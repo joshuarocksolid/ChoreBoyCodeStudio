@@ -18,6 +18,9 @@ def test_global_state_constant_values() -> None:
     assert constants.GLOBAL_CRASH_REPORTS_DIRNAME == "crash_reports"
     assert constants.GLOBAL_STATE_DB_FILENAME == "state.sqlite3"
     assert constants.APP_LOG_FILENAME == "app.log"
+    assert constants.APP_LOGGER_NAMESPACE == "choreboy_code_studio"
+    assert constants.APP_LOG_FORMAT == "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    assert constants.APP_LOG_DATE_FORMAT == "%Y-%m-%d %H:%M:%S"
 
 
 def test_project_structure_constant_values() -> None:
