@@ -1,0 +1,32 @@
+---
+description: Route agents to the right canonical docs quickly
+alwaysApply: true
+---
+
+# Documentation Navigation
+
+Use this rule to select the correct source-of-truth document before planning or implementing changes.
+
+## Read first order
+
+For any non-trivial task, review these files in order:
+
+1. `docs/PRD.md` for product goals, scope, and intended workflows.
+2. `docs/DISCOVERY.md` for runtime facts and platform constraints.
+3. `docs/ARCHITECTURE.md` for process boundaries, module boundaries, and contracts.
+4. `docs/TASKS.md` for implementation slices, sequencing, and backlog status.
+5. `AGENTS.md` for repository operating rules and required agent workflow.
+
+## Question -> document lookup
+
+- Product behavior, scope, or user workflow questions -> `docs/PRD.md`
+- Runtime capability or environment limit questions -> `docs/DISCOVERY.md`
+- System boundaries, data flow, or module ownership questions -> `docs/ARCHITECTURE.md`
+- What to build next or in what order -> `docs/TASKS.md`
+- How to execute work safely in this repo -> `AGENTS.md`
+
+## Conflict and missing-doc handling
+
+- If docs conflict, prioritize implementation safety by following `docs/ARCHITECTURE.md` and `AGENTS.md`, then ask the user before taking a major direction.
+- If a referenced document is missing, continue using the available canonical docs and explicitly note the gap to the user.
+- Route to source documents instead of duplicating large sections of them in new files or comments.

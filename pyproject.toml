@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+norecursedirs = [".git", ".cursor", ".pytest_cache", ".venv", "venv"]
+markers = [
+    "unit: fast isolated tests for pure business logic and contracts",
+    "integration: multi-component tests with filesystem/subprocess boundaries",
+    "runtime_parity: tests requiring /opt/freecad/AppRun or equivalent runtime",
+    "manual_acceptance: links automated coverage to manual acceptance workflows",
+]
