@@ -1,0 +1,43 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# OS and editor temp noise
+.DS_Store
+Thumbs.db
+*~
+*.swp
+.idea/
+
+# ChoreBoy Code Studio runtime artifacts
+.choreboy_code_studio/
+**/.cbcs/runs/
+**/.cbcs/cache/
+**/logs/*
+!**/logs/.gitkeep
