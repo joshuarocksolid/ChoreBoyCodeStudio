@@ -45,7 +45,7 @@ All early tasks should support this path.
 ## 4. Phase 1 — Bootstrap and App Skeleton
 
 ### T01 — Create repository/app skeleton
-**Status:** TODO
+**Status:** DONE
 
 **Goal:**  
 Create the initial source tree that matches the architecture.
@@ -85,7 +85,7 @@ This gives the repo stable structure before implementation begins.
 ---
 
 ### T02 — Implement path/bootstrap helpers
-**Status:** TODO
+**Status:** DONE
 
 **Goal:**  
 Create a central path utility that normalizes app root, user state root, temp paths, and project-relative paths.
