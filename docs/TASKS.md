@@ -295,7 +295,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: status bar is always coherent with active editor state.
 
 ### B08 — Run manifest model + JSON IO contract
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create explicit runner input contract.
 - Scope:
   - implement run manifest datamodel + schema version
@@ -311,7 +311,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: manifests are deterministic, validated, and file-backed.
 
 ### B09 — Run ID + per-run log path generation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: guarantee one durable log file per run.
 - Scope:
   - create run ID generation helper
@@ -327,7 +327,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: each run has a stable per-run log target.
 
 ### B10 — Process supervisor (editor side)
-- Status: `TODO`
+- Status: `DONE`
 - Objective: launch/track/stop external runner process.
 - Scope:
   - AppRun command assembly
@@ -343,7 +343,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: runner always executes out-of-process and can be stopped safely.
 
 ### B11 — Runner bootstrap entrypoint + manifest loading
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make `run_runner.py` a real runner boot surface.
 - Scope:
   - parse manifest path argument
@@ -361,7 +361,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: runner starts deterministically from manifest input.
 
 ### B12 — Execute user entry script in runner (`python_script`)
-- Status: `TODO`
+- Status: `DONE`
 - Objective: run project `run.py` inside runner process.
 - Scope:
   - set cwd and `sys.path` deterministically
@@ -377,7 +377,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: simple projects run end-to-end with isolated failure behavior.
 
 ### B13 — Stream stdout/stderr to console panel
-- Status: `TODO`
+- Status: `DONE`
 - Objective: show live run output in UI.
 - Scope:
   - consume process pipes
@@ -394,7 +394,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: output appears live and remains readable.
 
 ### B14 — Persist run logs + full traceback capture
-- Status: `TODO`
+- Status: `DONE`
 - Objective: durable diagnostics on every run.
 - Scope:
   - write merged run output to per-run log
@@ -411,7 +411,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: failure diagnosis is possible from log files alone.
 
 ### B15 — Problems pane summary for run failures
-- Status: `TODO`
+- Status: `DONE`
 - Objective: provide concise, actionable failure summary beyond raw console output.
 - Scope:
   - parse traceback into file/line summaries
@@ -428,7 +428,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: common failures are navigable from concise summaries.
 
 ### B16 — Run/Stop actions + run-state UX
-- Status: `TODO`
+- Status: `DONE`
 - Objective: complete visible run lifecycle controls.
 - Scope:
   - enable/disable Run/Stop correctly by state

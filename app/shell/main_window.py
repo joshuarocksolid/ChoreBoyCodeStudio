@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import queue
 from pathlib import Path
 from typing import Optional
 
-from PySide2.QtCore import Qt
+from PySide2.QtCore import QTimer, Qt
+from PySide2.QtGui import QCloseEvent
 from PySide2.QtWidgets import (
     QFileDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -25,11 +29,21 @@ from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
 from app.editors.editor_manager import EditorManager
+from app.run.console_model import ConsoleModel
+from app.run.problem_parser import ProblemEntry, parse_traceback_problems
+from app.run.process_supervisor import ProcessEvent
+from app.run.run_service import RunService
 from app.project.project_tree import ProjectTreeNode, build_project_tree
 from app.project.project_service import open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
+from app.shell.actions import map_run_action_state
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
+
+# Qt.UserRole is 0x0100 (256). Literal role IDs avoid enum typing mismatches across PySide shims.
+TREE_ROLE_ABSOLUTE_PATH = 256
+TREE_ROLE_IS_DIRECTORY = 257
+TREE_ROLE_RELATIVE_PATH = 258
 
 
 class MainWindow(QMainWindow):
@@ -40,12 +54,20 @@ class MainWindow(QMainWindow):
         self._project_placeholder_label: QLabel | None = None
         self._project_tree_widget: QTreeWidget | None = None
         self._editor_tabs_widget: QTabWidget | None = None
+        self._console_output_widget: QPlainTextEdit | None = None
+        self._run_log_output_widget: QPlainTextEdit | None = None
+        self._problems_list_widget: QListWidget | None = None
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
         self._state_root = state_root
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, QPlainTextEdit] = {}
+        self._console_model = ConsoleModel()
+        self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
+        self._active_run_output_chunks: list[str] = []
+        self._active_run_session_log_path: str | None = None
+        self._run_service = RunService(on_event=self._enqueue_run_event)
         self._logger = get_subsystem_logger("shell")
 
         self._configure_window_frame()
@@ -57,11 +79,19 @@ class MainWindow(QMainWindow):
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
+                on_run=self._handle_run_action,
+                on_stop=self._handle_stop_action,
+                on_clear_console=self._handle_clear_console_action,
             ),
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
+        self._run_event_timer = QTimer(self)
+        self._run_event_timer.setInterval(50)
+        self._run_event_timer.timeout.connect(self._process_queued_run_events)
+        self._run_event_timer.start()
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -116,6 +146,7 @@ class MainWindow(QMainWindow):
         self._reset_editor_tabs()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
         return True
 
     def _refresh_open_recent_menu(self) -> None:
@@ -221,7 +252,138 @@ class MainWindow(QMainWindow):
         if save_all_action is not None:
             save_all_action.setEnabled(has_dirty_tabs)
 
-    def closeEvent(self, event: object) -> None:  # noqa: N802 - Qt signature
+    def _handle_run_action(self) -> bool:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a project before running code.")
+            return False
+        if self._run_service.supervisor.is_running():
+            return False
+
+        if not self._handle_save_all_action():
+            QMessageBox.warning(self, "Run cancelled", "Fix save errors before running.")
+            return False
+
+        self._active_run_output_chunks.clear()
+        self._clear_problems()
+        self._append_console_line("[system] Starting run...\n")
+
+        try:
+            session = self._run_service.start_run(self._loaded_project)
+        except Exception as exc:
+            QMessageBox.warning(self, "Run failed to start", str(exc))
+            self._append_console_line(f"[system] Run failed to start: {exc}\n", stream="stderr")
+            self._refresh_run_action_states()
+            return False
+
+        self._active_run_session_log_path = session.log_file_path
+        self._append_console_line(f"[system] Run started ({session.run_id})\n")
+        self._refresh_run_action_states()
+        return True
+
+    def _handle_stop_action(self) -> None:
+        self._run_service.stop_run()
+        self._append_console_line("[system] Stop requested.\n")
+        self._refresh_run_action_states()
+
+    def _handle_clear_console_action(self) -> None:
+        self._console_model.clear()
+        if self._console_output_widget is not None:
+            self._console_output_widget.clear()
+
+    def _refresh_run_action_states(self) -> None:
+        if self._menu_registry is None:
+            return
+
+        run_action = self._menu_registry.action("shell.action.run.run")
+        stop_action = self._menu_registry.action("shell.action.run.stop")
+        state = map_run_action_state(
+            has_project=self._loaded_project is not None,
+            is_running=self._run_service.supervisor.is_running(),
+        )
+
+        if run_action is not None:
+            run_action.setEnabled(state.run_enabled)
+        if stop_action is not None:
+            stop_action.setEnabled(state.stop_enabled)
+
+    def _enqueue_run_event(self, event: ProcessEvent) -> None:
+        self._run_event_queue.put(event)
+
+    def _process_queued_run_events(self) -> None:
+        while True:
+            try:
+                event = self._run_event_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._apply_run_event(event)
+
+    def _apply_run_event(self, event: ProcessEvent) -> None:
+        if event.event_type == "output":
+            stream = event.stream or "stdout"
+            text = event.text or ""
+            self._active_run_output_chunks.append(text)
+            self._append_console_line(text, stream=stream)
+            return
+
+        if event.event_type == "exit":
+            return_code = event.return_code
+            if event.terminated_by_user:
+                self._append_console_line(f"[system] Run terminated by user (code={return_code}).\n")
+            else:
+                self._append_console_line(f"[system] Run finished (code={return_code}).\n")
+
+            self._refresh_run_action_states()
+            self._load_latest_run_log()
+            self._update_problems_from_output()
+            return
+
+        if event.event_type == "state":
+            self._refresh_run_action_states()
+
+    def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
+        line = self._console_model.append(stream, text)
+        if self._console_output_widget is None:
+            return
+        prefix = ""
+        if stream == "stderr":
+            prefix = "[stderr] "
+        elif stream == "system":
+            prefix = "[system] "
+        self._console_output_widget.appendPlainText(f"{prefix}{line.text.rstrip()}")
+
+    def _load_latest_run_log(self) -> None:
+        if self._run_log_output_widget is None:
+            return
+        if not self._active_run_session_log_path:
+            return
+
+        log_path = Path(self._active_run_session_log_path)
+        if not log_path.exists():
+            self._run_log_output_widget.setPlainText("(No run log available)")
+            return
+        self._run_log_output_widget.setPlainText(log_path.read_text(encoding="utf-8"))
+
+    def _update_problems_from_output(self) -> None:
+        output_text = "".join(self._active_run_output_chunks)
+        problems = parse_traceback_problems(output_text)
+        self._set_problems(problems)
+
+    def _set_problems(self, problems: list[ProblemEntry]) -> None:
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        for problem in problems:
+            item = QListWidgetItem(
+                f"{problem.file_path}:{problem.line_number} | {problem.context} | {problem.message}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(problem.message)
+
+    def _clear_problems(self) -> None:
+        if self._problems_list_widget is not None:
+            self._problems_list_widget.clear()
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
@@ -292,30 +454,20 @@ class MainWindow(QMainWindow):
     def _build_bottom_panel(self) -> QWidget:
         tabs = QTabWidget(self)
         tabs.setObjectName("shell.bottomRegion.tabs")
-        tabs.addTab(
-            self._create_placeholder_panel(
-                title="Console",
-                body="Console stream placeholder (runner output wiring arrives in T19).",
-                object_name="shell.bottom.console",
-            ),
-            "Console",
-        )
-        tabs.addTab(
-            self._create_placeholder_panel(
-                title="Problems",
-                body="Problems pane placeholder (error summary wiring arrives in T21).",
-                object_name="shell.bottom.problems",
-            ),
-            "Problems",
-        )
-        tabs.addTab(
-            self._create_placeholder_panel(
-                title="Run Log",
-                body="Run log placeholder (per-run persistence wiring arrives in T20).",
-                object_name="shell.bottom.runLog",
-            ),
-            "Run Log",
-        )
+
+        self._console_output_widget = QPlainTextEdit(tabs)
+        self._console_output_widget.setObjectName("shell.bottom.console")
+        self._console_output_widget.setReadOnly(True)
+        tabs.addTab(self._console_output_widget, "Console")
+
+        self._problems_list_widget = QListWidget(tabs)
+        self._problems_list_widget.setObjectName("shell.bottom.problems")
+        tabs.addTab(self._problems_list_widget, "Problems")
+
+        self._run_log_output_widget = QPlainTextEdit(tabs)
+        self._run_log_output_widget.setObjectName("shell.bottom.runLog")
+        self._run_log_output_widget.setReadOnly(True)
+        tabs.addTab(self._run_log_output_widget, "Run Log")
         return tabs
 
     def _create_placeholder_panel(self, title: str, body: str, object_name: str) -> QWidget:
@@ -352,17 +504,17 @@ class MainWindow(QMainWindow):
 
     def _build_tree_item(self, node: ProjectTreeNode) -> QTreeWidgetItem:
         item = QTreeWidgetItem([node.name])
-        item.setData(0, Qt.UserRole, node.absolute_path)
-        item.setData(0, Qt.UserRole + 1, node.is_directory)
-        item.setData(0, Qt.UserRole + 2, node.relative_path)
+        item.setData(0, TREE_ROLE_ABSOLUTE_PATH, node.absolute_path)
+        item.setData(0, TREE_ROLE_IS_DIRECTORY, node.is_directory)
+        item.setData(0, TREE_ROLE_RELATIVE_PATH, node.relative_path)
 
         for child_node in node.children:
             item.addChild(self._build_tree_item(child_node))
         return item
 
     def _handle_project_tree_item_activation(self, item: QTreeWidgetItem, _column: int) -> None:
-        is_directory = bool(item.data(0, Qt.UserRole + 1))
-        absolute_path = item.data(0, Qt.UserRole)
+        is_directory = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
+        absolute_path = item.data(0, TREE_ROLE_ABSOLUTE_PATH)
         if is_directory or not absolute_path:
             return
         self._open_file_in_editor(str(absolute_path))

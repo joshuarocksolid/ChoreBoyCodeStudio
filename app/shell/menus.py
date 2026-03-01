@@ -26,10 +26,13 @@ class MenuStubRegistry:
 class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
-    on_open_project: Callable[[], None] | None = None
-    on_file_menu_about_to_show: Callable[[], None] | None = None
-    on_save: Callable[[], None] | None = None
-    on_save_all: Callable[[], None] | None = None
+    on_open_project: Callable[[], object] | None = None
+    on_file_menu_about_to_show: Callable[[], object] | None = None
+    on_save: Callable[[], object] | None = None
+    on_save_all: Callable[[], object] | None = None
+    on_run: Callable[[], object] | None = None
+    on_stop: Callable[[], object] | None = None
+    on_clear_console: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -127,9 +130,29 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
-    _register_menu_action(run_menu, actions, "shell.action.run.run", "Run", "F5")
-    _register_menu_action(run_menu, actions, "shell.action.run.stop", "Stop", "Shift+F5")
-    _register_menu_action(run_menu, actions, "shell.action.run.clearConsole", "Clear Console")
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.run",
+        "Run",
+        "F5",
+        callback=callback_registry.on_run,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.stop",
+        "Stop",
+        "Shift+F5",
+        callback=callback_registry.on_stop,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.clearConsole",
+        "Clear Console",
+        callback=callback_registry.on_clear_console,
+    )
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
@@ -163,7 +186,7 @@ def _register_menu_action(
     label: str,
     shortcut: str | None = None,
     enabled: bool = False,
-    callback: Callable[[], None] | None = None,
+    callback: Callable[[], object] | None = None,
 ) -> None:
     action_class = importlib.import_module("PySide2.QtWidgets").QAction
 

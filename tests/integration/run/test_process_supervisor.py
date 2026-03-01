@@ -1,0 +1,53 @@
+"""Integration tests for process supervisor lifecycle behavior."""
+
+from __future__ import annotations
+
+import sys
+import time
+
+import pytest
+
+from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+
+pytestmark = pytest.mark.integration
+
+
+def _wait_until(predicate, timeout_seconds: float = 3.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_process_supervisor_streams_output_and_emits_exit_event(tmp_path) -> None:
+    """Supervisor should stream stdout/stderr and produce exit events."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [
+        sys.executable,
+        "-c",
+        "import sys,time;print('hello-out');print('hello-err', file=sys.stderr);time.sleep(0.1)",
+    ]
+
+    supervisor.start(command, cwd=str(tmp_path))
+
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    assert any(event.event_type == "output" and event.stream == "stdout" and "hello-out" in (event.text or "") for event in events)
+    assert any(event.event_type == "output" and event.stream == "stderr" and "hello-err" in (event.text or "") for event in events)
+    assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
+
+
+def test_process_supervisor_stop_terminates_long_running_process(tmp_path) -> None:
+    """Stop should terminate active long-running process and emit exit event."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [sys.executable, "-c", "import time; print('tick'); time.sleep(30)"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: supervisor.is_running())
+
+    supervisor.stop(terminate_timeout_seconds=0.2)
+    assert _wait_until(lambda: any(event.event_type == 'exit' for event in events))
+    assert any(event.event_type == "exit" and event.terminated_by_user for event in events)
