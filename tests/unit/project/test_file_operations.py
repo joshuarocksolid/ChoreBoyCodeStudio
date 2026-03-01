@@ -48,3 +48,19 @@ def test_create_directory_conflict_returns_failure(tmp_path: Path) -> None:
     folder.mkdir()
     result = create_directory(str(folder))
     assert result.success is False
+
+
+def test_delete_path_moves_to_trash_when_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delete operation should prefer user trash path when available."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    target = tmp_path / "trash_me.py"
+    target.write_text("print('x')\n", encoding="utf-8")
+
+    result = delete_path(str(target), use_trash=True)
+
+    assert result.success is True
+    assert target.exists() is False
+    assert result.destination_path is not None
+    assert Path(result.destination_path).exists()

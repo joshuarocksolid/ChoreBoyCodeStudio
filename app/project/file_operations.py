@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from datetime import datetime
 
 from app.project.file_operation_models import FileOperationResult
 
@@ -78,15 +79,27 @@ def copy_path(source_path: str, destination_path: str) -> FileOperationResult:
     )
 
 
-def delete_path(target_path: str) -> FileOperationResult:
+def delete_path(target_path: str, *, use_trash: bool = True) -> FileOperationResult:
     target = Path(target_path).expanduser().resolve()
     if not target.exists():
         return FileOperationResult(success=False, message=f"Path does not exist: {target}")
+    if use_trash:
+        try:
+            trash_path = _move_to_user_trash(target)
+            return FileOperationResult(
+                success=True,
+                message="Path moved to trash.",
+                source_path=str(target),
+                destination_path=str(trash_path),
+            )
+        except OSError:
+            # Fall back to permanent delete for constrained environments.
+            pass
     if target.is_dir():
         shutil.rmtree(target)
     else:
         target.unlink()
-    return FileOperationResult(success=True, message="Path deleted.", source_path=str(target))
+    return FileOperationResult(success=True, message="Path deleted permanently.", source_path=str(target))
 
 
 def duplicate_path(source_path: str) -> FileOperationResult:
@@ -105,3 +118,14 @@ def _next_duplicate_path(source: Path) -> Path:
         if not candidate.exists():
             return candidate
     raise RuntimeError(f"Unable to allocate duplicate name for {source}")
+
+
+def _move_to_user_trash(target: Path) -> Path:
+    trash_root = Path.home() / ".local" / "share" / "Trash" / "files"
+    trash_root.mkdir(parents=True, exist_ok=True)
+    candidate = trash_root / target.name
+    if candidate.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        candidate = trash_root / f"{target.name}.{timestamp}"
+    shutil.move(str(target), str(candidate))
+    return candidate
