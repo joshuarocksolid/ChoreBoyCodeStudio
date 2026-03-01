@@ -47,7 +47,7 @@ from app.debug.debug_command_service import (
     step_over_command,
 )
 from app.debug.debug_session import DebugSession
-from app.intelligence.diagnostics_service import find_unresolved_imports
+from app.intelligence.diagnostics_service import DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
@@ -193,6 +193,7 @@ class MainWindow(QMainWindow):
                 on_start_python_console=self._handle_start_python_console_action,
                 on_clear_console=self._handle_clear_console_action,
                 on_reset_layout=self._handle_reset_layout_action,
+                on_lint_current_file=self._handle_lint_current_file_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
@@ -1046,6 +1047,37 @@ class MainWindow(QMainWindow):
             self._python_console_output_widget.clear()
         if self._debug_inspector_output_widget is not None:
             self._debug_inspector_output_widget.clear()
+
+    def _handle_lint_current_file_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Lint Current File", "Open a file tab first.")
+            return
+        if not active_tab.file_path.lower().endswith(".py"):
+            QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+            return
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        diagnostics = analyze_python_file(active_tab.file_path, project_root=project_root)
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        if not diagnostics:
+            self._problems_list_widget.addItem(QListWidgetItem("No diagnostics found in current file."))
+            return
+        severity_prefix = {
+            DiagnosticSeverity.ERROR: "error",
+            DiagnosticSeverity.WARNING: "warn",
+            DiagnosticSeverity.INFO: "info",
+        }
+        for diagnostic in diagnostics:
+            prefix = severity_prefix.get(diagnostic.severity, "info")
+            item = QListWidgetItem(
+                f"[{prefix}] {Path(diagnostic.file_path).name}:{diagnostic.line_number} {diagnostic.code} | {diagnostic.message}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(diagnostic.file_path)
+            item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
