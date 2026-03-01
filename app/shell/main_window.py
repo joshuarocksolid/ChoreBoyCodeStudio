@@ -48,6 +48,7 @@ from app.debug.debug_command_service import (
 )
 from app.debug.debug_session import DebugSession
 from app.intelligence.diagnostics_service import find_unresolved_imports
+from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.signature_service import resolve_signature_help
@@ -203,6 +204,7 @@ class MainWindow(QMainWindow):
                 on_outdent=self._handle_outdent_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_signature_help=self._handle_signature_help_action,
+                on_hover_info=self._handle_hover_info_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -585,6 +587,35 @@ class MainWindow(QMainWindow):
             details.append(f"Doc: {signature.doc_summary}")
         details.append(f"Source: {signature.source}")
         QMessageBox.information(self, "Signature Help", "\n".join(details))
+
+    def _handle_hover_info_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Hover Info", "Open a file tab first.")
+            return
+
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        hover_info = resolve_hover_info(
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+            current_file_path=active_tab.file_path,
+            project_root=project_root,
+            cache_db_path=str(global_cache_dir(self._state_root) / "symbols.sqlite3"),
+        )
+        if hover_info is None:
+            QMessageBox.information(self, "Hover Info", "No symbol info available.")
+            return
+
+        details = [f"Symbol: {hover_info.symbol_name}", f"Kind: {hover_info.symbol_kind}"]
+        if hover_info.file_path:
+            details.append(f"File: {hover_info.file_path}")
+        if hover_info.line_number is not None:
+            details.append(f"Line: {hover_info.line_number}")
+        if hover_info.doc_summary:
+            details.append(f"Doc: {hover_info.doc_summary}")
+        details.append(f"Source: {hover_info.source}")
+        QMessageBox.information(self, "Hover Info", "\n".join(details))
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:

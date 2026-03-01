@@ -41,6 +41,7 @@ class MenuCallbacks:
     on_outdent: Callable[[], object] | None = None
     on_go_to_definition: Callable[[], object] | None = None
     on_signature_help: Callable[[], object] | None = None
+    on_hover_info: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -250,6 +251,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Shift+Space",
         enabled=True,
         callback=callback_registry.on_signature_help,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.hoverInfo",
+        "Show Hover Info",
+        "Ctrl+K",
+        enabled=True,
+        callback=callback_registry.on_hover_info,
     )
 
     run_menu = menu_bar.addMenu("&Run")
