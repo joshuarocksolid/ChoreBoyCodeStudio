@@ -81,11 +81,11 @@ from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
-from app.project.project_service import open_project, open_project_and_track_recent
-from app.project.recent_projects import load_recent_projects
+from app.project.project_service import open_project
 from app.shell.actions import map_run_action_state
 from app.shell.background_tasks import BackgroundTaskRunner
-from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
+from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
+from app.shell.project_controller import ProjectController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_shell_toolbar
 
@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
         self._logger = get_subsystem_logger("shell")
+        self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
 
         self._configure_window_frame()
         self._build_layout_shell()
@@ -596,23 +597,29 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, title, help_path.read_text(encoding="utf-8"))
 
     def _open_project_by_path(self, project_root: str) -> bool:
-        if not self._confirm_proceed_with_unsaved_changes("opening another project"):
-            return False
-
         started_at = time.perf_counter()
-        try:
-            loaded_project = open_project_and_track_recent(
-                project_root,
-                state_root=self._state_root,
-            )
-        except (AppValidationError, ValueError) as exc:
-            self._show_open_project_error(project_root, str(exc))
-            return False
-        except Exception as exc:  # pragma: no cover - defensive shell guard
-            self._logger.exception("Unexpected error while opening project: %s", project_root)
-            self._show_open_project_error(project_root, f"Unexpected error: {exc}")
-            return False
+        return self._project_controller.open_project_by_path(
+            project_root,
+            confirm_proceed=self._confirm_proceed_with_unsaved_changes,
+            on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
+            on_error=self._show_open_project_error,
+        )
 
+    def _refresh_open_recent_menu(self) -> None:
+        self._project_controller.refresh_open_recent_menu(
+            self._menu_registry,
+            open_project_by_path=self._open_project_by_path,
+        )
+
+    def _show_open_project_error(self, project_root: str, details: str) -> None:
+        self._logger.warning("Project open failed for %s: %s", project_root, details)
+        QMessageBox.critical(
+            self,
+            "Unable to open project",
+            f"Could not open project:\n{project_root}\n\n{details}",
+        )
+
+    def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
         self._loaded_project = loaded_project
         self.set_project_placeholder(loaded_project.metadata.name)
         self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
@@ -630,39 +637,6 @@ class MainWindow(QMainWindow):
             loaded_project.project_root,
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
-        )
-        return True
-
-    def _refresh_open_recent_menu(self) -> None:
-        if self._menu_registry is None:
-            return
-
-        open_recent_menu = self._menu_registry.menu("shell.menu.file.openRecent")
-        if open_recent_menu is None:
-            return
-
-        open_recent_menu.clear()
-        recent_paths = load_recent_projects(state_root=self._state_root)
-        recent_items = build_recent_project_menu_items(recent_paths)
-
-        if not recent_items:
-            placeholder_action = open_recent_menu.addAction("(No recent projects)")
-            placeholder_action.setEnabled(False)
-            return
-
-        for recent_item in recent_items:
-            action = open_recent_menu.addAction(recent_item.display_text)
-            action.setToolTip(recent_item.project_path)
-            action.triggered.connect(
-                lambda _checked=False, project_path=recent_item.project_path: self._open_project_by_path(project_path)
-            )
-
-    def _show_open_project_error(self, project_root: str, details: str) -> None:
-        self._logger.warning("Project open failed for %s: %s", project_root, details)
-        QMessageBox.critical(
-            self,
-            "Unable to open project",
-            f"Could not open project:\n{project_root}\n\n{details}",
         )
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:

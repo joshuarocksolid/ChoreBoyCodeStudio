@@ -88,7 +88,7 @@ class ShellStatusBarController:
         startup_status = map_startup_report_to_status(report)
         self._startup_label.setText(startup_status.text)
         self._startup_label.setToolTip(startup_status.details)
-        self._startup_label.setProperty("startupSeverity", startup_status.severity)
+        self._startup_label.setProperty("startupSeverity", startup_status.severity)  # type: ignore[arg-type]
 
     def set_project_state_text(self, text: str) -> None:
         """Update lightweight project-status copy."""
