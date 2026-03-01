@@ -171,7 +171,7 @@ Release class default for this phase: `MVP-BLOCKING`
 The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### B01 — Wire **Open Project** action in shell
-- Status: `TODO`
+- Status: `DONE`
 - Objective: connect menu action + folder picker + project service load.
 - Scope:
   - enable `File -> Open Project...`
@@ -189,7 +189,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: project loads from UI without restart; invalid project fails clearly.
 
 ### B02 — Populate **Open Recent** menu + selection flow
-- Status: `TODO`
+- Status: `DONE`
 - Objective: turn persisted recents into usable UX.
 - Scope:
   - render recents submenu

@@ -1,36 +1,47 @@
-"""Main Qt shell for T05.
-
-T05 scope guardrails:
-- This is a composition shell only.
-- It provides placeholder regions and startup visibility.
-- It does not implement project-open, tab editing, run control, or persistence flows.
-"""
+"""Main Qt shell composition and top-level workflow wiring."""
 
 from __future__ import annotations
 
+from pathlib import Path
+import logging
 from typing import Optional
 
 from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QLabel, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PySide2.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
+from app.bootstrap.logging_setup import get_subsystem_logger
+from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
-from app.shell.menus import MenuStubRegistry, build_menu_stubs
+from app.core.models import LoadedProject
+from app.project.project_service import open_project_and_track_recent
+from app.project.recent_projects import load_recent_projects
+from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 
 
 class MainWindow(QMainWindow):
     """Top-level editor window shell with extension seams for later tasks."""
 
-    def __init__(self, startup_report: Optional[CapabilityProbeReport] = None) -> None:
+    def __init__(self, startup_report: Optional[CapabilityProbeReport] = None, state_root: str | None = None) -> None:
         super().__init__()
         self._project_placeholder_label: QLabel | None = None
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
+        self._state_root = state_root
+        self._loaded_project: LoadedProject | None = None
+        self._logger = get_subsystem_logger("shell")
 
         self._configure_window_frame()
         self._build_layout_shell()
-        self._menu_registry = build_menu_stubs(self)
+        self._menu_registry = build_menu_stubs(
+            self,
+            callbacks=MenuCallbacks(
+                on_open_project=self._handle_open_project_action,
+                on_file_menu_about_to_show=self._refresh_open_recent_menu,
+            ),
+        )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
+        self._refresh_open_recent_menu()
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -48,6 +59,71 @@ class MainWindow(QMainWindow):
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
         return self._menu_registry
+
+    @property
+    def loaded_project(self) -> LoadedProject | None:
+        """Return the currently loaded project, if any."""
+        return self._loaded_project
+
+    def _handle_open_project_action(self) -> None:
+        selected_path = QFileDialog.getExistingDirectory(self, "Open Project", str(Path.home()))
+        if not selected_path:
+            return
+        self._open_project_by_path(selected_path)
+
+    def _open_project_by_path(self, project_root: str) -> bool:
+        try:
+            loaded_project = open_project_and_track_recent(
+                project_root,
+                state_root=self._state_root,
+            )
+        except (AppValidationError, ValueError) as exc:
+            self._show_open_project_error(project_root, str(exc))
+            return False
+        except Exception as exc:  # pragma: no cover - defensive shell guard
+            self._logger.exception("Unexpected error while opening project: %s", project_root)
+            self._show_open_project_error(project_root, f"Unexpected error: {exc}")
+            return False
+
+        self._loaded_project = loaded_project
+        project_label = f"{loaded_project.metadata.name} ({loaded_project.project_root})"
+        self.set_project_placeholder(project_label)
+        self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
+        self._logger.info("Project loaded: %s", loaded_project.project_root)
+        self._refresh_open_recent_menu()
+        return True
+
+    def _refresh_open_recent_menu(self) -> None:
+        if self._menu_registry is None:
+            return
+
+        open_recent_menu = self._menu_registry.menu("shell.menu.file.openRecent")
+        if open_recent_menu is None:
+            return
+
+        open_recent_menu.clear()
+        recent_paths = load_recent_projects(state_root=self._state_root)
+        recent_items = build_recent_project_menu_items(recent_paths)
+
+        if not recent_items:
+            placeholder_action = open_recent_menu.addAction("(No recent projects)")
+            placeholder_action.setEnabled(False)
+            return
+
+        for recent_item in recent_items:
+            action = open_recent_menu.addAction(recent_item.display_text)
+            action.setToolTip(recent_item.project_path)
+            action.triggered.connect(
+                lambda _checked=False, project_path=recent_item.project_path: self._open_project_by_path(project_path)
+            )
+
+    def _show_open_project_error(self, project_root: str, details: str) -> None:
+        self._logger.warning("Project open failed for %s: %s", project_root, details)
+        QMessageBox.critical(
+            self,
+            "Unable to open project",
+            f"Could not open project:\n{project_root}\n\n{details}",
+        )
 
     def _configure_window_frame(self) -> None:
         self.setObjectName("shell.mainWindow")

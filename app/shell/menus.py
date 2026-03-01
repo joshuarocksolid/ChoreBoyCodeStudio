@@ -1,13 +1,10 @@
-"""Menu bar stubs for the T05 shell.
-
-Menus in this module intentionally avoid wiring project/editor/run logic.
-They provide stable action IDs so future tasks can connect behavior.
-"""
+"""Menu construction helpers for the shell window."""
 
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 
@@ -16,22 +13,74 @@ class MenuStubRegistry:
     """Stores stable references to menu actions by ID."""
 
     actions: dict[str, Any]
+    menus: dict[str, Any] = field(default_factory=dict)
 
     def action(self, action_id: str) -> Any:
         return self.actions.get(action_id)
 
+    def menu(self, menu_id: str) -> Any:
+        return self.menus.get(menu_id)
 
-def build_menu_stubs(main_window: Any) -> MenuStubRegistry:
-    """Create top-level shell menus with placeholder actions."""
+
+@dataclass(frozen=True)
+class MenuCallbacks:
+    """Optional callbacks that wire shell behavior to menu actions."""
+
+    on_open_project: Callable[[], None] | None = None
+    on_file_menu_about_to_show: Callable[[], None] | None = None
+
+
+@dataclass(frozen=True)
+class RecentProjectMenuItem:
+    """Menu-display model for a recent project entry."""
+
+    project_path: str
+    display_text: str
+
+
+def build_recent_project_menu_items(project_paths: list[str]) -> list[RecentProjectMenuItem]:
+    """Normalize recent-project paths into deterministic menu items."""
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw_path in project_paths:
+        normalized = raw_path.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+
+    items: list[RecentProjectMenuItem] = []
+    for project_path in deduped:
+        leaf_name = Path(project_path).name or project_path
+        items.append(RecentProjectMenuItem(project_path=project_path, display_text=f"{leaf_name} — {project_path}"))
+    return items
+
+
+def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -> MenuStubRegistry:
+    """Create top-level shell menus and stable action IDs."""
+    callback_registry = callbacks or MenuCallbacks()
     actions: dict[str, Any] = {}
+    menus: dict[str, Any] = {}
     menu_bar = main_window.menuBar()
     menu_bar.setObjectName("shell.menuBar")
 
     file_menu = menu_bar.addMenu("&File")
     file_menu.setObjectName("shell.menu.file")
+    if callback_registry.on_file_menu_about_to_show is not None:
+        file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
     _register_menu_action(file_menu, actions, "shell.action.file.newProject", "New Project...", "Ctrl+N")
-    _register_menu_action(file_menu, actions, "shell.action.file.openProject", "Open Project...", "Ctrl+O")
-    _register_menu_action(file_menu, actions, "shell.action.file.openRecent", "Open Recent")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.openProject",
+        "Open Project...",
+        "Ctrl+O",
+        enabled=True,
+        callback=callback_registry.on_open_project,
+    )
+    open_recent_menu = file_menu.addMenu("Open Recent")
+    open_recent_menu.setObjectName("shell.menu.file.openRecent")
+    menus["shell.menu.file.openRecent"] = open_recent_menu
     file_menu.addSeparator()
     _register_menu_action(file_menu, actions, "shell.action.file.save", "Save", "Ctrl+S")
     _register_menu_action(file_menu, actions, "shell.action.file.saveAs", "Save As...")
@@ -86,7 +135,7 @@ def build_menu_stubs(main_window: Any) -> MenuStubRegistry:
     _register_menu_action(help_menu, actions, "shell.action.help.shortcuts", "Keyboard Shortcuts")
     _register_menu_action(help_menu, actions, "shell.action.help.about", "About")
 
-    return MenuStubRegistry(actions=actions)
+    return MenuStubRegistry(actions=actions, menus=menus)
 
 
 def _register_menu_action(
