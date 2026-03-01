@@ -31,6 +31,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
+from app.bootstrap.paths import global_cache_dir
 from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
@@ -47,7 +48,7 @@ from app.debug.debug_command_service import (
 from app.debug.debug_session import DebugSession
 from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.intelligence.diagnostics_service import find_unresolved_imports
-from app.intelligence.navigation_service import lookup_definition
+from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -427,10 +428,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Go To Definition", "Open a file tab first.")
             return
         symbol_name = editor_widget.word_under_cursor()
-        lookup = lookup_definition(
-            self._loaded_project.project_root,
+        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
+        lookup = lookup_definition_with_cache(
+            project_root=self._loaded_project.project_root,
             current_file_path=active_tab.file_path,
             symbol_name=symbol_name,
+            cache_db_path=str(cache_db),
         )
         if not lookup.found:
             QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
