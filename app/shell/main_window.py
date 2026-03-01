@@ -49,6 +49,7 @@ from app.debug.debug_session import DebugSession
 from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
+from app.intelligence.outline_service import build_file_outline
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -175,6 +176,7 @@ class MainWindow(QMainWindow):
                 on_outdent=self._handle_outdent_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
+                on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
                 on_help_getting_started=self._handle_getting_started_action,
                 on_help_shortcuts=self._handle_shortcuts_action,
@@ -506,6 +508,26 @@ class MainWindow(QMainWindow):
             item.setToolTip(diagnostic.file_path)
             item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
             item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+
+    def _handle_show_outline_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Outline", "Open a Python file first.")
+            return
+        symbols = build_file_outline(active_tab.file_path)
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        if not symbols:
+            self._problems_list_widget.addItem(QListWidgetItem("No symbols found in current file."))
+            return
+        for symbol in symbols:
+            item = QListWidgetItem(
+                f"{symbol.kind} {symbol.name} (line {symbol.line_number})",
+                self._problems_list_widget,
+            )
+            item.setData(PROBLEM_ROLE_FILE_PATH, active_tab.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, symbol.line_number)
 
     def _handle_getting_started_action(self) -> None:
         self._show_help_file("Getting Started", "getting_started.md")

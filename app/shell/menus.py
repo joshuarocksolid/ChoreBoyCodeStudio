@@ -41,6 +41,7 @@ class MenuCallbacks:
     on_outdent: Callable[[], object] | None = None
     on_go_to_definition: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
+    on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
@@ -352,6 +353,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Analyze Imports",
         enabled=True,
         callback=callback_registry.on_analyze_imports,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.showOutline",
+        "Show Current File Outline",
+        enabled=True,
+        callback=callback_registry.on_show_outline,
     )
     _register_menu_action(
         tools_menu,
