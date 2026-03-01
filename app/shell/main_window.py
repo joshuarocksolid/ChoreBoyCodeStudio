@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self._tree_clipboard_path: str | None = None
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
+        self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
@@ -165,6 +166,9 @@ class MainWindow(QMainWindow):
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
+                on_toggle_comment=self._handle_toggle_comment_action,
+                on_indent=self._handle_indent_action,
+                on_outdent=self._handle_outdent_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -269,6 +273,20 @@ class MainWindow(QMainWindow):
         settings_payload[constants.UI_IMPORT_UPDATE_POLICY_KEY] = policy.value
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
+
+    def _load_editor_preferences(self) -> tuple[int, int]:
+        settings_payload = load_settings(state_root=self._state_root)
+        editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
+        if not isinstance(editor_settings, dict):
+            return (constants.UI_EDITOR_TAB_WIDTH_DEFAULT, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+
+        tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
+        font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+        if not isinstance(tab_width, int):
+            tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
+        if not isinstance(font_size, int):
+            font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
+        return (max(2, tab_width), max(8, font_size))
 
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
@@ -384,6 +402,24 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Replace", "No matching text found.")
             return
         editor_widget.setPlainText(replaced_content)
+
+    def _handle_toggle_comment_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            return
+        editor_widget.toggle_comment_selection()
+
+    def _handle_indent_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            return
+        editor_widget.indent_selection()
+
+    def _handle_outdent_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            return
+        editor_widget.outdent_selection()
 
     def _handle_go_to_line_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -1532,6 +1568,7 @@ class MainWindow(QMainWindow):
 
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
+        editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_breakpoint_toggled_callback(
