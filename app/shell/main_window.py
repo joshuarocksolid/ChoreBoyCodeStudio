@@ -29,10 +29,14 @@ from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import EditorTabState
+from app.persistence.autosave_store import AutosaveStore
 from app.run.console_model import ConsoleModel
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
+from app.support.diagnostics import ProjectHealthReport, run_project_health_check
+from app.support.support_bundle import build_support_bundle
 from app.project.project_tree import ProjectTreeNode, build_project_tree
 from app.project.project_service import open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
@@ -63,10 +67,12 @@ class MainWindow(QMainWindow):
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, QPlainTextEdit] = {}
+        self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_chunks: list[str] = []
         self._active_run_session_log_path: str | None = None
+        self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._logger = get_subsystem_logger("shell")
 
@@ -82,6 +88,8 @@ class MainWindow(QMainWindow):
                 on_run=self._handle_run_action,
                 on_stop=self._handle_stop_action,
                 on_clear_console=self._handle_clear_console_action,
+                on_project_health_check=self._handle_project_health_check_action,
+                on_generate_support_bundle=self._handle_generate_support_bundle_action,
             ),
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
@@ -233,6 +241,7 @@ class MainWindow(QMainWindow):
             if tab_index >= 0:
                 self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
 
+        self._autosave_store.delete_draft(saved_tab.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
         self._logger.info("Saved file: %s", saved_tab.file_path)
@@ -289,6 +298,56 @@ class MainWindow(QMainWindow):
         self._console_model.clear()
         if self._console_output_widget is not None:
             self._console_output_widget.clear()
+
+    def _handle_project_health_check_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Health check unavailable", "Open a project before running diagnostics.")
+            return
+
+        report = run_project_health_check(self._loaded_project.project_root, state_root=self._state_root)
+        self._latest_health_report = report
+        failed_checks = [check for check in report.checks if not check.is_ok]
+        summary_lines = [
+            f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
+            for check in report.checks
+        ]
+        summary_text = "\n".join(summary_lines)
+        if failed_checks:
+            QMessageBox.warning(self, "Project health check", summary_text)
+        else:
+            QMessageBox.information(self, "Project health check", summary_text)
+
+    def _handle_generate_support_bundle_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Support bundle unavailable", "Open a project before generating support bundle.")
+            return
+        if self._latest_health_report is None:
+            self._latest_health_report = run_project_health_check(
+                self._loaded_project.project_root,
+                state_root=self._state_root,
+            )
+
+        bundle_path = build_support_bundle(
+            self._loaded_project.project_root,
+            diagnostics_report=self._latest_health_report,
+            last_run_log_path=self._resolve_latest_run_log_path(),
+            state_root=self._state_root,
+            destination_dir=self._loaded_project.project_root,
+        )
+        QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
+
+    def _resolve_latest_run_log_path(self) -> str | None:
+        if self._active_run_session_log_path and Path(self._active_run_session_log_path).exists():
+            return self._active_run_session_log_path
+        if self._loaded_project is None:
+            return None
+        log_dir = Path(self._loaded_project.project_root) / "logs"
+        if not log_dir.exists():
+            return None
+        candidate_logs = sorted(log_dir.glob("run_*.log"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not candidate_logs:
+            return None
+        return str(candidate_logs[0].resolve())
 
     def _refresh_run_action_states(self) -> None:
         if self._menu_registry is None:
@@ -557,6 +616,7 @@ class MainWindow(QMainWindow):
         tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         self._editor_tabs_widget.setCurrentIndex(tab_index)
+        self._maybe_restore_draft(opened_result.tab, editor_widget)
         self._handle_editor_tab_changed(tab_index)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
@@ -582,6 +642,10 @@ class MainWindow(QMainWindow):
             return
         suffix = " *" if tab_state.is_dirty else ""
         self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+        if tab_state.is_dirty:
+            self._autosave_store.save_draft(tab_state.file_path, tab_state.current_content)
+        else:
+            self._autosave_store.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
 
@@ -630,3 +694,27 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+
+    def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: QPlainTextEdit) -> None:
+        draft_entry = self._autosave_store.load_draft(tab_state.file_path)
+        if draft_entry is None or draft_entry.content == tab_state.current_content:
+            return
+
+        response = QMessageBox.question(
+            self,
+            "Restore draft",
+            f"A recovery draft is available for {tab_state.display_name}.\nRestore unsaved changes?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if response != QMessageBox.Yes:
+            return
+
+        editor_widget.blockSignals(True)
+        editor_widget.setPlainText(draft_entry.content)
+        editor_widget.blockSignals(False)
+        updated_tab = self._editor_manager.update_tab_content(tab_state.file_path, draft_entry.content)
+        tab_index = self._tab_index_for_path(tab_state.file_path)
+        if self._editor_tabs_widget is not None and tab_index >= 0:
+            self._editor_tabs_widget.setTabText(tab_index, f"{updated_tab.display_name} *")
+        self._autosave_store.save_draft(updated_tab.file_path, updated_tab.current_content)

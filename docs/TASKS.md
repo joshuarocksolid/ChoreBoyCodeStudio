@@ -464,7 +464,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### C01 — Draft autosave/recovery foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: recover unsaved work after abnormal exit without silent overwrite.
 - Primary files:
   - `app/persistence/autosave_store.py` (new)
@@ -476,7 +476,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B05`, `B06`, `A09`
 
 ### C02 — Project health check command
-- Status: `TODO`
+- Status: `DONE`
 - Objective: pre-run diagnostics for common project/runtime issues.
 - Primary files:
   - `app/support/diagnostics.py` (new)
@@ -489,7 +489,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B11`, `B14`
 
 ### C03 — Support bundle generation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: package logs + project metadata for field troubleshooting.
 - Primary files:
   - `app/support/support_bundle.py` (new)

@@ -33,6 +33,8 @@ class MenuCallbacks:
     on_run: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
+    on_project_health_check: Callable[[], object] | None = None
+    on_generate_support_bundle: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         actions,
         "shell.action.tools.projectHealthCheck",
         "Project Health Check",
+        callback=callback_registry.on_project_health_check,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.generateSupportBundle",
+        "Generate Support Bundle",
+        callback=callback_registry.on_generate_support_bundle,
     )
     _register_menu_action(
         tools_menu,
