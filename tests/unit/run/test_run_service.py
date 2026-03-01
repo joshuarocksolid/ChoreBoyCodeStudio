@@ -1,0 +1,50 @@
+"""Unit tests for run service helper contracts."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+import sys
+
+import pytest
+
+from app.run.run_service import build_run_log_path, build_run_manifest_path, generate_run_id, resolve_runtime_executable
+
+pytestmark = pytest.mark.unit
+
+
+def test_generate_run_id_includes_timestamp_and_random_suffix() -> None:
+    """Run IDs should include deterministic timestamp prefix and unique suffix."""
+    now = datetime(2026, 3, 1, 5, 6, 7)
+    first = generate_run_id(now=now)
+    second = generate_run_id(now=now)
+
+    assert first.startswith("20260301_050607_")
+    assert second.startswith("20260301_050607_")
+    assert first != second
+
+
+def test_build_run_log_and_manifest_paths_use_project_contract(tmp_path: Path) -> None:
+    """Run artifacts should target project logs and .cbcs/runs directories."""
+    project_root = tmp_path / "project_alpha"
+    run_id = "20260301_050607_abcd12"
+
+    log_path = build_run_log_path(project_root, run_id)
+    manifest_path = build_run_manifest_path(project_root, run_id)
+
+    assert log_path == project_root / "logs" / f"run_{run_id}.log"
+    assert manifest_path == project_root / ".cbcs" / "runs" / f"run_manifest_{run_id}.json"
+
+
+def test_resolve_runtime_executable_prefers_explicit_config(tmp_path: Path) -> None:
+    """Configured runtime path should override automatic resolution."""
+    custom_runtime = tmp_path / "custom_runtime"
+    custom_runtime.write_text("", encoding="utf-8")
+
+    assert resolve_runtime_executable(str(custom_runtime)) == str(custom_runtime.resolve())
+
+
+def test_resolve_runtime_executable_falls_back_to_python_when_apprun_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When AppRun path is missing in cloud dev env, fallback should use current python."""
+    monkeypatch.setattr("app.run.run_service.constants.APP_RUN_PATH", "/path/that/does/not/exist")
+    assert resolve_runtime_executable(None) == sys.executable

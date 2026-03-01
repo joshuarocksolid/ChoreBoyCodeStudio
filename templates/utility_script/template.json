@@ -1,0 +1,7 @@
+{
+  "template_id": "utility_script",
+  "display_name": "Utility Script",
+  "description": "Simple script template for quick automation.",
+  "default_mode": "python_script",
+  "template_version": 1
+}

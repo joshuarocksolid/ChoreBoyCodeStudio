@@ -3,7 +3,7 @@
 import pytest
 
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
-from app.shell.status_bar import map_startup_report_to_status
+from app.shell.status_bar import map_editor_status_view, map_startup_report_to_status
 
 pytestmark = pytest.mark.unit
 
@@ -46,3 +46,15 @@ def test_map_startup_report_to_status_includes_failed_check_ids() -> None:
     assert status.severity == "warning"
     assert status.text == "Startup: Runtime issues (1/3 checks)"
     assert status.details == "Failed checks: freecad_import, global_logs_writable"
+
+
+def test_map_editor_status_view_formats_active_file_coordinates() -> None:
+    """Active editor telemetry should include file, coordinates, and dirty state."""
+    view = map_editor_status_view("main.py", 12, 4, is_dirty=True)
+    assert view.text == "Editor: main.py | Ln 12, Col 4 | modified"
+
+
+def test_map_editor_status_view_handles_missing_file() -> None:
+    """No active file should map to explicit placeholder copy."""
+    view = map_editor_status_view(None, None, None, is_dirty=False)
+    assert view.text == "Editor: no file"

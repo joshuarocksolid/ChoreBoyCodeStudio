@@ -171,7 +171,7 @@ Release class default for this phase: `MVP-BLOCKING`
 The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### B01 — Wire **Open Project** action in shell
-- Status: `TODO`
+- Status: `DONE`
 - Objective: connect menu action + folder picker + project service load.
 - Scope:
   - enable `File -> Open Project...`
@@ -189,7 +189,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: project loads from UI without restart; invalid project fails clearly.
 
 ### B02 — Populate **Open Recent** menu + selection flow
-- Status: `TODO`
+- Status: `DONE`
 - Objective: turn persisted recents into usable UX.
 - Scope:
   - render recents submenu
@@ -207,7 +207,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: recents survive restart and remain stable when paths disappear.
 
 ### B03 — Add project tree view to left sidebar
-- Status: `TODO`
+- Status: `DONE`
 - Objective: show project files/folders in shell.
 - Scope:
   - add model/view bridge for `LoadedProject.entries`
@@ -224,7 +224,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: tree reflects project reliably and emits file selection events.
 
 ### B04 — Implement tabbed file open flow from project tree
-- Status: `TODO`
+- Status: `DONE`
 - Objective: open selected text files in editor tabs.
 - Scope:
   - add editor manager + tab model
@@ -242,7 +242,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: selected file opens once and active tab state is deterministic.
 
 ### B05 — Dirty tracking + single-file Save
-- Status: `TODO`
+- Status: `DONE`
 - Objective: track modifications and persist current file.
 - Scope:
   - dirty marker per tab
@@ -260,7 +260,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: modified file saves correctly and dirty indicator clears.
 
 ### B06 — Save All + unsaved-change UX on close/switch
-- Status: `TODO`
+- Status: `DONE`
 - Objective: protect user data in multi-tab editing.
 - Scope:
   - Save All action
@@ -278,7 +278,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: multi-file edits persist predictably with clear prompts.
 
 ### B07 — Status bar editing telemetry
-- Status: `TODO`
+- Status: `DONE`
 - Objective: surface active file + line/column + modified state.
 - Scope:
   - status bar updates on cursor movement/tab switch
@@ -295,7 +295,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: status bar is always coherent with active editor state.
 
 ### B08 — Run manifest model + JSON IO contract
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create explicit runner input contract.
 - Scope:
   - implement run manifest datamodel + schema version
@@ -311,7 +311,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: manifests are deterministic, validated, and file-backed.
 
 ### B09 — Run ID + per-run log path generation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: guarantee one durable log file per run.
 - Scope:
   - create run ID generation helper
@@ -327,7 +327,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: each run has a stable per-run log target.
 
 ### B10 — Process supervisor (editor side)
-- Status: `TODO`
+- Status: `DONE`
 - Objective: launch/track/stop external runner process.
 - Scope:
   - AppRun command assembly
@@ -343,7 +343,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: runner always executes out-of-process and can be stopped safely.
 
 ### B11 — Runner bootstrap entrypoint + manifest loading
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make `run_runner.py` a real runner boot surface.
 - Scope:
   - parse manifest path argument
@@ -361,7 +361,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: runner starts deterministically from manifest input.
 
 ### B12 — Execute user entry script in runner (`python_script`)
-- Status: `TODO`
+- Status: `DONE`
 - Objective: run project `run.py` inside runner process.
 - Scope:
   - set cwd and `sys.path` deterministically
@@ -377,7 +377,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: simple projects run end-to-end with isolated failure behavior.
 
 ### B13 — Stream stdout/stderr to console panel
-- Status: `TODO`
+- Status: `DONE`
 - Objective: show live run output in UI.
 - Scope:
   - consume process pipes
@@ -394,7 +394,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: output appears live and remains readable.
 
 ### B14 — Persist run logs + full traceback capture
-- Status: `TODO`
+- Status: `DONE`
 - Objective: durable diagnostics on every run.
 - Scope:
   - write merged run output to per-run log
@@ -411,7 +411,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: failure diagnosis is possible from log files alone.
 
 ### B15 — Problems pane summary for run failures
-- Status: `TODO`
+- Status: `DONE`
 - Objective: provide concise, actionable failure summary beyond raw console output.
 - Scope:
   - parse traceback into file/line summaries
@@ -428,7 +428,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: common failures are navigable from concise summaries.
 
 ### B16 — Run/Stop actions + run-state UX
-- Status: `TODO`
+- Status: `DONE`
 - Objective: complete visible run lifecycle controls.
 - Scope:
   - enable/disable Run/Stop correctly by state
@@ -446,7 +446,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: run controls are predictable and safe.
 
 ### B17 — MVP acceptance gate pass
-- Status: `TODO`
+- Status: `DONE`
 - Objective: prove MVP on target workflow.
 - Scope:
   - execute minimum acceptance gate from `docs/ACCEPTANCE_TESTS.md`
@@ -464,7 +464,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### C01 — Draft autosave/recovery foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: recover unsaved work after abnormal exit without silent overwrite.
 - Primary files:
   - `app/persistence/autosave_store.py` (new)
@@ -476,7 +476,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B05`, `B06`, `A09`
 
 ### C02 — Project health check command
-- Status: `TODO`
+- Status: `DONE`
 - Objective: pre-run diagnostics for common project/runtime issues.
 - Primary files:
   - `app/support/diagnostics.py` (new)
@@ -489,7 +489,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B11`, `B14`
 
 ### C03 — Support bundle generation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: package logs + project metadata for field troubleshooting.
 - Primary files:
   - `app/support/support_bundle.py` (new)
@@ -506,7 +506,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### D01 — Template registry + loader
-- Status: `TODO`
+- Status: `DONE`
 - Objective: discover and materialize built-in templates deterministically.
 - Primary files:
   - `app/templates/template_service.py` (new)
@@ -516,7 +516,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: prerequisite for `AT-19`..`AT-21`
 
 ### D02 — `utility_script` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship simplest starter project.
 - Primary files:
   - `templates/utility_script/**` (new)
@@ -526,7 +526,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`, `B12`, `B14`
 
 ### D03 — `qt_app` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship starter GUI project aligned with runtime constraints.
 - Primary files:
   - `templates/qt_app/**` (new)
@@ -537,7 +537,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`
 
 ### D04 — `headless_tool` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship starter FreeCAD-headless-safe project.
 - Primary files:
   - `templates/headless_tool/**` (new)
@@ -548,7 +548,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`
 
 ### D05 — New Project wizard flow
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create/open template projects from UI.
 - Primary files:
   - `app/shell/main_window.py`
@@ -566,7 +566,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `ENHANCEMENT` unless explicitly marked otherwise.
 
 ### E01 — In-file Find/Replace and Go-to-Line
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: fast single-file navigation/editing workflows.
 - Primary files:
@@ -578,7 +578,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: expands `T13`
 
 ### E02 — Find in Files
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: project-wide text search with jump-to-result.
 - Primary files:
@@ -590,7 +590,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: `T31`
 
 ### E03 — Quick Open (`Ctrl+P`)
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: filename-first project navigation.
 - Primary files:
@@ -602,7 +602,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: `T32`
 
 ### E04 — Output UX polish
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: make console/run logs easy to read and debug.
 - Scope:
@@ -616,7 +616,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
   - integration tests for formatting behavior
 
 ### E05 — Onboarding/help surfaces for ChoreBoy constraints
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: reduce user confusion around runtime/headless limitations.
 - Scope:
@@ -630,7 +630,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
   - manual acceptance checks for content discoverability
 
 ### E06 — Theme compatibility validation pass
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: verify all UI states used by editor are legible in light and dark mode.
 - Scope:
@@ -641,7 +641,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Depends on: completion of major UI slices (`B01`..`E05`)
 
 ### E07 — Responsiveness/performance acceptance thresholds
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: define and verify baseline responsiveness so the editor feels polished on constrained systems.
 - Scope:
@@ -671,7 +671,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### F01 — Automated test coverage expansion for implemented contracts
-- Status: `TODO`
+- Status: `DONE`
 - Objective: close obvious coverage gaps in run/runner/editor boundaries.
 - Scope:
   - targeted unit + integration suites for all newly added modules
@@ -679,7 +679,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: completion of MVP + template slices
 
 ### F02 — Full manual acceptance runbook execution
-- Status: `TODO`
+- Status: `DONE`
 - Objective: execute end-to-end acceptance checks on target-like environment.
 - Scope:
   - run `AT-01` through `AT-23` as applicable
@@ -687,7 +687,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B17`, `C02`, `C03`, `D05`, key `E*` polish tasks
 
 ### F03 — Documentation contract sync
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ensure docs reflect shipped behavior exactly.
 - Scope:
   - update `ARCHITECTURE.md` for any contract changes
@@ -696,7 +696,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: final implementation scope
 
 ### F04 — Final release checklist + backlog closure
-- Status: `TODO`
+- Status: `DONE`
 - Objective: produce a supportable, handoff-ready v1.
 - Scope:
   - confirm no open MVP-critical defects
