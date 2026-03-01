@@ -51,6 +51,7 @@ from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
+from app.intelligence.reference_service import find_references
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -199,6 +200,7 @@ class MainWindow(QMainWindow):
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
+                on_find_references=self._handle_find_references_action,
                 on_toggle_comment=self._handle_toggle_comment_action,
                 on_indent=self._handle_indent_action,
                 on_outdent=self._handle_outdent_action,
@@ -529,6 +531,42 @@ class MainWindow(QMainWindow):
             on_done=lambda: self._handle_search_worker_done(started_at, query),
         )
         self._active_search_worker.start()
+
+    def _handle_find_references_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Find References", "Open a project first.")
+            return
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Find References", "Open a file tab first.")
+            return
+
+        result = find_references(
+            project_root=self._loaded_project.project_root,
+            current_file_path=active_tab.file_path,
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+        )
+        if not result.symbol_name:
+            QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
+            return
+        if not result.hits:
+            QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
+            return
+
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        for hit in result.hits:
+            marker = "def" if hit.is_definition else "ref"
+            item = QListWidgetItem(
+                f"[{marker}] {Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1} | {hit.line_text}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(hit.file_path)
+            item.setData(PROBLEM_ROLE_FILE_PATH, hit.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, hit.line_number)
 
     def _handle_go_to_definition_action(self) -> None:
         if self._loaded_project is None:

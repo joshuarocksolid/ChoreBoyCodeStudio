@@ -36,6 +36,7 @@ class MenuCallbacks:
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
     on_find_in_files: Callable[[], object] | None = None
+    on_find_references: Callable[[], object] | None = None
     on_toggle_comment: Callable[[], object] | None = None
     on_indent: Callable[[], object] | None = None
     on_outdent: Callable[[], object] | None = None
@@ -206,6 +207,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Shift+F",
         enabled=True,
         callback=callback_registry.on_find_in_files,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.findReferences",
+        "Find References",
+        "Shift+F12",
+        enabled=True,
+        callback=callback_registry.on_find_references,
     )
     _register_menu_action(
         edit_menu,
