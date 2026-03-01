@@ -11,6 +11,7 @@ from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
 from app.project.project_manifest import (
     PROJECT_METADATA_SCHEMA_VERSION,
+    build_default_project_manifest_payload,
     load_project_manifest,
     parse_project_manifest,
 )
@@ -60,6 +61,30 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "env_overrides": {},
         "project_notes": "",
     }
+
+
+def test_build_default_project_manifest_payload_returns_canonical_defaults() -> None:
+    """Default payload helper should emit deterministic canonical manifest fields."""
+    payload = build_default_project_manifest_payload(project_name="Imported Project")
+
+    assert payload == {
+        "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
+        "name": "Imported Project",
+        "default_entry": "run.py",
+        "default_mode": "python_script",
+        "working_directory": ".",
+        "template": "utility_script",
+        "safe_mode": True,
+        "run_configs": [],
+        "env_overrides": {},
+        "project_notes": "",
+    }
+
+
+def test_build_default_project_manifest_payload_rejects_unknown_mode() -> None:
+    """Helper should reject unsupported run modes before writing manifests."""
+    with pytest.raises(ValueError, match="default_mode must be one of"):
+        build_default_project_manifest_payload(project_name="Imported Project", default_mode="future_mode")
 
 
 def test_load_project_manifest_rejects_non_object_payload() -> None:

@@ -153,6 +153,8 @@ The system consists of five major parts:
 2. Editor performs startup capability probe.
 3. User opens or creates a project folder.
 4. Editor loads `.cbcs/project.json` and project files.
+   If metadata is missing but the folder is a Python project, editor bootstraps canonical
+   `.cbcs/project.json` metadata on first open, then proceeds through normal load.
 5. User edits files in tabs.
 6. On run, editor creates a run manifest and launches a separate runner process.
 7. Runner executes user code in AppRun runtime.
@@ -398,6 +400,10 @@ Per-project metadata lives at:
 ```text
 <project>/.cbcs/project.json
 ```
+
+If the folder is opened without existing metadata and contains Python source files, the
+editor initializes this file automatically with canonical defaults and an inferred entrypoint.
+The initialized file remains the single source of truth going forward.
 
 This file should be human-readable JSON and contain:
 

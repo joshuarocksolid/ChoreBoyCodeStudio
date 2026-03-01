@@ -14,6 +14,64 @@ PROJECT_METADATA_SCHEMA_VERSION = 1
 ALLOWED_DEFAULT_MODES = frozenset({"python_script", "qt_app", "freecad_headless"})
 
 
+def build_default_project_manifest_payload(
+    *,
+    project_name: str,
+    default_entry: str = "run.py",
+    default_mode: str = "python_script",
+    working_directory: str = ".",
+    template: str = "utility_script",
+    safe_mode: bool = True,
+    run_configs: list[dict[str, Any]] | None = None,
+    env_overrides: Mapping[str, str] | None = None,
+    project_notes: str = "",
+) -> dict[str, Any]:
+    """Build a canonical manifest payload for new/imported projects."""
+    if not _is_non_empty_string(project_name):
+        raise ValueError("project_name must be a non-empty string.")
+    if not _is_non_empty_string(default_entry):
+        raise ValueError("default_entry must be a non-empty string.")
+    if not _is_non_empty_string(default_mode):
+        raise ValueError("default_mode must be a non-empty string.")
+    if default_mode not in ALLOWED_DEFAULT_MODES:
+        raise ValueError(f"default_mode must be one of: {sorted(ALLOWED_DEFAULT_MODES)}.")
+    if not _is_non_empty_string(working_directory):
+        raise ValueError("working_directory must be a non-empty string.")
+    if not _is_non_empty_string(template):
+        raise ValueError("template must be a non-empty string.")
+    if not isinstance(safe_mode, bool):
+        raise ValueError("safe_mode must be a boolean.")
+    if not isinstance(project_notes, str):
+        raise ValueError("project_notes must be a string.")
+
+    normalized_run_configs: list[dict[str, Any]] = []
+    for index, run_config in enumerate(run_configs or []):
+        if not isinstance(run_config, dict):
+            raise ValueError(f"run_configs[{index}] must be an object.")
+        normalized_run_configs.append(dict(run_config))
+
+    normalized_env_overrides: dict[str, str] = {}
+    if env_overrides is not None:
+        for key, value in env_overrides.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError("env_overrides must contain only string keys and values.")
+            normalized_env_overrides[key] = value
+
+    metadata = ProjectMetadata(
+        schema_version=PROJECT_METADATA_SCHEMA_VERSION,
+        name=project_name.strip(),
+        default_entry=default_entry.strip(),
+        default_mode=default_mode.strip(),
+        working_directory=working_directory.strip(),
+        template=template.strip(),
+        safe_mode=safe_mode,
+        run_configs=normalized_run_configs,
+        env_overrides=normalized_env_overrides,
+        project_notes=project_notes,
+    )
+    return metadata.to_dict()
+
+
 def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
     """Load `<project>/.cbcs/project.json` and return structured metadata."""
     path = Path(manifest_path).expanduser().resolve()

@@ -30,7 +30,7 @@ It aligns with:
 Implemented coverage includes:
 
 - bootstrap, logging, capability probe, path contracts
-- project manifest/schema validation and project loading
+- project manifest/schema validation, project loading, and first-open metadata initialization for plain Python folders
 - recent project persistence
 - editor tab manager, dirty/save semantics, autosave store
 - project tree model, quick-open ranking, find-in-files scanning
@@ -78,7 +78,7 @@ Expected mypy baseline in cloud VM remains 4 known pre-existing errors:
 
 Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
-- MVP gate (`AT-01`, `AT-03`, `AT-05`, `AT-06`, `AT-07`, `AT-08`, `AT-10`, `AT-11`, `AT-12`, `AT-14`, `AT-15`, `AT-16`) validated with GUI evidence.
+- MVP gate (`AT-01`, `AT-03`, `AT-24`, `AT-05`, `AT-06`, `AT-07`, `AT-08`, `AT-10`, `AT-11`, `AT-12`, `AT-14`, `AT-15`, `AT-16`) validated with GUI evidence.
 - Extended checks (`AT-17`, `AT-19`, `AT-20`, `AT-21`, `AT-22`, `AT-23`) validated with GUI + artifact evidence.
 - `AT-18` draft recovery is validated via integration simulation test (`tests/integration/persistence/test_autosave_recovery.py`) because force-kill GUI simulation is unsafe in this cloud session.
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from app.bootstrap.paths import resolve_app_root
 from app.core.errors import AppValidationError
+from app.project.project_manifest import build_default_project_manifest_payload
 
 TEMPLATE_METADATA_FILENAME = "template.json"
 
@@ -101,18 +102,17 @@ class TemplateService:
             raise AppValidationError("project_name must be a non-empty string.")
         manifest_path = destination / ".cbcs" / "project.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "schema_version": 1,
-            "name": project_name.strip(),
-            "default_entry": "run.py",
-            "default_mode": default_mode,
-            "working_directory": ".",
-            "template": template_id,
-            "safe_mode": True,
-            "run_configs": [],
-            "env_overrides": {},
-            "project_notes": "",
-        }
+        try:
+            payload = build_default_project_manifest_payload(
+                project_name=project_name.strip(),
+                default_entry="run.py",
+                default_mode=default_mode,
+                working_directory=".",
+                template=template_id,
+                safe_mode=True,
+            )
+        except ValueError as exc:
+            raise AppValidationError(str(exc)) from exc
         manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

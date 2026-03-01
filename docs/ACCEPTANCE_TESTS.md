@@ -96,10 +96,17 @@ Example behavior:
 - prints `tick` repeatedly
 - remains active long enough to test Stop behavior
 
-### D. Invalid Project
-A folder missing required metadata or containing invalid `.cbcs/project.json`.
+### D. Invalid / Non-importable Project
+A folder that cannot be treated as a Python project, such as:
+- no `.cbcs/project.json` and no `.py` files
+- corrupted/invalid `.cbcs/project.json`
 
 Used to verify project validation and actionable errors.
+
+### E. Importable Existing Python Folder
+A plain Python folder without `.cbcs/project.json` that includes runnable `.py` files.
+
+Used to verify first-open metadata initialization and import-friendly open behavior.
 
 ---
 
@@ -166,7 +173,9 @@ Verify that runtime assumptions are checked explicitly.
 Verify that a normal project can be opened from disk.
 
 **Preconditions:**  
-- a valid test project exists with `.cbcs/project.json`
+- a valid test project exists, either:
+  - already containing `.cbcs/project.json`, or
+  - a plain Python folder that can be imported on first open
 
 **Steps:**  
 1. Launch the editor.
@@ -178,16 +187,17 @@ Verify that a normal project can be opened from disk.
 - project metadata is recognized
 - the project name or equivalent project state is visible in the UI
 - the project tree populates with project files
+- if metadata was missing but the folder is importable, `.cbcs/project.json` is initialized automatically
 
 ---
 
 ## AT-04 — Invalid project fails with actionable error
 
 **Purpose:**  
-Verify that broken projects fail safely and clearly.
+Verify that broken or non-importable folders fail safely and clearly.
 
 **Preconditions:**  
-- an invalid test project exists
+- an invalid/non-importable test folder exists
 
 **Steps:**  
 1. Launch the editor.
@@ -199,6 +209,28 @@ Verify that broken projects fail safely and clearly.
 - the user receives a clear, actionable error
 - the editor remains stable
 - the error is diagnosable through UI messaging and/or logs
+
+---
+
+## AT-24 — Existing Python folder imports on first open
+
+**Purpose:**  
+Verify that users can open normal Python folders that were not created by Code Studio.
+
+**Preconditions:**  
+- an importable existing Python folder exists
+- folder does not contain `.cbcs/project.json`
+
+**Steps:**  
+1. Launch the editor.
+2. Choose **Open Project**.
+3. Select the importable Python folder.
+
+**Expected Result:**  
+- the folder opens as a project without manual metadata setup
+- `.cbcs/project.json` is created with canonical defaults
+- inferred entrypoint is usable for Run
+- project tree and editor flows work as normal
 
 ---
 
@@ -598,6 +630,7 @@ The following tests are the minimum gate for MVP:
 
 - AT-01 — Editor launches successfully
 - AT-03 — Valid project opens successfully
+- AT-24 — Existing Python folder imports on first open
 - AT-05 — Project tree displays project contents
 - AT-06 — File opens in editor tab
 - AT-07 — File can be edited and marked dirty

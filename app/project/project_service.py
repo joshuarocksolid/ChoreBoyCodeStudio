@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
 from app.core.errors import ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
-from app.project.project_manifest import load_project_manifest
+from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
 
 
 def open_project(project_root: PathInput) -> LoadedProject:
     """Load a project root into a structured object for shell consumers."""
-    resolved_root = validate_project_structure(project_root)
+    resolved_root = _require_existing_project_root(project_root)
+    _initialize_missing_project_metadata(resolved_root)
+    resolved_root = validate_project_structure(resolved_root)
     manifest_path = project_manifest_path(resolved_root)
 
     metadata = load_project_manifest(manifest_path)
@@ -49,23 +52,14 @@ def open_project_and_track_recent(
 
 def validate_project_structure(project_root: PathInput) -> Path:
     """Validate required on-disk project shape and return resolved root path."""
-    try:
-        resolved_root = _resolve_project_root(project_root)
-    except ValueError as exc:
-        raise ProjectStructureValidationError(str(exc), project_root=Path(project_root)) from exc
-
-    if not resolved_root.exists():
-        raise ProjectStructureValidationError(
-            "Project folder not found.",
-            project_root=resolved_root,
-        )
-    if not resolved_root.is_dir():
-        raise ProjectStructureValidationError(
-            "Project root must be a directory.",
-            project_root=resolved_root,
-        )
+    resolved_root = _require_existing_project_root(project_root)
 
     cbcs_dir = project_cbcs_dir(resolved_root)
+    if cbcs_dir.exists() and not cbcs_dir.is_dir():
+        raise ProjectStructureValidationError(
+            "Project metadata path .cbcs exists but is not a directory.",
+            project_root=resolved_root,
+        )
     if not cbcs_dir.exists() or not cbcs_dir.is_dir():
         raise ProjectStructureValidationError(
             "Missing required metadata directory: .cbcs.",
@@ -73,6 +67,12 @@ def validate_project_structure(project_root: PathInput) -> Path:
         )
 
     manifest_path = project_manifest_path(resolved_root)
+    if manifest_path.exists() and not manifest_path.is_file():
+        raise ProjectStructureValidationError(
+            "Project manifest path .cbcs/project.json exists but is not a file.",
+            project_root=resolved_root,
+            manifest_path=manifest_path,
+        )
     if not manifest_path.exists() or not manifest_path.is_file():
         raise ProjectStructureValidationError(
             "Missing required project manifest file: .cbcs/project.json.",
@@ -154,6 +154,110 @@ def enumerate_project_entries(project_root: PathInput) -> list[ProjectFileEntry]
         ) from exc
 
     return sorted(entries, key=lambda entry: entry.relative_path)
+
+
+def _require_existing_project_root(project_root: PathInput) -> Path:
+    try:
+        resolved_root = _resolve_project_root(project_root)
+    except ValueError as exc:
+        raise ProjectStructureValidationError(str(exc), project_root=Path(project_root)) from exc
+
+    if not resolved_root.exists():
+        raise ProjectStructureValidationError(
+            "Project folder not found.",
+            project_root=resolved_root,
+        )
+    if not resolved_root.is_dir():
+        raise ProjectStructureValidationError(
+            "Project root must be a directory.",
+            project_root=resolved_root,
+        )
+    return resolved_root
+
+
+def _initialize_missing_project_metadata(project_root: Path) -> None:
+    cbcs_dir = project_cbcs_dir(project_root)
+    manifest_path = project_manifest_path(project_root)
+
+    if cbcs_dir.exists() and not cbcs_dir.is_dir():
+        raise ProjectStructureValidationError(
+            "Project metadata path .cbcs exists but is not a directory.",
+            project_root=project_root,
+        )
+    if manifest_path.exists() and not manifest_path.is_file():
+        raise ProjectStructureValidationError(
+            "Project manifest path .cbcs/project.json exists but is not a file.",
+            project_root=project_root,
+            manifest_path=manifest_path,
+        )
+    if cbcs_dir.is_dir() and manifest_path.is_file():
+        return
+
+    try:
+        inferred_entry = _infer_default_entry_file(project_root)
+    except OSError as exc:
+        raise ProjectStructureValidationError(
+            f"Unable to inspect project files for Python entrypoints: {exc}",
+            project_root=project_root,
+        ) from exc
+
+    if inferred_entry is None:
+        raise ProjectStructureValidationError(
+            "Project metadata is missing and no Python files were found. "
+            "Add a `.py` file (for example `run.py`) and try again.",
+            project_root=project_root,
+            manifest_path=manifest_path,
+        )
+
+    payload = build_default_project_manifest_payload(
+        project_name=_derive_project_name(project_root),
+        default_entry=inferred_entry,
+        default_mode="python_script",
+        working_directory=".",
+        template="imported_external",
+        safe_mode=True,
+    )
+
+    try:
+        cbcs_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise ProjectStructureValidationError(
+            f"Unable to initialize project metadata at .cbcs/project.json: {exc}",
+            project_root=project_root,
+            manifest_path=manifest_path,
+        ) from exc
+
+
+def _infer_default_entry_file(project_root: Path) -> str | None:
+    prioritized_names = ("run.py", "main.py", "__main__.py")
+    for name in prioritized_names:
+        candidate = project_root / name
+        if candidate.exists() and candidate.is_file():
+            return name
+
+    top_level_python_files = sorted(
+        file_path.name
+        for file_path in project_root.iterdir()
+        if file_path.is_file() and file_path.suffix == ".py"
+    )
+    if top_level_python_files:
+        return top_level_python_files[0]
+
+    for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
+        current_path = Path(current_dir)
+        dir_names[:] = sorted(name for name in dir_names if name != ".cbcs")
+        python_files = sorted(name for name in file_names if name.endswith(".py"))
+        if python_files:
+            return (current_path / python_files[0]).relative_to(project_root).as_posix()
+    return None
+
+
+def _derive_project_name(project_root: Path) -> str:
+    project_name = project_root.name.strip()
+    if project_name:
+        return project_name
+    return "Imported Project"
 
 
 def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) -> ProjectFileEntry:

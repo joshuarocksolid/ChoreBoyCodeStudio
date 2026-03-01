@@ -74,24 +74,103 @@ def test_open_project_rejects_non_directory_project_root(tmp_path: Path) -> None
     assert "must be a directory" in str(exc_info.value)
 
 
-def test_open_project_rejects_missing_cbcs_directory(tmp_path: Path) -> None:
-    """Project open should fail clearly when `.cbcs` is missing."""
+def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) -> None:
+    """Opening a plain Python folder should create canonical project metadata."""
+    project_root = tmp_path / "project_without_cbcs"
+    project_root.mkdir()
+    (project_root / "run.py").write_text("print('hello')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+    manifest_path = project_root / ".cbcs" / "project.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert loaded_project.metadata.name == "project_without_cbcs"
+    assert loaded_project.metadata.default_entry == "run.py"
+    assert manifest_path.exists()
+    assert payload["template"] == "imported_external"
+    assert payload["default_mode"] == "python_script"
+
+
+def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> None:
+    """Opening a folder with `.cbcs` but no manifest should regenerate metadata."""
+    project_root = tmp_path / "project_without_manifest"
+    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "main.py").write_text("print('hello')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "main.py"
+    assert (project_root / ".cbcs" / "project.json").exists()
+
+
+def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path: Path) -> None:
+    """Entrypoint inference should prefer run.py over other common names."""
+    project_root = tmp_path / "priority_project"
+    project_root.mkdir()
+    (project_root / "__main__.py").write_text("print('__main__')\n", encoding="utf-8")
+    (project_root / "main.py").write_text("print('main')\n", encoding="utf-8")
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    (project_root / "aaa.py").write_text("print('aaa')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "run.py"
+
+
+def test_open_project_auto_initialize_uses_top_level_python_before_recursive(tmp_path: Path) -> None:
+    """Top-level python files should be preferred over nested files after priority names."""
+    project_root = tmp_path / "top_level_project"
+    (project_root / "pkg").mkdir(parents=True)
+    (project_root / "pkg" / "nested.py").write_text("print('nested')\n", encoding="utf-8")
+    (project_root / "b.py").write_text("print('b')\n", encoding="utf-8")
+    (project_root / "a.py").write_text("print('a')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "a.py"
+
+
+def test_open_project_auto_initialize_uses_recursive_python_when_no_top_level(tmp_path: Path) -> None:
+    """When no top-level `.py` exists, first recursive `.py` should be used."""
+    project_root = tmp_path / "recursive_project"
+    (project_root / "app").mkdir(parents=True)
+    (project_root / "app" / "entry.py").write_text("print('entry')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "app/entry.py"
+
+
+def test_open_project_rejects_missing_metadata_when_no_python_files(tmp_path: Path) -> None:
+    """Metadata auto-init should fail clearly when folder has no Python files."""
+    project_root = tmp_path / "not_a_python_project"
+    project_root.mkdir()
+    (project_root / "README.md").write_text("# hello\n", encoding="utf-8")
+
+    with pytest.raises(ProjectStructureValidationError) as exc_info:
+        open_project(project_root)
+
+    assert "no Python files were found" in str(exc_info.value)
+
+
+def test_validate_project_structure_rejects_missing_cbcs_directory(tmp_path: Path) -> None:
+    """Structure validation remains strict for callers that require canonical metadata."""
     project_root = tmp_path / "project_without_cbcs"
     project_root.mkdir()
 
     with pytest.raises(ProjectStructureValidationError) as exc_info:
-        open_project(project_root)
+        validate_project_structure(project_root)
 
     assert "Missing required metadata directory" in str(exc_info.value)
 
 
-def test_open_project_rejects_missing_manifest_file(tmp_path: Path) -> None:
-    """Project open should fail clearly when `.cbcs/project.json` is missing."""
+def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path) -> None:
+    """Structure validation should fail clearly when `.cbcs/project.json` is missing."""
     project_root = tmp_path / "project_without_manifest"
     (project_root / ".cbcs").mkdir(parents=True)
 
     with pytest.raises(ProjectStructureValidationError) as exc_info:
-        open_project(project_root)
+        validate_project_structure(project_root)
 
     assert "Missing required project manifest file" in str(exc_info.value)
 
