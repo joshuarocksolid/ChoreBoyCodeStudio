@@ -680,6 +680,8 @@ Define clear meanings:
 
 The console pane should show near-live stdout/stderr from the current run.
 
+For responsiveness on high-output workloads, console buffering should be bounded and trim oldest entries once the configured cap is exceeded.
+
 ## 14.2 Problems
 
 The problems pane should show:
@@ -898,6 +900,8 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 * support bundle creation
 * project health check
 * large file loading
+
+Current implementation explicitly offloads find-in-files and symbol indexing to background workers to avoid blocking the UI thread.
 
 ## 21.3 Process-first for risky work
 

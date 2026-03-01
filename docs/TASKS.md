@@ -906,3 +906,35 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/shell/style_sheet.py`
   - `app/shell/main_window.py`
 
+### G10 — Debug pause control and state gating
+- Status: `DONE`
+- Objective: support explicit debug pause requests and state-aware pause action enablement.
+- Primary files:
+  - `app/run/process_supervisor.py`
+  - `app/run/run_service.py`
+  - `app/shell/actions.py`
+  - `app/shell/menus.py`
+  - `app/shell/toolbar.py`
+  - `tests/integration/run/test_process_supervisor.py`
+
+### G11 — Non-blocking search + background symbol indexing
+- Status: `DONE`
+- Objective: move key expensive operations off UI thread and preserve responsiveness.
+- Primary files:
+  - `app/editors/search_panel.py`
+  - `app/intelligence/symbol_index.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/editors/test_search_panel.py`
+  - `tests/unit/intelligence/test_symbol_index.py`
+
+### G12 — Runner debug module extraction + structured inspector sync
+- Status: `DONE`
+- Objective: isolate runner debug logic and provide structured pause payload for stack/variables inspector panes.
+- Primary files:
+  - `app/runner/debug_runner.py`
+  - `app/runner/runner_main.py`
+  - `app/debug/*`
+  - `app/shell/main_window.py`
+  - `tests/unit/runner/test_debug_runner.py`
+  - `tests/integration/debug/*`
+

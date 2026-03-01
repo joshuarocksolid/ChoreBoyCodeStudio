@@ -720,6 +720,7 @@ Verify top-of-window Run/Debug controls are discoverable and state-coherent.
 1. Use toolbar to run and stop a normal script.
 2. Start debug session.
 3. Verify stepping/continue controls enable only when paused.
+4. Verify Pause control is enabled only while actively debugging/running.
 
 **Expected Result:**  
 - run/debug controls are visible and functional
