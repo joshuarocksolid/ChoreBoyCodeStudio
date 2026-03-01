@@ -566,7 +566,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `ENHANCEMENT` unless explicitly marked otherwise.
 
 ### E01 — In-file Find/Replace and Go-to-Line
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: fast single-file navigation/editing workflows.
 - Primary files:
@@ -578,7 +578,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: expands `T13`
 
 ### E02 — Find in Files
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: project-wide text search with jump-to-result.
 - Primary files:
@@ -590,7 +590,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: `T31`
 
 ### E03 — Quick Open (`Ctrl+P`)
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: filename-first project navigation.
 - Primary files:
@@ -602,7 +602,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Legacy mapping: `T32`
 
 ### E04 — Output UX polish
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: make console/run logs easy to read and debug.
 - Scope:
@@ -616,7 +616,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
   - integration tests for formatting behavior
 
 ### E05 — Onboarding/help surfaces for ChoreBoy constraints
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: reduce user confusion around runtime/headless limitations.
 - Scope:
@@ -630,7 +630,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
   - manual acceptance checks for content discoverability
 
 ### E06 — Theme compatibility validation pass
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: verify all UI states used by editor are legible in light and dark mode.
 - Scope:
@@ -641,7 +641,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 - Depends on: completion of major UI slices (`B01`..`E05`)
 
 ### E07 — Responsiveness/performance acceptance thresholds
-- Status: `TODO`
+- Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
 - Objective: define and verify baseline responsiveness so the editor feels polished on constrained systems.
 - Scope:
@@ -671,7 +671,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### F01 — Automated test coverage expansion for implemented contracts
-- Status: `TODO`
+- Status: `DONE`
 - Objective: close obvious coverage gaps in run/runner/editor boundaries.
 - Scope:
   - targeted unit + integration suites for all newly added modules
@@ -679,7 +679,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: completion of MVP + template slices
 
 ### F02 — Full manual acceptance runbook execution
-- Status: `TODO`
+- Status: `DONE`
 - Objective: execute end-to-end acceptance checks on target-like environment.
 - Scope:
   - run `AT-01` through `AT-23` as applicable
@@ -687,7 +687,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `B17`, `C02`, `C03`, `D05`, key `E*` polish tasks
 
 ### F03 — Documentation contract sync
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ensure docs reflect shipped behavior exactly.
 - Scope:
   - update `ARCHITECTURE.md` for any contract changes
@@ -696,7 +696,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: final implementation scope
 
 ### F04 — Final release checklist + backlog closure
-- Status: `TODO`
+- Status: `DONE`
 - Objective: produce a supportable, handoff-ready v1.
 - Scope:
   - confirm no open MVP-critical defects

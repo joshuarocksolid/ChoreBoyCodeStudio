@@ -31,11 +31,20 @@ class MenuCallbacks:
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
+    on_quick_open: Callable[[], object] | None = None
+    on_find: Callable[[], object] | None = None
+    on_replace: Callable[[], object] | None = None
+    on_go_to_line: Callable[[], object] | None = None
+    on_find_in_files: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
+    on_headless_notes: Callable[[], object] | None = None
+    on_help_getting_started: Callable[[], object] | None = None
+    on_help_shortcuts: Callable[[], object] | None = None
+    on_help_about: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +106,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     open_recent_menu = file_menu.addMenu("Open Recent")
     open_recent_menu.setObjectName("shell.menu.file.openRecent")
     menus["shell.menu.file.openRecent"] = open_recent_menu
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.quickOpen",
+        "Quick Open...",
+        "Ctrl+P",
+        enabled=True,
+        callback=callback_registry.on_quick_open,
+    )
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -135,9 +153,42 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     _register_menu_action(edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z")
     _register_menu_action(edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z")
     edit_menu.addSeparator()
-    _register_menu_action(edit_menu, actions, "shell.action.edit.find", "Find", "Ctrl+F")
-    _register_menu_action(edit_menu, actions, "shell.action.edit.replace", "Replace", "Ctrl+H")
-    _register_menu_action(edit_menu, actions, "shell.action.edit.goToLine", "Go To Line", "Ctrl+G")
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.find",
+        "Find",
+        "Ctrl+F",
+        enabled=True,
+        callback=callback_registry.on_find,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.replace",
+        "Replace",
+        "Ctrl+H",
+        enabled=True,
+        callback=callback_registry.on_replace,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.goToLine",
+        "Go To Line",
+        "Ctrl+G",
+        enabled=True,
+        callback=callback_registry.on_go_to_line,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.findInFiles",
+        "Find in Files",
+        "Ctrl+Shift+F",
+        enabled=True,
+        callback=callback_registry.on_find_in_files,
+    )
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
@@ -173,6 +224,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         actions,
         "shell.action.tools.projectHealthCheck",
         "Project Health Check",
+        enabled=True,
         callback=callback_registry.on_project_health_check,
     )
     _register_menu_action(
@@ -180,6 +232,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         actions,
         "shell.action.tools.generateSupportBundle",
         "Generate Support Bundle",
+        enabled=True,
         callback=callback_registry.on_generate_support_bundle,
     )
     _register_menu_action(
@@ -187,13 +240,36 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         actions,
         "shell.action.tools.headlessNotes",
         "FreeCAD Headless Notes",
+        enabled=True,
+        callback=callback_registry.on_headless_notes,
     )
 
     help_menu = menu_bar.addMenu("&Help")
     help_menu.setObjectName("shell.menu.help")
-    _register_menu_action(help_menu, actions, "shell.action.help.gettingStarted", "Getting Started")
-    _register_menu_action(help_menu, actions, "shell.action.help.shortcuts", "Keyboard Shortcuts")
-    _register_menu_action(help_menu, actions, "shell.action.help.about", "About")
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.gettingStarted",
+        "Getting Started",
+        enabled=True,
+        callback=callback_registry.on_help_getting_started,
+    )
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.shortcuts",
+        "Keyboard Shortcuts",
+        enabled=True,
+        callback=callback_registry.on_help_shortcuts,
+    )
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.about",
+        "About",
+        enabled=True,
+        callback=callback_registry.on_help_about,
+    )
 
     return MenuStubRegistry(actions=actions, menus=menus)
 

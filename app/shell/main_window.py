@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide2.QtCore import QTimer, Qt
-from PySide2.QtGui import QCloseEvent
+from PySide2.QtGui import QCloseEvent, QTextCursor
 from PySide2.QtWidgets import (
     QFileDialog,
     QInputDialog,
@@ -32,6 +32,8 @@ from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
+from app.editors.quick_open import QuickOpenCandidate, rank_candidates
+from app.editors.search_panel import SearchMatch, find_in_files
 from app.persistence.autosave_store import AutosaveStore
 from app.run.console_model import ConsoleModel
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
@@ -51,6 +53,8 @@ from app.shell.status_bar import ShellStatusBarController, create_shell_status_b
 TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
+PROBLEM_ROLE_FILE_PATH = 320
+PROBLEM_ROLE_LINE_NUMBER = 321
 
 
 class MainWindow(QMainWindow):
@@ -95,6 +99,15 @@ class MainWindow(QMainWindow):
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
+                on_quick_open=self._handle_quick_open_action,
+                on_find=self._handle_find_action,
+                on_replace=self._handle_replace_action,
+                on_go_to_line=self._handle_go_to_line_action,
+                on_find_in_files=self._handle_find_in_files_action,
+                on_headless_notes=self._handle_headless_notes_action,
+                on_help_getting_started=self._handle_getting_started_action,
+                on_help_shortcuts=self._handle_shortcuts_action,
+                on_help_about=self._handle_about_action,
             ),
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
@@ -174,6 +187,116 @@ class MainWindow(QMainWindow):
             if selected_label == f"{template.display_name} ({template.template_id})":
                 return template
         return None
+
+    def _handle_quick_open_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Quick Open unavailable", "Open a project first.")
+            return
+
+        query, ok = QInputDialog.getText(self, "Quick Open", "Filename query:", QLineEdit.Normal, "")
+        if not ok:
+            return
+
+        candidates = [
+            QuickOpenCandidate(relative_path=entry.relative_path, absolute_path=entry.absolute_path)
+            for entry in self._loaded_project.entries
+            if not entry.is_directory
+        ]
+        ranked = rank_candidates(candidates, query, limit=50)
+        if not ranked:
+            QMessageBox.information(self, "Quick Open", "No matching files.")
+            return
+
+        labels = [candidate.relative_path for candidate in ranked]
+        selected_label, ok = QInputDialog.getItem(self, "Quick Open", "Open file:", labels, 0, editable=False)
+        if not ok:
+            return
+
+        selected_candidate = next(candidate for candidate in ranked if candidate.relative_path == selected_label)
+        self._open_file_in_editor(selected_candidate.absolute_path)
+
+    def _handle_find_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Find", "Open a file tab first.")
+            return
+
+        query, ok = QInputDialog.getText(self, "Find", "Find text:", QLineEdit.Normal, "")
+        if not ok or not query:
+            return
+        if not editor_widget.find(query):
+            QMessageBox.information(self, "Find", f"No matches for: {query}")
+
+    def _handle_replace_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Replace", "Open a file tab first.")
+            return
+
+        find_text, ok = QInputDialog.getText(self, "Replace", "Find text:", QLineEdit.Normal, "")
+        if not ok or not find_text:
+            return
+        replace_text, ok = QInputDialog.getText(self, "Replace", "Replace with:", QLineEdit.Normal, "")
+        if not ok:
+            return
+
+        content = editor_widget.toPlainText()
+        replaced_content = content.replace(find_text, replace_text)
+        if replaced_content == content:
+            QMessageBox.information(self, "Replace", "No matching text found.")
+            return
+        editor_widget.setPlainText(replaced_content)
+
+    def _handle_go_to_line_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Go To Line", "Open a file tab first.")
+            return
+
+        total_lines = max(1, editor_widget.document().blockCount())
+        line_number, ok = QInputDialog.getInt(self, "Go To Line", "Line:", 1, 1, total_lines, 1)
+        if not ok:
+            return
+
+        cursor = editor_widget.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, line_number - 1)
+        editor_widget.setTextCursor(cursor)
+        editor_widget.setFocus()
+
+    def _handle_find_in_files_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Find in Files", "Open a project first.")
+            return
+        query, ok = QInputDialog.getText(self, "Find in Files", "Find text:", QLineEdit.Normal, "")
+        if not ok or not query:
+            return
+
+        matches = find_in_files(self._loaded_project.project_root, query, max_results=500)
+        self._set_search_results(matches, query)
+
+    def _handle_getting_started_action(self) -> None:
+        self._show_help_file("Getting Started", "getting_started.md")
+
+    def _handle_shortcuts_action(self) -> None:
+        self._show_help_file("Keyboard Shortcuts", "shortcuts.md")
+
+    def _handle_headless_notes_action(self) -> None:
+        self._show_help_file("FreeCAD Headless Notes", "headless_notes.md")
+
+    def _handle_about_action(self) -> None:
+        QMessageBox.information(
+            self,
+            "About",
+            "ChoreBoy Code Studio\nProject-first editor + runner for constrained systems.",
+        )
+
+    def _show_help_file(self, title: str, file_name: str) -> None:
+        help_path = Path(__file__).resolve().parents[1] / "ui" / "help" / file_name
+        if not help_path.exists():
+            QMessageBox.warning(self, title, f"Help file not found: {help_path}")
+            return
+        QMessageBox.information(self, title, help_path.read_text(encoding="utf-8"))
 
     def _open_project_by_path(self, project_root: str) -> bool:
         if not self._confirm_proceed_with_unsaved_changes("opening another project"):
@@ -320,24 +443,25 @@ class MainWindow(QMainWindow):
 
         self._active_run_output_chunks.clear()
         self._clear_problems()
-        self._append_console_line("[system] Starting run...\n")
+        self._append_console_line("────────────────────\n", stream="system")
+        self._append_console_line("Starting run...\n", stream="system")
 
         try:
             session = self._run_service.start_run(self._loaded_project)
         except Exception as exc:
             QMessageBox.warning(self, "Run failed to start", str(exc))
-            self._append_console_line(f"[system] Run failed to start: {exc}\n", stream="stderr")
+            self._append_console_line(f"Run failed to start: {exc}\n", stream="stderr")
             self._refresh_run_action_states()
             return False
 
         self._active_run_session_log_path = session.log_file_path
-        self._append_console_line(f"[system] Run started ({session.run_id})\n")
+        self._append_console_line(f"Run started ({session.run_id})\n", stream="system")
         self._refresh_run_action_states()
         return True
 
     def _handle_stop_action(self) -> None:
         self._run_service.stop_run()
-        self._append_console_line("[system] Stop requested.\n")
+        self._append_console_line("Stop requested.\n", stream="system")
         self._refresh_run_action_states()
 
     def _handle_clear_console_action(self) -> None:
@@ -433,9 +557,9 @@ class MainWindow(QMainWindow):
         if event.event_type == "exit":
             return_code = event.return_code
             if event.terminated_by_user:
-                self._append_console_line(f"[system] Run terminated by user (code={return_code}).\n")
+                self._append_console_line(f"Run terminated by user (code={return_code}).\n", stream="system")
             else:
-                self._append_console_line(f"[system] Run finished (code={return_code}).\n")
+                self._append_console_line(f"Run finished (code={return_code}).\n", stream="system")
 
             self._refresh_run_action_states()
             self._load_latest_run_log()
@@ -454,7 +578,8 @@ class MainWindow(QMainWindow):
             prefix = "[stderr] "
         elif stream == "system":
             prefix = "[system] "
-        self._console_output_widget.appendPlainText(f"{prefix}{line.text.rstrip()}")
+        timestamp = line.timestamp.split("T")[-1]
+        self._console_output_widget.appendPlainText(f"[{timestamp}] {prefix}{line.text.rstrip()}")
 
     def _load_latest_run_log(self) -> None:
         if self._run_log_output_widget is None:
@@ -483,10 +608,40 @@ class MainWindow(QMainWindow):
                 self._problems_list_widget,
             )
             item.setToolTip(problem.message)
+            item.setData(PROBLEM_ROLE_FILE_PATH, problem.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, problem.line_number)
+
+    def _set_search_results(self, matches: list[SearchMatch], query: str) -> None:
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        if not matches:
+            self._problems_list_widget.addItem(QListWidgetItem(f"No results for '{query}'."))
+            return
+
+        for match in matches:
+            item = QListWidgetItem(
+                f"{match.relative_path}:{match.line_number} | {match.line_text}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(match.absolute_path)
+            item.setData(PROBLEM_ROLE_FILE_PATH, match.absolute_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, match.line_number)
 
     def _clear_problems(self) -> None:
         if self._problems_list_widget is not None:
             self._problems_list_widget.clear()
+
+    def _handle_problem_item_activation(self, item: QListWidgetItem) -> None:
+        file_path = item.data(PROBLEM_ROLE_FILE_PATH)
+        line_number = item.data(PROBLEM_ROLE_LINE_NUMBER)
+        if not file_path:
+            return
+        try:
+            resolved_line = int(line_number) if line_number is not None else None
+        except (TypeError, ValueError):
+            resolved_line = None
+        self._open_file_at_line(str(file_path), resolved_line)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
@@ -567,6 +722,8 @@ class MainWindow(QMainWindow):
 
         self._problems_list_widget = QListWidget(tabs)
         self._problems_list_widget.setObjectName("shell.bottom.problems")
+        self._problems_list_widget.itemActivated.connect(self._handle_problem_item_activation)
+        self._problems_list_widget.itemDoubleClicked.connect(self._handle_problem_item_activation)
         tabs.addTab(self._problems_list_widget, "Problems")
 
         self._run_log_output_widget = QPlainTextEdit(tabs)
@@ -668,6 +825,18 @@ class MainWindow(QMainWindow):
         self._update_editor_status_for_path(opened_result.tab.file_path)
         return True
 
+    def _open_file_at_line(self, file_path: str, line_number: int | None) -> None:
+        if not self._open_file_in_editor(file_path):
+            return
+        editor_widget = self._editor_widgets_by_path.get(str(Path(file_path).expanduser().resolve()))
+        if editor_widget is None or line_number is None:
+            return
+        cursor = editor_widget.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, max(0, line_number - 1))
+        editor_widget.setTextCursor(cursor)
+        editor_widget.setFocus()
+
     def _tab_index_for_path(self, file_path: str) -> int:
         if self._editor_tabs_widget is None:
             return -1
@@ -720,6 +889,12 @@ class MainWindow(QMainWindow):
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
         )
+
+    def _active_editor_widget(self) -> QPlainTextEdit | None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return None
+        return self._editor_widgets_by_path.get(active_tab.file_path)
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:
