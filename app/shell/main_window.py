@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 from pathlib import Path
 import subprocess
+import time
 from typing import Optional
 
 from PySide2.QtCore import QEvent, QTimer, Qt
@@ -457,12 +458,13 @@ class MainWindow(QMainWindow):
         self._set_search_results([], f"{query} (searching...)")
         if self._active_search_worker is not None and self._active_search_worker.is_running():
             self._active_search_worker.cancel()
+        started_at = time.perf_counter()
         self._active_search_worker = SearchWorker(
             project_root=self._loaded_project.project_root,
             query=query,
             max_results=500,
-            on_results=self._schedule_search_results_update,
-            on_done=self._handle_search_worker_done,
+            on_results=lambda matches, search_query: self._schedule_search_results_update(matches, search_query),
+            on_done=lambda: self._handle_search_worker_done(started_at, query),
         )
         self._active_search_worker.start()
 
@@ -556,6 +558,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_proceed_with_unsaved_changes("opening another project"):
             return False
 
+        started_at = time.perf_counter()
         try:
             loaded_project = open_project_and_track_recent(
                 project_root,
@@ -580,6 +583,12 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._logger.info(
+            "Project open telemetry: root=%s files=%s elapsed_ms=%.2f",
+            loaded_project.project_root,
+            len(loaded_project.entries),
+            (time.perf_counter() - started_at) * 1000.0,
+        )
         return True
 
     def _refresh_open_recent_menu(self) -> None:
@@ -1091,7 +1100,9 @@ class MainWindow(QMainWindow):
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
         QTimer.singleShot(0, lambda: self._set_search_results(matches, query))
 
-    def _handle_search_worker_done(self) -> None:
+    def _handle_search_worker_done(self, started_at: float, query: str) -> None:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        self._logger.info("Find in files telemetry: query=%r elapsed_ms=%.2f", query, elapsed_ms)
         QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
 
     def _clear_problems(self) -> None:
@@ -1631,6 +1642,7 @@ class MainWindow(QMainWindow):
         if self._editor_tabs_widget is None:
             return False
 
+        started_at = time.perf_counter()
         try:
             opened_result = self._editor_manager.open_file(file_path)
         except ValueError as exc:
@@ -1679,6 +1691,11 @@ class MainWindow(QMainWindow):
         self._handle_editor_tab_changed(tab_index)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
+        self._logger.info(
+            "File open telemetry: file=%s elapsed_ms=%.2f",
+            opened_result.tab.file_path,
+            (time.perf_counter() - started_at) * 1000.0,
+        )
         return True
 
     def _open_file_at_line(self, file_path: str, line_number: int | None) -> None:
