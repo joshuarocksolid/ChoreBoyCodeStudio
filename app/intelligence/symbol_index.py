@@ -16,6 +16,15 @@ class SymbolLocation:
     line_number: int
 
 
+def to_indexed_symbols(index: dict[str, list["SymbolLocation"]]) -> list["SymbolLocation"]:
+    """Flatten symbol index map into deterministic list."""
+    flattened: list[SymbolLocation] = []
+    for symbol_name in sorted(index.keys()):
+        locations = sorted(index[symbol_name], key=lambda item: (item.file_path, item.line_number))
+        flattened.extend(locations)
+    return flattened
+
+
 def build_python_symbol_index(project_root: str) -> dict[str, list[SymbolLocation]]:
     """Build symbol index for Python source files under project root."""
     root = Path(project_root).expanduser().resolve()

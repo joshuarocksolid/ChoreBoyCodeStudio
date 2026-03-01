@@ -13,6 +13,7 @@ from typing import Callable
 from app.bootstrap.paths import ensure_directory, project_logs_dir, project_runs_dir, resolve_app_root
 from app.core import constants
 from app.core.models import LoadedProject
+from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 from app.run.run_manifest import RunManifest, save_run_manifest
 
@@ -141,10 +142,12 @@ class RunService:
 
     def _forward_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:
-            if "__CB_DEBUG_PAUSED__" in event.text:
-                self._is_debug_paused = True
-            elif "__CB_DEBUG_RUNNING__" in event.text:
-                self._is_debug_paused = False
+            parsed_event = parse_debug_output_line(event.text)
+            if parsed_event is not None:
+                if parsed_event.event_type == "paused":
+                    self._is_debug_paused = True
+                elif parsed_event.event_type == "running":
+                    self._is_debug_paused = False
         if event.event_type == "exit":
             self._current_session = None
             self._is_debug_paused = False

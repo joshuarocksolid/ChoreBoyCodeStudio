@@ -35,6 +35,16 @@ from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
+from app.debug.debug_command_service import (
+    continue_command,
+    evaluate_command,
+    locals_command,
+    stack_command,
+    step_into_command,
+    step_out_command,
+    step_over_command,
+)
+from app.debug.debug_session import DebugSession
 from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition
@@ -118,6 +128,7 @@ class MainWindow(QMainWindow):
         self._active_run_output_chunks: list[str] = []
         self._active_run_session_log_path: str | None = None
         self._active_session_mode: str | None = None
+        self._debug_session = DebugSession()
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
@@ -625,6 +636,7 @@ class MainWindow(QMainWindow):
 
         self._active_run_output_chunks.clear()
         self._clear_problems()
+        self._debug_session = DebugSession()
         self._append_console_line("────────────────────\n", stream="system")
         self._append_console_line("Starting run...\n", stream="system")
 
@@ -664,22 +676,22 @@ class MainWindow(QMainWindow):
     def _handle_continue_debug_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("continue")
+        self._send_runner_input(continue_command())
 
     def _handle_step_over_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("next")
+        self._send_runner_input(step_over_command())
 
     def _handle_step_into_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("step")
+        self._send_runner_input(step_into_command())
 
     def _handle_step_out_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("return")
+        self._send_runner_input(step_out_command())
 
     def _handle_toggle_breakpoint_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -742,12 +754,12 @@ class MainWindow(QMainWindow):
     def _handle_debug_refresh_stack(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("where")
+        self._send_runner_input(stack_command())
 
     def _handle_debug_refresh_locals(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        self._send_runner_input("p locals()")
+        self._send_runner_input(locals_command())
 
     def _handle_add_watch_expression(self) -> None:
         if self._watch_input_widget is None or self._watch_list_widget is None:
@@ -767,7 +779,7 @@ class MainWindow(QMainWindow):
             expression = self._watch_list_widget.item(index).text().strip()
             if not expression:
                 continue
-            self._send_runner_input(f"p {expression}")
+            self._send_runner_input(evaluate_command(expression))
 
     def _handle_project_health_check_action(self) -> None:
         if self._loaded_project is None:
@@ -876,14 +888,10 @@ class MainWindow(QMainWindow):
         if event.event_type == "output":
             stream = event.stream or "stdout"
             text = event.text or ""
-            if "__CB_DEBUG_PAUSED__" in text:
-                self._append_python_console_line("[debug] Paused at breakpoint.")
-                self._append_debug_output_line("[debug] Paused at breakpoint.")
-                self._refresh_run_action_states()
-                return
-            if "__CB_DEBUG_RUNNING__" in text:
-                self._append_python_console_line("[debug] Running...")
-                self._append_debug_output_line("[debug] Running...")
+            parsed_debug_event = self._debug_session.ingest_output_line(text)
+            if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running"}:
+                self._append_python_console_line(f"[debug] {parsed_debug_event.message}")
+                self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
                 self._refresh_run_action_states()
                 return
             self._active_run_output_chunks.append(text)
@@ -897,6 +905,8 @@ class MainWindow(QMainWindow):
 
         if event.event_type == "exit":
             return_code = event.return_code
+            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                self._debug_session.mark_exited()
             if event.terminated_by_user:
                 self._append_console_line(f"Run terminated by user (code={return_code}).\n", stream="system")
                 self._append_python_console_line(f"[system] Session terminated (code={return_code}).")
