@@ -26,6 +26,7 @@ class MenuStubRegistry:
 class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
+    on_new_project: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
@@ -75,7 +76,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     file_menu.setObjectName("shell.menu.file")
     if callback_registry.on_file_menu_about_to_show is not None:
         file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
-    _register_menu_action(file_menu, actions, "shell.action.file.newProject", "New Project...", "Ctrl+N")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.newProject",
+        "New Project...",
+        "Ctrl+N",
+        enabled=True,
+        callback=callback_registry.on_new_project,
+    )
     _register_menu_action(
         file_menu,
         actions,

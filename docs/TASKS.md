@@ -506,7 +506,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### D01 — Template registry + loader
-- Status: `TODO`
+- Status: `DONE`
 - Objective: discover and materialize built-in templates deterministically.
 - Primary files:
   - `app/templates/template_service.py` (new)
@@ -516,7 +516,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: prerequisite for `AT-19`..`AT-21`
 
 ### D02 — `utility_script` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship simplest starter project.
 - Primary files:
   - `templates/utility_script/**` (new)
@@ -526,7 +526,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`, `B12`, `B14`
 
 ### D03 — `qt_app` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship starter GUI project aligned with runtime constraints.
 - Primary files:
   - `templates/qt_app/**` (new)
@@ -537,7 +537,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`
 
 ### D04 — `headless_tool` template
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship starter FreeCAD-headless-safe project.
 - Primary files:
   - `templates/headless_tool/**` (new)
@@ -548,7 +548,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `D01`
 
 ### D05 — New Project wizard flow
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create/open template projects from UI.
 - Primary files:
   - `app/shell/main_window.py`

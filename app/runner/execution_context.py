@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import sys
+from types import ModuleType
 from typing import Iterator
 
 from app.core.errors import RunLifecycleError
@@ -56,12 +57,16 @@ def apply_execution_context(execution_context: RunnerExecutionContext) -> Iterat
     previous_argv = list(sys.argv)
     previous_path = list(sys.path)
     previous_env: dict[str, str | None] = {}
+    removed_app_modules: dict[str, ModuleType] = {}
 
     try:
         os.chdir(execution_context.working_directory)
         sys.argv = [execution_context.entry_script_path, *execution_context.argv]
-        if execution_context.project_root not in sys.path:
-            sys.path.insert(0, execution_context.project_root)
+        sys.path.insert(0, execution_context.project_root)
+
+        for module_name in list(sys.modules.keys()):
+            if module_name == "app" or module_name.startswith("app."):
+                removed_app_modules[module_name] = sys.modules.pop(module_name)
 
         for key, value in execution_context.env_overrides.items():
             previous_env[key] = os.environ.get(key)
@@ -74,6 +79,8 @@ def apply_execution_context(execution_context: RunnerExecutionContext) -> Iterat
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = old_value
+        for module_name, module in removed_app_modules.items():
+            sys.modules[module_name] = module
         sys.argv = previous_argv
         sys.path[:] = previous_path
         os.chdir(previous_cwd)

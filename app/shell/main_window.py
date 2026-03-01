@@ -10,9 +10,11 @@ from PySide2.QtCore import QTimer, Qt
 from PySide2.QtGui import QCloseEvent
 from PySide2.QtWidgets import (
     QFileDialog,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -37,6 +39,7 @@ from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
+from app.templates.template_service import TemplateMetadata, TemplateService
 from app.project.project_tree import ProjectTreeNode, build_project_tree
 from app.project.project_service import open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
@@ -74,6 +77,7 @@ class MainWindow(QMainWindow):
         self._active_run_session_log_path: str | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
+        self._template_service = TemplateService()
         self._logger = get_subsystem_logger("shell")
 
         self._configure_window_frame()
@@ -90,6 +94,7 @@ class MainWindow(QMainWindow):
                 on_clear_console=self._handle_clear_console_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
+                on_new_project=self._handle_new_project_action,
             ),
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
@@ -128,6 +133,47 @@ class MainWindow(QMainWindow):
         if not selected_path:
             return
         self._open_project_by_path(selected_path)
+
+    def _handle_new_project_action(self) -> None:
+        templates = self._template_service.list_templates()
+        if not templates:
+            QMessageBox.warning(self, "No templates available", "No project templates were found.")
+            return
+
+        selected_template = self._prompt_for_template(templates)
+        if selected_template is None:
+            return
+
+        project_name, ok = QInputDialog.getText(self, "New Project", "Project name:", QLineEdit.Normal, "")
+        if not ok or not project_name.strip():
+            return
+
+        destination_parent = QFileDialog.getExistingDirectory(self, "Choose Project Folder", str(Path.home()))
+        if not destination_parent:
+            return
+
+        destination_path = Path(destination_parent) / project_name.strip()
+        try:
+            created_path = self._template_service.materialize_template(
+                template_id=selected_template.template_id,
+                destination_path=destination_path,
+                project_name=project_name.strip(),
+            )
+        except AppValidationError as exc:
+            QMessageBox.warning(self, "Failed to create project", str(exc))
+            return
+
+        self._open_project_by_path(str(created_path))
+
+    def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
+        labels = [f"{template.display_name} ({template.template_id})" for template in templates]
+        selected_label, ok = QInputDialog.getItem(self, "New Project", "Template:", labels, 0, editable=False)
+        if not ok:
+            return None
+        for template in templates:
+            if selected_label == f"{template.display_name} ({template.template_id})":
+                return template
+        return None
 
     def _open_project_by_path(self, project_root: str) -> bool:
         if not self._confirm_proceed_with_unsaved_changes("opening another project"):

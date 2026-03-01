@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
+import types
 
 import pytest
 
@@ -74,6 +75,9 @@ def test_apply_execution_context_sets_and_restores_runtime_state(tmp_path: Path)
     previous_cwd = Path.cwd()
     previous_argv = list(sys.argv)
     previous_sys_path = list(sys.path)
+    original_app_module = sys.modules.get("app")
+    sentinel_app_module = types.ModuleType("sentinel_app")
+    sys.modules["app"] = sentinel_app_module
 
     with apply_execution_context(context):
         assert Path.cwd() == Path(context.working_directory)
@@ -86,3 +90,8 @@ def test_apply_execution_context_sets_and_restores_runtime_state(tmp_path: Path)
     assert sys.argv == previous_argv
     assert sys.path == previous_sys_path
     assert "CUSTOM_ENV" not in os.environ
+    assert sys.modules.get("app") is sentinel_app_module
+    if original_app_module is not None:
+        sys.modules["app"] = original_app_module
+    else:
+        sys.modules.pop("app", None)
