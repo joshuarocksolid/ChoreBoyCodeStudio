@@ -75,8 +75,17 @@ Before release candidates:
 
 These commands are documented now for consistency; they are not required to run during setup.
 
+The dev venv must use **Python 3.11** to match the FreeCAD AppRun embedded runtime (Python 3.11.x).
+Use `pyenv` to install and pin Python 3.11 if it is not already available:
+
 ```bash
-python -m venv .venv
+pyenv install 3.11.13
+```
+
+Create and activate the dev venv:
+
+```bash
+~/.pyenv/versions/3.11.13/bin/python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
@@ -86,6 +95,21 @@ python -m pytest -m runtime_parity
 ```
 
 `requirements-dev.txt` is the single development dependency manifest for this repo.
+
+### Editor venv (`.venv-editor`)
+
+A separate `.venv-editor` is used by the editor's language server (BasedPyright) to resolve
+`PySide2` and `FreeCAD` imports for static analysis. It must also use Python 3.11:
+
+```bash
+~/.pyenv/versions/3.11.13/bin/python3.11 -m venv .venv-editor
+.venv-editor/bin/pip install --upgrade pip
+.venv-editor/bin/pip install -r requirements-dev.txt
+```
+
+`pyrightconfig.json` and `.vscode/settings.json` (both checked in) point the editor at `.venv-editor`
+automatically. Select `.venv-editor/bin/python` as the workspace interpreter in Cursor if not picked
+up automatically.
 
 If runtime-parity tests require explicit AppRun location, run with:
 
