@@ -1,0 +1,3 @@
+pytest
+freecad-stubs
+PySide2-stubs

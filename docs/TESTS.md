@@ -78,11 +78,14 @@ These commands are documented now for consistency; they are not required to run 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip pytest
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
 python -m pytest -m unit
 python -m pytest -m integration
 python -m pytest -m runtime_parity
 ```
+
+`requirements-dev.txt` is the single development dependency manifest for this repo.
 
 If runtime-parity tests require explicit AppRun location, run with:
 
