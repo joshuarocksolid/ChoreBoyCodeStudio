@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import bdb
 import code
-import pdb
 import runpy
 import sys
 
 from app.core import constants
-from app.debug.debug_event_protocol import format_debug_event
-from app.debug.debug_models import DebugEvent, DebugFrame, DebugVariable
 from app.core.errors import RunLifecycleError, RunManifestValidationError
 from app.run.run_manifest import RunManifest, load_run_manifest
+from app.runner.debug_runner import run_debug_session
 from app.runner.execution_context import RunnerExecutionContext, apply_execution_context
 from app.runner.output_bridge import redirect_output_to_log
 from app.runner.traceback_formatter import format_current_exception
@@ -39,7 +36,7 @@ def execute_manifest(manifest: RunManifest) -> int:
                 elif manifest.mode == constants.RUN_MODE_PYTHON_REPL:
                     _run_interactive_repl()
                 elif manifest.mode == constants.RUN_MODE_PYTHON_DEBUG:
-                    return _run_debug_session(manifest, execution_context.entry_script_path)
+                    return run_debug_session(manifest, _run_entry_script, execution_context.entry_script_path)
                 else:
                     print(f"Unsupported run mode: {manifest.mode}", file=sys.stderr)
                     return constants.RUN_EXIT_BOOTSTRAP_ERROR
@@ -68,49 +65,6 @@ def _run_interactive_repl() -> None:
         banner="ChoreBoy Python Console (runner process). Type exit() or Ctrl-D to close.",
         exitmsg="Python console session ended.",
     )
-
-
-class _MarkedPdb(pdb.Pdb):
-    def interaction(self, frame, traceback):  # type: ignore[override]
-        event = DebugEvent(
-            event_type="paused",
-            message="Paused at breakpoint.",
-            frames=[
-                DebugFrame(
-                    file_path=str(frame.f_code.co_filename),
-                    line_number=int(frame.f_lineno),
-                    function_name=str(frame.f_code.co_name),
-                )
-            ],
-            variables=[
-                DebugVariable(name=str(name), value_repr=repr(value))
-                for name, value in sorted(frame.f_locals.items(), key=lambda item: item[0])[:50]
-            ],
-        )
-        print(format_debug_event(event))
-        print("__CB_DEBUG_PAUSED__")
-        try:
-            super().interaction(frame, traceback)
-        finally:
-            print("__CB_DEBUG_RUNNING__")
-
-
-def _run_debug_session(manifest: RunManifest, entry_script_path: str) -> int:
-    debugger = _MarkedPdb()
-    for breakpoint_entry in manifest.breakpoints:
-        file_path = str(breakpoint_entry["file_path"])
-        line_number = int(breakpoint_entry["line_number"])
-        try:
-            debugger.set_break(file_path, line_number)
-        except Exception as exc:
-            print(f"Failed to set breakpoint {file_path}:{line_number}: {exc}", file=sys.stderr)
-
-    try:
-        print("__CB_DEBUG_RUNNING__")
-        debugger.runcall(_run_entry_script, entry_script_path)
-        return constants.RUN_EXIT_SUCCESS
-    except bdb.BdbQuit:
-        return constants.RUN_EXIT_TERMINATED_BY_USER
 
 
 def run_from_manifest_path(manifest_path: str) -> int:
