@@ -6,17 +6,20 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtCore import QRect, QSize, Qt
-from PySide2.QtGui import QColor, QPainter, QTextCursor, QTextFormat
-from PySide2.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
+from PySide2.QtCore import QRect, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QKeyEvent, QPainter, QTextCursor, QTextFormat
+from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from app.editors.text_editing import indent_lines, outdent_lines, toggle_comment_lines
 from app.editors.syntax_json import JsonSyntaxHighlighter
 from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
+from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_providers import extract_completion_prefix
 
 DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
+DEFAULT_COMPLETION_MIN_CHARS = 2
 
 
 class _LineNumberArea(QWidget):
@@ -47,6 +50,16 @@ class CodeEditorWidget(QPlainTextEdit):
         self._highlighter: object | None = None
         self._tab_width = DEFAULT_TAB_WIDTH
         self._comment_prefix = "# "
+        self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
+        self._completion_enabled = True
+        self._completion_auto_trigger = True
+        self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
+        self._completion_items_by_label: dict[str, CompletionItem] = {}
+        self._completion_model = QStringListModel(self)
+        self._completion_popup = QCompleter(self._completion_model, self)
+        self._completion_popup.setCaseSensitivity(Qt.CaseInsensitive)
+        self._completion_popup.setWidget(self)
+        self._completion_popup.activated.connect(self._insert_completion_from_label)
 
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
@@ -114,6 +127,58 @@ class CodeEditorWidget(QPlainTextEdit):
         font.setPointSize(max(8, font_point_size))
         self.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * self._tab_width)
+
+    def set_completion_provider(self, provider: Callable[[str, str, int, bool], list[CompletionItem]] | None) -> None:
+        """Attach completion provider callback invoked during editor typing."""
+        self._completion_provider = provider
+
+    def set_completion_preferences(self, *, enabled: bool, auto_trigger: bool, min_chars: int) -> None:
+        """Apply completion behavior preferences."""
+        self._completion_enabled = enabled
+        self._completion_auto_trigger = auto_trigger
+        self._completion_min_chars = max(1, min_chars)
+        if not enabled:
+            self._completion_popup.popup().hide()
+
+    def trigger_completion(self, *, manual: bool, force_empty_prefix: bool = False) -> None:
+        """Request and display completion candidates at current cursor location."""
+        if not self._completion_enabled or self._completion_provider is None:
+            return
+        source_text = self.toPlainText()
+        cursor_position = self.textCursor().position()
+        prefix = extract_completion_prefix(source_text, cursor_position)
+        if not force_empty_prefix and not manual and len(prefix) < self._completion_min_chars:
+            self._completion_popup.popup().hide()
+            return
+
+        items = self._completion_provider(prefix, source_text, cursor_position, manual or force_empty_prefix)
+        if not items:
+            self._completion_popup.popup().hide()
+            return
+        self._show_completion_items(items, prefix=prefix)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt signature
+        if self._handle_completion_popup_navigation(event):
+            return
+
+        if event.key() == Qt.Key_Space and event.modifiers() & Qt.ControlModifier:
+            self.trigger_completion(manual=True)
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+        if not self._completion_enabled or not self._completion_auto_trigger:
+            return
+
+        inserted_text = event.text()
+        if inserted_text == ".":
+            self.trigger_completion(manual=True, force_empty_prefix=True)
+            return
+        if inserted_text and (inserted_text.isalnum() or inserted_text == "_"):
+            self.trigger_completion(manual=False)
+            return
+        if self._completion_popup.popup().isVisible():
+            self._completion_popup.popup().hide()
 
     def line_number_area_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
@@ -232,6 +297,69 @@ class CodeEditorWidget(QPlainTextEdit):
         if not cursor.hasSelection():
             cursor.select(QTextCursor.LineUnderCursor)
         cursor.insertText(replacement_text)
+        self.setTextCursor(cursor)
+
+    def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
+        popup = self._completion_popup.popup()
+        if not popup.isVisible():
+            return False
+
+        if event.key() in {Qt.Key_Escape}:
+            popup.hide()
+            event.accept()
+            return True
+
+        if event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab}:
+            current_index = popup.currentIndex()
+            if current_index.isValid():
+                selected_label = current_index.data(0)
+                if selected_label is not None:
+                    self._insert_completion_from_label(str(selected_label))
+            popup.hide()
+            event.accept()
+            return True
+
+        if event.key() in {Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End}:
+            QApplication.sendEvent(popup, event)
+            return True
+
+        return False
+
+    def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
+        labels: list[str] = []
+        mapped_items: dict[str, CompletionItem] = {}
+        for item in items:
+            display_label = item.label if not item.detail else f"{item.label} — {item.detail}"
+            if display_label in mapped_items:
+                display_label = f"{display_label} ({item.kind.value})"
+            labels.append(display_label)
+            mapped_items[display_label] = item
+
+        if not labels:
+            self._completion_popup.popup().hide()
+            return
+
+        self._completion_items_by_label = mapped_items
+        self._completion_model.setStringList(labels)
+        self._completion_popup.setCompletionPrefix(prefix)
+        popup = self._completion_popup.popup()
+        popup.setCurrentIndex(self._completion_model.index(0, 0))
+        rect = self.cursorRect()
+        rect.setWidth(max(240, popup.sizeHintForColumn(0) + 24))
+        self._completion_popup.complete(rect)
+
+    def _insert_completion_from_label(self, display_label: object) -> None:
+        normalized_label = str(display_label)
+        completion_item = self._completion_items_by_label.get(normalized_label)
+        if completion_item is None:
+            return
+
+        cursor = self.textCursor()
+        current_prefix = extract_completion_prefix(self.toPlainText(), cursor.position())
+        if current_prefix:
+            cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(current_prefix))
+            cursor.removeSelectedText()
+        cursor.insertText(completion_item.insert_text)
         self.setTextCursor(cursor)
 
     def _build_bracket_match_selection(self) -> QTextEdit.ExtraSelection | None:

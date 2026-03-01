@@ -51,6 +51,8 @@ from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.symbol_index import SymbolIndexWorker
+from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_service import CompletionRequest, CompletionService
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -134,6 +136,12 @@ class MainWindow(QMainWindow):
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
         self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
+        (
+            self._completion_enabled,
+            self._completion_auto_trigger,
+            self._completion_min_chars,
+        ) = self._load_completion_preferences()
+        self._completion_service = CompletionService(cache_db_path=str(global_cache_dir(self._state_root) / "symbols.sqlite3"))
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = QTimer(self)
@@ -317,6 +325,36 @@ class MainWindow(QMainWindow):
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
         return (max(2, tab_width), max(8, font_size))
+
+    def _load_completion_preferences(self) -> tuple[bool, bool, int]:
+        settings_payload = load_settings(state_root=self._state_root)
+        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+        if not isinstance(intelligence_settings, dict):
+            return (
+                constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
+                constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
+                constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
+            )
+
+        enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
+        )
+        auto_trigger = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY,
+            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
+        )
+        min_chars = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
+            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
+        )
+        if not isinstance(enabled, bool):
+            enabled = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
+        if not isinstance(auto_trigger, bool):
+            auto_trigger = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
+        if not isinstance(min_chars, int):
+            min_chars = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
+        return (enabled, auto_trigger, max(1, min_chars))
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         QTimer.singleShot(0, callback)
@@ -1685,9 +1723,27 @@ class MainWindow(QMainWindow):
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
         editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
+        editor_widget.set_completion_preferences(
+            enabled=self._completion_enabled,
+            auto_trigger=self._completion_auto_trigger,
+            min_chars=self._completion_min_chars,
+        )
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
         tab_file_path = opened_result.tab.file_path
+
+        def completion_provider(
+            _prefix: str,
+            source_text: str,
+            cursor_position: int,
+            manual_trigger: bool,
+        ) -> list[CompletionItem]:
+            return self._request_editor_completions(
+                file_path=tab_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                manual_trigger=manual_trigger,
+            )
 
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
             self._handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
@@ -1699,6 +1755,7 @@ class MainWindow(QMainWindow):
             self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
+        editor_widget.set_completion_provider(completion_provider)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
@@ -1803,6 +1860,25 @@ class MainWindow(QMainWindow):
         if active_tab is None:
             return None
         return self._editor_widgets_by_path.get(active_tab.file_path)
+
+    def _request_editor_completions(
+        self,
+        *,
+        file_path: str,
+        source_text: str,
+        cursor_position: int,
+        manual_trigger: bool,
+    ) -> list[CompletionItem]:
+        request = CompletionRequest(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=file_path,
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            trigger_is_manual=manual_trigger,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+        )
+        return list(self._completion_service.complete(request))
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:

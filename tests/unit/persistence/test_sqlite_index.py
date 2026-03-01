@@ -69,3 +69,19 @@ def test_sqlite_symbol_index_file_fingerprints_round_trip(tmp_path: Path) -> Non
 
     index.remove_file_fingerprints(project_root, [file_a])
     assert file_a not in index.lookup_file_fingerprints(project_root)
+
+
+def test_sqlite_symbol_index_search_by_prefix_is_case_insensitive(tmp_path: Path) -> None:
+    db_path = tmp_path / "state" / "index.sqlite3"
+    index = SQLiteSymbolIndex(str(db_path))
+    project_root = str((tmp_path / "project").resolve())
+    symbols = [
+        IndexedSymbol(name="Alpha", file_path="/tmp/project/a.py", line_number=1),
+        IndexedSymbol(name="alphabet", file_path="/tmp/project/b.py", line_number=2),
+        IndexedSymbol(name="beta", file_path="/tmp/project/c.py", line_number=3),
+    ]
+    index.replace_symbols_for_project(project_root, symbols)
+
+    results = index.search_by_prefix(project_root, "alp", limit=10)
+
+    assert [symbol.name for symbol in results] == ["Alpha", "alphabet"]

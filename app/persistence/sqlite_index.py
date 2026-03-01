@@ -45,6 +45,35 @@ class SQLiteSymbolIndex:
             ).fetchall()
         return [IndexedSymbol(name=row[0], file_path=row[1], line_number=int(row[2])) for row in rows]
 
+    def search_by_prefix(self, project_root: str, prefix: str, *, limit: int = 100) -> list[IndexedSymbol]:
+        """Return symbols where name matches prefix (case-insensitive)."""
+        project = str(Path(project_root).expanduser().resolve())
+        normalized_limit = max(1, int(limit))
+        with sqlite3.connect(self._db_path) as connection:
+            if prefix:
+                rows = connection.execute(
+                    """
+                    SELECT name, file_path, line_number
+                    FROM symbols
+                    WHERE project_root = ? AND lower(name) LIKE ?
+                    ORDER BY name, file_path, line_number
+                    LIMIT ?
+                    """,
+                    (project, f"{prefix.lower()}%", normalized_limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT name, file_path, line_number
+                    FROM symbols
+                    WHERE project_root = ?
+                    ORDER BY name, file_path, line_number
+                    LIMIT ?
+                    """,
+                    (project, normalized_limit),
+                ).fetchall()
+        return [IndexedSymbol(name=row[0], file_path=row[1], line_number=int(row[2])) for row in rows]
+
     def count_symbols(self, project_root: str) -> int:
         project = str(Path(project_root).expanduser().resolve())
         with sqlite3.connect(self._db_path) as connection:
