@@ -44,6 +44,13 @@ QListWidget#shell\\.bottom\\.debug\\.watchList {{
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
 }}
+QListWidget#shell\\.bottom\\.debug\\.stackList,
+QListWidget#shell\\.bottom\\.debug\\.variablesList,
+QListWidget#shell\\.bottom\\.debug\\.breakpointsList {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+}}
 QStatusBar#shell\\.statusBar {{
     border-top: 1px solid {tokens.border};
 }}

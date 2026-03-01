@@ -108,6 +108,9 @@ class MainWindow(QMainWindow):
         self._debug_inspector_output_widget: QPlainTextEdit | None = None
         self._watch_input_widget: QLineEdit | None = None
         self._watch_list_widget: QListWidget | None = None
+        self._debug_stack_list_widget: QListWidget | None = None
+        self._debug_variables_list_widget: QListWidget | None = None
+        self._breakpoints_list_widget: QListWidget | None = None
         self._run_log_output_widget: QPlainTextEdit | None = None
         self._problems_list_widget: QListWidget | None = None
         self._menu_registry: MenuStubRegistry | None = None
@@ -115,6 +118,7 @@ class MainWindow(QMainWindow):
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
         self._vertical_splitter: QSplitter | None = None
+        self._is_applying_theme_styles = False
         self._state_root = state_root
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
@@ -250,9 +254,15 @@ class MainWindow(QMainWindow):
             return ImportUpdatePolicy.ASK
 
     def _apply_theme_styles(self) -> None:
+        if self._is_applying_theme_styles:
+            return
+        self._is_applying_theme_styles = True
         palette = self.palette()
-        tokens = tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
-        self.setStyleSheet(build_shell_style_sheet(tokens))
+        try:
+            tokens = tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+            self.setStyleSheet(build_shell_style_sheet(tokens))
+        finally:
+            self._is_applying_theme_styles = False
 
     def _system_prefers_dark_theme(self) -> bool:
         try:
@@ -544,6 +554,7 @@ class MainWindow(QMainWindow):
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
         self._breakpoints_by_file.clear()
+        self._refresh_breakpoints_list()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
@@ -758,6 +769,15 @@ class MainWindow(QMainWindow):
             breakpoints.discard(line_number)
         if not breakpoints:
             self._breakpoints_by_file.pop(file_path, None)
+        self._refresh_breakpoints_list()
+
+    def _refresh_breakpoints_list(self) -> None:
+        if self._breakpoints_list_widget is None:
+            return
+        self._breakpoints_list_widget.clear()
+        for file_path in sorted(self._breakpoints_by_file.keys()):
+            for line_number in sorted(self._breakpoints_by_file[file_path]):
+                self._breakpoints_list_widget.addItem(f"{Path(file_path).name}:{line_number}")
 
     def _handle_clear_console_action(self) -> None:
         self._console_model.clear()
@@ -799,6 +819,19 @@ class MainWindow(QMainWindow):
         if self._debug_inspector_output_widget is None:
             return
         self._debug_inspector_output_widget.appendPlainText(text)
+
+    def _apply_debug_inspector_event(self) -> None:
+        state = self._debug_session.state
+        if self._debug_stack_list_widget is not None:
+            self._debug_stack_list_widget.clear()
+            for frame in state.frames:
+                self._debug_stack_list_widget.addItem(
+                    f"{Path(frame.file_path).name}:{frame.line_number} ({frame.function_name})"
+                )
+        if self._debug_variables_list_widget is not None:
+            self._debug_variables_list_widget.clear()
+            for variable in state.variables:
+                self._debug_variables_list_widget.addItem(f"{variable.name} = {variable.value_repr}")
 
     def _handle_debug_refresh_stack(self) -> None:
         if not self._run_service.supervisor.is_running():
@@ -938,9 +971,11 @@ class MainWindow(QMainWindow):
             stream = event.stream or "stdout"
             text = event.text or ""
             parsed_debug_event = self._debug_session.ingest_output_line(text)
-            if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running"}:
-                self._append_python_console_line(f"[debug] {parsed_debug_event.message}")
-                self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
+            if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running", "stack"}:
+                if parsed_debug_event.message:
+                    self._append_python_console_line(f"[debug] {parsed_debug_event.message}")
+                    self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
+                self._apply_debug_inspector_event()
                 self._refresh_run_action_states()
                 return
             self._active_run_output_chunks.append(text)
@@ -1062,7 +1097,7 @@ class MainWindow(QMainWindow):
         event.ignore()
 
     def changeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.type() == QEvent.PaletteChange:
+        if event.type() == QEvent.PaletteChange and not self._is_applying_theme_styles:
             self._apply_theme_styles()
         super().changeEvent(event)
 
@@ -1211,9 +1246,27 @@ class MainWindow(QMainWindow):
         watch_row_layout.addWidget(eval_watch_button)
         debug_layout.addWidget(watch_row)
 
+        stack_and_vars = QWidget(debug_panel)
+        stack_and_vars_layout = QHBoxLayout(stack_and_vars)
+        stack_and_vars_layout.setContentsMargins(0, 0, 0, 0)
+        stack_and_vars_layout.setSpacing(6)
+
+        self._debug_stack_list_widget = QListWidget(stack_and_vars)
+        self._debug_stack_list_widget.setObjectName("shell.bottom.debug.stackList")
+        stack_and_vars_layout.addWidget(self._debug_stack_list_widget, 1)
+
+        self._debug_variables_list_widget = QListWidget(stack_and_vars)
+        self._debug_variables_list_widget.setObjectName("shell.bottom.debug.variablesList")
+        stack_and_vars_layout.addWidget(self._debug_variables_list_widget, 1)
+        debug_layout.addWidget(stack_and_vars, 1)
+
         self._watch_list_widget = QListWidget(debug_panel)
         self._watch_list_widget.setObjectName("shell.bottom.debug.watchList")
         debug_layout.addWidget(self._watch_list_widget, 1)
+
+        self._breakpoints_list_widget = QListWidget(debug_panel)
+        self._breakpoints_list_widget.setObjectName("shell.bottom.debug.breakpointsList")
+        debug_layout.addWidget(self._breakpoints_list_widget, 1)
 
         self._debug_inspector_output_widget = QPlainTextEdit(debug_panel)
         self._debug_inspector_output_widget.setObjectName("shell.bottom.debug.output")
@@ -1446,6 +1499,8 @@ class MainWindow(QMainWindow):
                     self._editor_tabs_widget.removeTab(tab_index)
                 widget.deleteLater()
                 self._editor_manager.close_file(open_path)
+                self._breakpoints_by_file.pop(open_path, None)
+        self._refresh_breakpoints_list()
 
     def _apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
         remapped_paths = self._editor_manager.remap_paths_for_move(source_path, destination_path)
@@ -1463,6 +1518,8 @@ class MainWindow(QMainWindow):
                 self._breakpoints_by_file[new_path] = breakpoints
                 widget.set_breakpoints(breakpoints)
             widget.set_language_for_path(new_path)
+
+        self._refresh_breakpoints_list()
 
         self._maybe_rewrite_imports_for_move(source_path, destination_path)
 
