@@ -110,8 +110,10 @@ class RunService:
         runtime_executable = resolve_runtime_executable(self._runtime_executable)
         runtime_path = Path(runtime_executable)
         if runtime_path.name == "AppRun" or runtime_path.suffix == ".AppImage":
+            runner_parent = str(Path(self._runner_boot_path).resolve().parent)
             payload = (
                 "import runpy, sys;"
+                f"sys.path.insert(0, {runner_parent!r});"
                 f"sys.argv={[self._runner_boot_path, '--manifest', manifest_path]!r};"
                 f"runpy.run_path({self._runner_boot_path!r}, run_name='__main__')"
             )

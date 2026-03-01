@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from app.run.run_service import build_run_log_path, build_run_manifest_path, generate_run_id, resolve_runtime_executable
+from app.run.run_service import RunService, build_run_log_path, build_run_manifest_path, generate_run_id, resolve_runtime_executable
 
 pytestmark = pytest.mark.unit
 
@@ -48,3 +48,19 @@ def test_resolve_runtime_executable_falls_back_to_python_when_apprun_missing(mon
     """When AppRun path is missing in cloud dev env, fallback should use current python."""
     monkeypatch.setattr("app.run.run_service.constants.APP_RUN_PATH", "/path/that/does/not/exist")
     assert resolve_runtime_executable(None) == sys.executable
+
+
+def test_build_runner_command_for_apprun_bootstraps_runner_parent_path(tmp_path: Path) -> None:
+    """AppRun command payload should include repo path so `app` imports resolve."""
+    runner_boot = tmp_path / "run_runner.py"
+    runner_boot.write_text("print('stub')\n", encoding="utf-8")
+    service = RunService(runtime_executable="/opt/freecad/AppRun", runner_boot_path=str(runner_boot))
+
+    command = service._build_runner_command("/tmp/run_manifest.json")
+
+    assert command[0] == "/opt/freecad/AppRun"
+    assert command[1] == "-c"
+    payload = command[2]
+    assert "sys.path.insert(0" in payload
+    assert str(tmp_path.resolve()) in payload
+    assert "runpy.run_path" in payload
