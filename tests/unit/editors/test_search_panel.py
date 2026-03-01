@@ -77,3 +77,14 @@ def test_search_worker_cancel_prevents_results_callback(tmp_path: Path) -> None:
     assert done.wait(timeout=2.0)
     time.sleep(0.05)
     assert seen == []
+
+
+def test_find_in_files_respects_pre_set_cancel_event(tmp_path: Path) -> None:
+    """Search should short-circuit immediately when cancellation is already requested."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "alpha.py").write_text("needle\n", encoding="utf-8")
+    cancel_event = threading.Event()
+    cancel_event.set()
+
+    assert find_in_files(project_root, "needle", cancel_event=cancel_event) == []
