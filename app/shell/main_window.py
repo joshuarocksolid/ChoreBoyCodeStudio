@@ -47,6 +47,7 @@ from app.debug.debug_command_service import (
     step_over_command,
 )
 from app.debug.debug_session import DebugSession
+from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
 from app.intelligence.diagnostics_service import DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
@@ -194,6 +195,7 @@ class MainWindow(QMainWindow):
                 on_clear_console=self._handle_clear_console_action,
                 on_reset_layout=self._handle_reset_layout_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
+                on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
@@ -1078,6 +1080,49 @@ class MainWindow(QMainWindow):
             item.setToolTip(diagnostic.file_path)
             item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
             item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+
+    def _handle_apply_safe_fixes_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
+            return
+        if not active_tab.file_path.lower().endswith(".py"):
+            QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
+            return
+
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        diagnostics = analyze_python_file(active_tab.file_path, project_root=project_root)
+        fixes = plan_safe_fixes_for_file(active_tab.file_path, diagnostics)
+        if not fixes:
+            QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
+            return
+
+        preview = "\n".join(f"- {fix.title}" for fix in fixes[:20])
+        if len(fixes) > 20:
+            preview += f"\n- ... and {len(fixes) - 20} more"
+        confirm = QMessageBox.question(
+            self,
+            "Apply Safe Fixes",
+            f"Apply {len(fixes)} safe fix(es)?\n\n{preview}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            changed_lines = apply_quick_fixes(fixes)
+        except OSError as exc:
+            QMessageBox.warning(self, "Apply Safe Fixes", f"Failed to apply fixes: {exc}")
+            return
+
+        if changed_lines <= 0:
+            QMessageBox.information(self, "Apply Safe Fixes", "No changes were applied.")
+            return
+
+        self._refresh_open_tabs_from_disk([active_tab.file_path])
+        self._handle_lint_current_file_action()
+        QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
