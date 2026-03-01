@@ -344,3 +344,37 @@ Keep implementation:
 - aligned with the docs
 
 When in doubt, preserve the architecture and reduce complexity.
+
+---
+
+## Cursor Cloud specific instructions
+
+### PySide2 / PySide6 shim
+
+PySide2 from PyPI (5.13.2, the only version supporting Python 3.12) segfaults on Ubuntu 24.04. The update script installs **PySide6** and creates a thin PySide2 shim in the venv's `site-packages/PySide2/` so the codebase's `import PySide2.*` statements resolve to PySide6 at runtime. Key shim detail: `PySide2/QtWidgets.py` re-exports `QAction` from `PySide6.QtGui` (PySide6 moved it out of QtWidgets). If new PySide2-to-PySide6 API gaps appear, extend the corresponding shim file rather than modifying application code.
+
+### Running tests
+
+All tests (unit + integration) run via:
+```
+source .venv/bin/activate && python -m pytest -v
+```
+See `pyproject.toml` for marker definitions (`unit`, `integration`, `runtime_parity`, `manual_acceptance`).
+
+### Launching the editor GUI
+
+```
+source .venv/bin/activate && DISPLAY=:1 python run_editor.py
+```
+The status bar will show "Runtime issues (4/6 checks)" because `/opt/freecad/AppRun` and the `FreeCAD` module are not present in the cloud VM — this is expected and does not block editor development.
+
+### Type checking
+
+```
+source .venv/bin/activate && python -m mypy app/ dev_launch_editor.py run_editor.py run_runner.py launcher.py
+```
+Pre-existing stub mismatches (4 errors from PySide2-stubs and dynamic importlib usage) are expected.
+
+### System dependency
+
+The `libxcb-cursor0` package is required for PySide6's xcb platform plugin. The update script installs it.
