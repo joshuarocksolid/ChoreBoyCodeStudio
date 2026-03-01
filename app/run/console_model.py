@@ -18,7 +18,8 @@ class ConsoleLine:
 class ConsoleModel:
     """Captures console lines for the active session."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_lines: int = 5000) -> None:
+        self._max_lines = max(100, max_lines)
         self._lines: list[ConsoleLine] = []
 
     def append(self, stream: str, text: str) -> ConsoleLine:
@@ -29,6 +30,9 @@ class ConsoleModel:
             text=text,
         )
         self._lines.append(line)
+        overflow = len(self._lines) - self._max_lines
+        if overflow > 0:
+            del self._lines[:overflow]
         return line
 
     def clear(self) -> None:

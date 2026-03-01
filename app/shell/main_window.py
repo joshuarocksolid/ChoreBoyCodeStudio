@@ -51,6 +51,7 @@ from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_r
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
+from app.intelligence.symbol_index import SymbolIndexWorker
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
         self._active_search_worker: SearchWorker | None = None
+        self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
@@ -585,6 +587,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._start_symbol_indexing(loaded_project.project_root)
         self._logger.info(
             "Project open telemetry: root=%s files=%s elapsed_ms=%.2f",
             loaded_project.project_root,
@@ -1122,6 +1125,33 @@ class MainWindow(QMainWindow):
         self._logger.info("Find in files telemetry: query=%r elapsed_ms=%.2f", query, elapsed_ms)
         QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
 
+    def _start_symbol_indexing(self, project_root: str) -> None:
+        if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+            self._active_symbol_index_worker.cancel()
+        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
+        started_at = time.perf_counter()
+        self._active_symbol_index_worker = SymbolIndexWorker(
+            project_root=project_root,
+            cache_db_path=str(cache_db),
+            on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at),
+            on_error=lambda message: self._handle_symbol_index_error(project_root, message),
+        )
+        self._active_symbol_index_worker.start()
+
+    def _handle_symbol_index_done(self, project_root: str, symbol_count: int, started_at: float) -> None:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        self._logger.info(
+            "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
+            project_root,
+            symbol_count,
+            elapsed_ms,
+        )
+        QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
+
+    def _handle_symbol_index_error(self, project_root: str, message: str) -> None:
+        self._logger.warning("Symbol index failed for %s: %s", project_root, message)
+        QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
+
     def _clear_problems(self) -> None:
         if self._problems_list_widget is not None:
             self._problems_list_widget.clear()
@@ -1655,6 +1685,7 @@ class MainWindow(QMainWindow):
             return
         self._loaded_project = open_project(self._loaded_project.project_root)
         self._populate_project_tree(self._loaded_project)
+        self._start_symbol_indexing(self._loaded_project.project_root)
 
     def _open_file_in_editor(self, file_path: str) -> bool:
         if self._editor_tabs_widget is None:

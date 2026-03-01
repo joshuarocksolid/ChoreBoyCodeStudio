@@ -19,3 +19,14 @@ def test_console_model_append_and_clear() -> None:
 
     model.clear()
     assert model.lines() == []
+
+
+def test_console_model_trims_oldest_lines_when_max_exceeded() -> None:
+    """Console should enforce bounded buffer for responsiveness."""
+    model = ConsoleModel(max_lines=100)
+    for index in range(101):
+        model.append("stdout", f"line-{index}")
+
+    assert len(model.lines()) == 100
+    assert model.lines()[0].text == "line-1"
+    assert model.lines()[-1].text == "line-100"
