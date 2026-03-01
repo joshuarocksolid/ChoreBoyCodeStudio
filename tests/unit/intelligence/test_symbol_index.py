@@ -58,3 +58,42 @@ def test_symbol_index_worker_populates_sqlite_cache(tmp_path: Path) -> None:
 
     cache = SQLiteSymbolIndex(str(cache_path))
     assert cache.lookup(str(project_root), "task")
+
+
+def test_symbol_index_worker_incrementally_updates_changed_files(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    module_a = project_root / "alpha.py"
+    module_b = project_root / "beta.py"
+    module_a.write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    module_b.write_text("def beta():\n    return 2\n", encoding="utf-8")
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+
+    done_first = threading.Event()
+    worker_first = SymbolIndexWorker(
+        project_root=str(project_root),
+        cache_db_path=str(cache_path),
+        on_done=lambda _count: done_first.set(),
+    )
+    worker_first.start()
+    assert done_first.wait(timeout=2.0)
+
+    cache = SQLiteSymbolIndex(str(cache_path))
+    assert cache.lookup(str(project_root), "alpha")
+    assert cache.lookup(str(project_root), "beta")
+
+    module_a.write_text("def alpha_new():\n    return 3\n", encoding="utf-8")
+    module_b.unlink()
+
+    done_second = threading.Event()
+    worker_second = SymbolIndexWorker(
+        project_root=str(project_root),
+        cache_db_path=str(cache_path),
+        on_done=lambda _count: done_second.set(),
+    )
+    worker_second.start()
+    assert done_second.wait(timeout=2.0)
+
+    assert cache.lookup(str(project_root), "alpha") == []
+    assert cache.lookup(str(project_root), "beta") == []
+    assert cache.lookup(str(project_root), "alpha_new")

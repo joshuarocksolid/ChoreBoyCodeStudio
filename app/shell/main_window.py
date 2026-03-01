@@ -6,7 +6,7 @@ import queue
 from pathlib import Path
 import subprocess
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide2.QtCore import QEvent, QTimer, Qt
 from PySide2.QtGui import QCloseEvent
@@ -47,7 +47,6 @@ from app.debug.debug_command_service import (
     step_over_command,
 )
 from app.debug.debug_session import DebugSession
-from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
@@ -60,6 +59,7 @@ from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_store import load_settings, save_settings
 from app.run.console_model import ConsoleModel
+from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
@@ -80,10 +80,12 @@ from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
-from app.project.project_service import open_project, open_project_and_track_recent
-from app.project.recent_projects import load_recent_projects
-from app.shell.actions import map_run_action_state
-from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
+from app.project.project_service import open_project
+from app.shell.background_tasks import BackgroundTaskRunner
+from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
+from app.shell.project_controller import ProjectController
+from app.shell.project_tree_controller import ProjectTreeController
+from app.shell.run_session_controller import RunSessionController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_shell_toolbar
 
@@ -133,9 +135,14 @@ class MainWindow(QMainWindow):
         self._import_update_policy = self._load_import_update_policy()
         self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
         self._autosave_store = AutosaveStore(state_root=self._state_root)
+        self._pending_autosave_payloads: dict[str, str] = {}
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(500)
+        self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
-        self._active_run_output_chunks: list[str] = []
+        self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
@@ -143,8 +150,14 @@ class MainWindow(QMainWindow):
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
+        self._run_session_controller = RunSessionController(self._run_service)
         self._template_service = TemplateService()
+        self._background_tasks = BackgroundTaskRunner(
+            dispatch_to_main_thread=self._dispatch_to_main_thread
+        )
         self._logger = get_subsystem_logger("shell")
+        self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
+        self._project_tree_controller = ProjectTreeController()
 
         self._configure_window_frame()
         self._build_layout_shell()
@@ -304,6 +317,9 @@ class MainWindow(QMainWindow):
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
         return (max(2, tab_width), max(8, font_size))
+
+    def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
+        QTimer.singleShot(0, callback)
 
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
@@ -482,38 +498,62 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Go To Definition", "Open a file tab first.")
             return
         symbol_name = editor_widget.word_under_cursor()
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
-        lookup = lookup_definition_with_cache(
-            project_root=self._loaded_project.project_root,
-            current_file_path=active_tab.file_path,
-            symbol_name=symbol_name,
-            cache_db_path=str(cache_db),
-        )
-        if not lookup.found:
-            QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
+        if not symbol_name:
+            QMessageBox.information(self, "Go To Definition", "Place cursor on a symbol first.")
             return
-        location = lookup.locations[0]
-        self._open_file_at_line(location.file_path, location.line_number)
+        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
+        project_root = self._loaded_project.project_root
+        current_file_path = active_tab.file_path
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return lookup_definition_with_cache(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                symbol_name=symbol_name,
+                cache_db_path=str(cache_db),
+            )
+
+        def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
+            if not lookup.found:
+                QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
+                return
+            location = lookup.locations[0]
+            self._open_file_at_line(location.file_path, location.line_number)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
+
+        self._background_tasks.run(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Analyze Imports", "Open a project first.")
             return
-        diagnostics = find_unresolved_imports(self._loaded_project.project_root)
-        if self._problems_list_widget is None:
-            return
-        self._problems_list_widget.clear()
-        if not diagnostics:
-            self._problems_list_widget.addItem(QListWidgetItem("No unresolved project-local imports found."))
-            return
-        for diagnostic in diagnostics:
-            item = QListWidgetItem(
-                f"{Path(diagnostic.file_path).name}:{diagnostic.line_number} | {diagnostic.message}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+        project_root = self._loaded_project.project_root
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return find_unresolved_imports(project_root)
+
+        def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
+            if self._problems_list_widget is None:
+                return
+            self._problems_list_widget.clear()
+            if not diagnostics:
+                self._problems_list_widget.addItem(QListWidgetItem("No unresolved project-local imports found."))
+                return
+            for diagnostic in diagnostics:
+                item = QListWidgetItem(
+                    f"{Path(diagnostic.file_path).name}:{diagnostic.line_number} | {diagnostic.message}",
+                    self._problems_list_widget,
+                )
+                item.setToolTip(diagnostic.file_path)
+                item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+                item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Analyze Imports", f"Import analysis failed: {exc}")
+
+        self._background_tasks.run(key="analyze_imports", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_show_outline_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -559,23 +599,29 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, title, help_path.read_text(encoding="utf-8"))
 
     def _open_project_by_path(self, project_root: str) -> bool:
-        if not self._confirm_proceed_with_unsaved_changes("opening another project"):
-            return False
-
         started_at = time.perf_counter()
-        try:
-            loaded_project = open_project_and_track_recent(
-                project_root,
-                state_root=self._state_root,
-            )
-        except (AppValidationError, ValueError) as exc:
-            self._show_open_project_error(project_root, str(exc))
-            return False
-        except Exception as exc:  # pragma: no cover - defensive shell guard
-            self._logger.exception("Unexpected error while opening project: %s", project_root)
-            self._show_open_project_error(project_root, f"Unexpected error: {exc}")
-            return False
+        return self._project_controller.open_project_by_path(
+            project_root,
+            confirm_proceed=self._confirm_proceed_with_unsaved_changes,
+            on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
+            on_error=self._show_open_project_error,
+        )
 
+    def _refresh_open_recent_menu(self) -> None:
+        self._project_controller.refresh_open_recent_menu(
+            self._menu_registry,
+            open_project_by_path=self._open_project_by_path,
+        )
+
+    def _show_open_project_error(self, project_root: str, details: str) -> None:
+        self._logger.warning("Project open failed for %s: %s", project_root, details)
+        QMessageBox.critical(
+            self,
+            "Unable to open project",
+            f"Could not open project:\n{project_root}\n\n{details}",
+        )
+
+    def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
         self._loaded_project = loaded_project
         self.set_project_placeholder(loaded_project.metadata.name)
         self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
@@ -593,39 +639,6 @@ class MainWindow(QMainWindow):
             loaded_project.project_root,
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
-        )
-        return True
-
-    def _refresh_open_recent_menu(self) -> None:
-        if self._menu_registry is None:
-            return
-
-        open_recent_menu = self._menu_registry.menu("shell.menu.file.openRecent")
-        if open_recent_menu is None:
-            return
-
-        open_recent_menu.clear()
-        recent_paths = load_recent_projects(state_root=self._state_root)
-        recent_items = build_recent_project_menu_items(recent_paths)
-
-        if not recent_items:
-            placeholder_action = open_recent_menu.addAction("(No recent projects)")
-            placeholder_action.setEnabled(False)
-            return
-
-        for recent_item in recent_items:
-            action = open_recent_menu.addAction(recent_item.display_text)
-            action.setToolTip(recent_item.project_path)
-            action.triggered.connect(
-                lambda _checked=False, project_path=recent_item.project_path: self._open_project_by_path(project_path)
-            )
-
-    def _show_open_project_error(self, project_root: str, details: str) -> None:
-        self._logger.warning("Project open failed for %s: %s", project_root, details)
-        QMessageBox.critical(
-            self,
-            "Unable to open project",
-            f"Could not open project:\n{project_root}\n\n{details}",
         )
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
@@ -680,6 +693,7 @@ class MainWindow(QMainWindow):
             if tab_index >= 0:
                 self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
 
+        self._pending_autosave_payloads.pop(saved_tab.file_path, None)
         self._autosave_store.delete_draft(saved_tab.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
@@ -713,6 +727,11 @@ class MainWindow(QMainWindow):
     def _handle_start_python_console_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_REPL, skip_save=True)
 
+    def _prepare_for_session_start(self) -> None:
+        self._active_run_output_tail.clear()
+        self._clear_problems()
+        self._debug_session = DebugSession()
+
     def _start_session(
         self,
         *,
@@ -720,43 +739,34 @@ class MainWindow(QMainWindow):
         breakpoints: list[dict[str, int | str]] | None = None,
         skip_save: bool = False,
     ) -> bool:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Run unavailable", "Open a project before running code.")
-            return False
-        if self._run_service.supervisor.is_running():
-            return False
-
-        if not skip_save and not self._handle_save_all_action():
-            QMessageBox.warning(self, "Run cancelled", "Fix save errors before running.")
-            return False
-
-        self._active_run_output_chunks.clear()
-        self._clear_problems()
-        self._debug_session = DebugSession()
-        self._append_console_line("────────────────────\n", stream="system")
-        self._append_console_line("Starting run...\n", stream="system")
-
-        try:
-            session = self._run_service.start_run(self._loaded_project, mode=mode, breakpoints=breakpoints)
-        except Exception as exc:
-            QMessageBox.warning(self, "Run failed to start", str(exc))
-            self._append_console_line(f"Run failed to start: {exc}\n", stream="stderr")
+        result = self._run_session_controller.start_session(
+            loaded_project=self._loaded_project,
+            mode=mode,
+            breakpoints=breakpoints,
+            skip_save=skip_save,
+            save_all=self._handle_save_all_action,
+            before_start=self._prepare_for_session_start,
+            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
+            append_python_console_line=self._append_python_console_line,
+        )
+        if not result.started:
+            if result.error_message and result.error_message == "Open a project before running code.":
+                QMessageBox.warning(self, "Run unavailable", result.error_message)
+            elif result.error_message and result.error_message == "Fix save errors before running.":
+                QMessageBox.warning(self, "Run cancelled", result.error_message)
+            elif result.error_message:
+                QMessageBox.warning(self, "Run failed to start", result.error_message)
             self._refresh_run_action_states()
             return False
 
-        self._active_run_session_log_path = session.log_file_path
-        self._active_session_mode = mode
-        self._append_console_line(f"Run started ({session.run_id})\n", stream="system")
-        if mode == constants.RUN_MODE_PYTHON_REPL:
-            self._append_python_console_line("[system] Python console started.")
-        elif mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._append_python_console_line("[system] Debug session started. Use toolbar or pdb commands.")
+        if result.session is not None:
+            self._active_run_session_log_path = result.session.log_file_path
+        self._active_session_mode = self._run_session_controller.active_session_mode
         self._refresh_run_action_states()
         return True
 
     def _handle_stop_action(self) -> None:
-        self._run_service.stop_run()
-        self._append_console_line("Stop requested.\n", stream="system")
+        self._run_session_controller.stop_session(lambda text, stream: self._append_console_line(text, stream=stream))
         self._refresh_run_action_states()
 
     def _handle_restart_action(self) -> None:
@@ -777,14 +787,12 @@ class MainWindow(QMainWindow):
     def _handle_pause_debug_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        try:
-            paused = self._run_service.pause_run()
-        except Exception as exc:
-            QMessageBox.warning(self, "Pause failed", str(exc))
-            return
-        if paused:
-            self._append_python_console_line("[debug] Pause requested.")
-            self._append_debug_output_line("[debug] Pause requested.")
+        _paused, error_message = self._run_session_controller.pause_session(
+            append_python_console_line=self._append_python_console_line,
+            append_debug_output_line=self._append_debug_output_line,
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Pause failed", error_message)
 
     def _handle_step_over_action(self) -> None:
         if not self._run_service.supervisor.is_running():
@@ -916,37 +924,61 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Health check unavailable", "Open a project before running diagnostics.")
             return
 
-        report = run_project_health_check(self._loaded_project.project_root, state_root=self._state_root)
-        self._latest_health_report = report
-        failed_checks = [check for check in report.checks if not check.is_ok]
-        summary_lines = [
-            f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
-            for check in report.checks
-        ]
-        summary_text = "\n".join(summary_lines)
-        if failed_checks:
-            QMessageBox.warning(self, "Project health check", summary_text)
-        else:
-            QMessageBox.information(self, "Project health check", summary_text)
+        project_root = self._loaded_project.project_root
+        state_root = self._state_root
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_project_health_check(project_root, state_root=state_root)
+
+        def on_success(report) -> None:  # type: ignore[no-untyped-def]
+            self._latest_health_report = report
+            failed_checks = [check for check in report.checks if not check.is_ok]
+            summary_lines = [
+                f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
+                for check in report.checks
+            ]
+            summary_text = "\n".join(summary_lines)
+            if failed_checks:
+                QMessageBox.warning(self, "Project health check", summary_text)
+            else:
+                QMessageBox.information(self, "Project health check", summary_text)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Project health check", f"Health check failed: {exc}")
+
+        self._background_tasks.run(key="project_health_check", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_generate_support_bundle_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Support bundle unavailable", "Open a project before generating support bundle.")
             return
-        if self._latest_health_report is None:
-            self._latest_health_report = run_project_health_check(
-                self._loaded_project.project_root,
-                state_root=self._state_root,
-            )
+        project_root = self._loaded_project.project_root
+        state_root = self._state_root
+        latest_report = self._latest_health_report
+        latest_run_log_path = self._resolve_latest_run_log_path()
 
-        bundle_path = build_support_bundle(
-            self._loaded_project.project_root,
-            diagnostics_report=self._latest_health_report,
-            last_run_log_path=self._resolve_latest_run_log_path(),
-            state_root=self._state_root,
-            destination_dir=self._loaded_project.project_root,
-        )
-        QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            report = latest_report
+            if report is None:
+                report = run_project_health_check(project_root, state_root=state_root)
+            bundle_path = build_support_bundle(
+                project_root,
+                diagnostics_report=report,
+                last_run_log_path=latest_run_log_path,
+                state_root=state_root,
+                destination_dir=project_root,
+            )
+            return (report, bundle_path)
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            report, bundle_path = payload
+            self._latest_health_report = report
+            QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Support bundle", f"Support bundle generation failed: {exc}")
+
+        self._background_tasks.run(key="support_bundle", task=task, on_success=on_success, on_error=on_error)
 
     def _resolve_latest_run_log_path(self) -> str | None:
         if self._active_run_session_log_path and Path(self._active_run_session_log_path).exists():
@@ -962,49 +994,10 @@ class MainWindow(QMainWindow):
         return str(candidate_logs[0].resolve())
 
     def _refresh_run_action_states(self) -> None:
-        if self._menu_registry is None:
-            return
-
-        run_action = self._menu_registry.action("shell.action.run.run")
-        debug_action = self._menu_registry.action("shell.action.run.debug")
-        stop_action = self._menu_registry.action("shell.action.run.stop")
-        restart_action = self._menu_registry.action("shell.action.run.restart")
-        continue_action = self._menu_registry.action("shell.action.run.continue")
-        pause_action = self._menu_registry.action("shell.action.run.pause")
-        step_over_action = self._menu_registry.action("shell.action.run.stepOver")
-        step_into_action = self._menu_registry.action("shell.action.run.stepInto")
-        step_out_action = self._menu_registry.action("shell.action.run.stepOut")
-        toggle_breakpoint_action = self._menu_registry.action("shell.action.run.toggleBreakpoint")
-        python_console_action = self._menu_registry.action("shell.action.run.pythonConsole")
-        state = map_run_action_state(
+        self._run_session_controller.refresh_action_states(
+            self._menu_registry,
             has_project=self._loaded_project is not None,
-            is_running=self._run_service.supervisor.is_running(),
-            is_debug_mode=self._run_service.is_debug_mode,
-            is_debug_paused=self._run_service.is_debug_paused,
         )
-
-        if run_action is not None:
-            run_action.setEnabled(state.run_enabled)
-        if debug_action is not None:
-            debug_action.setEnabled(state.debug_enabled)
-        if stop_action is not None:
-            stop_action.setEnabled(state.stop_enabled)
-        if restart_action is not None:
-            restart_action.setEnabled(state.restart_enabled)
-        if continue_action is not None:
-            continue_action.setEnabled(state.continue_enabled)
-        if pause_action is not None:
-            pause_action.setEnabled(state.pause_enabled)
-        if step_over_action is not None:
-            step_over_action.setEnabled(state.step_over_enabled)
-        if step_into_action is not None:
-            step_into_action.setEnabled(state.step_into_enabled)
-        if step_out_action is not None:
-            step_out_action.setEnabled(state.step_out_enabled)
-        if toggle_breakpoint_action is not None:
-            toggle_breakpoint_action.setEnabled(state.toggle_breakpoint_enabled)
-        if python_console_action is not None:
-            python_console_action.setEnabled(state.python_console_enabled)
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         self._run_event_queue.put(event)
@@ -1029,7 +1022,7 @@ class MainWindow(QMainWindow):
                 self._apply_debug_inspector_event()
                 self._refresh_run_action_states()
                 return
-            self._active_run_output_chunks.append(text)
+            self._active_run_output_tail.append(text)
             self._append_console_line(text, stream=stream)
             if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
                 for line in text.rstrip().splitlines():
@@ -1050,6 +1043,7 @@ class MainWindow(QMainWindow):
                 self._append_python_console_line(f"[system] Session finished (code={return_code}).")
 
             self._active_session_mode = None
+            self._run_session_controller.clear_active_session_mode()
             self._refresh_run_action_states()
             self._load_latest_run_log()
             self._update_problems_from_output()
@@ -1083,7 +1077,7 @@ class MainWindow(QMainWindow):
         self._run_log_output_widget.setPlainText(log_path.read_text(encoding="utf-8"))
 
     def _update_problems_from_output(self) -> None:
-        output_text = "".join(self._active_run_output_chunks)
+        output_text = self._active_run_output_tail.text()
         problems = parse_traceback_problems(output_text)
         self._set_problems(problems)
 
@@ -1169,6 +1163,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
+            self._background_tasks.cancel_all()
+            self._flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
@@ -1571,82 +1567,62 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
     def _close_deleted_editor_paths(self, deleted_path: str) -> None:
-        deleted_resolved = str(Path(deleted_path).resolve())
-        for open_path in list(self._editor_widgets_by_path.keys()):
-            if open_path == deleted_resolved or open_path.startswith(f"{deleted_resolved}/"):
-                widget = self._editor_widgets_by_path.pop(open_path)
-                tab_index = self._tab_index_for_path(open_path)
-                if self._editor_tabs_widget is not None and tab_index >= 0:
-                    self._editor_tabs_widget.removeTab(tab_index)
-                widget.deleteLater()
-                self._editor_manager.close_file(open_path)
-                self._breakpoints_by_file.pop(open_path, None)
-        self._refresh_breakpoints_list()
+        self._project_tree_controller.close_deleted_editor_paths(
+            deleted_path,
+            editor_widgets_by_path=self._editor_widgets_by_path,
+            tab_index_for_path=self._tab_index_for_path,
+            remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
+            if self._editor_tabs_widget is not None
+            else None,
+            release_editor_widget=lambda widget: widget.deleteLater(),
+            close_editor_file=self._editor_manager.close_file,
+            breakpoints_by_file=self._breakpoints_by_file,
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+        )
 
     def _apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
-        remapped_paths = self._editor_manager.remap_paths_for_move(source_path, destination_path)
-        for old_path, new_path in remapped_paths.items():
-            widget = self._editor_widgets_by_path.pop(old_path, None)
-            if widget is None:
-                continue
-            self._editor_widgets_by_path[new_path] = widget
-            tab_index = self._tab_index_for_path(old_path)
-            if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._editor_tabs_widget.setTabToolTip(tab_index, new_path)
-                self._editor_tabs_widget.setTabText(tab_index, Path(new_path).name)
-            breakpoints = self._breakpoints_by_file.pop(old_path, None)
-            if breakpoints is not None:
-                self._breakpoints_by_file[new_path] = breakpoints
-                widget.set_breakpoints(breakpoints)
-            widget.set_language_for_path(new_path)
+        self._project_tree_controller.apply_path_move_updates(
+            source_path,
+            destination_path,
+            remap_editor_paths=self._editor_manager.remap_paths_for_move,
+            editor_widgets_by_path=self._editor_widgets_by_path,
+            tab_index_for_path=self._tab_index_for_path,
+            update_tab_path_and_name=lambda tab_index, new_path: self._update_tab_path_and_name(tab_index, new_path),
+            breakpoints_by_file=self._breakpoints_by_file,
+            apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
+            update_widget_language=lambda widget, new_path: widget.set_language_for_path(new_path),
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+            maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
+        )
 
-        self._refresh_breakpoints_list()
-
-        self._maybe_rewrite_imports_for_move(source_path, destination_path)
+    def _update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        self._editor_tabs_widget.setTabToolTip(tab_index, new_path)
+        self._editor_tabs_widget.setTabText(tab_index, Path(new_path).name)
 
     def _maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:
-        if self._loaded_project is None:
-            return
-        source = Path(source_path).resolve()
-        destination = Path(destination_path).resolve()
-        if source.suffix != ".py" and destination.suffix != ".py":
-            return
-        project_root = Path(self._loaded_project.project_root).resolve()
-        try:
-            old_relative = source.relative_to(project_root).as_posix()
-            new_relative = destination.relative_to(project_root).as_posix()
-        except ValueError:
-            return
+        self._project_tree_controller.maybe_rewrite_imports_for_move(
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            source_path=source_path,
+            destination_path=destination_path,
+            resolve_policy_for_operation=self._resolve_import_update_policy_for_operation,
+            request_confirmation=self._request_import_rewrite_confirmation,
+            show_warning=lambda details: self._show_import_update_warning(details),
+        )
 
-        previews = plan_import_rewrites(self._loaded_project.project_root, old_relative, new_relative)
-        if not previews:
-            return
+    def _request_import_rewrite_confirmation(self, message: str) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Update imports?",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return answer == QMessageBox.Yes
 
-        policy = self._resolve_import_update_policy_for_operation()
-        if policy == ImportUpdatePolicy.NEVER:
-            return
-        if policy == ImportUpdatePolicy.ASK:
-            details = "\n".join(
-                f"- {Path(preview.file_path).name}: lines {', '.join(str(line) for line in preview.changed_line_numbers)}"
-                for preview in previews[:10]
-            )
-            answer = QMessageBox.question(
-                self,
-                "Update imports?",
-                (
-                    f"Update imports for moved module?\n\n"
-                    f"{len(previews)} file(s) would be modified.\n{details}"
-                ),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if answer != QMessageBox.Yes:
-                return
-
-        try:
-            apply_import_rewrites(previews)
-        except OSError as exc:
-            QMessageBox.warning(self, "Import update failed", f"Could not rewrite imports: {exc}")
+    def _show_import_update_warning(self, details: str) -> None:
+        QMessageBox.warning(self, "Import update failed", details)
 
     def _resolve_import_update_policy_for_operation(self) -> ImportUpdatePolicy:
         if self._import_update_policy != ImportUpdatePolicy.ASK:
@@ -1711,26 +1687,21 @@ class MainWindow(QMainWindow):
         editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
-        editor_widget.set_breakpoint_toggled_callback(
-            lambda line_number, enabled, file_path=opened_result.tab.file_path: self._handle_editor_breakpoint_toggled(
-                file_path,
-                line_number,
-                enabled,
-            )
-        )
+        tab_file_path = opened_result.tab.file_path
+
+        def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
+            self._handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
+
+        def on_text_changed() -> None:
+            self._handle_editor_text_changed(tab_file_path, editor_widget)
+
+        def on_cursor_position_changed() -> None:
+            self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
+
+        editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
-        editor_widget.textChanged.connect(
-            lambda file_path=opened_result.tab.file_path, widget=editor_widget: self._handle_editor_text_changed(
-                file_path,
-                widget,
-            )
-        )
-        editor_widget.cursorPositionChanged.connect(
-            lambda file_path=opened_result.tab.file_path, widget=editor_widget: self._handle_editor_cursor_position_changed(
-                file_path,
-                widget,
-            )
-        )
+        editor_widget.textChanged.connect(on_text_changed)
+        editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
         self._editor_widgets_by_path[opened_result.tab.file_path] = editor_widget
 
         tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
@@ -1776,8 +1747,9 @@ class MainWindow(QMainWindow):
         suffix = " *" if tab_state.is_dirty else ""
         self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
         if tab_state.is_dirty:
-            self._autosave_store.save_draft(tab_state.file_path, tab_state.current_content)
+            self._schedule_autosave(tab_state.file_path, tab_state.current_content)
         else:
+            self._pending_autosave_payloads.pop(tab_state.file_path, None)
             self._autosave_store.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
@@ -1846,6 +1818,8 @@ class MainWindow(QMainWindow):
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
+        self._autosave_timer.stop()
+        self._pending_autosave_payloads.clear()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -1875,4 +1849,19 @@ class MainWindow(QMainWindow):
         tab_index = self._tab_index_for_path(tab_state.file_path)
         if self._editor_tabs_widget is not None and tab_index >= 0:
             self._editor_tabs_widget.setTabText(tab_index, f"{updated_tab.display_name} *")
-        self._autosave_store.save_draft(updated_tab.file_path, updated_tab.current_content)
+        self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
+
+    def _schedule_autosave(self, file_path: str, content: str) -> None:
+        self._pending_autosave_payloads[file_path] = content
+        self._autosave_timer.start()
+
+    def _flush_pending_autosaves(self) -> None:
+        if not self._pending_autosave_payloads:
+            return
+        pending_items = list(self._pending_autosave_payloads.items())
+        self._pending_autosave_payloads.clear()
+        for file_path, content in pending_items:
+            try:
+                self._autosave_store.save_draft(file_path, content)
+            except OSError as exc:
+                self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)

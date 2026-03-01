@@ -18,7 +18,13 @@ class SearchMatch:
     line_text: str
 
 
-def find_in_files(project_root: str | Path, query: str, *, max_results: int = 200) -> list[SearchMatch]:
+def find_in_files(
+    project_root: str | Path,
+    query: str,
+    *,
+    max_results: int = 200,
+    cancel_event: threading.Event | None = None,
+) -> list[SearchMatch]:
     """Search text files under project root for query substring."""
     if not query.strip():
         return []
@@ -27,30 +33,33 @@ def find_in_files(project_root: str | Path, query: str, *, max_results: int = 20
     results: list[SearchMatch] = []
 
     for file_path in sorted(root.rglob("*")):
+        if cancel_event is not None and cancel_event.is_set():
+            break
         if len(results) >= max_results:
             break
         if not file_path.is_file():
             continue
-        if ".cbcs" in file_path.parts:
+        if ".cbcs" in file_path.parts or "__pycache__" in file_path.parts:
             continue
         try:
-            lines = file_path.read_text(encoding="utf-8").splitlines()
+            with file_path.open("r", encoding="utf-8") as handle:
+                for line_index, line in enumerate(handle, start=1):
+                    if cancel_event is not None and cancel_event.is_set():
+                        return results
+                    if query not in line:
+                        continue
+                    results.append(
+                        SearchMatch(
+                            relative_path=file_path.relative_to(root).as_posix(),
+                            absolute_path=str(file_path.resolve()),
+                            line_number=line_index,
+                            line_text=line.rstrip("\n"),
+                        )
+                    )
+                    if len(results) >= max_results:
+                        return results
         except (UnicodeDecodeError, OSError):
             continue
-
-        for line_index, line in enumerate(lines, start=1):
-            if query not in line:
-                continue
-            results.append(
-                SearchMatch(
-                    relative_path=file_path.relative_to(root).as_posix(),
-                    absolute_path=str(file_path.resolve()),
-                    line_number=line_index,
-                    line_text=line,
-                )
-            )
-            if len(results) >= max_results:
-                break
     return results
 
 
@@ -91,7 +100,12 @@ class SearchWorker:
             if self._on_done is not None:
                 self._on_done()
             return
-        matches = find_in_files(self._project_root, self._query, max_results=self._max_results)
+        matches = find_in_files(
+            self._project_root,
+            self._query,
+            max_results=self._max_results,
+            cancel_event=self._cancel_event,
+        )
         if not self._cancel_event.is_set() and self._on_results is not None:
             self._on_results(matches, self._query)
         if self._on_done is not None:

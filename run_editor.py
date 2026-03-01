@@ -3,7 +3,7 @@
 import logging
 import importlib
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from app.bootstrap.capability_probe import run_startup_capability_probe
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger
@@ -25,7 +25,7 @@ def _start_editor() -> int:
     return application.exec_()
 
 
-def _load_qt_runtime() -> tuple[object, object]:
+def _load_qt_runtime() -> tuple[Any, Any]:
     """Load runtime-only Qt dependencies lazily."""
     application_class = importlib.import_module("PySide2.QtWidgets").QApplication
     main_window_class = importlib.import_module("app.shell.main_window").MainWindow

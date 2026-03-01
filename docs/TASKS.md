@@ -938,3 +938,69 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `tests/unit/runner/test_debug_runner.py`
   - `tests/integration/debug/*`
 
+### G13 — Bounded run-output tail + debounced autosave writes
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: prevent unbounded run-output memory growth and reduce per-keystroke autosave I/O pressure.
+- Primary files:
+  - `app/run/output_tail_buffer.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/run/test_output_tail_buffer.py`
+  - `tests/integration/performance/test_responsiveness_thresholds.py`
+
+### G14 — Incremental symbol indexing + cooperative search cancellation
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: improve medium-project responsiveness by avoiding full index rebuilds and ensuring cancellable search traversal.
+- Primary files:
+  - `app/intelligence/symbol_index.py`
+  - `app/editors/search_panel.py`
+  - `app/persistence/sqlite_index.py`
+  - `tests/unit/intelligence/test_symbol_index.py`
+  - `tests/unit/editors/test_search_panel.py`
+  - `tests/unit/persistence/test_sqlite_index.py`
+
+### G15 — Process supervisor event-ordering hardening
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: make run lifecycle events deterministic and resilient to observer callback failures.
+- Primary files:
+  - `app/run/process_supervisor.py`
+  - `tests/integration/run/test_process_supervisor.py`
+
+### G16 — Background-task runner for blocking shell actions
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: offload heavy shell actions from UI thread with keyed cancellation/replacement semantics.
+- Primary files:
+  - `app/shell/background_tasks.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_background_tasks.py`
+
+### G17 — Shell controller decomposition (project/run/tree)
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: reduce top-level shell coupling by extracting project-open, run-session, and tree-side-effect orchestration into focused controllers.
+- Primary files:
+  - `app/shell/project_controller.py`
+  - `app/shell/run_session_controller.py`
+  - `app/shell/project_tree_controller.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_project_controller.py`
+  - `tests/unit/shell/test_run_session_controller.py`
+  - `tests/unit/shell/test_project_tree_controller.py`
+
+### G18 — Qt-runtime test harness resilience + typing cleanup
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: keep CI/local validation stable across environments lacking full native Qt runtime and restore strict type-check pass.
+- Primary files:
+  - `app/editors/text_editing.py`
+  - `tests/unit/editors/test_code_editor_widget.py`
+  - `tests/integration/shell/test_run_debug_toolbar_integration.py`
+  - `app/shell/status_bar.py`
+  - `app/run/run_manifest.py`
+  - `app/run/process_supervisor.py`
+  - `app/editors/code_editor_widget.py`
+  - `run_editor.py`
+

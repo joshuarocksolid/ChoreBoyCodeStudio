@@ -518,6 +518,14 @@ Owns the main window and top-level composition.
 
 It coordinates services but should not contain deep business logic.
 
+Current implementation keeps `MainWindow` as composition root and delegates
+domain orchestration to focused shell controllers:
+
+* `project_controller` for open/recent project flows
+* `run_session_controller` for run/debug/repl lifecycle control wiring
+* `project_tree_controller` for tree move/delete/remap side effects
+* `background_tasks` for keyed off-UI-thread task execution and replacement
+
 Key shell responsibilities include:
 
 * run/debug toolbar and action state mapping
@@ -682,6 +690,10 @@ The console pane should show near-live stdout/stderr from the current run.
 
 For responsiveness on high-output workloads, console buffering should be bounded and trim oldest entries once the configured cap is exceeded.
 
+Current implementation also maintains a bounded run-output tail buffer for
+traceback/problem extraction so very long runs do not accumulate unbounded
+in-memory output strings.
+
 ## 14.2 Problems
 
 The problems pane should show:
@@ -781,6 +793,7 @@ This allows stable reopen and recovery workflows.
 Recommended v1 behavior:
 
 * autosave drafts to a recovery store
+* debounce draft writes to avoid per-keystroke disk churn
 * do not silently overwrite source files unless autosave-to-file is explicitly enabled
 * restore drafts after crash
 
@@ -794,6 +807,9 @@ This is safer for support and easier to reason about.
 
 Start with filesystem-based search and optional in-memory indexing.
 
+Current implementation uses cooperative-cancel search workers and line-streaming
+file scans so cancellation and first-result latency remain responsive.
+
 ## 17.2 SQLite-backed index
 
 If project size justifies it, use SQLite for:
@@ -802,6 +818,10 @@ If project size justifies it, use SQLite for:
 * quick-open candidate cache
 * symbol cache
 * search acceleration
+
+Current implementation stores per-file symbol index fingerprints
+(`mtime_ns` + file size) so symbol indexing can update incrementally instead of
+rebuilding every file on each pass.
 
 ## 17.3 Design rule
 
@@ -901,7 +921,16 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 * project health check
 * large file loading
 
-Current implementation explicitly offloads find-in-files and symbol indexing to background workers to avoid blocking the UI thread.
+Current implementation explicitly offloads:
+
+* find-in-files
+* symbol indexing
+* go-to-definition cache refresh path
+* unresolved import analysis
+* project health checks
+* support bundle generation
+
+to background workers/tasks to avoid blocking the UI thread.
 
 ## 21.3 Process-first for risky work
 

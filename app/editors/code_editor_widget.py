@@ -4,67 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from PySide2.QtCore import QRect, QSize, Qt
 from PySide2.QtGui import QColor, QPainter, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
+from app.editors.text_editing import indent_lines, outdent_lines, toggle_comment_lines
 from app.editors.syntax_json import JsonSyntaxHighlighter
 from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
 
 DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
-
-
-def indent_lines(text: str, *, indent_text: str = "    ") -> str:
-    """Indent every non-empty line in text."""
-    lines = text.splitlines()
-    return "\n".join(f"{indent_text}{line}" if line.strip() else line for line in lines)
-
-
-def outdent_lines(text: str, *, indent_text: str = "    ") -> str:
-    """Outdent lines by one indentation unit when present."""
-    lines = text.splitlines()
-    outdented: list[str] = []
-    for line in lines:
-        if line.startswith(indent_text):
-            outdented.append(line[len(indent_text) :])
-        elif line.startswith("\t"):
-            outdented.append(line[1:])
-        elif line.startswith(" "):
-            outdented.append(line[1:])
-        else:
-            outdented.append(line)
-    return "\n".join(outdented)
-
-
-def toggle_comment_lines(text: str, *, comment_prefix: str = "# ") -> str:
-    """Toggle Python line comments for multi-line selection."""
-    lines = text.splitlines()
-    non_empty = [line for line in lines if line.strip()]
-    if not non_empty:
-        return text
-    should_uncomment = all(line.lstrip().startswith("#") for line in non_empty)
-
-    transformed: list[str] = []
-    for line in lines:
-        if not line.strip():
-            transformed.append(line)
-            continue
-        leading = len(line) - len(line.lstrip(" "))
-        indent = line[:leading]
-        body = line[leading:]
-        if should_uncomment:
-            if body.startswith("# "):
-                transformed.append(f"{indent}{body[2:]}")
-            elif body.startswith("#"):
-                transformed.append(f"{indent}{body[1:]}")
-            else:
-                transformed.append(line)
-        else:
-            transformed.append(f"{indent}{comment_prefix}{body}")
-    return "\n".join(transformed)
 
 
 class _LineNumberArea(QWidget):
@@ -207,12 +159,10 @@ class CodeEditorWidget(QPlainTextEdit):
                     painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
                 painter.setPen(color)
                 painter.drawText(
-                    0,
-                    top,
-                    self._line_number_area.width() - 6,
-                    self.fontMetrics().height(),
-                    Qt.AlignRight,
+                    QRect(0, top, self._line_number_area.width() - 6, self.fontMetrics().height()),
+                    int(Qt.AlignRight),
                     number_text,
+                    QRect(),
                 )
 
             block = block.next()
@@ -227,7 +177,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
         selections: list[QTextEdit.ExtraSelection] = []
 
-        line_selection = QTextEdit.ExtraSelection()
+        line_selection = cast(Any, QTextEdit.ExtraSelection())
         line_selection.format.setBackground(QColor("#EEF7FF"))
         line_selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         line_selection.cursor = self.textCursor()
@@ -310,7 +260,7 @@ class CodeEditorWidget(QPlainTextEdit):
         return None
 
     def _selection_for_position(self, position: int) -> QTextEdit.ExtraSelection:
-        selection = QTextEdit.ExtraSelection()
+        selection = cast(Any, QTextEdit.ExtraSelection())
         selection.format.setBackground(QColor("#FFD8A8"))
         cursor = self.textCursor()
         cursor.setPosition(position)

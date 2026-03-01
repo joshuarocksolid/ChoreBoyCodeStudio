@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.editors.code_editor_widget import indent_lines, outdent_lines, toggle_comment_lines
+from app.editors.text_editing import indent_lines, outdent_lines, toggle_comment_lines
 
 pytestmark = pytest.mark.unit
 

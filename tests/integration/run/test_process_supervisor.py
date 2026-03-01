@@ -40,6 +40,23 @@ def test_process_supervisor_streams_output_and_emits_exit_event(tmp_path) -> Non
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
 
 
+def test_process_supervisor_emits_state_order_running_then_exited_before_exit(tmp_path) -> None:
+    """Lifecycle events should publish running->exited state transitions around exit."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [sys.executable, "-c", "print('done')"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+
+    state_events = [event for event in events if event.event_type == "state"]
+    assert state_events[0].state == "running"
+    assert any(event.state == "exited" for event in state_events)
+    exited_index = next(index for index, event in enumerate(events) if event.event_type == "state" and event.state == "exited")
+    exit_index = next(index for index, event in enumerate(events) if event.event_type == "exit")
+    assert exited_index < exit_index
+
+
 def test_process_supervisor_stop_terminates_long_running_process(tmp_path) -> None:
     """Stop should terminate active long-running process and emit exit event."""
     events: list[ProcessEvent] = []
@@ -88,6 +105,37 @@ def test_process_supervisor_pause_interrupts_active_process(tmp_path) -> None:
         lambda: any(event.event_type == "exit" and (event.return_code or 0) != 0 for event in events),
         timeout_seconds=5.0,
     )
+
+
+def test_process_supervisor_stop_emits_stopping_state(tmp_path) -> None:
+    """Stop request should publish stopping state before process exit."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: supervisor.is_running())
+
+    supervisor.stop(terminate_timeout_seconds=0.2)
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    assert any(event.event_type == "state" and event.state == "stopping" for event in events)
+
+
+def test_process_supervisor_ignores_callback_exceptions(tmp_path) -> None:
+    """Observer callback errors should not crash process supervision threads."""
+    seen_output = {"value": False}
+
+    def on_event(event: ProcessEvent) -> None:
+        if event.event_type == "output":
+            seen_output["value"] = True
+            raise RuntimeError("observer failure")
+
+    supervisor = ProcessSupervisor(on_event=on_event)
+    command = [sys.executable, "-c", "print('hello')"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: not supervisor.is_running())
+    assert seen_output["value"] is True
 
 
 @pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
