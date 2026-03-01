@@ -3,16 +3,29 @@
 from __future__ import annotations
 
 from pathlib import Path
-import logging
 from typing import Optional
 
 from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PySide2.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QSplitter,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
+from app.editors.editor_manager import EditorManager
+from app.project.project_tree import ProjectTreeNode, build_project_tree
 from app.project.project_service import open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
@@ -25,10 +38,14 @@ class MainWindow(QMainWindow):
     def __init__(self, startup_report: Optional[CapabilityProbeReport] = None, state_root: str | None = None) -> None:
         super().__init__()
         self._project_placeholder_label: QLabel | None = None
+        self._project_tree_widget: QTreeWidget | None = None
+        self._editor_tabs_widget: QTabWidget | None = None
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
         self._state_root = state_root
         self._loaded_project: LoadedProject | None = None
+        self._editor_manager = EditorManager()
+        self._editor_widgets_by_path: dict[str, QPlainTextEdit] = {}
         self._logger = get_subsystem_logger("shell")
 
         self._configure_window_frame()
@@ -86,10 +103,11 @@ class MainWindow(QMainWindow):
             return False
 
         self._loaded_project = loaded_project
-        project_label = f"{loaded_project.metadata.name} ({loaded_project.project_root})"
-        self.set_project_placeholder(project_label)
+        self.set_project_placeholder(loaded_project.metadata.name)
         self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
         self._logger.info("Project loaded: %s", loaded_project.project_root)
+        self._populate_project_tree(loaded_project)
+        self._reset_editor_tabs()
         self._refresh_open_recent_menu()
         return True
 
@@ -156,26 +174,34 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_left_panel(self) -> QWidget:
-        panel = self._create_placeholder_panel(
-            title="Project",
-            body=(
-                "Project panel placeholder.\n"
-                "Open/load flows and tree wiring are introduced in T09/T10."
-            ),
-            object_name="shell.leftRegion",
-        )
-        self._project_placeholder_label = panel.findChild(QLabel, "shell.leftRegion.body")
+        panel = QWidget(self)
+        panel.setObjectName("shell.leftRegion")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title_label = QLabel("Project", panel)
+        title_label.setObjectName("shell.leftRegion.title")
+        layout.addWidget(title_label)
+
+        self._project_placeholder_label = QLabel("No project loaded.", panel)
+        self._project_placeholder_label.setObjectName("shell.leftRegion.body")
+        self._project_placeholder_label.setWordWrap(True)
+        layout.addWidget(self._project_placeholder_label)
+
+        self._project_tree_widget = QTreeWidget(panel)
+        self._project_tree_widget.setObjectName("shell.projectTree")
+        self._project_tree_widget.setHeaderHidden(True)
+        self._project_tree_widget.itemActivated.connect(self._handle_project_tree_item_activation)
+        self._project_tree_widget.itemClicked.connect(self._handle_project_tree_item_activation)
+        layout.addWidget(self._project_tree_widget, 1)
         return panel
 
     def _build_center_panel(self) -> QWidget:
-        return self._create_placeholder_panel(
-            title="Editor",
-            body=(
-                "Editor area placeholder.\n"
-                "Tabbed editing and file open behavior arrive in later tasks."
-            ),
-            object_name="shell.centerRegion",
-        )
+        self._editor_tabs_widget = QTabWidget(self)
+        self._editor_tabs_widget.setObjectName("shell.editorTabs")
+        self._editor_tabs_widget.currentChanged.connect(self._handle_editor_tab_changed)
+        return self._editor_tabs_widget
 
     def _build_bottom_panel(self) -> QWidget:
         tabs = QTabWidget(self)
@@ -225,3 +251,109 @@ class MainWindow(QMainWindow):
         layout.addWidget(title_label)
         layout.addWidget(body_label, 1)
         return panel
+
+    def _populate_project_tree(self, loaded_project: LoadedProject) -> None:
+        if self._project_tree_widget is None:
+            return
+
+        self._project_tree_widget.clear()
+        root_nodes = build_project_tree(loaded_project.entries)
+        for root_node in root_nodes:
+            root_item = self._build_tree_item(root_node)
+            self._project_tree_widget.addTopLevelItem(root_item)
+            if root_node.is_directory:
+                root_item.setExpanded(True)
+
+    def _build_tree_item(self, node: ProjectTreeNode) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([node.name])
+        item.setData(0, Qt.UserRole, node.absolute_path)
+        item.setData(0, Qt.UserRole + 1, node.is_directory)
+        item.setData(0, Qt.UserRole + 2, node.relative_path)
+
+        for child_node in node.children:
+            item.addChild(self._build_tree_item(child_node))
+        return item
+
+    def _handle_project_tree_item_activation(self, item: QTreeWidgetItem, _column: int) -> None:
+        is_directory = bool(item.data(0, Qt.UserRole + 1))
+        absolute_path = item.data(0, Qt.UserRole)
+        if is_directory or not absolute_path:
+            return
+        self._open_file_in_editor(str(absolute_path))
+
+    def _open_file_in_editor(self, file_path: str) -> bool:
+        if self._editor_tabs_widget is None:
+            return False
+
+        try:
+            opened_result = self._editor_manager.open_file(file_path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Unable to open file", str(exc))
+            return False
+
+        if opened_result.was_already_open:
+            existing_index = self._tab_index_for_path(opened_result.tab.file_path)
+            if existing_index >= 0:
+                self._editor_tabs_widget.setCurrentIndex(existing_index)
+            return True
+
+        editor_widget = QPlainTextEdit(self._editor_tabs_widget)
+        editor_widget.setObjectName("shell.editorTabs.textEditor")
+        editor_widget.setPlainText(opened_result.tab.current_content)
+        editor_widget.textChanged.connect(
+            lambda file_path=opened_result.tab.file_path, widget=editor_widget: self._handle_editor_text_changed(
+                file_path,
+                widget,
+            )
+        )
+        self._editor_widgets_by_path[opened_result.tab.file_path] = editor_widget
+
+        tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
+        self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+        self._editor_tabs_widget.setCurrentIndex(tab_index)
+        self._handle_editor_tab_changed(tab_index)
+        return True
+
+    def _tab_index_for_path(self, file_path: str) -> int:
+        if self._editor_tabs_widget is None:
+            return -1
+
+        normalized_path = str(Path(file_path).expanduser().resolve())
+        for index in range(self._editor_tabs_widget.count()):
+            if self._editor_tabs_widget.tabToolTip(index) == normalized_path:
+                return index
+        return -1
+
+    def _handle_editor_text_changed(self, file_path: str, editor_widget: QPlainTextEdit) -> None:
+        tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
+        if self._editor_tabs_widget is None:
+            return
+
+        tab_index = self._tab_index_for_path(tab_state.file_path)
+        if tab_index < 0:
+            return
+        suffix = " *" if tab_state.is_dirty else ""
+        self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+
+    def _handle_editor_tab_changed(self, tab_index: int) -> None:
+        if tab_index < 0 or self._editor_tabs_widget is None:
+            return
+
+        tab_path = self._editor_tabs_widget.tabToolTip(tab_index)
+        if not tab_path:
+            return
+        self._editor_manager.set_active_file(tab_path)
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return
+        if self._status_controller is not None:
+            self._status_controller.set_project_state_text(
+                f"Project: {self._loaded_project.metadata.name if self._loaded_project else 'none'} | "
+                f"File: {active_tab.display_name}"
+            )
+
+    def _reset_editor_tabs(self) -> None:
+        if self._editor_tabs_widget is not None:
+            self._editor_tabs_widget.clear()
+        self._editor_widgets_by_path.clear()
+        self._editor_manager = EditorManager()

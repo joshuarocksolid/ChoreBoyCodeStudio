@@ -207,7 +207,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: recents survive restart and remain stable when paths disappear.
 
 ### B03 — Add project tree view to left sidebar
-- Status: `TODO`
+- Status: `DONE`
 - Objective: show project files/folders in shell.
 - Scope:
   - add model/view bridge for `LoadedProject.entries`
@@ -224,7 +224,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: tree reflects project reliably and emits file selection events.
 
 ### B04 — Implement tabbed file open flow from project tree
-- Status: `TODO`
+- Status: `DONE`
 - Objective: open selected text files in editor tabs.
 - Scope:
   - add editor manager + tab model
