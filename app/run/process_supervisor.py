@@ -203,7 +203,7 @@ class ProcessSupervisor:
         self._join_reader_threads(reader_threads, timeout_seconds=0.2)
 
         seen_stream_ids: set[int] = set()
-        for stream in [*reader_streams, process.stdout, process.stderr]:
+        for stream in [*reader_streams, process.stdout, process.stderr, process.stdin]:
             if stream is None:
                 continue
             stream_id = id(stream)
