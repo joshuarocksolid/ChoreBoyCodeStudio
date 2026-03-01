@@ -47,7 +47,6 @@ from app.debug.debug_command_service import (
     step_over_command,
 )
 from app.debug.debug_session import DebugSession
-from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
@@ -85,6 +84,7 @@ from app.project.project_service import open_project
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
+from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.run_session_controller import RunSessionController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_shell_toolbar
@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
         )
         self._logger = get_subsystem_logger("shell")
         self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
+        self._project_tree_controller = ProjectTreeController()
 
         self._configure_window_frame()
         self._build_layout_shell()
@@ -1566,82 +1567,62 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
     def _close_deleted_editor_paths(self, deleted_path: str) -> None:
-        deleted_resolved = str(Path(deleted_path).resolve())
-        for open_path in list(self._editor_widgets_by_path.keys()):
-            if open_path == deleted_resolved or open_path.startswith(f"{deleted_resolved}/"):
-                widget = self._editor_widgets_by_path.pop(open_path)
-                tab_index = self._tab_index_for_path(open_path)
-                if self._editor_tabs_widget is not None and tab_index >= 0:
-                    self._editor_tabs_widget.removeTab(tab_index)
-                widget.deleteLater()
-                self._editor_manager.close_file(open_path)
-                self._breakpoints_by_file.pop(open_path, None)
-        self._refresh_breakpoints_list()
+        self._project_tree_controller.close_deleted_editor_paths(
+            deleted_path,
+            editor_widgets_by_path=self._editor_widgets_by_path,
+            tab_index_for_path=self._tab_index_for_path,
+            remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
+            if self._editor_tabs_widget is not None
+            else None,
+            release_editor_widget=lambda widget: widget.deleteLater(),
+            close_editor_file=self._editor_manager.close_file,
+            breakpoints_by_file=self._breakpoints_by_file,
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+        )
 
     def _apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
-        remapped_paths = self._editor_manager.remap_paths_for_move(source_path, destination_path)
-        for old_path, new_path in remapped_paths.items():
-            widget = self._editor_widgets_by_path.pop(old_path, None)
-            if widget is None:
-                continue
-            self._editor_widgets_by_path[new_path] = widget
-            tab_index = self._tab_index_for_path(old_path)
-            if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._editor_tabs_widget.setTabToolTip(tab_index, new_path)
-                self._editor_tabs_widget.setTabText(tab_index, Path(new_path).name)
-            breakpoints = self._breakpoints_by_file.pop(old_path, None)
-            if breakpoints is not None:
-                self._breakpoints_by_file[new_path] = breakpoints
-                widget.set_breakpoints(breakpoints)
-            widget.set_language_for_path(new_path)
+        self._project_tree_controller.apply_path_move_updates(
+            source_path,
+            destination_path,
+            remap_editor_paths=self._editor_manager.remap_paths_for_move,
+            editor_widgets_by_path=self._editor_widgets_by_path,
+            tab_index_for_path=self._tab_index_for_path,
+            update_tab_path_and_name=lambda tab_index, new_path: self._update_tab_path_and_name(tab_index, new_path),
+            breakpoints_by_file=self._breakpoints_by_file,
+            apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
+            update_widget_language=lambda widget, new_path: widget.set_language_for_path(new_path),
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+            maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
+        )
 
-        self._refresh_breakpoints_list()
-
-        self._maybe_rewrite_imports_for_move(source_path, destination_path)
+    def _update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        self._editor_tabs_widget.setTabToolTip(tab_index, new_path)
+        self._editor_tabs_widget.setTabText(tab_index, Path(new_path).name)
 
     def _maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:
-        if self._loaded_project is None:
-            return
-        source = Path(source_path).resolve()
-        destination = Path(destination_path).resolve()
-        if source.suffix != ".py" and destination.suffix != ".py":
-            return
-        project_root = Path(self._loaded_project.project_root).resolve()
-        try:
-            old_relative = source.relative_to(project_root).as_posix()
-            new_relative = destination.relative_to(project_root).as_posix()
-        except ValueError:
-            return
+        self._project_tree_controller.maybe_rewrite_imports_for_move(
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            source_path=source_path,
+            destination_path=destination_path,
+            resolve_policy_for_operation=self._resolve_import_update_policy_for_operation,
+            request_confirmation=self._request_import_rewrite_confirmation,
+            show_warning=lambda details: self._show_import_update_warning(details),
+        )
 
-        previews = plan_import_rewrites(self._loaded_project.project_root, old_relative, new_relative)
-        if not previews:
-            return
+    def _request_import_rewrite_confirmation(self, message: str) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Update imports?",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return answer == QMessageBox.Yes
 
-        policy = self._resolve_import_update_policy_for_operation()
-        if policy == ImportUpdatePolicy.NEVER:
-            return
-        if policy == ImportUpdatePolicy.ASK:
-            details = "\n".join(
-                f"- {Path(preview.file_path).name}: lines {', '.join(str(line) for line in preview.changed_line_numbers)}"
-                for preview in previews[:10]
-            )
-            answer = QMessageBox.question(
-                self,
-                "Update imports?",
-                (
-                    f"Update imports for moved module?\n\n"
-                    f"{len(previews)} file(s) would be modified.\n{details}"
-                ),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if answer != QMessageBox.Yes:
-                return
-
-        try:
-            apply_import_rewrites(previews)
-        except OSError as exc:
-            QMessageBox.warning(self, "Import update failed", f"Could not rewrite imports: {exc}")
+    def _show_import_update_warning(self, details: str) -> None:
+        QMessageBox.warning(self, "Import update failed", details)
 
     def _resolve_import_update_policy_for_operation(self) -> ImportUpdatePolicy:
         if self._import_update_policy != ImportUpdatePolicy.ASK:
