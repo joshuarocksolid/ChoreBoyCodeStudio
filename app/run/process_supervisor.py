@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import signal
 import subprocess
 import threading
 from typing import Callable, Literal, Mapping
@@ -99,6 +100,18 @@ class ProcessSupervisor:
             process.kill()
             process.wait()
         return process.returncode
+
+    def pause(self) -> bool:
+        """Request an interrupt signal for active process."""
+        with self._lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            return False
+        try:
+            process.send_signal(signal.SIGINT)
+        except OSError as exc:
+            raise RunLifecycleError(f"Failed to pause runner process: {exc}") from exc
+        return True
 
     def send_input(self, text: str) -> None:
         """Send text to active process stdin."""

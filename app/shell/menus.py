@@ -47,6 +47,7 @@ class MenuCallbacks:
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
+    on_pause_debug: Callable[[], object] | None = None
     on_step_over: Callable[[], object] | None = None
     on_step_into: Callable[[], object] | None = None
     on_step_out: Callable[[], object] | None = None
@@ -283,6 +284,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Continue",
         "F6",
         callback=callback_registry.on_continue_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pause",
+        "Pause",
+        "Ctrl+F6",
+        callback=callback_registry.on_pause_debug,
     )
     _register_menu_action(
         run_menu,

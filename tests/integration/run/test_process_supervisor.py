@@ -68,3 +68,23 @@ def test_process_supervisor_send_input_writes_to_child_stdin(tmp_path) -> None:
 
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
     assert any(event.event_type == "output" and "ECHO:hello" in (event.text or "") for event in events)
+
+
+def test_process_supervisor_pause_interrupts_active_process(tmp_path) -> None:
+    """Pause should send interrupt signal to active process."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [
+        sys.executable,
+        "-c",
+        "import time; print('READY', flush=True); time.sleep(30)",
+    ]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: supervisor.is_running())
+
+    assert supervisor.pause() is True
+    assert _wait_until(
+        lambda: any(event.event_type == "exit" and (event.return_code or 0) != 0 for event in events),
+        timeout_seconds=5.0,
+    )

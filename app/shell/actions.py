@@ -14,6 +14,7 @@ class RunActionState:
     stop_enabled: bool
     restart_enabled: bool
     continue_enabled: bool
+    pause_enabled: bool
     step_over_enabled: bool
     step_into_enabled: bool
     step_out_enabled: bool
@@ -36,6 +37,7 @@ def map_run_action_state(
             stop_enabled=False,
             restart_enabled=False,
             continue_enabled=False,
+            pause_enabled=False,
             step_over_enabled=False,
             step_into_enabled=False,
             step_out_enabled=False,
@@ -50,6 +52,7 @@ def map_run_action_state(
             stop_enabled=True,
             restart_enabled=is_debug_mode,
             continue_enabled=is_debug_mode and is_debug_paused,
+            pause_enabled=is_debug_mode and not is_debug_paused,
             step_over_enabled=is_debug_mode and is_debug_paused,
             step_into_enabled=is_debug_mode and is_debug_paused,
             step_out_enabled=is_debug_mode and is_debug_paused,
@@ -62,6 +65,7 @@ def map_run_action_state(
         stop_enabled=False,
         restart_enabled=False,
         continue_enabled=False,
+        pause_enabled=False,
         step_over_enabled=False,
         step_into_enabled=False,
         step_out_enabled=False,

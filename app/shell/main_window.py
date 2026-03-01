@@ -74,8 +74,9 @@ from app.shell.layout_persistence import (
 )
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import tokens_from_palette
-from app.project.project_tree import ProjectTreeNode, build_project_tree
+from app.project.project_tree import build_project_tree
 from app.project.project_tree_widget import ProjectTreeWidget
+from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.project.project_service import open_project, open_project_and_track_recent
@@ -157,6 +158,7 @@ class MainWindow(QMainWindow):
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
                 on_continue_debug=self._handle_continue_debug_action,
+                on_pause_debug=self._handle_pause_debug_action,
                 on_step_over=self._handle_step_over_action,
                 on_step_into=self._handle_step_into_action,
                 on_step_out=self._handle_step_out_action,
@@ -769,6 +771,18 @@ class MainWindow(QMainWindow):
             return
         self._send_runner_input(continue_command())
 
+    def _handle_pause_debug_action(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+        try:
+            paused = self._run_service.pause_run()
+        except Exception as exc:
+            QMessageBox.warning(self, "Pause failed", str(exc))
+            return
+        if paused:
+            self._append_python_console_line("[debug] Pause requested.")
+            self._append_debug_output_line("[debug] Pause requested.")
+
     def _handle_step_over_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
@@ -953,6 +967,7 @@ class MainWindow(QMainWindow):
         stop_action = self._menu_registry.action("shell.action.run.stop")
         restart_action = self._menu_registry.action("shell.action.run.restart")
         continue_action = self._menu_registry.action("shell.action.run.continue")
+        pause_action = self._menu_registry.action("shell.action.run.pause")
         step_over_action = self._menu_registry.action("shell.action.run.stepOver")
         step_into_action = self._menu_registry.action("shell.action.run.stepInto")
         step_out_action = self._menu_registry.action("shell.action.run.stepOut")
@@ -975,6 +990,8 @@ class MainWindow(QMainWindow):
             restart_action.setEnabled(state.restart_enabled)
         if continue_action is not None:
             continue_action.setEnabled(state.continue_enabled)
+        if pause_action is not None:
+            pause_action.setEnabled(state.pause_enabled)
         if step_over_action is not None:
             step_over_action.setEnabled(state.step_over_enabled)
         if step_into_action is not None:
@@ -1345,14 +1362,15 @@ class MainWindow(QMainWindow):
 
         self._project_tree_widget.clear()
         root_nodes = build_project_tree(loaded_project.entries)
-        for root_node in root_nodes:
-            root_item = self._build_tree_item(root_node)
+        display_nodes = build_project_tree_display(root_nodes)
+        for display_node in display_nodes:
+            root_item = self._build_tree_item(display_node)
             self._project_tree_widget.addTopLevelItem(root_item)
-            if root_node.is_directory:
+            if display_node.is_directory:
                 root_item.setExpanded(True)
 
-    def _build_tree_item(self, node: ProjectTreeNode) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([node.name])
+    def _build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([node.display_label])
         item.setData(0, TREE_ROLE_ABSOLUTE_PATH, node.absolute_path)
         item.setData(0, TREE_ROLE_IS_DIRECTORY, node.is_directory)
         item.setData(0, TREE_ROLE_RELATIVE_PATH, node.relative_path)

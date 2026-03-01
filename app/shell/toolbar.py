@@ -31,6 +31,7 @@ def build_shell_toolbar(main_window: Any, menu_registry: MenuStubRegistry | None
     toolbar.addSeparator()
     for action_id in (
         "shell.action.run.continue",
+        "shell.action.run.pause",
         "shell.action.run.stepOver",
         "shell.action.run.stepInto",
         "shell.action.run.stepOut",

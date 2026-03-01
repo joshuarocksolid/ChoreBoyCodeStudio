@@ -63,6 +63,7 @@ def test_build_shell_toolbar_adds_expected_action_order(monkeypatch: pytest.Monk
         "shell.action.run.restart": _FakeAction("restart"),
         "shell.action.run.pythonConsole": _FakeAction("pythonConsole"),
         "shell.action.run.continue": _FakeAction("continue"),
+        "shell.action.run.pause": _FakeAction("pause"),
         "shell.action.run.stepOver": _FakeAction("stepOver"),
         "shell.action.run.stepInto": _FakeAction("stepInto"),
         "shell.action.run.stepOut": _FakeAction("stepOut"),
@@ -78,4 +79,4 @@ def test_build_shell_toolbar_adds_expected_action_order(monkeypatch: pytest.Monk
     assert toolbar.object_name == "shell.toolbar.runDebug"
     action_ids = [entry.action_id for entry in toolbar.actions if isinstance(entry, _FakeAction)]
     assert action_ids[0:5] == ["run", "debug", "stop", "restart", "pythonConsole"]
-    assert action_ids[5:] == ["continue", "stepOver", "stepInto", "stepOut", "toggleBreakpoint"]
+    assert action_ids[5:] == ["continue", "pause", "stepOver", "stepInto", "stepOut", "toggleBreakpoint"]

@@ -29,6 +29,7 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
     assert registry is not None
     assert registry.action("shell.action.run.run") is not None
     assert registry.action("shell.action.run.debug") is not None
+    assert registry.action("shell.action.run.pause") is not None
     assert registry.action("shell.action.run.stepOver") is not None
     assert registry.action("shell.action.run.toggleBreakpoint") is not None
 
@@ -46,7 +47,9 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
     debug_action = registry.action("shell.action.run.debug")
     stop_action = registry.action("shell.action.run.stop")
     python_console_action = registry.action("shell.action.run.pythonConsole")
+    pause_action = registry.action("shell.action.run.pause")
     assert run_action.isEnabled() is True
     assert debug_action.isEnabled() is True
     assert stop_action.isEnabled() is False
     assert python_console_action.isEnabled() is True
+    assert pause_action.isEnabled() is False

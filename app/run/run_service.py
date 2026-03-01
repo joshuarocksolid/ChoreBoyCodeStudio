@@ -122,6 +122,10 @@ class RunService:
         """Stop active run process if running."""
         return self._supervisor.stop()
 
+    def pause_run(self) -> bool:
+        """Interrupt active run process to enter paused/debug interaction."""
+        return self._supervisor.pause()
+
     def send_input(self, text: str) -> None:
         """Send stdin input to active runner process."""
         self._supervisor.send_input(text)
