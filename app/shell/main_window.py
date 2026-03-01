@@ -84,6 +84,7 @@ from app.project.file_operations import copy_path, create_directory, create_file
 from app.project.project_service import open_project, open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
 from app.shell.actions import map_run_action_state
+from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_shell_toolbar
@@ -150,6 +151,9 @@ class MainWindow(QMainWindow):
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
+        self._background_tasks = BackgroundTaskRunner(
+            dispatch_to_main_thread=lambda callback: QTimer.singleShot(0, callback)
+        )
         self._logger = get_subsystem_logger("shell")
 
         self._configure_window_frame()
@@ -488,38 +492,62 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Go To Definition", "Open a file tab first.")
             return
         symbol_name = editor_widget.word_under_cursor()
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
-        lookup = lookup_definition_with_cache(
-            project_root=self._loaded_project.project_root,
-            current_file_path=active_tab.file_path,
-            symbol_name=symbol_name,
-            cache_db_path=str(cache_db),
-        )
-        if not lookup.found:
-            QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
+        if not symbol_name:
+            QMessageBox.information(self, "Go To Definition", "Place cursor on a symbol first.")
             return
-        location = lookup.locations[0]
-        self._open_file_at_line(location.file_path, location.line_number)
+        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
+        project_root = self._loaded_project.project_root
+        current_file_path = active_tab.file_path
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return lookup_definition_with_cache(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                symbol_name=symbol_name,
+                cache_db_path=str(cache_db),
+            )
+
+        def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
+            if not lookup.found:
+                QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
+                return
+            location = lookup.locations[0]
+            self._open_file_at_line(location.file_path, location.line_number)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
+
+        self._background_tasks.run(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Analyze Imports", "Open a project first.")
             return
-        diagnostics = find_unresolved_imports(self._loaded_project.project_root)
-        if self._problems_list_widget is None:
-            return
-        self._problems_list_widget.clear()
-        if not diagnostics:
-            self._problems_list_widget.addItem(QListWidgetItem("No unresolved project-local imports found."))
-            return
-        for diagnostic in diagnostics:
-            item = QListWidgetItem(
-                f"{Path(diagnostic.file_path).name}:{diagnostic.line_number} | {diagnostic.message}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+        project_root = self._loaded_project.project_root
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return find_unresolved_imports(project_root)
+
+        def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
+            if self._problems_list_widget is None:
+                return
+            self._problems_list_widget.clear()
+            if not diagnostics:
+                self._problems_list_widget.addItem(QListWidgetItem("No unresolved project-local imports found."))
+                return
+            for diagnostic in diagnostics:
+                item = QListWidgetItem(
+                    f"{Path(diagnostic.file_path).name}:{diagnostic.line_number} | {diagnostic.message}",
+                    self._problems_list_widget,
+                )
+                item.setToolTip(diagnostic.file_path)
+                item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+                item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Analyze Imports", f"Import analysis failed: {exc}")
+
+        self._background_tasks.run(key="analyze_imports", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_show_outline_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -923,37 +951,61 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Health check unavailable", "Open a project before running diagnostics.")
             return
 
-        report = run_project_health_check(self._loaded_project.project_root, state_root=self._state_root)
-        self._latest_health_report = report
-        failed_checks = [check for check in report.checks if not check.is_ok]
-        summary_lines = [
-            f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
-            for check in report.checks
-        ]
-        summary_text = "\n".join(summary_lines)
-        if failed_checks:
-            QMessageBox.warning(self, "Project health check", summary_text)
-        else:
-            QMessageBox.information(self, "Project health check", summary_text)
+        project_root = self._loaded_project.project_root
+        state_root = self._state_root
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_project_health_check(project_root, state_root=state_root)
+
+        def on_success(report) -> None:  # type: ignore[no-untyped-def]
+            self._latest_health_report = report
+            failed_checks = [check for check in report.checks if not check.is_ok]
+            summary_lines = [
+                f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
+                for check in report.checks
+            ]
+            summary_text = "\n".join(summary_lines)
+            if failed_checks:
+                QMessageBox.warning(self, "Project health check", summary_text)
+            else:
+                QMessageBox.information(self, "Project health check", summary_text)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Project health check", f"Health check failed: {exc}")
+
+        self._background_tasks.run(key="project_health_check", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_generate_support_bundle_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Support bundle unavailable", "Open a project before generating support bundle.")
             return
-        if self._latest_health_report is None:
-            self._latest_health_report = run_project_health_check(
-                self._loaded_project.project_root,
-                state_root=self._state_root,
-            )
+        project_root = self._loaded_project.project_root
+        state_root = self._state_root
+        latest_report = self._latest_health_report
+        latest_run_log_path = self._resolve_latest_run_log_path()
 
-        bundle_path = build_support_bundle(
-            self._loaded_project.project_root,
-            diagnostics_report=self._latest_health_report,
-            last_run_log_path=self._resolve_latest_run_log_path(),
-            state_root=self._state_root,
-            destination_dir=self._loaded_project.project_root,
-        )
-        QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            report = latest_report
+            if report is None:
+                report = run_project_health_check(project_root, state_root=state_root)
+            bundle_path = build_support_bundle(
+                project_root,
+                diagnostics_report=report,
+                last_run_log_path=latest_run_log_path,
+                state_root=state_root,
+                destination_dir=project_root,
+            )
+            return (report, bundle_path)
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            report, bundle_path = payload
+            self._latest_health_report = report
+            QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Support bundle", f"Support bundle generation failed: {exc}")
+
+        self._background_tasks.run(key="support_bundle", task=task, on_success=on_success, on_error=on_error)
 
     def _resolve_latest_run_log_path(self) -> str | None:
         if self._active_run_session_log_path and Path(self._active_run_session_log_path).exists():
@@ -1176,6 +1228,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
+            self._background_tasks.cancel_all()
             self._flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
