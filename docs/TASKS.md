@@ -273,7 +273,7 @@ Opening an existing project is part of the very first MVP workflow.
 ---
 
 ### T08 — Implement recent projects persistence
-**Status:** TODO
+**Status:** DONE
 
 **Goal:**  
 Track and restore recent projects.

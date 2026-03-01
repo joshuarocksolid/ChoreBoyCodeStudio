@@ -1,0 +1,68 @@
+"""Unit tests for JSON-backed persistence helpers."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from app.persistence.settings_store import load_json_object, save_json_object
+
+pytestmark = pytest.mark.unit
+
+
+def test_load_json_object_returns_default_copy_when_file_missing(tmp_path: Path) -> None:
+    """Missing files should return a safe default object."""
+    default_payload = {"items": []}
+    payload = load_json_object(tmp_path / "missing.json", default=default_payload)
+
+    assert payload == {"items": []}
+    assert payload is not default_payload
+
+
+def test_load_json_object_returns_default_copy_when_json_is_corrupt(tmp_path: Path) -> None:
+    """Corrupt JSON should fail gracefully and return default content."""
+    path = tmp_path / "state" / "corrupt.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{ not json", encoding="utf-8")
+
+    payload = load_json_object(path, default={"schema_version": 1, "projects": []})
+
+    assert payload == {"schema_version": 1, "projects": []}
+
+
+def test_load_json_object_returns_default_copy_when_json_root_is_not_object(tmp_path: Path) -> None:
+    """JSON payload roots must be object-shaped for deterministic callers."""
+    path = tmp_path / "state" / "array.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(["bad", "shape"]), encoding="utf-8")
+
+    payload = load_json_object(path, default={"schema_version": 1})
+
+    assert payload == {"schema_version": 1}
+
+
+def test_save_json_object_creates_parent_dirs_and_writes_deterministic_json(tmp_path: Path) -> None:
+    """Saving should ensure parent dirs and persist stable UTF-8 JSON."""
+    path = tmp_path / "state" / "nested" / "settings.json"
+    payload = {
+        "schema_version": 1,
+        "projects": ["/tmp/beta", "/tmp/alpha"],
+    }
+
+    saved_path = save_json_object(path, payload)
+
+    assert saved_path == path.resolve()
+    assert path.exists()
+    assert json.loads(path.read_text(encoding="utf-8")) == payload
+    expected_text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    assert path.read_text(encoding="utf-8") == expected_text
+
+
+def test_save_json_object_rejects_non_mapping_payload(tmp_path: Path) -> None:
+    """Saving non-object payloads should raise a clear error."""
+    path = tmp_path / "state" / "bad.json"
+
+    with pytest.raises(ValueError):
+        save_json_object(path, ["not", "an", "object"])  # type: ignore[arg-type]

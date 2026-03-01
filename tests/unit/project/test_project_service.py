@@ -9,11 +9,13 @@ import pytest
 
 from app.core.errors import ProjectManifestValidationError, ProjectStructureValidationError
 from app.core.models import LoadedProject
+from app.project import project_service
 from app.project.project_service import (
     enumerate_project_entries,
     open_project,
     validate_project_structure,
 )
+from app.project.recent_projects import load_recent_projects, remember_recent_project
 
 pytestmark = pytest.mark.unit
 
@@ -132,6 +134,30 @@ def test_enumerate_project_entries_is_deterministic_and_excludes_cbcs(tmp_path: 
         "run.py",
     ]
     assert all(not entry.relative_path.startswith(".cbcs") for entry in first)
+
+
+def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:
+    """Successful open should persist project path into recent projects."""
+    project_root = tmp_path / "tracked_project"
+    _write_valid_manifest(project_root, name="Tracked Project")
+
+    loaded_project = project_service.open_project_and_track_recent(project_root, state_root=tmp_path / "state")
+
+    assert loaded_project.project_root == str(project_root.resolve())
+    assert load_recent_projects(state_root=tmp_path / "state") == [str(project_root.resolve())]
+
+
+def test_open_project_and_track_recent_does_not_mutate_recents_on_failure(tmp_path: Path) -> None:
+    """Failed open should leave the existing recent-project list unchanged."""
+    state_root = tmp_path / "state"
+    valid_project = tmp_path / "valid_project"
+    _write_valid_manifest(valid_project, name="Valid Project")
+    remember_recent_project(valid_project, state_root=state_root)
+
+    with pytest.raises(ProjectStructureValidationError):
+        project_service.open_project_and_track_recent(tmp_path / "missing_project", state_root=state_root)
+
+    assert load_recent_projects(state_root=state_root) == [str(valid_project.resolve())]
 
 
 def _write_valid_manifest(project_root: Path, *, name: str) -> Path:

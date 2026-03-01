@@ -27,6 +27,26 @@ def open_project(project_root: PathInput) -> LoadedProject:
     )
 
 
+def open_project_and_track_recent(
+    project_root: PathInput,
+    *,
+    state_root: PathInput | None = None,
+    max_recent_entries: int | None = None,
+) -> LoadedProject:
+    """Open a project and update persisted recents only after success."""
+    loaded_project = open_project(project_root)
+
+    # Local import keeps the recents module decoupled from service module import order.
+    from app.project.recent_projects import DEFAULT_MAX_RECENT_PROJECTS, remember_recent_project
+
+    remember_recent_project(
+        loaded_project.project_root,
+        state_root=state_root,
+        max_entries=DEFAULT_MAX_RECENT_PROJECTS if max_recent_entries is None else max_recent_entries,
+    )
+    return loaded_project
+
+
 def validate_project_structure(project_root: PathInput) -> Path:
     """Validate required on-disk project shape and return resolved root path."""
     try:
