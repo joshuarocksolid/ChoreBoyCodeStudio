@@ -624,7 +624,152 @@ Verify field-support workflow.
 
 ---
 
-## 10. Minimum MVP Gate
+## 10. Post-MVP UX and Debug Acceptance Tests
+
+## AT-25 — Split layout defaults and persistence
+
+**Purpose:**  
+Verify editor/tree/output pane proportions are practical on first launch and persist after user adjustment.
+
+**Preconditions:**  
+- editor can launch with a writable settings path
+
+**Steps:**  
+1. Launch editor on a clean settings profile.
+2. Verify initial tree/editor split is editor-favoring.
+3. Adjust splitter positions.
+4. Close and relaunch editor.
+
+**Expected Result:**  
+- initial default layout is productive (tree not oversized)
+- adjusted layout is restored on relaunch
+- reset-layout action restores known-good defaults
+
+---
+
+## AT-26 — Interactive Python console input/output
+
+**Purpose:**  
+Verify users can execute interactive Python commands in a dedicated console session.
+
+**Preconditions:**  
+- valid project is open
+
+**Steps:**  
+1. Start Python Console mode.
+2. Submit commands (e.g., `x = 2`, `print(x + 3)`).
+3. Exit console session.
+
+**Expected Result:**  
+- submitted commands are accepted via stdin bridge
+- output appears in console transcript
+- session terminates cleanly on exit/stop
+
+---
+
+## AT-27 — Project tree file operations parity
+
+**Purpose:**  
+Verify modern explorer actions are available and reliable from the project tree.
+
+**Preconditions:**  
+- project with nested files/folders is open
+
+**Steps:**  
+1. Use tree context menu for create/rename/delete/duplicate.
+2. Use cut/copy/paste and drag-drop move.
+3. Use copy path / copy relative path / reveal in file manager.
+
+**Expected Result:**  
+- filesystem operations complete successfully with clear confirmations on destructive actions
+- tree refreshes to reflect resulting state
+- path copy actions return correct values
+
+---
+
+## AT-28 — Move/rename import rewrite policy behavior
+
+**Purpose:**  
+Verify Python import update workflow and policy controls for file move/rename.
+
+**Preconditions:**  
+- project has at least two Python modules with imports between them
+
+**Steps:**  
+1. Move/rename an imported module.
+2. Validate policy prompt default is **Ask every time**.
+3. Select Always and verify persistence on next move.
+4. Select Never and verify rewrites are skipped.
+
+**Expected Result:**  
+- Ask/Always/Never policy works as documented
+- import rewrites are previewed and applied only when permitted
+- no silent overwrite or hidden partial refactor behavior
+
+---
+
+## AT-29 — Run/Debug top toolbar usability
+
+**Purpose:**  
+Verify top-of-window Run/Debug controls are discoverable and state-coherent.
+
+**Preconditions:**  
+- project is open
+
+**Steps:**  
+1. Use toolbar to run and stop a normal script.
+2. Start debug session.
+3. Verify stepping/continue controls enable only when paused.
+
+**Expected Result:**  
+- run/debug controls are visible and functional
+- invalid actions are disabled by state
+- toolbar behavior matches menu shortcuts
+
+---
+
+## AT-30 — Breakpoints and stepping workflow
+
+**Purpose:**  
+Verify practical debugging via gutter breakpoints and step controls.
+
+**Preconditions:**  
+- debug-eligible Python project open
+
+**Steps:**  
+1. Toggle breakpoint from editor gutter.
+2. Start Debug.
+3. Confirm execution pauses at breakpoint.
+4. Use continue/step commands and observe progress.
+
+**Expected Result:**  
+- breakpoints are honored by runner debug mode
+- paused/running transitions are visible
+- stepping commands function without crashing editor
+
+---
+
+## AT-31 — Debug inspection and watch evaluation
+
+**Purpose:**  
+Verify variable/stack inspection affordances in debug workflows.
+
+**Preconditions:**  
+- active paused debug session
+
+**Steps:**  
+1. Use debug inspector actions to request stack and locals.
+2. Add watch expressions and evaluate.
+3. Continue and stop debug session.
+
+**Expected Result:**  
+- inspector output updates with stack/locals command results
+- watch expressions can be evaluated in paused context
+- debug session exits cleanly and editor remains stable
+
+---
+
+## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -646,7 +791,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 11. Completion Rule
+## 12. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -660,7 +805,7 @@ A feature is complete only when:
 
 ---
 
-## 12. Maintenance Rules
+## 13. Maintenance Rules
 
 Update this file when:
 

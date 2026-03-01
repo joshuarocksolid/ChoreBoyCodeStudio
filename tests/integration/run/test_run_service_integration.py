@@ -108,3 +108,33 @@ def test_run_service_python_repl_supports_input_and_output(tmp_path: Path) -> No
 
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
     assert any(event.event_type == "output" and "REPL_OK" in (event.text or "") for event in events)
+
+
+def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) -> None:
+    """Debug mode should pause on configured breakpoint and resume via stdin command."""
+    project_root = tmp_path / "project"
+    (project_root / ".cbcs").mkdir(parents=True)
+    script_path = project_root / "run.py"
+    script_path.write_text("value = 41\nvalue = value + 1\nprint(value)\n", encoding="utf-8")
+    loaded_project = _build_loaded_project(project_root)
+
+    events: list[ProcessEvent] = []
+    service = RunService(
+        on_event=events.append,
+        runtime_executable=None,
+        runner_boot_path=str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve()),
+    )
+
+    service.start_run(
+        loaded_project,
+        mode=constants.RUN_MODE_PYTHON_DEBUG,
+        breakpoints=[{"file_path": str(script_path.resolve()), "line_number": 2}],
+    )
+    assert _wait_until(lambda: service.supervisor.is_running())
+    assert _wait_until(lambda: service.is_debug_paused, timeout_seconds=8.0)
+
+    service.send_input("continue\n")
+    # First continue may advance from initial debugger stop to configured breakpoint.
+    service.send_input("continue\n")
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
+    assert any(event.event_type == "output" and "42" in (event.text or "") for event in events)

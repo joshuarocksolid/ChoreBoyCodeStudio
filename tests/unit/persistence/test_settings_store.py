@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core import constants
 from app.persistence.settings_store import load_json_object, save_json_object
 
 pytestmark = pytest.mark.unit
@@ -66,3 +67,12 @@ def test_save_json_object_rejects_non_mapping_payload(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         save_json_object(path, ["not", "an", "object"])  # type: ignore[arg-type]
+
+
+def test_settings_payload_can_store_import_update_policy_key(tmp_path: Path) -> None:
+    """Import update policy should round-trip through generic settings store."""
+    path = tmp_path / "state" / "settings.json"
+    payload = {"schema_version": 1, constants.UI_IMPORT_UPDATE_POLICY_KEY: "ask"}
+    save_json_object(path, payload)
+    loaded = load_json_object(path, default={"schema_version": 1})
+    assert loaded[constants.UI_IMPORT_UPDATE_POLICY_KEY] == "ask"

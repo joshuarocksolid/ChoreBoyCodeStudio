@@ -90,6 +90,37 @@ class EditorManager:
             saved_tabs.append(tab)
         return saved_tabs
 
+    def close_file(self, file_path: str) -> None:
+        """Close an open file tab if it exists."""
+        normalized_path = str(Path(file_path).expanduser().resolve())
+        if normalized_path not in self._tabs_by_path:
+            return
+        self._tabs_by_path.pop(normalized_path, None)
+        self._open_order = [path for path in self._open_order if path != normalized_path]
+        if self._active_file_path == normalized_path:
+            self._active_file_path = self._open_order[-1] if self._open_order else None
+
+    def remap_paths_for_move(self, source_path: str, destination_path: str) -> dict[str, str]:
+        """Remap open tab paths after file/folder move and return old->new map."""
+        source = str(Path(source_path).expanduser().resolve())
+        destination = str(Path(destination_path).expanduser().resolve())
+        remapped: dict[str, str] = {}
+        existing_paths = list(self._tabs_by_path.keys())
+        for old_path in existing_paths:
+            if old_path != source and not old_path.startswith(f"{source}/"):
+                continue
+            suffix = old_path[len(source) :]
+            new_path = f"{destination}{suffix}"
+            tab = self._tabs_by_path.pop(old_path)
+            tab.file_path = new_path
+            tab.display_name = Path(new_path).name
+            self._tabs_by_path[new_path] = tab
+            remapped[old_path] = new_path
+            self._open_order = [new_path if path == old_path else path for path in self._open_order]
+            if self._active_file_path == old_path:
+                self._active_file_path = new_path
+        return remapped
+
     def _require_tab(self, file_path: str) -> EditorTabState:
         normalized_path = str(Path(file_path).expanduser().resolve())
         tab = self._tabs_by_path.get(normalized_path)

@@ -36,6 +36,8 @@ class MenuCallbacks:
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
     on_find_in_files: Callable[[], object] | None = None
+    on_go_to_definition: Callable[[], object] | None = None
+    on_analyze_imports: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
@@ -198,6 +200,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         enabled=True,
         callback=callback_registry.on_find_in_files,
     )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.goToDefinition",
+        "Go To Definition",
+        "F12",
+        enabled=True,
+        callback=callback_registry.on_go_to_definition,
+    )
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
@@ -304,6 +315,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
     _register_menu_action(tools_menu, actions, "shell.action.tools.lintCurrentFile", "Lint Current File")
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.analyzeImports",
+        "Analyze Imports",
+        enabled=True,
+        callback=callback_registry.on_analyze_imports,
+    )
     _register_menu_action(
         tools_menu,
         actions,

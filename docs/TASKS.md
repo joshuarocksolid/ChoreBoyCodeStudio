@@ -805,3 +805,104 @@ MVP is achieved only when the following are demonstrably true on target-like run
 
 Until then, polish work is secondary.
 
+---
+
+## 15) Post-MVP UX2 Enhancements (2026-03-01)
+
+Release class default for this section: `RELEASE-CRITICAL` unless noted.
+
+### G01 — Layout persistence and reset ergonomics
+- Status: `DONE`
+- Objective: persist splitter/window layout and restore productive defaults.
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/shell/layout_persistence.py`
+  - `app/persistence/settings_store.py`
+  - `tests/unit/shell/test_layout_persistence.py`
+- Validation:
+  - automated: unit + integration suite pass
+  - manual: layout can be reset and persisted between sessions
+
+### G02 — Interactive Python console mode
+- Status: `DONE`
+- Objective: enable stdin-backed interactive console session in runner process.
+- Primary files:
+  - `app/run/process_supervisor.py`
+  - `app/run/run_manifest.py`
+  - `app/run/run_service.py`
+  - `app/runner/runner_main.py`
+  - `app/shell/main_window.py`
+  - `tests/integration/run/test_run_service_integration.py`
+- Validation:
+  - REPL input/output covered by integration tests
+
+### G03 — Run/Debug top toolbar and lifecycle controls
+- Status: `DONE`
+- Objective: expose run/debug controls in a top command bar with state-aware enablement.
+- Primary files:
+  - `app/shell/toolbar.py`
+  - `app/shell/actions.py`
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_actions.py`
+
+### G04 — File tree parity operations
+- Status: `DONE`
+- Objective: tree context-menu operations (create/rename/delete/copy/cut/paste/duplicate/path copy/reveal) and drag-drop move callback support.
+- Primary files:
+  - `app/project/file_operations.py`
+  - `app/project/file_operation_models.py`
+  - `app/project/project_tree_widget.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/project/test_file_operations.py`
+
+### G05 — Import rewrite policy with Ask/Always/Never
+- Status: `DONE`
+- Objective: update Python imports on module move/rename with default Ask policy and optional persisted Always/Never preference.
+- Primary files:
+  - `app/intelligence/import_rewrite.py`
+  - `app/shell/main_window.py`
+  - `app/core/constants.py`
+  - `tests/unit/intelligence/test_import_rewrite.py`
+  - `tests/unit/persistence/test_settings_store.py`
+
+### G06 — Code pane modernization foundation
+- Status: `DONE`
+- Objective: add code editor widget with line numbers, current-line highlighting, syntax highlighting, breadcrumbs, and breakpoint gutter.
+- Primary files:
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/syntax_python.py`
+  - `app/editors/syntax_json.py`
+  - `app/editors/syntax_markdown.py`
+  - `app/shell/main_window.py`
+
+### G07 — Navigation and import diagnostics baseline
+- Status: `DONE`
+- Objective: provide go-to-definition and unresolved import analysis workflow.
+- Primary files:
+  - `app/intelligence/symbol_index.py`
+  - `app/intelligence/navigation_service.py`
+  - `app/intelligence/diagnostics_service.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/intelligence/test_symbol_index.py`
+  - `tests/unit/intelligence/test_navigation_service.py`
+  - `tests/unit/intelligence/test_diagnostics_service.py`
+
+### G08 — Debugger workflow baseline
+- Status: `DONE`
+- Objective: run Python code under debug mode with breakpoints, pause markers, continue/step commands, and inspector command helpers.
+- Primary files:
+  - `app/run/run_manifest.py`
+  - `app/run/run_service.py`
+  - `app/runner/runner_main.py`
+  - `app/shell/main_window.py`
+  - `tests/integration/run/test_run_service_integration.py`
+
+### G09 — Theme-safe shell polish
+- Status: `DONE`
+- Objective: centralize shell styling through theme token + stylesheet modules and preserve light/dark usability.
+- Primary files:
+  - `app/shell/theme_tokens.py`
+  - `app/shell/style_sheet.py`
+  - `app/shell/main_window.py`
+
