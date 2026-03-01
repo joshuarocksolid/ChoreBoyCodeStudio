@@ -1,0 +1,99 @@
+"""Status bar scaffolding for the T05 shell.
+
+This module intentionally stays thin:
+- startup status presentation only
+- no project-service wiring
+- no run/runner state wiring
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
+
+from app.core.models import CapabilityProbeReport
+
+if TYPE_CHECKING:
+    from PySide2.QtWidgets import QLabel, QMainWindow, QStatusBar
+
+
+@dataclass(frozen=True)
+class StartupStatusView:
+    """UI-friendly startup state derived from capability probe output."""
+
+    severity: str
+    text: str
+    details: str
+
+
+def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
+    """Map capability probe output into deterministic status bar copy."""
+    if report is None:
+        return StartupStatusView(
+            severity="unknown",
+            text="Startup: Capability data unavailable",
+            details="Startup capability data was not provided to the editor shell.",
+        )
+
+    if report.all_available:
+        return StartupStatusView(
+            severity="ok",
+            text=f"Startup: Runtime ready ({report.available_count}/{report.total_count} checks)",
+            details="All startup capability checks passed.",
+        )
+
+    failed_checks = ", ".join(report.failed_check_ids)
+    return StartupStatusView(
+        severity="warning",
+        text=f"Startup: Runtime issues ({report.available_count}/{report.total_count} checks)",
+        details=f"Failed checks: {failed_checks}",
+    )
+
+
+class ShellStatusBarController:
+    """Small controller for shell status bar labels."""
+
+    def __init__(self, status_bar: "QStatusBar", startup_label: "QLabel", project_label: "QLabel") -> None:
+        self._status_bar = status_bar
+        self._startup_label = startup_label
+        self._project_label = project_label
+
+    def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
+        """Update startup status label from the latest probe output."""
+        startup_status = map_startup_report_to_status(report)
+        self._startup_label.setText(startup_status.text)
+        self._startup_label.setToolTip(startup_status.details)
+        self._startup_label.setProperty("startupSeverity", startup_status.severity)
+
+    def set_project_state_text(self, text: str) -> None:
+        """Update lightweight project-status copy."""
+        self._project_label.setText(text)
+
+    @property
+    def status_bar(self) -> "QStatusBar":
+        return self._status_bar
+
+
+def create_shell_status_bar(
+    main_window: "QMainWindow",
+    startup_report: Optional[CapabilityProbeReport] = None,
+) -> ShellStatusBarController:
+    """Create and attach a status bar shell to the given window."""
+    from PySide2.QtWidgets import QLabel, QStatusBar
+
+    status_bar = QStatusBar(main_window)
+    status_bar.setObjectName("shell.statusBar")
+
+    startup_label = QLabel(status_bar)
+    startup_label.setObjectName("shell.startupStatusLabel")
+
+    project_label = QLabel("Project: none loaded", status_bar)
+    project_label.setObjectName("shell.projectStatusLabel")
+
+    status_bar.addWidget(startup_label, 1)
+    status_bar.addPermanentWidget(project_label, 0)
+    main_window.setStatusBar(status_bar)
+
+    controller = ShellStatusBarController(status_bar, startup_label, project_label)
+    controller.set_startup_report(startup_report)
+    return controller

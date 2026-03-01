@@ -1,0 +1,154 @@
+"""Runtime capability checks used during editor startup."""
+
+from __future__ import annotations
+
+import importlib
+import uuid
+from pathlib import Path
+from typing import Callable, Optional
+
+from app.bootstrap.paths import (
+    PathInput,
+    ensure_directory,
+    global_logs_dir,
+    resolve_global_state_root,
+    resolve_temp_root,
+)
+from app.core import constants
+from app.core.models import CapabilityCheckResult, CapabilityProbeReport
+
+
+APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
+PYSIDE2_IMPORT_CHECK_ID = "pyside2_import"
+FREECAD_IMPORT_CHECK_ID = "freecad_import"
+STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
+GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
+TEMP_ROOT_WRITABLE_CHECK_ID = "temp_root_writable"
+
+
+def run_startup_capability_probe(
+    state_root: Optional[PathInput] = None,
+    temp_root: Optional[PathInput] = None,
+    app_run_path: Optional[PathInput] = None,
+) -> CapabilityProbeReport:
+    """Run startup capability checks and return structured results."""
+    check_runners: list[tuple[str, Callable[[], CapabilityCheckResult]]] = [
+        (APP_RUN_PRESENCE_CHECK_ID, lambda: check_apprun_presence(app_run_path=app_run_path)),
+        (PYSIDE2_IMPORT_CHECK_ID, check_pyside2_availability),
+        (FREECAD_IMPORT_CHECK_ID, check_freecad_availability),
+        (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
+        (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
+        (TEMP_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_temp_path(temp_root=temp_root)),
+    ]
+    checks: list[CapabilityCheckResult] = []
+
+    for expected_check_id, runner in check_runners:
+        try:
+            checks.append(runner())
+        except Exception as exc:  # pragma: no cover - defensive guard for startup resilience
+            checks.append(
+                CapabilityCheckResult(
+                    check_id=expected_check_id,
+                    is_available=False,
+                    message=f"{expected_check_id} check crashed: {exc}",
+                    details={"error_type": type(exc).__name__},
+                )
+            )
+
+    return CapabilityProbeReport(checks=checks)
+
+
+def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> CapabilityCheckResult:
+    """Check whether the expected AppRun path exists."""
+    configured = Path(app_run_path or constants.APP_RUN_PATH).expanduser()
+    target_path = configured.resolve()
+    path_exists = target_path.exists()
+
+    if path_exists:
+        return CapabilityCheckResult(
+            check_id=APP_RUN_PRESENCE_CHECK_ID,
+            is_available=True,
+            message="AppRun path is available.",
+            details={"path": str(target_path)},
+        )
+
+    return CapabilityCheckResult(
+        check_id=APP_RUN_PRESENCE_CHECK_ID,
+        is_available=False,
+        message=f"AppRun path not found: {target_path}",
+        details={"path": str(target_path)},
+    )
+
+
+def check_pyside2_availability() -> CapabilityCheckResult:
+    """Check that PySide2 is importable in the active runtime."""
+    return _check_module_import("PySide2", PYSIDE2_IMPORT_CHECK_ID)
+
+
+def check_freecad_availability() -> CapabilityCheckResult:
+    """Check that FreeCAD is importable in the active runtime."""
+    return _check_module_import("FreeCAD", FREECAD_IMPORT_CHECK_ID)
+
+
+def check_writable_state_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
+    """Check that global state root path is writable."""
+    directory = resolve_global_state_root(state_root)
+    return _check_writable_directory(directory, STATE_ROOT_WRITABLE_CHECK_ID, "Global state root")
+
+
+def check_writable_logs_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
+    """Check that global logs directory is writable."""
+    directory = global_logs_dir(state_root)
+    return _check_writable_directory(directory, GLOBAL_LOGS_WRITABLE_CHECK_ID, "Global logs directory")
+
+
+def check_writable_temp_path(temp_root: Optional[PathInput] = None) -> CapabilityCheckResult:
+    """Check that app temp directory is writable."""
+    directory = resolve_temp_root(temp_root)
+    return _check_writable_directory(directory, TEMP_ROOT_WRITABLE_CHECK_ID, "Temp root")
+
+
+def _check_module_import(module_name: str, check_id: str) -> CapabilityCheckResult:
+    try:
+        importlib.import_module(module_name)
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=check_id,
+            is_available=False,
+            message=f"Failed to import {module_name}: {exc}",
+            details={"module": module_name},
+        )
+
+    return CapabilityCheckResult(
+        check_id=check_id,
+        is_available=True,
+        message=f"{module_name} import succeeded.",
+        details={"module": module_name},
+    )
+
+
+def _check_writable_directory(directory: Path, check_id: str, label: str) -> CapabilityCheckResult:
+    try:
+        _verify_writable_directory(directory)
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=check_id,
+            is_available=False,
+            message=f"{label} is not writable: {exc}",
+            details={"path": str(directory.resolve())},
+        )
+
+    return CapabilityCheckResult(
+        check_id=check_id,
+        is_available=True,
+        message=f"{label} is writable.",
+        details={"path": str(directory.resolve())},
+    )
+
+
+def _verify_writable_directory(directory: Path) -> None:
+    """Create directory and verify write permissions with a probe file."""
+    ensured_dir = ensure_directory(directory)
+    probe_file = ensured_dir / f".capability_probe_{uuid.uuid4().hex}.tmp"
+    probe_file.write_text("ok", encoding="utf-8")
+    probe_file.unlink()

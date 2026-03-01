@@ -210,7 +210,7 @@ We need a stable editor host before project and runner features can plug in.
 ## 5. Phase 2 — Project Model and Persistence
 
 ### T06 — Define project metadata schema and model
-**Status:** TODO
+**Status:** DONE
 
 **Goal:**  
 Define the canonical `.cbcs/project.json` structure in code.
@@ -241,7 +241,7 @@ Project metadata is a core filesystem contract and must be explicit before proje
 ---
 
 ### T07 — Implement project open/load service
-**Status:** TODO
+**Status:** DONE
 
 **Goal:**  
 Load a project folder from disk and validate its structure.

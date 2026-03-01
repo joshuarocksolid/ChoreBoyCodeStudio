@@ -79,15 +79,53 @@ These commands are documented now for consistency; they are not required to run 
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip pytest
-pytest -m unit
-pytest -m integration
-pytest -m runtime_parity
+python -m pytest -m unit
+python -m pytest -m integration
+python -m pytest -m runtime_parity
 ```
 
 If runtime-parity tests require explicit AppRun location, run with:
 
 ```bash
-CBCS_APPRUN=/opt/freecad/AppRun pytest -m runtime_parity
+CBCS_APPRUN=/opt/freecad/AppRun python -m pytest -m runtime_parity
+```
+
+## 7.1 Dev parity launch command
+
+For quick local runtime checks in a ChoreBoy-like launch model, use the dev-only root launcher:
+
+```bash
+python dev_launch_editor.py
+```
+
+This starts `run_editor.py` through FreeCAD runtime using detached process behavior (`start_new_session=True`).
+The launcher also prepends the repository root to `sys.path` because some FreeCAD AppImage `-c` runs do not include the project directory by default.
+Run this command from repository root, or call it by absolute path.
+
+Default runtime path used by this launcher:
+
+```text
+/opt/freecad/AppRun
+```
+
+Override runtime path when needed:
+
+```bash
+python dev_launch_editor.py --apprun /path/to/AppRun-or-FreeCAD.AppImage
+```
+
+or:
+
+```bash
+CBCS_APPRUN=/path/to/AppRun-or-FreeCAD.AppImage python dev_launch_editor.py
+```
+
+If you prefer plain `pytest`, the repo now configures `pythonpath = ["."]` so collection should match `python -m pytest`.
+
+Preview the resolved command without launching:
+
+```bash
+python dev_launch_editor.py --dry-run
 ```
 
 ## 8. Traceability Starter (Tasks -> Test Layers)
