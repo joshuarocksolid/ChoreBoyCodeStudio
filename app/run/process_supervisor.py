@@ -56,6 +56,7 @@ class ProcessSupervisor:
 
     def start(self, command: list[str], *, cwd: str, env: Mapping[str, str] | None = None) -> int:
         """Start an external process and begin streaming output events."""
+        state_event: ProcessEvent
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 raise RunLifecycleError("Runner process is already active.")
@@ -77,10 +78,14 @@ class ProcessSupervisor:
             self._process = process
             self._terminated_by_user = False
             self._resources_cleaned = False
-            self._set_state("running")
-            self._start_reader_threads(process)
-            self._start_waiter_thread(process)
-            return process.pid
+            self._state = "running"
+            state_event = self._build_state_event("running")
+            process_id = process.pid
+
+        self._emit_event(state_event)
+        self._start_reader_threads(process)
+        self._start_waiter_thread(process)
+        return process_id
 
     def stop(self, *, terminate_timeout_seconds: float = 2.0) -> int | None:
         """Stop active process gracefully, then force kill if needed."""
@@ -94,9 +99,13 @@ class ProcessSupervisor:
             self._join_waiter_thread()
             return process.returncode
 
+        state_event: ProcessEvent
         with self._lock:
             self._terminated_by_user = True
-            self._set_state("stopping")
+            self._state = "stopping"
+            state_event = self._build_state_event("stopping")
+
+        self._emit_event(state_event)
 
         process.terminate()
         try:
@@ -156,12 +165,14 @@ class ProcessSupervisor:
     def _read_stream(self, stream_name: Literal["stdout", "stderr"], stream: TextIO) -> None:
         try:
             for chunk in iter(stream.readline, ""):
+                with self._lock:
+                    terminated_by_user = self._terminated_by_user
                 self._emit_event(
                     ProcessEvent(
                         event_type="output",
                         stream=stream_name,
                         text=chunk,
-                        terminated_by_user=self._terminated_by_user,
+                        terminated_by_user=terminated_by_user,
                     )
                 )
         except (OSError, ValueError):
@@ -176,18 +187,27 @@ class ProcessSupervisor:
     def _wait_for_exit(self, process: subprocess.Popen[str]) -> None:
         return_code = process.wait()
         self._cleanup_process_resources(process)
+        state_event: ProcessEvent
+        exit_event: ProcessEvent
         with self._lock:
             self._process = None
             self._waiter_thread = None
-            self._set_state("exited")
+            self._state = "exited"
             terminated_by_user = self._terminated_by_user
-
-        self._emit_event(
-            ProcessEvent(
+            state_event = self._build_state_event("exited")
+            exit_event = ProcessEvent(
                 event_type="exit",
                 return_code=return_code,
                 terminated_by_user=terminated_by_user,
             )
+        self._emit_event(state_event)
+        self._emit_event(exit_event)
+
+    def _build_state_event(self, state: ProcessState) -> ProcessEvent:
+        return ProcessEvent(
+            event_type="state",
+            state=state,
+            terminated_by_user=self._terminated_by_user,
         )
 
     def _cleanup_process_resources(self, process: subprocess.Popen[str]) -> None:
@@ -233,11 +253,11 @@ class ProcessSupervisor:
             return
         waiter_thread.join(timeout=0.5)
 
-    def _set_state(self, state: ProcessState) -> None:
-        self._state = state
-        self._emit_event(ProcessEvent(event_type="state", state=state, terminated_by_user=self._terminated_by_user))
-
     def _emit_event(self, event: ProcessEvent) -> None:
         if self._on_event is None:
             return
-        self._on_event(event)
+        try:
+            self._on_event(event)
+        except Exception:
+            # Event callbacks are observer side-effects; never crash supervisor threads.
+            return
