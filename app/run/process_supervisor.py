@@ -6,8 +6,7 @@ from dataclasses import dataclass
 import signal
 import subprocess
 import threading
-from typing import Callable, Literal, Mapping
-from typing import TextIO
+from typing import IO, Callable, Literal, Mapping
 
 from app.core.errors import RunLifecycleError
 
@@ -36,7 +35,7 @@ class ProcessSupervisor:
         self._terminated_by_user = False
         self._lock = threading.RLock()
         self._reader_threads: list[threading.Thread] = []
-        self._reader_streams: list[TextIO] = []
+        self._reader_streams: list[IO[str]] = []
         self._waiter_thread: threading.Thread | None = None
         self._resources_cleaned = True
 
@@ -162,7 +161,7 @@ class ProcessSupervisor:
         self._waiter_thread = threading.Thread(target=self._wait_for_exit, args=(process,), daemon=True)
         self._waiter_thread.start()
 
-    def _read_stream(self, stream_name: Literal["stdout", "stderr"], stream: TextIO) -> None:
+    def _read_stream(self, stream_name: Literal["stdout", "stderr"], stream: IO[str]) -> None:
         try:
             for chunk in iter(stream.readline, ""):
                 with self._lock:

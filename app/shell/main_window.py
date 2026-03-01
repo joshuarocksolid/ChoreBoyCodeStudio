@@ -6,7 +6,7 @@ import queue
 from pathlib import Path
 import subprocess
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide2.QtCore import QEvent, QTimer, Qt
 from PySide2.QtGui import QCloseEvent
@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
         self._background_tasks = BackgroundTaskRunner(
-            dispatch_to_main_thread=lambda callback: QTimer.singleShot(0, callback)
+            dispatch_to_main_thread=self._dispatch_to_main_thread
         )
         self._logger = get_subsystem_logger("shell")
 
@@ -314,6 +314,9 @@ class MainWindow(QMainWindow):
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
         return (max(2, tab_width), max(8, font_size))
+
+    def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
+        QTimer.singleShot(0, callback)
 
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
@@ -1772,26 +1775,21 @@ class MainWindow(QMainWindow):
         editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
-        editor_widget.set_breakpoint_toggled_callback(
-            lambda line_number, enabled, file_path=opened_result.tab.file_path: self._handle_editor_breakpoint_toggled(
-                file_path,
-                line_number,
-                enabled,
-            )
-        )
+        tab_file_path = opened_result.tab.file_path
+
+        def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
+            self._handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
+
+        def on_text_changed() -> None:
+            self._handle_editor_text_changed(tab_file_path, editor_widget)
+
+        def on_cursor_position_changed() -> None:
+            self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
+
+        editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
-        editor_widget.textChanged.connect(
-            lambda file_path=opened_result.tab.file_path, widget=editor_widget: self._handle_editor_text_changed(
-                file_path,
-                widget,
-            )
-        )
-        editor_widget.cursorPositionChanged.connect(
-            lambda file_path=opened_result.tab.file_path, widget=editor_widget: self._handle_editor_cursor_position_changed(
-                file_path,
-                widget,
-            )
-        )
+        editor_widget.textChanged.connect(on_text_changed)
+        editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
         self._editor_widgets_by_path[opened_result.tab.file_path] = editor_widget
 
         tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)

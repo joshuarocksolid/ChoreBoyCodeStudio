@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.core import constants
 from app.core.errors import RunManifestValidationError
@@ -177,15 +177,16 @@ def _parse_breakpoints(
         _raise_manifest_error("breakpoints must be a list.", field="breakpoints", manifest_path=manifest_path)
 
     normalized: list[dict[str, int | str]] = []
-    for index, entry in enumerate(raw_breakpoints):
+    for index, entry in enumerate(cast(list[object], raw_breakpoints)):
         if not isinstance(entry, dict):
             _raise_manifest_error(
                 f"breakpoints[{index}] must be an object with file_path and line_number.",
                 field="breakpoints",
                 manifest_path=manifest_path,
             )
-        file_path = entry.get("file_path")
-        line_number = entry.get("line_number")
+        entry_dict = cast(dict[str, object], entry)
+        file_path = entry_dict.get("file_path")
+        line_number = entry_dict.get("line_number")
         if not isinstance(file_path, str) or not file_path.strip():
             _raise_manifest_error(
                 f"breakpoints[{index}].file_path must be a non-empty string.",
@@ -198,5 +199,12 @@ def _parse_breakpoints(
                 field="breakpoints",
                 manifest_path=manifest_path,
             )
-        normalized.append({"file_path": str(Path(file_path).expanduser().resolve()), "line_number": line_number})
+        normalized_file_path = cast(str, file_path)
+        normalized_line_number = cast(int, line_number)
+        normalized.append(
+            {
+                "file_path": str(Path(normalized_file_path).expanduser().resolve()),
+                "line_number": normalized_line_number,
+            }
+        )
     return normalized

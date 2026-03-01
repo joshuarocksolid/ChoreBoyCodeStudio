@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from PySide2.QtCore import QRect, QSize, Qt
 from PySide2.QtGui import QColor, QPainter, QTextCursor, QTextFormat
@@ -158,12 +159,10 @@ class CodeEditorWidget(QPlainTextEdit):
                     painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
                 painter.setPen(color)
                 painter.drawText(
-                    0,
-                    top,
-                    self._line_number_area.width() - 6,
-                    self.fontMetrics().height(),
-                    Qt.AlignRight,
+                    QRect(0, top, self._line_number_area.width() - 6, self.fontMetrics().height()),
+                    int(Qt.AlignRight),
                     number_text,
+                    QRect(),
                 )
 
             block = block.next()
@@ -178,7 +177,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
         selections: list[QTextEdit.ExtraSelection] = []
 
-        line_selection = QTextEdit.ExtraSelection()
+        line_selection = cast(Any, QTextEdit.ExtraSelection())
         line_selection.format.setBackground(QColor("#EEF7FF"))
         line_selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         line_selection.cursor = self.textCursor()
@@ -261,7 +260,7 @@ class CodeEditorWidget(QPlainTextEdit):
         return None
 
     def _selection_for_position(self, position: int) -> QTextEdit.ExtraSelection:
-        selection = QTextEdit.ExtraSelection()
+        selection = cast(Any, QTextEdit.ExtraSelection())
         selection.format.setBackground(QColor("#FFD8A8"))
         cursor = self.textCursor()
         cursor.setPosition(position)
