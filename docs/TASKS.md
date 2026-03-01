@@ -446,7 +446,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: run controls are predictable and safe.
 
 ### B17 — MVP acceptance gate pass
-- Status: `TODO`
+- Status: `DONE`
 - Objective: prove MVP on target workflow.
 - Scope:
   - execute minimum acceptance gate from `docs/ACCEPTANCE_TESTS.md`
