@@ -52,6 +52,7 @@ from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
+from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -201,6 +202,7 @@ class MainWindow(QMainWindow):
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
                 on_find_references=self._handle_find_references_action,
+                on_rename_symbol=self._handle_rename_symbol_action,
                 on_toggle_comment=self._handle_toggle_comment_action,
                 on_indent=self._handle_indent_action,
                 on_outdent=self._handle_outdent_action,
@@ -567,6 +569,77 @@ class MainWindow(QMainWindow):
             item.setToolTip(hit.file_path)
             item.setData(PROBLEM_ROLE_FILE_PATH, hit.file_path)
             item.setData(PROBLEM_ROLE_LINE_NUMBER, hit.line_number)
+
+    def _handle_rename_symbol_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Rename Symbol", "Open a project first.")
+            return
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Rename Symbol", "Open a file tab first.")
+            return
+
+        old_symbol = editor_widget.word_under_cursor()
+        if not old_symbol:
+            QMessageBox.information(self, "Rename Symbol", "Place cursor on a symbol first.")
+            return
+        new_symbol, ok = QInputDialog.getText(self, "Rename Symbol", f"Rename '{old_symbol}' to:", QLineEdit.Normal, old_symbol)
+        if not ok:
+            return
+        new_symbol = new_symbol.strip()
+        if not new_symbol or new_symbol == old_symbol:
+            return
+        if not new_symbol.isidentifier():
+            QMessageBox.warning(self, "Rename Symbol", "New name must be a valid Python identifier.")
+            return
+
+        if not self._handle_save_all_action():
+            QMessageBox.warning(self, "Rename Symbol", "Fix save errors before renaming.")
+            return
+
+        plan = plan_rename_symbol(
+            project_root=self._loaded_project.project_root,
+            current_file_path=active_tab.file_path,
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+            new_symbol=new_symbol,
+        )
+        if plan is None or not plan.hits:
+            QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
+            return
+
+        preview_lines = [f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}" for hit in plan.hits[:20]]
+        preview_body = "\n".join(preview_lines)
+        if len(plan.hits) > 20:
+            preview_body += f"\n... and {len(plan.hits) - 20} more occurrence(s)"
+        confirm = QMessageBox.question(
+            self,
+            "Rename Preview",
+            (
+                f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'?\n"
+                f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n\n"
+                f"{preview_body}"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            result = apply_rename_plan(plan)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
+            return
+
+        self._refresh_open_tabs_from_disk(result.changed_files)
+        self._reload_current_project()
+        QMessageBox.information(
+            self,
+            "Rename Symbol",
+            f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+        )
 
     def _handle_go_to_definition_action(self) -> None:
         if self._loaded_project is None:
@@ -1994,6 +2067,26 @@ class MainWindow(QMainWindow):
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
         self._update_breadcrumb_for_path(None)
+
+    def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
+        for file_path in file_paths:
+            tab_state = self._editor_manager.get_tab(file_path)
+            editor_widget = self._editor_widgets_by_path.get(file_path)
+            if tab_state is None or editor_widget is None:
+                continue
+            try:
+                refreshed = Path(file_path).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(refreshed)
+            editor_widget.blockSignals(False)
+            updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
+            updated_tab.mark_saved()
+            tab_index = self._tab_index_for_path(file_path)
+            if self._editor_tabs_widget is not None and tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, updated_tab.display_name)
+        self._refresh_save_action_states()
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)
