@@ -6,12 +6,20 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+CURRENT_SYMBOL_INDEX_SCHEMA_VERSION = 2
+
 
 @dataclass(frozen=True)
 class IndexedSymbol:
     name: str
     file_path: str
     line_number: int
+    symbol_kind: str = "symbol"
+    container_name: str = ""
+    signature_text: str = ""
+    doc_excerpt: str = ""
+    column_number: int | None = None
+    fingerprint_version: int = 1
 
 
 class SQLiteSymbolIndex:
@@ -31,8 +39,35 @@ class SQLiteSymbolIndex:
             connection.execute("DELETE FROM symbols WHERE project_root = ?", (project,))
             connection.execute("DELETE FROM indexed_files WHERE project_root = ?", (project,))
             connection.executemany(
-                "INSERT INTO symbols(project_root, name, file_path, line_number) VALUES(?, ?, ?, ?)",
-                [(project, symbol.name, symbol.file_path, symbol.line_number) for symbol in symbols],
+                """
+                INSERT INTO symbols(
+                    project_root,
+                    name,
+                    file_path,
+                    line_number,
+                    symbol_kind,
+                    container_name,
+                    signature_text,
+                    doc_excerpt,
+                    column_number,
+                    fingerprint_version
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        project,
+                        symbol.name,
+                        symbol.file_path,
+                        symbol.line_number,
+                        symbol.symbol_kind,
+                        symbol.container_name,
+                        symbol.signature_text,
+                        symbol.doc_excerpt,
+                        symbol.column_number,
+                        symbol.fingerprint_version,
+                    )
+                    for symbol in symbols
+                ],
             )
             connection.commit()
 
@@ -40,10 +75,37 @@ class SQLiteSymbolIndex:
         project = str(Path(project_root).expanduser().resolve())
         with sqlite3.connect(self._db_path) as connection:
             rows = connection.execute(
-                "SELECT name, file_path, line_number FROM symbols WHERE project_root = ? AND name = ? ORDER BY file_path, line_number",
+                """
+                SELECT
+                    name,
+                    file_path,
+                    line_number,
+                    COALESCE(symbol_kind, 'symbol'),
+                    COALESCE(container_name, ''),
+                    COALESCE(signature_text, ''),
+                    COALESCE(doc_excerpt, ''),
+                    column_number,
+                    COALESCE(fingerprint_version, 1)
+                FROM symbols
+                WHERE project_root = ? AND name = ?
+                ORDER BY file_path, line_number
+                """,
                 (project, symbol_name),
             ).fetchall()
-        return [IndexedSymbol(name=row[0], file_path=row[1], line_number=int(row[2])) for row in rows]
+        return [
+            IndexedSymbol(
+                name=row[0],
+                file_path=row[1],
+                line_number=int(row[2]),
+                symbol_kind=str(row[3]),
+                container_name=str(row[4]),
+                signature_text=str(row[5]),
+                doc_excerpt=str(row[6]),
+                column_number=None if row[7] is None else int(row[7]),
+                fingerprint_version=int(row[8]),
+            )
+            for row in rows
+        ]
 
     def search_by_prefix(self, project_root: str, prefix: str, *, limit: int = 100) -> list[IndexedSymbol]:
         """Return symbols where name matches prefix (case-insensitive)."""
@@ -53,7 +115,16 @@ class SQLiteSymbolIndex:
             if prefix:
                 rows = connection.execute(
                     """
-                    SELECT name, file_path, line_number
+                    SELECT
+                        name,
+                        file_path,
+                        line_number,
+                        COALESCE(symbol_kind, 'symbol'),
+                        COALESCE(container_name, ''),
+                        COALESCE(signature_text, ''),
+                        COALESCE(doc_excerpt, ''),
+                        column_number,
+                        COALESCE(fingerprint_version, 1)
                     FROM symbols
                     WHERE project_root = ? AND lower(name) LIKE ?
                     ORDER BY name, file_path, line_number
@@ -64,7 +135,16 @@ class SQLiteSymbolIndex:
             else:
                 rows = connection.execute(
                     """
-                    SELECT name, file_path, line_number
+                    SELECT
+                        name,
+                        file_path,
+                        line_number,
+                        COALESCE(symbol_kind, 'symbol'),
+                        COALESCE(container_name, ''),
+                        COALESCE(signature_text, ''),
+                        COALESCE(doc_excerpt, ''),
+                        column_number,
+                        COALESCE(fingerprint_version, 1)
                     FROM symbols
                     WHERE project_root = ?
                     ORDER BY name, file_path, line_number
@@ -72,7 +152,20 @@ class SQLiteSymbolIndex:
                     """,
                     (project, normalized_limit),
                 ).fetchall()
-        return [IndexedSymbol(name=row[0], file_path=row[1], line_number=int(row[2])) for row in rows]
+        return [
+            IndexedSymbol(
+                name=row[0],
+                file_path=row[1],
+                line_number=int(row[2]),
+                symbol_kind=str(row[3]),
+                container_name=str(row[4]),
+                signature_text=str(row[5]),
+                doc_excerpt=str(row[6]),
+                column_number=None if row[7] is None else int(row[7]),
+                fingerprint_version=int(row[8]),
+            )
+            for row in rows
+        ]
 
     def count_symbols(self, project_root: str) -> int:
         project = str(Path(project_root).expanduser().resolve())
@@ -149,8 +242,35 @@ class SQLiteSymbolIndex:
                 if not file_symbols:
                     continue
                 connection.executemany(
-                    "INSERT INTO symbols(project_root, name, file_path, line_number) VALUES(?, ?, ?, ?)",
-                    [(project, symbol.name, symbol.file_path, symbol.line_number) for symbol in file_symbols],
+                    """
+                    INSERT INTO symbols(
+                        project_root,
+                        name,
+                        file_path,
+                        line_number,
+                        symbol_kind,
+                        container_name,
+                        signature_text,
+                        doc_excerpt,
+                        column_number,
+                        fingerprint_version
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            project,
+                            symbol.name,
+                            symbol.file_path,
+                            symbol.line_number,
+                            symbol.symbol_kind,
+                            symbol.container_name,
+                            symbol.signature_text,
+                            symbol.doc_excerpt,
+                            symbol.column_number,
+                            symbol.fingerprint_version,
+                        )
+                        for symbol in file_symbols
+                    ],
                 )
             connection.commit()
 
@@ -159,14 +279,34 @@ class SQLiteSymbolIndex:
         with sqlite3.connect(self._db_path) as connection:
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS schema_meta(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS symbols(
                     project_root TEXT NOT NULL,
                     name TEXT NOT NULL,
                     file_path TEXT NOT NULL,
-                    line_number INTEGER NOT NULL
+                    line_number INTEGER NOT NULL,
+                    symbol_kind TEXT NOT NULL DEFAULT 'symbol',
+                    container_name TEXT NOT NULL DEFAULT '',
+                    signature_text TEXT NOT NULL DEFAULT '',
+                    doc_excerpt TEXT NOT NULL DEFAULT '',
+                    column_number INTEGER,
+                    fingerprint_version INTEGER NOT NULL DEFAULT 1
                 )
                 """
             )
+            self._ensure_symbols_column(connection, "symbol_kind", "TEXT NOT NULL DEFAULT 'symbol'")
+            self._ensure_symbols_column(connection, "container_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_symbols_column(connection, "signature_text", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_symbols_column(connection, "doc_excerpt", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_symbols_column(connection, "column_number", "INTEGER")
+            self._ensure_symbols_column(connection, "fingerprint_version", "INTEGER NOT NULL DEFAULT 1")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS indexed_files(
@@ -184,4 +324,16 @@ class SQLiteSymbolIndex:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_symbols_project_file ON symbols(project_root, file_path)"
             )
+            connection.execute(
+                "INSERT OR REPLACE INTO schema_meta(key, value) VALUES(?, ?)",
+                ("schema_version", str(CURRENT_SYMBOL_INDEX_SCHEMA_VERSION)),
+            )
             connection.commit()
+
+    def _ensure_symbols_column(self, connection: sqlite3.Connection, column_name: str, definition: str) -> None:
+        existing_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(symbols)").fetchall()
+        }
+        if column_name in existing_columns:
+            return
+        connection.execute(f"ALTER TABLE symbols ADD COLUMN {column_name} {definition}")
