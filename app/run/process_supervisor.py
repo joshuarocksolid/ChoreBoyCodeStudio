@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import signal
 import subprocess
 import threading
 from typing import Callable, Literal, Mapping
@@ -64,6 +65,7 @@ class ProcessSupervisor:
                     command,
                     cwd=cwd,
                     env=None if env is None else dict(env),
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -105,6 +107,32 @@ class ProcessSupervisor:
         self._cleanup_process_resources(process)
         self._join_waiter_thread()
         return process.returncode
+
+    def pause(self) -> bool:
+        """Request an interrupt signal for active process."""
+        with self._lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            return False
+        try:
+            process.send_signal(signal.SIGINT)
+        except OSError as exc:
+            raise RunLifecycleError(f"Failed to pause runner process: {exc}") from exc
+        return True
+
+    def send_input(self, text: str) -> None:
+        """Send text to active process stdin."""
+        with self._lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            raise RunLifecycleError("Cannot send input because runner process is not active.")
+        if process.stdin is None:
+            raise RunLifecycleError("Runner process stdin is unavailable.")
+        try:
+            process.stdin.write(text)
+            process.stdin.flush()
+        except OSError as exc:
+            raise RunLifecycleError(f"Failed to write to runner stdin: {exc}") from exc
 
     def _start_reader_threads(self, process: subprocess.Popen[str]) -> None:
         self._reader_threads = []
@@ -175,7 +203,7 @@ class ProcessSupervisor:
         self._join_reader_threads(reader_threads, timeout_seconds=0.2)
 
         seen_stream_ids: set[int] = set()
-        for stream in [*reader_streams, process.stdout, process.stderr]:
+        for stream in [*reader_streams, process.stdout, process.stderr, process.stdin]:
             if stream is None:
                 continue
             stream_id = id(stream)

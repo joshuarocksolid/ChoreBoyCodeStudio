@@ -13,6 +13,14 @@ APP_LOG_FILENAME = "app.log"
 APP_LOGGER_NAMESPACE = "choreboy_code_studio"
 APP_LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 APP_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+UI_LAYOUT_SETTINGS_KEY = "ui_layout"
+UI_IMPORT_UPDATE_POLICY_KEY = "python_import_update_policy"
+UI_IMPORT_UPDATE_POLICY_DEFAULT = "ask"
+UI_EDITOR_SETTINGS_KEY = "editor"
+UI_EDITOR_TAB_WIDTH_KEY = "tab_width"
+UI_EDITOR_FONT_SIZE_KEY = "font_size"
+UI_EDITOR_TAB_WIDTH_DEFAULT = 4
+UI_EDITOR_FONT_SIZE_DEFAULT = 10
 
 PROJECT_META_DIRNAME = ".cbcs"
 PROJECT_MANIFEST_FILENAME = "project.json"
@@ -31,5 +39,10 @@ RUN_EXIT_BOOTSTRAP_ERROR = 2
 RUN_EXIT_INVALID_MANIFEST = 3
 RUN_EXIT_SAFE_MODE_BLOCKED = 4
 RUN_EXIT_TERMINATED_BY_USER = 130
+RUN_MODE_PYTHON_SCRIPT = "python_script"
+RUN_MODE_QT_APP = "qt_app"
+RUN_MODE_FREECAD_HEADLESS = "freecad_headless"
+RUN_MODE_PYTHON_REPL = "python_repl"
+RUN_MODE_PYTHON_DEBUG = "python_debug"
 
 TEMP_NAMESPACE_DIRNAME = "choreboy_code_studio"

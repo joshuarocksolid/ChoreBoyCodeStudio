@@ -270,13 +270,23 @@ For project entrypoints that create their own PySide2 application or windows.
 
 For backend tasks that rely on `import FreeCAD` but must avoid GUI-only modules.
 
-## 8.4 Future `freecad_gui`
+## 8.4 `python_repl`
+
+For interactive Python console sessions where users submit commands over stdin and receive near-live output in the shell.
+
+## 8.5 `python_debug`
+
+For breakpoint-driven debug sessions. This mode executes user code inside the runner process under debugger control and accepts debug commands from the editor.
+
+## 8.6 Future `freecad_gui`
 
 Reserved for future cases where GUI-dependent export workflows need a different launch strategy.
 
 ### Rule
 
 Execution mode must be explicit in run config or inferable from template defaults, not guessed from fragile heuristics.
+
+For `python_debug`, breakpoints and debug-control commands must flow through explicit editor↔runner contracts; the editor process must never execute debug-target project code directly.
 
 ---
 
@@ -508,6 +518,13 @@ Owns the main window and top-level composition.
 
 It coordinates services but should not contain deep business logic.
 
+Key shell responsibilities include:
+
+* run/debug toolbar and action state mapping
+* split-pane layout persistence and reset behavior
+* project-tree context action wiring
+* bottom-pane composition (console, Python console, problems, debug inspector, run log)
+
 ## 12.4 `editors`
 
 Text editing behavior:
@@ -515,8 +532,10 @@ Text editing behavior:
 * tabs
 * dirty state
 * syntax highlighting
+* line numbers and breakpoint gutter markers
 * search within file
 * quick open support
+* code-navigation affordances (go-to-definition, breadcrumbs)
 
 ## 12.5 `project`
 
@@ -588,6 +607,7 @@ Recommended manifest contents:
 * safe-mode flags
 * log file path
 * timestamp
+* optional breakpoint payloads (for `python_debug`)
 
 ### Example
 
@@ -602,7 +622,13 @@ Recommended manifest contents:
   "argv": [],
   "env": {},
   "safe_mode": true,
-  "log_file": "/home/default/projects/my_project/logs/run_20260228_153500.log"
+  "log_file": "/home/default/projects/my_project/logs/run_20260228_153500.log",
+  "breakpoints": [
+    {
+      "file_path": "/home/default/projects/my_project/app/main.py",
+      "line_number": 42
+    }
+  ]
 }
 ```
 
@@ -618,7 +644,7 @@ This architecture strongly prefers a manifest file over complex shell quoting be
 
 ## 13.3 Runner output protocol
 
-For v1, standard stdout/stderr is sufficient.
+For baseline run mode, standard stdout/stderr is sufficient.
 
 Recommended enhancement:
 
@@ -630,6 +656,8 @@ Recommended enhancement:
   * `traceback`
   * `warning`
   * `status`
+
+Current debug-capable builds may also emit explicit debug lifecycle markers (for example paused/running markers) so editor controls can synchronize state while preserving full output logs.
 
 Human output and structured output may coexist, but the protocol must stay simple.
 
@@ -651,6 +679,8 @@ Define clear meanings:
 ## 14.1 Console
 
 The console pane should show near-live stdout/stderr from the current run.
+
+For responsiveness on high-output workloads, console buffering should be bounded and trim oldest entries once the configured cap is exceeded.
 
 ## 14.2 Problems
 
@@ -871,6 +901,8 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 * project health check
 * large file loading
 
+Current implementation explicitly offloads find-in-files and symbol indexing to background workers to avoid blocking the UI thread.
+
 ## 21.3 Process-first for risky work
 
 If work is expensive or failure-prone, prefer process boundaries over thread complexity.
@@ -989,7 +1021,7 @@ Everything else should build on top of this slice.
 
 The architecture explicitly does **not** require v1 support for:
 
-* full debugger/breakpoints
+* advanced debugger parity beyond baseline line breakpoints/stepping/inspection
 * LSP and language servers
 * Git integration
 * package management

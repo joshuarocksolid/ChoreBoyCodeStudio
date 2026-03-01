@@ -27,7 +27,7 @@ def _build_manifest(tmp_path: Path, script_contents: str) -> tuple[Path, Path]:
         project_root=str(project_root.resolve()),
         entry_file="run.py",
         working_directory=str(project_root.resolve()),
-        mode="python_script",
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
         argv=[],
         env={},
         safe_mode=True,

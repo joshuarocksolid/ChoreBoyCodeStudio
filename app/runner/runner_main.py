@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import code
 import runpy
 import sys
 
 from app.core import constants
 from app.core.errors import RunLifecycleError, RunManifestValidationError
 from app.run.run_manifest import RunManifest, load_run_manifest
+from app.runner.debug_runner import run_debug_session
 from app.runner.execution_context import RunnerExecutionContext, apply_execution_context
 from app.runner.output_bridge import redirect_output_to_log
 from app.runner.traceback_formatter import format_current_exception
@@ -25,8 +27,16 @@ def execute_manifest(manifest: RunManifest) -> int:
         print(f"[runner] run_id={manifest.run_id} mode={manifest.mode} entry={manifest.entry_file}")
         try:
             with apply_execution_context(execution_context):
-                if manifest.mode in {"python_script", "qt_app", "freecad_headless"}:
-                    runpy.run_path(execution_context.entry_script_path, run_name="__main__")
+                if manifest.mode in {
+                    constants.RUN_MODE_PYTHON_SCRIPT,
+                    constants.RUN_MODE_QT_APP,
+                    constants.RUN_MODE_FREECAD_HEADLESS,
+                }:
+                    _run_entry_script(execution_context.entry_script_path)
+                elif manifest.mode == constants.RUN_MODE_PYTHON_REPL:
+                    _run_interactive_repl()
+                elif manifest.mode == constants.RUN_MODE_PYTHON_DEBUG:
+                    return run_debug_session(manifest, _run_entry_script, execution_context.entry_script_path)
                 else:
                     print(f"Unsupported run mode: {manifest.mode}", file=sys.stderr)
                     return constants.RUN_EXIT_BOOTSTRAP_ERROR
@@ -43,6 +53,18 @@ def execute_manifest(manifest: RunManifest) -> int:
             return constants.RUN_EXIT_USER_CODE_ERROR
 
     return constants.RUN_EXIT_SUCCESS
+
+
+def _run_entry_script(entry_script_path: str) -> None:
+    runpy.run_path(entry_script_path, run_name="__main__")
+
+
+def _run_interactive_repl() -> None:
+    console = code.InteractiveConsole(locals={"__name__": "__console__", "__package__": None})
+    console.interact(
+        banner="ChoreBoy Python Console (runner process). Type exit() or Ctrl-D to close.",
+        exitmsg="Python console session ended.",
+    )
 
 
 def run_from_manifest_path(manifest_path: str) -> int:

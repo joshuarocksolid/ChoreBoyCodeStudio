@@ -36,9 +36,25 @@ class MenuCallbacks:
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
     on_find_in_files: Callable[[], object] | None = None
+    on_toggle_comment: Callable[[], object] | None = None
+    on_indent: Callable[[], object] | None = None
+    on_outdent: Callable[[], object] | None = None
+    on_go_to_definition: Callable[[], object] | None = None
+    on_analyze_imports: Callable[[], object] | None = None
+    on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
+    on_debug: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
+    on_restart: Callable[[], object] | None = None
+    on_continue_debug: Callable[[], object] | None = None
+    on_pause_debug: Callable[[], object] | None = None
+    on_step_over: Callable[[], object] | None = None
+    on_step_into: Callable[[], object] | None = None
+    on_step_out: Callable[[], object] | None = None
+    on_toggle_breakpoint: Callable[[], object] | None = None
+    on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
+    on_reset_layout: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
@@ -189,6 +205,42 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         enabled=True,
         callback=callback_registry.on_find_in_files,
     )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.toggleComment",
+        "Toggle Comment",
+        "Ctrl+/",
+        enabled=True,
+        callback=callback_registry.on_toggle_comment,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.indent",
+        "Indent",
+        "Tab",
+        enabled=True,
+        callback=callback_registry.on_indent,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.outdent",
+        "Outdent",
+        "Shift+Tab",
+        enabled=True,
+        callback=callback_registry.on_outdent,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.goToDefinition",
+        "Go To Definition",
+        "F12",
+        enabled=True,
+        callback=callback_registry.on_go_to_definition,
+    )
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
@@ -203,10 +255,84 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     _register_menu_action(
         run_menu,
         actions,
+        "shell.action.run.debug",
+        "Debug",
+        "Ctrl+F5",
+        callback=callback_registry.on_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
         "shell.action.run.stop",
         "Stop",
         "Shift+F5",
         callback=callback_registry.on_stop,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.restart",
+        "Restart",
+        "Ctrl+Shift+F5",
+        callback=callback_registry.on_restart,
+    )
+    run_menu.addSeparator()
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.continue",
+        "Continue",
+        "F6",
+        callback=callback_registry.on_continue_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pause",
+        "Pause",
+        "Ctrl+F6",
+        callback=callback_registry.on_pause_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.stepOver",
+        "Step Over",
+        "F10",
+        callback=callback_registry.on_step_over,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.stepInto",
+        "Step Into",
+        "F11",
+        callback=callback_registry.on_step_into,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.stepOut",
+        "Step Out",
+        "Shift+F11",
+        callback=callback_registry.on_step_out,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.toggleBreakpoint",
+        "Toggle Breakpoint",
+        "F9",
+        callback=callback_registry.on_toggle_breakpoint,
+    )
+    run_menu.addSeparator()
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pythonConsole",
+        "Start Python Console",
+        "Ctrl+`",
+        callback=callback_registry.on_start_python_console,
     )
     _register_menu_action(
         run_menu,
@@ -216,9 +342,35 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         callback=callback_registry.on_clear_console,
     )
 
+    view_menu = menu_bar.addMenu("&View")
+    view_menu.setObjectName("shell.menu.view")
+    _register_menu_action(
+        view_menu,
+        actions,
+        "shell.action.view.resetLayout",
+        "Reset Layout",
+        callback=callback_registry.on_reset_layout,
+    )
+
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
     _register_menu_action(tools_menu, actions, "shell.action.tools.lintCurrentFile", "Lint Current File")
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.analyzeImports",
+        "Analyze Imports",
+        enabled=True,
+        callback=callback_registry.on_analyze_imports,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.showOutline",
+        "Show Current File Outline",
+        enabled=True,
+        callback=callback_registry.on_show_outline,
+    )
     _register_menu_action(
         tools_menu,
         actions,

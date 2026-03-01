@@ -76,3 +76,36 @@ def test_open_file_rejects_binary_or_non_utf8_content(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not valid UTF-8 text"):
         manager.open_file(str(file_path))
+
+
+def test_remap_paths_for_move_updates_open_tabs_and_active_file(tmp_path: Path) -> None:
+    """Moving paths should remap tab keys and preserve active-tab state."""
+    root = tmp_path / "project"
+    (root / "pkg").mkdir(parents=True)
+    source = root / "pkg" / "module.py"
+    source.write_text("x=1\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(source))
+
+    remapped = manager.remap_paths_for_move(str(root / "pkg"), str(root / "renamed"))
+
+    new_path = str((root / "renamed" / "module.py").resolve())
+    assert list(remapped.values()) == [new_path]
+    assert manager.get_tab(new_path) is not None
+    assert manager.active_tab() is manager.get_tab(new_path)
+
+
+def test_close_file_removes_tab_and_reassigns_active(tmp_path: Path) -> None:
+    """Closing an active file should promote previous tab as active."""
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("a=1\n", encoding="utf-8")
+    second.write_text("b=2\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(first))
+    manager.open_file(str(second))
+
+    manager.close_file(str(second))
+
+    assert manager.get_tab(str(second.resolve())) is None
+    assert manager.active_tab() is manager.get_tab(str(first.resolve()))

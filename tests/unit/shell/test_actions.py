@@ -11,18 +11,45 @@ def test_map_run_action_state_without_project_disables_run_and_stop() -> None:
     """No loaded project should disable run controls."""
     state = map_run_action_state(has_project=False, is_running=False)
     assert state.run_enabled is False
+    assert state.debug_enabled is False
     assert state.stop_enabled is False
+    assert state.pause_enabled is False
+    assert state.python_console_enabled is False
 
 
 def test_map_run_action_state_while_running_disables_run_enables_stop() -> None:
     """Running state should enforce single-run policy."""
     state = map_run_action_state(has_project=True, is_running=True)
     assert state.run_enabled is False
+    assert state.debug_enabled is False
     assert state.stop_enabled is True
+    assert state.pause_enabled is False
+    assert state.step_over_enabled is False
 
 
 def test_map_run_action_state_idle_project_enables_run_only() -> None:
     """Idle project state should allow run and disable stop."""
     state = map_run_action_state(has_project=True, is_running=False)
     assert state.run_enabled is True
+    assert state.debug_enabled is True
     assert state.stop_enabled is False
+    assert state.pause_enabled is False
+    assert state.python_console_enabled is True
+
+
+def test_map_run_action_state_paused_debug_enables_step_controls() -> None:
+    """Paused debug sessions should enable continue and step commands."""
+    state = map_run_action_state(has_project=True, is_running=True, is_debug_mode=True, is_debug_paused=True)
+    assert state.continue_enabled is True
+    assert state.pause_enabled is False
+    assert state.step_over_enabled is True
+    assert state.step_into_enabled is True
+    assert state.step_out_enabled is True
+
+
+def test_map_run_action_state_running_debug_enables_pause_only() -> None:
+    """Running debug mode should allow pause and disable stepping."""
+    state = map_run_action_state(has_project=True, is_running=True, is_debug_mode=True, is_debug_paused=False)
+    assert state.pause_enabled is True
+    assert state.continue_enabled is False
+    assert state.step_over_enabled is False
