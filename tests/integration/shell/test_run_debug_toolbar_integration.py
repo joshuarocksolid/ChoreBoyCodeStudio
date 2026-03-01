@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.integration
