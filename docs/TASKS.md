@@ -31,6 +31,20 @@ This version replaces the previous broad checklist with a **thin-slice, test-tra
 4. For UI changes, validate in **light and dark** themes.
 5. No slice is complete without explicit validation evidence.
 
+### Task card contract (required fields for new/updated tasks)
+
+Every non-trivial task entry must explicitly include:
+
+- `Status`
+- `Objective`
+- `Primary files`
+- `Automated test layer` (`unit` / `integration` / `runtime_parity`)
+- `Validation method` (exact command or manual evidence expectation)
+- `Acceptance linkage` (`AT-*` IDs or explicit post-MVP note)
+- `Release class` (`MVP-BLOCKING`, `RELEASE-CRITICAL`, `ENHANCEMENT`)
+- `Depends on`
+- `Done when`
+
 ---
 
 ## 3) Current implementation baseline (as of 2026-03-01)
@@ -76,6 +90,12 @@ The repository is no longer “empty scaffolding.” Core foundation work is alr
 - Useful project search/open ergonomics
 - ChoreBoy-specific help surfaces
 - Stable behavior in both light/dark themes
+
+### Release class definitions
+
+- `MVP-BLOCKING`: required to declare MVP complete.
+- `RELEASE-CRITICAL`: not part of strict MVP gate, but required for top-tier shippable quality.
+- `ENHANCEMENT`: high-value improvements that can ship after initial v1 if schedule requires.
 
 ---
 
@@ -145,6 +165,8 @@ These slices are complete and should be treated as the stable base.
 ---
 
 ## 7) Phase B — MVP completion slices (highest priority)
+
+Release class default for this phase: `MVP-BLOCKING`
 
 The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
@@ -439,6 +461,8 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ## 8) Phase C — Data safety, diagnostics, and supportability
 
+Release class default for this phase: `RELEASE-CRITICAL`
+
 ### C01 — Draft autosave/recovery foundation
 - Status: `TODO`
 - Objective: recover unsaved work after abnormal exit without silent overwrite.
@@ -478,6 +502,8 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 ---
 
 ## 9) Phase D — New Project workflow and templates
+
+Release class default for this phase: `RELEASE-CRITICAL`
 
 ### D01 — Template registry + loader
 - Status: `TODO`
@@ -537,8 +563,11 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ## 10) Phase E — Developer comfort and UX polish
 
+Release class default for this phase: `ENHANCEMENT` unless explicitly marked otherwise.
+
 ### E01 — In-file Find/Replace and Go-to-Line
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: fast single-file navigation/editing workflows.
 - Primary files:
   - `app/editors/editor_tab.py`
@@ -550,6 +579,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### E02 — Find in Files
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: project-wide text search with jump-to-result.
 - Primary files:
   - `app/editors/search_panel.py` (new)
@@ -561,6 +591,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### E03 — Quick Open (`Ctrl+P`)
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: filename-first project navigation.
 - Primary files:
   - `app/editors/quick_open.py` (new)
@@ -572,6 +603,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### E04 — Output UX polish
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: make console/run logs easy to read and debug.
 - Scope:
   - clear stdout/stderr styling contrast
@@ -585,6 +617,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### E05 — Onboarding/help surfaces for ChoreBoy constraints
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: reduce user confusion around runtime/headless limitations.
 - Scope:
   - Getting Started panel content
@@ -598,6 +631,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### E06 — Theme compatibility validation pass
 - Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
 - Objective: verify all UI states used by editor are legible in light and dark mode.
 - Scope:
   - validate shell, tree, tabs, status bar, console, problems
@@ -606,9 +640,35 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
   - manual validation artifacts in both themes
 - Depends on: completion of major UI slices (`B01`..`E05`)
 
+### E07 — Responsiveness/performance acceptance thresholds
+- Status: `TODO`
+- Release class: `RELEASE-CRITICAL`
+- Objective: define and verify baseline responsiveness so the editor feels polished on constrained systems.
+- Scope:
+  - project open (small/medium project fixtures) remains responsive with visible progress feedback
+  - file open latency feels immediate for typical script sizes
+  - Find in Files returns first result chunk quickly for medium projects
+  - console rendering remains usable during sustained output bursts
+- Thresholds (target baselines for release sign-off):
+  - Open project (<= 500 files): initial tree visible in <= 1.0s on target-like VM
+  - Open file (~2,000 LOC): tab visible + editable in <= 250ms
+  - Find in Files (<= 500 files): first results in <= 1.5s
+  - Console burst (>= 2,000 lines): UI remains interactive; no hard freeze > 500ms
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/project/project_tree.py`
+  - `app/editors/search_panel.py`
+  - `app/run/console_model.py`
+- Tests:
+  - integration tests for non-blocking behavior where practical
+  - manual timing evidence from target-like runtime for final sign-off
+- Depends on: `B03`, `E02`, `E04`
+
 ---
 
 ## 11) Phase F — Release hardening and final gate
+
+Release class default for this phase: `RELEASE-CRITICAL`
 
 ### F01 — Automated test coverage expansion for implemented contracts
 - Status: `TODO`
@@ -646,7 +706,52 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ---
 
-## 12) Legacy mapping (continuity with previous T01–T33 plan)
+## 12) Execution traceability matrix (task → test layer → validation)
+
+This matrix provides the canonical test-layer + validation expectations for remaining non-foundation slices.
+
+| Task | Automated test layer | Validation method (minimum) | Release class |
+|---|---|---|---|
+| B01 | integration (+ targeted unit) | `python -m pytest -m integration tests/integration/...` + UI open-project manual check | MVP-BLOCKING |
+| B02 | integration (+ targeted unit) | integration test for menu wiring + restart persistence check | MVP-BLOCKING |
+| B03 | unit + integration | tree model unit tests + integration refresh check | MVP-BLOCKING |
+| B04 | unit + integration | tab manager unit tests + tree-click integration check | MVP-BLOCKING |
+| B05 | unit + integration | dirty/save unit tests + edit/save integration check | MVP-BLOCKING |
+| B06 | unit + integration | save-all + unsaved-guard integration checks | MVP-BLOCKING |
+| B07 | unit + integration | status mapping unit tests + UI telemetry integration check | MVP-BLOCKING |
+| B08 | unit | manifest model validation + round-trip tests | MVP-BLOCKING |
+| B09 | unit | run-id/log-path determinism tests | MVP-BLOCKING |
+| B10 | integration | spawn/stop lifecycle integration checks | MVP-BLOCKING |
+| B11 | unit + integration | runner CLI/manifest failure tests + integration bootstrap check | MVP-BLOCKING |
+| B12 | integration | success/failure execution integration tests | MVP-BLOCKING |
+| B13 | integration | stdout/stderr streaming integration tests | MVP-BLOCKING |
+| B14 | integration | log/traceback persistence integration tests | MVP-BLOCKING |
+| B15 | unit + integration | traceback parsing unit tests + problems-pane integration check | MVP-BLOCKING |
+| B16 | integration | run-state transition integration tests + manual stop-flow check | MVP-BLOCKING |
+| B17 | manual_acceptance | execute MVP AT gate with evidence artifacts | MVP-BLOCKING |
+| C01 | unit + integration | draft recovery tests + crash-recovery integration test | RELEASE-CRITICAL |
+| C02 | unit + integration | diagnostics result tests + invalid project checks | RELEASE-CRITICAL |
+| C03 | integration | support bundle artifact verification tests | RELEASE-CRITICAL |
+| D01 | unit | template registry/metadata contract tests | RELEASE-CRITICAL |
+| D02 | integration | template generate + run validation | RELEASE-CRITICAL |
+| D03 | integration + manual_acceptance | template generate test + GUI launch evidence | RELEASE-CRITICAL |
+| D04 | integration + runtime_parity/manual_acceptance | headless template contract checks + runtime guidance validation | RELEASE-CRITICAL |
+| D05 | integration | New Project flow integration checks | RELEASE-CRITICAL |
+| E01 | unit + integration | find/goto unit tests + shortcut wiring check | RELEASE-CRITICAL |
+| E02 | integration | project search integration tests | RELEASE-CRITICAL |
+| E03 | unit + integration | matching unit tests + open-file integration checks | RELEASE-CRITICAL |
+| E04 | integration + manual_acceptance | console formatting behavior + readability evidence | RELEASE-CRITICAL |
+| E05 | manual_acceptance | onboarding discoverability walkthrough evidence | RELEASE-CRITICAL |
+| E06 | manual_acceptance | light/dark visual validation artifacts | RELEASE-CRITICAL |
+| E07 | integration + manual_acceptance | responsiveness checks + timing evidence against thresholds | RELEASE-CRITICAL |
+| F01 | unit + integration + runtime_parity | run targeted suites for all shipped modules | RELEASE-CRITICAL |
+| F02 | manual_acceptance | execute AT runbook and capture outcomes | RELEASE-CRITICAL |
+| F03 | n/a (docs contract) | doc diff review aligned to shipped behavior | RELEASE-CRITICAL |
+| F04 | n/a (release process) | closure checklist + deferred backlog curation | RELEASE-CRITICAL |
+
+---
+
+## 13) Legacy mapping (continuity with previous T01–T33 plan)
 
 | Legacy ID | New mapping |
 |---|---|
@@ -686,7 +791,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ---
 
-## 13) Definition of MVP achieved
+## 14) Definition of MVP achieved
 
 MVP is achieved only when the following are demonstrably true on target-like runtime:
 
