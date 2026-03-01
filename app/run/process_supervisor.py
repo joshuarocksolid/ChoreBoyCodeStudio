@@ -62,6 +62,7 @@ class ProcessSupervisor:
                     command,
                     cwd=cwd,
                     env=None if env is None else dict(env),
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -98,6 +99,20 @@ class ProcessSupervisor:
             process.kill()
             process.wait()
         return process.returncode
+
+    def send_input(self, text: str) -> None:
+        """Send text to active process stdin."""
+        with self._lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            raise RunLifecycleError("Cannot send input because runner process is not active.")
+        if process.stdin is None:
+            raise RunLifecycleError("Runner process stdin is unavailable.")
+        try:
+            process.stdin.write(text)
+            process.stdin.flush()
+        except OSError as exc:
+            raise RunLifecycleError(f"Failed to write to runner stdin: {exc}") from exc
 
     def _start_reader_threads(self, process: subprocess.Popen[str]) -> None:
         self._reader_threads = []

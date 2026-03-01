@@ -9,7 +9,9 @@ from typing import Optional
 from PySide2.QtCore import QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QTextCursor
 from PySide2.QtWidgets import (
+    QApplication,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
@@ -18,6 +20,7 @@ from PySide2.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QSplitter,
     QTabWidget,
     QTreeWidget,
@@ -27,6 +30,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
+from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
@@ -35,6 +39,7 @@ from app.editors.editor_tab import EditorTabState
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
 from app.editors.search_panel import SearchMatch, find_in_files
 from app.persistence.autosave_store import AutosaveStore
+from app.persistence.settings_store import load_settings, save_settings
 from app.run.console_model import ConsoleModel
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
@@ -42,12 +47,20 @@ from app.run.run_service import RunService
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
+from app.shell.layout_persistence import (
+    DEFAULT_TOP_SPLITTER_SIZES,
+    DEFAULT_VERTICAL_SPLITTER_SIZES,
+    ShellLayoutState,
+    merge_layout_into_settings,
+    parse_shell_layout_state,
+)
 from app.project.project_tree import ProjectTreeNode, build_project_tree
-from app.project.project_service import open_project_and_track_recent
+from app.project.project_service import open_project, open_project_and_track_recent
 from app.project.recent_projects import load_recent_projects
 from app.shell.actions import map_run_action_state
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs, build_recent_project_menu_items
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
+from app.shell.toolbar import build_shell_toolbar
 
 # Qt.UserRole is 0x0100 (256). Literal role IDs avoid enum typing mismatches across PySide shims.
 TREE_ROLE_ABSOLUTE_PATH = 256
@@ -65,20 +78,29 @@ class MainWindow(QMainWindow):
         self._project_placeholder_label: QLabel | None = None
         self._project_tree_widget: QTreeWidget | None = None
         self._editor_tabs_widget: QTabWidget | None = None
+        self._bottom_tabs_widget: QTabWidget | None = None
         self._console_output_widget: QPlainTextEdit | None = None
+        self._python_console_output_widget: QPlainTextEdit | None = None
+        self._python_console_input_widget: QLineEdit | None = None
+        self._python_console_send_button: QPushButton | None = None
         self._run_log_output_widget: QPlainTextEdit | None = None
         self._problems_list_widget: QListWidget | None = None
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
+        self._toolbar = None
+        self._top_splitter: QSplitter | None = None
+        self._vertical_splitter: QSplitter | None = None
         self._state_root = state_root
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, QPlainTextEdit] = {}
+        self._breakpoints_by_file: dict[str, set[int]] = {}
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_chunks: list[str] = []
         self._active_run_session_log_path: str | None = None
+        self._active_session_mode: str | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
@@ -94,8 +116,17 @@ class MainWindow(QMainWindow):
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
                 on_run=self._handle_run_action,
+                on_debug=self._handle_debug_action,
                 on_stop=self._handle_stop_action,
+                on_restart=self._handle_restart_action,
+                on_continue_debug=self._handle_continue_debug_action,
+                on_step_over=self._handle_step_over_action,
+                on_step_into=self._handle_step_into_action,
+                on_step_out=self._handle_step_out_action,
+                on_toggle_breakpoint=self._handle_toggle_breakpoint_action,
+                on_start_python_console=self._handle_start_python_console_action,
                 on_clear_console=self._handle_clear_console_action,
+                on_reset_layout=self._handle_reset_layout_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
@@ -111,6 +142,8 @@ class MainWindow(QMainWindow):
             ),
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
+        self._toolbar = build_shell_toolbar(self, self._menu_registry)
+        self._restore_layout_from_settings()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
@@ -131,6 +164,45 @@ class MainWindow(QMainWindow):
             self._project_placeholder_label.setText(project_text)
         if self._status_controller is not None:
             self._status_controller.set_project_state_text(f"Project: {project_text}")
+
+    def _restore_layout_from_settings(self) -> None:
+        settings_payload = load_settings(state_root=self._state_root)
+        layout_state = parse_shell_layout_state(settings_payload)
+        self.resize(layout_state.width, layout_state.height)
+        if self._top_splitter is not None:
+            self._top_splitter.setSizes(list(layout_state.top_splitter_sizes))
+        if self._vertical_splitter is not None:
+            self._vertical_splitter.setSizes(list(layout_state.vertical_splitter_sizes))
+
+    def _persist_layout_to_settings(self) -> None:
+        top_sizes = tuple(self._top_splitter.sizes()) if self._top_splitter is not None else DEFAULT_TOP_SPLITTER_SIZES
+        vertical_sizes = (
+            tuple(self._vertical_splitter.sizes())
+            if self._vertical_splitter is not None
+            else DEFAULT_VERTICAL_SPLITTER_SIZES
+        )
+        if len(top_sizes) != 2:
+            top_sizes = DEFAULT_TOP_SPLITTER_SIZES
+        if len(vertical_sizes) != 2:
+            vertical_sizes = DEFAULT_VERTICAL_SPLITTER_SIZES
+
+        layout_state = ShellLayoutState(
+            width=self.width(),
+            height=self.height(),
+            top_splitter_sizes=(int(top_sizes[0]), int(top_sizes[1])),
+            vertical_splitter_sizes=(int(vertical_sizes[0]), int(vertical_sizes[1])),
+        )
+        settings_payload = load_settings(state_root=self._state_root)
+        merged = merge_layout_into_settings(settings_payload, layout_state)
+        save_settings(merged, state_root=self._state_root)
+
+    def _handle_reset_layout_action(self) -> None:
+        self.resize(ShellLayoutState().width, ShellLayoutState().height)
+        if self._top_splitter is not None:
+            self._top_splitter.setSizes(list(DEFAULT_TOP_SPLITTER_SIZES))
+        if self._vertical_splitter is not None:
+            self._vertical_splitter.setSizes(list(DEFAULT_VERTICAL_SPLITTER_SIZES))
+        self._persist_layout_to_settings()
 
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
@@ -321,6 +393,7 @@ class MainWindow(QMainWindow):
         self._logger.info("Project loaded: %s", loaded_project.project_root)
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
+        self._breakpoints_by_file.clear()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
@@ -431,13 +504,32 @@ class MainWindow(QMainWindow):
             save_all_action.setEnabled(has_dirty_tabs)
 
     def _handle_run_action(self) -> bool:
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
+
+    def _handle_debug_action(self) -> bool:
+        breakpoint_entries: list[dict[str, int | str]] = []
+        for file_path, line_numbers in self._breakpoints_by_file.items():
+            for line_number in sorted(line_numbers):
+                breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
+
+    def _handle_start_python_console_action(self) -> bool:
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_REPL, skip_save=True)
+
+    def _start_session(
+        self,
+        *,
+        mode: str,
+        breakpoints: list[dict[str, int | str]] | None = None,
+        skip_save: bool = False,
+    ) -> bool:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Run unavailable", "Open a project before running code.")
             return False
         if self._run_service.supervisor.is_running():
             return False
 
-        if not self._handle_save_all_action():
+        if not skip_save and not self._handle_save_all_action():
             QMessageBox.warning(self, "Run cancelled", "Fix save errors before running.")
             return False
 
@@ -447,7 +539,7 @@ class MainWindow(QMainWindow):
         self._append_console_line("Starting run...\n", stream="system")
 
         try:
-            session = self._run_service.start_run(self._loaded_project)
+            session = self._run_service.start_run(self._loaded_project, mode=mode, breakpoints=breakpoints)
         except Exception as exc:
             QMessageBox.warning(self, "Run failed to start", str(exc))
             self._append_console_line(f"Run failed to start: {exc}\n", stream="stderr")
@@ -455,7 +547,12 @@ class MainWindow(QMainWindow):
             return False
 
         self._active_run_session_log_path = session.log_file_path
+        self._active_session_mode = mode
         self._append_console_line(f"Run started ({session.run_id})\n", stream="system")
+        if mode == constants.RUN_MODE_PYTHON_REPL:
+            self._append_python_console_line("[system] Python console started.")
+        elif mode == constants.RUN_MODE_PYTHON_DEBUG:
+            self._append_python_console_line("[system] Debug session started. Use toolbar or pdb commands.")
         self._refresh_run_action_states()
         return True
 
@@ -464,10 +561,84 @@ class MainWindow(QMainWindow):
         self._append_console_line("Stop requested.\n", stream="system")
         self._refresh_run_action_states()
 
+    def _handle_restart_action(self) -> None:
+        if self._run_service.supervisor.is_running():
+            self._run_service.stop_run()
+        if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+            self._handle_debug_action()
+        elif self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
+            self._handle_start_python_console_action()
+        else:
+            self._handle_run_action()
+
+    def _handle_continue_debug_action(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+        self._send_runner_input("continue")
+
+    def _handle_step_over_action(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+        self._send_runner_input("next")
+
+    def _handle_step_into_action(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+        self._send_runner_input("step")
+
+    def _handle_step_out_action(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+        self._send_runner_input("return")
+
+    def _handle_toggle_breakpoint_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            return
+        line_number = editor_widget.textCursor().blockNumber() + 1
+        breakpoints = self._breakpoints_by_file.setdefault(active_tab.file_path, set())
+        if line_number in breakpoints:
+            breakpoints.remove(line_number)
+        else:
+            breakpoints.add(line_number)
+        if not breakpoints:
+            self._breakpoints_by_file.pop(active_tab.file_path, None)
+        if hasattr(editor_widget, "set_breakpoints"):
+            editor_widget.set_breakpoints(self._breakpoints_by_file.get(active_tab.file_path, set()))
+
     def _handle_clear_console_action(self) -> None:
         self._console_model.clear()
         if self._console_output_widget is not None:
             self._console_output_widget.clear()
+        if self._python_console_output_widget is not None:
+            self._python_console_output_widget.clear()
+
+    def _send_runner_input(self, command_text: str) -> None:
+        text = command_text if command_text.endswith("\n") else f"{command_text}\n"
+        try:
+            self._run_service.send_input(text)
+        except Exception as exc:
+            QMessageBox.warning(self, "Runner input failed", str(exc))
+            return
+        self._append_python_console_line(f">>> {command_text.rstrip()}")
+
+    def _handle_python_console_submit(self) -> None:
+        if self._python_console_input_widget is None:
+            return
+        command_text = self._python_console_input_widget.text().strip()
+        if not command_text:
+            return
+        if not self._run_service.supervisor.is_running():
+            QMessageBox.warning(self, "Python Console", "Start a Python console or debug session first.")
+            return
+        self._send_runner_input(command_text)
+        self._python_console_input_widget.clear()
+
+    def _append_python_console_line(self, text: str) -> None:
+        if self._python_console_output_widget is None:
+            return
+        self._python_console_output_widget.appendPlainText(text)
 
     def _handle_project_health_check_action(self) -> None:
         if self._loaded_project is None:
@@ -524,16 +695,42 @@ class MainWindow(QMainWindow):
             return
 
         run_action = self._menu_registry.action("shell.action.run.run")
+        debug_action = self._menu_registry.action("shell.action.run.debug")
         stop_action = self._menu_registry.action("shell.action.run.stop")
+        restart_action = self._menu_registry.action("shell.action.run.restart")
+        continue_action = self._menu_registry.action("shell.action.run.continue")
+        step_over_action = self._menu_registry.action("shell.action.run.stepOver")
+        step_into_action = self._menu_registry.action("shell.action.run.stepInto")
+        step_out_action = self._menu_registry.action("shell.action.run.stepOut")
+        toggle_breakpoint_action = self._menu_registry.action("shell.action.run.toggleBreakpoint")
+        python_console_action = self._menu_registry.action("shell.action.run.pythonConsole")
         state = map_run_action_state(
             has_project=self._loaded_project is not None,
             is_running=self._run_service.supervisor.is_running(),
+            is_debug_mode=self._run_service.is_debug_mode,
+            is_debug_paused=self._run_service.is_debug_paused,
         )
 
         if run_action is not None:
             run_action.setEnabled(state.run_enabled)
+        if debug_action is not None:
+            debug_action.setEnabled(state.debug_enabled)
         if stop_action is not None:
             stop_action.setEnabled(state.stop_enabled)
+        if restart_action is not None:
+            restart_action.setEnabled(state.restart_enabled)
+        if continue_action is not None:
+            continue_action.setEnabled(state.continue_enabled)
+        if step_over_action is not None:
+            step_over_action.setEnabled(state.step_over_enabled)
+        if step_into_action is not None:
+            step_into_action.setEnabled(state.step_into_enabled)
+        if step_out_action is not None:
+            step_out_action.setEnabled(state.step_out_enabled)
+        if toggle_breakpoint_action is not None:
+            toggle_breakpoint_action.setEnabled(state.toggle_breakpoint_enabled)
+        if python_console_action is not None:
+            python_console_action.setEnabled(state.python_console_enabled)
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         self._run_event_queue.put(event)
@@ -550,17 +747,31 @@ class MainWindow(QMainWindow):
         if event.event_type == "output":
             stream = event.stream or "stdout"
             text = event.text or ""
+            if "__CB_DEBUG_PAUSED__" in text:
+                self._append_python_console_line("[debug] Paused at breakpoint.")
+                self._refresh_run_action_states()
+                return
+            if "__CB_DEBUG_RUNNING__" in text:
+                self._append_python_console_line("[debug] Running...")
+                self._refresh_run_action_states()
+                return
             self._active_run_output_chunks.append(text)
             self._append_console_line(text, stream=stream)
+            if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
+                for line in text.rstrip().splitlines():
+                    self._append_python_console_line(line)
             return
 
         if event.event_type == "exit":
             return_code = event.return_code
             if event.terminated_by_user:
                 self._append_console_line(f"Run terminated by user (code={return_code}).\n", stream="system")
+                self._append_python_console_line(f"[system] Session terminated (code={return_code}).")
             else:
                 self._append_console_line(f"Run finished (code={return_code}).\n", stream="system")
+                self._append_python_console_line(f"[system] Session finished (code={return_code}).")
 
+            self._active_session_mode = None
             self._refresh_run_action_states()
             self._load_latest_run_log()
             self._update_problems_from_output()
@@ -647,6 +858,7 @@ class MainWindow(QMainWindow):
         if self._confirm_proceed_with_unsaved_changes("exiting"):
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            self._persist_layout_to_settings()
             event.accept()
             return
         event.ignore()
@@ -665,9 +877,11 @@ class MainWindow(QMainWindow):
 
         vertical_splitter = QSplitter(Qt.Vertical, central)
         vertical_splitter.setObjectName("shell.verticalSplitter")
+        self._vertical_splitter = vertical_splitter
 
         top_splitter = QSplitter(Qt.Horizontal, vertical_splitter)
         top_splitter.setObjectName("shell.topSplitter")
+        self._top_splitter = top_splitter
         top_splitter.addWidget(self._build_left_panel())
         top_splitter.addWidget(self._build_center_panel())
         top_splitter.setStretchFactor(0, 1)
@@ -677,6 +891,8 @@ class MainWindow(QMainWindow):
         vertical_splitter.addWidget(self._build_bottom_panel())
         vertical_splitter.setStretchFactor(0, 4)
         vertical_splitter.setStretchFactor(1, 2)
+        top_splitter.setSizes(list(DEFAULT_TOP_SPLITTER_SIZES))
+        vertical_splitter.setSizes(list(DEFAULT_VERTICAL_SPLITTER_SIZES))
 
         layout.addWidget(vertical_splitter)
         self.setCentralWidget(central)
@@ -703,22 +919,49 @@ class MainWindow(QMainWindow):
         self._project_tree_widget.itemActivated.connect(self._handle_project_tree_item_activation)
         self._project_tree_widget.itemClicked.connect(self._handle_project_tree_item_activation)
         layout.addWidget(self._project_tree_widget, 1)
+        panel.setMinimumWidth(220)
         return panel
 
     def _build_center_panel(self) -> QWidget:
         self._editor_tabs_widget = QTabWidget(self)
         self._editor_tabs_widget.setObjectName("shell.editorTabs")
         self._editor_tabs_widget.currentChanged.connect(self._handle_editor_tab_changed)
+        self._editor_tabs_widget.setMinimumWidth(480)
         return self._editor_tabs_widget
 
     def _build_bottom_panel(self) -> QWidget:
         tabs = QTabWidget(self)
         tabs.setObjectName("shell.bottomRegion.tabs")
+        self._bottom_tabs_widget = tabs
 
         self._console_output_widget = QPlainTextEdit(tabs)
         self._console_output_widget.setObjectName("shell.bottom.console")
         self._console_output_widget.setReadOnly(True)
         tabs.addTab(self._console_output_widget, "Console")
+
+        console_panel = QWidget(tabs)
+        console_layout = QVBoxLayout(console_panel)
+        console_layout.setContentsMargins(8, 8, 8, 8)
+        console_layout.setSpacing(6)
+
+        self._python_console_output_widget = QPlainTextEdit(console_panel)
+        self._python_console_output_widget.setObjectName("shell.bottom.pythonConsole.output")
+        self._python_console_output_widget.setReadOnly(True)
+        console_layout.addWidget(self._python_console_output_widget, 1)
+
+        input_row = QWidget(console_panel)
+        input_layout = QHBoxLayout(input_row)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(6)
+        self._python_console_input_widget = QLineEdit(input_row)
+        self._python_console_input_widget.setObjectName("shell.bottom.pythonConsole.input")
+        self._python_console_input_widget.returnPressed.connect(self._handle_python_console_submit)
+        input_layout.addWidget(self._python_console_input_widget, 1)
+        self._python_console_send_button = QPushButton("Send", input_row)
+        self._python_console_send_button.clicked.connect(self._handle_python_console_submit)
+        input_layout.addWidget(self._python_console_send_button, 0)
+        console_layout.addWidget(input_row, 0)
+        tabs.addTab(console_panel, "Python Console")
 
         self._problems_list_widget = QListWidget(tabs)
         self._problems_list_widget.setObjectName("shell.bottom.problems")

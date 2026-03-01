@@ -51,3 +51,20 @@ def test_process_supervisor_stop_terminates_long_running_process(tmp_path) -> No
     supervisor.stop(terminate_timeout_seconds=0.2)
     assert _wait_until(lambda: any(event.event_type == 'exit' for event in events))
     assert any(event.event_type == "exit" and event.terminated_by_user for event in events)
+
+
+def test_process_supervisor_send_input_writes_to_child_stdin(tmp_path) -> None:
+    """Supervisor should support interactive stdin writes."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; line = sys.stdin.readline().strip(); print(f'ECHO:{line}')",
+    ]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    supervisor.send_input("hello\n")
+
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    assert any(event.event_type == "output" and "ECHO:hello" in (event.text or "") for event in events)

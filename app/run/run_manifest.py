@@ -10,7 +10,15 @@ from typing import Any
 from app.core import constants
 from app.core.errors import RunManifestValidationError
 
-ALLOWED_RUN_MODES = frozenset({"python_script", "qt_app", "freecad_headless"})
+ALLOWED_RUN_MODES = frozenset(
+    {
+        constants.RUN_MODE_PYTHON_SCRIPT,
+        constants.RUN_MODE_QT_APP,
+        constants.RUN_MODE_FREECAD_HEADLESS,
+        constants.RUN_MODE_PYTHON_REPL,
+        constants.RUN_MODE_PYTHON_DEBUG,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +36,7 @@ class RunManifest:
     safe_mode: bool = True
     log_file: str = ""
     timestamp: str = ""
+    breakpoints: list[dict[str, int | str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +51,7 @@ class RunManifest:
             "safe_mode": self.safe_mode,
             "log_file": self.log_file,
             "timestamp": self.timestamp,
+            "breakpoints": [dict(entry) for entry in self.breakpoints],
         }
 
 
@@ -84,6 +94,7 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
 
     log_file = _require_absolute_path(payload, "log_file", manifest_path=manifest_path)
     timestamp = _require_non_empty_string(payload, "timestamp", manifest_path=manifest_path)
+    breakpoints = _parse_breakpoints(payload.get("breakpoints", []), manifest_path=manifest_path)
 
     return RunManifest(
         manifest_version=manifest_version,
@@ -97,6 +108,7 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
         safe_mode=safe_mode,
         log_file=log_file,
         timestamp=timestamp,
+        breakpoints=breakpoints,
     )
 
 
@@ -154,3 +166,37 @@ def _require_absolute_path(payload: dict[str, Any], field: str, *, manifest_path
 
 def _raise_manifest_error(message: str, *, field: str | None = None, manifest_path: Path | None = None) -> None:
     raise RunManifestValidationError(message, field=field, manifest_path=manifest_path)
+
+
+def _parse_breakpoints(
+    raw_breakpoints: object,
+    *,
+    manifest_path: Path | None,
+) -> list[dict[str, int | str]]:
+    if not isinstance(raw_breakpoints, list):
+        _raise_manifest_error("breakpoints must be a list.", field="breakpoints", manifest_path=manifest_path)
+
+    normalized: list[dict[str, int | str]] = []
+    for index, entry in enumerate(raw_breakpoints):
+        if not isinstance(entry, dict):
+            _raise_manifest_error(
+                f"breakpoints[{index}] must be an object with file_path and line_number.",
+                field="breakpoints",
+                manifest_path=manifest_path,
+            )
+        file_path = entry.get("file_path")
+        line_number = entry.get("line_number")
+        if not isinstance(file_path, str) or not file_path.strip():
+            _raise_manifest_error(
+                f"breakpoints[{index}].file_path must be a non-empty string.",
+                field="breakpoints",
+                manifest_path=manifest_path,
+            )
+        if not isinstance(line_number, int) or line_number <= 0:
+            _raise_manifest_error(
+                f"breakpoints[{index}].line_number must be a positive integer.",
+                field="breakpoints",
+                manifest_path=manifest_path,
+            )
+        normalized.append({"file_path": str(Path(file_path).expanduser().resolve()), "line_number": line_number})
+    return normalized

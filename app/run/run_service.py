@@ -26,6 +26,7 @@ class RunSession:
     log_file_path: str
     project_root: str
     entry_file: str
+    mode: str
 
 
 class RunService:
@@ -45,6 +46,7 @@ class RunService:
         self._now_factory = now_factory or datetime.now
         self._supervisor = ProcessSupervisor(on_event=self._forward_event)
         self._current_session: RunSession | None = None
+        self._is_debug_paused = False
 
     @property
     def supervisor(self) -> ProcessSupervisor:
@@ -54,6 +56,14 @@ class RunService:
     def current_session(self) -> RunSession | None:
         return self._current_session
 
+    @property
+    def is_debug_mode(self) -> bool:
+        return self._current_session is not None and self._current_session.mode == constants.RUN_MODE_PYTHON_DEBUG
+
+    @property
+    def is_debug_paused(self) -> bool:
+        return self._is_debug_paused
+
     def start_run(
         self,
         loaded_project: LoadedProject,
@@ -61,12 +71,14 @@ class RunService:
         entry_file: str | None = None,
         mode: str | None = None,
         argv: list[str] | None = None,
+        breakpoints: list[dict[str, int | str]] | None = None,
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
         run_id = generate_run_id(now=self._now_factory())
         entry = entry_file or loaded_project.metadata.default_entry
-        run_mode = mode or loaded_project.metadata.default_mode
+        run_mode = mode or loaded_project.metadata.default_mode or constants.RUN_MODE_PYTHON_SCRIPT
         arguments = [] if argv is None else list(argv)
+        normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
 
         resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
         resolved_working_directory = (resolved_project_root / loaded_project.metadata.working_directory).resolve()
@@ -88,6 +100,7 @@ class RunService:
             safe_mode=loaded_project.metadata.safe_mode,
             log_file=str(log_file_path),
             timestamp=timestamp,
+            breakpoints=normalized_breakpoints,
         )
         save_run_manifest(manifest_path, manifest)
 
@@ -99,12 +112,18 @@ class RunService:
             log_file_path=str(log_file_path),
             project_root=str(resolved_project_root),
             entry_file=entry,
+            mode=run_mode,
         )
+        self._is_debug_paused = False
         return self._current_session
 
     def stop_run(self) -> int | None:
         """Stop active run process if running."""
         return self._supervisor.stop()
+
+    def send_input(self, text: str) -> None:
+        """Send stdin input to active runner process."""
+        self._supervisor.send_input(text)
 
     def _build_runner_command(self, manifest_path: str) -> list[str]:
         runtime_executable = resolve_runtime_executable(self._runtime_executable)
@@ -121,8 +140,14 @@ class RunService:
         return [runtime_executable, self._runner_boot_path, "--manifest", manifest_path]
 
     def _forward_event(self, event: ProcessEvent) -> None:
+        if event.event_type == "output" and event.text:
+            if "__CB_DEBUG_PAUSED__" in event.text:
+                self._is_debug_paused = True
+            elif "__CB_DEBUG_RUNNING__" in event.text:
+                self._is_debug_paused = False
         if event.event_type == "exit":
             self._current_session = None
+            self._is_debug_paused = False
         if self._on_event is None:
             return
         self._on_event(event)
