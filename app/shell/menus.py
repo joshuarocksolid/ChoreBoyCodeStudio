@@ -40,6 +40,7 @@ class MenuCallbacks:
     on_indent: Callable[[], object] | None = None
     on_outdent: Callable[[], object] | None = None
     on_go_to_definition: Callable[[], object] | None = None
+    on_signature_help: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -240,6 +241,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "F12",
         enabled=True,
         callback=callback_registry.on_go_to_definition,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.signatureHelp",
+        "Signature Help",
+        "Ctrl+Shift+Space",
+        enabled=True,
+        callback=callback_registry.on_signature_help,
     )
 
     run_menu = menu_bar.addMenu("&Run")

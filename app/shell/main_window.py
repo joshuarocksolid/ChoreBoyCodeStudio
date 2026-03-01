@@ -50,6 +50,7 @@ from app.debug.debug_session import DebugSession
 from app.intelligence.diagnostics_service import find_unresolved_imports
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
+from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_service import CompletionRequest, CompletionService
@@ -201,6 +202,7 @@ class MainWindow(QMainWindow):
                 on_indent=self._handle_indent_action,
                 on_outdent=self._handle_outdent_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
+                on_signature_help=self._handle_signature_help_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -562,6 +564,27 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
 
         self._background_tasks.run(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
+
+    def _handle_signature_help_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Signature Help", "Open a file tab first.")
+            return
+
+        signature = resolve_signature_help(editor_widget.toPlainText(), editor_widget.textCursor().position())
+        if signature is None:
+            QMessageBox.information(self, "Signature Help", "No callable signature information available.")
+            return
+
+        details = [
+            signature.signature_text,
+            f"Active parameter index: {signature.argument_index}",
+        ]
+        if signature.doc_summary:
+            details.append(f"Doc: {signature.doc_summary}")
+        details.append(f"Source: {signature.source}")
+        QMessageBox.information(self, "Signature Help", "\n".join(details))
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
