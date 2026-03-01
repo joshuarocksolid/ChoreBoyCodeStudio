@@ -35,7 +35,9 @@ class ProcessSupervisor:
         self._terminated_by_user = False
         self._lock = threading.RLock()
         self._reader_threads: list[threading.Thread] = []
+        self._reader_streams: list[TextIO] = []
         self._waiter_thread: threading.Thread | None = None
+        self._resources_cleaned = True
 
     @property
     def state(self) -> ProcessState:
@@ -72,6 +74,7 @@ class ProcessSupervisor:
 
             self._process = process
             self._terminated_by_user = False
+            self._resources_cleaned = False
             self._set_state("running")
             self._start_reader_threads(process)
             self._start_waiter_thread(process)
@@ -85,6 +88,8 @@ class ProcessSupervisor:
             return None
 
         if process.poll() is not None:
+            self._cleanup_process_resources(process)
+            self._join_waiter_thread()
             return process.returncode
 
         with self._lock:
@@ -97,13 +102,17 @@ class ProcessSupervisor:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+        self._cleanup_process_resources(process)
+        self._join_waiter_thread()
         return process.returncode
 
     def _start_reader_threads(self, process: subprocess.Popen[str]) -> None:
         self._reader_threads = []
+        self._reader_streams = []
         for stream_name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
             if stream is None:
                 continue
+            self._reader_streams.append(stream)
             reader = threading.Thread(
                 target=self._read_stream,
                 args=(stream_name, stream),
@@ -117,20 +126,31 @@ class ProcessSupervisor:
         self._waiter_thread.start()
 
     def _read_stream(self, stream_name: Literal["stdout", "stderr"], stream: TextIO) -> None:
-        for chunk in iter(stream.readline, ""):
-            self._emit_event(
-                ProcessEvent(
-                    event_type="output",
-                    stream=stream_name,
-                    text=chunk,
-                    terminated_by_user=self._terminated_by_user,
+        try:
+            for chunk in iter(stream.readline, ""):
+                self._emit_event(
+                    ProcessEvent(
+                        event_type="output",
+                        stream=stream_name,
+                        text=chunk,
+                        terminated_by_user=self._terminated_by_user,
+                    )
                 )
-            )
+        except (OSError, ValueError):
+            # Stream can be force-closed during shutdown/stop cleanup.
+            return
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
 
     def _wait_for_exit(self, process: subprocess.Popen[str]) -> None:
         return_code = process.wait()
+        self._cleanup_process_resources(process)
         with self._lock:
             self._process = None
+            self._waiter_thread = None
             self._set_state("exited")
             terminated_by_user = self._terminated_by_user
 
@@ -141,6 +161,49 @@ class ProcessSupervisor:
                 terminated_by_user=terminated_by_user,
             )
         )
+
+    def _cleanup_process_resources(self, process: subprocess.Popen[str]) -> None:
+        with self._lock:
+            if self._resources_cleaned:
+                return
+            self._resources_cleaned = True
+            reader_threads = list(self._reader_threads)
+            reader_streams = list(self._reader_streams)
+            self._reader_threads = []
+            self._reader_streams = []
+
+        self._join_reader_threads(reader_threads, timeout_seconds=0.2)
+
+        seen_stream_ids: set[int] = set()
+        for stream in [*reader_streams, process.stdout, process.stderr]:
+            if stream is None:
+                continue
+            stream_id = id(stream)
+            if stream_id in seen_stream_ids:
+                continue
+            seen_stream_ids.add(stream_id)
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+        self._join_reader_threads(reader_threads, timeout_seconds=0.2)
+
+    def _join_reader_threads(self, threads: list[threading.Thread], *, timeout_seconds: float) -> None:
+        current_thread = threading.current_thread()
+        for reader in threads:
+            if reader is current_thread:
+                continue
+            reader.join(timeout=timeout_seconds)
+
+    def _join_waiter_thread(self) -> None:
+        with self._lock:
+            waiter_thread = self._waiter_thread
+        if waiter_thread is None:
+            return
+        if waiter_thread is threading.current_thread():
+            return
+        waiter_thread.join(timeout=0.5)
 
     def _set_state(self, state: ProcessState) -> None:
         self._state = state

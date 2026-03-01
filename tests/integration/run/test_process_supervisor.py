@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import sys
 import time
 
@@ -51,3 +52,36 @@ def test_process_supervisor_stop_terminates_long_running_process(tmp_path) -> No
     supervisor.stop(terminate_timeout_seconds=0.2)
     assert _wait_until(lambda: any(event.event_type == 'exit' for event in events))
     assert any(event.event_type == "exit" and event.terminated_by_user for event in events)
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+@pytest.mark.filterwarnings("error::ResourceWarning")
+def test_process_supervisor_stop_cleans_up_stream_handles(tmp_path) -> None:
+    """Stop path should not leave unclosed stdout/stderr stream wrappers."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [sys.executable, "-c", "import time; print('tick'); time.sleep(30)"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: supervisor.is_running())
+
+    supervisor.stop(terminate_timeout_seconds=0.2)
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+
+    del supervisor
+    gc.collect()
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+@pytest.mark.filterwarnings("error::ResourceWarning")
+def test_process_supervisor_exit_cleans_up_stream_handles(tmp_path) -> None:
+    """Natural process exit should not leave unclosed stdout/stderr streams."""
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    command = [sys.executable, "-c", "print('done')"]
+
+    supervisor.start(command, cwd=str(tmp_path))
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+
+    del supervisor
+    gc.collect()

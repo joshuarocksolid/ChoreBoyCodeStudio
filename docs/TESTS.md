@@ -91,5 +91,5 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 At latest validation checkpoint:
 
-- `python -m pytest -q` -> **148 passed** (with 4 known runner-stream finalizer warnings)
+- `python -m pytest -q` -> **150 passed** (no known test warnings)
 - `mypy` -> **4 known pre-existing errors (expected baseline)**
