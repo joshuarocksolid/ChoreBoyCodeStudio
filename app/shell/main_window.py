@@ -82,10 +82,10 @@ from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_pro
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.project.project_service import open_project
-from app.shell.actions import map_run_action_state
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
+from app.shell.run_session_controller import RunSessionController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_shell_toolbar
 
@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
+        self._run_session_controller = RunSessionController(self._run_service)
         self._template_service = TemplateService()
         self._background_tasks = BackgroundTaskRunner(
             dispatch_to_main_thread=self._dispatch_to_main_thread
@@ -725,6 +726,11 @@ class MainWindow(QMainWindow):
     def _handle_start_python_console_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_REPL, skip_save=True)
 
+    def _prepare_for_session_start(self) -> None:
+        self._active_run_output_tail.clear()
+        self._clear_problems()
+        self._debug_session = DebugSession()
+
     def _start_session(
         self,
         *,
@@ -732,43 +738,34 @@ class MainWindow(QMainWindow):
         breakpoints: list[dict[str, int | str]] | None = None,
         skip_save: bool = False,
     ) -> bool:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Run unavailable", "Open a project before running code.")
-            return False
-        if self._run_service.supervisor.is_running():
-            return False
-
-        if not skip_save and not self._handle_save_all_action():
-            QMessageBox.warning(self, "Run cancelled", "Fix save errors before running.")
-            return False
-
-        self._active_run_output_tail.clear()
-        self._clear_problems()
-        self._debug_session = DebugSession()
-        self._append_console_line("────────────────────\n", stream="system")
-        self._append_console_line("Starting run...\n", stream="system")
-
-        try:
-            session = self._run_service.start_run(self._loaded_project, mode=mode, breakpoints=breakpoints)
-        except Exception as exc:
-            QMessageBox.warning(self, "Run failed to start", str(exc))
-            self._append_console_line(f"Run failed to start: {exc}\n", stream="stderr")
+        result = self._run_session_controller.start_session(
+            loaded_project=self._loaded_project,
+            mode=mode,
+            breakpoints=breakpoints,
+            skip_save=skip_save,
+            save_all=self._handle_save_all_action,
+            before_start=self._prepare_for_session_start,
+            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
+            append_python_console_line=self._append_python_console_line,
+        )
+        if not result.started:
+            if result.error_message and result.error_message == "Open a project before running code.":
+                QMessageBox.warning(self, "Run unavailable", result.error_message)
+            elif result.error_message and result.error_message == "Fix save errors before running.":
+                QMessageBox.warning(self, "Run cancelled", result.error_message)
+            elif result.error_message:
+                QMessageBox.warning(self, "Run failed to start", result.error_message)
             self._refresh_run_action_states()
             return False
 
-        self._active_run_session_log_path = session.log_file_path
-        self._active_session_mode = mode
-        self._append_console_line(f"Run started ({session.run_id})\n", stream="system")
-        if mode == constants.RUN_MODE_PYTHON_REPL:
-            self._append_python_console_line("[system] Python console started.")
-        elif mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._append_python_console_line("[system] Debug session started. Use toolbar or pdb commands.")
+        if result.session is not None:
+            self._active_run_session_log_path = result.session.log_file_path
+        self._active_session_mode = self._run_session_controller.active_session_mode
         self._refresh_run_action_states()
         return True
 
     def _handle_stop_action(self) -> None:
-        self._run_service.stop_run()
-        self._append_console_line("Stop requested.\n", stream="system")
+        self._run_session_controller.stop_session(lambda text, stream: self._append_console_line(text, stream=stream))
         self._refresh_run_action_states()
 
     def _handle_restart_action(self) -> None:
@@ -789,14 +786,12 @@ class MainWindow(QMainWindow):
     def _handle_pause_debug_action(self) -> None:
         if not self._run_service.supervisor.is_running():
             return
-        try:
-            paused = self._run_service.pause_run()
-        except Exception as exc:
-            QMessageBox.warning(self, "Pause failed", str(exc))
-            return
-        if paused:
-            self._append_python_console_line("[debug] Pause requested.")
-            self._append_debug_output_line("[debug] Pause requested.")
+        _paused, error_message = self._run_session_controller.pause_session(
+            append_python_console_line=self._append_python_console_line,
+            append_debug_output_line=self._append_debug_output_line,
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Pause failed", error_message)
 
     def _handle_step_over_action(self) -> None:
         if not self._run_service.supervisor.is_running():
@@ -998,49 +993,10 @@ class MainWindow(QMainWindow):
         return str(candidate_logs[0].resolve())
 
     def _refresh_run_action_states(self) -> None:
-        if self._menu_registry is None:
-            return
-
-        run_action = self._menu_registry.action("shell.action.run.run")
-        debug_action = self._menu_registry.action("shell.action.run.debug")
-        stop_action = self._menu_registry.action("shell.action.run.stop")
-        restart_action = self._menu_registry.action("shell.action.run.restart")
-        continue_action = self._menu_registry.action("shell.action.run.continue")
-        pause_action = self._menu_registry.action("shell.action.run.pause")
-        step_over_action = self._menu_registry.action("shell.action.run.stepOver")
-        step_into_action = self._menu_registry.action("shell.action.run.stepInto")
-        step_out_action = self._menu_registry.action("shell.action.run.stepOut")
-        toggle_breakpoint_action = self._menu_registry.action("shell.action.run.toggleBreakpoint")
-        python_console_action = self._menu_registry.action("shell.action.run.pythonConsole")
-        state = map_run_action_state(
+        self._run_session_controller.refresh_action_states(
+            self._menu_registry,
             has_project=self._loaded_project is not None,
-            is_running=self._run_service.supervisor.is_running(),
-            is_debug_mode=self._run_service.is_debug_mode,
-            is_debug_paused=self._run_service.is_debug_paused,
         )
-
-        if run_action is not None:
-            run_action.setEnabled(state.run_enabled)
-        if debug_action is not None:
-            debug_action.setEnabled(state.debug_enabled)
-        if stop_action is not None:
-            stop_action.setEnabled(state.stop_enabled)
-        if restart_action is not None:
-            restart_action.setEnabled(state.restart_enabled)
-        if continue_action is not None:
-            continue_action.setEnabled(state.continue_enabled)
-        if pause_action is not None:
-            pause_action.setEnabled(state.pause_enabled)
-        if step_over_action is not None:
-            step_over_action.setEnabled(state.step_over_enabled)
-        if step_into_action is not None:
-            step_into_action.setEnabled(state.step_into_enabled)
-        if step_out_action is not None:
-            step_out_action.setEnabled(state.step_out_enabled)
-        if toggle_breakpoint_action is not None:
-            toggle_breakpoint_action.setEnabled(state.toggle_breakpoint_enabled)
-        if python_console_action is not None:
-            python_console_action.setEnabled(state.python_console_enabled)
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         self._run_event_queue.put(event)
@@ -1086,6 +1042,7 @@ class MainWindow(QMainWindow):
                 self._append_python_console_line(f"[system] Session finished (code={return_code}).")
 
             self._active_session_mode = None
+            self._run_session_controller.clear_active_session_mode()
             self._refresh_run_action_states()
             self._load_latest_run_log()
             self._update_problems_from_output()
