@@ -60,6 +60,7 @@ from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_store import load_settings, save_settings
 from app.run.console_model import ConsoleModel
+from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
@@ -133,9 +134,14 @@ class MainWindow(QMainWindow):
         self._import_update_policy = self._load_import_update_policy()
         self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
         self._autosave_store = AutosaveStore(state_root=self._state_root)
+        self._pending_autosave_payloads: dict[str, str] = {}
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(500)
+        self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
-        self._active_run_output_chunks: list[str] = []
+        self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
@@ -680,6 +686,7 @@ class MainWindow(QMainWindow):
             if tab_index >= 0:
                 self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
 
+        self._pending_autosave_payloads.pop(saved_tab.file_path, None)
         self._autosave_store.delete_draft(saved_tab.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
@@ -730,7 +737,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Run cancelled", "Fix save errors before running.")
             return False
 
-        self._active_run_output_chunks.clear()
+        self._active_run_output_tail.clear()
         self._clear_problems()
         self._debug_session = DebugSession()
         self._append_console_line("────────────────────\n", stream="system")
@@ -1029,7 +1036,7 @@ class MainWindow(QMainWindow):
                 self._apply_debug_inspector_event()
                 self._refresh_run_action_states()
                 return
-            self._active_run_output_chunks.append(text)
+            self._active_run_output_tail.append(text)
             self._append_console_line(text, stream=stream)
             if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
                 for line in text.rstrip().splitlines():
@@ -1083,7 +1090,7 @@ class MainWindow(QMainWindow):
         self._run_log_output_widget.setPlainText(log_path.read_text(encoding="utf-8"))
 
     def _update_problems_from_output(self) -> None:
-        output_text = "".join(self._active_run_output_chunks)
+        output_text = self._active_run_output_tail.text()
         problems = parse_traceback_problems(output_text)
         self._set_problems(problems)
 
@@ -1169,6 +1176,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
+            self._flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
@@ -1776,8 +1784,9 @@ class MainWindow(QMainWindow):
         suffix = " *" if tab_state.is_dirty else ""
         self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
         if tab_state.is_dirty:
-            self._autosave_store.save_draft(tab_state.file_path, tab_state.current_content)
+            self._schedule_autosave(tab_state.file_path, tab_state.current_content)
         else:
+            self._pending_autosave_payloads.pop(tab_state.file_path, None)
             self._autosave_store.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
@@ -1846,6 +1855,8 @@ class MainWindow(QMainWindow):
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
+        self._autosave_timer.stop()
+        self._pending_autosave_payloads.clear()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -1875,4 +1886,19 @@ class MainWindow(QMainWindow):
         tab_index = self._tab_index_for_path(tab_state.file_path)
         if self._editor_tabs_widget is not None and tab_index >= 0:
             self._editor_tabs_widget.setTabText(tab_index, f"{updated_tab.display_name} *")
-        self._autosave_store.save_draft(updated_tab.file_path, updated_tab.current_content)
+        self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
+
+    def _schedule_autosave(self, file_path: str, content: str) -> None:
+        self._pending_autosave_payloads[file_path] = content
+        self._autosave_timer.start()
+
+    def _flush_pending_autosaves(self) -> None:
+        if not self._pending_autosave_payloads:
+            return
+        pending_items = list(self._pending_autosave_payloads.items())
+        self._pending_autosave_payloads.clear()
+        for file_path, content in pending_items:
+            try:
+                self._autosave_store.save_draft(file_path, content)
+            except OSError as exc:
+                self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)
