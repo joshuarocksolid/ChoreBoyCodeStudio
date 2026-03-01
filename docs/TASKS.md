@@ -1,1165 +1,702 @@
-# ChoreBoy Code Studio — Tasks (v1)
+# ChoreBoy Code Studio — Tasks (v2)
 
-## 1. Purpose
+## 1) Purpose
 
-This file translates the product goals in `PRD.md`, the runtime facts in `DISCOVERY.md`, and the system structure in `ARCHITECTURE.md` into an ordered implementation backlog.
+This file is the **execution backlog** for shipping a polished ChoreBoy Code Studio release within the constraints documented in:
 
-This is the canonical task list for v1.
+1. `docs/PRD.md`
+2. `docs/DISCOVERY.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/ACCEPTANCE_TESTS.md`
+5. `AGENTS.md`
 
-Guiding principles:
-
-- prioritize the first working vertical slice
-- keep tasks small and verifiable
-- respect the editor/runner boundary
-- prefer explicit file-based contracts
-- avoid speculative abstraction
+This version replaces the previous broad checklist with a **thin-slice, test-traceable plan**.
 
 ---
 
-## 2. Status Legend
+## 2) How to use this backlog
 
+### Status legend
+
+- `DONE` — implemented and validated
+- `PARTIAL` — foundational implementation exists, but required behavior is incomplete
 - `TODO` — not started
-- `IN PROGRESS` — currently being worked on
-- `BLOCKED` — cannot proceed without a decision or prerequisite
-- `DONE` — completed and validated
+- `BLOCKED` — cannot proceed without external decision/prerequisite
+
+### Execution rules
+
+1. Move one vertical slice at a time.
+2. Update status immediately when a slice lands.
+3. For non-trivial logic, follow red → green → refactor.
+4. For UI changes, validate in **light and dark** themes.
+5. No slice is complete without explicit validation evidence.
 
 ---
 
-## 3. MVP Priority
+## 3) Current implementation baseline (as of 2026-03-01)
 
-The highest-priority vertical slice is:
+The repository is no longer “empty scaffolding.” Core foundation work is already present.
 
-1. open a project
-2. open and edit `run.py`
-3. save changes
-4. run in a separate runner process
-5. capture stdout/stderr
-6. show traceback on failure
-7. write per-run log
-8. stop the run safely
+| Area | Baseline status | Evidence |
+|---|---|---|
+| App skeleton / entrypoints | DONE | `run_editor.py`, `run_runner.py`, `launcher.py` exist |
+| Deterministic paths | DONE | `app/bootstrap/paths.py` + unit tests |
+| App logging | DONE | `app/bootstrap/logging_setup.py` + unit tests |
+| Startup capability probe | DONE | `app/bootstrap/capability_probe.py` + integration wiring tests |
+| Main shell scaffold | DONE | `app/shell/main_window.py`, `menus.py`, `status_bar.py` |
+| Project metadata schema | DONE | `app/project/project_manifest.py`, `app/core/models.py` |
+| Project open/load + structure validation | DONE | `app/project/project_service.py` |
+| Recent projects persistence | DONE | `app/project/recent_projects.py` |
+| Settings persistence foundation | DONE | `app/persistence/settings_store.py` |
+| Runner orchestration / execution | TODO | no `app/run/*` or `app/runner/*` implementation modules yet |
+| Templates / New Project | TODO | no template assets under `/templates` yet |
+| Acceptance coverage vs MVP gate | PARTIAL | foundational tests pass; MVP run path not implemented |
 
-All early tasks should support this path.
-
----
-
-## 4. Phase 1 — Bootstrap and App Skeleton
-
-### T01 — Create repository/app skeleton
-**Status:** DONE
-
-**Goal:**  
-Create the initial source tree that matches the architecture.
-
-**Why:**  
-This gives the repo stable structure before implementation begins.
-
-**Scope:**  
-- create `run_editor.py`
-- create `run_runner.py`
-- create `launcher.py`
-- create `app/` package and first-level subpackages
-- add `__init__.py` files where needed
-- do not implement real behavior yet
-
-**Likely files:**  
-- `run_editor.py`
-- `run_runner.py`
-- `launcher.py`
-- `app/bootstrap/__init__.py`
-- `app/core/__init__.py`
-- `app/shell/__init__.py`
-- `app/project/__init__.py`
-- `app/run/__init__.py`
-- `app/runner/__init__.py`
-- `app/persistence/__init__.py`
-- `app/templates/__init__.py`
-- `app/support/__init__.py`
-
-**Depends on:**  
-- none
-
-**Done when:**  
-- the repo structure exists and matches the architecture doc
-- imports can resolve at the package level without implementation errors
+> Baseline test signal at rewrite time: `81 passed`.
 
 ---
 
-### T02 — Implement path/bootstrap helpers
-**Status:** DONE
+## 4) Delivery north star
 
-**Goal:**  
-Create a central path utility that normalizes app root, user state root, temp paths, and project-relative paths.
+### MVP critical path (must work end-to-end)
 
-**Why:**  
-The architecture requires deterministic bootstrapping and no reliance on accidental current working directory behavior.
+1. Open project
+2. Open/edit/save files
+3. Run in separate runner process
+4. Stream stdout/stderr
+5. Show traceback on failure
+6. Persist per-run logs
+7. Stop long-running runs safely
+8. Keep editor alive when user code fails
 
-**Scope:**  
-- define app root resolution
-- define global state root (for example `~/.choreboy_code_studio/`)
-- define helper functions for logs, cache, crash reports, and settings
-- do not implement project loading yet
+### Polish bar (post-MVP but release-important)
 
-**Likely files:**  
-- `app/bootstrap/paths.py`
-- `app/core/constants.py`
-
-**Depends on:**  
-- T01
-
-**Done when:**  
-- app/global paths can be generated consistently
-- missing directories can be created safely
-- no logic depends on the shell’s current working directory
+- Keyboard-first UX (discoverable shortcuts)
+- Clear error/recovery flows
+- Useful project search/open ergonomics
+- ChoreBoy-specific help surfaces
+- Stable behavior in both light/dark themes
 
 ---
 
-### T03 — Implement application logging setup
-**Status:** TODO
+## 5) Cross-cutting quality gates (apply to every phase)
 
-**Goal:**  
-Create a shared logging setup for the editor application.
+### Architecture guardrails
 
-**Why:**  
-Persistent logs are a first-class requirement and essential for supportability.
+- Never execute user project code in the editor process.
+- Keep project metadata filesystem-first (`.cbcs/project.json`).
+- Use explicit JSON contracts for runner manifests.
+- Prefer diagnosability over cleverness.
 
-**Scope:**  
-- configure app log path
-- define common log format
-- expose helper for subsystem loggers
-- ensure startup failures can be logged
+### Testing guardrails
 
-**Likely files:**  
-- `app/bootstrap/logging_setup.py`
-- `app/core/constants.py`
+- Use pytest markers: `unit`, `integration`, `runtime_parity`, `manual_acceptance`.
+- Run the smallest relevant suite for each slice.
+- Add/adjust tests whenever behavior contracts change.
 
-**Depends on:**  
-- T02
+### UI guardrails
 
-**Done when:**  
-- the editor can initialize logging without crashing
-- logs are written to the expected persistent location
-- log format includes timestamp, level, subsystem, and message
+- Any UI change must be theme-safe (light + dark).
+- Avoid hardcoded one-theme-only color assumptions.
+- Validate readability for normal/hover/selected/error states.
 
 ---
 
-### T04 — Implement runtime capability probe
-**Status:** TODO
+## 6) Phase A — Foundation (completed)
 
-**Goal:**  
-Add startup checks for required environment capabilities.
+These slices are complete and should be treated as the stable base.
 
-**Why:**  
-The discovery doc proved the environment is unusual and the architecture requires capability probing over assumption.
+### A01 — Repository/app skeleton
+- Status: `DONE`
+- Legacy mapping: `T01`
 
-**Scope:**  
-- check AppRun presence
-- check `PySide2` availability
-- check `FreeCAD` availability
-- check writable state/log/temp paths
-- expose structured results
-- do not build final UI for the report yet
+### A02 — Path/bootstrap helpers
+- Status: `DONE`
+- Legacy mapping: `T02`
 
-**Likely files:**  
-- `app/bootstrap/capability_probe.py`
-- `app/core/models.py`
+### A03 — Application logging bootstrap
+- Status: `DONE`
+- Legacy mapping: `T03`
 
-**Depends on:**  
-- T02
-- T03
+### A04 — Runtime capability probe
+- Status: `DONE`
+- Legacy mapping: `T04`
 
-**Done when:**  
-- a capability probe can run on startup
-- results are available as structured data
-- failures are reported clearly rather than crashing silently
+### A05 — Main window shell scaffold
+- Status: `DONE`
+- Legacy mapping: `T05`
 
----
+### A06 — Project metadata schema/model
+- Status: `DONE`
+- Legacy mapping: `T06`
 
-### T05 — Create minimal main window shell
-**Status:** TODO
+### A07 — Project open/load service
+- Status: `DONE`
+- Legacy mapping: `T07`
 
-**Goal:**  
-Create the main Qt window and top-level layout shell.
+### A08 — Recent projects persistence
+- Status: `DONE`
+- Legacy mapping: `T08`
 
-**Why:**  
-We need a stable editor host before project and runner features can plug in.
-
-**Scope:**  
-- create main window
-- add placeholder left/center/bottom regions
-- add menu bar and status bar stubs
-- show application startup state
-- do not implement editor tabs or run logic yet
-
-**Likely files:**  
-- `app/shell/main_window.py`
-- `app/shell/menus.py`
-- `app/shell/status_bar.py`
-- `run_editor.py`
-
-**Depends on:**  
-- T03
-- T04
-
-**Done when:**  
-- the editor window launches through `run_editor.py`
-- menu and status bar appear
-- startup does not depend on a loaded project
+### A09 — Settings store foundation
+- Status: `DONE`
+- Legacy mapping: `T23` (foundation portion)
 
 ---
 
-## 5. Phase 2 — Project Model and Persistence
+## 7) Phase B — MVP completion slices (highest priority)
 
-### T06 — Define project metadata schema and model
-**Status:** DONE
+The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
-**Goal:**  
-Define the canonical `.cbcs/project.json` structure in code.
+### B01 — Wire **Open Project** action in shell
+- Status: `TODO`
+- Objective: connect menu action + folder picker + project service load.
+- Scope:
+  - enable `File -> Open Project...`
+  - successful open updates shell state
+  - failed open surfaces actionable error dialog + log entry
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `app/project/project_service.py`
+- Tests:
+  - unit tests for action dispatch/error mapping
+  - integration test for open-project happy/failure path
+- Acceptance linkage: `AT-03`, `AT-04`
+- Depends on: `A05`, `A07`, `A08`
+- Done when: project loads from UI without restart; invalid project fails clearly.
 
-**Why:**  
-Project metadata is a core filesystem contract and must be explicit before project loading is built.
+### B02 — Populate **Open Recent** menu + selection flow
+- Status: `TODO`
+- Objective: turn persisted recents into usable UX.
+- Scope:
+  - render recents submenu
+  - selecting an item opens project
+  - invalid recents prune safely
+- Primary files:
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `app/project/recent_projects.py`
+- Tests:
+  - unit tests for menu model shaping
+  - integration test for open-recent selection
+- Acceptance linkage: `AT-17`
+- Depends on: `B01`
+- Done when: recents survive restart and remain stable when paths disappear.
 
-**Scope:**  
-- define schema version
-- define project metadata model
-- define required and optional fields
-- add validation rules
-- do not build editing UI yet
+### B03 — Add project tree view to left sidebar
+- Status: `TODO`
+- Objective: show project files/folders in shell.
+- Scope:
+  - add model/view bridge for `LoadedProject.entries`
+  - refresh tree on project switch
+  - support selection signal for file-open path
+- Primary files:
+  - `app/project/project_tree.py` (new)
+  - `app/shell/main_window.py`
+- Tests:
+  - unit tests for tree model construction/order
+  - integration test for tree refresh on project open
+- Acceptance linkage: `AT-05`
+- Depends on: `B01`
+- Done when: tree reflects project reliably and emits file selection events.
 
-**Likely files:**  
-- `app/project/project_manifest.py`
-- `app/core/models.py`
-- `app/core/errors.py`
+### B04 — Implement tabbed file open flow from project tree
+- Status: `TODO`
+- Objective: open selected text files in editor tabs.
+- Scope:
+  - add editor manager + tab model
+  - open file on tree selection
+  - prevent duplicate tabs for same file
+- Primary files:
+  - `app/editors/editor_tab.py` (new)
+  - `app/editors/editor_manager.py` (new)
+  - `app/shell/main_window.py`
+- Tests:
+  - unit tests for tab dedupe/current-tab behavior
+  - integration test tree-click -> tab-open
+- Acceptance linkage: `AT-06`
+- Depends on: `B03`
+- Done when: selected file opens once and active tab state is deterministic.
 
-**Depends on:**  
-- T01
+### B05 — Dirty tracking + single-file Save
+- Status: `TODO`
+- Objective: track modifications and persist current file.
+- Scope:
+  - dirty marker per tab
+  - Save action writes to disk
+  - save failure surfaced clearly
+- Primary files:
+  - `app/editors/editor_tab.py`
+  - `app/editors/editor_manager.py`
+  - `app/shell/menus.py`
+- Tests:
+  - unit tests for dirty-state transitions
+  - integration test edit+save persistence
+- Acceptance linkage: `AT-07`, `AT-08`
+- Depends on: `B04`
+- Done when: modified file saves correctly and dirty indicator clears.
 
-**Done when:**  
-- project metadata can be loaded into a structured model
-- invalid metadata raises a clear validation error
-- default values are explicit and documented in code
+### B06 — Save All + unsaved-change UX on close/switch
+- Status: `TODO`
+- Objective: protect user data in multi-tab editing.
+- Scope:
+  - Save All action
+  - unsaved warning flow before destructive actions (close project/exit)
+  - no silent data loss
+- Primary files:
+  - `app/editors/editor_manager.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+- Tests:
+  - unit tests for save-all ordering/error handling
+  - integration test unsaved guardrail behavior
+- Acceptance linkage: `AT-09`
+- Depends on: `B05`
+- Done when: multi-file edits persist predictably with clear prompts.
+
+### B07 — Status bar editing telemetry
+- Status: `TODO`
+- Objective: surface active file + line/column + modified state.
+- Scope:
+  - status bar updates on cursor movement/tab switch
+  - retain startup/runtime indicator text from capability probe
+- Primary files:
+  - `app/shell/status_bar.py`
+  - `app/shell/main_window.py`
+  - `app/editors/editor_tab.py`
+- Tests:
+  - unit tests for status mapping
+  - integration check for status updates during editing
+- Acceptance linkage: supports `AT-06`..`AT-09`
+- Depends on: `B04`
+- Done when: status bar is always coherent with active editor state.
+
+### B08 — Run manifest model + JSON IO contract
+- Status: `TODO`
+- Objective: create explicit runner input contract.
+- Scope:
+  - implement run manifest datamodel + schema version
+  - serialize/deserialize + validation errors
+- Primary files:
+  - `app/run/run_manifest.py` (new)
+  - `app/core/models.py`
+  - `app/core/errors.py`
+- Tests:
+  - unit tests for manifest validation/round-trip
+- Acceptance linkage: prerequisite for `AT-10`..`AT-16`
+- Depends on: `A02`, `A06`
+- Done when: manifests are deterministic, validated, and file-backed.
+
+### B09 — Run ID + per-run log path generation
+- Status: `TODO`
+- Objective: guarantee one durable log file per run.
+- Scope:
+  - create run ID generation helper
+  - create log path helper under `<project>/logs`
+  - ensure dirs exist
+- Primary files:
+  - `app/run/run_service.py` (new)
+  - `app/bootstrap/paths.py`
+- Tests:
+  - unit tests for uniqueness, naming, path validity
+- Acceptance linkage: `AT-14`
+- Depends on: `B08`
+- Done when: each run has a stable per-run log target.
+
+### B10 — Process supervisor (editor side)
+- Status: `TODO`
+- Objective: launch/track/stop external runner process.
+- Scope:
+  - AppRun command assembly
+  - lifecycle states (idle/running/stopping/exited)
+  - stop with graceful terminate -> forced kill fallback
+- Primary files:
+  - `app/run/process_supervisor.py` (new)
+  - `app/run/run_service.py`
+- Tests:
+  - integration tests for spawn/state transitions/termination
+- Acceptance linkage: `AT-10`, `AT-15`, `AT-16`
+- Depends on: `B08`, `B09`
+- Done when: runner always executes out-of-process and can be stopped safely.
+
+### B11 — Runner bootstrap entrypoint + manifest loading
+- Status: `TODO`
+- Objective: make `run_runner.py` a real runner boot surface.
+- Scope:
+  - parse manifest path argument
+  - validate manifest and bootstrap runner context
+  - return clear exit codes for bootstrap/manifest failures
+- Primary files:
+  - `run_runner.py`
+  - `app/runner/runner_main.py` (new)
+  - `app/runner/execution_context.py` (new)
+- Tests:
+  - unit tests for CLI/manifest failure cases
+  - integration tests for invalid manifest handling
+- Acceptance linkage: prerequisite for `AT-10`..`AT-16`
+- Depends on: `B08`
+- Done when: runner starts deterministically from manifest input.
+
+### B12 — Execute user entry script in runner (`python_script`)
+- Status: `TODO`
+- Objective: run project `run.py` inside runner process.
+- Scope:
+  - set cwd and `sys.path` deterministically
+  - execute entrypoint
+  - return success/failure exit semantics
+- Primary files:
+  - `app/runner/runner_main.py`
+  - `app/runner/execution_context.py`
+- Tests:
+  - integration tests: success/failure script execution
+- Acceptance linkage: `AT-10`, `AT-11`, `AT-12`, `AT-16`
+- Depends on: `B11`
+- Done when: simple projects run end-to-end with isolated failure behavior.
+
+### B13 — Stream stdout/stderr to console panel
+- Status: `TODO`
+- Objective: show live run output in UI.
+- Scope:
+  - consume process pipes
+  - append output to console model/view
+  - distinguish stderr from stdout visually
+- Primary files:
+  - `app/run/console_model.py` (new)
+  - `app/run/process_supervisor.py`
+  - `app/shell/main_window.py`
+- Tests:
+  - integration tests for stdout+stderr ordering/visibility
+- Acceptance linkage: `AT-11`, `AT-13`
+- Depends on: `B10`, `B12`
+- Done when: output appears live and remains readable.
+
+### B14 — Persist run logs + full traceback capture
+- Status: `TODO`
+- Objective: durable diagnostics on every run.
+- Scope:
+  - write merged run output to per-run log
+  - preserve full traceback on exception
+  - expose log location in UI
+- Primary files:
+  - `app/runner/output_bridge.py` (new)
+  - `app/runner/traceback_formatter.py` (new)
+  - `app/run/run_service.py`
+- Tests:
+  - integration tests validating log file contents
+- Acceptance linkage: `AT-12`, `AT-14`
+- Depends on: `B09`, `B12`, `B13`
+- Done when: failure diagnosis is possible from log files alone.
+
+### B15 — Problems pane summary for run failures
+- Status: `TODO`
+- Objective: provide concise, actionable failure summary beyond raw console output.
+- Scope:
+  - parse traceback into file/line summaries
+  - show summary list in Problems pane
+  - keep full traceback accessible
+- Primary files:
+  - `app/run/problem_parser.py` (new)
+  - `app/shell/main_window.py`
+- Tests:
+  - unit tests for traceback parsing
+  - integration test for problems pane population
+- Acceptance linkage: strengthens `AT-12`, `AT-13`
+- Depends on: `B14`
+- Done when: common failures are navigable from concise summaries.
+
+### B16 — Run/Stop actions + run-state UX
+- Status: `TODO`
+- Objective: complete visible run lifecycle controls.
+- Scope:
+  - enable/disable Run/Stop correctly by state
+  - status updates for running/success/failure/terminated
+  - prevent accidental parallel launches (v1 single-run policy)
+- Primary files:
+  - `app/shell/actions.py` (new)
+  - `app/shell/menus.py`
+  - `app/shell/status_bar.py`
+  - `app/run/process_supervisor.py`
+- Tests:
+  - integration tests for state transitions and button availability
+- Acceptance linkage: `AT-10`, `AT-15`, `AT-16`
+- Depends on: `B10`, `B13`, `B14`
+- Done when: run controls are predictable and safe.
+
+### B17 — MVP acceptance gate pass
+- Status: `TODO`
+- Objective: prove MVP on target workflow.
+- Scope:
+  - execute minimum acceptance gate from `docs/ACCEPTANCE_TESTS.md`
+  - collect objective evidence (terminal output/log excerpts and UI artifacts)
+- Required acceptance tests:
+  - `AT-01`, `AT-03`, `AT-05`, `AT-06`, `AT-07`, `AT-08`
+  - `AT-10`, `AT-11`, `AT-12`, `AT-14`, `AT-15`, `AT-16`
+- Depends on: `B01`..`B16`
+- Done when: minimum gate is demonstrably passing.
 
 ---
 
-### T07 — Implement project open/load service
-**Status:** DONE
+## 8) Phase C — Data safety, diagnostics, and supportability
 
-**Goal:**  
-Load a project folder from disk and validate its structure.
+### C01 — Draft autosave/recovery foundation
+- Status: `TODO`
+- Objective: recover unsaved work after abnormal exit without silent overwrite.
+- Primary files:
+  - `app/persistence/autosave_store.py` (new)
+  - `app/editors/editor_manager.py`
+- Tests:
+  - unit tests for draft persistence semantics
+  - integration test for recovery after simulated crash
+- Acceptance linkage: `AT-18` (required if feature is included in MVP scope)
+- Depends on: `B05`, `B06`, `A09`
 
-**Why:**  
-Opening an existing project is part of the very first MVP workflow.
+### C02 — Project health check command
+- Status: `TODO`
+- Objective: pre-run diagnostics for common project/runtime issues.
+- Primary files:
+  - `app/support/diagnostics.py` (new)
+  - `app/project/project_service.py`
+  - `app/bootstrap/capability_probe.py`
+- Tests:
+  - unit tests for diagnostic result shaping
+  - integration tests for valid/invalid project diagnostics
+- Acceptance linkage: `AT-22`
+- Depends on: `B11`, `B14`
 
-**Scope:**  
-- accept a selected folder
-- locate `.cbcs/project.json`
-- validate project structure
-- load project metadata
-- enumerate project files
-- return a structured project object
-
-**Likely files:**  
-- `app/project/project_service.py`
-- `app/project/project_manifest.py`
-- `app/core/models.py`
-
-**Depends on:**  
-- T06
-
-**Done when:**  
-- a valid project folder can be opened successfully
-- invalid or incomplete projects fail with actionable errors
-- the editor receives enough data to display the project
-
----
-
-### T08 — Implement recent projects persistence
-**Status:** DONE
-
-**Goal:**  
-Track and restore recent projects.
-
-**Why:**  
-This is a small but high-value part of the project-first workflow.
-
-**Scope:**  
-- store recent project paths
-- deduplicate entries
-- prune invalid entries
-- expose load/save helpers
-- do not build final menu UX polish yet
-
-**Likely files:**  
-- `app/project/recent_projects.py`
-- `app/persistence/settings_store.py`
-
-**Depends on:**  
-- T02
-- T07
-
-**Done when:**  
-- opening a project updates the recent-project list
-- recent projects persist between sessions
-- invalid entries are handled safely
+### C03 — Support bundle generation
+- Status: `TODO`
+- Objective: package logs + project metadata for field troubleshooting.
+- Primary files:
+  - `app/support/support_bundle.py` (new)
+  - `app/support/diagnostics.py`
+- Tests:
+  - integration tests for bundle artifact composition
+- Acceptance linkage: `AT-23`
+- Depends on: `C02`, `B14`, `A09`
 
 ---
 
-### T09 — Connect main window to project open flow
-**Status:** TODO
+## 9) Phase D — New Project workflow and templates
 
-**Goal:**  
-Allow the editor shell to open a project and show its basic structure.
+### D01 — Template registry + loader
+- Status: `TODO`
+- Objective: discover and materialize built-in templates deterministically.
+- Primary files:
+  - `app/templates/template_service.py` (new)
+  - `templates/` metadata layout
+- Tests:
+  - unit tests for template discovery/metadata validation
+- Acceptance linkage: prerequisite for `AT-19`..`AT-21`
 
-**Why:**  
-This is the first real user-visible milestone of the MVP path.
+### D02 — `utility_script` template
+- Status: `TODO`
+- Objective: ship simplest starter project.
+- Primary files:
+  - `templates/utility_script/**` (new)
+- Tests:
+  - integration test for generated project validity + run
+- Acceptance linkage: `AT-19`
+- Depends on: `D01`, `B12`, `B14`
 
-**Scope:**  
-- add “Open Project…” action
-- connect file picker
-- call project service
-- display loaded project name/state
-- wire recent-project updates
-- do not open files in tabs yet
+### D03 — `qt_app` template
+- Status: `TODO`
+- Objective: ship starter GUI project aligned with runtime constraints.
+- Primary files:
+  - `templates/qt_app/**` (new)
+- Tests:
+  - integration test for generated project boot path
+  - manual acceptance with GUI evidence
+- Acceptance linkage: `AT-20`
+- Depends on: `D01`
 
-**Likely files:**  
-- `app/shell/main_window.py`
-- `app/shell/menus.py`
-- `app/project/project_service.py`
+### D04 — `headless_tool` template
+- Status: `TODO`
+- Objective: ship starter FreeCAD-headless-safe project.
+- Primary files:
+  - `templates/headless_tool/**` (new)
+- Tests:
+  - integration test for generated project contract
+  - runtime-parity/manual validation for headless guidance correctness
+- Acceptance linkage: `AT-21`
+- Depends on: `D01`
 
-**Depends on:**  
-- T05
-- T07
-- T08
-
-**Done when:**  
-- a user can choose a project folder
-- the editor opens it without restarting
-- project state is visible in the shell
-
----
-
-### T10 — Add project tree view
-**Status:** TODO
-
-**Goal:**  
-Show the project’s files and folders in the left sidebar.
-
-**Why:**  
-Project browsing is required before file editing becomes useful.
-
-**Scope:**  
-- create tree model/view
-- show folders/files
-- exclude internal noise if needed
-- support selection events
-- do not implement rename/delete yet
-
-**Likely files:**  
-- `app/project/project_tree.py`
-- `app/shell/main_window.py`
-
-**Depends on:**  
-- T09
-
-**Done when:**  
-- the project tree renders the selected project
-- clicking a file emits an open-file action/event
-- tree refresh works after project load
+### D05 — New Project wizard flow
+- Status: `TODO`
+- Objective: create/open template projects from UI.
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `app/templates/template_service.py`
+- Tests:
+  - integration tests for create/open flow
+- Acceptance linkage: `AT-19`, `AT-20`, `AT-21`
+- Depends on: `D02`, `D03`, `D04`
 
 ---
 
-## 6. Phase 3 — Basic Editor
+## 10) Phase E — Developer comfort and UX polish
 
-### T11 — Implement editor tab model and file open flow
-**Status:** TODO
+### E01 — In-file Find/Replace and Go-to-Line
+- Status: `TODO`
+- Objective: fast single-file navigation/editing workflows.
+- Primary files:
+  - `app/editors/editor_tab.py`
+  - `app/shell/menus.py`
+- Tests:
+  - unit tests for find/goto behavior
+  - integration tests for menu/shortcut wiring
+- Legacy mapping: expands `T13`
 
-**Goal:**  
-Open selected files into editor tabs.
+### E02 — Find in Files
+- Status: `TODO`
+- Objective: project-wide text search with jump-to-result.
+- Primary files:
+  - `app/editors/search_panel.py` (new)
+  - `app/shell/main_window.py`
+- Tests:
+  - integration tests over fixture project trees
+- Acceptance linkage: post-MVP ergonomics
+- Legacy mapping: `T31`
 
-**Why:**  
-The MVP requires opening and editing `run.py` inside the app.
+### E03 — Quick Open (`Ctrl+P`)
+- Status: `TODO`
+- Objective: filename-first project navigation.
+- Primary files:
+  - `app/editors/quick_open.py` (new)
+  - `app/shell/main_window.py`
+- Tests:
+  - unit tests for matching/ranking
+  - integration tests for open behavior
+- Legacy mapping: `T32`
 
-**Scope:**  
-- define editor tab state
-- open text files from project tree
-- reuse existing tab if file is already open
-- track current tab
-- do not implement save yet
+### E04 — Output UX polish
+- Status: `TODO`
+- Objective: make console/run logs easy to read and debug.
+- Scope:
+  - clear stdout/stderr styling contrast
+  - run separators and timestamps
+  - copy selected output
+- Primary files:
+  - `app/run/console_model.py`
+  - `app/shell/main_window.py`
+- Tests:
+  - integration tests for formatting behavior
 
-**Likely files:**  
-- `app/editors/editor_tab.py`
-- `app/editors/editor_manager.py`
-- `app/shell/main_window.py`
+### E05 — Onboarding/help surfaces for ChoreBoy constraints
+- Status: `TODO`
+- Objective: reduce user confusion around runtime/headless limitations.
+- Scope:
+  - Getting Started panel content
+  - FreeCAD headless notes and actionable links
+  - shortcut reference exposure
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/ui/help/**` (new)
+- Tests:
+  - manual acceptance checks for content discoverability
 
-**Depends on:**  
-- T10
-
-**Done when:**  
-- clicking a text file opens it in a tab
-- the same file does not open duplicate tabs unnecessarily
-- current file path is visible in the UI
-
----
-
-### T12 — Implement dirty state and save/save-all
-**Status:** TODO
-
-**Goal:**  
-Support editing and saving project files safely.
-
-**Why:**  
-Saving changes is part of the first core vertical slice.
-
-**Scope:**  
-- detect modified state
-- save current file
-- save all open modified files
-- update UI modified indicators
-- basic save error handling
-- do not implement autosave recovery yet
-
-**Likely files:**  
-- `app/editors/editor_tab.py`
-- `app/editors/editor_manager.py`
-- `app/shell/menus.py`
-- `app/shell/status_bar.py`
-
-**Depends on:**  
-- T11
-
-**Done when:**  
-- edited files show as modified
-- save writes updated contents to disk
-- save all persists all modified open files
-- save failures are surfaced clearly
-
----
-
-### T13 — Add Python syntax highlighting and basic editor UX
-**Status:** TODO
-
-**Goal:**  
-Make Python editing usable and readable.
-
-**Why:**  
-Even a lightweight IDE should provide a minimally competent code editing experience.
-
-**Scope:**  
-- Python syntax highlighting
-- tab/indent behavior
-- line/column status reporting
-- optional go-to-line hook point
-- do not add advanced refactors or LSP features
-
-**Likely files:**  
-- `app/editors/syntax_python.py`
-- `app/editors/editor_tab.py`
-- `app/shell/status_bar.py`
-
-**Depends on:**  
-- T11
-
-**Done when:**  
-- Python files are syntax highlighted
-- line/column updates appear in the status area
-- indentation behavior is usable for normal editing
+### E06 — Theme compatibility validation pass
+- Status: `TODO`
+- Objective: verify all UI states used by editor are legible in light and dark mode.
+- Scope:
+  - validate shell, tree, tabs, status bar, console, problems
+  - fix theme-breaking hardcoded styling
+- Tests:
+  - manual validation artifacts in both themes
+- Depends on: completion of major UI slices (`B01`..`E05`)
 
 ---
 
-## 7. Phase 4 — Runner Contract and Process Launch
+## 11) Phase F — Release hardening and final gate
 
-### T14 — Define run manifest model and JSON serialization
-**Status:** TODO
+### F01 — Automated test coverage expansion for implemented contracts
+- Status: `TODO`
+- Objective: close obvious coverage gaps in run/runner/editor boundaries.
+- Scope:
+  - targeted unit + integration suites for all newly added modules
+  - runtime-parity tests where FreeCAD AppRun behavior matters
+- Depends on: completion of MVP + template slices
 
-**Goal:**  
-Define the file-based contract used by the editor to instruct the runner.
+### F02 — Full manual acceptance runbook execution
+- Status: `TODO`
+- Objective: execute end-to-end acceptance checks on target-like environment.
+- Scope:
+  - run `AT-01` through `AT-23` as applicable
+  - document pass/fail evidence
+- Depends on: `B17`, `C02`, `C03`, `D05`, key `E*` polish tasks
 
-**Why:**  
-The architecture explicitly requires JSON manifests rather than fragile shell argument strings.
+### F03 — Documentation contract sync
+- Status: `TODO`
+- Objective: ensure docs reflect shipped behavior exactly.
+- Scope:
+  - update `ARCHITECTURE.md` for any contract changes
+  - update `ACCEPTANCE_TESTS.md` for changed validation criteria
+  - update `TESTS.md` to remove setup-era drift and reflect real test inventory
+- Depends on: final implementation scope
 
-**Scope:**  
-- define manifest schema/version
-- define required fields
-- add JSON serialization/deserialization
-- validate required fields
-- do not launch processes yet
-
-**Likely files:**  
-- `app/run/run_manifest.py`
-- `app/core/models.py`
-- `app/core/errors.py`
-
-**Depends on:**  
-- T02
-- T06
-
-**Done when:**  
-- a run manifest object can be created and serialized
-- required fields are validated
-- manifest version is explicit
-
----
-
-### T15 — Implement per-run log path generation
-**Status:** TODO
-
-**Goal:**  
-Create deterministic log paths for each run.
-
-**Why:**  
-Per-run logs are part of the MVP and core support workflow.
-
-**Scope:**  
-- generate run IDs
-- generate log file paths
-- ensure project log directory exists
-- expose helper for editor and runner use
-
-**Likely files:**  
-- `app/run/run_service.py`
-- `app/core/constants.py`
-- `app/bootstrap/paths.py`
-
-**Depends on:**  
-- T02
-- T07
-
-**Done when:**  
-- each run gets a stable unique log file path
-- log directories are created as needed
-- naming is predictable and support-friendly
+### F04 — Final release checklist + backlog closure
+- Status: `TODO`
+- Objective: produce a supportable, handoff-ready v1.
+- Scope:
+  - confirm no open MVP-critical defects
+  - mark all completed tasks with evidence links
+  - move non-v1 items to explicit deferred list
+- Depends on: `F01`, `F02`, `F03`
 
 ---
 
-### T16 — Implement process supervisor
-**Status:** TODO
+## 12) Legacy mapping (continuity with previous T01–T33 plan)
 
-**Goal:**  
-Launch and stop the external runner process from the editor.
-
-**Why:**  
-The editor/runner boundary is the most important runtime boundary in the system.
-
-**Scope:**  
-- launch runner via AppRun
-- pass manifest path
-- capture stdout/stderr pipes
-- track process state
-- implement stop/terminate
-- do not yet parse tracebacks
-
-**Likely files:**  
-- `app/run/process_supervisor.py`
-- `app/run/run_service.py`
-- `run_runner.py`
-
-**Depends on:**  
-- T14
-- T15
-
-**Done when:**  
-- the editor can launch a separate runner process
-- the process can be stopped by the editor
-- process state transitions are tracked clearly
-
----
-
-### T17 — Implement runner bootstrap and manifest loading
-**Status:** TODO
-
-**Goal:**  
-Create the runner-side entrypoint that receives and validates a manifest.
-
-**Why:**  
-The runner must be a real standalone execution surface, not implicit shared editor logic.
-
-**Scope:**  
-- parse manifest path argument
-- load manifest JSON
-- validate manifest
-- initialize runner logging/output setup
-- return meaningful exit codes for invalid manifest/bootstrap failures
-- do not execute user code yet
-
-**Likely files:**  
-- `run_runner.py`
-- `app/runner/runner_main.py`
-- `app/runner/execution_context.py`
-
-**Depends on:**  
-- T14
-- T15
-
-**Done when:**  
-- the runner starts from a manifest path
-- invalid manifests fail clearly
-- bootstrap errors are logged and mapped to clear exit codes
+| Legacy ID | New mapping |
+|---|---|
+| T01 | A01 |
+| T02 | A02 |
+| T03 | A03 |
+| T04 | A04 |
+| T05 | A05 |
+| T06 | A06 |
+| T07 | A07 |
+| T08 | A08 |
+| T09 | B01 |
+| T10 | B03 |
+| T11 | B04 |
+| T12 | B05 + B06 |
+| T13 | B07 + E01 |
+| T14 | B08 |
+| T15 | B09 |
+| T16 | B10 |
+| T17 | B11 |
+| T18 | B12 |
+| T19 | B13 |
+| T20 | B14 |
+| T21 | B15 |
+| T22 | B16 |
+| T23 | A09 |
+| T24 | C01 |
+| T25 | C02 |
+| T26 | D01 |
+| T27 | D02 |
+| T28 | D03 |
+| T29 | D04 |
+| T30 | D05 |
+| T31 | E02 |
+| T32 | E03 |
+| T33 | C03 |
 
 ---
 
-### T18 — Implement user code execution in runner
-**Status:** TODO
+## 13) Definition of MVP achieved
 
-**Goal:**  
-Execute the project’s selected entry file in the runner process.
+MVP is achieved only when the following are demonstrably true on target-like runtime:
 
-**Why:**  
-This is the heart of the product.
+- Editor launches and probes runtime safely.
+- Project open/edit/save path is stable.
+- Runner executes out-of-process with output capture.
+- Failures preserve traceback and logs.
+- Stop flow is safe for long-running code.
+- Editor survives user-code crashes.
+- Required acceptance tests pass with evidence.
 
-**Scope:**  
-- set working directory
-- prepare `sys.path`
-- execute selected entry file
-- support initial `python_script` mode
-- do not implement all future run modes yet
+Until then, polish work is secondary.
 
-**Likely files:**  
-- `app/runner/runner_main.py`
-- `app/runner/execution_context.py`
-
-**Depends on:**  
-- T17
-
-**Done when:**  
-- a simple project `run.py` can execute in the runner
-- working directory and import behavior are deterministic
-- success/failure exit codes are returned correctly
-
----
-
-## 8. Phase 5 — Console, Tracebacks, and Logs
-
-### T19 — Stream stdout/stderr into editor console
-**Status:** TODO
-
-**Goal:**  
-Display near-live runner output in the editor UI.
-
-**Why:**  
-A real run experience requires immediate feedback.
-
-**Scope:**  
-- read stdout/stderr from process supervisor
-- append to console model/view
-- preserve output ordering as reasonably as possible
-- do not implement rich structured events yet
-
-**Likely files:**  
-- `app/run/console_model.py`
-- `app/run/process_supervisor.py`
-- `app/shell/main_window.py`
-
-**Depends on:**  
-- T16
-- T18
-
-**Done when:**  
-- `print()` output from user code appears in the console pane
-- stderr appears distinctly enough to be useful
-- console can be cleared between runs
-
----
-
-### T20 — Persist full traceback and run log output
-**Status:** TODO
-
-**Goal:**  
-Ensure failures are preserved to disk even if the UI view is transient.
-
-**Why:**  
-Persistent logs and full tracebacks are mandatory in the PRD and discovery-based debugging model.
-
-**Scope:**  
-- write run output to per-run log file
-- preserve full traceback on failure
-- include timestamps and subsystem labels where appropriate
-- do not implement support bundle export yet
-
-**Likely files:**  
-- `app/runner/output_bridge.py`
-- `app/runner/traceback_formatter.py`
-- `app/run/run_service.py`
-
-**Depends on:**  
-- T15
-- T18
-- T19
-
-**Done when:**  
-- each run produces a persistent log file
-- exceptions are written fully to the log
-- a failed run can be diagnosed from disk output alone
-
----
-
-### T21 — Add basic problems/error presentation
-**Status:** TODO
-
-**Goal:**  
-Present runner failures in a clearer form than raw console text alone.
-
-**Why:**  
-The architecture calls for summarized problems in addition to full logs.
-
-**Scope:**  
-- parse traceback into a user-visible problem summary
-- expose filename/line if available
-- show basic problems pane or error panel
-- do not implement full linting yet
-
-**Likely files:**  
-- `app/run/problem_parser.py`
-- `app/shell/main_window.py`
-
-**Depends on:**  
-- T20
-
-**Done when:**  
-- a failing run surfaces a concise summary in the UI
-- the summary points users toward the relevant file/line when possible
-- full traceback remains available elsewhere
-
----
-
-### T22 — Add stop/terminate UI flow
-**Status:** TODO
-
-**Goal:**  
-Allow users to stop long-running code safely from the editor.
-
-**Why:**  
-Run/Stop is part of the core product behavior in the PRD.
-
-**Scope:**  
-- add Run / Stop actions
-- connect to process supervisor
-- update UI while run is active
-- handle “terminated by user” state cleanly
-
-**Likely files:**  
-- `app/shell/menus.py`
-- `app/shell/actions.py`
-- `app/run/process_supervisor.py`
-- `app/shell/status_bar.py`
-
-**Depends on:**  
-- T16
-- T19
-
-**Done when:**  
-- users can stop an active run
-- the runner process exits cleanly or is forcibly terminated if necessary
-- the UI reflects the final terminated state clearly
-
----
-
-## 9. Phase 6 — Recovery, Settings, and Polish for MVP
-
-### T23 — Implement basic settings store
-**Status:** TODO
-
-**Goal:**  
-Persist app-level preferences and basic shell state.
-
-**Why:**  
-This supports recent projects, future editor preferences, and a stable app experience.
-
-**Scope:**  
-- JSON-backed settings store
-- basic read/write helpers
-- storage for recent projects and simple UI preferences
-- do not add every future setting yet
-
-**Likely files:**  
-- `app/persistence/settings_store.py`
-
-**Depends on:**  
-- T02
-
-**Done when:**  
-- settings can be loaded and saved safely
-- missing/corrupt settings files fail gracefully
-- recent-project support can rely on this layer
-
----
-
-### T24 — Implement autosave draft/recovery foundation
-**Status:** TODO
-
-**Goal:**  
-Protect user work from crashes and power loss.
-
-**Why:**  
-The PRD explicitly calls out not losing work, and the architecture recommends recovery-based autosave.
-
-**Scope:**  
-- save draft copies outside the source file
-- associate drafts with open files
-- restore draft candidates on restart
-- do not enable silent overwrite autosave-to-file by default
-
-**Likely files:**  
-- `app/persistence/autosave_store.py`
-- `app/editors/editor_manager.py`
-
-**Depends on:**  
-- T12
-- T23
-
-**Done when:**  
-- unsaved work can be recovered after abnormal exit
-- recovery drafts do not silently overwrite source files
-- recovery state is inspectable and supportable
-
----
-
-### T25 — Add project health check
-**Status:** TODO
-
-**Goal:**  
-Provide a simple diagnostic check for project/run readiness.
-
-**Why:**  
-This aligns with the supportability goals and constrained runtime environment.
-
-**Scope:**  
-- validate project structure
-- validate entry file presence
-- validate write access for logs
-- validate runner prerequisites
-- show concise results
-
-**Likely files:**  
-- `app/support/diagnostics.py`
-- `app/project/project_service.py`
-- `app/bootstrap/capability_probe.py`
-
-**Depends on:**  
-- T07
-- T17
-- T20
-
-**Done when:**  
-- users can run a health check
-- the output identifies actionable issues before a run
-- results are easy to understand
-
----
-
-## 10. Phase 7 — New Project and Templates
-
-### T26 — Implement template registry and template loader
-**Status:** TODO
-
-**Goal:**  
-Create the internal system for project templates.
-
-**Why:**  
-The PRD calls out new-project workflows and curated starter templates.
-
-**Scope:**  
-- define available template types
-- define template metadata/version markers
-- load template definitions from the repo
-- do not create full wizard UI yet
-
-**Likely files:**  
-- `app/templates/template_service.py`
-- `templates/`
-
-**Depends on:**  
-- T01
-
-**Done when:**  
-- template types are discoverable in code
-- template metadata is explicit
-- templates can be copied into a target location predictably
-
----
-
-### T27 — Create utility_script template
-**Status:** TODO
-
-**Goal:**  
-Ship the simplest useful starter project.
-
-**Why:**  
-This is the lowest-risk template and ideal for validating the new-project path.
-
-**Scope:**  
-- add starter `run.py`
-- add `.cbcs/project.json`
-- add README
-- include basic logging/error example
-
-**Likely files:**  
-- `templates/utility_script/`
-
-**Depends on:**  
-- T26
-
-**Done when:**  
-- a new utility script project can be created from the template
-- it runs successfully through the runner path
-- the template layout matches architecture expectations
-
----
-
-### T28 — Create qt_app template
-**Status:** TODO
-
-**Goal:**  
-Ship a starter GUI project using PySide2.
-
-**Why:**  
-Qt UI is one of the core breakthroughs behind the product.
-
-**Scope:**  
-- add starter Qt app structure
-- include entry point and main window
-- include project metadata and README
-- include basic crash/log behavior
-
-**Likely files:**  
-- `templates/qt_app/`
-
-**Depends on:**  
-- T26
-
-**Done when:**  
-- a new Qt template project can be created
-- it launches successfully through the runner path or documented Qt mode path
-- the template is understandable and supportable
-
----
-
-### T29 — Create headless_tool template
-**Status:** TODO
-
-**Goal:**  
-Ship a starter project for headless FreeCAD-safe backend work.
-
-**Why:**  
-The discovery doc makes clear that some FreeCAD GUI paths are unavailable in console mode, so we should guide users toward headless-safe patterns.
-
-**Scope:**  
-- add starter backend structure
-- document headless-safe assumptions
-- include project metadata and README
-- avoid GUI-only export examples
-
-**Likely files:**  
-- `templates/headless_tool/`
-
-**Depends on:**  
-- T26
-
-**Done when:**  
-- a new headless template project can be created
-- it demonstrates `import FreeCAD`-style backend work without GUI assumptions
-- template docs warn clearly about headless limitations
-
----
-
-### T30 — Implement New Project flow
-**Status:** TODO
-
-**Goal:**  
-Allow users to create a new project from a built-in template.
-
-**Why:**  
-Creating a project from scratch is one of the core v1 use cases.
-
-**Scope:**  
-- add “New Project…” action
-- choose template
-- choose destination folder
-- create project files
-- open the new project in the editor
-
-**Likely files:**  
-- `app/templates/template_service.py`
-- `app/shell/main_window.py`
-- `app/shell/menus.py`
-
-**Depends on:**  
-- T26
-- T27
-- T28
-- T29
-
-**Done when:**  
-- a user can create and open a project from a template
-- generated files are valid
-- the new project is immediately usable
-
----
-
-## 11. Phase 8 — Post-MVP Developer Comfort
-
-### T31 — Add Find in Files
-**Status:** TODO
-
-**Goal:**  
-Search across the current project.
-
-**Why:**  
-This is one of the highest-value lightweight IDE features after the MVP slice is solid.
-
-**Scope:**  
-- basic project text search
-- result list with file/line preview
-- jump to result in editor
-- start with filesystem scan; no index required
-
-**Likely files:**  
-- `app/editors/search_panel.py`
-- `app/shell/main_window.py`
-
-**Depends on:**  
-- T10
-- T11
-
-**Done when:**  
-- users can search project text
-- clicking a result opens the correct file/location
-- feature works without an indexing database
-
----
-
-### T32 — Add Quick Open
-**Status:** TODO
-
-**Goal:**  
-Open files quickly by name.
-
-**Why:**  
-This is a strong usability improvement with low architectural risk.
-
-**Scope:**  
-- basic quick-open UI
-- fuzzy or partial matching
-- open selected file in editor
-- no symbol index required for v1
-
-**Likely files:**  
-- `app/editors/quick_open.py`
-- `app/shell/main_window.py`
-
-**Depends on:**  
-- T10
-- T11
-
-**Done when:**  
-- users can invoke quick open
-- matching files appear from the current project
-- selecting a result opens the correct tab
-
----
-
-### T33 — Add support bundle generator
-**Status:** TODO
-
-**Goal:**  
-Package logs and basic metadata into a supportable artifact.
-
-**Why:**  
-The PRD explicitly calls for a report/support workflow suitable for USB transfer.
-
-**Scope:**  
-- collect app log
-- collect last run log
-- collect project metadata
-- zip into a bundle
-- do not add advanced telemetry or hidden data collection
-
-**Likely files:**  
-- `app/support/support_bundle.py`
-- `app/support/diagnostics.py`
-
-**Depends on:**  
-- T20
-- T23
-- T25
-
-**Done when:**  
-- a support bundle can be generated successfully
-- the bundle contains the expected diagnostic artifacts
-- bundle creation failures are reported clearly
-
----
-
-## 12. Deferred / Explicitly Out of Scope for v1
-
-These are intentionally not part of the first implementation wave:
-
-- debugger / breakpoints
-- LSP integration
-- refactors
-- Git integration
-- plugin system
-- package manager workflows
-- internet-dependent features
-- collaborative editing
-- generalized sandboxing
-- GUI-dependent FreeCAD export workflows
-- heavy indexing infrastructure
-- advanced Postgres workflows inside the IDE
-
----
-
-## 13. Recommended First Execution Order
-
-If we are implementing from scratch, start here:
-
-1. T01 — repository/app skeleton
-2. T02 — path/bootstrap helpers
-3. T03 — logging setup
-4. T04 — capability probe
-5. T05 — main window shell
-6. T06 — project metadata schema
-7. T07 — project open/load service
-8. T09 — connect shell to project open
-9. T10 — project tree
-10. T11 — editor tab/file open flow
-11. T12 — save/save-all
-12. T14 — run manifest model
-13. T15 — per-run log path generation
-14. T16 — process supervisor
-15. T17 — runner bootstrap
-16. T18 — user code execution
-17. T19 — stdout/stderr console
-18. T20 — traceback + persistent run log
-19. T22 — stop/terminate UI
-
-That sequence proves the product.
-
----
-
-## 14. Task Maintenance Rules
-
-When a task is completed:
-
-- mark its status
-- record any follow-up tasks discovered
-- update dependencies if sequencing changed
-- update docs if the implementation changed a contract
-
-If implementation reveals that a task is too large, split it into smaller tasks rather than letting it sprawl.
-
----
-
-## 15. Definition of “MVP Achieved”
-
-MVP is achieved when the following is true on the real ChoreBoy runtime:
-
-- the editor launches successfully
-- a project can be opened
-- a file can be opened and edited
-- changes can be saved
-- user code can run in a separate runner process
-- stdout/stderr are visible
-- failures produce visible tracebacks
-- per-run logs are written to disk
-- the run can be stopped safely
-
-Until that works end-to-end, other improvements are secondary.
