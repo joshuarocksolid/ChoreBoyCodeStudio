@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import threading
+from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -50,3 +52,47 @@ def find_in_files(project_root: str | Path, query: str, *, max_results: int = 20
             if len(results) >= max_results:
                 break
     return results
+
+
+class SearchWorker:
+    """Background search worker with cancellation support."""
+
+    def __init__(
+        self,
+        *,
+        project_root: str | Path,
+        query: str,
+        max_results: int = 200,
+        on_results: Callable[[list[SearchMatch], str], None] | None = None,
+        on_done: Callable[[], None] | None = None,
+    ) -> None:
+        self._project_root = str(Path(project_root).expanduser().resolve())
+        self._query = query
+        self._max_results = max_results
+        self._on_results = on_results
+        self._on_done = on_done
+        self._cancel_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self._cancel_event.set()
+
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self) -> None:
+        if self._cancel_event.is_set():
+            if self._on_done is not None:
+                self._on_done()
+            return
+        matches = find_in_files(self._project_root, self._query, max_results=self._max_results)
+        if not self._cancel_event.is_set() and self._on_results is not None:
+            self._on_results(matches, self._query)
+        if self._on_done is not None:
+            self._on_done()

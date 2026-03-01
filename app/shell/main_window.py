@@ -52,7 +52,7 @@ from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
-from app.editors.search_panel import SearchMatch, find_in_files
+from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_store import load_settings, save_settings
 from app.run.console_model import ConsoleModel
@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         self._active_run_session_log_path: str | None = None
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
+        self._active_search_worker: SearchWorker | None = None
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._template_service = TemplateService()
@@ -404,8 +405,17 @@ class MainWindow(QMainWindow):
         if not ok or not query:
             return
 
-        matches = find_in_files(self._loaded_project.project_root, query, max_results=500)
-        self._set_search_results(matches, query)
+        self._set_search_results([], f"{query} (searching...)")
+        if self._active_search_worker is not None and self._active_search_worker.is_running():
+            self._active_search_worker.cancel()
+        self._active_search_worker = SearchWorker(
+            project_root=self._loaded_project.project_root,
+            query=query,
+            max_results=500,
+            on_results=self._schedule_search_results_update,
+            on_done=self._handle_search_worker_done,
+        )
+        self._active_search_worker.start()
 
     def _handle_go_to_definition_action(self) -> None:
         if self._loaded_project is None:
@@ -981,6 +991,12 @@ class MainWindow(QMainWindow):
             item.setToolTip(match.absolute_path)
             item.setData(PROBLEM_ROLE_FILE_PATH, match.absolute_path)
             item.setData(PROBLEM_ROLE_LINE_NUMBER, match.line_number)
+
+    def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
+        QTimer.singleShot(0, lambda: self._set_search_results(matches, query))
+
+    def _handle_search_worker_done(self) -> None:
+        QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
 
     def _clear_problems(self) -> None:
         if self._problems_list_widget is not None:
