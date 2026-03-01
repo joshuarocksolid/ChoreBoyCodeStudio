@@ -242,7 +242,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: selected file opens once and active tab state is deterministic.
 
 ### B05 — Dirty tracking + single-file Save
-- Status: `TODO`
+- Status: `DONE`
 - Objective: track modifications and persist current file.
 - Scope:
   - dirty marker per tab
@@ -260,7 +260,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: modified file saves correctly and dirty indicator clears.
 
 ### B06 — Save All + unsaved-change UX on close/switch
-- Status: `TODO`
+- Status: `DONE`
 - Objective: protect user data in multi-tab editing.
 - Scope:
   - Save All action
@@ -278,7 +278,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Done when: multi-file edits persist predictably with clear prompts.
 
 ### B07 — Status bar editing telemetry
-- Status: `TODO`
+- Status: `DONE`
 - Objective: surface active file + line/column + modified state.
 - Scope:
   - status bar updates on cursor movement/tab switch

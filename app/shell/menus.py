@@ -28,6 +28,8 @@ class MenuCallbacks:
 
     on_open_project: Callable[[], None] | None = None
     on_file_menu_about_to_show: Callable[[], None] | None = None
+    on_save: Callable[[], None] | None = None
+    on_save_all: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -82,9 +84,25 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     open_recent_menu.setObjectName("shell.menu.file.openRecent")
     menus["shell.menu.file.openRecent"] = open_recent_menu
     file_menu.addSeparator()
-    _register_menu_action(file_menu, actions, "shell.action.file.save", "Save", "Ctrl+S")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.save",
+        "Save",
+        "Ctrl+S",
+        enabled=True,
+        callback=callback_registry.on_save,
+    )
     _register_menu_action(file_menu, actions, "shell.action.file.saveAs", "Save As...")
-    _register_menu_action(file_menu, actions, "shell.action.file.saveAll", "Save All", "Ctrl+Shift+S")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.saveAll",
+        "Save All",
+        "Ctrl+Shift+S",
+        enabled=True,
+        callback=callback_registry.on_save_all,
+    )
     file_menu.addSeparator()
     _register_menu_action(file_menu, actions, "shell.action.file.settings", "Settings...")
     file_menu.addSeparator()
