@@ -74,6 +74,7 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     assert metadata.run_configs == []
     assert metadata.env_overrides == {}
     assert metadata.project_notes == ""
+    assert metadata.import_metadata == {}
 
 
 def test_project_metadata_serializes_to_stable_schema() -> None:
@@ -102,6 +103,7 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         "run_configs": [{"id": "default", "mode": "qt_app"}],
         "env_overrides": {"APP_ENV": "dev"},
         "project_notes": "Launches a Qt UI.",
+        "import_metadata": {},
     }
 
 
@@ -155,6 +157,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
             "run_configs": [],
             "env_overrides": {},
             "project_notes": "",
+            "import_metadata": {},
         },
         "entries": [
             {

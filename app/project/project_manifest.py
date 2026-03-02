@@ -25,6 +25,7 @@ def build_default_project_manifest_payload(
     run_configs: list[dict[str, Any]] | None = None,
     env_overrides: Mapping[str, str] | None = None,
     project_notes: str = "",
+    import_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a canonical manifest payload for new/imported projects."""
     if not _is_non_empty_string(project_name):
@@ -43,6 +44,8 @@ def build_default_project_manifest_payload(
         raise ValueError("safe_mode must be a boolean.")
     if not isinstance(project_notes, str):
         raise ValueError("project_notes must be a string.")
+    if import_metadata is not None and not isinstance(import_metadata, Mapping):
+        raise ValueError("import_metadata must be an object.")
 
     normalized_run_configs: list[dict[str, Any]] = []
     for index, run_config in enumerate(run_configs or []):
@@ -57,6 +60,13 @@ def build_default_project_manifest_payload(
                 raise ValueError("env_overrides must contain only string keys and values.")
             normalized_env_overrides[key] = value
 
+    normalized_import_metadata: dict[str, Any] = {}
+    if import_metadata is not None:
+        for key, value in import_metadata.items():
+            if not isinstance(key, str):
+                raise ValueError("import_metadata keys must be strings.")
+            normalized_import_metadata[key] = value
+
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,
         name=project_name.strip(),
@@ -68,6 +78,7 @@ def build_default_project_manifest_payload(
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        import_metadata=normalized_import_metadata,
     )
     return metadata.to_dict()
 
@@ -191,6 +202,21 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     if not isinstance(project_notes, str):
         _raise_validation_error("project_notes must be a string.", field="project_notes", manifest_path=resolved_path)
 
+    import_metadata = payload.get("import_metadata", {})
+    if import_metadata is None:
+        import_metadata = {}
+    if not isinstance(import_metadata, dict):
+        _raise_validation_error("import_metadata must be an object.", field="import_metadata", manifest_path=resolved_path)
+    normalized_import_metadata: dict[str, Any] = {}
+    for key, value in import_metadata.items():
+        if not isinstance(key, str):
+            _raise_validation_error(
+                "import_metadata keys must be strings.",
+                field="import_metadata",
+                manifest_path=resolved_path,
+            )
+        normalized_import_metadata[key] = value
+
     return ProjectMetadata(
         schema_version=schema_version,
         name=name,
@@ -202,6 +228,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        import_metadata=normalized_import_metadata,
     )
 
 

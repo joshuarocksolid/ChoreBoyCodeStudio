@@ -60,6 +60,7 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
+        "import_metadata": {},
     }
 
 
@@ -78,6 +79,7 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
+        "import_metadata": {},
     }
 
 
@@ -132,6 +134,21 @@ def test_load_project_manifest_rejects_invalid_run_configs_type() -> None:
 
     assert exc_info.value.field == "run_configs"
     assert "must be a list" in str(exc_info.value)
+
+
+def test_load_project_manifest_rejects_invalid_import_metadata_type() -> None:
+    """import_metadata must remain an object for stable onboarding metadata."""
+    with pytest.raises(ProjectManifestValidationError) as exc_info:
+        parse_project_manifest(
+            {
+                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
+                "name": "Bad Import Metadata",
+                "import_metadata": "not-an-object",
+            }
+        )
+
+    assert exc_info.value.field == "import_metadata"
+    assert "must be an object" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_unsupported_schema_version() -> None:

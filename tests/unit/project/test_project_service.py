@@ -89,6 +89,8 @@ def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) ->
     assert manifest_path.exists()
     assert payload["template"] == "imported_external"
     assert payload["default_mode"] == "python_script"
+    assert payload["import_metadata"]["source_type"] == "imported_external"
+    assert payload["import_metadata"]["onboarding_completed"] is False
 
 
 def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> None:
@@ -100,6 +102,7 @@ def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "main.py"
+    assert loaded_project.metadata.import_metadata.get("source_type") == "imported_external"
     assert (project_root / ".cbcs" / "project.json").exists()
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 import queue
 from pathlib import Path
 import subprocess
@@ -926,6 +928,103 @@ class MainWindow(QMainWindow):
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
         )
+        QTimer.singleShot(0, lambda: self._maybe_prompt_imported_project_setup(loaded_project))
+
+    def _maybe_prompt_imported_project_setup(self, loaded_project: LoadedProject) -> None:
+        metadata = loaded_project.metadata
+        if metadata.template != "imported_external":
+            return
+        import_metadata = metadata.import_metadata
+        if import_metadata.get("onboarding_completed") is True:
+            return
+
+        detected_signals = import_metadata.get("detected_signals", [])
+        runtime_warnings = import_metadata.get("runtime_warnings", [])
+        signal_text = ", ".join(detected_signals) if isinstance(detected_signals, list) and detected_signals else "none"
+        warnings_text = (
+            "\n".join(f"• {warning}" for warning in runtime_warnings)
+            if isinstance(runtime_warnings, list) and runtime_warnings
+            else "• No immediate runtime warnings detected."
+        )
+        message = (
+            "This appears to be an imported Python project.\n\n"
+            f"Detected project signals: {signal_text}\n"
+            f"Inferred default entry: {metadata.default_entry}\n"
+            f"Inferred run mode: {metadata.default_mode}\n\n"
+            f"Runtime compatibility notes:\n{warnings_text}\n\n"
+            "Would you like to review and adjust these defaults now?"
+        )
+        review_defaults = (
+            QMessageBox.question(
+                self,
+                "Imported Project Setup",
+                message,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            == QMessageBox.Yes
+        )
+
+        default_entry = metadata.default_entry
+        default_mode = metadata.default_mode
+        if review_defaults:
+            selected_entry, accepted_entry = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Default entry file (relative to project root):",
+                QLineEdit.Normal,
+                default_entry,
+            )
+            if accepted_entry and selected_entry.strip():
+                default_entry = selected_entry.strip()
+            mode_choices = [
+                constants.RUN_MODE_PYTHON_SCRIPT,
+                constants.RUN_MODE_QT_APP,
+                constants.RUN_MODE_FREECAD_HEADLESS,
+            ]
+            default_mode_index = mode_choices.index(default_mode) if default_mode in mode_choices else 0
+            selected_mode, accepted_mode = QInputDialog.getItem(
+                self,
+                "Imported Project Setup",
+                "Default run mode:",
+                mode_choices,
+                default_mode_index,
+                False,
+            )
+            if accepted_mode and selected_mode:
+                default_mode = selected_mode
+
+        self._persist_imported_project_setup_defaults(
+            loaded_project=loaded_project,
+            default_entry=default_entry,
+            default_mode=default_mode,
+        )
+
+    def _persist_imported_project_setup_defaults(
+        self,
+        *,
+        loaded_project: LoadedProject,
+        default_entry: str,
+        default_mode: str,
+    ) -> None:
+        payload = loaded_project.metadata.to_dict()
+        payload["default_entry"] = default_entry
+        payload["default_mode"] = default_mode
+        import_metadata = dict(payload.get("import_metadata", {}))
+        import_metadata["onboarding_completed"] = True
+        import_metadata["onboarding_completed_at"] = datetime.now(timezone.utc).isoformat()
+        payload["import_metadata"] = import_metadata
+        manifest_path = Path(loaded_project.manifest_path)
+        try:
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Imported Project Setup", f"Unable to save setup choices: {exc}")
+            return
+        if (
+            default_entry != loaded_project.metadata.default_entry
+            or default_mode != loaded_project.metadata.default_mode
+        ):
+            self._reload_current_project()
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
         dirty_tabs = [tab for tab in self._editor_manager.all_tabs() if tab.is_dirty]

@@ -76,6 +76,7 @@ class ProjectMetadata:
     run_configs: list[dict[str, Any]] = field(default_factory=list)
     env_overrides: dict[str, str] = field(default_factory=dict)
     project_notes: str = ""
+    import_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation with explicit defaults."""
@@ -90,6 +91,7 @@ class ProjectMetadata:
             "run_configs": [dict(config) for config in self.run_configs],
             "env_overrides": dict(self.env_overrides),
             "project_notes": self.project_notes,
+            "import_metadata": dict(self.import_metadata),
         }
 
 
