@@ -37,6 +37,7 @@ def test_plan_safe_fixes_for_file_returns_unused_import_removal_fixes(tmp_path: 
     assert len(fixes) == 1
     assert fixes[0].action_kind == "remove_line"
     assert fixes[0].line_number == 1
+    assert fixes[0].expected_line_text == "import json"
 
 
 def test_apply_quick_fixes_removes_import_lines(tmp_path: Path) -> None:
@@ -180,6 +181,28 @@ def test_plan_safe_fixes_for_file_returns_duplicate_import_removal_fixes(tmp_pat
     assert len(fixes) == 1
     assert fixes[0].action_kind == "remove_line"
     assert fixes[0].line_number == 2
+    assert fixes[0].expected_line_text == "import json"
+
+
+def test_apply_quick_fixes_skips_when_target_line_changed_since_planning(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("import json\nvalue = 1\n", encoding="utf-8")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY220",
+            severity=DiagnosticSeverity.WARNING,
+            file_path=str(file_path.resolve()),
+            line_number=1,
+            message="Imported name 'json' is not used.",
+        )
+    ]
+    fixes = plan_safe_fixes_for_file(str(file_path), diagnostics)
+
+    file_path.write_text("import pathlib\nvalue = 1\n", encoding="utf-8")
+    changed = apply_quick_fixes(fixes)
+
+    assert changed == 0
+    assert file_path.read_text(encoding="utf-8") == "import pathlib\nvalue = 1\n"
 
 
 def test_apply_quick_fixes_rolls_back_file_edits_on_write_failure(

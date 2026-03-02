@@ -22,6 +22,7 @@ class QuickFix:
     project_root: str | None = None
     match_text: str | None = None
     replacement_text: str | None = None
+    expected_line_text: str | None = None
 
 
 def plan_safe_fixes_for_file(
@@ -33,11 +34,13 @@ def plan_safe_fixes_for_file(
     """Return safe quick fixes for known diagnostics."""
     normalized_path = str(Path(file_path).expanduser().resolve())
     normalized_project_root = None if project_root is None else str(Path(project_root).expanduser().resolve())
+    source_lines = _read_source_lines(Path(normalized_path))
     fixes: list[QuickFix] = []
     seen_keys: set[tuple[str, int, str, str, str]] = set()
     for diagnostic in diagnostics:
         if diagnostic.file_path != normalized_path:
             continue
+        expected_line = _line_text_at(source_lines, diagnostic.line_number)
         if diagnostic.code in {"PY220", "PY221"}:
             title_prefix = "Remove unused import" if diagnostic.code == "PY220" else "Remove duplicate import"
             fix = QuickFix(
@@ -46,6 +49,7 @@ def plan_safe_fixes_for_file(
                 line_number=diagnostic.line_number,
                 action_kind="remove_line",
                 project_root=normalized_project_root,
+                expected_line_text=expected_line,
             )
         elif diagnostic.code == "PY200" and normalized_project_root is not None:
             unresolved_module = _extract_unresolved_module_name(diagnostic.message)
@@ -61,6 +65,7 @@ def plan_safe_fixes_for_file(
                     project_root=normalized_project_root,
                     match_text=unresolved_module,
                     replacement_text=suggested_module,
+                    expected_line_text=expected_line,
                 )
             else:
                 target_path = _module_target_path(normalized_project_root, unresolved_module)
@@ -149,6 +154,8 @@ def _apply_file_fixes(
             continue
         line_index = fix.line_number - 1
         if line_index < 0 or line_index >= len(lines):
+            continue
+        if fix.expected_line_text is not None and lines[line_index].rstrip("\n\r") != fix.expected_line_text:
             continue
         if fix.action_kind == "remove_line":
             line = lines[line_index].lstrip()
@@ -277,6 +284,21 @@ def _replace_import_module_in_line(
     if count == 0:
         return line
     return updated
+
+
+def _read_source_lines(path: Path) -> list[str]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return source.splitlines()
+
+
+def _line_text_at(lines: list[str], line_number: int) -> str | None:
+    line_index = line_number - 1
+    if line_index < 0 or line_index >= len(lines):
+        return None
+    return lines[line_index]
 
 
 def _record_file_snapshot(
