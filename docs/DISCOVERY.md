@@ -68,6 +68,53 @@ This detaches the spawned process from LibreOffice/LibrePy so the Qt app can rem
 
 ---
 
+## 3A. New Discovery: Launching Qt Apps via `.desktop` Files (No LibrePy Launcher)
+
+We confirmed the ChoreBoy desktop environment can launch our Qt apps directly using a `.desktop` application shortcut.
+
+### Why this matters
+
+- Removes the need for `launcher.py` and LibrePy as a “bootstrap”.
+- Users can launch apps like any normal desktop app (icon, menu entry, etc.).
+- Makes distribution/UX much cleaner (copy folder + install shortcut).
+
+### Recommended pattern
+
+1. Rename `main.py` to `main.py` and treat it as the single entrypoint.
+2. Create a `.desktop` file whose `Exec=` runs FreeCAD’s runtime and `exec()`s `main.py`.
+3. IMPORTANT: define `__file__` explicitly in the `exec()` globals (because `AppRun -c` does not set it for code loaded from disk).
+
+### Example `.desktop` (MyApp)
+
+```ini
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MyApp
+Comment=Launch MyApp (Qt via FreeCAD AppRun)
+#Icon=/home/default/myapp/icon.png
+Terminal=false
+Categories=Utility;
+
+Exec=/opt/freecad/AppRun -c "p='/home/default/myapp/main.py';exec(compile(open(p,'r',encoding='utf-8').read(),p,'exec'),{'__name__':'__main__','__file__':p})"
+```
+
+### Install locations
+
+- Per-user launcher:
+  - `~/.local/share/applications/myapp.desktop`
+- Desktop icon:
+  - `~/Desktop/myapp.desktop`
+
+After placing the file, ensure it is marked executable (from a terminal or file manager).
+
+### Notes
+
+- If the system requires “trusting” desktop shortcuts, you may need to right-click the icon and choose “Allow Launching” the first time.
+- If you want the app to keep working when moved, hardcode the absolute path (recommended on ChoreBoy).
+
+---
+
 ## 4. Confirmed Capability Matrix
 
 These probes were run and verified on ChoreBoy:
