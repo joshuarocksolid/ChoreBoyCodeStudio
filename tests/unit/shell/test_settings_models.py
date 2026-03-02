@@ -19,6 +19,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.tab_width == 4
     assert snapshot.font_size == 10
     assert snapshot.indent_style == "spaces"
+    assert snapshot.detect_indentation_from_file is True
     assert snapshot.completion_enabled is True
     assert snapshot.cache_enabled is True
 
@@ -31,6 +32,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "font_size": 14,
                 "indent_style": "tabs",
                 "indent_size": 1,
+                "detect_indentation_from_file": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -48,6 +50,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.font_size == 14
     assert snapshot.indent_style == "tabs"
     assert snapshot.indent_size == 1
+    assert snapshot.detect_indentation_from_file is False
     assert snapshot.completion_enabled is False
     assert snapshot.completion_auto_trigger is False
     assert snapshot.completion_min_chars == 3
@@ -63,6 +66,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         font_size=12,
         indent_style="tabs",
         indent_size=1,
+        detect_indentation_from_file=False,
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
@@ -75,6 +79,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
 
     assert merged["editor"]["tab_width"] == 6
     assert merged["editor"]["indent_style"] == "tabs"
+    assert merged["editor"]["detect_indentation_from_file"] is False
     assert merged["intelligence"]["enable_completion"] is False
     assert merged["intelligence"]["cache_enabled"] is False
     assert merged["intelligence"]["force_full_reindex_on_open"] is True

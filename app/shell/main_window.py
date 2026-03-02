@@ -68,6 +68,7 @@ from app.intelligence.completion_service import CompletionRequest, CompletionSer
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
@@ -155,6 +156,7 @@ class MainWindow(QMainWindow):
             self._editor_font_size,
             self._editor_indent_style,
             self._editor_indent_size,
+            self._editor_detect_indentation_from_file,
         ) = self._load_editor_preferences()
         (
             self._completion_enabled,
@@ -342,7 +344,7 @@ class MainWindow(QMainWindow):
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, int]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, int, bool]:
         settings_payload = load_settings(state_root=self._state_root)
         editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
         if not isinstance(editor_settings, dict):
@@ -351,12 +353,17 @@ class MainWindow(QMainWindow):
                 constants.UI_EDITOR_FONT_SIZE_DEFAULT,
                 constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
                 constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
+                constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
             )
 
         tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
         font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
         indent_style = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
         indent_size = editor_settings.get(constants.UI_EDITOR_INDENT_SIZE_KEY, constants.UI_EDITOR_INDENT_SIZE_DEFAULT)
+        detect_indentation_from_file = editor_settings.get(
+            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY,
+            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+        )
         if not isinstance(tab_width, int):
             tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
         if not isinstance(font_size, int):
@@ -365,7 +372,9 @@ class MainWindow(QMainWindow):
             indent_style = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
         if not isinstance(indent_size, int):
             indent_size = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
-        return (max(2, tab_width), max(8, font_size), str(indent_style), max(1, indent_size))
+        if not isinstance(detect_indentation_from_file, bool):
+            detect_indentation_from_file = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
+        return (max(2, tab_width), max(8, font_size), str(indent_style), max(1, indent_size), detect_indentation_from_file)
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
         settings_payload = load_settings(state_root=self._state_root)
@@ -466,6 +475,7 @@ class MainWindow(QMainWindow):
             self._editor_font_size,
             self._editor_indent_style,
             self._editor_indent_size,
+            self._editor_detect_indentation_from_file,
         ) = self._load_editor_preferences()
         (
             self._completion_enabled,
@@ -2138,6 +2148,11 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         self._editor_tabs_widget.setCurrentIndex(tab_index)
         self._maybe_restore_draft(opened_result.tab, editor_widget)
+        self._apply_detected_indentation_for_widget(
+            opened_result.tab.file_path,
+            editor_widget,
+            editor_widget.toPlainText(),
+        )
         self._handle_editor_tab_changed(tab_index)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
@@ -2295,18 +2310,40 @@ class MainWindow(QMainWindow):
         self._update_breadcrumb_for_path(None)
 
     def _apply_editor_preferences_to_open_editors(self) -> None:
-        for editor_widget in self._editor_widgets_by_path.values():
+        for file_path, editor_widget in self._editor_widgets_by_path.items():
             editor_widget.set_editor_preferences(
                 tab_width=self._editor_tab_width,
                 font_point_size=self._editor_font_size,
                 indent_style=self._editor_indent_style,
                 indent_size=self._editor_indent_size,
             )
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, editor_widget.toPlainText())
             editor_widget.set_completion_preferences(
                 enabled=self._completion_enabled,
                 auto_trigger=self._completion_auto_trigger,
                 min_chars=self._completion_min_chars,
             )
+
+    def _apply_detected_indentation_for_widget(
+        self,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        source_text: str,
+    ) -> None:
+        if not self._editor_detect_indentation_from_file:
+            return
+        if not file_path.lower().endswith((".py", ".json", ".md", ".txt")):
+            return
+        detected = detect_indentation_style_and_size(source_text)
+        if detected is None:
+            return
+        style, size = detected
+        editor_widget.set_editor_preferences(
+            tab_width=self._editor_tab_width,
+            font_point_size=self._editor_font_size,
+            indent_style=style,
+            indent_size=size,
+        )
 
     def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
         for file_path in file_paths:
@@ -2321,6 +2358,7 @@ class MainWindow(QMainWindow):
             editor_widget.blockSignals(True)
             editor_widget.setPlainText(refreshed)
             editor_widget.blockSignals(False)
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, refreshed)
             updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
             updated_tab.mark_saved()
             tab_index = self._tab_index_for_path(file_path)

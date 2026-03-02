@@ -48,6 +48,10 @@ class SettingsDialog(QDialog):
         self._indent_size_input.setRange(1, 16)
         self._indent_size_input.setValue(snapshot.indent_size)
         editor_form.addRow("Indent size", self._indent_size_input)
+
+        self._detect_indentation_input = QCheckBox(editor_group)
+        self._detect_indentation_input.setChecked(snapshot.detect_indentation_from_file)
+        editor_form.addRow("Detect indentation from file", self._detect_indentation_input)
         layout.addWidget(editor_group)
 
         intelligence_group = QGroupBox("Intelligence")
@@ -94,6 +98,7 @@ class SettingsDialog(QDialog):
             font_size=int(self._font_size_input.value()),
             indent_style=str(self._indent_style_input.currentText()),
             indent_size=int(self._indent_size_input.value()),
+            detect_indentation_from_file=self._detect_indentation_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),

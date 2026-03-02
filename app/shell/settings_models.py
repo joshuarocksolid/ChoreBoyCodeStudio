@@ -16,6 +16,7 @@ class EditorSettingsSnapshot:
     font_size: int = constants.UI_EDITOR_FONT_SIZE_DEFAULT
     indent_style: str = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
     indent_size: int = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
+    detect_indentation_from_file: bool = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
     completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
@@ -51,12 +52,17 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         default=constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
         minimum=1,
     )
+    detect_indentation_from_file = _coerce_bool(
+        editor_settings.get(constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY),
+        default=constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+    )
 
     return EditorSettingsSnapshot(
         tab_width=tab_width,
         font_size=font_size,
         indent_style=indent_style,
         indent_size=indent_size,
+        detect_indentation_from_file=detect_indentation_from_file,
         completion_enabled=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY),
             default=constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
@@ -100,6 +106,7 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_FONT_SIZE_KEY: max(8, int(snapshot.font_size)),
         constants.UI_EDITOR_INDENT_STYLE_KEY: "tabs" if snapshot.indent_style == "tabs" else "spaces",
         constants.UI_EDITOR_INDENT_SIZE_KEY: max(1, int(snapshot.indent_size)),
+        constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: bool(snapshot.detect_indentation_from_file),
     }
     merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = {
         constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),
