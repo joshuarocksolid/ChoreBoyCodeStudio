@@ -31,6 +31,7 @@ class MenuCallbacks:
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
+    on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
@@ -159,7 +160,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         callback=callback_registry.on_save_all,
     )
     file_menu.addSeparator()
-    _register_menu_action(file_menu, actions, "shell.action.file.settings", "Settings...")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.settings",
+        "Settings...",
+        enabled=True,
+        callback=callback_registry.on_open_settings,
+    )
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,

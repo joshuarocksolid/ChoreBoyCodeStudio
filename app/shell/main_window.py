@@ -12,6 +12,7 @@ from PySide2.QtCore import QEvent, QTimer, Qt
 from PySide2.QtGui import QCloseEvent
 from PySide2.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -86,6 +87,8 @@ from app.shell.layout_persistence import (
     merge_layout_into_settings,
     parse_shell_layout_state,
 )
+from app.shell.settings_dialog import SettingsDialog
+from app.shell.settings_models import merge_editor_settings_snapshot, parse_editor_settings_snapshot
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import tokens_from_palette
 from app.project.project_tree import build_project_tree
@@ -195,6 +198,7 @@ class MainWindow(QMainWindow):
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
+                on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
                 on_stop=self._handle_stop_action,
@@ -445,6 +449,37 @@ class MainWindow(QMainWindow):
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _handle_open_settings_action(self) -> None:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        dialog = SettingsDialog(snapshot, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        updated_snapshot = dialog.snapshot()
+        merged_settings = merge_editor_settings_snapshot(settings_payload, updated_snapshot)
+        save_settings(merged_settings, state_root=self._state_root)
+
+        (
+            self._editor_tab_width,
+            self._editor_font_size,
+            self._editor_indent_style,
+            self._editor_indent_size,
+        ) = self._load_editor_preferences()
+        (
+            self._completion_enabled,
+            self._completion_auto_trigger,
+            self._completion_min_chars,
+        ) = self._load_completion_preferences()
+        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
+        if not self._intelligence_runtime_settings.cache_enabled:
+            if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+                self._active_symbol_index_worker.cancel()
+        elif self._loaded_project is not None:
+            self._start_symbol_indexing(self._loaded_project.project_root)
+        self._apply_editor_preferences_to_open_editors()
+        self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
         labels = [f"{template.display_name} ({template.template_id})" for template in templates]
@@ -2258,6 +2293,20 @@ class MainWindow(QMainWindow):
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
         self._update_breadcrumb_for_path(None)
+
+    def _apply_editor_preferences_to_open_editors(self) -> None:
+        for editor_widget in self._editor_widgets_by_path.values():
+            editor_widget.set_editor_preferences(
+                tab_width=self._editor_tab_width,
+                font_point_size=self._editor_font_size,
+                indent_style=self._editor_indent_style,
+                indent_size=self._editor_indent_size,
+            )
+            editor_widget.set_completion_preferences(
+                enabled=self._completion_enabled,
+                auto_trigger=self._completion_auto_trigger,
+                min_chars=self._completion_min_chars,
+            )
 
     def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
         for file_path in file_paths:
