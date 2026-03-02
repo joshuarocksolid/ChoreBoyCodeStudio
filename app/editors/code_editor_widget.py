@@ -16,6 +16,7 @@ from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
+from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
@@ -64,6 +65,13 @@ class CodeEditorWidget(QPlainTextEdit):
         self._completion_popup.setWidget(self)
         self._completion_popup.activated.connect(self._insert_completion_from_label)
 
+        self._is_dark = False
+        self._gutter_bg = QColor("#F1F3F5")
+        self._gutter_text = QColor("#ADB5BD")
+        self._line_highlight = QColor("#EEF7FF")
+        self._bracket_match_color = QColor("#FFD8A8")
+        self._breakpoint_color = QColor("#E03131")
+
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._highlight_current_line)
@@ -76,6 +84,19 @@ class CodeEditorWidget(QPlainTextEdit):
             indent_style="spaces",
             indent_size=DEFAULT_TAB_WIDTH,
         )
+
+    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self._is_dark = tokens.is_dark
+        self._gutter_bg = QColor(tokens.gutter_bg)
+        self._gutter_text = QColor(tokens.gutter_text)
+        self._line_highlight = QColor(tokens.line_highlight)
+        self._bracket_match_color = QColor("#5C3D1A") if tokens.is_dark else QColor("#FFD8A8")
+        self._breakpoint_color = QColor("#FF6B6B") if tokens.is_dark else QColor("#E03131")
+        self._line_number_area.update()
+        self._highlight_current_line()
+        highlighter = self._highlighter
+        if hasattr(highlighter, "set_dark_mode"):
+            highlighter.set_dark_mode(tokens.is_dark)  # type: ignore[union-attr]
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
         self._breakpoint_toggled_callback = callback
@@ -120,11 +141,11 @@ class CodeEditorWidget(QPlainTextEdit):
         extension = Path(file_path).suffix.lower()
         document = self.document()
         if extension == ".py":
-            self._highlighter = PythonSyntaxHighlighter(document)
+            self._highlighter = PythonSyntaxHighlighter(document, is_dark=self._is_dark)
         elif extension in {".json"}:
-            self._highlighter = JsonSyntaxHighlighter(document)
+            self._highlighter = JsonSyntaxHighlighter(document, is_dark=self._is_dark)
         elif extension in {".md", ".markdown"}:
-            self._highlighter = MarkdownSyntaxHighlighter(document)
+            self._highlighter = MarkdownSyntaxHighlighter(document, is_dark=self._is_dark)
         else:
             self._highlighter = None
 
@@ -178,33 +199,33 @@ class CodeEditorWidget(QPlainTextEdit):
             return
         self._show_completion_items(items, prefix=prefix)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt signature
-        if self._handle_completion_popup_navigation(event):
+    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
+        if self._handle_completion_popup_navigation(e):
             return
 
-        if event.key() == Qt.Key_Space and event.modifiers() & Qt.ControlModifier:
+        if e.key() == Qt.Key_Space and e.modifiers() & Qt.ControlModifier:
             self.trigger_completion(manual=True)
-            event.accept()
+            e.accept()
             return
 
-        if event.key() == Qt.Key_Tab and not event.modifiers():
+        if e.key() == Qt.Key_Tab and not e.modifiers():
             self.indent_selection()
-            event.accept()
+            e.accept()
             return
-        if event.key() == Qt.Key_Backtab:
+        if e.key() == Qt.Key_Backtab:
             self.outdent_selection()
-            event.accept()
+            e.accept()
             return
-        if event.key() == Qt.Key_Backspace and not event.modifiers():
+        if e.key() == Qt.Key_Backspace and not e.modifiers():
             if self._handle_smart_backspace():
-                event.accept()
+                e.accept()
                 return
 
-        super().keyPressEvent(event)
+        super().keyPressEvent(e)
         if not self._completion_enabled or not self._completion_auto_trigger:
             return
 
-        inserted_text = event.text()
+        inserted_text = e.text()
         if inserted_text == ".":
             self.trigger_completion(manual=True, force_empty_prefix=True)
             return
@@ -237,37 +258,39 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def paint_line_number_area(self, event) -> None:
         painter = QPainter(self._line_number_area)
-        painter.fillRect(event.rect(), QColor("#F1F3F5"))
+        try:
+            painter.fillRect(event.rect(), self._gutter_bg)
 
-        block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
-        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
-        bottom = top + int(self.blockBoundingRect(block).height())
-
-        while block.isValid() and top <= event.rect().bottom():
-            if block.isVisible() and bottom >= event.rect().top():
-                line_number = block_number + 1
-                number_text = str(line_number)
-                color = QColor("#ADB5BD")
-                if line_number in self._breakpoints:
-                    color = QColor("#E03131")
-                    marker_radius = 4
-                    center_y = top + self.fontMetrics().height() // 2
-                    painter.setBrush(color)
-                    painter.setPen(Qt.NoPen)
-                    painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
-                painter.setPen(color)
-                painter.drawText(
-                    QRect(0, top, self._line_number_area.width() - 6, self.fontMetrics().height()),
-                    int(Qt.AlignRight),
-                    number_text,
-                    QRect(),
-                )
-
-            block = block.next()
-            block_number += 1
-            top = bottom
+            block = self.firstVisibleBlock()
+            block_number = block.blockNumber()
+            top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
             bottom = top + int(self.blockBoundingRect(block).height())
+
+            while block.isValid() and top <= event.rect().bottom():
+                if block.isVisible() and bottom >= event.rect().top():
+                    line_number = block_number + 1
+                    number_text = str(line_number)
+                    color = self._gutter_text
+                    if line_number in self._breakpoints:
+                        color = self._breakpoint_color
+                        marker_radius = 4
+                        center_y = top + self.fontMetrics().height() // 2
+                        painter.setBrush(color)
+                        painter.setPen(Qt.NoPen)
+                        painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
+                    painter.setPen(color)
+                    painter.drawText(
+                        QRect(0, top, self._line_number_area.width() - 6, self.fontMetrics().height()),  # type: ignore
+                        int(Qt.AlignRight),
+                        number_text,
+                    )  # type: ignore[call-overload]  # stubs require br; PySide6 shim does not
+
+                block = block.next()
+                block_number += 1
+                top = bottom
+                bottom = top + int(self.blockBoundingRect(block).height())
+        finally:
+            painter.end()
 
     def _highlight_current_line(self) -> None:
         if self.isReadOnly():
@@ -277,7 +300,7 @@ class CodeEditorWidget(QPlainTextEdit):
         selections: list[QTextEdit.ExtraSelection] = []
 
         line_selection = cast(Any, QTextEdit.ExtraSelection())
-        line_selection.format.setBackground(QColor("#EEF7FF"))
+        line_selection.format.setBackground(self._line_highlight)
         line_selection.format.setProperty(QTextFormat.FullWidthSelection, True)
         line_selection.cursor = self.textCursor()
         line_selection.cursor.clearSelection()
@@ -448,7 +471,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _selection_for_position(self, position: int) -> QTextEdit.ExtraSelection:
         selection = cast(Any, QTextEdit.ExtraSelection())
-        selection.format.setBackground(QColor("#FFD8A8"))
+        selection.format.setBackground(self._bracket_match_color)
         cursor = self.textCursor()
         cursor.setPosition(position)
         cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, 1)

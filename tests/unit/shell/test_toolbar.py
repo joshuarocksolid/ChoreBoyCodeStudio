@@ -1,82 +1,84 @@
-"""Unit tests for shell toolbar construction."""
+"""Unit tests for shell run toolbar widget."""
 
 from __future__ import annotations
 
-import types
-
 import pytest
 
-import app.shell.toolbar as toolbar_module
-from app.shell.menus import MenuStubRegistry
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
+from PySide2.QtWidgets import QApplication  # noqa: E402
+
+from app.shell.toolbar import RunToolbarWidget, build_run_toolbar_widget  # noqa: E402
+from app.shell.menus import MenuStubRegistry  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
 
-class _FakeAction:
-    def __init__(self, action_id: str) -> None:
-        self.action_id = action_id
+@pytest.fixture(scope="module", autouse=True)
+def _qapp(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def]
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
-class _FakeToolBar:
-    def __init__(self, title: str, _main_window: object) -> None:
-        self.title = title
-        self.object_name = ""
-        self.actions: list[_FakeAction | str] = []
-        self.movable = True
+def _make_registry_with_actions() -> tuple[MenuStubRegistry, dict[str, object]]:
+    from PySide2.QtWidgets import QAction
 
-    def setObjectName(self, name: str) -> None:  # noqa: N802 - Qt signature
-        self.object_name = name
-
-    def setMovable(self, value: bool) -> None:  # noqa: N802 - Qt signature
-        self.movable = value
-
-    def addAction(self, action: _FakeAction) -> None:  # noqa: N802 - Qt signature
-        self.actions.append(action)
-
-    def addSeparator(self) -> None:  # noqa: N802 - Qt signature
-        self.actions.append("|")
-
-
-class _FakeMainWindow:
-    def __init__(self) -> None:
-        self.toolbars: list[_FakeToolBar] = []
-
-    def addToolBar(self, toolbar: _FakeToolBar) -> None:  # noqa: N802 - Qt signature
-        self.toolbars.append(toolbar)
+    action_map: dict[str, object] = {}
+    for aid in (
+        "shell.action.run.run",
+        "shell.action.run.debug",
+        "shell.action.run.stop",
+        "shell.action.run.restart",
+        "shell.action.run.pythonConsole",
+        "shell.action.run.continue",
+        "shell.action.run.pause",
+        "shell.action.run.stepOver",
+        "shell.action.run.stepInto",
+        "shell.action.run.stepOut",
+        "shell.action.run.toggleBreakpoint",
+    ):
+        action = QAction(aid.split(".")[-1])
+        action.setEnabled(False)
+        action_map[aid] = action
+    registry = MenuStubRegistry(actions=action_map, menus={})
+    return registry, action_map
 
 
-def test_build_shell_toolbar_returns_none_without_registry() -> None:
-    window = _FakeMainWindow()
-    assert toolbar_module.build_shell_toolbar(window, None) is None
+def test_build_run_toolbar_widget_returns_none_without_registry() -> None:
+    assert build_run_toolbar_widget(None) is None
 
 
-def test_build_shell_toolbar_adds_expected_action_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_import(_name: str, _globals=None, _locals=None, _fromlist=(), _level=0, **_kwargs):  # type: ignore[no-untyped-def]
-        return types.SimpleNamespace(QToolBar=_FakeToolBar)
+def test_widget_creates_with_correct_object_name() -> None:
+    registry, _ = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry)
+    assert widget.objectName() == "shell.toolbar.runDebug"
 
-    monkeypatch.setitem(toolbar_module.__dict__, "__import__", _fake_import)
 
-    actions = {
-        "shell.action.run.run": _FakeAction("run"),
-        "shell.action.run.debug": _FakeAction("debug"),
-        "shell.action.run.stop": _FakeAction("stop"),
-        "shell.action.run.restart": _FakeAction("restart"),
-        "shell.action.run.pythonConsole": _FakeAction("pythonConsole"),
-        "shell.action.run.continue": _FakeAction("continue"),
-        "shell.action.run.pause": _FakeAction("pause"),
-        "shell.action.run.stepOver": _FakeAction("stepOver"),
-        "shell.action.run.stepInto": _FakeAction("stepInto"),
-        "shell.action.run.stepOut": _FakeAction("stepOut"),
-        "shell.action.run.toggleBreakpoint": _FakeAction("toggleBreakpoint"),
-    }
-    registry = MenuStubRegistry(actions=actions, menus={})
-    window = _FakeMainWindow()
+def test_disabled_actions_produce_hidden_buttons() -> None:
+    registry, actions = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry)
+    from PySide2.QtWidgets import QToolButton
 
-    toolbar = toolbar_module.build_shell_toolbar(window, registry)
+    visible_buttons = [
+        btn for btn in widget.findChildren(QToolButton)
+        if btn.isVisible()
+    ]
+    assert len(visible_buttons) == 0
 
-    assert toolbar is not None
-    assert window.toolbars
-    assert toolbar.object_name == "shell.toolbar.runDebug"
-    action_ids = [entry.action_id for entry in toolbar.actions if isinstance(entry, _FakeAction)]
-    assert action_ids[0:5] == ["run", "debug", "stop", "restart", "pythonConsole"]
-    assert action_ids[5:] == ["continue", "pause", "stepOver", "stepInto", "stepOut", "toggleBreakpoint"]
+
+def test_enabling_action_shows_button() -> None:
+    from PySide2.QtWidgets import QAction, QToolButton
+
+    registry, actions = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry)
+
+    run_action: QAction = actions["shell.action.run.run"]  # type: ignore[assignment]
+    run_action.setEnabled(True)
+
+    visible_buttons = [
+        btn for btn in widget.findChildren(QToolButton)
+        if btn.isVisible()
+    ]
+    assert len(visible_buttons) == 1

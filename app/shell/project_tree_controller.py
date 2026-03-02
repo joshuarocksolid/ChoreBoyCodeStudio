@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, MutableMapping, Protocol, TypeVar
+from typing import Callable, Generic, Protocol, TypeVar
 
 from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.project.file_operation_models import ImportUpdatePolicy
@@ -11,21 +11,21 @@ from app.project.file_operation_models import ImportUpdatePolicy
 
 class TreeEditorWidget(Protocol):
     def set_breakpoints(self, breakpoints: set[int]) -> None: ...
-    def set_language_for_path(self, path: str) -> None: ...
+    def set_language_for_path(self, file_path: str) -> None: ...
     def deleteLater(self) -> None: ...  # noqa: N802
 
 
 W = TypeVar("W", bound=TreeEditorWidget)
 
 
-class ProjectTreeController:
+class ProjectTreeController(Generic[W]):
     """Coordinates editor/path updates for tree delete/move operations."""
 
     def close_deleted_editor_paths(
         self,
         deleted_path: str,
         *,
-        editor_widgets_by_path: MutableMapping[str, W],
+        editor_widgets_by_path: dict[str, W],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
         release_editor_widget: Callable[[W], None],
@@ -52,7 +52,7 @@ class ProjectTreeController:
         destination_path: str,
         *,
         remap_editor_paths: Callable[[str, str], dict[str, str]],
-        editor_widgets_by_path: MutableMapping[str, W],
+        editor_widgets_by_path: dict[str, W],
         tab_index_for_path: Callable[[str], int],
         update_tab_path_and_name: Callable[[int, str], None],
         breakpoints_by_file: dict[str, set[int]],

@@ -33,6 +33,7 @@ class EditorSettingsSnapshot:
     incremental_indexing: bool = constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_DEFAULT
     metrics_logging_enabled: bool = constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT
     force_full_reindex_on_open: bool = constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT
+    theme_mode: str = constants.UI_THEME_MODE_DEFAULT
 
 
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
@@ -43,6 +44,12 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
     if not isinstance(intelligence_settings, dict):
         intelligence_settings = {}
+    theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
+    if not isinstance(theme_settings, dict):
+        theme_settings = {}
+    theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
+    _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
+    theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
 
     tab_width = _coerce_int(
         editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY),
@@ -132,6 +139,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             intelligence_settings.get(constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY),
             default=constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT,
         ),
+        theme_mode=theme_mode,
     )
 
 
@@ -165,6 +173,11 @@ def merge_editor_settings_snapshot(
         constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY: bool(snapshot.incremental_indexing),
         constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY: bool(snapshot.metrics_logging_enabled),
         constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY: bool(snapshot.force_full_reindex_on_open),
+    }
+    _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
+    mode = snapshot.theme_mode if snapshot.theme_mode in _valid_modes else constants.UI_THEME_MODE_DEFAULT
+    merged[constants.UI_THEME_SETTINGS_KEY] = {
+        constants.UI_THEME_MODE_KEY: mode,
     }
     return merged
 

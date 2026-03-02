@@ -29,6 +29,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.quick_fixes_enabled is True
     assert snapshot.quick_fix_require_preview_for_multifile is True
     assert snapshot.cache_enabled is True
+    assert snapshot.theme_mode == "system"
 
 
 def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
@@ -118,3 +119,49 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["intelligence"]["quick_fix_require_preview_for_multifile"] is False
     assert merged["intelligence"]["cache_enabled"] is False
     assert merged["intelligence"]["force_full_reindex_on_open"] is True
+    assert merged["theme"]["mode"] == "system"
+
+
+def test_parse_theme_mode_reads_explicit_dark() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"mode": "dark"}})
+    assert snapshot.theme_mode == "dark"
+
+
+def test_parse_theme_mode_reads_explicit_light() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"mode": "light"}})
+    assert snapshot.theme_mode == "light"
+
+
+def test_parse_theme_mode_defaults_for_invalid_value() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"mode": "neon"}})
+    assert snapshot.theme_mode == "system"
+
+
+def test_parse_theme_mode_defaults_for_missing_key() -> None:
+    snapshot = parse_editor_settings_snapshot({})
+    assert snapshot.theme_mode == "system"
+
+
+def test_parse_theme_mode_defaults_for_invalid_theme_section() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": "garbage"})
+    assert snapshot.theme_mode == "system"
+
+
+def test_merge_preserves_theme_mode() -> None:
+    snapshot = EditorSettingsSnapshot(theme_mode="dark")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["theme"]["mode"] == "dark"
+
+
+def test_merge_theme_mode_round_trip() -> None:
+    for mode in ("system", "light", "dark"):
+        snapshot = EditorSettingsSnapshot(theme_mode=mode)
+        merged = merge_editor_settings_snapshot({}, snapshot)
+        restored = parse_editor_settings_snapshot(merged)
+        assert restored.theme_mode == mode
+
+
+def test_merge_invalid_theme_mode_falls_back_to_system() -> None:
+    snapshot = EditorSettingsSnapshot(theme_mode="invalid")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["theme"]["mode"] == "system"

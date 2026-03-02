@@ -64,6 +64,9 @@ class MenuCallbacks:
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_reset_layout: Callable[[], object] | None = None
+    on_set_theme_system: Callable[[], object] | None = None
+    on_set_theme_light: Callable[[], object] | None = None
+    on_set_theme_dark: Callable[[], object] | None = None
     on_format_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
@@ -437,6 +440,28 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Reset Layout",
         callback=callback_registry.on_reset_layout,
     )
+    view_menu.addSeparator()
+    theme_menu = view_menu.addMenu("Theme")
+    theme_menu.setObjectName("shell.menu.view.theme")
+    menus["shell.menu.view.theme"] = theme_menu
+
+    qt_gui = importlib.import_module("PySide2.QtWidgets")
+    action_group = qt_gui.QActionGroup(theme_menu)
+    action_group.setExclusive(True)
+    for action_id, label, mode_callback in [
+        ("shell.action.view.theme.system", "System", callback_registry.on_set_theme_system),
+        ("shell.action.view.theme.light", "Light", callback_registry.on_set_theme_light),
+        ("shell.action.view.theme.dark", "Dark", callback_registry.on_set_theme_dark),
+    ]:
+        act = qt_gui.QAction(label, theme_menu)
+        act.setObjectName(action_id)
+        act.setCheckable(True)
+        act.setEnabled(True)
+        if mode_callback is not None:
+            act.triggered.connect(mode_callback)
+        action_group.addAction(act)
+        theme_menu.addAction(act)
+        actions[action_id] = act
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")

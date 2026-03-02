@@ -23,9 +23,18 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(460, 430)
+        self.resize(460, 480)
 
         layout = QVBoxLayout(self)
+
+        appearance_group = QGroupBox("Appearance")
+        appearance_form = QFormLayout(appearance_group)
+        self._theme_mode_input = QComboBox(appearance_group)
+        self._theme_mode_input.addItems(["System", "Light", "Dark"])
+        _mode_to_index = {"system": 0, "light": 1, "dark": 2}
+        self._theme_mode_input.setCurrentIndex(_mode_to_index.get(snapshot.theme_mode, 0))
+        appearance_form.addRow("Theme", self._theme_mode_input)
+        layout.addWidget(appearance_group)
 
         editor_group = QGroupBox("Editor")
         editor_form = QFormLayout(editor_group)
@@ -141,4 +150,5 @@ class SettingsDialog(QDialog):
             incremental_indexing=self._incremental_indexing_input.isChecked(),
             metrics_logging_enabled=self._metrics_logging_input.isChecked(),
             force_full_reindex_on_open=self._force_reindex_on_open_input.isChecked(),
+            theme_mode=["system", "light", "dark"][self._theme_mode_input.currentIndex()],
         )
