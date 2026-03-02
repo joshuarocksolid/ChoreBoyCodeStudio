@@ -61,6 +61,7 @@ class MenuCallbacks:
     on_reset_layout: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
+    on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
@@ -411,6 +412,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Apply Safe Fixes (Current File)",
         enabled=True,
         callback=callback_registry.on_apply_safe_fixes,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.rebuildIntelligenceCache",
+        "Rebuild Intelligence Cache",
+        enabled=True,
+        callback=callback_registry.on_rebuild_intelligence_cache,
     )
     _register_menu_action(
         tools_menu,

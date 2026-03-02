@@ -48,6 +48,12 @@ from app.debug.debug_command_service import (
 )
 from app.debug.debug_session import DebugSession
 from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
+from app.intelligence.cache_controls import (
+    IntelligenceRuntimeSettings,
+    parse_intelligence_runtime_settings,
+    rebuild_symbol_cache,
+    should_refresh_index_after_save,
+)
 from app.intelligence.diagnostics_service import DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
@@ -146,7 +152,9 @@ class MainWindow(QMainWindow):
             self._completion_auto_trigger,
             self._completion_min_chars,
         ) = self._load_completion_preferences()
-        self._completion_service = CompletionService(cache_db_path=str(global_cache_dir(self._state_root) / "symbols.sqlite3"))
+        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
+        self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
+        self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = QTimer(self)
@@ -196,6 +204,7 @@ class MainWindow(QMainWindow):
                 on_reset_layout=self._handle_reset_layout_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
+                on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
@@ -366,6 +375,10 @@ class MainWindow(QMainWindow):
         if not isinstance(min_chars, int):
             min_chars = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
         return (enabled, auto_trigger, max(1, min_chars))
+
+    def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
+        settings_payload = load_settings(state_root=self._state_root)
+        return parse_intelligence_runtime_settings(settings_payload)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         QTimer.singleShot(0, callback)
@@ -657,7 +670,6 @@ class MainWindow(QMainWindow):
         if not symbol_name:
             QMessageBox.information(self, "Go To Definition", "Place cursor on a symbol first.")
             return
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
         project_root = self._loaded_project.project_root
         current_file_path = active_tab.file_path
 
@@ -666,7 +678,7 @@ class MainWindow(QMainWindow):
                 project_root=project_root,
                 current_file_path=current_file_path,
                 symbol_name=symbol_name,
-                cache_db_path=str(cache_db),
+                cache_db_path=self._symbol_cache_db_path,
             )
 
         def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
@@ -715,7 +727,7 @@ class MainWindow(QMainWindow):
             cursor_position=editor_widget.textCursor().position(),
             current_file_path=active_tab.file_path,
             project_root=project_root,
-            cache_db_path=str(global_cache_dir(self._state_root) / "symbols.sqlite3"),
+            cache_db_path=self._symbol_cache_db_path,
         )
         if hover_info is None:
             QMessageBox.information(self, "Hover Info", "No symbol info available.")
@@ -839,6 +851,8 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        if self._intelligence_runtime_settings.force_full_reindex_on_open:
+            self._rebuild_intelligence_cache()
         self._start_symbol_indexing(loaded_project.project_root)
         self._logger.info(
             "Project open telemetry: root=%s files=%s elapsed_ms=%.2f",
@@ -903,6 +917,11 @@ class MainWindow(QMainWindow):
         self._autosave_store.delete_draft(saved_tab.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
+        if should_refresh_index_after_save(
+            self._intelligence_runtime_settings,
+            has_loaded_project=self._loaded_project is not None,
+        ) and self._loaded_project is not None:
+            self._start_symbol_indexing(self._loaded_project.project_root)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -1123,6 +1142,15 @@ class MainWindow(QMainWindow):
         self._refresh_open_tabs_from_disk([active_tab.file_path])
         self._handle_lint_current_file_action()
         QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
+
+    def _handle_rebuild_intelligence_cache_action(self) -> None:
+        deleted = self._rebuild_intelligence_cache()
+        if self._loaded_project is not None and self._intelligence_runtime_settings.cache_enabled:
+            self._start_symbol_indexing(self._loaded_project.project_root)
+        if deleted:
+            QMessageBox.information(self, "Rebuild Intelligence Cache", "Cache rebuilt successfully.")
+            return
+        QMessageBox.information(self, "Rebuild Intelligence Cache", "No existing cache found. Reindex initialized.")
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
@@ -1400,17 +1428,28 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
 
     def _start_symbol_indexing(self, project_root: str) -> None:
+        if not self._intelligence_runtime_settings.cache_enabled:
+            return
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
         started_at = time.perf_counter()
         self._active_symbol_index_worker = SymbolIndexWorker(
             project_root=project_root,
-            cache_db_path=str(cache_db),
+            cache_db_path=self._symbol_cache_db_path,
             on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at),
             on_error=lambda message: self._handle_symbol_index_error(project_root, message),
         )
         self._active_symbol_index_worker.start()
+
+    def _rebuild_intelligence_cache(self) -> bool:
+        if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+            self._active_symbol_index_worker.cancel()
+        try:
+            deleted = rebuild_symbol_cache(self._symbol_cache_db_path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rebuild Intelligence Cache", f"Unable to rebuild cache: {exc}")
+            return False
+        return deleted
 
     def _handle_symbol_index_done(self, project_root: str, symbol_count: int, started_at: float) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -2111,6 +2150,7 @@ class MainWindow(QMainWindow):
         cursor_position: int,
         manual_trigger: bool,
     ) -> list[CompletionItem]:
+        started_at = time.perf_counter()
         request = CompletionRequest(
             source_text=source_text,
             cursor_position=cursor_position,
@@ -2120,7 +2160,24 @@ class MainWindow(QMainWindow):
             min_prefix_chars=self._completion_min_chars,
             max_results=100,
         )
-        return list(self._completion_service.complete(request))
+        completions = list(self._completion_service.complete(request))
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 150.0:
+                self._logger.warning(
+                    "Completion latency warning: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(completions),
+                )
+            else:
+                self._logger.info(
+                    "Completion telemetry: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(completions),
+                )
+        return completions
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:
