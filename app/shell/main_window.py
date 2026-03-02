@@ -108,6 +108,7 @@ TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
 PROBLEM_ROLE_FILE_PATH = 320
 PROBLEM_ROLE_LINE_NUMBER = 321
+PROBLEM_ROLE_DIAGNOSTIC_CODE = 322
 
 
 class MainWindow(QMainWindow):
@@ -1077,8 +1078,21 @@ class MainWindow(QMainWindow):
         if not active_tab.file_path.lower().endswith(".py"):
             QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
             return
+        self._render_lint_diagnostics_for_file(active_tab.file_path)
+
+    def _handle_apply_safe_fixes_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
+            return
+        self._apply_safe_fixes_for_file(active_tab.file_path)
+
+    def _render_lint_diagnostics_for_file(self, file_path: str) -> None:
+        if not file_path.lower().endswith(".py"):
+            QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+            return
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        diagnostics = analyze_python_file(active_tab.file_path, project_root=project_root)
+        diagnostics = analyze_python_file(file_path, project_root=project_root)
         if self._problems_list_widget is None:
             return
         self._problems_list_widget.clear()
@@ -1099,19 +1113,15 @@ class MainWindow(QMainWindow):
             item.setToolTip(diagnostic.file_path)
             item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
             item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+            item.setData(PROBLEM_ROLE_DIAGNOSTIC_CODE, diagnostic.code)
 
-    def _handle_apply_safe_fixes_action(self) -> None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
-            return
-        if not active_tab.file_path.lower().endswith(".py"):
+    def _apply_safe_fixes_for_file(self, file_path: str) -> None:
+        if not file_path.lower().endswith(".py"):
             QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
             return
-
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        diagnostics = analyze_python_file(active_tab.file_path, project_root=project_root)
-        fixes = plan_safe_fixes_for_file(active_tab.file_path, diagnostics)
+        diagnostics = analyze_python_file(file_path, project_root=project_root)
+        fixes = plan_safe_fixes_for_file(file_path, diagnostics)
         if not fixes:
             QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
             return
@@ -1139,12 +1149,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Apply Safe Fixes", "No changes were applied.")
             return
 
-        self._refresh_open_tabs_from_disk([active_tab.file_path])
-        self._handle_lint_current_file_action()
+        self._refresh_open_tabs_from_disk([file_path])
+        self._render_lint_diagnostics_for_file(file_path)
         QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
 
     def _handle_rebuild_intelligence_cache_action(self) -> None:
         deleted = self._rebuild_intelligence_cache()
+        if deleted is None:
+            return
         if self._loaded_project is not None and self._intelligence_runtime_settings.cache_enabled:
             self._start_symbol_indexing(self._loaded_project.project_root)
         if deleted:
@@ -1441,14 +1453,14 @@ class MainWindow(QMainWindow):
         )
         self._active_symbol_index_worker.start()
 
-    def _rebuild_intelligence_cache(self) -> bool:
+    def _rebuild_intelligence_cache(self) -> bool | None:
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
         try:
             deleted = rebuild_symbol_cache(self._symbol_cache_db_path)
         except OSError as exc:
             QMessageBox.warning(self, "Rebuild Intelligence Cache", f"Unable to rebuild cache: {exc}")
-            return False
+            return None
         return deleted
 
     def _handle_symbol_index_done(self, project_root: str, symbol_count: int, started_at: float) -> None:
@@ -1479,6 +1491,28 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             resolved_line = None
         self._open_file_at_line(str(file_path), resolved_line)
+
+    def _show_problems_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
+        if self._problems_list_widget is None:
+            return
+        item = self._problems_list_widget.itemAt(position)
+        if item is None:
+            return
+
+        diagnostic_code = item.data(PROBLEM_ROLE_DIAGNOSTIC_CODE)
+        file_path = item.data(PROBLEM_ROLE_FILE_PATH)
+        if not file_path:
+            return
+
+        menu = QMenu(self)
+        apply_fixes_action = None
+        if diagnostic_code == "PY220":
+            apply_fixes_action = menu.addAction("Apply Safe Fixes for File")
+        if apply_fixes_action is None:
+            return
+        chosen = menu.exec_(self._problems_list_widget.viewport().mapToGlobal(position))
+        if chosen == apply_fixes_action:
+            self._apply_safe_fixes_for_file(str(file_path))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
@@ -1673,6 +1707,8 @@ class MainWindow(QMainWindow):
         self._problems_list_widget.setObjectName("shell.bottom.problems")
         self._problems_list_widget.itemActivated.connect(self._handle_problem_item_activation)
         self._problems_list_widget.itemDoubleClicked.connect(self._handle_problem_item_activation)
+        self._problems_list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._problems_list_widget.customContextMenuRequested.connect(self._show_problems_context_menu)
         tabs.addTab(self._problems_list_widget, "Problems")
 
         self._run_log_output_widget = QPlainTextEdit(tabs)
