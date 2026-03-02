@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
         self._debug_session = DebugSession()
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
+        self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._run_session_controller = RunSessionController(self._run_service)
@@ -2047,18 +2048,22 @@ class MainWindow(QMainWindow):
             return
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
+        self._symbol_index_generation += 1
+        generation = self._symbol_index_generation
         started_at = time.perf_counter()
         self._active_symbol_index_worker = SymbolIndexWorker(
             project_root=project_root,
             cache_db_path=self._symbol_cache_db_path,
-            on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at),
-            on_error=lambda message: self._handle_symbol_index_error(project_root, message),
+            on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at, generation),
+            on_error=lambda message: self._handle_symbol_index_error(project_root, message, generation),
+            should_commit=lambda: generation == self._symbol_index_generation,
         )
         self._active_symbol_index_worker.start()
 
     def _rebuild_intelligence_cache(self) -> bool | None:
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
+        self._symbol_index_generation += 1
         try:
             deleted = rebuild_symbol_cache(self._symbol_cache_db_path)
         except OSError as exc:
@@ -2066,7 +2071,15 @@ class MainWindow(QMainWindow):
             return None
         return deleted
 
-    def _handle_symbol_index_done(self, project_root: str, symbol_count: int, started_at: float) -> None:
+    def _handle_symbol_index_done(
+        self,
+        project_root: str,
+        symbol_count: int,
+        started_at: float,
+        generation: int,
+    ) -> None:
+        if generation != self._symbol_index_generation:
+            return
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         self._logger.info(
             "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
@@ -2076,7 +2089,9 @@ class MainWindow(QMainWindow):
         )
         QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
 
-    def _handle_symbol_index_error(self, project_root: str, message: str) -> None:
+    def _handle_symbol_index_error(self, project_root: str, message: str, generation: int) -> None:
+        if generation != self._symbol_index_generation:
+            return
         self._logger.warning("Symbol index failed for %s: %s", project_root, message)
         QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
 

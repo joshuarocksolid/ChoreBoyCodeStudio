@@ -44,11 +44,13 @@ class SymbolIndexWorker:
         cache_db_path: str,
         on_done: Callable[[int], None] | None = None,
         on_error: Callable[[str], None] | None = None,
+        should_commit: Callable[[], bool] | None = None,
     ) -> None:
         self._project_root = str(Path(project_root).expanduser().resolve())
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
         self._on_done = on_done
         self._on_error = on_error
+        self._should_commit = should_commit
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -64,15 +66,22 @@ class SymbolIndexWorker:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def _can_commit(self) -> bool:
+        if self._cancel_event.is_set():
+            return False
+        if self._should_commit is not None and not self._should_commit():
+            return False
+        return True
+
     def _run(self) -> None:
         try:
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
             python_files = _list_python_source_files(self._project_root)
             current_fingerprints = {str(path): _file_fingerprint(path) for path in python_files}
             cache = SQLiteSymbolIndex(self._cache_db_path)
             cached_fingerprints = cache.lookup_file_fingerprints(self._project_root)
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
 
             deleted_files = sorted(path for path in cached_fingerprints.keys() if path not in current_fingerprints)
@@ -83,12 +92,14 @@ class SymbolIndexWorker:
             )
 
             if deleted_files:
+                if not self._can_commit():
+                    return
                 cache.remove_symbols_for_files(self._project_root, deleted_files)
                 cache.remove_file_fingerprints(self._project_root, deleted_files)
 
             symbols_by_file: dict[str, list[IndexedSymbol]] = {}
             for file_path in changed_files:
-                if self._cancel_event.is_set():
+                if not self._can_commit():
                     return
                 extracted = _extract_symbols(Path(file_path))
                 symbols_by_file[file_path] = [
@@ -107,13 +118,17 @@ class SymbolIndexWorker:
                 ]
 
             if symbols_by_file:
+                if not self._can_commit():
+                    return
                 cache.upsert_symbols_for_files(self._project_root, symbols_by_file)
             if changed_files:
+                if not self._can_commit():
+                    return
                 cache.upsert_file_fingerprints(
                     self._project_root,
                     {file_path: current_fingerprints[file_path] for file_path in changed_files},
                 )
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
             symbol_count = cache.count_symbols(self._project_root)
             if self._on_done is not None:
