@@ -50,6 +50,8 @@ class MenuCallbacks:
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
     on_run_pytest_project: Callable[[], object] | None = None
+    on_run_with_config: Callable[[], object] | None = None
+    on_manage_run_configs: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
@@ -320,6 +322,20 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Run Project Tests",
         "Ctrl+Shift+T",
         callback=callback_registry.on_run_pytest_project,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.runWithConfig",
+        "Run With Configuration...",
+        callback=callback_registry.on_run_with_config,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.manageRunConfigs",
+        "Manage Run Configurations...",
+        callback=callback_registry.on_manage_run_configs,
     )
     _register_menu_action(
         run_menu,

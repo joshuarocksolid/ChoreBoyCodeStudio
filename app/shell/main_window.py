@@ -97,6 +97,7 @@ from app.shell.settings_models import merge_editor_settings_snapshot, parse_edit
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import tokens_from_palette
 from app.project.project_tree import build_project_tree
+from app.project.run_configs import RunConfiguration, parse_run_config, parse_run_configs, upsert_run_config
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
@@ -208,6 +209,8 @@ class MainWindow(QMainWindow):
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
                 on_run_pytest_project=self._handle_run_pytest_project_action,
+                on_run_with_config=self._handle_run_with_configuration_action,
+                on_manage_run_configs=self._handle_manage_run_configurations_action,
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
                 on_continue_debug=self._handle_continue_debug_action,
@@ -1138,6 +1141,138 @@ class MainWindow(QMainWindow):
             on_error=on_error,
         )
 
+    def _handle_run_with_configuration_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run With Configuration", "Open a project first.")
+            return
+        configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        if not configs:
+            QMessageBox.information(
+                self,
+                "Run With Configuration",
+                "No run configurations are defined. Use 'Manage Run Configurations...' first.",
+            )
+            return
+        names = [config.name for config in configs]
+        selected_name, accepted = QInputDialog.getItem(
+            self,
+            "Run With Configuration",
+            "Select run configuration:",
+            names,
+            0,
+            False,
+        )
+        if not accepted or not selected_name:
+            return
+        selected_config = next((config for config in configs if config.name == selected_name), None)
+        if selected_config is None:
+            QMessageBox.warning(self, "Run With Configuration", "Selected configuration could not be resolved.")
+            return
+        self._start_session(
+            mode=selected_config.mode,
+            entry_file=selected_config.entry_file,
+            argv=selected_config.argv,
+        )
+
+    def _handle_manage_run_configurations_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Manage Run Configurations", "Open a project first.")
+            return
+        existing_configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        choices = [config.name for config in existing_configs]
+        create_label = "<Create new configuration>"
+        choices.append(create_label)
+        selected_name, accepted_selection = QInputDialog.getItem(
+            self,
+            "Manage Run Configurations",
+            "Select configuration to edit:",
+            choices,
+            0,
+            False,
+        )
+        if not accepted_selection or not selected_name:
+            return
+        selected_config = next((config for config in existing_configs if config.name == selected_name), None)
+        if selected_name == create_label or selected_config is None:
+            selected_config = RunConfiguration(
+                name="Default",
+                entry_file=self._loaded_project.metadata.default_entry,
+                mode=self._loaded_project.metadata.default_mode,
+                argv=[],
+            )
+
+        config_name, accepted_name = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Configuration name:",
+            QLineEdit.Normal,
+            selected_config.name,
+        )
+        if not accepted_name or not config_name.strip():
+            return
+        entry_file, accepted_entry = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Entry file (relative to project root):",
+            QLineEdit.Normal,
+            selected_config.entry_file,
+        )
+        if not accepted_entry or not entry_file.strip():
+            return
+        mode_choices = [
+            constants.RUN_MODE_PYTHON_SCRIPT,
+            constants.RUN_MODE_QT_APP,
+            constants.RUN_MODE_FREECAD_HEADLESS,
+            constants.RUN_MODE_PYTHON_DEBUG,
+        ]
+        selected_mode, accepted_mode = QInputDialog.getItem(
+            self,
+            "Manage Run Configurations",
+            "Run mode:",
+            mode_choices,
+            mode_choices.index(selected_config.mode) if selected_config.mode in mode_choices else 0,
+            False,
+        )
+        if not accepted_mode or not selected_mode:
+            return
+        argv_text, accepted_argv = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Arguments (space-separated):",
+            QLineEdit.Normal,
+            " ".join(selected_config.argv),
+        )
+        if not accepted_argv:
+            return
+        updated_config = parse_run_config(
+            {
+                "name": config_name.strip(),
+                "entry_file": entry_file.strip(),
+                "mode": selected_mode,
+                "argv": [token for token in argv_text.split(" ") if token.strip()],
+            }
+        )
+        merged_configs = upsert_run_config(existing_configs, updated_config)
+        self._persist_run_configurations(merged_configs)
+        QMessageBox.information(
+            self,
+            "Manage Run Configurations",
+            f"Saved configuration '{updated_config.name}'.",
+        )
+
+    def _persist_run_configurations(self, run_configs: list[RunConfiguration]) -> None:
+        if self._loaded_project is None:
+            return
+        manifest_path = Path(self._loaded_project.manifest_path)
+        payload = self._loaded_project.metadata.to_dict()
+        payload["run_configs"] = [config.to_payload() for config in run_configs]
+        try:
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Manage Run Configurations", f"Unable to save run configurations: {exc}")
+            return
+        self._reload_current_project()
+
     def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
         if result.stdout.strip():
             for line in result.stdout.splitlines():
@@ -1167,12 +1302,22 @@ class MainWindow(QMainWindow):
         self,
         *,
         mode: str,
+        entry_file: str | None = None,
+        argv: list[str] | None = None,
+        working_directory: str | None = None,
+        env_overrides: dict[str, str] | None = None,
+        safe_mode: bool | None = None,
         breakpoints: list[dict[str, int | str]] | None = None,
         skip_save: bool = False,
     ) -> bool:
         result = self._run_session_controller.start_session(
             loaded_project=self._loaded_project,
             mode=mode,
+            entry_file=entry_file,
+            argv=argv,
+            working_directory=working_directory,
+            env_overrides=env_overrides,
+            safe_mode=safe_mode,
             breakpoints=breakpoints,
             skip_save=skip_save,
             save_all=self._handle_save_all_action,

@@ -39,7 +39,18 @@ class _FakeRunService:
         self.stopped = False
         self.paused = False
 
-    def start_run(self, loaded_project: LoadedProject, *, mode: str, breakpoints) -> RunSession:  # type: ignore[no-untyped-def]
+    def start_run(  # type: ignore[no-untyped-def]
+        self,
+        loaded_project: LoadedProject,
+        *,
+        mode: str,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        safe_mode=None,
+        breakpoints=None,
+    ) -> RunSession:
         self.supervisor._running = True
         self.is_debug_mode = mode == constants.RUN_MODE_PYTHON_DEBUG
         return RunSession(
@@ -92,6 +103,11 @@ def test_start_session_requires_loaded_project() -> None:
     result = controller.start_session(
         loaded_project=None,
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        safe_mode=None,
         breakpoints=None,
         skip_save=False,
         save_all=lambda: True,
@@ -109,6 +125,11 @@ def test_start_session_success_updates_active_mode_and_returns_session() -> None
     result = controller.start_session(
         loaded_project=_loaded_project(),
         mode=constants.RUN_MODE_PYTHON_REPL,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        safe_mode=None,
         breakpoints=None,
         skip_save=True,
         save_all=lambda: True,

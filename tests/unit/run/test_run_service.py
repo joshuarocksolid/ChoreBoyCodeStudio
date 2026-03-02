@@ -8,6 +8,8 @@ import sys
 
 import pytest
 
+from app.core.models import LoadedProject, ProjectMetadata
+from app.run.run_manifest import load_run_manifest
 from app.run.run_service import RunService, build_run_log_path, build_run_manifest_path, generate_run_id, resolve_runtime_executable
 
 pytestmark = pytest.mark.unit
@@ -64,3 +66,46 @@ def test_build_runner_command_for_apprun_bootstraps_runner_parent_path(tmp_path:
     assert "sys.path.insert(0" in payload
     assert str(tmp_path.resolve()) in payload
     assert "runpy.run_path" in payload
+
+
+def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit run overrides should flow into generated run manifest fields."""
+    project_root = tmp_path / "project"
+    (project_root / "app").mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    (project_root / "app" / "main.py").write_text("print('main')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+            default_mode="python_script",
+            working_directory=".",
+            env_overrides={"BASE_ENV": "1"},
+            safe_mode=True,
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    monkeypatch.setattr(service.supervisor, "start", lambda *args, **kwargs: None)
+
+    session = service.start_run(
+        loaded_project,
+        entry_file="app/main.py",
+        mode="qt_app",
+        argv=["--flag"],
+        working_directory="app",
+        env_overrides={"EXTRA_ENV": "2"},
+        safe_mode=False,
+    )
+    manifest = load_run_manifest(session.manifest_path)
+
+    assert manifest.entry_file == "app/main.py"
+    assert manifest.mode == "qt_app"
+    assert manifest.working_directory == str((project_root / "app").resolve())
+    assert manifest.argv == ["--flag"]
+    assert manifest.env["BASE_ENV"] == "1"
+    assert manifest.env["EXTRA_ENV"] == "2"
+    assert manifest.safe_mode is False
