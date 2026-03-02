@@ -72,6 +72,7 @@ def analyze_python_file(file_path: str, *, project_root: str | None = None) -> l
         return diagnostics
 
     diagnostics.extend(_duplicate_definition_diagnostics(syntax_tree, path))
+    diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
     diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
     diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
     if project_root:
@@ -192,6 +193,35 @@ def _unused_import_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list[Co
                 file_path=str(file_path),
                 line_number=line_number,
                 message=f"Imported name '{imported_name}' is not used.",
+            )
+        )
+    return diagnostics
+
+
+def _duplicate_import_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list[CodeDiagnostic]:
+    diagnostics: list[CodeDiagnostic] = []
+    seen_imports: dict[tuple[str, int, str, tuple[tuple[str, str], ...]], int] = {}
+    body = getattr(syntax_tree, "body", [])
+    for node in body:
+        if isinstance(node, ast.Import):
+            aliases = tuple(sorted((alias.name, alias.asname or "") for alias in node.names))
+            key = ("import", 0, "", aliases)
+        elif isinstance(node, ast.ImportFrom):
+            aliases = tuple(sorted((alias.name, alias.asname or "") for alias in node.names))
+            key = ("from", int(node.level), node.module or "", aliases)
+        else:
+            continue
+        previous_line = seen_imports.get(key)
+        if previous_line is None:
+            seen_imports[key] = int(node.lineno)
+            continue
+        diagnostics.append(
+            CodeDiagnostic(
+                code="PY221",
+                severity=DiagnosticSeverity.WARNING,
+                file_path=str(file_path),
+                line_number=int(node.lineno),
+                message=f"Duplicate import statement (first seen at line {previous_line}).",
             )
         )
     return diagnostics

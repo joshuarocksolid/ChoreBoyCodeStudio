@@ -53,6 +53,24 @@ def test_analyze_python_file_reports_duplicate_and_unused_import(tmp_path: Path)
     assert "PY220" in codes
 
 
+def test_analyze_python_file_reports_duplicate_import_statements(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        "import json\n"
+        "from pathlib import Path\n",
+        encoding="utf-8",
+    )
+
+    diagnostics = analyze_python_file(str(file_path))
+    duplicate_imports = [diagnostic for diagnostic in diagnostics if diagnostic.code == "PY221"]
+
+    assert len(duplicate_imports) == 2
+    assert duplicate_imports[0].line_number == 3
+    assert duplicate_imports[1].line_number == 4
+
+
 def test_analyze_python_file_reports_unreachable_statement(tmp_path: Path) -> None:
     file_path = tmp_path / "module.py"
     file_path.write_text(

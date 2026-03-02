@@ -2124,7 +2124,7 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         apply_fixes_action = None
-        if diagnostic_code in {"PY220", "PY200"}:
+        if diagnostic_code in {"PY220", "PY221", "PY200"}:
             apply_fixes_action = menu.addAction("Apply Safe Fixes for File")
         if apply_fixes_action is None:
             return

@@ -38,9 +38,10 @@ def plan_safe_fixes_for_file(
     for diagnostic in diagnostics:
         if diagnostic.file_path != normalized_path:
             continue
-        if diagnostic.code == "PY220":
+        if diagnostic.code in {"PY220", "PY221"}:
+            title_prefix = "Remove unused import" if diagnostic.code == "PY220" else "Remove duplicate import"
             fix = QuickFix(
-                title=f"Remove unused import at line {diagnostic.line_number}",
+                title=f"{title_prefix} at line {diagnostic.line_number}",
                 file_path=normalized_path,
                 line_number=diagnostic.line_number,
                 action_kind="remove_line",

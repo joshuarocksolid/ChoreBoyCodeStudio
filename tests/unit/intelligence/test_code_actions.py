@@ -160,3 +160,23 @@ def test_apply_quick_fixes_replaces_typo_import_module_name(tmp_path: Path) -> N
 
     assert changed == 1
     assert file_path.read_text(encoding="utf-8") == "import transformer as runtime\n"
+
+
+def test_plan_safe_fixes_for_file_returns_duplicate_import_removal_fixes(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("import json\nimport json\n", encoding="utf-8")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY221",
+            severity=DiagnosticSeverity.WARNING,
+            file_path=str(file_path.resolve()),
+            line_number=2,
+            message="Duplicate import statement.",
+        )
+    ]
+
+    fixes = plan_safe_fixes_for_file(str(file_path), diagnostics)
+
+    assert len(fixes) == 1
+    assert fixes[0].action_kind == "remove_line"
+    assert fixes[0].line_number == 2
