@@ -113,3 +113,50 @@ def test_apply_quick_fixes_creates_missing_module_and_package_init(tmp_path: Pat
     assert changed == 1
     assert (project_root / "missing" / "module.py").exists()
     assert (project_root / "missing" / "__init__.py").exists()
+
+
+def test_plan_safe_fixes_for_file_prefers_typo_import_replacement_when_available(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "transformer.py").write_text("VALUE = 1\n", encoding="utf-8")
+    file_path = project_root / "module.py"
+    file_path.write_text("import trasnformer\n", encoding="utf-8")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY200",
+            severity=DiagnosticSeverity.ERROR,
+            file_path=str(file_path.resolve()),
+            line_number=1,
+            message="Unresolved import: trasnformer",
+        )
+    ]
+
+    fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))
+
+    assert len(fixes) == 1
+    assert fixes[0].action_kind == "replace_import_module"
+    assert fixes[0].match_text == "trasnformer"
+    assert fixes[0].replacement_text == "transformer"
+
+
+def test_apply_quick_fixes_replaces_typo_import_module_name(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "transformer.py").write_text("VALUE = 1\n", encoding="utf-8")
+    file_path = project_root / "module.py"
+    file_path.write_text("import trasnformer as runtime\n", encoding="utf-8")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY200",
+            severity=DiagnosticSeverity.ERROR,
+            file_path=str(file_path.resolve()),
+            line_number=1,
+            message="Unresolved import: trasnformer",
+        )
+    ]
+
+    fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))
+    changed = apply_quick_fixes(fixes)
+
+    assert changed == 1
+    assert file_path.read_text(encoding="utf-8") == "import transformer as runtime\n"

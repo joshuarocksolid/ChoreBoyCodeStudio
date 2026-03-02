@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import difflib
 from pathlib import Path
+import re
 
 from app.intelligence.diagnostics_service import CodeDiagnostic
 
@@ -18,6 +20,8 @@ class QuickFix:
     action_kind: str
     target_path: str | None = None
     project_root: str | None = None
+    match_text: str | None = None
+    replacement_text: str | None = None
 
 
 def plan_safe_fixes_for_file(
@@ -30,7 +34,7 @@ def plan_safe_fixes_for_file(
     normalized_path = str(Path(file_path).expanduser().resolve())
     normalized_project_root = None if project_root is None else str(Path(project_root).expanduser().resolve())
     fixes: list[QuickFix] = []
-    seen_keys: set[tuple[str, int, str, str | None]] = set()
+    seen_keys: set[tuple[str, int, str, str, str]] = set()
     for diagnostic in diagnostics:
         if diagnostic.file_path != normalized_path:
             continue
@@ -46,18 +50,36 @@ def plan_safe_fixes_for_file(
             unresolved_module = _extract_unresolved_module_name(diagnostic.message)
             if unresolved_module is None:
                 continue
-            target_path = _module_target_path(normalized_project_root, unresolved_module)
-            fix = QuickFix(
-                title=f"Create missing module '{unresolved_module}'",
-                file_path=normalized_path,
-                line_number=diagnostic.line_number,
-                action_kind="create_module_file",
-                target_path=target_path,
-                project_root=normalized_project_root,
-            )
+            suggested_module = _suggest_module_replacement(normalized_project_root, unresolved_module)
+            if suggested_module is not None and suggested_module != unresolved_module:
+                fix = QuickFix(
+                    title=f"Replace import '{unresolved_module}' with '{suggested_module}'",
+                    file_path=normalized_path,
+                    line_number=diagnostic.line_number,
+                    action_kind="replace_import_module",
+                    project_root=normalized_project_root,
+                    match_text=unresolved_module,
+                    replacement_text=suggested_module,
+                )
+            else:
+                target_path = _module_target_path(normalized_project_root, unresolved_module)
+                fix = QuickFix(
+                    title=f"Create missing module '{unresolved_module}'",
+                    file_path=normalized_path,
+                    line_number=diagnostic.line_number,
+                    action_kind="create_module_file",
+                    target_path=target_path,
+                    project_root=normalized_project_root,
+                )
         else:
             continue
-        key = (fix.file_path, fix.line_number, fix.action_kind, fix.target_path or "")
+        key = (
+            fix.file_path,
+            fix.line_number,
+            fix.action_kind,
+            fix.target_path or "",
+            f"{fix.match_text or ''}->{fix.replacement_text or ''}",
+        )
         if key in seen_keys:
             continue
         seen_keys.add(key)
@@ -73,6 +95,8 @@ def apply_quick_fixes(fixes: list[QuickFix]) -> int:
     create_module_fixes: list[QuickFix] = []
     for fix in fixes:
         if fix.action_kind == "remove_line":
+            remove_line_fixes_by_file.setdefault(fix.file_path, []).append(fix)
+        elif fix.action_kind == "replace_import_module":
             remove_line_fixes_by_file.setdefault(fix.file_path, []).append(fix)
         elif fix.action_kind == "create_module_file":
             create_module_fixes.append(fix)
@@ -96,16 +120,26 @@ def _apply_file_fixes(file_path: str, fixes: list[QuickFix]) -> int:
     lines = source.splitlines(keepends=True)
     changed = 0
     for fix in sorted(fixes, key=lambda item: item.line_number, reverse=True):
-        if fix.action_kind != "remove_line":
+        if fix.action_kind not in {"remove_line", "replace_import_module"}:
             continue
         line_index = fix.line_number - 1
         if line_index < 0 or line_index >= len(lines):
             continue
-        line = lines[line_index].lstrip()
-        if not (line.startswith("import ") or line.startswith("from ")):
+        if fix.action_kind == "remove_line":
+            line = lines[line_index].lstrip()
+            if not (line.startswith("import ") or line.startswith("from ")):
+                continue
+            lines.pop(line_index)
+            changed += 1
             continue
-        lines.pop(line_index)
-        changed += 1
+        replacement = _replace_import_module_in_line(
+            lines[line_index],
+            match_text=fix.match_text,
+            replacement_text=fix.replacement_text,
+        )
+        if replacement != lines[line_index]:
+            lines[line_index] = replacement
+            changed += 1
     if changed:
         path.write_text("".join(lines), encoding="utf-8")
     return changed
@@ -151,3 +185,46 @@ def _module_target_path(project_root: str, module_name: str) -> str:
     module_parts = [part for part in module_name.split(".") if part]
     path = Path(project_root).expanduser().resolve()
     return str((path / Path(*module_parts)).with_suffix(".py"))
+
+
+def _suggest_module_replacement(project_root: str, unresolved_module: str) -> str | None:
+    available_modules = sorted(_discover_project_modules(project_root))
+    if not available_modules:
+        return None
+    closest_matches = difflib.get_close_matches(unresolved_module, available_modules, n=1, cutoff=0.75)
+    if not closest_matches:
+        return None
+    return closest_matches[0]
+
+
+def _discover_project_modules(project_root: str) -> set[str]:
+    root = Path(project_root).expanduser().resolve()
+    discovered: set[str] = set()
+    for file_path in root.rglob("*.py"):
+        if ".cbcs" in file_path.parts:
+            continue
+        relative = file_path.relative_to(root)
+        if relative.name == "__init__.py":
+            module_name = ".".join(relative.parts[:-1])
+        else:
+            module_name = ".".join(relative.with_suffix("").parts)
+        if module_name:
+            discovered.add(module_name)
+    return discovered
+
+
+def _replace_import_module_in_line(
+    line: str,
+    *,
+    match_text: str | None,
+    replacement_text: str | None,
+) -> str:
+    if not match_text or not replacement_text:
+        return line
+    stripped = line.lstrip()
+    if not (stripped.startswith("import ") or stripped.startswith("from ")):
+        return line
+    updated, count = re.subn(rf"\b{re.escape(match_text)}\b", replacement_text, line, count=1)
+    if count == 0:
+        return line
+    return updated
