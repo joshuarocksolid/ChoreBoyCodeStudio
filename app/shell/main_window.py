@@ -739,12 +739,31 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Find References", "Open a file tab first.")
             return
 
+        started_at = time.perf_counter()
         result = find_references(
             project_root=self._loaded_project.project_root,
             current_file_path=active_tab.file_path,
             source_text=editor_widget.toPlainText(),
             cursor_position=editor_widget.textCursor().position(),
         )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 1200.0:
+                self._logger.warning(
+                    "References latency warning: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    result.symbol_name,
+                    elapsed_ms,
+                    len(result.hits),
+                )
+            else:
+                self._logger.info(
+                    "References telemetry: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    result.symbol_name,
+                    elapsed_ms,
+                    len(result.hits),
+                )
         if not result.symbol_name:
             QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
             return
@@ -793,6 +812,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Rename Symbol", "Fix save errors before renaming.")
             return
 
+        started_at = time.perf_counter()
         plan = plan_rename_symbol(
             project_root=self._loaded_project.project_root,
             current_file_path=active_tab.file_path,
@@ -800,6 +820,27 @@ class MainWindow(QMainWindow):
             cursor_position=editor_widget.textCursor().position(),
             new_symbol=new_symbol,
         )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            hit_count = 0 if plan is None else len(plan.hits)
+            if elapsed_ms > 800.0:
+                self._logger.warning(
+                    "Rename planning latency warning: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    old_symbol,
+                    new_symbol,
+                    elapsed_ms,
+                    hit_count,
+                )
+            else:
+                self._logger.info(
+                    "Rename planning telemetry: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    old_symbol,
+                    new_symbol,
+                    elapsed_ms,
+                    hit_count,
+                )
         if plan is None or not plan.hits:
             QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
             return
