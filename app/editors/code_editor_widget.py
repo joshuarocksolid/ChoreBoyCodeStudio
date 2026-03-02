@@ -50,6 +50,8 @@ class CodeEditorWidget(QPlainTextEdit):
         self._highlighter: object | None = None
         self._tab_width = DEFAULT_TAB_WIDTH
         self._comment_prefix = "# "
+        self._indent_style = "spaces"
+        self._indent_size = DEFAULT_TAB_WIDTH
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
         self._completion_enabled = True
         self._completion_auto_trigger = True
@@ -67,7 +69,12 @@ class CodeEditorWidget(QPlainTextEdit):
         self._update_line_number_area_width(0)
         self._highlight_current_line()
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.set_editor_preferences(tab_width=DEFAULT_TAB_WIDTH, font_point_size=DEFAULT_FONT_POINT_SIZE)
+        self.set_editor_preferences(
+            tab_width=DEFAULT_TAB_WIDTH,
+            font_point_size=DEFAULT_FONT_POINT_SIZE,
+            indent_style="spaces",
+            indent_size=DEFAULT_TAB_WIDTH,
+        )
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
         self._breakpoint_toggled_callback = callback
@@ -120,9 +127,18 @@ class CodeEditorWidget(QPlainTextEdit):
         else:
             self._highlighter = None
 
-    def set_editor_preferences(self, *, tab_width: int, font_point_size: int) -> None:
+    def set_editor_preferences(
+        self,
+        *,
+        tab_width: int,
+        font_point_size: int,
+        indent_style: str = "spaces",
+        indent_size: int = DEFAULT_TAB_WIDTH,
+    ) -> None:
         """Apply tab width and font-size preferences."""
         self._tab_width = max(2, tab_width)
+        self._indent_style = "tabs" if indent_style == "tabs" else "spaces"
+        self._indent_size = max(1, indent_size)
         font = self.font()
         font.setPointSize(max(8, font_point_size))
         self.setFont(font)
@@ -163,6 +179,15 @@ class CodeEditorWidget(QPlainTextEdit):
 
         if event.key() == Qt.Key_Space and event.modifiers() & Qt.ControlModifier:
             self.trigger_completion(manual=True)
+            event.accept()
+            return
+
+        if event.key() == Qt.Key_Tab and not event.modifiers():
+            self.indent_selection()
+            event.accept()
+            return
+        if event.key() == Qt.Key_Backtab:
+            self.outdent_selection()
             event.accept()
             return
 
@@ -271,16 +296,16 @@ class CodeEditorWidget(QPlainTextEdit):
     def indent_selection(self) -> None:
         selected = self.textCursor().selectedText()
         if not selected:
-            self.insertPlainText(" " * self._tab_width)
+            self.insertPlainText(self._indent_text())
             return
-        updated = indent_lines(selected.replace("\u2029", "\n"), indent_text=" " * self._tab_width)
+        updated = indent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
         self._replace_selected_text(updated)
 
     def outdent_selection(self) -> None:
         selected = self.textCursor().selectedText()
         if not selected:
             return
-        updated = outdent_lines(selected.replace("\u2029", "\n"), indent_text=" " * self._tab_width)
+        updated = outdent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
         self._replace_selected_text(updated)
 
     def toggle_comment_selection(self) -> None:
@@ -298,6 +323,11 @@ class CodeEditorWidget(QPlainTextEdit):
             cursor.select(QTextCursor.LineUnderCursor)
         cursor.insertText(replacement_text)
         self.setTextCursor(cursor)
+
+    def _indent_text(self) -> str:
+        if self._indent_style == "tabs":
+            return "\t"
+        return " " * self._indent_size
 
     def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
         popup = self._completion_popup.popup()

@@ -28,3 +28,10 @@ def test_toggle_comment_lines_ignores_empty_lines() -> None:
     original = "value = 1\n\nprint(value)"
     commented = toggle_comment_lines(original)
     assert commented == "# value = 1\n\n# print(value)"
+
+
+def test_indent_and_outdent_support_tab_indent_text() -> None:
+    original = "alpha = 1\nbeta = 2"
+    indented = indent_lines(original, indent_text="\t")
+    assert indented == "\talpha = 1\n\tbeta = 2"
+    assert outdent_lines(indented, indent_text="\t") == original

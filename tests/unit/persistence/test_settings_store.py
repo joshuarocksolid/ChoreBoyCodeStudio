@@ -86,12 +86,16 @@ def test_settings_payload_can_store_editor_preferences(tmp_path: Path) -> None:
         constants.UI_EDITOR_SETTINGS_KEY: {
             constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
             constants.UI_EDITOR_FONT_SIZE_KEY: 12,
+            constants.UI_EDITOR_INDENT_STYLE_KEY: "tabs",
+            constants.UI_EDITOR_INDENT_SIZE_KEY: 1,
         },
     }
     save_json_object(path, payload)
     loaded = load_json_object(path, default={"schema_version": 1})
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 2
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_FONT_SIZE_KEY] == 12
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_STYLE_KEY] == "tabs"
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_SIZE_KEY] == 1
 
 
 def test_settings_payload_can_store_intelligence_cache_preferences(tmp_path: Path) -> None:

@@ -147,7 +147,12 @@ class MainWindow(QMainWindow):
         self._tree_clipboard_path: str | None = None
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
-        self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
+        (
+            self._editor_tab_width,
+            self._editor_font_size,
+            self._editor_indent_style,
+            self._editor_indent_size,
+        ) = self._load_editor_preferences()
         (
             self._completion_enabled,
             self._completion_auto_trigger,
@@ -333,19 +338,30 @@ class MainWindow(QMainWindow):
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, int]:
         settings_payload = load_settings(state_root=self._state_root)
         editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
         if not isinstance(editor_settings, dict):
-            return (constants.UI_EDITOR_TAB_WIDTH_DEFAULT, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+            return (
+                constants.UI_EDITOR_TAB_WIDTH_DEFAULT,
+                constants.UI_EDITOR_FONT_SIZE_DEFAULT,
+                constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
+                constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
+            )
 
         tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
         font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+        indent_style = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
+        indent_size = editor_settings.get(constants.UI_EDITOR_INDENT_SIZE_KEY, constants.UI_EDITOR_INDENT_SIZE_DEFAULT)
         if not isinstance(tab_width, int):
             tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
-        return (max(2, tab_width), max(8, font_size))
+        if indent_style not in {"spaces", "tabs"}:
+            indent_style = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
+        if not isinstance(indent_size, int):
+            indent_size = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
+        return (max(2, tab_width), max(8, font_size), str(indent_style), max(1, indent_size))
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
         settings_payload = load_settings(state_root=self._state_root)
@@ -2039,7 +2055,12 @@ class MainWindow(QMainWindow):
 
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
-        editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
+        editor_widget.set_editor_preferences(
+            tab_width=self._editor_tab_width,
+            font_point_size=self._editor_font_size,
+            indent_style=self._editor_indent_style,
+            indent_size=self._editor_indent_size,
+        )
         editor_widget.set_completion_preferences(
             enabled=self._completion_enabled,
             auto_trigger=self._completion_auto_trigger,
