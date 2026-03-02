@@ -23,6 +23,12 @@ class EditorSettingsSnapshot:
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
     completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
+    diagnostics_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
+    diagnostics_realtime: bool = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
+    quick_fixes_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
+    quick_fix_require_preview_for_multifile: bool = (
+        constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT
+    )
     cache_enabled: bool = constants.UI_INTELLIGENCE_CACHE_ENABLED_DEFAULT
     incremental_indexing: bool = constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_DEFAULT
     metrics_logging_enabled: bool = constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT
@@ -94,6 +100,22 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             default=constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
             minimum=1,
         ),
+        diagnostics_enabled=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
+            default=constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+        ),
+        diagnostics_realtime=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY),
+            default=constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
+        ),
+        quick_fixes_enabled=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY),
+            default=constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
+        ),
+        quick_fix_require_preview_for_multifile=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY),
+            default=constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
+        ),
         cache_enabled=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_CACHE_ENABLED_KEY),
             default=constants.UI_INTELLIGENCE_CACHE_ENABLED_DEFAULT,
@@ -133,6 +155,12 @@ def merge_editor_settings_snapshot(
         constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),
         constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY: bool(snapshot.completion_auto_trigger),
         constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY: max(1, int(snapshot.completion_min_chars)),
+        constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY: bool(snapshot.diagnostics_enabled),
+        constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY: bool(snapshot.diagnostics_realtime),
+        constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY: bool(snapshot.quick_fixes_enabled),
+        constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY: bool(
+            snapshot.quick_fix_require_preview_for_multifile
+        ),
         constants.UI_INTELLIGENCE_CACHE_ENABLED_KEY: bool(snapshot.cache_enabled),
         constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY: bool(snapshot.incremental_indexing),
         constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY: bool(snapshot.metrics_logging_enabled),

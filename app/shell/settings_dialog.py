@@ -23,7 +23,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(420, 360)
+        self.resize(460, 430)
 
         layout = QVBoxLayout(self)
 
@@ -81,6 +81,22 @@ class SettingsDialog(QDialog):
         self._completion_min_chars_input.setValue(snapshot.completion_min_chars)
         intelligence_form.addRow("Completion min chars", self._completion_min_chars_input)
 
+        self._diagnostics_enabled_input = QCheckBox(intelligence_group)
+        self._diagnostics_enabled_input.setChecked(snapshot.diagnostics_enabled)
+        intelligence_form.addRow("Enable diagnostics", self._diagnostics_enabled_input)
+
+        self._diagnostics_realtime_input = QCheckBox(intelligence_group)
+        self._diagnostics_realtime_input.setChecked(snapshot.diagnostics_realtime)
+        intelligence_form.addRow("Realtime diagnostics", self._diagnostics_realtime_input)
+
+        self._quick_fixes_enabled_input = QCheckBox(intelligence_group)
+        self._quick_fixes_enabled_input.setChecked(snapshot.quick_fixes_enabled)
+        intelligence_form.addRow("Enable quick fixes", self._quick_fixes_enabled_input)
+
+        self._quick_fix_multifile_preview_input = QCheckBox(intelligence_group)
+        self._quick_fix_multifile_preview_input.setChecked(snapshot.quick_fix_require_preview_for_multifile)
+        intelligence_form.addRow("Preview required for multi-file fixes", self._quick_fix_multifile_preview_input)
+
         self._cache_enabled_input = QCheckBox(intelligence_group)
         self._cache_enabled_input.setChecked(snapshot.cache_enabled)
         intelligence_form.addRow("Enable intelligence cache", self._cache_enabled_input)
@@ -117,6 +133,10 @@ class SettingsDialog(QDialog):
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),
+            diagnostics_enabled=self._diagnostics_enabled_input.isChecked(),
+            diagnostics_realtime=self._diagnostics_realtime_input.isChecked(),
+            quick_fixes_enabled=self._quick_fixes_enabled_input.isChecked(),
+            quick_fix_require_preview_for_multifile=self._quick_fix_multifile_preview_input.isChecked(),
             cache_enabled=self._cache_enabled_input.isChecked(),
             incremental_indexing=self._incremental_indexing_input.isChecked(),
             metrics_logging_enabled=self._metrics_logging_input.isChecked(),

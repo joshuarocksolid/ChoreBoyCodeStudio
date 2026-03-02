@@ -180,6 +180,12 @@ class MainWindow(QMainWindow):
             self._completion_auto_trigger,
             self._completion_min_chars,
         ) = self._load_completion_preferences()
+        (
+            self._diagnostics_enabled,
+            self._diagnostics_realtime,
+            self._quick_fixes_enabled,
+            self._quick_fix_require_preview_for_multifile,
+        ) = self._load_diagnostics_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
@@ -463,6 +469,43 @@ class MainWindow(QMainWindow):
             min_chars = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
         return (enabled, auto_trigger, max(1, min_chars))
 
+    def _load_diagnostics_preferences(self) -> tuple[bool, bool, bool, bool]:
+        settings_payload = load_settings(state_root=self._state_root)
+        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+        if not isinstance(intelligence_settings, dict):
+            return (
+                constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+                constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
+                constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
+                constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
+            )
+
+        diagnostics_enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+        )
+        diagnostics_realtime = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY,
+            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
+        )
+        quick_fixes_enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
+        )
+        quick_fix_require_preview = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY,
+            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
+        )
+        if not isinstance(diagnostics_enabled, bool):
+            diagnostics_enabled = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
+        if not isinstance(diagnostics_realtime, bool):
+            diagnostics_realtime = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
+        if not isinstance(quick_fixes_enabled, bool):
+            quick_fixes_enabled = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
+        if not isinstance(quick_fix_require_preview, bool):
+            quick_fix_require_preview = constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT
+        return diagnostics_enabled, diagnostics_realtime, quick_fixes_enabled, quick_fix_require_preview
+
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
         settings_payload = load_settings(state_root=self._state_root)
         return parse_intelligence_runtime_settings(settings_payload)
@@ -542,6 +585,12 @@ class MainWindow(QMainWindow):
             self._completion_auto_trigger,
             self._completion_min_chars,
         ) = self._load_completion_preferences()
+        (
+            self._diagnostics_enabled,
+            self._diagnostics_realtime,
+            self._quick_fixes_enabled,
+            self._quick_fix_require_preview_for_multifile,
+        ) = self._load_diagnostics_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         if not self._intelligence_runtime_settings.cache_enabled:
             if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
@@ -1170,6 +1219,8 @@ class MainWindow(QMainWindow):
             has_loaded_project=self._loaded_project is not None,
         ) and self._loaded_project is not None:
             self._start_symbol_indexing(self._loaded_project.project_root)
+        if saved_tab.file_path.lower().endswith(".py"):
+            self._render_lint_diagnostics_for_file(saved_tab.file_path, manual=False)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -1682,7 +1733,7 @@ class MainWindow(QMainWindow):
         if not active_tab.file_path.lower().endswith(".py"):
             QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
             return
-        self._render_lint_diagnostics_for_file(active_tab.file_path)
+        self._render_lint_diagnostics_for_file(active_tab.file_path, manual=True)
 
     def _handle_apply_safe_fixes_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -1691,12 +1742,40 @@ class MainWindow(QMainWindow):
             return
         self._apply_safe_fixes_for_file(active_tab.file_path)
 
-    def _render_lint_diagnostics_for_file(self, file_path: str) -> None:
-        if not file_path.lower().endswith(".py"):
-            QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+    def _render_lint_diagnostics_for_file(self, file_path: str, *, manual: bool) -> None:
+        if not self._diagnostics_enabled:
+            if manual:
+                QMessageBox.information(
+                    self,
+                    "Lint Current File",
+                    "Diagnostics are currently disabled in Settings.",
+                )
             return
+        if not manual and not self._diagnostics_realtime:
+            return
+        if not file_path.lower().endswith(".py"):
+            if manual:
+                QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+            return
+        started_at = time.perf_counter()
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         diagnostics = analyze_python_file(file_path, project_root=project_root)
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 180.0:
+                self._logger.warning(
+                    "Diagnostics latency warning: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(diagnostics),
+                )
+            else:
+                self._logger.info(
+                    "Diagnostics telemetry: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(diagnostics),
+                )
         if self._problems_list_widget is None:
             return
         self._problems_list_widget.clear()
@@ -1720,6 +1799,9 @@ class MainWindow(QMainWindow):
             item.setData(PROBLEM_ROLE_DIAGNOSTIC_CODE, diagnostic.code)
 
     def _apply_safe_fixes_for_file(self, file_path: str) -> None:
+        if not self._quick_fixes_enabled:
+            QMessageBox.information(self, "Apply Safe Fixes", "Quick fixes are currently disabled in Settings.")
+            return
         if not file_path.lower().endswith(".py"):
             QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
             return
@@ -1730,18 +1812,22 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
             return
 
-        preview = "\n".join(f"- {fix.title}" for fix in fixes[:20])
-        if len(fixes) > 20:
-            preview += f"\n- ... and {len(fixes) - 20} more"
-        confirm = QMessageBox.question(
-            self,
-            "Apply Safe Fixes",
-            f"Apply {len(fixes)} safe fix(es)?\n\n{preview}",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if confirm != QMessageBox.Yes:
-            return
+        affected_paths = {fix.file_path for fix in fixes}
+        affected_paths.update(fix.target_path for fix in fixes if fix.target_path)
+        should_confirm = self._quick_fix_require_preview_for_multifile or len(affected_paths) > 1
+        if should_confirm:
+            preview = "\n".join(f"- {fix.title}" for fix in fixes[:20])
+            if len(fixes) > 20:
+                preview += f"\n- ... and {len(fixes) - 20} more"
+            confirm = QMessageBox.question(
+                self,
+                "Apply Safe Fixes",
+                f"Apply {len(fixes)} safe fix(es)?\n\n{preview}",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if confirm != QMessageBox.Yes:
+                return
 
         try:
             changed_lines = apply_quick_fixes(fixes)
@@ -1754,7 +1840,7 @@ class MainWindow(QMainWindow):
             return
 
         self._refresh_open_tabs_from_disk([file_path])
-        self._render_lint_diagnostics_for_file(file_path)
+        self._render_lint_diagnostics_for_file(file_path, manual=True)
         QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
 
     def _handle_rebuild_intelligence_cache_action(self) -> None:
@@ -2124,7 +2210,7 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         apply_fixes_action = None
-        if diagnostic_code in {"PY220", "PY221", "PY200"}:
+        if self._quick_fixes_enabled and diagnostic_code in {"PY220", "PY221", "PY200"}:
             apply_fixes_action = menu.addAction("Apply Safe Fixes for File")
         if apply_fixes_action is None:
             return

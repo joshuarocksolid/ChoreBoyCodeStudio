@@ -24,6 +24,10 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
     assert snapshot.completion_enabled is True
+    assert snapshot.diagnostics_enabled is True
+    assert snapshot.diagnostics_realtime is True
+    assert snapshot.quick_fixes_enabled is True
+    assert snapshot.quick_fix_require_preview_for_multifile is True
     assert snapshot.cache_enabled is True
 
 
@@ -44,6 +48,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "enable_completion": False,
                 "auto_trigger_completion": False,
                 "completion_min_chars": 3,
+                "enable_diagnostics": False,
+                "diagnostics_realtime": False,
+                "enable_quick_fixes": False,
+                "quick_fix_require_preview_for_multifile": False,
                 "cache_enabled": False,
                 "incremental_indexing": False,
                 "metrics_logging_enabled": False,
@@ -63,6 +71,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.completion_enabled is False
     assert snapshot.completion_auto_trigger is False
     assert snapshot.completion_min_chars == 3
+    assert snapshot.diagnostics_enabled is False
+    assert snapshot.diagnostics_realtime is False
+    assert snapshot.quick_fixes_enabled is False
+    assert snapshot.quick_fix_require_preview_for_multifile is False
     assert snapshot.cache_enabled is False
     assert snapshot.incremental_indexing is False
     assert snapshot.metrics_logging_enabled is False
@@ -82,6 +94,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
+        diagnostics_enabled=False,
+        diagnostics_realtime=False,
+        quick_fixes_enabled=False,
+        quick_fix_require_preview_for_multifile=False,
         cache_enabled=False,
         incremental_indexing=True,
         metrics_logging_enabled=False,
@@ -96,5 +112,9 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
     assert merged["intelligence"]["enable_completion"] is False
+    assert merged["intelligence"]["enable_diagnostics"] is False
+    assert merged["intelligence"]["diagnostics_realtime"] is False
+    assert merged["intelligence"]["enable_quick_fixes"] is False
+    assert merged["intelligence"]["quick_fix_require_preview_for_multifile"] is False
     assert merged["intelligence"]["cache_enabled"] is False
     assert merged["intelligence"]["force_full_reindex_on_open"] is True
