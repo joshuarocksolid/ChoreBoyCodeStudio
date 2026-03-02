@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import pytest
+from PySide2.QtCore import Qt
 
 from app.editors.search_panel import SearchMatch
-from app.shell.search_sidebar_widget import SearchSidebarWidget
+from app.shell.search_sidebar_widget import (
+    ROLE_ABS_PATH,
+    ROLE_IS_FILE,
+    ROLE_LINE_NUMBER,
+    ROLE_LINE_TEXT,
+    ROLE_MATCH_COLUMN,
+    ROLE_MATCH_COUNT,
+    ROLE_MATCH_LENGTH,
+    SearchResultDelegate,
+    SearchSidebarWidget,
+)
 
 
 @pytest.fixture
@@ -24,6 +35,7 @@ class TestSearchSidebarWidget:
         assert widget._search_input.text() == ""
         assert widget._results_tree.topLevelItemCount() == 0
         assert widget._replace_container.isVisible() is False
+        assert widget._filters_container.isVisible() is False
 
     def test_set_project_root(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()
@@ -38,11 +50,30 @@ class TestSearchSidebarWidget:
 
     def test_toggle_replace(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()
+        widget.show()
         assert widget._replace_visible is False
         widget._toggle_replace(True)
         assert widget._replace_visible is True
+        assert widget._replace_container.isVisible() is True
+        assert widget._replace_toggle_btn.text() == "\u25BC"
         widget._toggle_replace(False)
         assert widget._replace_visible is False
+        assert widget._replace_container.isVisible() is False
+        assert widget._replace_toggle_btn.text() == "\u25B6"
+
+    def test_toggle_filters(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget.show()
+        assert widget._filters_visible is False
+        assert widget._filters_container.isVisible() is False
+
+        widget._toggle_filters(True)
+        assert widget._filters_visible is True
+        assert widget._filters_container.isVisible() is True
+
+        widget._toggle_filters(False)
+        assert widget._filters_visible is False
+        assert widget._filters_container.isVisible() is False
 
     def test_search_options_defaults(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()
@@ -119,3 +150,85 @@ class TestSearchSidebarWidget:
         widget._on_result_activated(line_item)
         assert len(signals) == 1
         assert signals[0] == ("/proj/src/main.py", 10)
+
+    def test_file_items_have_data_roles(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget._pending_results = [
+            SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello world", 6, 5),
+        ]
+        widget._apply_search_results()
+        file_item = widget._results_tree.topLevelItem(0)
+        assert file_item is not None
+        assert file_item.data(0, ROLE_IS_FILE) is True
+        assert file_item.data(0, ROLE_MATCH_COUNT) == 1
+        assert file_item.data(0, ROLE_ABS_PATH) is None
+
+    def test_match_items_have_data_roles(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget._pending_results = [
+            SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello world", 6, 5),
+        ]
+        widget._apply_search_results()
+        file_item = widget._results_tree.topLevelItem(0)
+        assert file_item is not None
+        line_item = file_item.child(0)
+        assert line_item is not None
+        assert line_item.data(0, ROLE_ABS_PATH) == "/proj/src/main.py"
+        assert line_item.data(0, ROLE_LINE_NUMBER) == 10
+        assert line_item.data(0, ROLE_IS_FILE) is False
+        assert line_item.data(0, ROLE_LINE_TEXT) == "hello world"
+        assert line_item.data(0, ROLE_MATCH_COLUMN) == 6
+        assert line_item.data(0, ROLE_MATCH_LENGTH) == 5
+
+    def test_no_results_shows_empty_state(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget.show()
+        widget._search_input.setText("something")
+        widget._pending_results = []
+        widget._apply_search_results()
+        assert widget._no_results_label.isVisible() is True
+        assert "No results" in widget._no_results_label.text()
+        assert widget._results_tree.isVisible() is False
+
+    def test_clear_results(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget._pending_results = [
+            SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello world", 0, 5),
+        ]
+        widget._apply_search_results()
+        assert widget._results_tree.topLevelItemCount() == 1
+
+        widget._clear_results()
+        assert widget._results_tree.topLevelItemCount() == 0
+        assert widget._search_input.text() == ""
+        assert widget._summary_label.text() == ""
+        assert widget._clear_btn.isVisible() is False
+
+    def test_results_tree_has_delegate(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        assert isinstance(widget._results_tree.itemDelegate(), SearchResultDelegate)
+
+    def test_apply_theme_tokens(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget.apply_theme_tokens(
+            match_bg="#FF0000",
+            text_primary="#000000",
+            text_muted="#666666",
+            badge_bg="#CCCCCC",
+        )
+        assert widget._delegate._match_bg == "#FF0000"
+        assert widget._delegate._text_primary == "#000000"
+        assert widget._delegate._text_muted == "#666666"
+        assert widget._delegate._badge_bg == "#CCCCCC"
+
+    def test_file_display_shows_basename_and_dir(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget._pending_results = [
+            SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello", 0, 5),
+        ]
+        widget._apply_search_results()
+        file_item = widget._results_tree.topLevelItem(0)
+        assert file_item is not None
+        text = file_item.text(0)
+        assert "main.py" in text
+        assert "src" in text

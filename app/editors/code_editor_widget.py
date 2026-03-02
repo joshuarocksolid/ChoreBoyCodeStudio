@@ -7,9 +7,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtCore import QPointF, QRect, QRegularExpression, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCursor, QTextDocument, QTextFormat
-from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QWidget
+from PySide2.QtCore import QEvent, QPointF, QRect, QRegularExpression, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat
+from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QToolTip, QWidget
 
 from app.editors.find_replace_bar import FindOptions
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
@@ -18,10 +18,12 @@ from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
+DEFAULT_FONT_FAMILY = "monospace"
 DEFAULT_COMPLETION_MIN_CHARS = 2
 
 
@@ -83,6 +85,14 @@ class CodeEditorWidget(QPlainTextEdit):
         self._search_match_positions: list[tuple[int, int]] = []
         self._search_current_index: int = -1
 
+        self._diag_error_color = QColor("#E03131")
+        self._diag_warning_color = QColor("#D97706")
+        self._diag_info_color = QColor("#3366FF")
+        self._diagnostic_selections: list[QTextEdit.ExtraSelection] = []
+        self._diagnostic_lines: dict[int, DiagnosticSeverity] = {}
+        self._diagnostic_ranges: list[tuple[int, int, str]] = []
+
+        self.setMouseTracking(True)
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._highlight_current_line)
@@ -92,6 +102,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self.set_editor_preferences(
             tab_width=DEFAULT_TAB_WIDTH,
             font_point_size=DEFAULT_FONT_POINT_SIZE,
+            font_family=DEFAULT_FONT_FAMILY,
             indent_style="spaces",
             indent_size=DEFAULT_TAB_WIDTH,
         )
@@ -109,6 +120,12 @@ class CodeEditorWidget(QPlainTextEdit):
             self._search_match_bg = QColor(tokens.search_match_bg)
         if tokens.search_current_match_bg:
             self._search_current_match_bg = QColor(tokens.search_current_match_bg)
+        if tokens.diag_error_color:
+            self._diag_error_color = QColor(tokens.diag_error_color)
+        if tokens.diag_warning_color:
+            self._diag_warning_color = QColor(tokens.diag_warning_color)
+        if tokens.diag_info_color:
+            self._diag_info_color = QColor(tokens.diag_info_color)
         self._line_number_area.update()
         self._highlight_current_line()
         highlighter = self._highlighter
@@ -149,6 +166,86 @@ class CodeEditorWidget(QPlainTextEdit):
     def clear_debug_execution_line(self) -> None:
         self.set_debug_execution_line(None)
 
+    # ------------------------------------------------------------------
+    # Diagnostics API (squiggly underlines, gutter markers, hover)
+    # ------------------------------------------------------------------
+
+    def set_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
+        """Apply diagnostics: build squiggly underlines, gutter markers, and hover ranges."""
+        self._diagnostic_selections.clear()
+        self._diagnostic_lines.clear()
+        self._diagnostic_ranges.clear()
+
+        _SEVERITY_PRIORITY = {DiagnosticSeverity.ERROR: 0, DiagnosticSeverity.WARNING: 1, DiagnosticSeverity.INFO: 2}
+
+        doc = self.document()
+        for diag in diagnostics:
+            color = self._diag_color_for_severity(diag.severity)
+            block = doc.findBlockByNumber(diag.line_number - 1)
+            if not block.isValid():
+                continue
+
+            block_start = block.position()
+            line_text = block.text()
+
+            if diag.col_start is not None and diag.col_end is not None:
+                start_pos = block_start + diag.col_start
+                end_pos = block_start + diag.col_end
+            else:
+                stripped = line_text.lstrip()
+                leading = len(line_text) - len(stripped)
+                start_pos = block_start + leading
+                end_pos = block_start + len(line_text)
+
+            if start_pos >= end_pos:
+                end_pos = block_start + max(len(line_text), 1)
+
+            sel = cast(Any, QTextEdit.ExtraSelection())
+            sel.format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
+            sel.format.setUnderlineColor(color)
+            cursor = QTextCursor(doc)
+            cursor.setPosition(start_pos)
+            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+            sel.cursor = cursor
+            self._diagnostic_selections.append(sel)
+
+            tooltip = f"[{diag.code}] {diag.message}"
+            self._diagnostic_ranges.append((start_pos, end_pos, tooltip))
+
+            cur_severity = self._diagnostic_lines.get(diag.line_number)
+            if cur_severity is None or _SEVERITY_PRIORITY.get(diag.severity, 2) < _SEVERITY_PRIORITY.get(cur_severity, 2):
+                self._diagnostic_lines[diag.line_number] = diag.severity
+
+        self._refresh_extra_selections()
+        self._line_number_area.update()
+
+    def clear_diagnostics(self) -> None:
+        self._diagnostic_selections.clear()
+        self._diagnostic_lines.clear()
+        self._diagnostic_ranges.clear()
+        self._refresh_extra_selections()
+        self._line_number_area.update()
+
+    def _diag_color_for_severity(self, severity: DiagnosticSeverity) -> QColor:
+        if severity == DiagnosticSeverity.ERROR:
+            return self._diag_error_color
+        if severity == DiagnosticSeverity.WARNING:
+            return self._diag_warning_color
+        return self._diag_info_color
+
+    def event(self, ev: QEvent) -> bool:  # type: ignore[override]
+        if ev.type() == QEvent.ToolTip:
+            pos = ev.pos()  # type: ignore[union-attr]
+            cursor = self.cursorForPosition(pos)
+            cursor_pos = cursor.position()
+            for start, end, tooltip in self._diagnostic_ranges:
+                if start <= cursor_pos < end:
+                    QToolTip.showText(ev.globalPos(), tooltip, self)  # type: ignore[union-attr]
+                    return True
+            QToolTip.hideText()
+            return True
+        return super().event(ev)
+
     def toggle_breakpoint_at_y(self, y_coordinate: int) -> None:
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -181,14 +278,16 @@ class CodeEditorWidget(QPlainTextEdit):
         *,
         tab_width: int,
         font_point_size: int,
+        font_family: str = DEFAULT_FONT_FAMILY,
         indent_style: str = "spaces",
         indent_size: int = DEFAULT_TAB_WIDTH,
     ) -> None:
-        """Apply tab width and font-size preferences."""
+        """Apply tab width, font family, and font-size preferences."""
         self._tab_width = max(2, tab_width)
         self._indent_style = "tabs" if indent_style == "tabs" else "spaces"
         self._indent_size = max(1, indent_size)
         font = self.font()
+        font.setFamily(font_family)
         font.setPointSize(max(8, font_point_size))
         self.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * self._tab_width)
@@ -323,6 +422,14 @@ class CodeEditorWidget(QPlainTextEdit):
                         painter.setBrush(self._debug_execution_color)
                         painter.setPen(Qt.NoPen)
                         painter.drawPolygon(arrow)
+
+                    diag_severity = self._diagnostic_lines.get(line_number)
+                    if diag_severity is not None and line_number not in self._breakpoints:
+                        diag_color = self._diag_color_for_severity(diag_severity)
+                        painter.setBrush(diag_color)
+                        painter.setPen(Qt.NoPen)
+                        marker_r = 3
+                        painter.drawEllipse(3, center_y - marker_r, marker_r * 2, marker_r * 2)
 
                     painter.setPen(color)
                     painter.drawText(
@@ -542,6 +649,7 @@ class CodeEditorWidget(QPlainTextEdit):
         if bracket_selection is not None:
             selections.append(bracket_selection)
 
+        selections.extend(self._diagnostic_selections)
         selections.extend(self._search_selections)
         self.setExtraSelections(selections)
 

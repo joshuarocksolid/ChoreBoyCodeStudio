@@ -68,6 +68,9 @@ class MenuCallbacks:
     on_set_theme_system: Callable[[], object] | None = None
     on_set_theme_light: Callable[[], object] | None = None
     on_set_theme_dark: Callable[[], object] | None = None
+    on_zoom_in: Callable[[], object] | None = None
+    on_zoom_out: Callable[[], object] | None = None
+    on_zoom_reset: Callable[[], object] | None = None
     on_format_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
@@ -471,6 +474,35 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         action_group.addAction(act)
         theme_menu.addAction(act)
         actions[action_id] = act
+
+    view_menu.addSeparator()
+    _register_menu_action(
+        view_menu,
+        actions,
+        "shell.action.view.zoomIn",
+        "Zoom In",
+        shortcut="Ctrl+=",
+        enabled=True,
+        callback=callback_registry.on_zoom_in,
+    )
+    _register_menu_action(
+        view_menu,
+        actions,
+        "shell.action.view.zoomOut",
+        "Zoom Out",
+        shortcut="Ctrl+-",
+        enabled=True,
+        callback=callback_registry.on_zoom_out,
+    )
+    _register_menu_action(
+        view_menu,
+        actions,
+        "shell.action.view.zoomReset",
+        "Reset Zoom",
+        shortcut="Ctrl+0",
+        enabled=True,
+        callback=callback_registry.on_zoom_reset,
+    )
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")

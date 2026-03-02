@@ -118,3 +118,45 @@ class TestFindReplaceBar:
         bar._replace_input.setText("world")
         bar._on_replace_all()
         assert replacements == ["world"]
+
+    def test_chevron_toggles_replace_row(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = FindReplaceBar()
+        bar.show()
+        assert not bar._replace_row.isVisible()
+        assert bar._chevron_btn.text() == "\u25B6"
+
+        bar._chevron_btn.setChecked(True)
+        assert bar._replace_row.isVisible()
+        assert bar._chevron_btn.text() == "\u25BC"
+        assert bar._replace_visible is True
+
+        bar._chevron_btn.setChecked(False)
+        assert not bar._replace_row.isVisible()
+        assert bar._chevron_btn.text() == "\u25B6"
+        assert bar._replace_visible is False
+
+    def test_open_find_resets_chevron(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = FindReplaceBar()
+        bar.open_find_replace("test")
+        assert bar._chevron_btn.isChecked()
+        bar.open_find("test")
+        assert not bar._chevron_btn.isChecked()
+        assert not bar._replace_row.isVisible()
+
+    def test_open_find_replace_sets_chevron(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = FindReplaceBar()
+        bar.open_find_replace("test")
+        assert bar._chevron_btn.isChecked()
+        assert bar._replace_row.isVisible()
+
+    def test_option_buttons_have_fixed_size(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = FindReplaceBar()
+        for btn in [bar._case_btn, bar._word_btn, bar._regex_btn]:
+            assert btn.width() == 24
+            assert btn.height() == 24
+
+    def test_nav_buttons_have_fixed_size(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = FindReplaceBar()
+        for btn in [bar._prev_btn, bar._next_btn]:
+            assert btn.width() == 24
+            assert btn.height() == 24

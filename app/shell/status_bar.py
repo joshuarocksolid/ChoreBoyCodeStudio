@@ -68,6 +68,18 @@ def map_editor_status_view(file_name: str | None, line: int | None, column: int 
     return EditorStatusView(text=f"Editor: {file_name} | Ln {safe_line}, Col {safe_column} | {dirty_text}")
 
 
+def format_diagnostics_counts(errors: int, warnings: int) -> str:
+    """Format diagnostic counts for status bar display."""
+    parts: list[str] = []
+    if errors:
+        parts.append(f"{errors} error{'s' if errors != 1 else ''}")
+    if warnings:
+        parts.append(f"{warnings} warning{'s' if warnings != 1 else ''}")
+    if not parts:
+        return ""
+    return ", ".join(parts)
+
+
 class ShellStatusBarController:
     """Small controller for shell status bar labels."""
 
@@ -77,11 +89,13 @@ class ShellStatusBarController:
         startup_label: "QLabel",
         project_label: "QLabel",
         editor_label: "QLabel",
+        diagnostics_label: "QLabel",
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
         self._project_label = project_label
         self._editor_label = editor_label
+        self._diagnostics_label = diagnostics_label
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Update startup status label from the latest probe output."""
@@ -98,6 +112,12 @@ class ShellStatusBarController:
         """Update current editor telemetry in the status bar."""
         view = map_editor_status_view(file_name=file_name, line=line, column=column, is_dirty=is_dirty)
         self._editor_label.setText(view.text)
+
+    def set_diagnostics_counts(self, errors: int, warnings: int) -> None:
+        """Update diagnostic counts in the status bar."""
+        text = format_diagnostics_counts(errors, warnings)
+        self._diagnostics_label.setText(text)
+        self._diagnostics_label.setVisible(bool(text))
 
     @property
     def status_bar(self) -> "QStatusBar":
@@ -117,6 +137,10 @@ def create_shell_status_bar(
     startup_label = QLabel(status_bar)
     startup_label.setObjectName("shell.startupStatusLabel")
 
+    diagnostics_label = QLabel("", status_bar)
+    diagnostics_label.setObjectName("shell.diagnosticsStatusLabel")
+    diagnostics_label.setVisible(False)
+
     project_label = QLabel("Project: none loaded", status_bar)
     project_label.setObjectName("shell.projectStatusLabel")
 
@@ -124,10 +148,11 @@ def create_shell_status_bar(
     editor_label.setObjectName("shell.editorStatusLabel")
 
     status_bar.addWidget(startup_label, 1)
+    status_bar.addPermanentWidget(diagnostics_label, 0)
     status_bar.addPermanentWidget(project_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
     main_window.setStatusBar(status_bar)
 
-    controller = ShellStatusBarController(status_bar, startup_label, project_label, editor_label)
+    controller = ShellStatusBarController(status_bar, startup_label, project_label, editor_label, diagnostics_label)
     controller.set_startup_report(startup_report)
     return controller

@@ -83,3 +83,86 @@ def test_analyze_python_file_reports_unreachable_statement(tmp_path: Path) -> No
     diagnostics = analyze_python_file(str(file_path))
 
     assert any(diagnostic.code == "PY230" for diagnostic in diagnostics)
+
+
+def test_syntax_error_includes_column_info(tmp_path: Path) -> None:
+    file_path = tmp_path / "broken.py"
+    file_path.write_text("x = (\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(str(file_path))
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "PY100"
+    assert diagnostics[0].col_start is not None
+
+
+def test_unresolved_import_includes_column_range(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "module.py"
+    file_path.write_text("import nonexistent\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(str(file_path), project_root=str(project_root))
+
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+    assert len(py200) == 1
+    assert py200[0].col_start == 0
+    assert py200[0].col_end is not None
+    assert py200[0].col_end > py200[0].col_start
+
+
+def test_duplicate_definition_includes_column_range(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text(
+        "def run():\n"
+        "    return 1\n"
+        "def run():\n"
+        "    return 2\n",
+        encoding="utf-8",
+    )
+
+    diagnostics = analyze_python_file(str(file_path))
+
+    py210 = [d for d in diagnostics if d.code == "PY210"]
+    assert len(py210) == 1
+    assert py210[0].col_start == 0
+    assert py210[0].col_end is not None
+
+
+def test_unused_import_includes_column_range(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("import json\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(str(file_path))
+
+    py220 = [d for d in diagnostics if d.code == "PY220"]
+    assert len(py220) == 1
+    assert py220[0].col_start == 0
+    assert py220[0].col_end is not None
+
+
+def test_analyze_python_file_uses_source_over_disk(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("x = 1\n", encoding="utf-8")
+
+    diagnostics_from_disk = analyze_python_file(str(file_path))
+    assert not any(d.code == "PY100" for d in diagnostics_from_disk)
+
+    diagnostics_from_buffer = analyze_python_file(str(file_path), source="def run(:\n    pass\n")
+    assert any(d.code == "PY100" for d in diagnostics_from_buffer)
+
+
+def test_unreachable_statement_includes_column_range(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text(
+        "def run():\n"
+        "    return 1\n"
+        "    value = 2\n",
+        encoding="utf-8",
+    )
+
+    diagnostics = analyze_python_file(str(file_path))
+
+    py230 = [d for d in diagnostics if d.code == "PY230"]
+    assert len(py230) == 1
+    assert py230[0].col_start is not None

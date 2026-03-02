@@ -7,11 +7,14 @@ from PySide2.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFontComboBox,
     QFormLayout,
     QGroupBox,
     QSpinBox,
     QVBoxLayout,
 )
+
+from PySide2.QtGui import QFont
 
 from app.shell.settings_models import EditorSettingsSnapshot
 
@@ -42,6 +45,10 @@ class SettingsDialog(QDialog):
         self._tab_width_input.setRange(2, 16)
         self._tab_width_input.setValue(snapshot.tab_width)
         editor_form.addRow("Tab width", self._tab_width_input)
+
+        self._font_family_input = QFontComboBox(editor_group)
+        self._font_family_input.setCurrentFont(QFont(snapshot.font_family))
+        editor_form.addRow("Font family", self._font_family_input)
 
         self._font_size_input = QSpinBox(editor_group)
         self._font_size_input.setRange(8, 28)
@@ -133,6 +140,7 @@ class SettingsDialog(QDialog):
         return EditorSettingsSnapshot(
             tab_width=int(self._tab_width_input.value()),
             font_size=int(self._font_size_input.value()),
+            font_family=self._font_family_input.currentFont().family(),
             indent_style=str(self._indent_style_input.currentText()),
             indent_size=int(self._indent_size_input.value()),
             detect_indentation_from_file=self._detect_indentation_input.isChecked(),

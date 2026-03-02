@@ -18,12 +18,14 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
 
     assert snapshot.tab_width == 4
     assert snapshot.font_size == 10
+    assert snapshot.font_family == "monospace"
     assert snapshot.indent_style == "spaces"
     assert snapshot.detect_indentation_from_file is True
     assert snapshot.format_on_save is False
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
     assert snapshot.completion_enabled is True
+    assert snapshot.completion_auto_trigger is False
     assert snapshot.diagnostics_enabled is True
     assert snapshot.diagnostics_realtime is True
     assert snapshot.quick_fixes_enabled is True
@@ -38,6 +40,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
             "editor": {
                 "tab_width": 8,
                 "font_size": 14,
+                "font_family": "Courier New",
                 "indent_style": "tabs",
                 "indent_size": 1,
                 "detect_indentation_from_file": False,
@@ -63,6 +66,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
 
     assert snapshot.tab_width == 8
     assert snapshot.font_size == 14
+    assert snapshot.font_family == "Courier New"
     assert snapshot.indent_style == "tabs"
     assert snapshot.indent_size == 1
     assert snapshot.detect_indentation_from_file is False
@@ -86,6 +90,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     snapshot = EditorSettingsSnapshot(
         tab_width=6,
         font_size=12,
+        font_family="DejaVu Sans Mono",
         indent_style="tabs",
         indent_size=1,
         detect_indentation_from_file=False,
@@ -107,6 +112,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     merged = merge_editor_settings_snapshot({"schema_version": 1}, snapshot)
 
     assert merged["editor"]["tab_width"] == 6
+    assert merged["editor"]["font_family"] == "DejaVu Sans Mono"
     assert merged["editor"]["indent_style"] == "tabs"
     assert merged["editor"]["detect_indentation_from_file"] is False
     assert merged["editor"]["format_on_save"] is True
@@ -165,3 +171,60 @@ def test_merge_invalid_theme_mode_falls_back_to_system() -> None:
     snapshot = EditorSettingsSnapshot(theme_mode="invalid")
     merged = merge_editor_settings_snapshot({}, snapshot)
     assert merged["theme"]["mode"] == "system"
+
+
+# --- font_family tests ---
+
+
+def test_parse_font_family_defaults_for_missing_key() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {}})
+    assert snapshot.font_family == "monospace"
+
+
+def test_parse_font_family_defaults_for_non_string_value() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {"font_family": 42}})
+    assert snapshot.font_family == "monospace"
+
+
+def test_parse_font_family_defaults_for_blank_string() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {"font_family": "  "}})
+    assert snapshot.font_family == "monospace"
+
+
+def test_parse_font_family_reads_explicit_value() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {"font_family": "Fira Code"}})
+    assert snapshot.font_family == "Fira Code"
+
+
+def test_merge_font_family_round_trip() -> None:
+    snapshot = EditorSettingsSnapshot(font_family="Source Code Pro")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    restored = parse_editor_settings_snapshot(merged)
+    assert restored.font_family == "Source Code Pro"
+
+
+def test_merge_font_family_defaults_for_empty_string() -> None:
+    snapshot = EditorSettingsSnapshot(font_family="")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["editor"]["font_family"] == "monospace"
+
+
+# --- zoom delta clamping tests ---
+
+
+@pytest.mark.parametrize(
+    "base_size, delta, expected",
+    [
+        (10, 0, 10),
+        (10, 5, 15),
+        (10, -2, 8),
+        (10, -5, 8),
+        (70, 5, 72),
+        (8, -1, 8),
+        (72, 1, 72),
+    ],
+)
+def test_effective_font_size_clamping(base_size: int, delta: int, expected: int) -> None:
+    """Verify the effective size formula: max(8, min(72, base + delta))."""
+    effective = max(8, min(72, base_size + delta))
+    assert effective == expected

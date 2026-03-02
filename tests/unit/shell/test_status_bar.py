@@ -3,7 +3,7 @@
 import pytest
 
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
-from app.shell.status_bar import map_editor_status_view, map_startup_report_to_status
+from app.shell.status_bar import format_diagnostics_counts, map_editor_status_view, map_startup_report_to_status
 
 pytestmark = pytest.mark.unit
 
@@ -58,3 +58,23 @@ def test_map_editor_status_view_handles_missing_file() -> None:
     """No active file should map to explicit placeholder copy."""
     view = map_editor_status_view(None, None, None, is_dirty=False)
     assert view.text == "Editor: no file"
+
+
+def test_format_diagnostics_counts_errors_and_warnings() -> None:
+    assert format_diagnostics_counts(2, 3) == "2 errors, 3 warnings"
+
+
+def test_format_diagnostics_counts_singular() -> None:
+    assert format_diagnostics_counts(1, 1) == "1 error, 1 warning"
+
+
+def test_format_diagnostics_counts_only_errors() -> None:
+    assert format_diagnostics_counts(5, 0) == "5 errors"
+
+
+def test_format_diagnostics_counts_only_warnings() -> None:
+    assert format_diagnostics_counts(0, 2) == "2 warnings"
+
+
+def test_format_diagnostics_counts_zero() -> None:
+    assert format_diagnostics_counts(0, 0) == ""

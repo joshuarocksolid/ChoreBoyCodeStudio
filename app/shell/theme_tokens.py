@@ -31,6 +31,11 @@ class ShellThemeTokens:
     search_match_bg: str = ""
     search_current_match_bg: str = ""
     activity_bar_bg: str = ""
+    input_bg: str = ""
+    badge_bg: str = ""
+    diag_error_color: str = ""
+    diag_warning_color: str = ""
+    diag_info_color: str = ""
 
 
 def tokens_from_palette(
@@ -75,6 +80,11 @@ def tokens_from_palette(
             search_match_bg="#3A3D41",
             search_current_match_bg="#515C6A",
             activity_bar_bg="#1A1E22",
+            input_bg="#1B1F23",
+            badge_bg="#3C434A",
+            diag_error_color="#FF6B6B",
+            diag_warning_color="#E5A100",
+            diag_info_color="#5B8CFF",
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -99,6 +109,11 @@ def tokens_from_palette(
         search_match_bg="#FFE066",
         search_current_match_bg="#FF922B",
         activity_bar_bg="#E9ECEF",
+        input_bg="#FFFFFF",
+        badge_bg="#E9ECEF",
+        diag_error_color="#E03131",
+        diag_warning_color="#D97706",
+        diag_info_color="#3366FF",
     )
 
 

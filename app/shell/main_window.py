@@ -11,7 +11,7 @@ import time
 from typing import Callable, Optional
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent, QPainter, QPixmap
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
@@ -19,8 +19,6 @@ from PySide2.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QLineEdit,
     QMainWindow,
     QMenu,
@@ -33,6 +31,7 @@ from PySide2.QtWidgets import (
     QTabBar,
     QTabWidget,
     QToolButton,
+    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -62,7 +61,7 @@ from app.intelligence.cache_controls import (
     rebuild_symbol_cache,
     should_refresh_index_after_save,
 )
-from app.intelligence.diagnostics_service import DiagnosticSeverity, analyze_python_file, find_unresolved_imports
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
@@ -153,6 +152,25 @@ PROBLEM_ROLE_FILE_PATH = 320
 PROBLEM_ROLE_LINE_NUMBER = 321
 PROBLEM_ROLE_DIAGNOSTIC_CODE = 322
 
+_SEVERITY_ICON_CACHE: dict[str, QIcon] = {}
+
+
+def _severity_icon(color_hex: str) -> QIcon:
+    cached = _SEVERITY_ICON_CACHE.get(color_hex)
+    if cached is not None:
+        return cached
+    pixmap = QPixmap(12, 12)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(QColor(color_hex))
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(2, 2, 8, 8)
+    painter.end()
+    icon = QIcon(pixmap)
+    _SEVERITY_ICON_CACHE[color_hex] = icon
+    return icon
+
 
 class _MiddleClickTabBar(QTabBar):
     def mousePressEvent(self, arg__1: QMouseEvent) -> None:
@@ -190,7 +208,10 @@ class MainWindow(QMainWindow):
         self._python_console_widget: PythonConsoleWidget | None = None
         self._debug_panel: DebugPanelWidget | None = None
         self._run_log_output_widget: QPlainTextEdit | None = None
-        self._problems_list_widget: QListWidget | None = None
+        self._problems_list_widget: QTreeWidget | None = None
+        self._problems_tab_widget: QTabWidget | None = None
+        self._stored_lint_diagnostics: list[CodeDiagnostic] = []
+        self._stored_runtime_problems: list[ProblemEntry] = []
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
@@ -209,6 +230,7 @@ class MainWindow(QMainWindow):
         (
             self._editor_tab_width,
             self._editor_font_size,
+            self._editor_font_family,
             self._editor_indent_style,
             self._editor_indent_size,
             self._editor_detect_indentation_from_file,
@@ -216,6 +238,7 @@ class MainWindow(QMainWindow):
             self._editor_trim_trailing_whitespace_on_save,
             self._editor_insert_final_newline_on_save,
         ) = self._load_editor_preferences()
+        self._zoom_delta: int = 0
         (
             self._completion_enabled,
             self._completion_auto_trigger,
@@ -297,6 +320,9 @@ class MainWindow(QMainWindow):
                 on_set_theme_system=lambda: self._handle_set_theme(constants.UI_THEME_MODE_SYSTEM),
                 on_set_theme_light=lambda: self._handle_set_theme(constants.UI_THEME_MODE_LIGHT),
                 on_set_theme_dark=lambda: self._handle_set_theme(constants.UI_THEME_MODE_DARK),
+                on_zoom_in=self._handle_zoom_in,
+                on_zoom_out=self._handle_zoom_out,
+                on_zoom_reset=self._handle_zoom_reset,
                 on_format_current_file=self._handle_format_current_file_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
@@ -443,6 +469,13 @@ class MainWindow(QMainWindow):
             if self._python_console_widget is not None:
                 self._python_console_widget.apply_theme(tokens)
             self._apply_explorer_theme(tokens)
+            if self._search_sidebar is not None:
+                self._search_sidebar.apply_theme_tokens(
+                    match_bg=tokens.search_match_bg,
+                    text_primary=tokens.text_primary,
+                    text_muted=tokens.text_muted,
+                    badge_bg=tokens.badge_bg,
+                )
         finally:
             self._is_applying_theme_styles = False
 
@@ -515,19 +548,35 @@ class MainWindow(QMainWindow):
             if action is not None:
                 action.setChecked(action_id == active_id)
 
+    def _handle_zoom_in(self) -> None:
+        if self._editor_font_size + self._zoom_delta < 72:
+            self._zoom_delta += 1
+            self._apply_editor_preferences_to_open_editors()
+
+    def _handle_zoom_out(self) -> None:
+        if self._editor_font_size + self._zoom_delta > 8:
+            self._zoom_delta -= 1
+            self._apply_editor_preferences_to_open_editors()
+
+    def _handle_zoom_reset(self) -> None:
+        if self._zoom_delta != 0:
+            self._zoom_delta = 0
+            self._apply_editor_preferences_to_open_editors()
+
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
         settings_payload = load_settings(state_root=self._state_root)
         settings_payload[constants.UI_IMPORT_UPDATE_POLICY_KEY] = policy.value
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, int, bool, bool, bool, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
         settings_payload = load_settings(state_root=self._state_root)
         editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
         if not isinstance(editor_settings, dict):
             return (
                 constants.UI_EDITOR_TAB_WIDTH_DEFAULT,
                 constants.UI_EDITOR_FONT_SIZE_DEFAULT,
+                constants.UI_EDITOR_FONT_FAMILY_DEFAULT,
                 constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
                 constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
                 constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
@@ -538,6 +587,7 @@ class MainWindow(QMainWindow):
 
         tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
         font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+        font_family = editor_settings.get(constants.UI_EDITOR_FONT_FAMILY_KEY, constants.UI_EDITOR_FONT_FAMILY_DEFAULT)
         indent_style = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
         indent_size = editor_settings.get(constants.UI_EDITOR_INDENT_SIZE_KEY, constants.UI_EDITOR_INDENT_SIZE_DEFAULT)
         detect_indentation_from_file = editor_settings.get(
@@ -560,6 +610,8 @@ class MainWindow(QMainWindow):
             tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
+        if not isinstance(font_family, str) or not font_family.strip():
+            font_family = constants.UI_EDITOR_FONT_FAMILY_DEFAULT
         if indent_style not in {"spaces", "tabs"}:
             indent_style = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
         if not isinstance(indent_size, int):
@@ -575,6 +627,7 @@ class MainWindow(QMainWindow):
         return (
             max(2, tab_width),
             max(8, font_size),
+            str(font_family).strip(),
             str(indent_style),
             max(1, indent_size),
             detect_indentation_from_file,
@@ -745,6 +798,7 @@ class MainWindow(QMainWindow):
         (
             self._editor_tab_width,
             self._editor_font_size,
+            self._editor_font_family,
             self._editor_indent_style,
             self._editor_indent_size,
             self._editor_detect_indentation_from_file,
@@ -962,13 +1016,12 @@ class MainWindow(QMainWindow):
         self._problems_list_widget.clear()
         for hit in result.hits:
             marker = "def" if hit.is_definition else "ref"
-            item = QListWidgetItem(
-                f"[{marker}] {Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1} | {hit.line_text}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(hit.file_path)
-            item.setData(PROBLEM_ROLE_FILE_PATH, hit.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, hit.line_number)
+            location = f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}"
+            item = QTreeWidgetItem(["", f"[{marker}] {hit.line_text.strip()}", location, ""])
+            item.setToolTip(1, hit.file_path)
+            item.setData(0, PROBLEM_ROLE_FILE_PATH, hit.file_path)
+            item.setData(0, PROBLEM_ROLE_LINE_NUMBER, hit.line_number)
+            self._problems_list_widget.addTopLevelItem(item)
 
     def _handle_rename_symbol_action(self) -> None:
         if self._loaded_project is None:
@@ -1163,16 +1216,18 @@ class MainWindow(QMainWindow):
                 return
             self._problems_list_widget.clear()
             if not diagnostics:
-                self._problems_list_widget.addItem(QListWidgetItem("No unresolved project-local imports found."))
+                item = QTreeWidgetItem(["", "No unresolved project-local imports found.", "", ""])
+                self._problems_list_widget.addTopLevelItem(item)
                 return
             for diagnostic in diagnostics:
-                item = QListWidgetItem(
-                    f"{Path(diagnostic.file_path).name}:{diagnostic.line_number} | {diagnostic.message}",
-                    self._problems_list_widget,
-                )
-                item.setToolTip(diagnostic.file_path)
-                item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
-                item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+                location = f"{Path(diagnostic.file_path).name}:{diagnostic.line_number}"
+                item = QTreeWidgetItem(["", diagnostic.message, location, ""])
+                item.setIcon(0, _severity_icon("#E03131"))
+                item.setForeground(1, QColor("#E03131"))
+                item.setToolTip(1, diagnostic.file_path)
+                item.setData(0, PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+                item.setData(0, PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+                self._problems_list_widget.addTopLevelItem(item)
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Analyze Imports", f"Import analysis failed: {exc}")
@@ -1189,15 +1244,15 @@ class MainWindow(QMainWindow):
             return
         self._problems_list_widget.clear()
         if not symbols:
-            self._problems_list_widget.addItem(QListWidgetItem("No symbols found in current file."))
+            item = QTreeWidgetItem(["", "No symbols found in current file.", "", ""])
+            self._problems_list_widget.addTopLevelItem(item)
             return
         for symbol in symbols:
-            item = QListWidgetItem(
-                f"{symbol.kind} {symbol.name} (line {symbol.line_number})",
-                self._problems_list_widget,
-            )
-            item.setData(PROBLEM_ROLE_FILE_PATH, active_tab.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, symbol.line_number)
+            location = f"line {symbol.line_number}"
+            item = QTreeWidgetItem(["", f"{symbol.kind} {symbol.name}", location, ""])
+            item.setData(0, PROBLEM_ROLE_FILE_PATH, active_tab.file_path)
+            item.setData(0, PROBLEM_ROLE_LINE_NUMBER, symbol.line_number)
+            self._problems_list_widget.addTopLevelItem(item)
 
     def _handle_getting_started_action(self) -> None:
         self._show_help_file("Getting Started", "getting_started.md")
@@ -2122,7 +2177,9 @@ class MainWindow(QMainWindow):
             return
         started_at = time.perf_counter()
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        diagnostics = analyze_python_file(file_path, project_root=project_root)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
+        diagnostics = analyze_python_file(file_path, project_root=project_root, source=buffer_source)
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
             if elapsed_ms > 180.0:
@@ -2139,27 +2196,75 @@ class MainWindow(QMainWindow):
                     elapsed_ms,
                     len(diagnostics),
                 )
+        self._stored_lint_diagnostics = diagnostics
+        self._push_diagnostics_to_editor(file_path, diagnostics)
+        self._render_merged_problems_panel()
+        self._update_status_bar_diagnostics(diagnostics)
+
+    def _push_diagnostics_to_editor(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if editor_widget is None:
+            return
+        editor_widget.set_diagnostics(diagnostics)
+
+    def _update_status_bar_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
+        if self._status_controller is None:
+            return
+        errors = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.ERROR)
+        warnings = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.WARNING)
+        self._status_controller.set_diagnostics_counts(errors, warnings)
+
+    def _render_merged_problems_panel(self) -> None:
+        """Rebuild the Problems panel from stored lint + runtime state."""
         if self._problems_list_widget is None:
             return
         self._problems_list_widget.clear()
-        if not diagnostics:
-            self._problems_list_widget.addItem(QListWidgetItem("No diagnostics found in current file."))
-            return
-        severity_prefix = {
-            DiagnosticSeverity.ERROR: "error",
-            DiagnosticSeverity.WARNING: "warn",
-            DiagnosticSeverity.INFO: "info",
+
+        severity_colors = {
+            DiagnosticSeverity.ERROR: "#E03131",
+            DiagnosticSeverity.WARNING: "#D97706",
+            DiagnosticSeverity.INFO: "#3366FF",
         }
-        for diagnostic in diagnostics:
-            prefix = severity_prefix.get(diagnostic.severity, "info")
-            item = QListWidgetItem(
-                f"[{prefix}] {Path(diagnostic.file_path).name}:{diagnostic.line_number} {diagnostic.code} | {diagnostic.message}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
-            item.setData(PROBLEM_ROLE_DIAGNOSTIC_CODE, diagnostic.code)
+
+        total = 0
+        for diagnostic in self._stored_lint_diagnostics:
+            location = f"{Path(diagnostic.file_path).name}:{diagnostic.line_number}"
+            item = QTreeWidgetItem(["", diagnostic.message, location, diagnostic.code])
+            color_hex = severity_colors.get(diagnostic.severity, "#3366FF")
+            item.setIcon(0, _severity_icon(color_hex))
+            item.setForeground(1, QColor(color_hex))
+            item.setToolTip(1, diagnostic.file_path)
+            item.setData(0, PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+            item.setData(0, PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+            item.setData(0, PROBLEM_ROLE_DIAGNOSTIC_CODE, diagnostic.code)
+            self._problems_list_widget.addTopLevelItem(item)
+            total += 1
+
+        for problem in self._stored_runtime_problems:
+            location = f"{Path(problem.file_path).name}:{problem.line_number}"
+            message = f"{problem.context} | {problem.message}" if problem.context else problem.message
+            item = QTreeWidgetItem(["", message, location, "runtime"])
+            item.setIcon(0, _severity_icon("#E03131"))
+            item.setForeground(1, QColor("#E03131"))
+            item.setToolTip(1, problem.file_path)
+            item.setData(0, PROBLEM_ROLE_FILE_PATH, problem.file_path)
+            item.setData(0, PROBLEM_ROLE_LINE_NUMBER, problem.line_number)
+            self._problems_list_widget.addTopLevelItem(item)
+            total += 1
+
+        if total == 0:
+            item = QTreeWidgetItem(["", "No problems detected.", "", ""])
+            self._problems_list_widget.addTopLevelItem(item)
+        self._update_problems_tab_title(total)
+
+    def _update_problems_tab_title(self, count: int) -> None:
+        if self._problems_tab_widget is None or self._problems_list_widget is None:
+            return
+        index = self._problems_tab_widget.indexOf(self._problems_list_widget)
+        if index < 0:
+            return
+        title = f"Problems ({count})" if count > 0 else "Problems"
+        self._problems_tab_widget.setTabText(index, title)
 
     def _apply_safe_fixes_for_file(self, file_path: str) -> None:
         if not self._quick_fixes_enabled:
@@ -2524,34 +2629,27 @@ class MainWindow(QMainWindow):
         self._set_problems(problems)
 
     def _set_problems(self, problems: list[ProblemEntry]) -> None:
-        if self._problems_list_widget is None:
-            return
-        self._problems_list_widget.clear()
-        for problem in problems:
-            item = QListWidgetItem(
-                f"{problem.file_path}:{problem.line_number} | {problem.context} | {problem.message}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(problem.message)
-            item.setData(PROBLEM_ROLE_FILE_PATH, problem.file_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, problem.line_number)
+        self._stored_runtime_problems = problems
+        self._render_merged_problems_panel()
 
     def _set_search_results(self, matches: list[SearchMatch], query: str) -> None:
         if self._problems_list_widget is None:
             return
         self._problems_list_widget.clear()
         if not matches:
-            self._problems_list_widget.addItem(QListWidgetItem(f"No results for '{query}'."))
+            item = QTreeWidgetItem(["", f"No results for '{query}'.", "", ""])
+            self._problems_list_widget.addTopLevelItem(item)
+            self._update_problems_tab_title(0)
             return
 
         for match in matches:
-            item = QListWidgetItem(
-                f"{match.relative_path}:{match.line_number} | {match.line_text}",
-                self._problems_list_widget,
-            )
-            item.setToolTip(match.absolute_path)
-            item.setData(PROBLEM_ROLE_FILE_PATH, match.absolute_path)
-            item.setData(PROBLEM_ROLE_LINE_NUMBER, match.line_number)
+            location = f"{match.relative_path}:{match.line_number}"
+            item = QTreeWidgetItem(["", match.line_text.strip(), location, ""])
+            item.setToolTip(1, match.absolute_path)
+            item.setData(0, PROBLEM_ROLE_FILE_PATH, match.absolute_path)
+            item.setData(0, PROBLEM_ROLE_LINE_NUMBER, match.line_number)
+            self._problems_list_widget.addTopLevelItem(item)
+        self._update_problems_tab_title(len(matches))
 
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
         self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
@@ -2623,12 +2721,15 @@ class MainWindow(QMainWindow):
         self._dispatch_to_main_thread(lambda: setattr(self, "_active_symbol_index_worker", None))
 
     def _clear_problems(self) -> None:
+        self._stored_lint_diagnostics = []
+        self._stored_runtime_problems = []
         if self._problems_list_widget is not None:
             self._problems_list_widget.clear()
+            self._update_problems_tab_title(0)
 
-    def _handle_problem_item_activation(self, item: QListWidgetItem) -> None:
-        file_path = item.data(PROBLEM_ROLE_FILE_PATH)
-        line_number = item.data(PROBLEM_ROLE_LINE_NUMBER)
+    def _handle_problem_item_activation(self, item: QTreeWidgetItem) -> None:
+        file_path = item.data(0, PROBLEM_ROLE_FILE_PATH)
+        line_number = item.data(0, PROBLEM_ROLE_LINE_NUMBER)
         if not file_path:
             return
         try:
@@ -2644,8 +2745,8 @@ class MainWindow(QMainWindow):
         if item is None:
             return
 
-        diagnostic_code = item.data(PROBLEM_ROLE_DIAGNOSTIC_CODE)
-        file_path = item.data(PROBLEM_ROLE_FILE_PATH)
+        diagnostic_code = item.data(0, PROBLEM_ROLE_DIAGNOSTIC_CODE)
+        file_path = item.data(0, PROBLEM_ROLE_FILE_PATH)
         if not file_path:
             return
 
@@ -2988,12 +3089,25 @@ class MainWindow(QMainWindow):
         self._debug_panel.command_submitted.connect(self._handle_debug_command_submit)
         tabs.addTab(self._debug_panel, "Debug")
 
-        self._problems_list_widget = QListWidget(tabs)
+        self._problems_list_widget = QTreeWidget(tabs)
         self._problems_list_widget.setObjectName("shell.bottom.problems")
+        self._problems_list_widget.setHeaderLabels(["", "Message", "Location", "Code"])
+        self._problems_list_widget.setColumnWidth(0, 24)
+        self._problems_list_widget.setColumnWidth(3, 60)
+        self._problems_list_widget.setRootIsDecorated(False)
+        self._problems_list_widget.setIndentation(0)
+        self._problems_list_widget.setAlternatingRowColors(True)
+        header = self._problems_list_widget.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, header.Fixed)
+        header.setSectionResizeMode(1, header.Stretch)
+        header.setSectionResizeMode(2, header.ResizeToContents)
+        header.setSectionResizeMode(3, header.ResizeToContents)
         self._problems_list_widget.itemActivated.connect(self._handle_problem_item_activation)
         self._problems_list_widget.itemDoubleClicked.connect(self._handle_problem_item_activation)
         self._problems_list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self._problems_list_widget.customContextMenuRequested.connect(self._show_problems_context_menu)
+        self._problems_tab_widget = tabs
         tabs.addTab(self._problems_list_widget, "Problems")
 
         self._run_log_output_widget = QPlainTextEdit(tabs)
@@ -3337,7 +3451,8 @@ class MainWindow(QMainWindow):
         editor_widget.setObjectName("shell.editorTabs.textEditor")
         editor_widget.set_editor_preferences(
             tab_width=self._editor_tab_width,
-            font_point_size=self._editor_font_size,
+            font_point_size=self._effective_font_size(),
+            font_family=self._editor_font_family,
             indent_style=self._editor_indent_style,
             indent_size=self._editor_indent_size,
         )
@@ -3593,11 +3708,16 @@ class MainWindow(QMainWindow):
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
         self._update_breadcrumb_for_path(None)
 
+    def _effective_font_size(self) -> int:
+        return max(8, min(72, self._editor_font_size + self._zoom_delta))
+
     def _apply_editor_preferences_to_open_editors(self) -> None:
+        effective_size = self._effective_font_size()
         for file_path, editor_widget in self._editor_widgets_by_path.items():
             editor_widget.set_editor_preferences(
                 tab_width=self._editor_tab_width,
-                font_point_size=self._editor_font_size,
+                font_point_size=effective_size,
+                font_family=self._editor_font_family,
                 indent_style=self._editor_indent_style,
                 indent_size=self._editor_indent_size,
             )
@@ -3619,7 +3739,8 @@ class MainWindow(QMainWindow):
         if editorconfig_indent is not None:
             editor_widget.set_editor_preferences(
                 tab_width=max(1, editorconfig_indent.tab_width),
-                font_point_size=self._editor_font_size,
+                font_point_size=self._effective_font_size(),
+                font_family=self._editor_font_family,
                 indent_style=editorconfig_indent.indent_style,
                 indent_size=max(1, editorconfig_indent.indent_size),
             )
@@ -3634,7 +3755,8 @@ class MainWindow(QMainWindow):
         style, size = detected
         editor_widget.set_editor_preferences(
             tab_width=self._editor_tab_width,
-            font_point_size=self._editor_font_size,
+            font_point_size=self._effective_font_size(),
+            font_family=self._editor_font_family,
             indent_style=style,
             indent_size=size,
         )

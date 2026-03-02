@@ -34,6 +34,8 @@ class CodeDiagnostic:
     file_path: str
     line_number: int
     message: str
+    col_start: int | None = None
+    col_end: int | None = None
 
 
 def find_unresolved_imports(project_root: str) -> list[ImportDiagnostic]:
@@ -47,19 +49,31 @@ def find_unresolved_imports(project_root: str) -> list[ImportDiagnostic]:
     return diagnostics
 
 
-def analyze_python_file(file_path: str, *, project_root: str | None = None) -> list[CodeDiagnostic]:
-    """Run focused diagnostics for one Python file."""
+def analyze_python_file(
+    file_path: str,
+    *,
+    project_root: str | None = None,
+    source: str | None = None,
+) -> list[CodeDiagnostic]:
+    """Run focused diagnostics for one Python file.
+
+    When *source* is provided, it is used instead of reading from disk.
+    This enables linting unsaved editor buffer content.
+    """
     path = Path(file_path).expanduser().resolve()
-    try:
-        source = path.read_text(encoding="utf-8")
-    except OSError:
-        return []
+    if source is None:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError:
+            return []
 
     syntax_tree: ast.AST | None = None
     diagnostics: list[CodeDiagnostic] = []
     try:
         syntax_tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
+        col_start = (int(exc.offset) - 1) if exc.offset is not None else None
+        col_end = (int(exc.end_offset) - 1) if getattr(exc, "end_offset", None) is not None else None
         diagnostics.append(
             CodeDiagnostic(
                 code="PY100",
@@ -67,6 +81,8 @@ def analyze_python_file(file_path: str, *, project_root: str | None = None) -> l
                 file_path=str(path),
                 line_number=max(1, int(exc.lineno or 1)),
                 message=f"Syntax error: {exc.msg}",
+                col_start=col_start,
+                col_end=col_end,
             )
         )
         return diagnostics
@@ -103,6 +119,16 @@ def _diagnostics_for_file(project_root: Path, file_path: Path) -> list[ImportDia
     return diagnostics
 
 
+def _col_offset(node: ast.AST) -> int | None:
+    value = getattr(node, "col_offset", None)
+    return int(value) if value is not None else None
+
+
+def _end_col_offset(node: ast.AST) -> int | None:
+    value = getattr(node, "end_col_offset", None)
+    return int(value) if value is not None else None
+
+
 def _is_project_import_resolvable(project_root: Path, module_name: str) -> bool:
     module_path = Path(*module_name.split("."))
     if (project_root / module_path).with_suffix(".py").exists():
@@ -126,6 +152,8 @@ def _unresolved_import_diagnostics(project_root: Path, file_path: Path, syntax_t
                         file_path=str(file_path),
                         line_number=int(node.lineno),
                         message=f"Unresolved import: {alias.name}",
+                        col_start=_col_offset(node),
+                        col_end=_end_col_offset(node),
                     )
                 )
         elif isinstance(node, ast.ImportFrom):
@@ -140,6 +168,8 @@ def _unresolved_import_diagnostics(project_root: Path, file_path: Path, syntax_t
                     file_path=str(file_path),
                     line_number=int(node.lineno),
                     message=f"Unresolved import: {node.module}",
+                    col_start=_col_offset(node),
+                    col_end=_end_col_offset(node),
                 )
             )
     return diagnostics
@@ -163,27 +193,37 @@ def _duplicate_definition_diagnostics(syntax_tree: ast.AST, file_path: Path) -> 
                 file_path=str(file_path),
                 line_number=int(node.lineno),
                 message=f"Duplicate definition '{node.name}' (first defined at line {previous_line}).",
+                col_start=_col_offset(node),
+                col_end=_end_col_offset(node),
             )
         )
     return diagnostics
 
 
 def _unused_import_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list[CodeDiagnostic]:
-    imported_names: dict[str, int] = {}
+    imported_names: dict[str, tuple[int, int | None, int | None]] = {}
     used_names: set[str] = set()
     for node in ast.walk(syntax_tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                imported_names[alias.asname or alias.name.split(".")[0]] = int(node.lineno)
+                imported_names[alias.asname or alias.name.split(".")[0]] = (
+                    int(node.lineno),
+                    _col_offset(node),
+                    _end_col_offset(node),
+                )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                imported_names[alias.asname or alias.name] = int(node.lineno)
+                imported_names[alias.asname or alias.name] = (
+                    int(node.lineno),
+                    _col_offset(node),
+                    _end_col_offset(node),
+                )
         elif isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Load):
                 used_names.add(node.id)
 
     diagnostics: list[CodeDiagnostic] = []
-    for imported_name, line_number in sorted(imported_names.items(), key=lambda item: item[1]):
+    for imported_name, (line_number, cs, ce) in sorted(imported_names.items(), key=lambda item: item[1][0]):
         if imported_name in used_names:
             continue
         diagnostics.append(
@@ -193,6 +233,8 @@ def _unused_import_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list[Co
                 file_path=str(file_path),
                 line_number=line_number,
                 message=f"Imported name '{imported_name}' is not used.",
+                col_start=cs,
+                col_end=ce,
             )
         )
     return diagnostics
@@ -222,6 +264,8 @@ def _duplicate_import_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list
                 file_path=str(file_path),
                 line_number=int(node.lineno),
                 message=f"Duplicate import statement (first seen at line {previous_line}).",
+                col_start=_col_offset(node),
+                col_end=_end_col_offset(node),
             )
         )
     return diagnostics
@@ -244,6 +288,8 @@ def _unreachable_statement_diagnostics(syntax_tree: ast.AST, file_path: Path) ->
                     file_path=str(file_path),
                     line_number=int(next_statement.lineno),
                     message="Statement is unreachable because previous statement exits function.",
+                    col_start=_col_offset(next_statement),
+                    col_end=_end_col_offset(next_statement),
                 )
             )
     return diagnostics

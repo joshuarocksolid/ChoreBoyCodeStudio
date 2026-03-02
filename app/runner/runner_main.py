@@ -15,6 +15,36 @@ from app.runner.output_bridge import redirect_output_to_log
 from app.runner.traceback_formatter import format_current_exception
 
 
+class _QuietConsole(code.InteractiveConsole):
+    """InteractiveConsole that suppresses prompt output to stdout.
+
+    interact() writes >>> / ... to sys.stdout before each readline.
+    Since sys.stdout is piped to the editor process, pipe buffering
+    concatenates the prompt with the next result chunk, making per-line
+    filtering on the editor side unreliable.
+    """
+
+    def raw_input(self, prompt: str = "") -> str:
+        sys.stdout.flush()
+        line = sys.stdin.readline()
+        if not line:
+            raise EOFError
+        return line.rstrip("\n")
+
+
+def _make_clear_helper() -> object:
+    """Return a callable that tells the user how to clear the console."""
+
+    class _ClearHint:
+        def __repr__(self) -> str:
+            return "Use Run \u2192 Clear Console to clear the Python Console display."
+
+        def __call__(self) -> None:
+            print("Use Run \u2192 Clear Console to clear the Python Console display.")
+
+    return _ClearHint()
+
+
 def execute_manifest(manifest: RunManifest) -> int:
     """Execute a run manifest and return standardized exit codes."""
     try:
@@ -60,17 +90,16 @@ def _run_entry_script(entry_script_path: str) -> None:
 
 
 def _run_interactive_repl() -> None:
-    console = code.InteractiveConsole(locals={"__name__": "__console__", "__package__": None})
+    console = _QuietConsole(locals={
+        "__name__": "__console__",
+        "__package__": None,
+        "clear": _make_clear_helper(),
+    })
     banner = (
-        "ChoreBoy Python Console\n"
-        f"Python {sys.version} on {sys.platform}\n"
-        'Type "help", "copyright", "credits" or "license" for more information.\n'
-        "Type exit() or Ctrl-D to quit."
+        "ChoreBoy Python Console (runner process). "
+        "Type exit() or Ctrl-D to close."
     )
-    console.interact(
-        banner=banner,
-        exitmsg="Python console session ended.",
-    )
+    console.interact(banner=banner, exitmsg="")
 
 
 def run_from_manifest_path(manifest_path: str) -> int:

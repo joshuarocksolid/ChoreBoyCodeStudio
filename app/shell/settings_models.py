@@ -14,6 +14,7 @@ class EditorSettingsSnapshot:
 
     tab_width: int = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
     font_size: int = constants.UI_EDITOR_FONT_SIZE_DEFAULT
+    font_family: str = constants.UI_EDITOR_FONT_FAMILY_DEFAULT
     indent_style: str = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
     indent_size: int = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
     detect_indentation_from_file: bool = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
@@ -61,6 +62,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         default=constants.UI_EDITOR_FONT_SIZE_DEFAULT,
         minimum=8,
     )
+    font_family_raw = editor_settings.get(
+        constants.UI_EDITOR_FONT_FAMILY_KEY, constants.UI_EDITOR_FONT_FAMILY_DEFAULT
+    )
+    font_family = str(font_family_raw).strip() if isinstance(font_family_raw, str) and font_family_raw.strip() else constants.UI_EDITOR_FONT_FAMILY_DEFAULT
     indent_style_raw = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
     indent_style = "tabs" if indent_style_raw == "tabs" else "spaces"
     indent_size = _coerce_int(
@@ -88,6 +93,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     return EditorSettingsSnapshot(
         tab_width=tab_width,
         font_size=font_size,
+        font_family=font_family,
         indent_style=indent_style,
         indent_size=indent_size,
         detect_indentation_from_file=detect_indentation_from_file,
@@ -152,6 +158,7 @@ def merge_editor_settings_snapshot(
     merged[constants.UI_EDITOR_SETTINGS_KEY] = {
         constants.UI_EDITOR_TAB_WIDTH_KEY: max(2, int(snapshot.tab_width)),
         constants.UI_EDITOR_FONT_SIZE_KEY: max(8, int(snapshot.font_size)),
+        constants.UI_EDITOR_FONT_FAMILY_KEY: str(snapshot.font_family).strip() or constants.UI_EDITOR_FONT_FAMILY_DEFAULT,
         constants.UI_EDITOR_INDENT_STYLE_KEY: "tabs" if snapshot.indent_style == "tabs" else "spaces",
         constants.UI_EDITOR_INDENT_SIZE_KEY: max(1, int(snapshot.indent_size)),
         constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: bool(snapshot.detect_indentation_from_file),

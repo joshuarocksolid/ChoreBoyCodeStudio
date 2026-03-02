@@ -245,11 +245,9 @@ class TestOutputAppending:
         assert "NameError" in text
         assert text.endswith(_PROMPT)
 
-    def test_bare_runner_prompts_filtered(self, active_widget: PythonConsoleWidget) -> None:
+    def test_freecad_teardown_noise_filtered(self, active_widget: PythonConsoleWidget) -> None:
         before = _get_plain_text(active_widget)
-        active_widget.append_output(">>> ", "stdout")
-        active_widget.append_output("...", "stdout")
-        active_widget.append_output(">>> ")
+        active_widget.append_output("Loading Post Frame Workbench Module...", "stdout")
         after = _get_plain_text(active_widget)
         assert before == after
 

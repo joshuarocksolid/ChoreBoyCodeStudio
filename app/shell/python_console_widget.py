@@ -30,9 +30,9 @@ _CONT_PROMPT = "... "
 _PROMPT_LEN = len(_PROMPT)
 _MAX_HISTORY = 200
 
-# Runner prompts we suppress (the REPL subprocess echoes these to stdout and
-# we render our own prompt instead).
-_RUNNER_PROMPTS = {">>>", "...", ">>> ", "... "}
+# FreeCAD prints module-load messages during process teardown that are not
+# meaningful to the user.  Filter them out of the console output.
+_FREECAD_TEARDOWN_PREFIXES = ("Loading Post Frame Workbench Module",)
 
 
 class PythonConsoleWidget(QTextEdit):
@@ -134,13 +134,12 @@ class PythonConsoleWidget(QTextEdit):
     def append_output(self, text: str, stream: str = "stdout") -> None:
         """Append *text* from the runner before the current prompt line.
 
-        - Bare runner prompts (``>>> `` / ``... ``) are silently dropped.
         - ``stderr`` output is rendered in the error color.
         - Lines starting with ``[system]`` or ``[debug]`` get distinct styles.
+        - Known FreeCAD teardown noise is silently dropped.
         - Auto-scroll only fires when the view was already pinned to the bottom.
         """
-        stripped = text.rstrip("\n").rstrip()
-        if stripped in _RUNNER_PROMPTS:
+        if any(text.lstrip().startswith(p) for p in _FREECAD_TEARDOWN_PREFIXES):
             return
 
         at_bottom = self._is_at_bottom()

@@ -62,10 +62,27 @@ QTextEdit#shell\\.bottom\\.pythonConsole {{
     border: 1px solid {tokens.border};
     padding: 2px;
 }}
-QListWidget#shell\\.bottom\\.problems {{
+QTreeWidget#shell\\.bottom\\.problems {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
+}}
+QTreeWidget#shell\\.bottom\\.problems::item {{
+    padding: 2px 4px;
+}}
+QTreeWidget#shell\\.bottom\\.problems::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.bottom\\.problems::item:selected {{
+    background: {tokens.tree_selected_bg};
+}}
+QTreeWidget#shell\\.bottom\\.problems QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    padding: 2px 6px;
+    font-size: 11px;
 }}
 /* -- Debug panel -------------------------------------------------------- */
 QWidget#shell\\.debug\\.panel {{
@@ -236,7 +253,8 @@ QStatusBar#shell\\.statusBar {{
 }}
 QLabel#shell\\.startupStatusLabel,
 QLabel#shell\\.projectStatusLabel,
-QLabel#shell\\.editorStatusLabel {{
+QLabel#shell\\.editorStatusLabel,
+QLabel#shell\\.diagnosticsStatusLabel {{
     color: {tokens.text_muted};
     background: transparent;
 }}
@@ -363,15 +381,29 @@ QLabel#shell\\.welcome\\.emptyLabel {{
 /* -- Find/Replace bar ---------------------------------------------------- */
 QWidget#shell\\.findBar {{
     background: {tokens.panel_bg};
-    border-bottom: 1px solid {tokens.border};
+    border-bottom: 2px solid {tokens.border};
+}}
+QToolButton#shell\\.findBar\\.chevronBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    font-size: 9px;
+}}
+QToolButton#shell\\.findBar\\.chevronBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.findBar\\.chevronBtn:checked {{
+    color: {tokens.text_primary};
 }}
 QLineEdit#shell\\.findBar\\.findInput,
 QLineEdit#shell\\.findBar\\.replaceInput {{
-    background: {tokens.editor_bg};
+    background: {tokens.input_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    border-radius: 3px;
-    padding: 3px 6px;
+    border-radius: 4px;
+    padding: 4px 8px;
     font-size: 12px;
 }}
 QLineEdit#shell\\.findBar\\.findInput:focus,
@@ -380,49 +412,90 @@ QLineEdit#shell\\.findBar\\.replaceInput:focus {{
 }}
 QLabel#shell\\.findBar\\.matchCount {{
     color: {tokens.text_muted};
+    background: {tokens.badge_bg};
+    border-radius: 8px;
+    padding: 2px 8px;
     font-size: 11px;
+    font-weight: 600;
 }}
-QToolButton#shell\\.findBar\\.prevBtn,
-QToolButton#shell\\.findBar\\.nextBtn,
 QToolButton#shell\\.findBar\\.caseBtn,
 QToolButton#shell\\.findBar\\.wordBtn,
-QToolButton#shell\\.findBar\\.regexBtn,
-QToolButton#shell\\.findBar\\.closeBtn {{
+QToolButton#shell\\.findBar\\.regexBtn {{
     background: transparent;
-    color: {tokens.text_primary};
+    color: {tokens.text_muted};
     border: 1px solid transparent;
-    border-radius: 3px;
-    padding: 2px 5px;
-    font-size: 11px;
-    min-width: 22px;
-    min-height: 22px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
 }}
-QToolButton#shell\\.findBar\\.prevBtn:hover,
-QToolButton#shell\\.findBar\\.nextBtn:hover,
 QToolButton#shell\\.findBar\\.caseBtn:hover,
 QToolButton#shell\\.findBar\\.wordBtn:hover,
-QToolButton#shell\\.findBar\\.regexBtn:hover,
-QToolButton#shell\\.findBar\\.closeBtn:hover {{
+QToolButton#shell\\.findBar\\.regexBtn:hover {{
     background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.findBar\\.caseBtn:pressed,
+QToolButton#shell\\.findBar\\.wordBtn:pressed,
+QToolButton#shell\\.findBar\\.regexBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 QToolButton#shell\\.findBar\\.caseBtn:checked,
 QToolButton#shell\\.findBar\\.wordBtn:checked,
 QToolButton#shell\\.findBar\\.regexBtn:checked {{
     background: {tokens.tree_selected_bg};
-    border-color: {tokens.accent};
+    color: {tokens.accent};
+    border-bottom: 2px solid {tokens.accent};
+}}
+QToolButton#shell\\.findBar\\.prevBtn,
+QToolButton#shell\\.findBar\\.nextBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 12px;
+}}
+QToolButton#shell\\.findBar\\.prevBtn:hover,
+QToolButton#shell\\.findBar\\.nextBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.findBar\\.prevBtn:pressed,
+QToolButton#shell\\.findBar\\.nextBtn:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QToolButton#shell\\.findBar\\.closeBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+}}
+QToolButton#shell\\.findBar\\.closeBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.findBar\\.closeBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 QPushButton#shell\\.findBar\\.replaceBtn,
 QPushButton#shell\\.findBar\\.replaceAllBtn {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    border-radius: 3px;
-    padding: 3px 10px;
+    border-radius: 4px;
+    padding: 4px 12px;
     font-size: 11px;
+    font-weight: 600;
 }}
 QPushButton#shell\\.findBar\\.replaceBtn:hover,
 QPushButton#shell\\.findBar\\.replaceAllBtn:hover {{
     background: {tokens.tree_hover_bg};
+    color: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.findBar\\.replaceBtn:pressed,
+QPushButton#shell\\.findBar\\.replaceAllBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 /* -- Quick Open dialog --------------------------------------------------- */
 QDialog#shell\\.quickOpen {{
@@ -485,16 +558,17 @@ QLabel#shell\\.searchSidebar\\.header {{
     color: {tokens.text_muted};
     font-size: 11px;
     font-weight: bold;
+    letter-spacing: 0.5px;
 }}
 QLineEdit#shell\\.searchSidebar\\.searchInput,
 QLineEdit#shell\\.searchSidebar\\.replaceInput,
 QLineEdit#shell\\.searchSidebar\\.includeInput,
 QLineEdit#shell\\.searchSidebar\\.excludeInput {{
-    background: {tokens.editor_bg};
+    background: {tokens.input_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    border-radius: 3px;
-    padding: 4px 6px;
+    border-radius: 4px;
+    padding: 4px 8px;
     font-size: 12px;
 }}
 QLineEdit#shell\\.searchSidebar\\.searchInput:focus,
@@ -507,48 +581,104 @@ QToolButton#shell\\.searchSidebar\\.caseBtn,
 QToolButton#shell\\.searchSidebar\\.wordBtn,
 QToolButton#shell\\.searchSidebar\\.regexBtn {{
     background: transparent;
-    color: {tokens.text_primary};
+    color: {tokens.text_muted};
     border: 1px solid transparent;
-    border-radius: 3px;
-    font-size: 11px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
 }}
 QToolButton#shell\\.searchSidebar\\.caseBtn:hover,
 QToolButton#shell\\.searchSidebar\\.wordBtn:hover,
 QToolButton#shell\\.searchSidebar\\.regexBtn:hover {{
     background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.searchSidebar\\.caseBtn:pressed,
+QToolButton#shell\\.searchSidebar\\.wordBtn:pressed,
+QToolButton#shell\\.searchSidebar\\.regexBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 QToolButton#shell\\.searchSidebar\\.caseBtn:checked,
 QToolButton#shell\\.searchSidebar\\.wordBtn:checked,
 QToolButton#shell\\.searchSidebar\\.regexBtn:checked {{
     background: {tokens.tree_selected_bg};
-    border-color: {tokens.accent};
+    color: {tokens.accent};
+    border-bottom: 2px solid {tokens.accent};
 }}
 QToolButton#shell\\.searchSidebar\\.replaceToggle {{
     background: transparent;
     color: {tokens.text_muted};
     border: none;
-    font-size: 11px;
-    text-align: left;
-    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 9px;
 }}
 QToolButton#shell\\.searchSidebar\\.replaceToggle:hover {{
+    background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
+}}
+QToolButton#shell\\.searchSidebar\\.replaceToggle:checked {{
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.searchSidebar\\.filterToggle {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: bold;
+}}
+QToolButton#shell\\.searchSidebar\\.filterToggle:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.searchSidebar\\.filterToggle:checked {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.accent};
+}}
+QToolButton#shell\\.searchSidebar\\.filterToggle[hasActiveFilters="true"] {{
+    color: {tokens.accent};
+}}
+QWidget#shell\\.searchSidebar\\.filtersContainer {{
+    border-top: 1px solid {tokens.border};
 }}
 QPushButton#shell\\.searchSidebar\\.replaceAllBtn {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    border-radius: 3px;
-    padding: 3px 10px;
+    border-radius: 4px;
+    padding: 4px 12px;
     font-size: 11px;
+    font-weight: 600;
 }}
 QPushButton#shell\\.searchSidebar\\.replaceAllBtn:hover {{
     background: {tokens.tree_hover_bg};
+    color: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.searchSidebar\\.replaceAllBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 QLabel#shell\\.searchSidebar\\.summary {{
     color: {tokens.text_muted};
     font-size: 11px;
     padding: 2px 0;
+    font-weight: 600;
+}}
+QToolButton#shell\\.searchSidebar\\.clearBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    font-size: 10px;
+}}
+QToolButton#shell\\.searchSidebar\\.clearBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QLabel#shell\\.searchSidebar\\.noResults {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+    padding: 24px 16px;
 }}
 QTreeWidget#shell\\.searchSidebar\\.results {{
     background: {tokens.editor_bg};
@@ -557,6 +687,7 @@ QTreeWidget#shell\\.searchSidebar\\.results {{
     border-top: 1px solid {tokens.border};
     outline: none;
     font-size: 12px;
+    alternate-background-color: {tokens.row_alt_bg};
 }}
 QTreeWidget#shell\\.searchSidebar\\.results::item {{
     padding: 2px 4px;
@@ -567,5 +698,9 @@ QTreeWidget#shell\\.searchSidebar\\.results::item:hover {{
 QTreeWidget#shell\\.searchSidebar\\.results::item:selected {{
     background: {tokens.tree_selected_bg};
     color: {tokens.text_primary};
+}}
+QTreeWidget#shell\\.searchSidebar\\.results::branch {{
+    border-image: none;
+    image: none;
 }}
 """
