@@ -2365,6 +2365,7 @@ class MainWindow(QMainWindow):
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_path)
+        self._check_for_external_file_change(tab_path)
 
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
@@ -2429,11 +2430,69 @@ class MainWindow(QMainWindow):
             editor_widget.blockSignals(False)
             self._apply_detected_indentation_for_widget(file_path, editor_widget, refreshed)
             updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
-            updated_tab.mark_saved()
+            updated_tab.mark_saved(last_known_mtime=self._editor_manager.current_disk_mtime(file_path))
             tab_index = self._tab_index_for_path(file_path)
             if self._editor_tabs_widget is not None and tab_index >= 0:
                 self._editor_tabs_widget.setTabText(tab_index, updated_tab.display_name)
         self._refresh_save_action_states()
+
+    def _check_for_external_file_change(self, file_path: str) -> None:
+        tab_state = self._editor_manager.get_tab(file_path)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if tab_state is None or editor_widget is None:
+            return
+
+        current_mtime = self._editor_manager.current_disk_mtime(file_path)
+        if current_mtime is None or current_mtime == tab_state.last_known_mtime:
+            return
+
+        try:
+            disk_content = Path(file_path).read_text(encoding="utf-8")
+        except OSError:
+            self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+            return
+
+        if disk_content == tab_state.current_content:
+            tab_state.mark_saved(last_known_mtime=current_mtime)
+            self._refresh_save_action_states()
+            return
+
+        if tab_state.is_dirty:
+            message = (
+                "This file changed on disk while you have unsaved changes.\n\n"
+                "Reloading will discard editor changes."
+            )
+        else:
+            message = "This file changed on disk. Reload the file from disk?"
+
+        choice = QMessageBox.question(
+            self,
+            "External file change detected",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No if tab_state.is_dirty else QMessageBox.Yes,
+        )
+
+        if choice == QMessageBox.Yes:
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(disk_content)
+            editor_widget.blockSignals(False)
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, disk_content)
+            refreshed_tab = self._editor_manager.update_tab_content(file_path, disk_content)
+            refreshed_tab.mark_saved(last_known_mtime=current_mtime)
+            tab_index = self._tab_index_for_path(file_path)
+            if self._editor_tabs_widget is not None and tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, refreshed_tab.display_name)
+            self._pending_autosave_payloads.pop(file_path, None)
+            self._autosave_store.delete_draft(file_path)
+            self._refresh_save_action_states()
+            self._update_editor_status_for_path(file_path)
+            return
+
+        self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+        if not tab_state.is_dirty:
+            tab_state.original_content = disk_content
+            self._handle_editor_text_changed(file_path, editor_widget)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)
