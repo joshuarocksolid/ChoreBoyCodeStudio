@@ -104,6 +104,7 @@ from app.project.run_configs import (
     parse_env_overrides_text,
     parse_run_config,
     parse_run_configs,
+    remove_run_config,
     upsert_run_config,
 )
 from app.project.project_tree_widget import ProjectTreeWidget
@@ -1336,6 +1337,35 @@ class MainWindow(QMainWindow):
         if not accepted_selection or not selected_name:
             return
         selected_config = next((config for config in existing_configs if config.name == selected_name), None)
+        if selected_config is not None:
+            action_choice, accepted_action = QInputDialog.getItem(
+                self,
+                "Manage Run Configurations",
+                f"Action for '{selected_config.name}':",
+                ["Edit", "Delete"],
+                0,
+                False,
+            )
+            if not accepted_action or not action_choice:
+                return
+            if action_choice == "Delete":
+                confirm = QMessageBox.question(
+                    self,
+                    "Manage Run Configurations",
+                    f"Delete run configuration '{selected_config.name}'?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if confirm != QMessageBox.Yes:
+                    return
+                remaining_configs = remove_run_config(existing_configs, selected_config.name)
+                self._persist_run_configurations(remaining_configs)
+                QMessageBox.information(
+                    self,
+                    "Manage Run Configurations",
+                    f"Deleted configuration '{selected_config.name}'.",
+                )
+                return
         if selected_name == create_label or selected_config is None:
             selected_config = RunConfiguration(
                 name="Default",

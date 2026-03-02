@@ -11,6 +11,7 @@ from app.project.run_configs import (
     parse_env_overrides_text,
     parse_run_config,
     parse_run_configs,
+    remove_run_config,
     upsert_run_config,
 )
 
@@ -88,3 +89,14 @@ def test_parse_env_overrides_text_round_trip() -> None:
 def test_parse_env_overrides_text_rejects_missing_equals() -> None:
     with pytest.raises(ValueError, match="KEY=VALUE"):
         parse_env_overrides_text("A=1, INVALID")
+
+
+def test_remove_run_config_removes_matching_name_only() -> None:
+    existing = [
+        RunConfiguration(name="Default", entry_file="run.py", mode=constants.RUN_MODE_PYTHON_SCRIPT, argv=[]),
+        RunConfiguration(name="Debug", entry_file="run.py", mode=constants.RUN_MODE_PYTHON_DEBUG, argv=[]),
+    ]
+
+    remaining = remove_run_config(existing, "Default")
+
+    assert [config.name for config in remaining] == ["Debug"]

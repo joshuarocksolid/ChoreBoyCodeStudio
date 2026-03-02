@@ -113,6 +113,11 @@ def upsert_run_config(existing: list[RunConfiguration], updated: RunConfiguratio
     return output
 
 
+def remove_run_config(existing: list[RunConfiguration], config_name: str) -> list[RunConfiguration]:
+    """Remove run config by name while preserving order of remaining items."""
+    return [config for config in existing if config.name != config_name]
+
+
 def parse_env_overrides_text(raw_text: str) -> dict[str, str]:
     """Parse comma-separated KEY=VALUE entries into env overrides dict."""
     parsed: dict[str, str] = {}
