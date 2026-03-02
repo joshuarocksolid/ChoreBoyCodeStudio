@@ -70,6 +70,7 @@ from app.intelligence.completion_service import CompletionRequest, CompletionSer
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.formatting_service import format_text_basic
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
@@ -2672,6 +2673,16 @@ class MainWindow(QMainWindow):
         editor_widget: CodeEditorWidget,
         source_text: str,
     ) -> None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        editorconfig_indent = resolve_editorconfig_indentation(file_path, project_root=project_root)
+        if editorconfig_indent is not None:
+            editor_widget.set_editor_preferences(
+                tab_width=max(1, editorconfig_indent.tab_width),
+                font_point_size=self._editor_font_size,
+                indent_style=editorconfig_indent.indent_style,
+                indent_size=max(1, editorconfig_indent.indent_size),
+            )
+            return
         if not self._editor_detect_indentation_from_file:
             return
         if not file_path.lower().endswith((".py", ".json", ".md", ".txt")):
