@@ -2944,6 +2944,7 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
+        self._render_lint_diagnostics_for_file(tab_path, manual=False)
 
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
