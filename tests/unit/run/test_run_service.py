@@ -109,3 +109,29 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     assert manifest.env["BASE_ENV"] == "1"
     assert manifest.env["EXTRA_ENV"] == "2"
     assert manifest.safe_mode is False
+
+
+def test_start_run_uses_project_default_argv_when_not_overridden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When argv is omitted, metadata default_argv should populate run manifest."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+            default_mode="python_script",
+            default_argv=["--from-default"],
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    monkeypatch.setattr(service.supervisor, "start", lambda *args, **kwargs: None)
+
+    session = service.start_run(loaded_project)
+    manifest = load_run_manifest(session.manifest_path)
+
+    assert manifest.argv == ["--from-default"]

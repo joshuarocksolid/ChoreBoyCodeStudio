@@ -19,6 +19,7 @@ def build_default_project_manifest_payload(
     project_name: str,
     default_entry: str = "run.py",
     default_mode: str = "python_script",
+    default_argv: list[str] | None = None,
     working_directory: str = ".",
     template: str = "utility_script",
     safe_mode: bool = True,
@@ -36,6 +37,10 @@ def build_default_project_manifest_payload(
         raise ValueError("default_mode must be a non-empty string.")
     if default_mode not in ALLOWED_DEFAULT_MODES:
         raise ValueError(f"default_mode must be one of: {sorted(ALLOWED_DEFAULT_MODES)}.")
+    if default_argv is not None and (
+        not isinstance(default_argv, list) or any(not isinstance(value, str) for value in default_argv)
+    ):
+        raise ValueError("default_argv must be a list of strings.")
     if not _is_non_empty_string(working_directory):
         raise ValueError("working_directory must be a non-empty string.")
     if not _is_non_empty_string(template):
@@ -72,6 +77,7 @@ def build_default_project_manifest_payload(
         name=project_name.strip(),
         default_entry=default_entry.strip(),
         default_mode=default_mode.strip(),
+        default_argv=[] if default_argv is None else list(default_argv),
         working_directory=working_directory.strip(),
         template=template.strip(),
         safe_mode=safe_mode,
@@ -136,6 +142,20 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         default="python_script",
         manifest_path=resolved_path,
     )
+    default_argv = payload.get("default_argv", [])
+    if default_argv is None:
+        default_argv = []
+    if not isinstance(default_argv, list):
+        _raise_validation_error("default_argv must be a list.", field="default_argv", manifest_path=resolved_path)
+    normalized_default_argv: list[str] = []
+    for index, raw_argv in enumerate(default_argv):
+        if not isinstance(raw_argv, str):
+            _raise_validation_error(
+                "default_argv entries must be strings.",
+                field=f"default_argv[{index}]",
+                manifest_path=resolved_path,
+            )
+        normalized_default_argv.append(raw_argv)
     if default_mode not in ALLOWED_DEFAULT_MODES:
         _raise_validation_error(
             f"Unsupported default_mode: {default_mode}. Allowed values: {sorted(ALLOWED_DEFAULT_MODES)}.",
@@ -222,6 +242,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         name=name,
         default_entry=default_entry,
         default_mode=default_mode,
+        default_argv=normalized_default_argv,
         working_directory=working_directory,
         template=template,
         safe_mode=safe_mode,

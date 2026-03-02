@@ -54,6 +54,7 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "name": "Defaulted Project",
         "default_entry": "run.py",
         "default_mode": "python_script",
+        "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
         "safe_mode": True,
@@ -73,6 +74,7 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "name": "Imported Project",
         "default_entry": "run.py",
         "default_mode": "python_script",
+        "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
         "safe_mode": True,
@@ -173,6 +175,21 @@ def test_load_project_manifest_rejects_unknown_default_mode() -> None:
 
     assert exc_info.value.field == "default_mode"
     assert "Unsupported default_mode" in str(exc_info.value)
+
+
+def test_load_project_manifest_rejects_invalid_default_argv_type() -> None:
+    """default_argv must be a list of strings."""
+    with pytest.raises(ProjectManifestValidationError) as exc_info:
+        parse_project_manifest(
+            {
+                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
+                "name": "Bad Argv",
+                "default_argv": "not-a-list",
+            }
+        )
+
+    assert exc_info.value.field == "default_argv"
+    assert "must be a list" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_malformed_json_with_manifest_path(tmp_path: Path) -> None:

@@ -81,7 +81,7 @@ class RunService:
         run_id = generate_run_id(now=self._now_factory())
         entry = entry_file or loaded_project.metadata.default_entry
         run_mode = mode or loaded_project.metadata.default_mode or constants.RUN_MODE_PYTHON_SCRIPT
-        arguments = [] if argv is None else list(argv)
+        arguments = list(loaded_project.metadata.default_argv) if argv is None else list(argv)
         normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
 
         resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()

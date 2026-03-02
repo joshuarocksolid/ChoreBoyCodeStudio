@@ -68,6 +68,7 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
 
     assert metadata.default_entry == "run.py"
     assert metadata.default_mode == "python_script"
+    assert metadata.default_argv == []
     assert metadata.working_directory == "."
     assert metadata.template == "utility_script"
     assert metadata.safe_mode is True
@@ -97,6 +98,7 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         "name": "Custom Project",
         "default_entry": "app/start.py",
         "default_mode": "qt_app",
+        "default_argv": [],
         "working_directory": "app",
         "template": "qt_app",
         "safe_mode": False,
@@ -151,6 +153,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
             "name": "Project Alpha",
             "default_entry": "run.py",
             "default_mode": "python_script",
+            "default_argv": [],
             "working_directory": ".",
             "template": "utility_script",
             "safe_mode": True,

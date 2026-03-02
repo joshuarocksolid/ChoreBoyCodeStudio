@@ -70,6 +70,7 @@ class ProjectMetadata:
     name: str
     default_entry: str = "run.py"
     default_mode: str = "python_script"
+    default_argv: list[str] = field(default_factory=list)
     working_directory: str = "."
     template: str = "utility_script"
     safe_mode: bool = True
@@ -85,6 +86,7 @@ class ProjectMetadata:
             "name": self.name,
             "default_entry": self.default_entry,
             "default_mode": self.default_mode,
+            "default_argv": list(self.default_argv),
             "working_directory": self.working_directory,
             "template": self.template,
             "safe_mode": self.safe_mode,

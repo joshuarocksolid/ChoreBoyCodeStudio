@@ -970,6 +970,8 @@ class MainWindow(QMainWindow):
 
         default_entry = metadata.default_entry
         default_mode = metadata.default_mode
+        default_working_directory = metadata.working_directory
+        default_argv = list(metadata.default_argv)
         if review_defaults:
             selected_entry, accepted_entry = QInputDialog.getText(
                 self,
@@ -996,11 +998,31 @@ class MainWindow(QMainWindow):
             )
             if accepted_mode and selected_mode:
                 default_mode = selected_mode
+            selected_working_directory, accepted_working_directory = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Working directory (relative to project root):",
+                QLineEdit.Normal,
+                default_working_directory,
+            )
+            if accepted_working_directory and selected_working_directory.strip():
+                default_working_directory = selected_working_directory.strip()
+            argv_text, accepted_argv = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Default arguments (space-separated):",
+                QLineEdit.Normal,
+                " ".join(default_argv),
+            )
+            if accepted_argv:
+                default_argv = [token for token in argv_text.split(" ") if token.strip()]
 
         self._persist_imported_project_setup_defaults(
             loaded_project=loaded_project,
             default_entry=default_entry,
             default_mode=default_mode,
+            default_working_directory=default_working_directory,
+            default_argv=default_argv,
         )
 
     def _persist_imported_project_setup_defaults(
@@ -1009,10 +1031,14 @@ class MainWindow(QMainWindow):
         loaded_project: LoadedProject,
         default_entry: str,
         default_mode: str,
+        default_working_directory: str,
+        default_argv: list[str],
     ) -> None:
         payload = loaded_project.metadata.to_dict()
         payload["default_entry"] = default_entry
         payload["default_mode"] = default_mode
+        payload["working_directory"] = default_working_directory
+        payload["default_argv"] = list(default_argv)
         import_metadata = dict(payload.get("import_metadata", {}))
         import_metadata["onboarding_completed"] = True
         import_metadata["onboarding_completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -1026,6 +1052,8 @@ class MainWindow(QMainWindow):
         if (
             default_entry != loaded_project.metadata.default_entry
             or default_mode != loaded_project.metadata.default_mode
+            or default_working_directory != loaded_project.metadata.working_directory
+            or default_argv != loaded_project.metadata.default_argv
         ):
             self._reload_current_project()
 
@@ -1198,7 +1226,7 @@ class MainWindow(QMainWindow):
                 name="Default",
                 entry_file=self._loaded_project.metadata.default_entry,
                 mode=self._loaded_project.metadata.default_mode,
-                argv=[],
+                argv=list(self._loaded_project.metadata.default_argv),
             )
 
         config_name, accepted_name = QInputDialog.getText(
