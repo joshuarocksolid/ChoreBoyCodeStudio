@@ -49,6 +49,7 @@ class MenuCallbacks:
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
+    on_run_pytest_project: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
@@ -310,6 +311,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Debug",
         "Ctrl+F5",
         callback=callback_registry.on_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pytestProject",
+        "Run Project Tests",
+        "Ctrl+Shift+T",
+        callback=callback_registry.on_run_pytest_project,
     )
     _register_menu_action(
         run_menu,

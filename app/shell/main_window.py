@@ -78,6 +78,7 @@ from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
+from app.run.test_runner_service import PytestRunResult, run_pytest_project
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -203,6 +204,7 @@ class MainWindow(QMainWindow):
                 on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
+                on_run_pytest_project=self._handle_run_pytest_project_action,
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
                 on_continue_debug=self._handle_continue_debug_action,
@@ -1010,6 +1012,47 @@ class MainWindow(QMainWindow):
             for line_number in sorted(line_numbers):
                 breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
         return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
+
+    def _handle_run_pytest_project_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run Project Tests", "Open a project first.")
+            return
+        project_root = self._loaded_project.project_root
+        self._append_console_line(f"Running pytest in {project_root}", stream="system")
+
+        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
+            return run_pytest_project(project_root)
+
+        def on_success(result: PytestRunResult) -> None:
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Pytest run failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Run Project Tests", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_project",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
+        if result.stdout.strip():
+            for line in result.stdout.splitlines():
+                self._append_console_line(line, stream="stdout")
+        if result.stderr.strip():
+            for line in result.stderr.splitlines():
+                self._append_console_line(line, stream="stderr")
+        if result.failures:
+            self._set_problems(result.failures)
+        else:
+            self._set_problems([])
+        status = "passed" if result.succeeded else "failed"
+        self._append_console_line(
+            f"Pytest run {status} (code={result.return_code}, elapsed_ms={result.elapsed_ms:.2f}).",
+            stream="system",
+        )
 
     def _handle_start_python_console_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_REPL, skip_save=True)
