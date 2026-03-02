@@ -20,6 +20,9 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.font_size == 10
     assert snapshot.indent_style == "spaces"
     assert snapshot.detect_indentation_from_file is True
+    assert snapshot.format_on_save is False
+    assert snapshot.trim_trailing_whitespace_on_save is True
+    assert snapshot.insert_final_newline_on_save is True
     assert snapshot.completion_enabled is True
     assert snapshot.cache_enabled is True
 
@@ -33,6 +36,9 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "indent_style": "tabs",
                 "indent_size": 1,
                 "detect_indentation_from_file": False,
+                "format_on_save": True,
+                "trim_trailing_whitespace_on_save": False,
+                "insert_final_newline_on_save": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -51,6 +57,9 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.indent_style == "tabs"
     assert snapshot.indent_size == 1
     assert snapshot.detect_indentation_from_file is False
+    assert snapshot.format_on_save is True
+    assert snapshot.trim_trailing_whitespace_on_save is False
+    assert snapshot.insert_final_newline_on_save is False
     assert snapshot.completion_enabled is False
     assert snapshot.completion_auto_trigger is False
     assert snapshot.completion_min_chars == 3
@@ -67,6 +76,9 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         indent_style="tabs",
         indent_size=1,
         detect_indentation_from_file=False,
+        format_on_save=True,
+        trim_trailing_whitespace_on_save=False,
+        insert_final_newline_on_save=False,
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
@@ -80,6 +92,9 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["tab_width"] == 6
     assert merged["editor"]["indent_style"] == "tabs"
     assert merged["editor"]["detect_indentation_from_file"] is False
+    assert merged["editor"]["format_on_save"] is True
+    assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
+    assert merged["editor"]["insert_final_newline_on_save"] is False
     assert merged["intelligence"]["enable_completion"] is False
     assert merged["intelligence"]["cache_enabled"] is False
     assert merged["intelligence"]["force_full_reindex_on_open"] is True

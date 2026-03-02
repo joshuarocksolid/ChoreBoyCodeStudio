@@ -89,6 +89,9 @@ def test_settings_payload_can_store_editor_preferences(tmp_path: Path) -> None:
             constants.UI_EDITOR_INDENT_STYLE_KEY: "tabs",
             constants.UI_EDITOR_INDENT_SIZE_KEY: 1,
             constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: False,
+            constants.UI_EDITOR_FORMAT_ON_SAVE_KEY: True,
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY: False,
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: False,
         },
     }
     save_json_object(path, payload)
@@ -98,6 +101,9 @@ def test_settings_payload_can_store_editor_preferences(tmp_path: Path) -> None:
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_STYLE_KEY] == "tabs"
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_SIZE_KEY] == 1
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY] is False
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_FORMAT_ON_SAVE_KEY] is True
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY] is False
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY] is False
 
 
 def test_settings_payload_can_store_intelligence_cache_preferences(tmp_path: Path) -> None:

@@ -163,6 +163,9 @@ class MainWindow(QMainWindow):
             self._editor_indent_style,
             self._editor_indent_size,
             self._editor_detect_indentation_from_file,
+            self._editor_format_on_save,
+            self._editor_trim_trailing_whitespace_on_save,
+            self._editor_insert_final_newline_on_save,
         ) = self._load_editor_preferences()
         (
             self._completion_enabled,
@@ -354,7 +357,7 @@ class MainWindow(QMainWindow):
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, int, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, int, bool, bool, bool, bool]:
         settings_payload = load_settings(state_root=self._state_root)
         editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
         if not isinstance(editor_settings, dict):
@@ -364,6 +367,9 @@ class MainWindow(QMainWindow):
                 constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
                 constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
                 constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+                constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
+                constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
+                constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
             )
 
         tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
@@ -373,6 +379,18 @@ class MainWindow(QMainWindow):
         detect_indentation_from_file = editor_settings.get(
             constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY,
             constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+        )
+        format_on_save = editor_settings.get(
+            constants.UI_EDITOR_FORMAT_ON_SAVE_KEY,
+            constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
+        )
+        trim_trailing_whitespace_on_save = editor_settings.get(
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY,
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
+        )
+        insert_final_newline_on_save = editor_settings.get(
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY,
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
         )
         if not isinstance(tab_width, int):
             tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
@@ -384,7 +402,22 @@ class MainWindow(QMainWindow):
             indent_size = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
         if not isinstance(detect_indentation_from_file, bool):
             detect_indentation_from_file = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
-        return (max(2, tab_width), max(8, font_size), str(indent_style), max(1, indent_size), detect_indentation_from_file)
+        if not isinstance(format_on_save, bool):
+            format_on_save = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
+        if not isinstance(trim_trailing_whitespace_on_save, bool):
+            trim_trailing_whitespace_on_save = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
+        if not isinstance(insert_final_newline_on_save, bool):
+            insert_final_newline_on_save = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
+        return (
+            max(2, tab_width),
+            max(8, font_size),
+            str(indent_style),
+            max(1, indent_size),
+            detect_indentation_from_file,
+            format_on_save,
+            trim_trailing_whitespace_on_save,
+            insert_final_newline_on_save,
+        )
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
         settings_payload = load_settings(state_root=self._state_root)
@@ -486,6 +519,9 @@ class MainWindow(QMainWindow):
             self._editor_indent_style,
             self._editor_indent_size,
             self._editor_detect_indentation_from_file,
+            self._editor_format_on_save,
+            self._editor_trim_trailing_whitespace_on_save,
+            self._editor_insert_final_newline_on_save,
         ) = self._load_editor_preferences()
         (
             self._completion_enabled,
@@ -1098,6 +1134,7 @@ class MainWindow(QMainWindow):
         return not any_failure
 
     def _save_tab(self, file_path: str) -> bool:
+        self._apply_format_on_save_if_enabled(file_path)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
         except (OSError, ValueError) as exc:
@@ -1121,6 +1158,33 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
+
+    def _apply_format_on_save_if_enabled(self, file_path: str) -> None:
+        if not self._editor_format_on_save:
+            return
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return
+        result = format_text_basic(
+            tab_state.current_content,
+            trim_trailing_whitespace=self._editor_trim_trailing_whitespace_on_save,
+            ensure_final_newline=self._editor_insert_final_newline_on_save,
+        )
+        if not result.changed:
+            return
+
+        self._editor_manager.update_tab_content(file_path, result.formatted_text)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if editor_widget is None:
+            return
+        cursor = editor_widget.textCursor()
+        cursor_position = cursor.position()
+        editor_widget.blockSignals(True)
+        editor_widget.setPlainText(result.formatted_text)
+        editor_widget.blockSignals(False)
+        restored_cursor = editor_widget.textCursor()
+        restored_cursor.setPosition(min(cursor_position, len(result.formatted_text)))
+        editor_widget.setTextCursor(restored_cursor)
 
     def _refresh_save_action_states(self) -> None:
         if self._menu_registry is None:

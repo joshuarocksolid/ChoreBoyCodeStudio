@@ -52,6 +52,18 @@ class SettingsDialog(QDialog):
         self._detect_indentation_input = QCheckBox(editor_group)
         self._detect_indentation_input.setChecked(snapshot.detect_indentation_from_file)
         editor_form.addRow("Detect indentation from file", self._detect_indentation_input)
+
+        self._format_on_save_input = QCheckBox(editor_group)
+        self._format_on_save_input.setChecked(snapshot.format_on_save)
+        editor_form.addRow("Format on save", self._format_on_save_input)
+
+        self._trim_trailing_whitespace_on_save_input = QCheckBox(editor_group)
+        self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
+        editor_form.addRow("Trim trailing whitespace on save", self._trim_trailing_whitespace_on_save_input)
+
+        self._insert_final_newline_on_save_input = QCheckBox(editor_group)
+        self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
+        editor_form.addRow("Insert final newline on save", self._insert_final_newline_on_save_input)
         layout.addWidget(editor_group)
 
         intelligence_group = QGroupBox("Intelligence")
@@ -99,6 +111,9 @@ class SettingsDialog(QDialog):
             indent_style=str(self._indent_style_input.currentText()),
             indent_size=int(self._indent_size_input.value()),
             detect_indentation_from_file=self._detect_indentation_input.isChecked(),
+            format_on_save=self._format_on_save_input.isChecked(),
+            trim_trailing_whitespace_on_save=self._trim_trailing_whitespace_on_save_input.isChecked(),
+            insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),

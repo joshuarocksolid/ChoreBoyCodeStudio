@@ -25,3 +25,16 @@ def test_format_text_basic_reports_no_change_for_already_normalized_content() ->
 
     assert result.changed is False
     assert result.formatted_text == source
+
+
+def test_format_text_basic_respects_disabled_trim_and_final_newline() -> None:
+    source = "value = 1   \nprint(value)\t"
+
+    result = format_text_basic(
+        source,
+        trim_trailing_whitespace=False,
+        ensure_final_newline=False,
+    )
+
+    assert result.changed is False
+    assert result.formatted_text == source
