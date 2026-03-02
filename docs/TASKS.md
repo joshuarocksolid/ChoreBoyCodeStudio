@@ -315,7 +315,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Objective: guarantee one durable log file per run.
 - Scope:
   - create run ID generation helper
-  - create log path helper under `<project>/logs`
+  - create log path helper under `<project>/.cbcs/logs`
   - ensure dirs exist
 - Primary files:
   - `app/run/run_service.py` (new)

@@ -90,6 +90,39 @@ def test_run_debug_session_first_pause_targets_user_breakpoint(
     assert first_frame.line_number == 2
 
 
+def test_run_debug_session_no_breakpoints_does_not_pause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """With no breakpoints the debugger should run to completion without entering interaction."""
+    script_path = tmp_path / "run.py"
+    script_path.write_text("x = 1\nx = x + 1\nprint(x)\n", encoding="utf-8")
+    manifest = RunManifest(
+        manifest_version=constants.RUN_MANIFEST_VERSION,
+        run_id="run_debug_no_bp",
+        project_root=str(tmp_path.resolve()),
+        entry_file="run.py",
+        working_directory=str(tmp_path.resolve()),
+        log_file=str((tmp_path / "logs" / "run_debug_no_bp.log").resolve()),
+        mode=constants.RUN_MODE_PYTHON_DEBUG,
+        argv=[],
+        env={},
+        safe_mode=True,
+        timestamp="2026-03-01T00:00:00",
+        breakpoints=[],
+    )
+
+    def _entry_callable(path: str) -> None:
+        runpy.run_path(path, run_name="__main__")
+
+    exit_code = run_debug_session(manifest, _entry_callable, str(script_path.resolve()))
+    assert exit_code == constants.RUN_EXIT_SUCCESS
+
+    captured = capsys.readouterr()
+    assert "__CB_DEBUG_PAUSED__" not in captured.out
+
+
 def test_redirect_output_to_log_mirrors_stdout_and_stderr(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

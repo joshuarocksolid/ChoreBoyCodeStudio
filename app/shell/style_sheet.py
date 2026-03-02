@@ -142,6 +142,58 @@ QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:hover {{
 QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:pressed {{
     background: {tokens.tree_selected_bg};
 }}
+/* -- Run Log panel ------------------------------------------------------ */
+QWidget#shell\\.bottom\\.runLog {{
+    background: {tokens.editor_bg};
+}}
+QWidget#shell\\.bottom\\.runLog\\.toolbar {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.bottom\\.runLog\\.metaLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    padding: 0 4px;
+}}
+QLabel#shell\\.bottom\\.runLog\\.statusDot {{
+    border-radius: 4px;
+}}
+QLabel#shell\\.bottom\\.runLog\\.statusDot[runLogState="idle"] {{
+    background: {tokens.text_muted};
+}}
+QLabel#shell\\.bottom\\.runLog\\.statusDot[runLogState="success"] {{
+    background: {tokens.debug_running_color};
+}}
+QLabel#shell\\.bottom\\.runLog\\.statusDot[runLogState="running"] {{
+    background: {tokens.accent};
+}}
+QLabel#shell\\.bottom\\.runLog\\.statusDot[runLogState="error"] {{
+    background: {tokens.diag_error_color};
+}}
+QTextEdit#shell\\.bottom\\.runLog\\.textArea {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    padding: 4px;
+}}
+QToolButton#shell\\.bottom\\.runLog\\.clearBtn,
+QToolButton#shell\\.bottom\\.runLog\\.openBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+}}
+QToolButton#shell\\.bottom\\.runLog\\.clearBtn:hover,
+QToolButton#shell\\.bottom\\.runLog\\.openBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.bottom\\.runLog\\.clearBtn:pressed,
+QToolButton#shell\\.bottom\\.runLog\\.openBtn:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
 /* -- Problems panel (VS Code-style) ------------------------------------ */
 QWidget#shell\\.problemsPanel {{
     background: {tokens.editor_bg};

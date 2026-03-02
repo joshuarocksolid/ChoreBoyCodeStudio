@@ -127,6 +127,7 @@ class RunSessionController:
         toggle_breakpoint_action = menu_registry.action("shell.action.run.toggleBreakpoint")
         python_console_action = menu_registry.action("shell.action.run.pythonConsole")
         remove_all_bp_action = menu_registry.action("shell.action.run.removeAllBreakpoints")
+        package_action = menu_registry.action("shell.action.build.package")
 
         state = map_run_action_state(
             has_project=has_project,
@@ -160,3 +161,5 @@ class RunSessionController:
             python_console_action.setEnabled(state.python_console_enabled)
         if remove_all_bp_action is not None:
             remove_all_bp_action.setEnabled(state.remove_all_breakpoints_enabled)
+        if package_action is not None:
+            package_action.setEnabled(state.package_enabled)

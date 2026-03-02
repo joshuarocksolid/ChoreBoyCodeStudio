@@ -21,6 +21,7 @@ class RunActionState:
     toggle_breakpoint_enabled: bool
     python_console_enabled: bool
     remove_all_breakpoints_enabled: bool
+    package_enabled: bool
 
 
 def map_run_action_state(
@@ -50,6 +51,7 @@ def map_run_action_state(
             toggle_breakpoint_enabled=not is_debug_mode,
             python_console_enabled=True,
             remove_all_breakpoints_enabled=has_breakpoints,
+            package_enabled=False,
         )
     if not has_project:
         return RunActionState(
@@ -65,6 +67,7 @@ def map_run_action_state(
             toggle_breakpoint_enabled=False,
             python_console_enabled=True,
             remove_all_breakpoints_enabled=has_breakpoints,
+            package_enabled=False,
         )
     return RunActionState(
         run_enabled=True,
@@ -79,4 +82,5 @@ def map_run_action_state(
         toggle_breakpoint_enabled=True,
         python_console_enabled=True,
         remove_all_breakpoints_enabled=has_breakpoints,
+        package_enabled=True,
     )

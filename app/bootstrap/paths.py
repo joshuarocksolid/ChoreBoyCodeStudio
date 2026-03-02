@@ -85,6 +85,11 @@ def project_runs_dir(project_root: PathInput) -> Path:
     return project_cbcs_dir(project_root) / constants.PROJECT_RUNS_DIRNAME
 
 
+def project_logs_dir(project_root: PathInput) -> Path:
+    """Return the per-project run logs directory path."""
+    return project_cbcs_dir(project_root) / constants.PROJECT_LOGS_DIRNAME
+
+
 def project_cache_dir(project_root: PathInput) -> Path:
     """Return the per-project cache directory path."""
     return project_cbcs_dir(project_root) / constants.PROJECT_CACHE_DIRNAME

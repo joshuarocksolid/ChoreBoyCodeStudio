@@ -43,13 +43,13 @@ def test_build_run_manifest_path_uses_project_contract(tmp_path: Path) -> None:
 
 
 def test_build_run_log_path_uses_project_logs_contract(tmp_path: Path) -> None:
-    """Run log should target project logs directory."""
+    """Run log should target .cbcs/logs inside the project."""
     project_root = tmp_path / "project_alpha"
     run_id = "20260301_050607_abcd12"
 
     log_path = build_run_log_path(project_root, run_id)
 
-    assert log_path == project_root / "logs" / f"run_{run_id}.log"
+    assert log_path == project_root / ".cbcs" / "logs" / f"run_{run_id}.log"
 
 
 def test_resolve_runtime_executable_prefers_explicit_config(tmp_path: Path) -> None:

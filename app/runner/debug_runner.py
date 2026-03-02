@@ -67,7 +67,7 @@ def run_debug_session(manifest: RunManifest, entry_callable: Callable[[str], Non
             has_valid_breakpoints = True
         except Exception as exc:
             print(f"Failed to set breakpoint {file_path}:{line_number}: {exc}", file=sys.stderr)
-    debugger.configure_initial_breakpoint_seek(has_valid_breakpoints)
+    debugger.configure_initial_breakpoint_seek(True)
 
     try:
         print("__CB_DEBUG_RUNNING__")

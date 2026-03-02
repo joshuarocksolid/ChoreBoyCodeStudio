@@ -123,7 +123,7 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     assert console_lines == [("hello-debug\n", "stdout")]
 
 
-def test_apply_run_event_auto_focuses_console_tab_when_enabled() -> None:
+def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
@@ -139,9 +139,9 @@ def test_apply_run_event_auto_focuses_console_tab_when_enabled() -> None:
     )
     window_any._append_debug_output_line = lambda _text: None
 
-    console_widget = object()
-    window_any._console_output_widget = console_widget
-    window_any._bottom_tabs_widget = _FakeBottomTabs({console_widget: 2})
+    run_log_widget = object()
+    window_any._run_log_panel = run_log_widget
+    window_any._bottom_tabs_widget = _FakeBottomTabs({run_log_widget: 2})
 
     event = ProcessEvent(event_type="output", stream="stdout", text="hello\n")
     MainWindow._apply_run_event(window, event)
@@ -161,7 +161,7 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
     window_any._append_console_line = lambda _text, stream="stdout": None
     window_any._append_debug_output_line = lambda _text: None
     window_any._refresh_run_action_states = lambda: None
-    window_any._load_latest_run_log = lambda: None
+    window_any._finalize_run_log = lambda return_code=None: None
     window_any._update_problems_from_output = lambda: [
         ProblemEntry(
             file_path="/tmp/project/main.py",

@@ -181,3 +181,71 @@ def test_find_unresolved_imports_uses_source_overrides(tmp_path: Path) -> None:
     diagnostics_buffer = find_unresolved_imports(str(project_root), source_overrides=overrides)
     assert len(diagnostics_buffer) == 1
     assert "nonexistent_module" in diagnostics_buffer[0].message
+
+
+# ---------------------------------------------------------------------------
+# known_runtime_modules integration
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_python_file_skips_known_runtime_modules(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text(
+        "import FreeCAD\nimport os\nimport totally_fake\nFreeCAD.open('x')\nos.getcwd()\n",
+        encoding="utf-8",
+    )
+    known = frozenset(["FreeCAD", "os", "sys"])
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=known,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "totally_fake" in py200[0].message
+
+
+def test_analyze_python_file_skips_dotted_import_when_top_level_known(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text("from FreeCAD import Part\nPart.show()\n", encoding="utf-8")
+    known = frozenset(["FreeCAD"])
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=known,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 0
+
+
+def test_analyze_python_file_still_flags_without_known_modules(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text("import os\nos.getcwd()\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=None,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "os" in py200[0].message
+
+
+def test_find_unresolved_imports_respects_known_runtime_modules(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "module.py").write_text(
+        "import FreeCAD\nimport nonexistent\n", encoding="utf-8",
+    )
+    known = frozenset(["FreeCAD"])
+
+    diagnostics = find_unresolved_imports(str(project_root), known_runtime_modules=known)
+
+    assert len(diagnostics) == 1
+    assert "nonexistent" in diagnostics[0].message

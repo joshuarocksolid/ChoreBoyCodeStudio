@@ -23,7 +23,6 @@ from PySide2.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
     QShortcut,
     QSizePolicy,
     QSplitter,
@@ -38,7 +37,8 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_cache_dir
+from app.bootstrap.paths import global_cache_dir, project_logs_dir
+from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
@@ -89,6 +89,8 @@ from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
+from app.shell.run_log_panel import RunInfo, RunLogPanel
+from app.packaging.packager import package_project
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -183,15 +185,17 @@ class MainWindow(QMainWindow):
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
-        self._console_output_widget: QPlainTextEdit | None = None
-        self._run_log_output_widget: QPlainTextEdit | None = None
+        self._run_log_panel: RunLogPanel | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
         self._python_console_container: QWidget | None = None
         self._debug_panel: DebugPanelWidget | None = None
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
-        self._stored_lint_diagnostics: list[CodeDiagnostic] = []
+        self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
+        self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
+            state_root=self._state_root,
+        )
         self._menu_registry: MenuStubRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
@@ -204,7 +208,7 @@ class MainWindow(QMainWindow):
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
-        self._tree_clipboard_path: str | None = None
+        self._tree_clipboard_paths: list[str] = []
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
         (
@@ -253,6 +257,7 @@ class MainWindow(QMainWindow):
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
+        self._active_run_session_info: RunInfo | None = None
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
@@ -319,8 +324,10 @@ class MainWindow(QMainWindow):
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
+                on_refresh_runtime_modules=self._handle_refresh_runtime_modules_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
+                on_package_project=self._handle_package_project_action,
                 on_new_project=self._handle_new_project_action,
                 on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
@@ -372,6 +379,7 @@ class MainWindow(QMainWindow):
         self._external_change_poll_timer.start()
         QTimer.singleShot(0, self._try_restore_last_project)
         QTimer.singleShot(100, self._auto_start_repl)
+        QTimer.singleShot(200, self._start_runtime_module_probe)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
@@ -466,6 +474,8 @@ class MainWindow(QMainWindow):
             if self._python_console_widget is not None:
                 self._python_console_widget.apply_theme(tokens)
             self._apply_explorer_theme(tokens)
+            if self._run_log_panel is not None:
+                self._run_log_panel.apply_theme(tokens)
             if self._search_sidebar is not None:
                 self._search_sidebar.apply_theme_tokens(
                     match_bg=tokens.search_match_bg,
@@ -1237,8 +1247,12 @@ class MainWindow(QMainWindow):
         for path, widget in self._editor_widgets_by_path.items():
             source_overrides[path] = widget.toPlainText()
 
+        known_modules = self._known_runtime_modules
+
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return find_unresolved_imports(project_root, source_overrides=source_overrides)
+            return find_unresolved_imports(
+                project_root, source_overrides=source_overrides, known_runtime_modules=known_modules,
+            )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
             if self._problems_panel is None:
@@ -1667,7 +1681,7 @@ class MainWindow(QMainWindow):
         ) and self._loaded_project is not None:
             self._start_symbol_indexing(self._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
-            self._render_lint_diagnostics_for_file(saved_tab.file_path, manual=False)
+            self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -2009,7 +2023,7 @@ class MainWindow(QMainWindow):
             for line in result.stderr.splitlines():
                 self._append_console_line(line, stream="stderr")
         if self._auto_open_console_on_run_output and (result.stdout.strip() or result.stderr.strip()):
-            self._focus_console_output_tab()
+            self._focus_run_log_tab()
         if result.failures:
             self._set_problems(result.failures)
             if self._auto_open_problems_on_run_failure:
@@ -2032,8 +2046,8 @@ class MainWindow(QMainWindow):
         self._clear_problems()
         self._debug_session = DebugSession()
         self._clear_debug_execution_indicator()
-        if self._run_log_output_widget is not None:
-            self._run_log_output_widget.clear()
+        if self._run_log_panel is not None:
+            self._run_log_panel.begin_run()
 
     def _start_session(
         self,
@@ -2075,12 +2089,17 @@ class MainWindow(QMainWindow):
 
         if result.session is not None:
             self._active_run_session_log_path = result.session.log_file_path
+            self._active_run_session_info = RunInfo(
+                run_id=result.session.run_id,
+                mode=result.session.mode,
+                entry_file=result.session.entry_file,
+            )
         self._active_session_mode = self._run_session_controller.active_session_mode
         if self._debug_panel is not None:
             self._debug_panel.set_command_input_enabled(self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG)
         self._set_run_status("running")
         if self._auto_open_console_on_run_output:
-            self._focus_console_output_tab()
+            self._focus_run_log_tab()
         self._refresh_run_action_states()
         return True
 
@@ -2160,10 +2179,8 @@ class MainWindow(QMainWindow):
 
     def _handle_clear_console_action(self) -> None:
         self._console_model.clear()
-        if self._console_output_widget is not None:
-            self._console_output_widget.clear()
-        if self._run_log_output_widget is not None:
-            self._run_log_output_widget.clear()
+        if self._run_log_panel is not None:
+            self._run_log_panel.clear()
         if self._python_console_widget is not None:
             self._python_console_widget.clear_console()
         if self._debug_panel is not None:
@@ -2201,7 +2218,7 @@ class MainWindow(QMainWindow):
         if not active_tab.file_path.lower().endswith(".py"):
             QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
             return
-        self._render_lint_diagnostics_for_file(active_tab.file_path, manual=True)
+        self._render_lint_diagnostics_for_file(active_tab.file_path, trigger="manual")
 
     def _handle_apply_safe_fixes_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -2210,26 +2227,37 @@ class MainWindow(QMainWindow):
             return
         self._apply_safe_fixes_for_file(active_tab.file_path)
 
-    def _render_lint_diagnostics_for_file(self, file_path: str, *, manual: bool) -> None:
+    def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
+        """Run diagnostics for *file_path* and update the editor + problems panel.
+
+        *trigger* controls gating behaviour:
+          "manual"     – always runs (user explicitly asked)
+          "tab_change" – runs when diagnostics are enabled (regardless of realtime)
+          "save"       – same as tab_change
+          "realtime"   – only runs when realtime diagnostics are on
+        """
         if not self._diagnostics_enabled:
-            if manual:
+            if trigger == "manual":
                 QMessageBox.information(
                     self,
                     "Lint Current File",
                     "Diagnostics are currently disabled in Settings.",
                 )
             return
-        if not manual and not self._diagnostics_realtime:
+        if trigger == "realtime" and not self._diagnostics_realtime:
             return
         if not file_path.lower().endswith(".py"):
-            if manual:
+            if trigger == "manual":
                 QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
             return
         started_at = time.perf_counter()
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         editor_widget = self._editor_widgets_by_path.get(file_path)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
-        diagnostics = analyze_python_file(file_path, project_root=project_root, source=buffer_source)
+        diagnostics = analyze_python_file(
+            file_path, project_root=project_root, source=buffer_source,
+            known_runtime_modules=self._known_runtime_modules,
+        )
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
             if elapsed_ms > 180.0:
@@ -2246,7 +2274,7 @@ class MainWindow(QMainWindow):
                     elapsed_ms,
                     len(diagnostics),
                 )
-        self._stored_lint_diagnostics = diagnostics
+        self._stored_lint_diagnostics[file_path] = diagnostics
         self._push_diagnostics_to_editor(file_path, diagnostics)
         self._render_merged_problems_panel()
         self._update_status_bar_diagnostics(diagnostics)
@@ -2268,8 +2296,9 @@ class MainWindow(QMainWindow):
         """Rebuild the Problems panel from stored lint + runtime state."""
         if self._problems_panel is None:
             return
+        all_diags = [d for diags in self._stored_lint_diagnostics.values() for d in diags]
         self._problems_panel.set_quick_fixes_enabled(self._quick_fixes_enabled)
-        self._problems_panel.set_diagnostics(self._stored_lint_diagnostics, self._stored_runtime_problems)
+        self._problems_panel.set_diagnostics(all_diags, self._stored_runtime_problems)
         self._update_problems_tab_title(self._problems_panel.problem_count())
 
     def _update_problems_tab_title(self, count: int) -> None:
@@ -2289,7 +2318,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
             return
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        diagnostics = analyze_python_file(file_path, project_root=project_root)
+        diagnostics = analyze_python_file(
+            file_path, project_root=project_root,
+            known_runtime_modules=self._known_runtime_modules,
+        )
         fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
         if not fixes:
             QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
@@ -2336,6 +2368,31 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Rebuild Intelligence Cache", "Cache rebuilt successfully.")
             return
         QMessageBox.information(self, "Rebuild Intelligence Cache", "No existing cache found. Reindex initialized.")
+
+    # ------------------------------------------------------------------
+    # Runtime module probe
+    # ------------------------------------------------------------------
+
+    def _start_runtime_module_probe(self) -> None:
+        state_root = self._state_root
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return probe_and_cache_runtime_modules(state_root=state_root)
+
+        def on_success(modules: object) -> None:
+            if isinstance(modules, frozenset) and modules:
+                self._known_runtime_modules = modules
+                self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Runtime module probe failed: %s", exc)
+
+        self._background_tasks.run(
+            key="runtime_module_probe", task=task, on_success=on_success, on_error=on_error,
+        )
+
+    def _handle_refresh_runtime_modules_action(self) -> None:
+        self._start_runtime_module_probe()
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
@@ -2518,12 +2575,47 @@ class MainWindow(QMainWindow):
 
         self._background_tasks.run(key="support_bundle", task=task, on_success=on_success, on_error=on_error)
 
+    def _handle_package_project_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Package unavailable", "Open a project before packaging.")
+            return
+        project_root = self._loaded_project.project_root
+        project_name = self._loaded_project.metadata.name
+        entry_file = self._loaded_project.metadata.default_entry
+        output_dir = str(Path.home())
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return package_project(
+                project_root=project_root,
+                project_name=project_name,
+                entry_file=entry_file,
+                output_dir=output_dir,
+            )
+
+        def on_success(result) -> None:  # type: ignore[no-untyped-def]
+            if result.success:
+                QMessageBox.information(
+                    self,
+                    "Package created",
+                    f"Package written to:\n{result.zip_path}\n\n"
+                    f"To install, extract the zip into the user's home folder.\n"
+                    f"The .desktop file can be placed in ~/Desktop/ or\n"
+                    f"~/.local/share/applications/ for a launcher shortcut.",
+                )
+            else:
+                QMessageBox.warning(self, "Packaging failed", f"Packaging error:\n{result.error}")
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Packaging failed", f"Unexpected error during packaging:\n{exc}")
+
+        self._background_tasks.run(key="package_project", task=task, on_success=on_success, on_error=on_error)
+
     def _resolve_latest_run_log_path(self) -> str | None:
         if self._active_run_session_log_path and Path(self._active_run_session_log_path).exists():
             return self._active_run_session_log_path
         if self._loaded_project is None:
             return None
-        log_dir = Path(self._loaded_project.project_root) / "logs"
+        log_dir = project_logs_dir(self._loaded_project.project_root)
         if not log_dir.exists():
             return None
         candidate_logs = sorted(log_dir.glob("run_*.log"), key=lambda path: path.stat().st_mtime, reverse=True)
@@ -2540,8 +2632,8 @@ class MainWindow(QMainWindow):
             return
         bottom_tabs.setCurrentIndex(index)
 
-    def _focus_console_output_tab(self) -> None:
-        self._focus_bottom_tab(self._console_output_widget)
+    def _focus_run_log_tab(self) -> None:
+        self._focus_bottom_tab(self._run_log_panel)
 
     def _focus_python_console_tab(self) -> None:
         self._focus_bottom_tab(self._python_console_container)
@@ -2634,12 +2726,12 @@ class MainWindow(QMainWindow):
                 self._apply_debug_inspector_event()
                 self._refresh_run_action_states()
                 return
-            # Contract: run/debug session output is always shown in the Console tab.
+            # Contract: run/debug session output is always shown in the Run Log tab.
             # The Python Console tab is reserved for REPL session output only.
             self._active_run_output_tail.append(text)
             self._append_console_line(text, stream=stream)
             if getattr(self, "_auto_open_console_on_run_output", False):
-                self._focus_console_output_tab()
+                self._focus_run_log_tab()
             if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 for line in text.rstrip().splitlines():
                     self._append_debug_output_line(line)
@@ -2669,7 +2761,7 @@ class MainWindow(QMainWindow):
             self._active_session_mode = None
             self._run_session_controller.clear_active_session_mode()
             self._refresh_run_action_states()
-            self._load_latest_run_log()
+            self._finalize_run_log(return_code=return_code)
             problems = self._update_problems_from_output()
             if (
                 not event.terminated_by_user
@@ -2686,30 +2778,28 @@ class MainWindow(QMainWindow):
             self._refresh_run_action_states()
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
-        line = self._console_model.append(stream, text)
-        if self._console_output_widget is None:
-            return
-        prefix = ""
-        if stream == "stderr":
-            prefix = "[stderr] "
-        elif stream == "system":
-            prefix = "[system] "
-        timestamp = line.timestamp.split("T")[-1]
-        self._console_output_widget.appendPlainText(f"[{timestamp}] {prefix}{line.text.rstrip()}")
+        self._console_model.append(stream, text)
+        if self._run_log_panel is not None:
+            self._run_log_panel.append_live_line(text, stream=stream)
 
-    def _load_latest_run_log(self) -> None:
-        run_log_output_widget = getattr(self, "_run_log_output_widget", None)
-        if run_log_output_widget is None:
+    def _finalize_run_log(self, return_code: int | None = None) -> None:
+        panel = getattr(self, "_run_log_panel", None)
+        if panel is None:
             return
+        cached = getattr(self, "_active_run_session_info", None)
+        run_info = RunInfo(
+            run_id=cached.run_id if cached else "",
+            mode=cached.mode if cached else "",
+            entry_file=cached.entry_file if cached else "",
+            exit_code=return_code,
+        )
         active_log_path = getattr(self, "_active_run_session_log_path", None)
-        if not active_log_path:
-            run_log_output_widget.setPlainText("(No run log available)")
-            return
-        log_path = Path(active_log_path)
-        if not log_path.exists():
-            run_log_output_widget.setPlainText("(No run log available)")
-            return
-        run_log_output_widget.setPlainText(log_path.read_text(encoding="utf-8"))
+        log_path_str: str | None = None
+        if active_log_path:
+            log_path = Path(active_log_path)
+            if log_path.exists():
+                log_path_str = str(log_path)
+        panel.end_run(run_info, log_path=log_path_str)
 
     def _update_problems_from_output(self) -> list[ProblemEntry]:
         output_text = self._active_run_output_tail.text()
@@ -2806,7 +2896,7 @@ class MainWindow(QMainWindow):
         self._dispatch_to_main_thread(lambda: setattr(self, "_active_symbol_index_worker", None))
 
     def _clear_problems(self) -> None:
-        self._stored_lint_diagnostics = []
+        self._stored_lint_diagnostics.clear()
         self._stored_runtime_problems = []
         if self._problems_panel is not None:
             self._problems_panel.clear()
@@ -3124,12 +3214,6 @@ class MainWindow(QMainWindow):
         self._bottom_tabs_widget = tabs
         tabs.setMinimumHeight(60)
 
-        self._console_output_widget = QPlainTextEdit(tabs)
-        self._console_output_widget.setObjectName("shell.bottom.console")
-        self._console_output_widget.setReadOnly(True)
-        console_index = tabs.addTab(self._console_output_widget, "Console")
-        tabs.setTabToolTip(console_index, "Run/Debug output (stdout/stderr) appears here.")
-
         self._python_console_container = QWidget(tabs)
         self._python_console_container.setObjectName("shell.bottom.pythonConsoleContainer")
         container_layout = QVBoxLayout(self._python_console_container)
@@ -3176,11 +3260,10 @@ class MainWindow(QMainWindow):
         problems_index = tabs.addTab(self._problems_panel, "Problems")
         tabs.setTabToolTip(problems_index, "Tracebacks and diagnostics for quick navigation.")
 
-        self._run_log_output_widget = QPlainTextEdit(tabs)
-        self._run_log_output_widget.setObjectName("shell.bottom.runLog")
-        self._run_log_output_widget.setReadOnly(True)
-        run_log_index = tabs.addTab(self._run_log_output_widget, "Run Log")
-        tabs.setTabToolTip(run_log_index, "Per-run log file persisted under project logs/.")
+        self._run_log_panel = RunLogPanel(tabs)
+        self._run_log_panel.open_log_requested.connect(self._open_file_in_editor)
+        run_log_index = tabs.addTab(self._run_log_panel, "Run Log")
+        tabs.setTabToolTip(run_log_index, "Run/Debug output (stdout/stderr) and per-run log.")
         return tabs
 
     def _create_placeholder_panel(self, title: str, body: str, object_name: str) -> QWidget:
@@ -3239,17 +3322,40 @@ class MainWindow(QMainWindow):
             return
         self._open_file_in_editor(str(absolute_path))
 
+    def _get_selected_tree_paths(self) -> list[tuple[str, str, bool]]:
+        """Return (absolute_path, relative_path, is_directory) for each selected tree item."""
+        if self._project_tree_widget is None:
+            return []
+        entries: list[tuple[str, str, bool]] = []
+        for item in self._project_tree_widget.selectedItems():
+            abs_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
+            rel_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            is_dir = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
+            if abs_path:
+                entries.append((abs_path, rel_path, is_dir))
+        return entries
+
     def _show_project_tree_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
         if self._project_tree_widget is None:
             return
         item = self._project_tree_widget.itemAt(position)
         if item is None:
             return
-        absolute_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-        relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
-        is_directory = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
-        if not absolute_path:
+
+        selected = self._get_selected_tree_paths()
+        if not selected:
             return
+
+        if len(selected) > 1:
+            self._show_bulk_context_menu(position, selected)
+        else:
+            self._show_single_item_context_menu(position, selected[0])
+
+    def _show_single_item_context_menu(
+        self, position: object, entry: tuple[str, str, bool],
+    ) -> None:
+        assert self._project_tree_widget is not None
+        absolute_path, relative_path, is_directory = entry
 
         menu = QMenu(self)
         new_file_action = menu.addAction("New File…")
@@ -3267,7 +3373,7 @@ class MainWindow(QMainWindow):
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
 
-        paste_action.setEnabled(self._tree_clipboard_path is not None)
+        paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
         chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
         if chosen is None:
             return
@@ -3283,10 +3389,10 @@ class MainWindow(QMainWindow):
         elif chosen == duplicate_action:
             self._handle_tree_duplicate(absolute_path)
         elif chosen == copy_action:
-            self._tree_clipboard_path = absolute_path
+            self._tree_clipboard_paths = [absolute_path]
             self._tree_clipboard_cut = False
         elif chosen == cut_action:
-            self._tree_clipboard_path = absolute_path
+            self._tree_clipboard_paths = [absolute_path]
             self._tree_clipboard_cut = True
         elif chosen == paste_action:
             self._handle_tree_paste(absolute_path if is_directory else str(Path(absolute_path).parent))
@@ -3296,6 +3402,48 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(relative_path)
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
+
+    def _show_bulk_context_menu(
+        self, position: object, selected: list[tuple[str, str, bool]],
+    ) -> None:
+        assert self._project_tree_widget is not None
+        abs_paths = [entry[0] for entry in selected]
+
+        menu = QMenu(self)
+        delete_action = menu.addAction(f"Delete {len(selected)} Items")
+        duplicate_action = menu.addAction(f"Duplicate {len(selected)} Items")
+        menu.addSeparator()
+        copy_action = menu.addAction("Copy")
+        cut_action = menu.addAction("Cut")
+        paste_action = menu.addAction("Paste")
+        menu.addSeparator()
+        copy_path_action = menu.addAction("Copy Paths")
+        copy_relative_path_action = menu.addAction("Copy Relative Paths")
+
+        paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
+        chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
+        if chosen is None:
+            return
+
+        if chosen == delete_action:
+            self._handle_tree_bulk_delete(abs_paths)
+        elif chosen == duplicate_action:
+            self._handle_tree_bulk_duplicate(abs_paths)
+        elif chosen == copy_action:
+            self._tree_clipboard_paths = list(abs_paths)
+            self._tree_clipboard_cut = False
+        elif chosen == cut_action:
+            self._tree_clipboard_paths = list(abs_paths)
+            self._tree_clipboard_cut = True
+        elif chosen == paste_action:
+            first_abs, _, first_is_dir = selected[0]
+            dest = first_abs if first_is_dir else str(Path(first_abs).parent)
+            self._handle_tree_paste(dest)
+        elif chosen == copy_path_action:
+            QApplication.clipboard().setText("\n".join(abs_paths))
+        elif chosen == copy_relative_path_action:
+            rel_paths = [entry[1] for entry in selected]
+            QApplication.clipboard().setText("\n".join(rel_paths))
 
     def _handle_tree_new_file(self, destination_directory: str) -> None:
         file_name, ok = QInputDialog.getText(self, "New File", "File name:", QLineEdit.Normal, "")
@@ -3354,22 +3502,61 @@ class MainWindow(QMainWindow):
             return
         self._reload_current_project()
 
-    def _handle_tree_paste(self, destination_directory: str) -> None:
-        if self._tree_clipboard_path is None:
+    def _handle_tree_bulk_delete(self, paths: list[str]) -> None:
+        names = "\n".join(f"  • {Path(p).name}" for p in paths)
+        confirmation = QMessageBox.question(
+            self,
+            "Delete",
+            f"Delete {len(paths)} items?\n\n{names}\n\nThis action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirmation != QMessageBox.Yes:
             return
-        source = Path(self._tree_clipboard_path).resolve()
-        destination = Path(destination_directory).resolve() / source.name
-        if self._tree_clipboard_cut:
-            result = move_path(str(source), str(destination))
+        failed: list[str] = []
+        for target_path in paths:
+            result = delete_path(target_path)
             if result.success:
-                self._apply_path_move_updates(str(source), str(destination))
-                self._tree_clipboard_path = None
-                self._tree_clipboard_cut = False
-        else:
-            result = copy_path(str(source), str(destination))
-        if not result.success:
-            QMessageBox.warning(self, "Paste", result.message)
+                self._close_deleted_editor_paths(target_path)
+            else:
+                failed.append(f"{Path(target_path).name}: {result.message}")
+        if failed:
+            QMessageBox.warning(self, "Delete", "\n".join(failed))
+        self._reload_current_project()
+
+    def _handle_tree_bulk_duplicate(self, paths: list[str]) -> None:
+        failed: list[str] = []
+        for source_path in paths:
+            result = duplicate_path(source_path)
+            if not result.success:
+                failed.append(f"{Path(source_path).name}: {result.message}")
+        if failed:
+            QMessageBox.warning(self, "Duplicate", "\n".join(failed))
+        self._reload_current_project()
+
+    def _handle_tree_paste(self, destination_directory: str) -> None:
+        if not self._tree_clipboard_paths:
             return
+        dest_dir = Path(destination_directory).resolve()
+        failed: list[str] = []
+        for clipboard_path in list(self._tree_clipboard_paths):
+            source = Path(clipboard_path).resolve()
+            destination = dest_dir / source.name
+            if self._tree_clipboard_cut:
+                result = move_path(str(source), str(destination))
+                if result.success:
+                    self._apply_path_move_updates(str(source), str(destination))
+                else:
+                    failed.append(f"{source.name}: {result.message}")
+            else:
+                result = copy_path(str(source), str(destination))
+                if not result.success:
+                    failed.append(f"{source.name}: {result.message}")
+        if self._tree_clipboard_cut:
+            self._tree_clipboard_paths = []
+            self._tree_clipboard_cut = False
+        if failed:
+            QMessageBox.warning(self, "Paste", "\n".join(failed))
         self._reload_current_project()
 
     def _handle_project_tree_drop(self, source_path: str, target_path: str) -> bool:

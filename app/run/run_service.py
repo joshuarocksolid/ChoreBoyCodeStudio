@@ -13,6 +13,7 @@ from typing import Callable
 from app.bootstrap.paths import (
     PathInput,
     ensure_directory,
+    project_logs_dir,
     project_runs_dir,
     resolve_app_root,
     resolve_global_state_root,
@@ -217,9 +218,8 @@ def build_run_manifest_path(project_root: str | Path, run_id: str) -> Path:
 
 
 def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
-    """Build run log path under `<project>/logs`."""
-    project_root_path = Path(project_root).expanduser().resolve()
-    return project_root_path / "logs" / f"run_{run_id}.log"
+    """Build run log path under `<project>/.cbcs/logs`."""
+    return project_logs_dir(project_root) / f"run_{run_id}.log"
 
 
 def build_repl_context_root(*, state_root: PathInput | None = None) -> Path:

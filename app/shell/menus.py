@@ -65,6 +65,7 @@ class MenuCallbacks:
     on_remove_all_breakpoints: Callable[[], object] | None = None
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
+    on_package_project: Callable[[], object] | None = None
     on_reset_layout: Callable[[], object] | None = None
     on_set_theme_system: Callable[[], object] | None = None
     on_set_theme_light: Callable[[], object] | None = None
@@ -76,6 +77,7 @@ class MenuCallbacks:
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
     on_rebuild_intelligence_cache: Callable[[], object] | None = None
+    on_refresh_runtime_modules: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
@@ -326,8 +328,8 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     )
     run_action = actions.get("shell.action.run.run")
     if run_action is not None:
-        run_action.setToolTip("Run the project entry script. Output appears in the Console tab.")
-        run_action.setStatusTip("Run the project entry script. Output appears in the Console tab.")
+        run_action.setToolTip("Run the project entry script. Output appears in the Run Log tab.")
+        run_action.setStatusTip("Run the project entry script. Output appears in the Run Log tab.")
     _register_menu_action(
         run_menu,
         actions,
@@ -338,8 +340,8 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     )
     debug_action = actions.get("shell.action.run.debug")
     if debug_action is not None:
-        debug_action.setToolTip("Start a debug session. Output appears in Console and Debug tabs.")
-        debug_action.setStatusTip("Start a debug session. Output appears in Console and Debug tabs.")
+        debug_action.setToolTip("Start a debug session. Output appears in Run Log and Debug tabs.")
+        debug_action.setStatusTip("Start a debug session. Output appears in Run Log and Debug tabs.")
     _register_menu_action(
         run_menu,
         actions,
@@ -463,6 +465,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Clear Console",
         callback=callback_registry.on_clear_console,
     )
+    run_menu.addSeparator()
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.build.package",
+        "Package Project...",
+        callback=callback_registry.on_package_project,
+    )
 
     view_menu = menu_bar.addMenu("&View")
     view_menu.setObjectName("shell.menu.view")
@@ -558,6 +568,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Rebuild Intelligence Cache",
         enabled=True,
         callback=callback_registry.on_rebuild_intelligence_cache,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.refreshRuntimeModules",
+        "Refresh Runtime Modules",
+        enabled=True,
+        callback=callback_registry.on_refresh_runtime_modules,
     )
     _register_menu_action(
         tools_menu,

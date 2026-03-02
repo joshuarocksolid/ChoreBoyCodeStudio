@@ -39,6 +39,5 @@ Thumbs.db
 # ChoreBoy Code Studio runtime artifacts
 .choreboy_code_studio/
 **/.cbcs/runs/
+**/.cbcs/logs/
 **/.cbcs/cache/
-**/logs/*
-!**/logs/.gitkeep

@@ -14,8 +14,15 @@ class ImportResolution:
     resolved_path: str | None
 
 
-def resolve_project_import(project_root: str, module_name: str) -> ImportResolution:
-    """Resolve absolute module import against project files."""
+def resolve_project_import(
+    project_root: str,
+    module_name: str,
+    known_runtime_modules: frozenset[str] | None = None,
+) -> ImportResolution:
+    """Resolve absolute module import against project files and runtime modules."""
+    top_level = module_name.split(".")[0]
+    if known_runtime_modules and top_level in known_runtime_modules:
+        return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=None)
     root = Path(project_root).expanduser().resolve()
     module_path = Path(*module_name.split("."))
     module_file = (root / module_path).with_suffix(".py")

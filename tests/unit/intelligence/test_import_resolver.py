@@ -66,3 +66,34 @@ def test_resolve_module_binding_returns_unresolved_for_non_module_target(tmp_pat
     )
 
     assert unresolved.is_resolved is False
+
+
+def test_resolve_project_import_resolves_known_runtime_module(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    known = frozenset(["FreeCAD", "os", "sys"])
+
+    resolved = resolve_project_import(str(project_root), "FreeCAD", known_runtime_modules=known)
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is None
+
+
+def test_resolve_project_import_resolves_dotted_runtime_module(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    known = frozenset(["FreeCAD"])
+
+    resolved = resolve_project_import(str(project_root), "FreeCAD.Part", known_runtime_modules=known)
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is None
+
+
+def test_resolve_project_import_still_unresolved_without_known_modules(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    unresolved = resolve_project_import(str(project_root), "FreeCAD")
+
+    assert unresolved.is_resolved is False

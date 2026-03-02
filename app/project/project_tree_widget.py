@@ -15,6 +15,7 @@ class ProjectTreeWidget(QTreeWidget):
         super().__init__(parent)
         self._drag_source_path: str | None = None
         self._drop_callback: Callable[[str, str], bool] | None = None
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)

@@ -394,6 +394,7 @@ my_project/
   .cbcs/
     project.json
     runs/
+    logs/
     cache/
   vendor/
   app/
@@ -628,7 +629,7 @@ Recommended manifest contents:
   "argv": [],
   "env": {},
   "safe_mode": true,
-  "log_file": "/home/default/projects/my_project/logs/run_20260228_153500.log",
+  "log_file": "/home/default/projects/my_project/.cbcs/logs/run_20260228_153500.log",
   "breakpoints": [
     {
       "file_path": "/home/default/projects/my_project/app/main.py",
@@ -721,7 +722,7 @@ Editor log:
 Project run logs:
 
 ```text
-<project>/logs/run_YYYYMMDD_HHMMSS.log
+<project>/.cbcs/logs/run_YYYYMMDD_HHMMSS.log
 ```
 
 ## 14.6 Logging requirements

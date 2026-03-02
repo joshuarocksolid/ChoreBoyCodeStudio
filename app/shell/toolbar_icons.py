@@ -197,6 +197,29 @@ def icon_step_out(color: str) -> QIcon:
     return QIcon(pm)
 
 
+def icon_package(color: str = "#5B8CFF") -> QIcon:
+    """Box icon representing project packaging."""
+    pm = _new_pixmap()
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    c = QColor(color)
+    pen = p.pen()
+    pen.setColor(c)
+    pen.setWidthF(1.5)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    # Box body
+    p.drawRect(QRectF(2, 5, 12, 9))
+    # Lid / flap lines
+    p.drawLine(QPointF(2, 5), QPointF(5, 2))
+    p.drawLine(QPointF(14, 5), QPointF(11, 2))
+    p.drawLine(QPointF(5, 2), QPointF(11, 2))
+    # Vertical ribbon
+    p.drawLine(QPointF(8, 2), QPointF(8, 14))
+    p.end()
+    return QIcon(pm)
+
+
 def icon_remove_all_breakpoints(color: str = "#DC2626") -> QIcon:
     pm = _new_pixmap()
     p = QPainter(pm)
@@ -228,6 +251,7 @@ _ICON_BUILDERS: dict[str, tuple[str, bool]] = {
     "shell.action.run.stepInto": ("step_into", True),
     "shell.action.run.stepOut": ("step_out", True),
     "shell.action.run.removeAllBreakpoints": ("remove_all_breakpoints", False),
+    "shell.action.build.package": ("package", True),
 }
 
 

@@ -284,7 +284,9 @@ myapp/
   main.py
   launcher.py
   vendor/          # optional (pg8000 etc)
-  logs/
+  .cbcs/
+    project.json
+    logs/
   app/
     __init__.py
     backend.py

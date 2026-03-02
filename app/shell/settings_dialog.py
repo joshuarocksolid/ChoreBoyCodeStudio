@@ -43,7 +43,7 @@ class SettingsDialog(QDialog):
         output_form = QFormLayout(output_group)
         self._auto_open_console_on_run_output_input = QCheckBox(output_group)
         self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
-        output_form.addRow("Auto-open Console on run output", self._auto_open_console_on_run_output_input)
+        output_form.addRow("Auto-open Run Log on run output", self._auto_open_console_on_run_output_input)
         self._auto_open_problems_on_run_failure_input = QCheckBox(output_group)
         self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
         output_form.addRow("Auto-open Problems on run failure", self._auto_open_problems_on_run_failure_input)
