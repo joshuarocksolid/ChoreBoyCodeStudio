@@ -52,7 +52,6 @@ def test_project_helpers_compose_expected_paths(tmp_path: Path) -> None:
     assert paths.project_manifest_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
     assert paths.project_runs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_RUNS_DIRNAME
     assert paths.project_cache_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME
-    assert paths.project_logs_dir(project_root) == project_root / constants.PROJECT_LOGS_DIRNAME
 
 
 def test_resolve_project_path_uses_project_root(tmp_path: Path) -> None:

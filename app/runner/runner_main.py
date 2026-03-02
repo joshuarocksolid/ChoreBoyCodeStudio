@@ -45,15 +45,30 @@ def _make_clear_helper() -> object:
     return _ClearHint()
 
 
+def _ensure_line_buffering() -> None:
+    """Force line buffering on stdout/stderr to guarantee pipe delivery."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(line_buffering=True)
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(line_buffering=True)
+        except Exception:
+            pass
+
+
 def execute_manifest(manifest: RunManifest) -> int:
     """Execute a run manifest and return standardized exit codes."""
-    try:
-        execution_context = RunnerExecutionContext.from_manifest(manifest)
-    except RunLifecycleError as exc:
-        print(f"Runner bootstrap failed: {exc}", file=sys.stderr)
-        return constants.RUN_EXIT_BOOTSTRAP_ERROR
-
+    _ensure_line_buffering()
     with redirect_output_to_log(manifest.log_file):
+        try:
+            execution_context = RunnerExecutionContext.from_manifest(manifest)
+        except RunLifecycleError as exc:
+            print(f"Runner bootstrap failed: {exc}", file=sys.stderr)
+            return constants.RUN_EXIT_BOOTSTRAP_ERROR
+
         print(f"[runner] run_id={manifest.run_id} mode={manifest.mode} entry={manifest.entry_file}")
         try:
             with apply_execution_context(execution_context):
@@ -82,7 +97,7 @@ def execute_manifest(manifest: RunManifest) -> int:
             print(format_current_exception(), file=sys.stderr)
             return constants.RUN_EXIT_USER_CODE_ERROR
 
-    return constants.RUN_EXIT_SUCCESS
+        return constants.RUN_EXIT_SUCCESS
 
 
 def _run_entry_script(entry_script_path: str) -> None:

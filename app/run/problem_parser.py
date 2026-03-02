@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-TRACEBACK_FILE_LINE_PATTERN = re.compile(r'^\s*File "(?P<path>.+)", line (?P<line>\d+), in (?P<context>.+)$')
+TRACEBACK_FILE_LINE_PATTERN = re.compile(
+    r'^\s*File "(?P<path>.+)", line (?P<line>\d+)(?:, in (?P<context>.+))?$'
+)
+TRACEBACK_ERROR_LINE_PATTERN = re.compile(r"^[A-Za-z_][\w.]*?(?:: .*)?$")
 
 
 @dataclass(frozen=True)
@@ -21,7 +24,7 @@ class ProblemEntry:
 def parse_traceback_problems(output_text: str) -> list[ProblemEntry]:
     """Extract navigable problem entries from traceback output text."""
     lines = output_text.splitlines()
-    traceback_frames: list[tuple[str, int, str]] = []
+    traceback_frames: list[tuple[str, int, str | None]] = []
     error_message = ""
 
     for raw_line in lines:
@@ -31,12 +34,17 @@ def parse_traceback_problems(output_text: str) -> list[ProblemEntry]:
                 (
                     match.group("path"),
                     int(match.group("line")),
-                    match.group("context").strip(),
+                    None if match.group("context") is None else match.group("context").strip(),
                 )
             )
             continue
-        if raw_line and ":" in raw_line and not raw_line.startswith("  "):
-            error_message = raw_line.strip()
+        normalized_line = raw_line.strip()
+        if not normalized_line:
+            continue
+        if normalized_line.startswith("File "):
+            continue
+        if TRACEBACK_ERROR_LINE_PATTERN.match(normalized_line):
+            error_message = normalized_line
 
     if not traceback_frames:
         return []
@@ -46,7 +54,7 @@ def parse_traceback_problems(output_text: str) -> list[ProblemEntry]:
         ProblemEntry(
             file_path=frame_path,
             line_number=frame_line,
-            context=frame_context,
+            context=frame_context or "",
             message=message,
         )
         for frame_path, frame_line, frame_context in traceback_frames

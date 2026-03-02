@@ -13,7 +13,6 @@ from typing import Callable
 from app.bootstrap.paths import (
     PathInput,
     ensure_directory,
-    project_logs_dir,
     project_runs_dir,
     resolve_app_root,
     resolve_global_state_root,
@@ -108,8 +107,8 @@ class RunService:
                 resolved_working_directory = working_directory_candidate.resolve()
             else:
                 resolved_working_directory = (home_directory / working_directory_candidate).resolve()
-            log_file_path = build_repl_log_path(run_id, state_root=self._state_root)
             manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
+            log_path = build_repl_log_path(run_id, state_root=self._state_root)
             merged_env_overrides = {} if env_overrides is None else dict(env_overrides)
             effective_safe_mode = False if safe_mode is None else safe_mode
             launch_cwd = str(resolved_working_directory)
@@ -119,8 +118,8 @@ class RunService:
             resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
             configured_working_directory = working_directory or loaded_project.metadata.working_directory
             resolved_working_directory = (resolved_project_root / configured_working_directory).resolve()
-            log_file_path = build_run_log_path(resolved_project_root, run_id)
             manifest_path = build_run_manifest_path(resolved_project_root, run_id)
+            log_path = build_run_log_path(resolved_project_root, run_id)
             merged_env_overrides = dict(loaded_project.metadata.env_overrides)
             if env_overrides is not None:
                 merged_env_overrides.update(env_overrides)
@@ -128,8 +127,8 @@ class RunService:
             launch_cwd = str(resolved_project_root)
 
         normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
-        ensure_directory(Path(log_file_path).parent)
         ensure_directory(Path(manifest_path).parent)
+        ensure_directory(Path(log_path).parent)
 
         timestamp = self._now_factory().isoformat(timespec="seconds")
         manifest = RunManifest(
@@ -138,11 +137,11 @@ class RunService:
             project_root=str(resolved_project_root),
             entry_file=entry,
             working_directory=str(resolved_working_directory),
+            log_file=str(Path(log_path).resolve()),
             mode=run_mode,
             argv=arguments,
             env=merged_env_overrides,
             safe_mode=effective_safe_mode,
-            log_file=str(log_file_path),
             timestamp=timestamp,
             breakpoints=normalized_breakpoints,
         )
@@ -153,7 +152,7 @@ class RunService:
         self._current_session = RunSession(
             run_id=run_id,
             manifest_path=str(manifest_path),
-            log_file_path=str(log_file_path),
+            log_file_path=str(Path(log_path).resolve()),
             project_root=str(resolved_project_root),
             entry_file=entry,
             mode=run_mode,
@@ -211,16 +210,16 @@ def generate_run_id(*, now: datetime | None = None) -> str:
     return f"{timestamp}_{unique_suffix}"
 
 
-def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
-    """Build per-run log path under `<project>/logs`."""
-    logs_directory = project_logs_dir(str(Path(project_root).expanduser().resolve()))
-    return logs_directory / f"{constants.RUN_LOG_FILENAME_PREFIX}{run_id}{constants.RUN_LOG_FILENAME_SUFFIX}"
-
-
 def build_run_manifest_path(project_root: str | Path, run_id: str) -> Path:
     """Build run manifest path under `<project>/.cbcs/runs`."""
     runs_directory = project_runs_dir(str(Path(project_root).expanduser().resolve()))
     return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
+
+
+def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
+    """Build run log path under `<project>/logs`."""
+    project_root_path = Path(project_root).expanduser().resolve()
+    return project_root_path / "logs" / f"run_{run_id}.log"
 
 
 def build_repl_context_root(*, state_root: PathInput | None = None) -> Path:
@@ -228,16 +227,16 @@ def build_repl_context_root(*, state_root: PathInput | None = None) -> Path:
     return ensure_directory(resolve_global_state_root(state_root) / "repl")
 
 
-def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
-    """Build projectless REPL run log path under global state."""
-    logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
-    return logs_directory / f"{constants.RUN_LOG_FILENAME_PREFIX}{run_id}{constants.RUN_LOG_FILENAME_SUFFIX}"
-
-
 def build_repl_manifest_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
     """Build projectless REPL manifest path under global state."""
     runs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "runs")
     return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
+
+
+def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
+    """Build projectless REPL log path under global state."""
+    logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
+    return logs_directory / f"run_{run_id}.log"
 
 
 def resolve_runtime_executable(configured_runtime: str | None) -> str:

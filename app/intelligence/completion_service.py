@@ -7,10 +7,12 @@ from pathlib import Path
 
 from app.intelligence.completion_models import CompletionItem, CompletionKind, RankedCompletionItem
 from app.intelligence.completion_providers import (
+    detect_module_member_completion_context,
     extract_completion_prefix,
     provide_builtin_items,
     provide_current_file_symbol_items,
     provide_keyword_items,
+    provide_module_member_items,
     provide_project_module_items,
     provide_project_symbol_items,
 )
@@ -39,10 +41,28 @@ class CompletionService:
     def complete(self, request: CompletionRequest) -> list[CompletionItem]:
         """Return ranked completion candidates for one editor query."""
         prefix = extract_completion_prefix(request.source_text, request.cursor_position)
-        if not request.trigger_is_manual and len(prefix) < max(1, request.min_prefix_chars):
+        module_context = detect_module_member_completion_context(request.source_text, request.cursor_position)
+        effective_prefix = module_context.member_prefix if module_context is not None else prefix
+        if not request.trigger_is_manual and len(effective_prefix) < max(1, request.min_prefix_chars):
             return []
 
         project_limit = max(request.max_results * 2, 120)
+        if module_context is not None:
+            module_candidates = provide_module_member_items(
+                project_root=request.project_root,
+                source_text=request.source_text,
+                cursor_position=request.cursor_position,
+                limit=project_limit,
+            )
+            if not module_candidates:
+                return []
+            ranked = self._rank_candidates(
+                module_candidates,
+                prefix=effective_prefix,
+                current_file_path=request.current_file_path,
+            )
+            return [entry.item for entry in ranked[: request.max_results]]
+
         raw_candidates = [
             *provide_current_file_symbol_items(
                 request.source_text,
@@ -60,7 +80,7 @@ class CompletionService:
             *provide_keyword_items(prefix),
         ]
 
-        ranked = self._rank_candidates(raw_candidates, prefix=prefix, current_file_path=request.current_file_path)
+        ranked = self._rank_candidates(raw_candidates, prefix=effective_prefix, current_file_path=request.current_file_path)
         return [entry.item for entry in ranked[: request.max_results]]
 
     def _rank_candidates(

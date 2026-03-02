@@ -38,14 +38,29 @@ class CodeDiagnostic:
     col_end: int | None = None
 
 
-def find_unresolved_imports(project_root: str) -> list[ImportDiagnostic]:
-    """Find unresolved project-local imports in Python files."""
+def find_unresolved_imports(
+    project_root: str,
+    *,
+    source_overrides: dict[str, str] | None = None,
+) -> list[ImportDiagnostic]:
+    """Find unresolved project-local imports in Python files.
+
+    When *source_overrides* is provided it maps absolute file paths to
+    in-memory source text (e.g. unsaved editor buffers).  Overridden
+    content is used instead of reading from disk so that unsaved edits
+    are included in the analysis.
+    """
     root = Path(project_root).expanduser().resolve()
+    resolved_overrides: dict[str, str] = {}
+    if source_overrides:
+        for p, src in source_overrides.items():
+            resolved_overrides[str(Path(p).expanduser().resolve())] = src
     diagnostics: list[ImportDiagnostic] = []
     for file_path in sorted(root.rglob("*.py")):
         if ".cbcs" in file_path.parts:
             continue
-        diagnostics.extend(_diagnostics_for_file(root, file_path))
+        override = resolved_overrides.get(str(file_path.resolve()))
+        diagnostics.extend(_diagnostics_for_file(root, file_path, source=override))
     return diagnostics
 
 
@@ -97,11 +112,17 @@ def analyze_python_file(
     return diagnostics
 
 
-def _diagnostics_for_file(project_root: Path, file_path: Path) -> list[ImportDiagnostic]:
-    try:
-        source = file_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
+def _diagnostics_for_file(
+    project_root: Path,
+    file_path: Path,
+    *,
+    source: str | None = None,
+) -> list[ImportDiagnostic]:
+    if source is None:
+        try:
+            source = file_path.read_text(encoding="utf-8")
+        except OSError:
+            return []
     try:
         tree = ast.parse(source, filename=str(file_path))
     except SyntaxError:

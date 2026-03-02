@@ -29,3 +29,21 @@ RuntimeError: boom
 def test_parse_traceback_problems_returns_empty_for_non_traceback_text() -> None:
     """Non-traceback output should not create fake problem entries."""
     assert parse_traceback_problems("plain output only") == []
+
+
+def test_parse_traceback_problems_handles_syntax_error_without_context_segment() -> None:
+    """Parser should keep SyntaxError frames even when `in <context>` is absent."""
+    traceback_text = """
+Traceback (most recent call last):
+  File "/tmp/project/run.py", line 1
+    if True print("oops")
+            ^
+SyntaxError: invalid syntax
+"""
+    problems = parse_traceback_problems(traceback_text)
+
+    assert len(problems) == 1
+    assert problems[0].file_path == "/tmp/project/run.py"
+    assert problems[0].line_number == 1
+    assert problems[0].context == ""
+    assert problems[0].message == "SyntaxError: invalid syntax"

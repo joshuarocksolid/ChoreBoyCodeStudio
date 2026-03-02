@@ -2,8 +2,8 @@
 
 This module intentionally stays thin:
 - startup status presentation only
-- no project-service wiring
-- no run/runner state wiring
+- lightweight project/editor/diagnostics wiring
+- lightweight run-state wiring
 """
 
 from __future__ import annotations
@@ -31,6 +31,15 @@ class EditorStatusView:
     """UI-friendly editor telemetry state for the status bar."""
 
     text: str
+
+
+@dataclass(frozen=True)
+class RunStatusView:
+    """UI-friendly run lifecycle state for the status bar."""
+
+    severity: str
+    text: str
+    details: str
 
 
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
@@ -80,6 +89,50 @@ def format_diagnostics_counts(errors: int, warnings: int) -> str:
     return ", ".join(parts)
 
 
+def map_run_status_view(status: str, *, return_code: int | None = None) -> RunStatusView:
+    """Map run lifecycle status into deterministic status bar copy."""
+    if status == "running":
+        return RunStatusView(
+            severity="running",
+            text="Run: running",
+            details="A run/debug session is currently active.",
+        )
+    if status == "stopping":
+        return RunStatusView(
+            severity="stopping",
+            text="Run: stopping",
+            details="Stop requested. Waiting for runner process to exit.",
+        )
+    if status == "success":
+        code = 0 if return_code is None else int(return_code)
+        return RunStatusView(
+            severity="ok",
+            text=f"Run: success (code={code})",
+            details="Latest run completed successfully.",
+        )
+    if status == "terminated":
+        detail = "Latest run was terminated by the user."
+        if return_code is not None:
+            detail = f"{detail} Exit code: {return_code}."
+        return RunStatusView(
+            severity="warning",
+            text="Run: terminated",
+            details=detail,
+        )
+    if status == "failed":
+        code = "?" if return_code is None else str(int(return_code))
+        return RunStatusView(
+            severity="error",
+            text=f"Run: failed (code={code})",
+            details="Latest run exited with an error.",
+        )
+    return RunStatusView(
+        severity="idle",
+        text="Run: idle",
+        details="No active run/debug session.",
+    )
+
+
 class ShellStatusBarController:
     """Small controller for shell status bar labels."""
 
@@ -87,12 +140,14 @@ class ShellStatusBarController:
         self,
         status_bar: "QStatusBar",
         startup_label: "QLabel",
+        run_label: "QLabel",
         project_label: "QLabel",
         editor_label: "QLabel",
         diagnostics_label: "QLabel",
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
+        self._run_label = run_label
         self._project_label = project_label
         self._editor_label = editor_label
         self._diagnostics_label = diagnostics_label
@@ -118,6 +173,13 @@ class ShellStatusBarController:
         text = format_diagnostics_counts(errors, warnings)
         self._diagnostics_label.setText(text)
         self._diagnostics_label.setVisible(bool(text))
+
+    def set_run_status(self, status: str, *, return_code: int | None = None) -> None:
+        """Update run/debug lifecycle status in the status bar."""
+        run_view = map_run_status_view(status, return_code=return_code)
+        self._run_label.setText(run_view.text)
+        self._run_label.setToolTip(run_view.details)
+        self._run_label.setProperty("runSeverity", run_view.severity)  # type: ignore[arg-type]
 
     @property
     def status_bar(self) -> "QStatusBar":
@@ -147,12 +209,17 @@ def create_shell_status_bar(
     editor_label = QLabel("Editor: no file", status_bar)
     editor_label.setObjectName("shell.editorStatusLabel")
 
+    run_label = QLabel("Run: idle", status_bar)
+    run_label.setObjectName("shell.runStatusLabel")
+
     status_bar.addWidget(startup_label, 1)
     status_bar.addPermanentWidget(diagnostics_label, 0)
+    status_bar.addPermanentWidget(run_label, 0)
     status_bar.addPermanentWidget(project_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
     main_window.setStatusBar(status_bar)
 
-    controller = ShellStatusBarController(status_bar, startup_label, project_label, editor_label, diagnostics_label)
+    controller = ShellStatusBarController(status_bar, startup_label, run_label, project_label, editor_label, diagnostics_label)
     controller.set_startup_report(startup_report)
+    controller.set_run_status("idle")
     return controller

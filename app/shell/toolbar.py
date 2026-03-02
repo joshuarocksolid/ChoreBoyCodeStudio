@@ -14,6 +14,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.shell.menus import MenuStubRegistry
+from app.shell.toolbar_icons import build_toolbar_icon
 
 _GROUP_1_IDS = (
     "shell.action.run.run",
@@ -28,8 +29,21 @@ _GROUP_2_IDS = (
     "shell.action.run.stepOver",
     "shell.action.run.stepInto",
     "shell.action.run.stepOut",
-    "shell.action.run.toggleBreakpoint",
+    "shell.action.run.removeAllBreakpoints",
 )
+
+_ACTION_ID_TO_OBJ_SUFFIX: dict[str, str] = {
+    "shell.action.run.run": "run",
+    "shell.action.run.debug": "debug",
+    "shell.action.run.stop": "stop",
+    "shell.action.run.restart": "restart",
+    "shell.action.run.continue": "continue",
+    "shell.action.run.pause": "pause",
+    "shell.action.run.stepOver": "stepOver",
+    "shell.action.run.stepInto": "stepInto",
+    "shell.action.run.stepOut": "stepOut",
+    "shell.action.run.removeAllBreakpoints": "removeAllBp",
+}
 
 
 class RunToolbarWidget(QWidget):
@@ -41,7 +55,7 @@ class RunToolbarWidget(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(2)
+        layout.setSpacing(4)
 
         self._group2_buttons: List[QToolButton] = []
         self._separator: QFrame | None = None
@@ -73,24 +87,30 @@ class RunToolbarWidget(QWidget):
         if action is None:
             return None
 
+        icon = build_toolbar_icon(action_id, accent_color="#5B8CFF")
+        if icon is not None:
+            action.setIcon(icon)
+
+        suffix = _ACTION_ID_TO_OBJ_SUFFIX.get(action_id, "btn")
+        obj_name = f"shell.toolbar.btn.{suffix}"
+
         btn = QToolButton(self)
-        btn.setObjectName("shell.toolbar.btn")
+        btn.setObjectName(obj_name)
         btn.setDefaultAction(action)
         btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setVisible(action.isEnabled())
+        btn.setEnabled(action.isEnabled())
         action.changed.connect(lambda a=action, b=btn: self._sync_button(a, b))
         return btn
 
     def _sync_button(self, action: Any, btn: QToolButton) -> None:
-        btn.setVisible(action.isEnabled())
+        btn.setEnabled(action.isEnabled())
         self._update_separator_visibility()
 
     def _update_separator_visibility(self) -> None:
         if self._separator is None:
             return
-        any_visible = any(b.isVisible() for b in self._group2_buttons)
-        self._separator.setVisible(any_visible)
+        self._separator.setVisible(bool(self._group2_buttons))
 
 
 def build_run_toolbar_widget(

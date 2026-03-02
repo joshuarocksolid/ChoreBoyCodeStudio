@@ -62,7 +62,7 @@ The repository is no longer “empty scaffolding.” Core foundation work is alr
 | Project open/load + structure validation | DONE | `app/project/project_service.py` |
 | Recent projects persistence | DONE | `app/project/recent_projects.py` |
 | Settings persistence foundation | DONE | `app/persistence/settings_store.py` |
-| Runner orchestration / execution | TODO | no `app/run/*` or `app/runner/*` implementation modules yet |
+| Runner orchestration / execution | DONE | `app/run/*` + `app/runner/*` implemented with manifest-driven execution |
 | Templates / New Project | TODO | no template assets under `/templates` yet |
 | Acceptance coverage vs MVP gate | PARTIAL | foundational tests pass; MVP run path not implemented |
 
@@ -402,7 +402,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
   - expose log location in UI
 - Primary files:
   - `app/runner/output_bridge.py` (new)
-  - `app/runner/traceback_formatter.py` (new)
+  - `app/runner/traceback_formatter.py`
   - `app/run/run_service.py`
 - Tests:
   - integration tests validating log file contents
@@ -453,7 +453,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
   - collect objective evidence (terminal output/log excerpts and UI artifacts)
 - Required acceptance tests:
   - `AT-01`, `AT-03`, `AT-05`, `AT-06`, `AT-07`, `AT-08`
-  - `AT-10`, `AT-11`, `AT-12`, `AT-14`, `AT-15`, `AT-16`
+- `AT-10`, `AT-11`, `AT-12`, `AT-13`, `AT-14`, `AT-15`, `AT-16`
 - Depends on: `B01`..`B16`
 - Done when: minimum gate is demonstrably passing.
 
@@ -604,7 +604,7 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
 ### E04 — Output UX polish
 - Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
-- Objective: make console/run logs easy to read and debug.
+- Objective: make console output easy to read and debug.
 - Scope:
   - clear stdout/stderr styling contrast
   - run separators and timestamps

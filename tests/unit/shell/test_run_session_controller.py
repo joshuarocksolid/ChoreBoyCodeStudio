@@ -58,7 +58,7 @@ class _FakeRunService:
         return RunSession(
             run_id="run123",
             manifest_path=f"{project_root}/.cbcs/runs/run.json",
-            log_file_path=f"{project_root}/logs/run.log",
+            log_file_path=f"{project_root}/logs/run_run123.log",
             project_root=project_root,
             entry_file=entry,
             mode=mode,
@@ -96,6 +96,7 @@ def _menu_registry() -> MenuStubRegistry:
         "shell.action.run.stepOut": _FakeAction(),
         "shell.action.run.toggleBreakpoint": _FakeAction(),
         "shell.action.run.pythonConsole": _FakeAction(),
+        "shell.action.run.removeAllBreakpoints": _FakeAction(),
     }
     return MenuStubRegistry(actions=actions)
 
@@ -121,7 +122,8 @@ def test_start_session_requires_loaded_project() -> None:
     assert result.error_message == "Open a project before running code."
 
 
-def test_start_session_allows_repl_without_loaded_project() -> None:
+def test_start_session_rejects_repl_without_loaded_project() -> None:
+    """REPL is now managed separately; RunSessionController always requires a project."""
     controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
     result = controller.start_session(
         loaded_project=None,
@@ -138,8 +140,8 @@ def test_start_session_allows_repl_without_loaded_project() -> None:
         append_console_line=lambda _text, _stream: None,
         append_python_console_line=lambda _text: None,
     )
-    assert result.started is True
-    assert controller.active_session_mode == constants.RUN_MODE_PYTHON_REPL
+    assert result.started is False
+    assert result.error_message == "Open a project before running code."
 
 
 def test_start_session_success_updates_active_mode_and_returns_session() -> None:

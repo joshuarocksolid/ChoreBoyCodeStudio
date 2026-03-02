@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.intelligence.import_resolver import resolve_project_import
+from app.intelligence.import_resolver import resolve_module_binding, resolve_project_import
 
 pytestmark = pytest.mark.unit
 
@@ -27,3 +27,42 @@ def test_resolve_project_import_handles_module_and_package(tmp_path: Path) -> No
     assert package.is_resolved is True
     assert package.resolved_path is not None and package.resolved_path.endswith("__init__.py")
     assert missing.is_resolved is False
+
+
+def test_resolve_module_binding_handles_alias_and_missing_binding(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "pkg").mkdir()
+    (project_root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (project_root / "pkg" / "mod.py").write_text("value = 1\n", encoding="utf-8")
+
+    resolved = resolve_module_binding(
+        str(project_root),
+        bindings={"mod": "pkg.mod"},
+        binding_name="mod",
+    )
+    missing = resolve_module_binding(
+        str(project_root),
+        bindings={"mod": "pkg.mod"},
+        binding_name="unknown",
+    )
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is not None and resolved.resolved_path.endswith("mod.py")
+    assert missing.is_resolved is False
+
+
+def test_resolve_module_binding_returns_unresolved_for_non_module_target(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "pkg").mkdir()
+    (project_root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (project_root / "pkg" / "helpers.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
+
+    unresolved = resolve_module_binding(
+        str(project_root),
+        bindings={"helper": "pkg.helpers.helper"},
+        binding_name="helper",
+    )
+
+    assert unresolved.is_resolved is False

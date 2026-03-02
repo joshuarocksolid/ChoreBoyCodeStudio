@@ -89,7 +89,7 @@ Why this is optimal on ChoreBoy:
   * args
   * run mode (normal / headless FreeCAD / Qt app)
 * Runner streams stdout/stderr back to Code Studio (pipe or file tail).
-* Runner writes a per-run log file under `logs/`.
+* Runner streams stdout/stderr back to Code Studio via pipes.
 
 ---
 
@@ -131,7 +131,6 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 
 * **Console** (stdout/stderr)
 * **Problems** (lint results, parse errors)
-* **Run Log** (the “app.log” tail + per-run logs)
 * **Tasks** (background ops: indexing, search, etc.)
 
 ### Right sidebar (optional, collapsible)
@@ -173,7 +172,6 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 * Run (F5)
 * Run With Arguments…
 * Stop (kills runner process)
-* Open Run Folder (logs/)
 * Clear Console
 * Run Configurations…
 
@@ -219,7 +217,6 @@ myapp/
   main.py
   launcher.py
   vendor/
-  logs/
   app/
     __init__.py
     backend.py
@@ -271,12 +268,11 @@ This is not optional—it’s the difference between “usable” and “mystery
 **Must ship:**
 
 1. `logs/app.log` always written (editor app)
-2. Per-run logs: `logs/run_YYYYMMDD_HHMMSS.log`
+2. Console output captures full stdout/stderr from each run
 3. Crash popup window that shows full traceback and “Copy to Clipboard” 
 4. A “Report” button that packages:
 
    * app log
-   * last run log
    * project.json
      into a zip for USB transfer (support workflow)
 
@@ -341,11 +337,10 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 | Project (Files)   |  Editor Tabs                | Run Config    |
 | - myapp/          |  [main_window.py] [backend] | Entry: main.py|
 |   - app/          |  -------------------------  | Args:        |
-|   - logs/         |  | code editor area       | | Mode: Headless
 |   - vendor/       |  |                       | | CWD: project |
 |   - main.py       |  -------------------------  | [Run] [Stop] |
 +-------------------+-----------------------------+-------------+
-| Bottom Tabs:  Console | Problems | Run Log | Tasks            |
+| Bottom Tabs:  Console | Problems | Tasks                    |
 | > output...                                                   |
 +---------------------------------------------------------------+
 | Status: project | line:col | modified | FreeCAD AppRun Py 3.9 |

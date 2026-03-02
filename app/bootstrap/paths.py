@@ -90,11 +90,6 @@ def project_cache_dir(project_root: PathInput) -> Path:
     return project_cbcs_dir(project_root) / constants.PROJECT_CACHE_DIRNAME
 
 
-def project_logs_dir(project_root: PathInput) -> Path:
-    """Return the per-project logs directory path."""
-    return _normalize_project_root(project_root) / constants.PROJECT_LOGS_DIRNAME
-
-
 def resolve_project_path(project_root: PathInput, relative_path: PathInput) -> Path:
     """Resolve a path relative to project root without using CWD."""
     root = _normalize_project_root(project_root)

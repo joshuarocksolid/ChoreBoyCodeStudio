@@ -348,7 +348,6 @@ choreboy_code_studio/
       __init__.py
       runner_main.py
       execution_context.py
-      output_bridge.py
       traceback_formatter.py
     persistence/
       __init__.py
@@ -396,7 +395,6 @@ my_project/
     project.json
     runs/
     cache/
-  logs/
   vendor/
   app/
   main.py
@@ -705,7 +703,8 @@ The problems pane should show:
 
 ## 14.3 Run Log
 
-The run log pane should show the saved per-run log tail, not only transient pipe output.
+The run log pane should show saved per-run log content from disk, not only transient pipe output.
+Current implementation refreshes the Run Log tab from the active run log file after run exit.
 
 ## 14.4 Application Log
 
@@ -876,7 +875,6 @@ Suggested checks:
 * QtUiTools available
 * writable global settings path
 * writable temp path
-* project logs writable
 * optional vendored package availability
 
 The probe should generate a user-visible compatibility summary.
@@ -951,7 +949,6 @@ For:
 * manifest creation
 * settings parsing
 * project metadata
-* log path generation
 * problem parsing
 * capability probe helpers
 

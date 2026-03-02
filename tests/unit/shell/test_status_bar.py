@@ -3,7 +3,12 @@
 import pytest
 
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
-from app.shell.status_bar import format_diagnostics_counts, map_editor_status_view, map_startup_report_to_status
+from app.shell.status_bar import (
+    format_diagnostics_counts,
+    map_editor_status_view,
+    map_run_status_view,
+    map_startup_report_to_status,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -78,3 +83,21 @@ def test_format_diagnostics_counts_only_warnings() -> None:
 
 def test_format_diagnostics_counts_zero() -> None:
     assert format_diagnostics_counts(0, 0) == ""
+
+
+def test_map_run_status_view_handles_running() -> None:
+    view = map_run_status_view("running")
+    assert view.severity == "running"
+    assert view.text == "Run: running"
+
+
+def test_map_run_status_view_handles_failed_exit_code() -> None:
+    view = map_run_status_view("failed", return_code=1)
+    assert view.severity == "error"
+    assert view.text == "Run: failed (code=1)"
+
+
+def test_map_run_status_view_defaults_to_idle_for_unknown_state() -> None:
+    view = map_run_status_view("mystery")
+    assert view.severity == "idle"
+    assert view.text == "Run: idle"

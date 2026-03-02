@@ -39,6 +39,16 @@ class SettingsDialog(QDialog):
         appearance_form.addRow("Theme", self._theme_mode_input)
         layout.addWidget(appearance_group)
 
+        output_group = QGroupBox("Output")
+        output_form = QFormLayout(output_group)
+        self._auto_open_console_on_run_output_input = QCheckBox(output_group)
+        self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
+        output_form.addRow("Auto-open Console on run output", self._auto_open_console_on_run_output_input)
+        self._auto_open_problems_on_run_failure_input = QCheckBox(output_group)
+        self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
+        output_form.addRow("Auto-open Problems on run failure", self._auto_open_problems_on_run_failure_input)
+        layout.addWidget(output_group)
+
         editor_group = QGroupBox("Editor")
         editor_form = QFormLayout(editor_group)
         self._tab_width_input = QSpinBox(editor_group)
@@ -159,4 +169,6 @@ class SettingsDialog(QDialog):
             metrics_logging_enabled=self._metrics_logging_input.isChecked(),
             force_full_reindex_on_open=self._force_reindex_on_open_input.isChecked(),
             theme_mode=["system", "light", "dark"][self._theme_mode_input.currentIndex()],
+            auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
+            auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
         )

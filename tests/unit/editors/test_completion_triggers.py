@@ -60,3 +60,23 @@ def test_typing_identifier_triggers_completion_when_auto_trigger_enabled(editor:
         editor.keyPressEvent(event)
 
     trigger_completion.assert_called_once_with(manual=False)
+
+
+def test_typing_dot_triggers_manual_completion_with_empty_prefix(editor: CodeEditorWidget) -> None:
+    editor.set_completion_preferences(enabled=True, auto_trigger=True, min_chars=2)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Period, Qt.NoModifier, ".")
+
+    with patch.object(editor, "trigger_completion") as trigger_completion:
+        editor.keyPressEvent(event)
+
+    trigger_completion.assert_called_once_with(manual=True, force_empty_prefix=True)
+
+
+def test_typing_dot_does_not_trigger_completion_when_auto_trigger_disabled(editor: CodeEditorWidget) -> None:
+    editor.set_completion_preferences(enabled=True, auto_trigger=False, min_chars=2)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Period, Qt.NoModifier, ".")
+
+    with patch.object(editor, "trigger_completion") as trigger_completion:
+        editor.keyPressEvent(event)
+
+    trigger_completion.assert_not_called()

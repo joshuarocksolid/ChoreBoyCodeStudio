@@ -108,7 +108,6 @@ class SearchResultDelegate(QStyledItemDelegate):
 
         font = QFont(option.font)
         font.setBold(True)
-        font.setPointSizeF(font.pointSizeF())
         painter.setFont(font)
         fm = QFontMetrics(font)
 
@@ -125,7 +124,13 @@ class SearchResultDelegate(QStyledItemDelegate):
         if match_count > 0:
             badge_text = str(match_count)
             badge_font = QFont(option.font)
-            badge_font.setPointSizeF(badge_font.pointSizeF() * 0.85)
+            ps = badge_font.pointSizeF()
+            if ps > 0:
+                badge_font.setPointSizeF(ps * 0.85)
+            else:
+                px = badge_font.pixelSize()
+                if px > 0:
+                    badge_font.setPixelSize(max(1, int(px * 0.85)))
             badge_font.setBold(True)
             painter.setFont(badge_font)
             bfm = QFontMetrics(badge_font)

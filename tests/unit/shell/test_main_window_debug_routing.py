@@ -13,6 +13,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from app.core import constants  # noqa: E402
 from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState  # noqa: E402
 from app.debug.debug_session import DebugSession  # noqa: E402
+from app.run.problem_parser import ProblemEntry  # noqa: E402
 from app.run.process_supervisor import ProcessEvent  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
@@ -49,6 +50,18 @@ class _FakeDebugPanel:
         self.state_updates.append(state)
 
 
+class _FakeBottomTabs:
+    def __init__(self, mapping: dict[object, int]) -> None:
+        self._mapping = mapping
+        self.current_index: int | None = None
+
+    def indexOf(self, widget: object) -> int:  # noqa: N802 - Qt signature
+        return self._mapping.get(widget, -1)
+
+    def setCurrentIndex(self, index: int) -> None:  # noqa: N802 - Qt signature
+        self.current_index = index
+
+
 class _FakeRunSessionController:
     def __init__(self, active_mode: str) -> None:
         self.active_session_mode = active_mode
@@ -59,7 +72,7 @@ class _FakeRunSessionController:
             session=RunSession(
                 run_id="run123",
                 manifest_path="/tmp/run.json",
-                log_file_path="/tmp/run.log",
+                log_file_path="/tmp/project/logs/run_run123.log",
                 project_root="/tmp/project",
                 entry_file="run.py",
                 mode=self.active_session_mode,
@@ -110,27 +123,85 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     assert console_lines == [("hello-debug\n", "stdout")]
 
 
-def test_start_session_in_debug_disables_python_console_session_and_enables_debug_input() -> None:
+def test_apply_run_event_auto_focuses_console_tab_when_enabled() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._debug_session = DebugSession()
+    window_any._active_run_output_tail = _TailBuffer()
+    window_any._is_shutting_down = False
+    window_any._auto_open_console_on_run_output = True
+    window_any._refresh_run_action_states = lambda: None
+
+    console_lines: list[tuple[str, str]] = []
+    window_any._append_console_line = (
+        lambda text, stream="stdout": console_lines.append((text, stream))
+    )
+    window_any._append_debug_output_line = lambda _text: None
+
+    console_widget = object()
+    window_any._console_output_widget = console_widget
+    window_any._bottom_tabs_widget = _FakeBottomTabs({console_widget: 2})
+
+    event = ProcessEvent(event_type="output", stream="stdout", text="hello\n")
+    MainWindow._apply_run_event(window, event)
+
+    assert console_lines == [("hello\n", "stdout")]
+    assert window_any._bottom_tabs_widget.current_index == 2
+
+
+def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._debug_session = DebugSession()
+    window_any._is_shutting_down = False
+    window_any._auto_open_problems_on_run_failure = True
+    window_any._debug_panel = None
+    window_any._append_console_line = lambda _text, stream="stdout": None
+    window_any._append_debug_output_line = lambda _text: None
+    window_any._refresh_run_action_states = lambda: None
+    window_any._load_latest_run_log = lambda: None
+    window_any._update_problems_from_output = lambda: [
+        ProblemEntry(
+            file_path="/tmp/project/main.py",
+            line_number=5,
+            context="<module>",
+            message="RuntimeError: boom",
+        )
+    ]
+    window_any._run_session_controller = SimpleNamespace(clear_active_session_mode=lambda: None)
+
+    problems_widget = object()
+    window_any._problems_panel = problems_widget
+    window_any._bottom_tabs_widget = _FakeBottomTabs({problems_widget: 3})
+
+    event = ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False)
+    MainWindow._apply_run_event(window, event)
+
+    assert window_any._bottom_tabs_widget.current_index == 3
+
+
+def test_start_session_in_debug_enables_debug_input() -> None:
+    """REPL is managed independently; starting a debug session should only enable the debug panel."""
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = object()
     window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_DEBUG)
-    window_any._python_console_widget = _FakePythonConsole()
     window_any._debug_panel = _FakeDebugPanel()
     window_any._handle_save_all_action = lambda: True
     window_any._prepare_for_session_start = lambda: None
     window_any._append_console_line = lambda _text, _stream="stdout": None
     window_any._append_python_console_line = lambda _text, _stream="stdout": None
     window_any._refresh_run_action_states = lambda: None
-    window_any._active_run_session_log_path = None
+    window_any._auto_open_console_on_run_output = False
+    window_any._set_run_status = lambda _status: None
     window_any._is_shutting_down = False
 
     started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
-    python_console = cast(_FakePythonConsole, window_any._python_console_widget)
     debug_panel = cast(_FakeDebugPanel, window_any._debug_panel)
 
     assert started is True
-    assert python_console.active_calls == [False]
     assert debug_panel.enabled_calls == [True]
 
 

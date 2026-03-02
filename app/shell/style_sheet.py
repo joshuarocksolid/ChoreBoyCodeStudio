@@ -12,6 +12,72 @@ QMainWindow#shell\\.mainWindow {{
     background: {tokens.window_bg};
     color: {tokens.text_primary};
 }}
+/* -- Menu bar and dropdown menus ---------------------------------------- */
+QMenuBar#shell\\.menuBar {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border-bottom: 1px solid {tokens.border};
+    padding: 2px 4px;
+    spacing: 1px;
+    font-size: 12px;
+}}
+QMenuBar#shell\\.menuBar::item {{
+    background: transparent;
+    color: {tokens.text_muted};
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin: 1px 0px;
+}}
+QMenuBar#shell\\.menuBar::item:selected {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QMenuBar#shell\\.menuBar::item:pressed {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QMenu {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 4px 0px;
+    font-size: 12px;
+}}
+QMenu::item {{
+    padding: 6px 32px 6px 12px;
+    border-radius: 4px;
+    margin: 1px 4px;
+}}
+QMenu::item:selected {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QMenu::item:disabled {{
+    color: {tokens.text_muted};
+}}
+QMenu::separator {{
+    height: 1px;
+    background: {tokens.border};
+    margin: 4px 12px;
+}}
+QMenu::indicator {{
+    width: 14px;
+    height: 14px;
+    margin-left: 6px;
+}}
+QMenu::indicator:checked {{
+    background: {tokens.accent};
+    border-radius: 3px;
+}}
+QMenu::indicator:unchecked {{
+    background: transparent;
+}}
+QMenu::right-arrow {{
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+}}
 QWidget#shell\\.leftRegion,
 QTabWidget#shell\\.editorTabs,
 QTabWidget#shell\\.bottomRegion\\.tabs {{
@@ -50,8 +116,7 @@ QTreeWidget#shell\\.projectTree::branch:has-children:open {{
     border-image: none;
 }}
 QPlainTextEdit#shell\\.editorTabs\\.textEditor,
-QPlainTextEdit#shell\\.bottom\\.console,
-QPlainTextEdit#shell\\.bottom\\.runLog {{
+QPlainTextEdit#shell\\.bottom\\.console {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
@@ -62,27 +127,93 @@ QTextEdit#shell\\.bottom\\.pythonConsole {{
     border: 1px solid {tokens.border};
     padding: 2px;
 }}
-QTreeWidget#shell\\.bottom\\.problems {{
-    background: {tokens.editor_bg};
-    color: {tokens.text_primary};
-    border: 1px solid {tokens.border};
+QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
 }}
-QTreeWidget#shell\\.bottom\\.problems::item {{
-    padding: 2px 4px;
-}}
-QTreeWidget#shell\\.bottom\\.problems::item:hover {{
+QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:hover {{
     background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
 }}
-QTreeWidget#shell\\.bottom\\.problems::item:selected {{
+QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-QTreeWidget#shell\\.bottom\\.problems QHeaderView::section {{
+/* -- Problems panel (VS Code-style) ------------------------------------ */
+QWidget#shell\\.problemsPanel {{
+    background: {tokens.editor_bg};
+}}
+QWidget#shell\\.problemsPanel\\.toolbar {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.problemsPanel\\.sourceLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    padding: 0 4px;
+}}
+QToolButton#shell\\.problemsPanel\\.filterErrors,
+QToolButton#shell\\.problemsPanel\\.filterWarnings,
+QToolButton#shell\\.problemsPanel\\.filterInfo {{
+    color: {tokens.text_muted};
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 11px;
+}}
+QToolButton#shell\\.problemsPanel\\.filterErrors:checked {{
+    color: {tokens.diag_error_color};
+    border-color: {tokens.diag_error_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.problemsPanel\\.filterWarnings:checked {{
+    color: {tokens.diag_warning_color};
+    border-color: {tokens.diag_warning_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.problemsPanel\\.filterInfo:checked {{
+    color: {tokens.diag_info_color};
+    border-color: {tokens.diag_info_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.problemsPanel\\.filterErrors:hover,
+QToolButton#shell\\.problemsPanel\\.filterWarnings:hover,
+QToolButton#shell\\.problemsPanel\\.filterInfo:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree::item {{
+    padding: 2px 4px;
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree::branch {{
+    background: transparent;
+}}
+QTreeWidget#shell\\.problemsPanel\\.tree QHeaderView::section {{
     background: {tokens.panel_bg};
     color: {tokens.text_muted};
     border: none;
     border-bottom: 1px solid {tokens.border};
     padding: 2px 6px;
     font-size: 11px;
+}}
+QLabel#shell\\.problemsPanel\\.emptyLabel {{
+    color: {tokens.text_muted};
+    font-size: 12px;
 }}
 /* -- Debug panel -------------------------------------------------------- */
 QWidget#shell\\.debug\\.panel {{
@@ -252,29 +383,78 @@ QStatusBar#shell\\.statusBar {{
     color: {tokens.text_primary};
 }}
 QLabel#shell\\.startupStatusLabel,
+QLabel#shell\\.runStatusLabel,
 QLabel#shell\\.projectStatusLabel,
 QLabel#shell\\.editorStatusLabel,
 QLabel#shell\\.diagnosticsStatusLabel {{
     color: {tokens.text_muted};
     background: transparent;
 }}
+QLabel#shell\\.runStatusLabel[runSeverity="running"] {{
+    color: {tokens.debug_running_color};
+}}
+QLabel#shell\\.runStatusLabel[runSeverity="stopping"],
+QLabel#shell\\.runStatusLabel[runSeverity="warning"] {{
+    color: {tokens.diag_warning_color};
+}}
+QLabel#shell\\.runStatusLabel[runSeverity="error"] {{
+    color: {tokens.diag_error_color};
+}}
+QLabel#shell\\.runStatusLabel[runSeverity="ok"] {{
+    color: {tokens.debug_running_color};
+}}
 QWidget#shell\\.toolbar\\.runDebug {{
     background: {tokens.panel_bg};
     border-bottom: 1px solid {tokens.border};
 }}
-QToolButton#shell\\.toolbar\\.btn {{
+/* -- Default toolbar button style --------------------------------------- */
+QToolButton[objectName^="shell.toolbar.btn"] {{
     background: transparent;
     color: {tokens.text_primary};
     border: none;
     border-radius: 5px;
-    padding: 4px 10px;
+    padding: 5px 12px;
     font-size: 12px;
+    font-weight: 600;
 }}
-QToolButton#shell\\.toolbar\\.btn:hover {{
+QToolButton[objectName^="shell.toolbar.btn"]:hover {{
     background: {tokens.tree_hover_bg};
 }}
-QToolButton#shell\\.toolbar\\.btn:pressed {{
+QToolButton[objectName^="shell.toolbar.btn"]:pressed {{
     background: {tokens.tree_selected_bg};
+}}
+/* -- Run button (green accent) ------------------------------------------ */
+QToolButton#shell\\.toolbar\\.btn\\.run {{
+    background: {"#1B3D1B" if tokens.is_dark else "#E6F4EA"};
+    color: {"#4ADE80" if tokens.is_dark else "#15803D"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.run:hover {{
+    background: {"#22502A" if tokens.is_dark else "#D1EDDA"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.run:pressed {{
+    background: {"#2A6434" if tokens.is_dark else "#B7DFC6"};
+}}
+/* -- Stop button (red accent) ------------------------------------------- */
+QToolButton#shell\\.toolbar\\.btn\\.stop {{
+    background: {"#3D1B1B" if tokens.is_dark else "#FEE2E2"};
+    color: {"#F87171" if tokens.is_dark else "#B91C1C"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.stop:hover {{
+    background: {"#502222" if tokens.is_dark else "#FECACA"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.stop:pressed {{
+    background: {"#642A2A" if tokens.is_dark else "#FCA5A5"};
+}}
+/* -- Debug button (amber accent) ---------------------------------------- */
+QToolButton#shell\\.toolbar\\.btn\\.debug {{
+    background: {"#3D2E0A" if tokens.is_dark else "#FEF3C7"};
+    color: {"#FBBF24" if tokens.is_dark else "#B45309"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.debug:hover {{
+    background: {"#50400E" if tokens.is_dark else "#FDE68A"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.debug:pressed {{
+    background: {"#645214" if tokens.is_dark else "#FCD34D"};
 }}
 QFrame#shell\\.toolbar\\.separator {{
     color: {tokens.border};
@@ -282,10 +462,6 @@ QFrame#shell\\.toolbar\\.separator {{
 QToolButton#shell\\.explorerAction,
 QToolButton {{
     color: {tokens.text_primary};
-}}
-QLabel#shell\\.editor\\.breadcrumbs {{
-    color: {tokens.text_muted};
-    padding: 2px 4px;
 }}
 QTabBar::tab {{
     background: {tokens.panel_bg};

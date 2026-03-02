@@ -146,3 +146,129 @@ def test_completion_service_boosts_recently_accepted_items(tmp_path: Path) -> No
 
     boosted = service.complete(request)
     assert boosted[0].insert_text == "alpha_two"
+
+
+def test_completion_service_suggests_members_for_direct_import(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text(
+        "def entrypoint():\n"
+        "    return 1\n\n"
+        "class Runner:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    service = CompletionService(cache_db_path=str(cache_path))
+    source = "import main\nmain."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((project_root / "consumer.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    completions = service.complete(request)
+    inserts = {item.insert_text for item in completions}
+
+    assert "entrypoint" in inserts
+    assert "Runner" in inserts
+
+
+def test_completion_service_suggests_members_for_import_alias(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text(
+        "def run_task():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    service = CompletionService(cache_db_path=str(cache_path))
+    source = "import main as m\nm."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((project_root / "consumer.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    completions = service.complete(request)
+
+    assert any(item.insert_text == "run_task" for item in completions)
+
+
+def test_completion_service_suggests_members_for_from_imported_module(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "pkg").mkdir()
+    (project_root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (project_root / "pkg" / "mod.py").write_text(
+        "def helper():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    service = CompletionService(cache_db_path=str(cache_path))
+    source = "from pkg import mod\nmod."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((project_root / "consumer.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    completions = service.complete(request)
+
+    assert any(item.insert_text == "helper" for item in completions)
+
+
+def test_completion_service_module_member_completion_returns_empty_for_unresolved_import(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    service = CompletionService(cache_db_path=str(cache_path))
+    source = "import missing_module\nmissing_module."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((project_root / "consumer.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    completions = service.complete(request)
+
+    assert completions == []
+
+
+def test_completion_service_module_member_completion_uses_parse_recovery(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text(
+        "def recovered():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    service = CompletionService(cache_db_path=str(cache_path))
+    source = "import main\nif True:\n    broken =\nmain."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((project_root / "consumer.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    completions = service.complete(request)
+
+    assert any(item.insert_text == "recovered" for item in completions)

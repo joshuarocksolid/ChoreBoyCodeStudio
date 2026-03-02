@@ -32,6 +32,8 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.quick_fix_require_preview_for_multifile is True
     assert snapshot.cache_enabled is True
     assert snapshot.theme_mode == "system"
+    assert snapshot.auto_open_console_on_run_output is True
+    assert snapshot.auto_open_problems_on_run_failure is True
 
 
 def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
@@ -61,6 +63,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "metrics_logging_enabled": False,
                 "force_full_reindex_on_open": True,
             },
+            "output": {
+                "auto_open_console_on_run_output": False,
+                "auto_open_problems_on_run_failure": False,
+            },
         }
     )
 
@@ -84,6 +90,8 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.incremental_indexing is False
     assert snapshot.metrics_logging_enabled is False
     assert snapshot.force_full_reindex_on_open is True
+    assert snapshot.auto_open_console_on_run_output is False
+    assert snapshot.auto_open_problems_on_run_failure is False
 
 
 def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() -> None:
@@ -108,6 +116,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         incremental_indexing=True,
         metrics_logging_enabled=False,
         force_full_reindex_on_open=True,
+        auto_open_console_on_run_output=False,
+        auto_open_problems_on_run_failure=False,
     )
     merged = merge_editor_settings_snapshot({"schema_version": 1}, snapshot)
 
@@ -126,6 +136,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["intelligence"]["cache_enabled"] is False
     assert merged["intelligence"]["force_full_reindex_on_open"] is True
     assert merged["theme"]["mode"] == "system"
+    assert merged["output"]["auto_open_console_on_run_output"] is False
+    assert merged["output"]["auto_open_problems_on_run_failure"] is False
 
 
 def test_parse_theme_mode_reads_explicit_dark() -> None:

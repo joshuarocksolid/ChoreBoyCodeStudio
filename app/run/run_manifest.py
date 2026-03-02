@@ -30,11 +30,11 @@ class RunManifest:
     project_root: str
     entry_file: str
     working_directory: str
+    log_file: str
     mode: str
     argv: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     safe_mode: bool = True
-    log_file: str = ""
     timestamp: str = ""
     breakpoints: list[dict[str, int | str]] = field(default_factory=list)
 
@@ -45,11 +45,11 @@ class RunManifest:
             "project_root": self.project_root,
             "entry_file": self.entry_file,
             "working_directory": self.working_directory,
+            "log_file": self.log_file,
             "mode": self.mode,
             "argv": list(self.argv),
             "env": dict(self.env),
             "safe_mode": self.safe_mode,
-            "log_file": self.log_file,
             "timestamp": self.timestamp,
             "breakpoints": [dict(entry) for entry in self.breakpoints],
         }
@@ -72,6 +72,7 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
     project_root = _require_absolute_path(payload, "project_root", manifest_path=manifest_path)
     entry_file = _require_non_empty_string(payload, "entry_file", manifest_path=manifest_path)
     working_directory = _require_absolute_path(payload, "working_directory", manifest_path=manifest_path)
+    log_file = _require_absolute_path(payload, "log_file", manifest_path=manifest_path)
     mode = _require_non_empty_string(payload, "mode", manifest_path=manifest_path)
     if mode not in ALLOWED_RUN_MODES:
         _raise_manifest_error(
@@ -92,7 +93,6 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
     if not isinstance(safe_mode, bool):
         _raise_manifest_error("safe_mode must be a boolean.", field="safe_mode", manifest_path=manifest_path)
 
-    log_file = _require_absolute_path(payload, "log_file", manifest_path=manifest_path)
     timestamp = _require_non_empty_string(payload, "timestamp", manifest_path=manifest_path)
     breakpoints = _parse_breakpoints(payload.get("breakpoints", []), manifest_path=manifest_path)
 
@@ -102,11 +102,11 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
         project_root=project_root,
         entry_file=entry_file,
         working_directory=working_directory,
+        log_file=log_file,
         mode=mode,
         argv=list(argv),
         env=dict(env),
         safe_mode=safe_mode,
-        log_file=log_file,
         timestamp=timestamp,
         breakpoints=breakpoints,
     )

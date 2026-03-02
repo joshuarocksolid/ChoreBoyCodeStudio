@@ -7,10 +7,10 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtGui import QKeyEvent  # noqa: E402
+from PySide2.QtGui import QColor, QFont, QKeyEvent  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
-from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget  # noqa: E402
+from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -65,9 +65,9 @@ def _get_plain_text(widget: PythonConsoleWidget) -> str:
 # ---------------------------------------------------------------------------
 
 class TestIdleState:
-    def test_shows_idle_hint_on_construction(self, widget: PythonConsoleWidget) -> None:
+    def test_shows_startup_hint_on_construction(self, widget: PythonConsoleWidget) -> None:
         text = _get_plain_text(widget)
-        assert "No active session" in text
+        assert "Starting Python Console" in text
 
     def test_read_only_when_no_session(self, widget: PythonConsoleWidget) -> None:
         assert widget.isReadOnly() is False
@@ -268,3 +268,131 @@ class TestOutputAppending:
         text = _get_plain_text(active_widget)
         assert "[system] Session finished" in text
         assert text.endswith(_PROMPT)
+
+
+# ---------------------------------------------------------------------------
+# Char format: user input should use the default text color, not the prompt's
+# ---------------------------------------------------------------------------
+
+class TestTypingCharFormat:
+    """Verify that currentCharFormat is reset to the default after prompts."""
+
+    def _assert_default_fmt(self, widget: PythonConsoleWidget) -> None:
+        fmt = widget.currentCharFormat()
+        expected_fg = QColor(widget._col_text)
+        assert fmt.foreground().color() == expected_fg, (
+            f"Expected foreground {expected_fg.name()}, got {fmt.foreground().color().name()}"
+        )
+        assert fmt.fontWeight() == QFont.Normal
+
+    def test_current_char_format_after_show_prompt(self, active_widget: PythonConsoleWidget) -> None:
+        self._assert_default_fmt(active_widget)
+
+    def test_current_char_format_after_submission(self, active_widget: PythonConsoleWidget) -> None:
+        _type_text(active_widget, "x = 1")
+        _press(active_widget, Qt.Key_Return)
+        self._assert_default_fmt(active_widget)
+
+    def test_current_char_format_after_history_recall(self, active_widget: PythonConsoleWidget) -> None:
+        _type_text(active_widget, "x = 1")
+        _press(active_widget, Qt.Key_Return)
+        _press(active_widget, Qt.Key_Up)
+        self._assert_default_fmt(active_widget)
+
+    def test_current_char_format_after_stderr_output(self, active_widget: PythonConsoleWidget) -> None:
+        active_widget.append_output("NameError: oops", "stderr")
+        self._assert_default_fmt(active_widget)
+
+    def test_typed_text_uses_default_format(self, active_widget: PythonConsoleWidget) -> None:
+        _type_text(active_widget, "hello")
+        cursor = active_widget.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Left, cursor.MoveMode.KeepAnchor, 1)
+        fmt = cursor.charFormat()
+        expected_fg = QColor(active_widget._col_text)
+        assert fmt.foreground().color() == expected_fg
+
+
+# ---------------------------------------------------------------------------
+# clear_console — user-facing clear that preserves session state
+# ---------------------------------------------------------------------------
+
+class TestClearConsole:
+    def test_clear_console_removes_all_text_and_shows_prompt(
+        self, active_widget: PythonConsoleWidget
+    ) -> None:
+        active_widget.append_output("some old output", "stdout")
+        _type_text(active_widget, "partial")
+        active_widget.clear_console()
+        text = _get_plain_text(active_widget)
+        assert text == _PROMPT
+
+    def test_clear_console_preserves_session_active_flag(
+        self, active_widget: PythonConsoleWidget
+    ) -> None:
+        active_widget.clear_console()
+        assert active_widget._session_active is True
+
+    def test_clear_console_preserves_history(
+        self, active_widget: PythonConsoleWidget
+    ) -> None:
+        _type_text(active_widget, "x = 1")
+        _press(active_widget, Qt.Key_Return)
+        assert len(active_widget.history) == 1
+        active_widget.clear_console()
+        assert len(active_widget.history) == 1
+
+    def test_clear_console_resets_prompt_anchor(
+        self, active_widget: PythonConsoleWidget
+    ) -> None:
+        active_widget.clear_console()
+        text = _get_plain_text(active_widget)
+        assert active_widget.prompt_anchor == len(text)
+
+    def test_clear_console_when_inactive_shows_prompt(
+        self, widget: PythonConsoleWidget
+    ) -> None:
+        widget.append_output("old output", "stdout")
+        widget.clear_console()
+        text = _get_plain_text(widget)
+        assert text == _PROMPT
+
+
+# ---------------------------------------------------------------------------
+# Traceback context detection and dimmed error styling
+# ---------------------------------------------------------------------------
+
+class TestTracebackContextDetection:
+    def test_traceback_header_is_context(self) -> None:
+        assert _is_traceback_context("Traceback (most recent call last):") is True
+
+    def test_file_line_is_context(self) -> None:
+        assert _is_traceback_context('  File "<console>", line 1, in <module>') is True
+
+    def test_indented_source_echo_is_context(self) -> None:
+        assert _is_traceback_context("    print(a)") is True
+
+    def test_chained_exception_header_is_context(self) -> None:
+        assert _is_traceback_context("During handling of the above exception, another exception occurred:") is True
+
+    def test_final_error_line_is_not_context(self) -> None:
+        assert _is_traceback_context("NameError: name 'a' is not defined") is False
+
+    def test_syntax_error_caret_is_not_context(self) -> None:
+        assert _is_traceback_context("    ^") is False
+
+    def test_empty_line_is_not_context(self) -> None:
+        assert _is_traceback_context("") is False
+
+
+class TestTracebackStyling:
+    def test_stderr_error_line_uses_full_error_color(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for("stderr", "NameError: name 'a' is not defined")
+        assert fmt.foreground().color() == QColor(active_widget._col_error)
+
+    def test_stderr_traceback_header_uses_dim_error_color(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for("stderr", "Traceback (most recent call last):")
+        assert fmt.foreground().color() == QColor(active_widget._col_error_dim)
+
+    def test_stderr_file_line_uses_dim_error_color(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for("stderr", '  File "<console>", line 1, in <module>')
+        assert fmt.foreground().color() == QColor(active_widget._col_error_dim)

@@ -10,7 +10,13 @@ import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
 from app.run.run_manifest import load_run_manifest
-from app.run.run_service import RunService, build_run_log_path, build_run_manifest_path, generate_run_id, resolve_runtime_executable
+from app.run.run_service import (
+    RunService,
+    build_run_log_path,
+    build_run_manifest_path,
+    generate_run_id,
+    resolve_runtime_executable,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -26,16 +32,24 @@ def test_generate_run_id_includes_timestamp_and_random_suffix() -> None:
     assert first != second
 
 
-def test_build_run_log_and_manifest_paths_use_project_contract(tmp_path: Path) -> None:
-    """Run artifacts should target project logs and .cbcs/runs directories."""
+def test_build_run_manifest_path_uses_project_contract(tmp_path: Path) -> None:
+    """Run manifest should target .cbcs/runs directory."""
+    project_root = tmp_path / "project_alpha"
+    run_id = "20260301_050607_abcd12"
+
+    manifest_path = build_run_manifest_path(project_root, run_id)
+
+    assert manifest_path == project_root / ".cbcs" / "runs" / f"run_manifest_{run_id}.json"
+
+
+def test_build_run_log_path_uses_project_logs_contract(tmp_path: Path) -> None:
+    """Run log should target project logs directory."""
     project_root = tmp_path / "project_alpha"
     run_id = "20260301_050607_abcd12"
 
     log_path = build_run_log_path(project_root, run_id)
-    manifest_path = build_run_manifest_path(project_root, run_id)
 
     assert log_path == project_root / "logs" / f"run_{run_id}.log"
-    assert manifest_path == project_root / ".cbcs" / "runs" / f"run_manifest_{run_id}.json"
 
 
 def test_resolve_runtime_executable_prefers_explicit_config(tmp_path: Path) -> None:
@@ -109,6 +123,8 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     assert manifest.env["BASE_ENV"] == "1"
     assert manifest.env["EXTRA_ENV"] == "2"
     assert manifest.safe_mode is False
+    assert manifest.log_file == session.log_file_path
+    assert Path(manifest.log_file).name.endswith(".log")
 
 
 def test_start_run_uses_project_default_argv_when_not_overridden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,6 +178,7 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     assert manifest.mode == "python_repl"
     assert manifest.safe_mode is False
     assert manifest.working_directory == expected_home
+    assert manifest.log_file == session.log_file_path
     assert launch_context["cwd"] == expected_home
     assert "/repl/runs/" in session.manifest_path
     assert "/repl/logs/" in session.log_file_path

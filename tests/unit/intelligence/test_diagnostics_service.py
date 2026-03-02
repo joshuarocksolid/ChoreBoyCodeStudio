@@ -166,3 +166,18 @@ def test_unreachable_statement_includes_column_range(tmp_path: Path) -> None:
     py230 = [d for d in diagnostics if d.code == "PY230"]
     assert len(py230) == 1
     assert py230[0].col_start is not None
+
+
+def test_find_unresolved_imports_uses_source_overrides(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "module.py"
+    file_path.write_text("x = 1\n", encoding="utf-8")
+
+    diagnostics_disk = find_unresolved_imports(str(project_root))
+    assert len(diagnostics_disk) == 0
+
+    overrides = {str(file_path): "import nonexistent_module\n"}
+    diagnostics_buffer = find_unresolved_imports(str(project_root), source_overrides=overrides)
+    assert len(diagnostics_buffer) == 1
+    assert "nonexistent_module" in diagnostics_buffer[0].message

@@ -38,6 +38,7 @@ def _make_registry_with_actions() -> tuple[MenuStubRegistry, dict[str, object]]:
         "shell.action.run.stepInto",
         "shell.action.run.stepOut",
         "shell.action.run.toggleBreakpoint",
+        "shell.action.run.removeAllBreakpoints",
     ):
         action = QAction(aid.split(".")[-1])
         action.setEnabled(False)
@@ -56,19 +57,17 @@ def test_widget_creates_with_correct_object_name() -> None:
     assert widget.objectName() == "shell.toolbar.runDebug"
 
 
-def test_disabled_actions_produce_hidden_buttons() -> None:
+def test_disabled_actions_produce_disabled_buttons() -> None:
     registry, actions = _make_registry_with_actions()
     widget = RunToolbarWidget(registry)
     from PySide2.QtWidgets import QToolButton
 
-    visible_buttons = [
-        btn for btn in widget.findChildren(QToolButton)
-        if btn.isVisible()
-    ]
-    assert len(visible_buttons) == 0
+    buttons = widget.findChildren(QToolButton)
+    assert len(buttons) == 10
+    assert all(not btn.isEnabled() for btn in buttons)
 
 
-def test_enabling_action_shows_button() -> None:
+def test_enabling_action_enables_button() -> None:
     from PySide2.QtWidgets import QAction, QToolButton
 
     registry, actions = _make_registry_with_actions()
@@ -77,11 +76,9 @@ def test_enabling_action_shows_button() -> None:
     run_action: QAction = actions["shell.action.run.run"]  # type: ignore[assignment]
     run_action.setEnabled(True)
 
-    visible_buttons = [
-        btn for btn in widget.findChildren(QToolButton)
-        if not btn.isHidden()
-    ]
-    assert len(visible_buttons) == 1
+    run_button = widget.findChild(QToolButton, "shell.toolbar.btn.run")
+    assert run_button is not None
+    assert run_button.isEnabled() is True
 
 
 def test_python_console_action_is_not_rendered_in_top_toolbar() -> None:
@@ -93,8 +90,5 @@ def test_python_console_action_is_not_rendered_in_top_toolbar() -> None:
     python_console_action: QAction = actions["shell.action.run.pythonConsole"]  # type: ignore[assignment]
     python_console_action.setEnabled(True)
 
-    visible_buttons = [
-        btn for btn in widget.findChildren(QToolButton)
-        if not btn.isHidden()
-    ]
-    assert len(visible_buttons) == 0
+    buttons = widget.findChildren(QToolButton)
+    assert all(btn.defaultAction() is not python_console_action for btn in buttons)

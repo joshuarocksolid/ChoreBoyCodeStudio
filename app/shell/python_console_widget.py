@@ -20,7 +20,7 @@ from PySide2.QtGui import (
     QTextCharFormat,
     QTextCursor,
 )
-from PySide2.QtWidgets import QTextEdit
+from PySide2.QtWidgets import QMenu, QTextEdit
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -48,6 +48,7 @@ class PythonConsoleWidget(QTextEdit):
 
     input_submitted: Signal = Signal(str)
     interrupt_requested: Signal = Signal()
+    restart_requested: Signal = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -66,10 +67,11 @@ class PythonConsoleWidget(QTextEdit):
         self._col_muted: str = "#ADB5BD"
         self._col_accent: str = "#5B8CFF"
         self._col_error: str = "#FF6B6B"
+        self._col_error_dim: str = "#CC8080"
         self._col_bg: str = "#1B1F23"
 
         self._setup_appearance()
-        self._render_idle_hint()
+        self._render_startup_hint()
         self._show_prompt()
 
     # ------------------------------------------------------------------
@@ -94,6 +96,7 @@ class PythonConsoleWidget(QTextEdit):
         self._col_accent = tokens.accent
         self._col_bg = tokens.editor_bg
         self._col_error = "#FF6B6B" if tokens.is_dark else "#CC0000"
+        self._col_error_dim = "#CC8080" if tokens.is_dark else "#994444"
 
         palette = self.palette()
         palette.setColor(QPalette.Base, QColor(tokens.editor_bg))
@@ -108,6 +111,15 @@ class PythonConsoleWidget(QTextEdit):
         super().clear()
         self._prompt_anchor = -1
         self._pending_block_lines.clear()
+
+    def clear_console(self) -> None:
+        """User-facing clear: wipe the display and re-show a fresh prompt.
+
+        Unlike ``clear()`` this preserves session-active state and history so
+        the REPL session can continue seamlessly.
+        """
+        self.clear()
+        self._show_prompt()
 
     def set_session_active(self, active: bool) -> None:
         """Show or hide the interactive prompt.
@@ -145,10 +157,15 @@ class PythonConsoleWidget(QTextEdit):
         at_bottom = self._is_at_bottom()
 
         if self._prompt_anchor < 0:
-            # No active prompt — just append to end.
             self._append_at_end(text, stream)
         else:
             self._insert_before_prompt(text, stream)
+
+        # Document modifications can cause Qt to re-derive the widget's
+        # current char format from the character at the cursor position
+        # (the prompt's accent format).  Re-assert the default so that
+        # subsequent user typing stays in the neutral text color.
+        self.setCurrentCharFormat(self._default_fmt())
 
         if at_bottom:
             self._scroll_to_bottom()
@@ -264,9 +281,15 @@ class PythonConsoleWidget(QTextEdit):
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         """Allow clicking anywhere (for text selection); keep editing at end."""
         super().mousePressEvent(event)
-        # We deliberately do NOT force the cursor into the input zone on click —
-        # the user should be able to select and copy history text freely.
-        # Typing a character automatically refocuses to the end (see keyPressEvent).
+
+    def contextMenuEvent(self, event) -> None:  # type: ignore[override]
+        menu: QMenu = self.createStandardContextMenu()
+        menu.addSeparator()
+        clear_action = menu.addAction("Clear Console")
+        clear_action.triggered.connect(self.clear_console)
+        restart_action = menu.addAction("Restart Python Console")
+        restart_action.triggered.connect(self.restart_requested.emit)
+        menu.exec_(event.globalPos())
 
     # ------------------------------------------------------------------
     # Submission and history
@@ -351,10 +374,11 @@ class PythonConsoleWidget(QTextEdit):
             cursor.insertText(prefill, default_fmt)
 
         self.setTextCursor(cursor)
+        self.setCurrentCharFormat(default_fmt)
         self._scroll_to_bottom()
 
-    def _render_idle_hint(self) -> None:
-        """Display a muted hint when no session is running."""
+    def _render_startup_hint(self) -> None:
+        """Display a brief startup message while the REPL process launches."""
         self.setReadOnly(False)
         cursor = QTextCursor(self.document())
         cursor.movePosition(QTextCursor.End)
@@ -362,7 +386,7 @@ class PythonConsoleWidget(QTextEdit):
         fmt.setForeground(QColor(self._col_muted))
         fmt.setFontItalic(True)
         cursor.insertText(
-            "No active session \u2014 press Enter after a command to start Python Console.\n",
+            "Starting Python Console\u2026\n",
             fmt,
         )
         self.setTextCursor(cursor)
@@ -383,8 +407,10 @@ class PythonConsoleWidget(QTextEdit):
         cursor = QTextCursor(self.document())
         cursor.setPosition(self._prompt_anchor)
         cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
-        cursor.insertText(text, self._default_fmt())
+        default_fmt = self._default_fmt()
+        cursor.insertText(text, default_fmt)
         self.setTextCursor(cursor)
+        self.setCurrentCharFormat(default_fmt)
 
     def _is_at_bottom(self) -> bool:
         bar = self.verticalScrollBar()
@@ -402,12 +428,20 @@ class PythonConsoleWidget(QTextEdit):
         return fmt
 
     def _fmt_for(self, stream: str, text: str) -> QTextCharFormat:
-        """Return a ``QTextCharFormat`` appropriate for *stream* / *text*."""
+        """Return a ``QTextCharFormat`` appropriate for *stream* / *text*.
+
+        For ``stderr``, traceback context lines (header, ``File`` locations,
+        source echoes) use a softer dimmed-error color so the final error
+        message line stands out.
+        """
         fmt = QTextCharFormat()
         fmt.setFontWeight(QFont.Normal)
 
         if stream == "stderr":
-            fmt.setForeground(QColor(self._col_error))
+            if _is_traceback_context(text):
+                fmt.setForeground(QColor(self._col_error_dim))
+            else:
+                fmt.setForeground(QColor(self._col_error))
         elif stream == "system" or text.lstrip().startswith("[system]"):
             fmt.setForeground(QColor(self._col_muted))
             fmt.setFontItalic(True)
@@ -438,6 +472,17 @@ def _is_source_complete(source: str) -> bool:
     except (OverflowError, SyntaxError, ValueError):
         # Syntax errors should still be submitted so runner REPL prints them.
         return True
+
+
+def _is_traceback_context(text: str) -> bool:
+    """Return True for traceback frame/context lines (not the final error)."""
+    stripped = text.lstrip()
+    return (
+        stripped.startswith("Traceback (most recent call last)")
+        or stripped.startswith("File \"")
+        or stripped.startswith("During handling of the above exception")
+        or (text.startswith(" ") and not stripped.startswith("^"))
+    )
 
 
 def _enum_int(value: object) -> int:

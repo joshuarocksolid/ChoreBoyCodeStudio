@@ -428,8 +428,12 @@ class CodeEditorWidget(QPlainTextEdit):
                         diag_color = self._diag_color_for_severity(diag_severity)
                         painter.setBrush(diag_color)
                         painter.setPen(Qt.NoPen)
-                        marker_r = 3
-                        painter.drawEllipse(3, center_y - marker_r, marker_r * 2, marker_r * 2)
+                        tri_size = 4
+                        painter.drawPolygon(QPolygonF([
+                            QPointF(2, center_y - tri_size),
+                            QPointF(2 + tri_size + 2, center_y),
+                            QPointF(2, center_y + tri_size),
+                        ]))
 
                     painter.setPen(color)
                     painter.drawText(

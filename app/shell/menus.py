@@ -62,6 +62,7 @@ class MenuCallbacks:
     on_step_into: Callable[[], object] | None = None
     on_step_out: Callable[[], object] | None = None
     on_toggle_breakpoint: Callable[[], object] | None = None
+    on_remove_all_breakpoints: Callable[[], object] | None = None
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_reset_layout: Callable[[], object] | None = None
@@ -323,6 +324,10 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "F5",
         callback=callback_registry.on_run,
     )
+    run_action = actions.get("shell.action.run.run")
+    if run_action is not None:
+        run_action.setToolTip("Run the project entry script. Output appears in the Console tab.")
+        run_action.setStatusTip("Run the project entry script. Output appears in the Console tab.")
     _register_menu_action(
         run_menu,
         actions,
@@ -331,6 +336,10 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+F5",
         callback=callback_registry.on_debug,
     )
+    debug_action = actions.get("shell.action.run.debug")
+    if debug_action is not None:
+        debug_action.setToolTip("Start a debug session. Output appears in Console and Debug tabs.")
+        debug_action.setStatusTip("Start a debug session. Output appears in Console and Debug tabs.")
     _register_menu_action(
         run_menu,
         actions,
@@ -426,15 +435,27 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "F9",
         callback=callback_registry.on_toggle_breakpoint,
     )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.removeAllBreakpoints",
+        "Remove All Breakpoints",
+        callback=callback_registry.on_remove_all_breakpoints,
+    )
     run_menu.addSeparator()
     _register_menu_action(
         run_menu,
         actions,
         "shell.action.run.pythonConsole",
-        "Start Python Console",
+        "Restart Python Console (REPL)",
         "Ctrl+`",
+        enabled=True,
         callback=callback_registry.on_start_python_console,
     )
+    python_console_action = actions.get("shell.action.run.pythonConsole")
+    if python_console_action is not None:
+        python_console_action.setToolTip("Restart the REPL session shown in the Python Console tab.")
+        python_console_action.setStatusTip("Restart the REPL session shown in the Python Console tab.")
     _register_menu_action(
         run_menu,
         actions,
@@ -605,6 +626,11 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         enabled=True,
         callback=callback_registry.on_help_about,
     )
+
+    qt_core = importlib.import_module("PySide2.QtCore")
+    for m in (file_menu, open_recent_menu, edit_menu, run_menu,
+              view_menu, theme_menu, tools_menu, help_menu):
+        m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 
     return MenuStubRegistry(actions=actions, menus=menus)
 

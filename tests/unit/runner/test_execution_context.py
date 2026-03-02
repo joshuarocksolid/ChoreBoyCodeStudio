@@ -28,11 +28,11 @@ def _build_manifest(tmp_path: Path, *, entry_file: str = "run.py", safe_mode: bo
         project_root=str(project_root.resolve()),
         entry_file=entry_file,
         working_directory=str(project_root.resolve()),
+        log_file=str((project_root / "logs" / "run_run_1.log").resolve()),
         mode="python_script",
         argv=["--arg"],
         env={"CUSTOM_ENV": "value"},
         safe_mode=safe_mode,
-        log_file=str((project_root / "logs" / "run.log").resolve()),
         timestamp="2026-03-01T01:01:01",
     )
 
@@ -57,11 +57,11 @@ def test_execution_context_from_manifest_rejects_missing_entry_file(tmp_path: Pa
         project_root=str(project_root.resolve()),
         entry_file="missing.py",
         working_directory=str(project_root.resolve()),
+        log_file=str((project_root / "logs" / "run_run_1.log").resolve()),
         mode="python_script",
         argv=[],
         env={},
         safe_mode=True,
-        log_file=str((project_root / "logs" / "run.log").resolve()),
         timestamp="2026-03-01T01:01:01",
     )
 
@@ -79,11 +79,11 @@ def test_execution_context_from_manifest_allows_repl_without_entry_file(tmp_path
         project_root=str(project_root.resolve()),
         entry_file="__repl__.py",
         working_directory=str(project_root.resolve()),
+        log_file=str((project_root / "logs" / "run_run_1.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_REPL,
         argv=[],
         env={},
         safe_mode=False,
-        log_file=str((project_root / "logs" / "run.log").resolve()),
         timestamp="2026-03-01T01:01:01",
     )
 

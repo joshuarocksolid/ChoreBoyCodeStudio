@@ -35,6 +35,8 @@ class EditorSettingsSnapshot:
     metrics_logging_enabled: bool = constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT
     force_full_reindex_on_open: bool = constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+    auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
+    auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
 
 
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
@@ -48,6 +50,9 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
     if not isinstance(theme_settings, dict):
         theme_settings = {}
+    output_settings = settings_payload.get(constants.UI_OUTPUT_SETTINGS_KEY, {})
+    if not isinstance(output_settings, dict):
+        output_settings = {}
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
@@ -146,6 +151,14 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             default=constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT,
         ),
         theme_mode=theme_mode,
+        auto_open_console_on_run_output=_coerce_bool(
+            output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY),
+            default=constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT,
+        ),
+        auto_open_problems_on_run_failure=_coerce_bool(
+            output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY),
+            default=constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
+        ),
     )
 
 
@@ -185,6 +198,10 @@ def merge_editor_settings_snapshot(
     mode = snapshot.theme_mode if snapshot.theme_mode in _valid_modes else constants.UI_THEME_MODE_DEFAULT
     merged[constants.UI_THEME_SETTINGS_KEY] = {
         constants.UI_THEME_MODE_KEY: mode,
+    }
+    merged[constants.UI_OUTPUT_SETTINGS_KEY] = {
+        constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: bool(snapshot.auto_open_console_on_run_output),
+        constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY: bool(snapshot.auto_open_problems_on_run_failure),
     }
     return merged
 

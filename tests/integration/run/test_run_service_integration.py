@@ -57,13 +57,16 @@ def test_run_service_starts_runner_and_writes_artifacts(tmp_path: Path) -> None:
 
     session = service.start_run(loaded_project)
     assert Path(session.manifest_path).exists()
-    assert Path(session.log_file_path).exists() is False
+    assert session.log_file_path.endswith(".log")
     assert session.mode == constants.RUN_MODE_PYTHON_SCRIPT
 
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    assert Path(session.log_file_path).exists()
-    assert "RUN_SERVICE_OK" in Path(session.log_file_path).read_text(encoding="utf-8")
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
+    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert "RUN_SERVICE_OK" in combined_output
+    log_path = Path(session.log_file_path)
+    assert log_path.exists()
+    assert "RUN_SERVICE_OK" in log_path.read_text(encoding="utf-8")
 
 
 def test_run_service_stop_terminates_long_running_run(tmp_path: Path) -> None:

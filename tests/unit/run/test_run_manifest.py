@@ -21,11 +21,11 @@ def test_run_manifest_round_trip_save_and_load(tmp_path: Path) -> None:
         project_root=str((tmp_path / "project").resolve()),
         entry_file="run.py",
         working_directory=str((tmp_path / "project").resolve()),
+        log_file=str((tmp_path / "project" / "logs" / "run_20260301_010101_ab12cd.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
         argv=["--foo", "bar"],
         env={"ENV_A": "1"},
         safe_mode=True,
-        log_file=str((tmp_path / "project" / "logs" / "run.log").resolve()),
         timestamp="2026-03-01T01:01:01",
         breakpoints=[{"file_path": str((tmp_path / "project" / "run.py").resolve()), "line_number": 3}],
     )
@@ -46,11 +46,11 @@ def test_parse_run_manifest_rejects_invalid_mode() -> None:
                 "project_root": "/tmp/project",
                 "entry_file": "run.py",
                 "working_directory": "/tmp/project",
+                "log_file": "/tmp/project/logs/run_1.log",
                 "mode": "unknown",
                 "argv": [],
                 "env": {},
                 "safe_mode": True,
-                "log_file": "/tmp/project/logs/run.log",
                 "timestamp": "2026-03-01T01:01:01",
             }
         )
@@ -66,11 +66,11 @@ def test_parse_run_manifest_requires_absolute_paths() -> None:
                 "project_root": "relative/project",
                 "entry_file": "run.py",
                 "working_directory": "/tmp/project",
+                "log_file": "/tmp/project/logs/run_1.log",
                 "mode": constants.RUN_MODE_PYTHON_SCRIPT,
                 "argv": [],
                 "env": {},
                 "safe_mode": True,
-                "log_file": "/tmp/project/logs/run.log",
                 "timestamp": "2026-03-01T01:01:01",
             }
         )
@@ -86,11 +86,11 @@ def test_parse_run_manifest_validates_breakpoint_shape() -> None:
                 "project_root": "/tmp/project",
                 "entry_file": "run.py",
                 "working_directory": "/tmp/project",
+                "log_file": "/tmp/project/logs/run_1.log",
                 "mode": constants.RUN_MODE_PYTHON_DEBUG,
                 "argv": [],
                 "env": {},
                 "safe_mode": True,
-                "log_file": "/tmp/project/logs/run.log",
                 "timestamp": "2026-03-01T01:01:01",
                 "breakpoints": [{"file_path": "/tmp/project/run.py", "line_number": 0}],
             }

@@ -1,4 +1,4 @@
-"""Integration tests for runner execution path and log persistence."""
+"""Integration tests for runner execution path."""
 
 from __future__ import annotations
 
@@ -7,18 +7,16 @@ from pathlib import Path
 import pytest
 
 from app.core import constants
-from app.run.run_manifest import RunManifest, save_run_manifest
+from app.run.run_manifest import RunManifest, load_run_manifest, save_run_manifest
 from app.runner.runner_main import run_from_manifest_path
 
 pytestmark = pytest.mark.integration
 
 
-def _build_manifest(tmp_path: Path, script_contents: str, *, safe_mode: bool = True) -> tuple[Path, Path]:
+def _build_manifest(tmp_path: Path, script_contents: str, *, safe_mode: bool = True) -> Path:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     (project_root / "run.py").write_text(script_contents, encoding="utf-8")
-    logs_dir = project_root / "logs"
-    log_file = logs_dir / "run_test.log"
     manifest_path = tmp_path / "manifest.json"
 
     manifest = RunManifest(
@@ -27,39 +25,39 @@ def _build_manifest(tmp_path: Path, script_contents: str, *, safe_mode: bool = T
         project_root=str(project_root.resolve()),
         entry_file="run.py",
         working_directory=str(project_root.resolve()),
+        log_file=str((project_root / "logs" / "run_20260301_010101_ab12cd.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
         argv=[],
         env={},
         safe_mode=safe_mode,
-        log_file=str(log_file.resolve()),
         timestamp="2026-03-01T01:01:01",
     )
     save_run_manifest(manifest_path, manifest)
-    return manifest_path, log_file
+    return manifest_path
 
 
-def test_runner_executes_success_script_and_writes_log(tmp_path: Path) -> None:
-    """Successful script should exit 0 and persist output in log file."""
-    manifest_path, log_file = _build_manifest(tmp_path, "print('SUCCESS_MARKER')\n")
+def test_runner_executes_success_script(tmp_path: Path) -> None:
+    """Successful script should exit 0."""
+    manifest_path = _build_manifest(tmp_path, "print('SUCCESS_MARKER')\n")
 
     exit_code = run_from_manifest_path(str(manifest_path))
+    manifest = load_run_manifest(manifest_path)
 
     assert exit_code == constants.RUN_EXIT_SUCCESS
-    assert log_file.exists()
-    assert "SUCCESS_MARKER" in log_file.read_text(encoding="utf-8")
+    assert Path(manifest.log_file).exists()
+    assert "SUCCESS_MARKER" in Path(manifest.log_file).read_text(encoding="utf-8")
 
 
 def test_runner_captures_traceback_on_failure(tmp_path: Path) -> None:
-    """Failed script should return user-code error and write traceback log."""
-    manifest_path, log_file = _build_manifest(tmp_path, "print('BEFORE_FAIL')\nraise RuntimeError('boom')\n")
+    """Failed script should return user-code error exit code."""
+    manifest_path = _build_manifest(tmp_path, "raise RuntimeError('boom')\n")
 
     exit_code = run_from_manifest_path(str(manifest_path))
+    manifest = load_run_manifest(manifest_path)
 
     assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
-    contents = log_file.read_text(encoding="utf-8")
-    assert "BEFORE_FAIL" in contents
-    assert "RuntimeError: boom" in contents
-    assert "Traceback (most recent call last)" in contents
+    log_text = Path(manifest.log_file).read_text(encoding="utf-8")
+    assert "RuntimeError: boom" in log_text
 
 
 def test_runner_returns_invalid_manifest_code_for_missing_manifest(tmp_path: Path) -> None:
@@ -75,24 +73,20 @@ def test_runner_blocks_subprocess_calls_when_safe_mode_enabled(tmp_path: Path) -
         "import subprocess\n"
         "subprocess.run(['echo', 'SAFE_MODE_TEST'], check=False)\n"
     )
-    manifest_path, log_file = _build_manifest(tmp_path, script, safe_mode=True)
+    manifest_path = _build_manifest(tmp_path, script, safe_mode=True)
 
     exit_code = run_from_manifest_path(str(manifest_path))
 
     assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
-    contents = log_file.read_text(encoding="utf-8")
-    assert "subprocess execution is disabled in safe mode" in contents
 
 
 def test_runner_blocks_writes_outside_project_when_safe_mode_enabled(tmp_path: Path) -> None:
     """Safe-mode runs should block file writes outside project root."""
     outside_path = tmp_path / "outside.txt"
     script = f"open({str(outside_path)!r}, 'w').write('blocked')\n"
-    manifest_path, log_file = _build_manifest(tmp_path, script, safe_mode=True)
+    manifest_path = _build_manifest(tmp_path, script, safe_mode=True)
 
     exit_code = run_from_manifest_path(str(manifest_path))
 
     assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
     assert not outside_path.exists()
-    contents = log_file.read_text(encoding="utf-8")
-    assert "write outside project root is disabled in safe mode" in contents

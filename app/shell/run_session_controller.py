@@ -49,7 +49,7 @@ class RunSessionController:
         append_console_line: Callable[[str, str], None],
         append_python_console_line: Callable[[str], None],
     ) -> RunSessionStartResult:
-        if loaded_project is None and mode != constants.RUN_MODE_PYTHON_REPL:
+        if loaded_project is None:
             return RunSessionStartResult(started=False, error_message="Open a project before running code.")
         if self._run_service.supervisor.is_running():
             return RunSessionStartResult(started=False)
@@ -78,9 +78,7 @@ class RunSessionController:
 
         self._active_session_mode = mode
         append_console_line(f"Run started ({session.run_id})\n", "system")
-        if mode == constants.RUN_MODE_PYTHON_REPL:
-            append_python_console_line("[system] Python console started.")
-        elif mode == constants.RUN_MODE_PYTHON_DEBUG:
+        if mode == constants.RUN_MODE_PYTHON_DEBUG:
             append_python_console_line("[system] Debug session started. Use toolbar or pdb commands.")
 
         return RunSessionStartResult(started=True, session=session)
@@ -107,7 +105,13 @@ class RunSessionController:
             append_debug_output_line("[debug] Pause requested.")
         return (paused, None)
 
-    def refresh_action_states(self, menu_registry: MenuStubRegistry | None, *, has_project: bool) -> None:
+    def refresh_action_states(
+        self,
+        menu_registry: MenuStubRegistry | None,
+        *,
+        has_project: bool,
+        has_breakpoints: bool = False,
+    ) -> None:
         if menu_registry is None:
             return
 
@@ -122,12 +126,14 @@ class RunSessionController:
         step_out_action = menu_registry.action("shell.action.run.stepOut")
         toggle_breakpoint_action = menu_registry.action("shell.action.run.toggleBreakpoint")
         python_console_action = menu_registry.action("shell.action.run.pythonConsole")
+        remove_all_bp_action = menu_registry.action("shell.action.run.removeAllBreakpoints")
 
         state = map_run_action_state(
             has_project=has_project,
             is_running=self._run_service.supervisor.is_running(),
             is_debug_mode=self._run_service.is_debug_mode,
             is_debug_paused=self._run_service.is_debug_paused,
+            has_breakpoints=has_breakpoints,
         )
 
         if run_action is not None:
@@ -152,3 +158,5 @@ class RunSessionController:
             toggle_breakpoint_action.setEnabled(state.toggle_breakpoint_enabled)
         if python_console_action is not None:
             python_console_action.setEnabled(state.python_console_enabled)
+        if remove_all_bp_action is not None:
+            remove_all_bp_action.setEnabled(state.remove_all_breakpoints_enabled)

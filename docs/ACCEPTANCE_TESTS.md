@@ -26,8 +26,7 @@ These acceptance tests focus on the first high-value vertical slice:
 5. run user code in a separate runner process
 6. view stdout/stderr
 7. view traceback on failure
-8. write per-run logs
-9. stop a running script safely
+8. stop a running script safely
 
 These tests are intentionally biased toward:
 - real user workflows
@@ -619,7 +618,7 @@ Verify field-support workflow.
 
 **Expected Result:**  
 - the support bundle is created successfully
-- expected diagnostic artifacts are included
+- expected diagnostic artifacts (app log, project metadata, latest run log when available) are included
 - the bundle is suitable for transfer and support review
 
 ---
@@ -787,6 +786,7 @@ The following tests are the minimum gate for MVP:
 - AT-10 — Run launches user code in a separate runner process
 - AT-11 — Successful run shows stdout in console
 - AT-12 — Failed run shows traceback information
+- AT-13 — stderr is visible to the user
 - AT-14 — Per-run log file is written to disk
 - AT-15 — Stop terminates a long-running script safely
 - AT-16 — Editor survives user-code failure

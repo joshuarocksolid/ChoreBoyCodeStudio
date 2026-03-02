@@ -33,12 +33,12 @@ def _runner_boot_path() -> str:
     return str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve())
 
 
-def _run_generated_project(loaded_project: LoadedProject) -> tuple[str, list[ProcessEvent]]:
+def _run_generated_project(loaded_project: LoadedProject) -> list[ProcessEvent]:
     events: list[ProcessEvent] = []
     service = RunService(on_event=events.append, runner_boot_path=_runner_boot_path())
-    session = service.start_run(loaded_project)
+    service.start_run(loaded_project)
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    return session.log_file_path, events
+    return events
 
 
 def test_materialized_utility_template_runs_successfully(tmp_path: Path) -> None:
@@ -50,10 +50,11 @@ def test_materialized_utility_template_runs_successfully(tmp_path: Path) -> None
         project_name="Utility",
     )
     loaded_project = open_project(project_root)
-    log_path, events = _run_generated_project(loaded_project)
+    events = _run_generated_project(loaded_project)
 
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
-    assert "Utility template ready." in Path(log_path).read_text(encoding="utf-8")
+    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert "Utility template ready." in combined_output
 
 
 def test_materialized_headless_template_runs_successfully(tmp_path: Path) -> None:
@@ -65,10 +66,11 @@ def test_materialized_headless_template_runs_successfully(tmp_path: Path) -> Non
         project_name="Headless",
     )
     loaded_project = open_project(project_root)
-    log_path, events = _run_generated_project(loaded_project)
+    events = _run_generated_project(loaded_project)
 
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
-    assert "Headless tool template ready." in Path(log_path).read_text(encoding="utf-8")
+    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert "Headless tool template ready." in combined_output
 
 
 def test_materialized_qt_template_contains_expected_entrypoints(tmp_path: Path) -> None:
