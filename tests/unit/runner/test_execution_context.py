@@ -112,6 +112,34 @@ def test_apply_execution_context_blocks_subprocess_in_safe_mode(tmp_path: Path) 
     assert subprocess.run is original_run
 
 
+def test_apply_execution_context_blocks_write_outside_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should block write attempts outside project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    outside_target = tmp_path / "outside.txt"
+    original_open = open
+
+    with apply_execution_context(context):
+        with pytest.raises(PermissionError, match="outside project root"):
+            with open(outside_target, "w", encoding="utf-8"):
+                pass
+
+    assert open is original_open
+
+
+def test_apply_execution_context_allows_write_within_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should allow writes under project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    inside_target = Path(context.project_root) / "inside.txt"
+
+    with apply_execution_context(context):
+        with open(inside_target, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+
+    assert inside_target.read_text(encoding="utf-8") == "ok"
+
+
 def test_apply_execution_context_leaves_subprocess_available_when_safe_mode_disabled(tmp_path: Path) -> None:
     """Safe mode disabled should not monkeypatch subprocess APIs."""
     manifest = _build_manifest(tmp_path, safe_mode=False)
@@ -120,3 +148,26 @@ def test_apply_execution_context_leaves_subprocess_available_when_safe_mode_disa
 
     with apply_execution_context(context):
         assert subprocess.run is original_run
+
+
+def test_apply_execution_context_blocks_write_outside_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should block writes targeting paths outside project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    outside_path = tmp_path / "outside.txt"
+
+    with apply_execution_context(context):
+        with pytest.raises(PermissionError, match="outside project root"):
+            outside_path.write_text("blocked\n", encoding="utf-8")
+
+
+def test_apply_execution_context_allows_write_within_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should permit writes under the project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    inside_path = Path(context.project_root) / "allowed.txt"
+
+    with apply_execution_context(context):
+        inside_path.write_text("ok\n", encoding="utf-8")
+
+    assert inside_path.read_text(encoding="utf-8") == "ok\n"

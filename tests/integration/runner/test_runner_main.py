@@ -82,3 +82,17 @@ def test_runner_blocks_subprocess_calls_when_safe_mode_enabled(tmp_path: Path) -
     assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
     contents = log_file.read_text(encoding="utf-8")
     assert "subprocess execution is disabled in safe mode" in contents
+
+
+def test_runner_blocks_writes_outside_project_when_safe_mode_enabled(tmp_path: Path) -> None:
+    """Safe-mode runs should block file writes outside project root."""
+    outside_path = tmp_path / "outside.txt"
+    script = f"open({str(outside_path)!r}, 'w').write('blocked')\n"
+    manifest_path, log_file = _build_manifest(tmp_path, script, safe_mode=True)
+
+    exit_code = run_from_manifest_path(str(manifest_path))
+
+    assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
+    assert not outside_path.exists()
+    contents = log_file.read_text(encoding="utf-8")
+    assert "write outside project root is disabled in safe mode" in contents
