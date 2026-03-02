@@ -10,7 +10,7 @@ from PySide2.QtCore import QRect, QSize, QStringListModel, Qt
 from PySide2.QtGui import QColor, QKeyEvent, QPainter, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
-from app.editors.text_editing import indent_lines, outdent_lines, toggle_comment_lines
+from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
 from app.editors.syntax_json import JsonSyntaxHighlighter
 from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
@@ -190,6 +190,10 @@ class CodeEditorWidget(QPlainTextEdit):
             self.outdent_selection()
             event.accept()
             return
+        if event.key() == Qt.Key_Backspace and not event.modifiers():
+            if self._handle_smart_backspace():
+                event.accept()
+                return
 
         super().keyPressEvent(event)
         if not self._completion_enabled or not self._completion_auto_trigger:
@@ -323,6 +327,24 @@ class CodeEditorWidget(QPlainTextEdit):
             cursor.select(QTextCursor.LineUnderCursor)
         cursor.insertText(replacement_text)
         self.setTextCursor(cursor)
+
+    def _handle_smart_backspace(self) -> bool:
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            return False
+        remove_count = smart_backspace_columns(
+            cursor.block().text(),
+            cursor.positionInBlock(),
+            indent_text=self._indent_text(),
+        )
+        if remove_count <= 0:
+            return False
+        cursor.beginEditBlock()
+        for _ in range(remove_count):
+            cursor.deletePreviousChar()
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
+        return True
 
     def _indent_text(self) -> str:
         if self._indent_style == "tabs":

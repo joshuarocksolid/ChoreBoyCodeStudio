@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.editors.text_editing import indent_lines, outdent_lines, toggle_comment_lines
+from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
 
 pytestmark = pytest.mark.unit
 
@@ -35,3 +35,13 @@ def test_indent_and_outdent_support_tab_indent_text() -> None:
     indented = indent_lines(original, indent_text="\t")
     assert indented == "\talpha = 1\n\tbeta = 2"
     assert outdent_lines(indented, indent_text="\t") == original
+
+
+def test_smart_backspace_columns_uses_indent_boundaries_for_spaces() -> None:
+    assert smart_backspace_columns("        value = 1", 8, indent_text="    ") == 4
+    assert smart_backspace_columns("      value = 1", 6, indent_text="    ") == 2
+
+
+def test_smart_backspace_columns_only_triggers_in_leading_whitespace() -> None:
+    assert smart_backspace_columns("    value = 1", 10, indent_text="    ") == 0
+    assert smart_backspace_columns("\t\tvalue = 1", 2, indent_text="\t") == 1
