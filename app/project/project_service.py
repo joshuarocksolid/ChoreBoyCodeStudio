@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tomllib
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
 from app.core.errors import ProjectEnumerationError, ProjectStructureValidationError
@@ -230,6 +231,10 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
 
 
 def _infer_default_entry_file(project_root: Path) -> str | None:
+    pyproject_entry = _infer_entry_from_pyproject(project_root)
+    if pyproject_entry is not None:
+        return pyproject_entry
+
     prioritized_names = ("run.py", "main.py", "__main__.py")
     for name in prioritized_names:
         candidate = project_root / name
@@ -243,6 +248,10 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     )
     if top_level_python_files:
         return top_level_python_files[0]
+
+    package_main_entry = _infer_recursive_package_main(project_root)
+    if package_main_entry is not None:
+        return package_main_entry
 
     for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
         current_path = Path(current_dir)
@@ -258,6 +267,71 @@ def _derive_project_name(project_root: Path) -> str:
     if project_name:
         return project_name
     return "Imported Project"
+
+
+def _infer_entry_from_pyproject(project_root: Path) -> str | None:
+    pyproject_path = project_root / "pyproject.toml"
+    if not pyproject_path.exists() or not pyproject_path.is_file():
+        return None
+
+    try:
+        payload = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+
+    script_targets: list[str] = []
+    project_scripts = payload.get("project", {}).get("scripts")
+    if isinstance(project_scripts, dict):
+        for script_name in sorted(project_scripts.keys()):
+            target = project_scripts.get(script_name)
+            if isinstance(target, str) and target.strip():
+                script_targets.append(target.strip())
+
+    poetry_scripts = payload.get("tool", {}).get("poetry", {}).get("scripts")
+    if isinstance(poetry_scripts, dict):
+        for script_name in sorted(poetry_scripts.keys()):
+            target = poetry_scripts.get(script_name)
+            if isinstance(target, str) and target.strip():
+                script_targets.append(target.strip())
+
+    for target in script_targets:
+        module_reference = target.split(":", maxsplit=1)[0].strip()
+        if not module_reference:
+            continue
+        resolved_entry = _resolve_module_reference_to_entry(project_root, module_reference)
+        if resolved_entry is not None:
+            return resolved_entry
+    return None
+
+
+def _resolve_module_reference_to_entry(project_root: Path, module_reference: str) -> str | None:
+    module_parts = [part for part in module_reference.split(".") if part]
+    if not module_parts:
+        return None
+    module_path = Path(*module_parts)
+    candidate_roots = [project_root, project_root / "src"]
+    for root in candidate_roots:
+        file_candidate = root / module_path
+        py_candidate = file_candidate.with_suffix(".py")
+        if py_candidate.exists() and py_candidate.is_file():
+            return py_candidate.relative_to(project_root).as_posix()
+        package_main = file_candidate / "__main__.py"
+        if package_main.exists() and package_main.is_file():
+            return package_main.relative_to(project_root).as_posix()
+        package_init = file_candidate / "__init__.py"
+        if package_init.exists() and package_init.is_file():
+            return package_init.relative_to(project_root).as_posix()
+    return None
+
+
+def _infer_recursive_package_main(project_root: Path) -> str | None:
+    for candidate in sorted(project_root.rglob("__main__.py")):
+        if ".cbcs" in candidate.parts:
+            continue
+        if candidate.parent == project_root:
+            continue
+        return candidate.relative_to(project_root).as_posix()
+    return None
 
 
 def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) -> ProjectFileEntry:

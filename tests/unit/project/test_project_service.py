@@ -117,6 +117,25 @@ def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path
     assert loaded_project.metadata.default_entry == "run.py"
 
 
+def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint(tmp_path: Path) -> None:
+    """Pyproject script targets should inform inferred default entrypoint."""
+    project_root = tmp_path / "pyproject_script_project"
+    (project_root / "src" / "my_app").mkdir(parents=True)
+    (project_root / "src" / "my_app" / "cli.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (project_root / "pyproject.toml").write_text(
+        "[project]\n"
+        "name = \"my-app\"\n"
+        "[project.scripts]\n"
+        "my-app = \"my_app.cli:main\"\n",
+        encoding="utf-8",
+    )
+    (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
+
+
 def test_open_project_auto_initialize_uses_top_level_python_before_recursive(tmp_path: Path) -> None:
     """Top-level python files should be preferred over nested files after priority names."""
     project_root = tmp_path / "top_level_project"
@@ -139,6 +158,18 @@ def test_open_project_auto_initialize_uses_recursive_python_when_no_top_level(tm
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "app/entry.py"
+
+
+def test_open_project_auto_initialize_prefers_recursive_package_main_before_generic_recursive(tmp_path: Path) -> None:
+    """Nested package __main__.py should be preferred for package-like projects."""
+    project_root = tmp_path / "package_main_project"
+    (project_root / "src" / "package_a").mkdir(parents=True)
+    (project_root / "src" / "package_a" / "__main__.py").write_text("print('pkg main')\n", encoding="utf-8")
+    (project_root / "src" / "package_a" / "runner.py").write_text("print('runner')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "src/package_a/__main__.py"
 
 
 def test_open_project_rejects_missing_metadata_when_no_python_files(tmp_path: Path) -> None:

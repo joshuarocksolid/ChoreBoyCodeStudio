@@ -48,6 +48,24 @@ def test_open_plain_python_folder_auto_initializes_manifest(tmp_path: Path) -> N
     assert all(not entry.relative_path.startswith(".cbcs") for entry in loaded_project.entries)
 
 
+def test_open_plain_python_folder_infers_entry_from_pyproject_scripts(tmp_path: Path) -> None:
+    """Pyproject scripts should drive entrypoint inference during first-open import."""
+    project_root = tmp_path / "pyproject_import_project"
+    (project_root / "src" / "demo_pkg").mkdir(parents=True)
+    (project_root / "src" / "demo_pkg" / "cli.py").write_text("def main():\n    print('OK')\n", encoding="utf-8")
+    (project_root / "pyproject.toml").write_text(
+        "[project]\n"
+        "name = \"demo\"\n"
+        "[project.scripts]\n"
+        "demo = \"demo_pkg.cli:main\"\n",
+        encoding="utf-8",
+    )
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "src/demo_pkg/cli.py"
+
+
 def test_auto_initialized_project_runs_successfully(tmp_path: Path) -> None:
     """Imported plain Python folders should run through the standard run path."""
     project_root = tmp_path / "plain_runnable_project"
