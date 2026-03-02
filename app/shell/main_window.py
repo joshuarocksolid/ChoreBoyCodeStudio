@@ -195,6 +195,11 @@ class MainWindow(QMainWindow):
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(500)
         self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
+        self._pending_realtime_lint_file_path: str | None = None
+        self._realtime_lint_timer = QTimer(self)
+        self._realtime_lint_timer.setSingleShot(True)
+        self._realtime_lint_timer.setInterval(300)
+        self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
@@ -591,6 +596,9 @@ class MainWindow(QMainWindow):
             self._quick_fixes_enabled,
             self._quick_fix_require_preview_for_multifile,
         ) = self._load_diagnostics_preferences()
+        if not self._diagnostics_enabled or not self._diagnostics_realtime:
+            self._realtime_lint_timer.stop()
+            self._pending_realtime_lint_file_path = None
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         if not self._intelligence_runtime_settings.cache_enabled:
             if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
@@ -2845,6 +2853,7 @@ class MainWindow(QMainWindow):
             self._autosave_store.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
+        self._schedule_realtime_lint(tab_state.file_path)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -2950,7 +2959,9 @@ class MainWindow(QMainWindow):
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
         self._autosave_timer.stop()
+        self._realtime_lint_timer.stop()
         self._pending_autosave_payloads.clear()
+        self._pending_realtime_lint_file_path = None
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -3120,6 +3131,24 @@ class MainWindow(QMainWindow):
     def _schedule_autosave(self, file_path: str, content: str) -> None:
         self._pending_autosave_payloads[file_path] = content
         self._autosave_timer.start()
+
+    def _schedule_realtime_lint(self, file_path: str) -> None:
+        if not self._diagnostics_enabled or not self._diagnostics_realtime:
+            return
+        if not file_path.lower().endswith(".py"):
+            return
+        self._pending_realtime_lint_file_path = file_path
+        self._realtime_lint_timer.start()
+
+    def _run_scheduled_realtime_lint(self) -> None:
+        file_path = self._pending_realtime_lint_file_path
+        self._pending_realtime_lint_file_path = None
+        if file_path is None:
+            return
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None or active_tab.file_path != file_path:
+            return
+        self._render_lint_diagnostics_for_file(file_path, manual=False)
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:
