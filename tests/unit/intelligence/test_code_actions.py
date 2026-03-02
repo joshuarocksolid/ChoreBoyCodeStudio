@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
+from app.intelligence.code_actions import QuickFix, apply_quick_fixes, plan_safe_fixes_for_file
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 
 pytestmark = pytest.mark.unit
@@ -180,3 +180,87 @@ def test_plan_safe_fixes_for_file_returns_duplicate_import_removal_fixes(tmp_pat
     assert len(fixes) == 1
     assert fixes[0].action_kind == "remove_line"
     assert fixes[0].line_number == 2
+
+
+def test_apply_quick_fixes_rolls_back_file_edits_on_write_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_a = tmp_path / "a.py"
+    file_b = tmp_path / "b.py"
+    original_a = "import json\nvalue = 1\n"
+    original_b = "import math\nvalue = 2\n"
+    file_a.write_text(original_a, encoding="utf-8")
+    file_b.write_text(original_b, encoding="utf-8")
+    fixes = [
+        QuickFix(
+            title="remove import a",
+            file_path=str(file_a.resolve()),
+            line_number=1,
+            action_kind="remove_line",
+        ),
+        QuickFix(
+            title="remove import b",
+            file_path=str(file_b.resolve()),
+            line_number=1,
+            action_kind="remove_line",
+        ),
+    ]
+
+    original_write_text = Path.write_text
+    failure_state = {"pending": True}
+
+    def flaky_write_text(self: Path, data: str, encoding: str = "utf-8", errors=None, newline=None) -> int:  # type: ignore[no-untyped-def]
+        if self.resolve() == file_b.resolve() and failure_state["pending"]:
+            failure_state["pending"] = False
+            raise OSError("simulated write failure")
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+
+    with pytest.raises(OSError, match="simulated write failure"):
+        apply_quick_fixes(fixes)
+
+    assert file_a.read_text(encoding="utf-8") == original_a
+    assert file_b.read_text(encoding="utf-8") == original_b
+
+
+def test_apply_quick_fixes_rolls_back_created_module_files_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "module.py"
+    file_path.write_text("import missing.module\n", encoding="utf-8")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY200",
+            severity=DiagnosticSeverity.ERROR,
+            file_path=str(file_path.resolve()),
+            line_number=1,
+            message="Unresolved import: missing.module",
+        )
+    ]
+    fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))
+    assert fixes and fixes[0].target_path is not None
+
+    target_module = project_root / "missing" / "module.py"
+    target_init = project_root / "missing" / "__init__.py"
+
+    original_write_text = Path.write_text
+    failure_state = {"pending": True}
+
+    def flaky_write_text(self: Path, data: str, encoding: str = "utf-8", errors=None, newline=None) -> int:  # type: ignore[no-untyped-def]
+        if self.resolve() == target_module.resolve() and failure_state["pending"]:
+            failure_state["pending"] = False
+            raise OSError("simulated create-module failure")
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+
+    with pytest.raises(OSError, match="simulated create-module failure"):
+        apply_quick_fixes(fixes)
+
+    assert not target_module.exists()
+    assert not target_init.exists()

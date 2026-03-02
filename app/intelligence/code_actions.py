@@ -102,20 +102,44 @@ def apply_quick_fixes(fixes: list[QuickFix]) -> int:
         elif fix.action_kind == "create_module_file":
             create_module_fixes.append(fix)
 
-    changed_operations = 0
-    for file_path, file_fixes in remove_line_fixes_by_file.items():
-        changed_operations += _apply_file_fixes(file_path, file_fixes)
+    snapshots: dict[Path, str | None] = {}
+    snapshot_order: list[Path] = []
+    created_directories: list[Path] = []
+    try:
+        changed_operations = 0
+        for file_path, file_fixes in remove_line_fixes_by_file.items():
+            changed_operations += _apply_file_fixes(
+                file_path,
+                file_fixes,
+                snapshots=snapshots,
+                snapshot_order=snapshot_order,
+            )
 
-    seen_targets: set[str] = set()
-    for fix in create_module_fixes:
-        if not fix.target_path or fix.target_path in seen_targets:
-            continue
-        seen_targets.add(fix.target_path)
-        changed_operations += _apply_create_module_fix(fix.target_path, fix.project_root)
-    return changed_operations
+        seen_targets: set[str] = set()
+        for fix in create_module_fixes:
+            if not fix.target_path or fix.target_path in seen_targets:
+                continue
+            seen_targets.add(fix.target_path)
+            changed_operations += _apply_create_module_fix(
+                fix.target_path,
+                fix.project_root,
+                snapshots=snapshots,
+                snapshot_order=snapshot_order,
+                created_directories=created_directories,
+            )
+        return changed_operations
+    except OSError:
+        _rollback_quick_fix_changes(snapshots, snapshot_order, created_directories)
+        raise
 
 
-def _apply_file_fixes(file_path: str, fixes: list[QuickFix]) -> int:
+def _apply_file_fixes(
+    file_path: str,
+    fixes: list[QuickFix],
+    *,
+    snapshots: dict[Path, str | None],
+    snapshot_order: list[Path],
+) -> int:
     path = Path(file_path).expanduser().resolve()
     source = path.read_text(encoding="utf-8")
     lines = source.splitlines(keepends=True)
@@ -142,33 +166,57 @@ def _apply_file_fixes(file_path: str, fixes: list[QuickFix]) -> int:
             lines[line_index] = replacement
             changed += 1
     if changed:
+        _record_file_snapshot(path, snapshots=snapshots, snapshot_order=snapshot_order)
         path.write_text("".join(lines), encoding="utf-8")
     return changed
 
 
-def _apply_create_module_fix(target_path: str, project_root: str | None) -> int:
+def _apply_create_module_fix(
+    target_path: str,
+    project_root: str | None,
+    *,
+    snapshots: dict[Path, str | None],
+    snapshot_order: list[Path],
+    created_directories: list[Path],
+) -> int:
     target = Path(target_path).expanduser().resolve()
     if target.exists():
         return 0
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _ensure_package_inits(target.parent, stop_dir=None if project_root is None else Path(project_root).expanduser().resolve())
+    _ensure_directory_exists(target.parent, created_directories=created_directories)
+    _ensure_package_inits(
+        target.parent,
+        stop_dir=None if project_root is None else Path(project_root).expanduser().resolve(),
+        snapshots=snapshots,
+        snapshot_order=snapshot_order,
+        created_directories=created_directories,
+    )
+    _record_file_snapshot(target, snapshots=snapshots, snapshot_order=snapshot_order)
     target.write_text('"""Auto-created module from quick-fix."""\n', encoding="utf-8")
     return 1
 
 
-def _ensure_package_inits(package_dir: Path, *, stop_dir: Path | None) -> None:
+def _ensure_package_inits(
+    package_dir: Path,
+    *,
+    stop_dir: Path | None,
+    snapshots: dict[Path, str | None],
+    snapshot_order: list[Path],
+    created_directories: list[Path],
+) -> None:
     current = package_dir
     while current.exists():
         if stop_dir is not None and current == stop_dir:
             break
         init_path = current / "__init__.py"
         if not init_path.exists():
+            _record_file_snapshot(init_path, snapshots=snapshots, snapshot_order=snapshot_order)
             init_path.write_text("", encoding="utf-8")
         parent = current.parent
         if parent == current:
             break
         if parent.name in {"", "/", "."}:
             break
+        _ensure_directory_exists(parent, created_directories=created_directories)
         current = parent
 
 
@@ -229,3 +277,54 @@ def _replace_import_module_in_line(
     if count == 0:
         return line
     return updated
+
+
+def _record_file_snapshot(
+    path: Path,
+    *,
+    snapshots: dict[Path, str | None],
+    snapshot_order: list[Path],
+) -> None:
+    resolved = path.expanduser().resolve()
+    if resolved in snapshots:
+        return
+    if resolved.exists():
+        snapshots[resolved] = resolved.read_text(encoding="utf-8")
+    else:
+        snapshots[resolved] = None
+    snapshot_order.append(resolved)
+
+
+def _ensure_directory_exists(path: Path, *, created_directories: list[Path]) -> None:
+    resolved = path.expanduser().resolve()
+    if resolved.exists():
+        return
+    parent = resolved.parent
+    if parent != resolved and not parent.exists():
+        _ensure_directory_exists(parent, created_directories=created_directories)
+    resolved.mkdir(exist_ok=True)
+    created_directories.append(resolved)
+
+
+def _rollback_quick_fix_changes(
+    snapshots: dict[Path, str | None],
+    snapshot_order: list[Path],
+    created_directories: list[Path],
+) -> None:
+    for path in reversed(snapshot_order):
+        original_content = snapshots.get(path)
+        try:
+            if original_content is None:
+                if path.exists():
+                    path.unlink()
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(original_content, encoding="utf-8")
+        except OSError:
+            continue
+    for directory in reversed(created_directories):
+        try:
+            if directory.exists() and not any(directory.iterdir()):
+                directory.rmdir()
+        except OSError:
+            continue
