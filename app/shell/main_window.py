@@ -68,6 +68,7 @@ from app.intelligence.completion_service import CompletionRequest, CompletionSer
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.formatting_service import format_text_basic
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
 from app.editors.search_panel import SearchMatch, SearchWorker
@@ -216,6 +217,7 @@ class MainWindow(QMainWindow):
                 on_start_python_console=self._handle_start_python_console_action,
                 on_clear_console=self._handle_clear_console_action,
                 on_reset_layout=self._handle_reset_layout_action,
+                on_format_current_file=self._handle_format_current_file_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
@@ -1173,6 +1175,30 @@ class MainWindow(QMainWindow):
             self._python_console_output_widget.clear()
         if self._debug_inspector_output_widget is not None:
             self._debug_inspector_output_widget.clear()
+
+    def _handle_format_current_file_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Format Current File", "Open a file tab first.")
+            return
+
+        result = format_text_basic(editor_widget.toPlainText())
+        if not result.changed:
+            QMessageBox.information(self, "Format Current File", "File is already formatted.")
+            return
+
+        cursor = editor_widget.textCursor()
+        cursor_position = cursor.position()
+        editor_widget.blockSignals(True)
+        editor_widget.setPlainText(result.formatted_text)
+        editor_widget.blockSignals(False)
+        restored_cursor = editor_widget.textCursor()
+        restored_cursor.setPosition(min(cursor_position, len(result.formatted_text)))
+        editor_widget.setTextCursor(restored_cursor)
+
+        self._handle_editor_text_changed(active_tab.file_path, editor_widget)
+        QMessageBox.information(self, "Format Current File", "Formatting applied.")
 
     def _handle_lint_current_file_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
