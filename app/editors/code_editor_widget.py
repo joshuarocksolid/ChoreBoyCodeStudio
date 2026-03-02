@@ -6,8 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtCore import QRect, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QKeyEvent, QPainter, QTextCursor, QTextFormat
+from PySide2.QtCore import QPointF, QRect, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
@@ -48,6 +48,9 @@ class CodeEditorWidget(QPlainTextEdit):
         self._line_number_area = _LineNumberArea(self)
         self._breakpoints: set[int] = set()
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
+        self._debug_execution_line: int | None = None
+        self._debug_execution_color = QColor("#D97706")
+        self._debug_execution_line_bg = QColor("#D0E2FF")
         self._highlighter: object | None = None
         self._tab_width = DEFAULT_TAB_WIDTH
         self._comment_prefix = "# "
@@ -92,6 +95,8 @@ class CodeEditorWidget(QPlainTextEdit):
         self._line_highlight = QColor(tokens.line_highlight)
         self._bracket_match_color = QColor("#5C3D1A") if tokens.is_dark else QColor("#FFD8A8")
         self._breakpoint_color = QColor("#FF6B6B") if tokens.is_dark else QColor("#E03131")
+        self._debug_execution_color = QColor(tokens.debug_paused_color) if tokens.debug_paused_color else self._debug_execution_color
+        self._debug_execution_line_bg = QColor(tokens.debug_current_frame_bg) if tokens.debug_current_frame_bg else self._debug_execution_line_bg
         self._line_number_area.update()
         self._highlight_current_line()
         highlighter = self._highlighter
@@ -121,6 +126,16 @@ class CodeEditorWidget(QPlainTextEdit):
         if self._breakpoint_toggled_callback is not None:
             self._breakpoint_toggled_callback(line_number, is_enabled)
         return is_enabled
+
+    def set_debug_execution_line(self, line_number: int | None) -> None:
+        if self._debug_execution_line == line_number:
+            return
+        self._debug_execution_line = line_number
+        self._line_number_area.update()
+        self._highlight_current_line()
+
+    def clear_debug_execution_line(self) -> None:
+        self.set_debug_execution_line(None)
 
     def toggle_breakpoint_at_y(self, y_coordinate: int) -> None:
         block = self.firstVisibleBlock()
@@ -235,9 +250,11 @@ class CodeEditorWidget(QPlainTextEdit):
         if self._completion_popup.popup().isVisible():
             self._completion_popup.popup().hide()
 
+    _ICON_ZONE_WIDTH = 20
+
     def line_number_area_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
-        return 16 + self.fontMetrics().horizontalAdvance("9") * digits
+        return self._ICON_ZONE_WIDTH + 8 + self.fontMetrics().horizontalAdvance("9") * digits
 
     def _update_line_number_area_width(self, _new_block_count: int) -> None:
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -265,22 +282,39 @@ class CodeEditorWidget(QPlainTextEdit):
             block_number = block.blockNumber()
             top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
             bottom = top + int(self.blockBoundingRect(block).height())
+            icon_zone = self._ICON_ZONE_WIDTH
 
             while block.isValid() and top <= event.rect().bottom():
                 if block.isVisible() and bottom >= event.rect().top():
                     line_number = block_number + 1
                     number_text = str(line_number)
                     color = self._gutter_text
+                    font_height = self.fontMetrics().height()
+                    center_y = top + font_height // 2
+
                     if line_number in self._breakpoints:
                         color = self._breakpoint_color
                         marker_radius = 4
-                        center_y = top + self.fontMetrics().height() // 2
                         painter.setBrush(color)
                         painter.setPen(Qt.NoPen)
                         painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
+
+                    if line_number == self._debug_execution_line:
+                        color = self._debug_execution_color
+                        arrow_size = 5
+                        arrow_x = icon_zone - arrow_size - 3
+                        arrow = QPolygonF([
+                            QPointF(arrow_x, center_y - arrow_size),
+                            QPointF(arrow_x + arrow_size, center_y),
+                            QPointF(arrow_x, center_y + arrow_size),
+                        ])
+                        painter.setBrush(self._debug_execution_color)
+                        painter.setPen(Qt.NoPen)
+                        painter.drawPolygon(arrow)
+
                     painter.setPen(color)
                     painter.drawText(
-                        QRect(0, top, self._line_number_area.width() - 6, self.fontMetrics().height()),  # type: ignore
+                        QRect(icon_zone, top, self._line_number_area.width() - icon_zone - 4, font_height),  # type: ignore
                         int(Qt.AlignRight),
                         number_text,
                     )  # type: ignore[call-overload]  # stubs require br; PySide6 shim does not
@@ -298,6 +332,17 @@ class CodeEditorWidget(QPlainTextEdit):
             return
 
         selections: list[QTextEdit.ExtraSelection] = []
+
+        if self._debug_execution_line is not None:
+            debug_sel = cast(Any, QTextEdit.ExtraSelection())
+            debug_sel.format.setBackground(self._debug_execution_line_bg)
+            debug_sel.format.setProperty(QTextFormat.FullWidthSelection, True)
+            block = self.document().findBlockByNumber(self._debug_execution_line - 1)
+            if block.isValid():
+                debug_cursor = QTextCursor(block)
+                debug_cursor.clearSelection()
+                debug_sel.cursor = debug_cursor
+                selections.append(debug_sel)
 
         line_selection = cast(Any, QTextEdit.ExtraSelection())
         line_selection.format.setBackground(self._line_highlight)

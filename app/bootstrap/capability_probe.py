@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import Callable, Optional
@@ -86,8 +88,8 @@ def check_pyside2_availability() -> CapabilityCheckResult:
 
 
 def check_freecad_availability() -> CapabilityCheckResult:
-    """Check that FreeCAD is importable in the active runtime."""
-    return _check_module_import("FreeCAD", FREECAD_IMPORT_CHECK_ID)
+    """Check that FreeCAD is importable without mutating editor runtime state."""
+    return _check_module_import_in_subprocess("FreeCAD", FREECAD_IMPORT_CHECK_ID)
 
 
 def check_writable_state_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
@@ -124,6 +126,50 @@ def _check_module_import(module_name: str, check_id: str) -> CapabilityCheckResu
         is_available=True,
         message=f"{module_name} import succeeded.",
         details={"module": module_name},
+    )
+
+
+def _check_module_import_in_subprocess(module_name: str, check_id: str) -> CapabilityCheckResult:
+    """Probe module import in a child interpreter to isolate side effects/crashes."""
+    probe_script = (
+        "import importlib;"
+        f"importlib.import_module({module_name!r})"
+    )
+    command = [sys.executable, "-c", probe_script]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return CapabilityCheckResult(
+            check_id=check_id,
+            is_available=False,
+            message=f"Failed to import {module_name}: isolated probe launch failed ({exc})",
+            details={"module": module_name, "probe": "subprocess"},
+        )
+
+    if completed.returncode == 0:
+        return CapabilityCheckResult(
+            check_id=check_id,
+            is_available=True,
+            message=f"{module_name} import succeeded.",
+            details={"module": module_name},
+        )
+
+    stderr = (completed.stderr or "").strip()
+    stdout = (completed.stdout or "").strip()
+    if completed.returncode < 0:
+        reason = f"terminated by signal {-completed.returncode}"
+    elif stderr:
+        reason = stderr
+    elif stdout:
+        reason = stdout
+    else:
+        reason = f"exit code {completed.returncode}"
+
+    return CapabilityCheckResult(
+        check_id=check_id,
+        is_available=False,
+        message=f"Failed to import {module_name}: {reason}",
+        details={"module": module_name, "probe": "subprocess", "return_code": completed.returncode},
     )
 
 

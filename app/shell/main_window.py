@@ -26,7 +26,6 @@ from PySide2.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
     QShortcut,
     QSizePolicy,
     QSplitter,
@@ -53,6 +52,7 @@ from app.debug.debug_command_service import (
     step_out_command,
     step_over_command,
 )
+from app.debug.debug_models import DebugExecutionState
 from app.debug.debug_session import DebugSession
 from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
 from app.intelligence.cache_controls import (
@@ -108,6 +108,7 @@ from app.shell.icon_provider import (
     new_folder_icon,
     refresh_icon,
 )
+from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
@@ -127,6 +128,7 @@ from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.project.project_service import open_project
 from app.shell.background_tasks import BackgroundTaskRunner
+from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
@@ -172,12 +174,7 @@ class MainWindow(QMainWindow):
         self._bottom_tabs_widget: QTabWidget | None = None
         self._console_output_widget: QPlainTextEdit | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
-        self._debug_inspector_output_widget: QPlainTextEdit | None = None
-        self._watch_input_widget: QLineEdit | None = None
-        self._watch_list_widget: QListWidget | None = None
-        self._debug_stack_list_widget: QListWidget | None = None
-        self._debug_variables_list_widget: QListWidget | None = None
-        self._breakpoints_list_widget: QListWidget | None = None
+        self._debug_panel: DebugPanelWidget | None = None
         self._run_log_output_widget: QPlainTextEdit | None = None
         self._problems_list_widget: QListWidget | None = None
         self._menu_registry: MenuStubRegistry | None = None
@@ -237,6 +234,7 @@ class MainWindow(QMainWindow):
         self._active_run_session_log_path: str | None = None
         self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
+        self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._symbol_index_generation = 0
@@ -244,6 +242,7 @@ class MainWindow(QMainWindow):
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._run_session_controller = RunSessionController(self._run_service)
         self._template_service = TemplateService()
+        self._main_thread_dispatcher = MainThreadDispatcher(self)
         self._background_tasks = BackgroundTaskRunner(
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
@@ -625,7 +624,7 @@ class MainWindow(QMainWindow):
         return parse_intelligence_runtime_settings(settings_payload)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
-        QTimer.singleShot(0, callback)
+        self._main_thread_dispatcher.dispatch(callback)
 
     @property
     def menu_registry(self) -> MenuStubRegistry | None:
@@ -1741,6 +1740,7 @@ class MainWindow(QMainWindow):
         self._active_run_output_tail.clear()
         self._clear_problems()
         self._debug_session = DebugSession()
+        self._clear_debug_execution_indicator()
 
     def _start_session(
         self,
@@ -1782,9 +1782,13 @@ class MainWindow(QMainWindow):
         if result.session is not None:
             self._active_run_session_log_path = result.session.log_file_path
         self._active_session_mode = self._run_session_controller.active_session_mode
-        if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
-            if self._python_console_widget is not None:
+        if self._python_console_widget is not None:
+            if self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
                 self._python_console_widget.set_session_active(True)
+            elif self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                self._python_console_widget.set_debug_session_locked(True)
+        if self._debug_panel is not None:
+            self._debug_panel.set_command_input_enabled(self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG)
         self._refresh_run_action_states()
         return True
 
@@ -1851,21 +1855,21 @@ class MainWindow(QMainWindow):
         self._refresh_breakpoints_list()
 
     def _refresh_breakpoints_list(self) -> None:
-        if self._breakpoints_list_widget is None:
+        if self._debug_panel is None:
             return
-        self._breakpoints_list_widget.clear()
-        for file_path in sorted(self._breakpoints_by_file.keys()):
-            for line_number in sorted(self._breakpoints_by_file[file_path]):
-                self._breakpoints_list_widget.addItem(f"{Path(file_path).name}:{line_number}")
+        self._debug_panel.set_breakpoints(self._breakpoints_by_file)
 
     def _handle_clear_console_action(self) -> None:
         self._console_model.clear()
         if self._console_output_widget is not None:
             self._console_output_widget.clear()
         if self._python_console_widget is not None:
-            self._python_console_widget.clear()
-        if self._debug_inspector_output_widget is not None:
-            self._debug_inspector_output_widget.clear()
+            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                self._python_console_widget.set_debug_session_locked(True)
+            else:
+                self._python_console_widget.clear()
+        if self._debug_panel is not None:
+            self._debug_panel.clear_output()
 
     def _handle_format_current_file_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -2032,6 +2036,8 @@ class MainWindow(QMainWindow):
     def _handle_python_console_submit(self, command_text: str) -> None:
         if not command_text.strip():
             return
+        if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+            return
         if not self._run_service.supervisor.is_running():
             QMessageBox.warning(self, "Python Console", "Start a Python console or debug session first.")
             return
@@ -2050,22 +2056,33 @@ class MainWindow(QMainWindow):
         self._python_console_widget.append_output(text, stream)
 
     def _append_debug_output_line(self, text: str) -> None:
-        if self._debug_inspector_output_widget is None:
+        if self._debug_panel is None:
             return
-        self._debug_inspector_output_widget.appendPlainText(text)
+        self._debug_panel.append_output(text)
 
     def _apply_debug_inspector_event(self) -> None:
+        if self._debug_panel is None:
+            return
         state = self._debug_session.state
-        if self._debug_stack_list_widget is not None:
-            self._debug_stack_list_widget.clear()
-            for frame in state.frames:
-                self._debug_stack_list_widget.addItem(
-                    f"{Path(frame.file_path).name}:{frame.line_number} ({frame.function_name})"
-                )
-        if self._debug_variables_list_widget is not None:
-            self._debug_variables_list_widget.clear()
-            for variable in state.variables:
-                self._debug_variables_list_widget.addItem(f"{variable.name} = {variable.value_repr}")
+        self._debug_panel.update_from_state(state)
+
+        if state.execution_state == DebugExecutionState.PAUSED and state.frames:
+            frame = state.frames[0]
+            self._open_file_at_line(frame.file_path, frame.line_number)
+            resolved = str(Path(frame.file_path).expanduser().resolve())
+            editor = self._editor_widgets_by_path.get(resolved)
+            if editor is not None:
+                if self._debug_execution_editor is not None and self._debug_execution_editor is not editor:
+                    self._debug_execution_editor.clear_debug_execution_line()
+                editor.set_debug_execution_line(frame.line_number)
+                self._debug_execution_editor = editor
+        elif state.execution_state in {DebugExecutionState.RUNNING, DebugExecutionState.EXITED}:
+            self._clear_debug_execution_indicator()
+
+    def _clear_debug_execution_indicator(self) -> None:
+        if self._debug_execution_editor is not None:
+            self._debug_execution_editor.clear_debug_execution_line()
+            self._debug_execution_editor = None
 
     def _handle_debug_refresh_stack(self) -> None:
         if not self._run_service.supervisor.is_running():
@@ -2077,25 +2094,32 @@ class MainWindow(QMainWindow):
             return
         self._send_runner_input(locals_command())
 
-    def _handle_add_watch_expression(self) -> None:
-        if self._watch_input_widget is None or self._watch_list_widget is None:
-            return
-        expression = self._watch_input_widget.text().strip()
-        if not expression:
-            return
-        existing = [self._watch_list_widget.item(index).text() for index in range(self._watch_list_widget.count())]
-        if expression not in existing:
-            self._watch_list_widget.addItem(expression)
-        self._watch_input_widget.clear()
+    def _handle_debug_navigate(self, file_path: str, line_number: int) -> None:
+        self._open_file_at_line(file_path, line_number)
 
-    def _handle_evaluate_watch_expressions(self) -> None:
-        if self._watch_list_widget is None:
+    def _handle_debug_watch_evaluate(self, expression: str) -> None:
+        if not self._run_service.supervisor.is_running():
             return
-        for index in range(self._watch_list_widget.count()):
-            expression = self._watch_list_widget.item(index).text().strip()
-            if not expression:
-                continue
-            self._send_runner_input(evaluate_command(expression))
+        self._send_runner_input(evaluate_command(expression))
+
+    def _handle_debug_command_submit(self, command_text: str) -> None:
+        if not command_text.strip():
+            return
+        if self._active_session_mode != constants.RUN_MODE_PYTHON_DEBUG:
+            return
+        if not self._run_service.supervisor.is_running():
+            return
+        self._send_runner_input(command_text.strip())
+
+    def _handle_debug_breakpoint_remove(self, file_path: str, line_number: int) -> None:
+        breakpoints = self._breakpoints_by_file.get(file_path, set())
+        breakpoints.discard(line_number)
+        if not breakpoints:
+            self._breakpoints_by_file.pop(file_path, None)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if editor_widget is not None:
+            editor_widget.set_breakpoints(self._breakpoints_by_file.get(file_path, set()))
+        self._refresh_breakpoints_list()
 
     def _handle_project_health_check_action(self) -> None:
         if self._loaded_project is None:
@@ -2195,33 +2219,41 @@ class MainWindow(QMainWindow):
             parsed_debug_event = self._debug_session.ingest_output_line(text)
             if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running", "stack"}:
                 if parsed_debug_event.message:
-                    self._append_python_console_line(f"[debug] {parsed_debug_event.message}")
                     self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
                 self._apply_debug_inspector_event()
                 self._refresh_run_action_states()
                 return
             self._active_run_output_tail.append(text)
             self._append_console_line(text, stream=stream)
-            if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
+            if self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
                 for line in text.rstrip().splitlines():
                     self._append_python_console_line(line, stream=stream)
-                    if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                        self._append_debug_output_line(line)
+            elif self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                for line in text.rstrip().splitlines():
+                    self._append_debug_output_line(line)
             return
 
         if event.event_type == "exit":
             return_code = event.return_code
             if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._debug_session.mark_exited()
+                self._apply_debug_inspector_event()
             if event.terminated_by_user:
                 self._append_console_line(f"Run terminated by user (code={return_code}).\n", stream="system")
-                self._append_python_console_line(f"[system] Session terminated (code={return_code}).", stream="system")
+                session_line = f"[system] Session terminated (code={return_code})."
             else:
                 self._append_console_line(f"Run finished (code={return_code}).\n", stream="system")
-                self._append_python_console_line(f"[system] Session finished (code={return_code}).", stream="system")
-            if self._active_session_mode in {constants.RUN_MODE_PYTHON_REPL, constants.RUN_MODE_PYTHON_DEBUG}:
+                session_line = f"[system] Session finished (code={return_code})."
+            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                self._append_debug_output_line(session_line)
+                if self._python_console_widget is not None:
+                    self._python_console_widget.set_debug_session_locked(False)
+            elif self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
+                self._append_python_console_line(session_line, stream="system")
                 if self._python_console_widget is not None:
                     self._python_console_widget.set_session_active(False)
+            if self._debug_panel is not None:
+                self._debug_panel.set_command_input_enabled(False)
 
             self._active_session_mode = None
             self._run_session_controller.clear_active_session_mode()
@@ -2293,12 +2325,12 @@ class MainWindow(QMainWindow):
             item.setData(PROBLEM_ROLE_LINE_NUMBER, match.line_number)
 
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        QTimer.singleShot(0, lambda: self._set_search_results(matches, query))
+        self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
 
     def _handle_search_worker_done(self, started_at: float, query: str) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         self._logger.info("Find in files telemetry: query=%r elapsed_ms=%.2f", query, elapsed_ms)
-        QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
+        self._dispatch_to_main_thread(lambda: setattr(self, "_active_search_worker", None))
 
     def _start_symbol_indexing(self, project_root: str) -> None:
         if not self._intelligence_runtime_settings.cache_enabled:
@@ -2353,13 +2385,13 @@ class MainWindow(QMainWindow):
                     symbol_count,
                     elapsed_ms,
                 )
-        QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
+        self._dispatch_to_main_thread(lambda: setattr(self, "_active_symbol_index_worker", None))
 
     def _handle_symbol_index_error(self, project_root: str, message: str, generation: int) -> None:
         if generation != self._symbol_index_generation:
             return
         self._logger.warning("Symbol index failed for %s: %s", project_root, message)
-        QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
+        self._dispatch_to_main_thread(lambda: setattr(self, "_active_symbol_index_worker", None))
 
     def _clear_problems(self) -> None:
         if self._problems_list_widget is not None:
@@ -2400,6 +2432,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
+            self._stop_active_run_before_close()
             self._background_tasks.cancel_all()
             self._flush_pending_autosaves()
             if self._status_controller is not None:
@@ -2408,6 +2441,20 @@ class MainWindow(QMainWindow):
             event.accept()
             return
         event.ignore()
+
+    def _stop_active_run_before_close(self) -> None:
+        if not self._run_service.supervisor.is_running():
+            return
+
+        try:
+            self._run_service.stop_run()
+        except Exception as exc:
+            self._logger.warning("Failed to stop active run during window close: %s", exc)
+
+        self._run_session_controller.clear_active_session_mode()
+        self._active_session_mode = None
+        if self._python_console_widget is not None:
+            self._python_console_widget.set_session_active(False)
 
     def changeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.type() == QEvent.PaletteChange and not self._is_applying_theme_styles:
@@ -2586,6 +2633,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget(self)
         tabs.setObjectName("shell.bottomRegion.tabs")
         self._bottom_tabs_widget = tabs
+        tabs.setMinimumHeight(60)
 
         self._console_output_widget = QPlainTextEdit(tabs)
         self._console_output_widget.setObjectName("shell.bottom.console")
@@ -2598,65 +2646,14 @@ class MainWindow(QMainWindow):
         self._python_console_widget.interrupt_requested.connect(self._handle_python_console_interrupt)
         tabs.addTab(self._python_console_widget, "Python Console")
 
-        debug_panel = QWidget(tabs)
-        debug_layout = QVBoxLayout(debug_panel)
-        debug_layout.setContentsMargins(8, 8, 8, 8)
-        debug_layout.setSpacing(6)
-
-        debug_controls = QWidget(debug_panel)
-        debug_controls_layout = QHBoxLayout(debug_controls)
-        debug_controls_layout.setContentsMargins(0, 0, 0, 0)
-        debug_controls_layout.setSpacing(6)
-        stack_button = QPushButton("Refresh Stack", debug_controls)
-        stack_button.clicked.connect(self._handle_debug_refresh_stack)
-        debug_controls_layout.addWidget(stack_button)
-        locals_button = QPushButton("Refresh Locals", debug_controls)
-        locals_button.clicked.connect(self._handle_debug_refresh_locals)
-        debug_controls_layout.addWidget(locals_button)
-        debug_layout.addWidget(debug_controls)
-
-        watch_row = QWidget(debug_panel)
-        watch_row_layout = QHBoxLayout(watch_row)
-        watch_row_layout.setContentsMargins(0, 0, 0, 0)
-        watch_row_layout.setSpacing(6)
-        self._watch_input_widget = QLineEdit(watch_row)
-        self._watch_input_widget.setPlaceholderText("watch expression, e.g. my_var")
-        watch_row_layout.addWidget(self._watch_input_widget, 1)
-        add_watch_button = QPushButton("Add Watch", watch_row)
-        add_watch_button.clicked.connect(self._handle_add_watch_expression)
-        watch_row_layout.addWidget(add_watch_button)
-        eval_watch_button = QPushButton("Evaluate Watches", watch_row)
-        eval_watch_button.clicked.connect(self._handle_evaluate_watch_expressions)
-        watch_row_layout.addWidget(eval_watch_button)
-        debug_layout.addWidget(watch_row)
-
-        stack_and_vars = QWidget(debug_panel)
-        stack_and_vars_layout = QHBoxLayout(stack_and_vars)
-        stack_and_vars_layout.setContentsMargins(0, 0, 0, 0)
-        stack_and_vars_layout.setSpacing(6)
-
-        self._debug_stack_list_widget = QListWidget(stack_and_vars)
-        self._debug_stack_list_widget.setObjectName("shell.bottom.debug.stackList")
-        stack_and_vars_layout.addWidget(self._debug_stack_list_widget, 1)
-
-        self._debug_variables_list_widget = QListWidget(stack_and_vars)
-        self._debug_variables_list_widget.setObjectName("shell.bottom.debug.variablesList")
-        stack_and_vars_layout.addWidget(self._debug_variables_list_widget, 1)
-        debug_layout.addWidget(stack_and_vars, 1)
-
-        self._watch_list_widget = QListWidget(debug_panel)
-        self._watch_list_widget.setObjectName("shell.bottom.debug.watchList")
-        debug_layout.addWidget(self._watch_list_widget, 1)
-
-        self._breakpoints_list_widget = QListWidget(debug_panel)
-        self._breakpoints_list_widget.setObjectName("shell.bottom.debug.breakpointsList")
-        debug_layout.addWidget(self._breakpoints_list_widget, 1)
-
-        self._debug_inspector_output_widget = QPlainTextEdit(debug_panel)
-        self._debug_inspector_output_widget.setObjectName("shell.bottom.debug.output")
-        self._debug_inspector_output_widget.setReadOnly(True)
-        debug_layout.addWidget(self._debug_inspector_output_widget, 2)
-        tabs.addTab(debug_panel, "Debug")
+        self._debug_panel = DebugPanelWidget(tabs)
+        self._debug_panel.navigate_requested.connect(self._handle_debug_navigate)
+        self._debug_panel.watch_evaluate_requested.connect(self._handle_debug_watch_evaluate)
+        self._debug_panel.breakpoint_remove_requested.connect(self._handle_debug_breakpoint_remove)
+        self._debug_panel.refresh_stack_requested.connect(self._handle_debug_refresh_stack)
+        self._debug_panel.refresh_locals_requested.connect(self._handle_debug_refresh_locals)
+        self._debug_panel.command_submitted.connect(self._handle_debug_command_submit)
+        tabs.addTab(self._debug_panel, "Debug")
 
         self._problems_list_widget = QListWidget(tabs)
         self._problems_list_widget.setObjectName("shell.bottom.problems")

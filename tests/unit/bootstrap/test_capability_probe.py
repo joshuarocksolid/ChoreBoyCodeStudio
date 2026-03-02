@@ -1,6 +1,7 @@
 """Unit tests for startup runtime capability probes."""
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -48,19 +49,41 @@ def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.M
 
 
 def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """FreeCAD check should return a failed result when import errors."""
+    """FreeCAD check should return a failed result when isolated probe errors."""
+    command_calls: list[list[str]] = []
 
-    def fake_import(module_name: str) -> object:
-        if module_name == "FreeCAD":
-            raise ModuleNotFoundError("No module named FreeCAD")
-        return object()
+    def fake_run(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
+        command_calls.append(command)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr="ModuleNotFoundError: No module named 'FreeCAD'",
+        )
 
-    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
-
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
     result = capability_probe.check_freecad_availability()
+
+    assert command_calls
+    assert command_calls[0][0] == capability_probe.sys.executable
+    assert command_calls[0][1] == "-c"
     assert result.check_id == "freecad_import"
     assert result.is_available is False
-    assert "No module named FreeCAD" in result.message
+    assert "No module named 'FreeCAD'" in result.message
+
+
+def test_check_freecad_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FreeCAD check should succeed when isolated probe exits zero."""
+
+    def fake_run(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
+    result = capability_probe.check_freecad_availability()
+
+    assert result.check_id == "freecad_import"
+    assert result.is_available is True
+    assert "succeeded" in result.message
 
 
 def test_check_writable_state_path_uses_resolved_state_root(tmp_path: Path) -> None:

@@ -110,6 +110,20 @@ class TestSessionActivation:
         widget.set_session_active(True)
         assert len(widget.history) == 0
 
+    def test_debug_lock_shows_read_only_hint(self, widget: PythonConsoleWidget) -> None:
+        widget.set_debug_session_locked(True)
+        text = _get_plain_text(widget)
+        assert widget.isReadOnly()
+        assert widget.prompt_anchor == -1
+        assert "Debug session active" in text
+
+    def test_debug_unlock_restores_idle_hint(self, widget: PythonConsoleWidget) -> None:
+        widget.set_debug_session_locked(True)
+        widget.set_debug_session_locked(False)
+        text = _get_plain_text(widget)
+        assert widget.isReadOnly()
+        assert "No active session" in text
+
 
 # ---------------------------------------------------------------------------
 # Prompt boundary protection

@@ -51,8 +51,7 @@ QTreeWidget#shell\\.projectTree::branch:has-children:open {{
 }}
 QPlainTextEdit#shell\\.editorTabs\\.textEditor,
 QPlainTextEdit#shell\\.bottom\\.console,
-QPlainTextEdit#shell\\.bottom\\.runLog,
-QPlainTextEdit#shell\\.bottom\\.debug\\.output {{
+QPlainTextEdit#shell\\.bottom\\.runLog {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
@@ -68,17 +67,143 @@ QListWidget#shell\\.bottom\\.problems {{
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
 }}
-QListWidget#shell\\.bottom\\.debug\\.watchList {{
-    background: {tokens.editor_bg};
-    color: {tokens.text_primary};
-    border: 1px solid {tokens.border};
+/* -- Debug panel -------------------------------------------------------- */
+QWidget#shell\\.debug\\.panel {{
+    background: {tokens.panel_bg};
 }}
-QListWidget#shell\\.bottom\\.debug\\.stackList,
-QListWidget#shell\\.bottom\\.debug\\.variablesList,
-QListWidget#shell\\.bottom\\.debug\\.breakpointsList {{
+QWidget#shell\\.debug\\.statusHeader {{
+    background: {tokens.editor_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.debug\\.statusLabel {{
+    color: {tokens.text_primary};
+    font-size: 11px;
+}}
+QLabel#shell\\.debug\\.statusDot {{
+    border-radius: 5px;
+}}
+QLabel#shell\\.debug\\.statusDot[debugState="idle"] {{
+    background: {tokens.text_muted};
+}}
+QLabel#shell\\.debug\\.statusDot[debugState="running"] {{
+    background: {tokens.debug_running_color};
+}}
+QLabel#shell\\.debug\\.statusDot[debugState="paused"] {{
+    background: {tokens.debug_paused_color};
+}}
+QWidget#shell\\.debug\\.sectionHeader {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.debug\\.sectionTitle {{
+    color: {tokens.text_muted};
+    font-size: 10px;
+    font-weight: 600;
+}}
+QLabel#shell\\.debug\\.sectionCount {{
+    color: {tokens.text_muted};
+    font-size: 9px;
+}}
+QToolButton#shell\\.debug\\.sectionBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+}}
+QToolButton#shell\\.debug\\.sectionBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.debug\\.sectionBtn:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QToolButton#shell\\.debug\\.sectionBtn:disabled {{
+    color: {tokens.text_muted};
+}}
+QTreeWidget#shell\\.debug\\.stackTree,
+QTreeWidget#shell\\.debug\\.variablesTree,
+QTreeWidget#shell\\.debug\\.watchTree,
+QTreeWidget#shell\\.debug\\.breakpointsTree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTreeWidget#shell\\.debug\\.stackTree::item,
+QTreeWidget#shell\\.debug\\.variablesTree::item,
+QTreeWidget#shell\\.debug\\.watchTree::item,
+QTreeWidget#shell\\.debug\\.breakpointsTree::item {{
+    padding: 2px 4px;
+}}
+QTreeWidget#shell\\.debug\\.stackTree::item:hover,
+QTreeWidget#shell\\.debug\\.variablesTree::item:hover,
+QTreeWidget#shell\\.debug\\.watchTree::item:hover,
+QTreeWidget#shell\\.debug\\.breakpointsTree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.debug\\.stackTree::item:selected,
+QTreeWidget#shell\\.debug\\.variablesTree::item:selected,
+QTreeWidget#shell\\.debug\\.watchTree::item:selected,
+QTreeWidget#shell\\.debug\\.breakpointsTree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#shell\\.debug\\.stackTree QHeaderView::section,
+QTreeWidget#shell\\.debug\\.variablesTree QHeaderView::section,
+QTreeWidget#shell\\.debug\\.watchTree QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    border-right: 1px solid {tokens.border};
+    padding: 2px 6px;
+    font-size: 10px;
+}}
+QPlainTextEdit#shell\\.debug\\.output {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+}}
+QWidget#shell\\.debug\\.watchInputRow {{
+    background: {tokens.editor_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLineEdit#shell\\.debug\\.watchInput {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+}}
+QLineEdit#shell\\.debug\\.watchInput:focus {{
+    border-color: {tokens.accent};
+}}
+QWidget#shell\\.debug\\.commandInputRow {{
+    background: {tokens.editor_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLineEdit#shell\\.debug\\.commandInput {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+}}
+QLineEdit#shell\\.debug\\.commandInput:focus {{
+    border-color: {tokens.accent};
+}}
+QLineEdit#shell\\.debug\\.commandInput:disabled {{
+    color: {tokens.text_muted};
+}}
+QSplitter#shell\\.debug\\.mainSplitter::handle,
+QSplitter#shell\\.debug\\.leftSplitter::handle,
+QSplitter#shell\\.debug\\.rightSplitter::handle {{
+    background: {tokens.border};
 }}
 QLabel#shell\\.leftRegion\\.title {{
     color: {tokens.text_muted};

@@ -57,6 +57,7 @@ class PythonConsoleWidget(QTextEdit):
         self._history: list[str] = []
         self._history_index: int = 0
         self._session_active: bool = False
+        self._debug_session_locked: bool = False
 
         # Token-derived colors (set proper values via apply_theme).
         self._col_text: str = "#E9ECEF"
@@ -108,6 +109,7 @@ class PythonConsoleWidget(QTextEdit):
         with ``False`` so it appears above the deactivation notice.
         """
         if active:
+            self._debug_session_locked = False
             self._session_active = True
             self._history.clear()
             self._history_index = 0
@@ -115,7 +117,20 @@ class PythonConsoleWidget(QTextEdit):
         else:
             self._session_active = False
             self._prompt_anchor = -1
+            self._debug_session_locked = False
             self.setReadOnly(True)
+
+    def set_debug_session_locked(self, locked: bool) -> None:
+        """Toggle read-only hint mode used while debugger owns stdin."""
+        self._session_active = False
+        self._prompt_anchor = -1
+        self._debug_session_locked = locked
+        self.setReadOnly(True)
+        self.clear()
+        if locked:
+            self._render_debug_hint()
+        else:
+            self._render_idle_hint()
 
     # ------------------------------------------------------------------
     # Output appending (called by MainWindow on runner events)
@@ -349,6 +364,20 @@ class PythonConsoleWidget(QTextEdit):
         )
         self.setTextCursor(cursor)
 
+    def _render_debug_hint(self) -> None:
+        """Display a muted hint while debug input is handled in Debug tab."""
+        self.setReadOnly(True)
+        cursor = QTextCursor(self.document())
+        cursor.movePosition(QTextCursor.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(self._col_muted))
+        fmt.setFontItalic(True)
+        cursor.insertText(
+            "Debug session active \u2014 use the Debug tab command input.",
+            fmt,
+        )
+        self.setTextCursor(cursor)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -379,7 +408,7 @@ class PythonConsoleWidget(QTextEdit):
     def _default_fmt(self) -> QTextCharFormat:
         fmt = QTextCharFormat()
         fmt.setForeground(QColor(self._col_text))
-        fmt.setFontWeight(QFont.Normal)
+        fmt.setFontWeight(QFont.Normal) 
         fmt.setFontItalic(False)
         return fmt
 
