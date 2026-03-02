@@ -32,10 +32,25 @@ def run_pytest_project(project_root: str, *, timeout_seconds: int = 300) -> Pyte
     """Run pytest in project root and parse navigable failures."""
     normalized_root = str(Path(project_root).expanduser().resolve())
     command = [sys.executable, "-m", "pytest", "-q"]
+    return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
+def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: int = 300) -> PytestRunResult:
+    """Run pytest for one target path relative to project root."""
+    normalized_root = str(Path(project_root).expanduser().resolve())
+    target = Path(target_path).expanduser()
+    resolved_target = target if target.is_absolute() else (Path(normalized_root) / target)
+    target_arg = str(resolved_target.resolve())
+    command = [sys.executable, "-m", "pytest", "-q", target_arg]
+    return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
+def _run_pytest_command(project_root: str, command: list[str], *, timeout_seconds: int) -> PytestRunResult:
+    """Run pytest command and parse results."""
     started_at = time.perf_counter()
     completed = subprocess.run(
         command,
-        cwd=normalized_root,
+        cwd=project_root,
         text=True,
         capture_output=True,
         check=False,
@@ -43,10 +58,10 @@ def run_pytest_project(project_root: str, *, timeout_seconds: int = 300) -> Pyte
     )
     elapsed_ms = (time.perf_counter() - started_at) * 1000.0
     combined_output = f"{completed.stdout}\n{completed.stderr}".strip()
-    failures = parse_pytest_failures(combined_output, normalized_root)
+    failures = parse_pytest_failures(combined_output, project_root)
     return PytestRunResult(
         command=command,
-        project_root=normalized_root,
+        project_root=project_root,
         return_code=completed.returncode,
         stdout=completed.stdout,
         stderr=completed.stderr,

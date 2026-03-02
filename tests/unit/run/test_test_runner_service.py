@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from app.run.test_runner_service import parse_pytest_failures, run_pytest_project
+from app.run.test_runner_service import parse_pytest_failures, run_pytest_project, run_pytest_target
 
 pytestmark = pytest.mark.unit
 
@@ -49,3 +49,33 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
     assert result.succeeded is False
     assert len(result.failures) == 1
     assert result.failures[0].line_number == 10
+
+
+def test_run_pytest_target_includes_target_argument(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    target = project_root / "tests" / "test_sample.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+
+    captured_command: list[str] = []
+
+    def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal captured_command
+        captured_command = list(args[0])
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="1 passed",
+            stderr="",
+        )
+
+    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+
+    result = run_pytest_target(str(project_root), str(target))
+
+    assert result.return_code == 0
+    assert captured_command[-1] == str(target.resolve())

@@ -82,7 +82,7 @@ from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
-from app.run.test_runner_service import PytestRunResult, run_pytest_project
+from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -220,6 +220,7 @@ class MainWindow(QMainWindow):
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
                 on_run_pytest_project=self._handle_run_pytest_project_action,
+                on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
                 on_run_with_config=self._handle_run_with_configuration_action,
                 on_manage_run_configs=self._handle_manage_run_configurations_action,
                 on_stop=self._handle_stop_action,
@@ -1236,6 +1237,45 @@ class MainWindow(QMainWindow):
 
         self._background_tasks.run(
             key="run_pytest_project",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_run_pytest_current_file_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run Current File Tests", "Open a project first.")
+            return
+        loaded_project = self._loaded_project
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Run Current File Tests", "Open a file tab first.")
+            return
+        target_path = Path(active_tab.file_path).expanduser().resolve()
+        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
+        try:
+            target_path.relative_to(project_root_path)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Run Current File Tests",
+                "Current file is outside project root and cannot be run as a test target.",
+            )
+            return
+        self._append_console_line(f"Running pytest for {target_path}", stream="system")
+
+        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
+            return run_pytest_target(loaded_project.project_root, str(target_path))
+
+        def on_success(result: PytestRunResult) -> None:
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Pytest target run failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Run Current File Tests", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_target",
             task=task,
             on_success=on_success,
             on_error=on_error,
