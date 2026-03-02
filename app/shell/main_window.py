@@ -2175,12 +2175,21 @@ class MainWindow(QMainWindow):
         if generation != self._symbol_index_generation:
             return
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-        self._logger.info(
-            "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
-            project_root,
-            symbol_count,
-            elapsed_ms,
-        )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            if elapsed_ms > 2500.0:
+                self._logger.warning(
+                    "Symbol index latency warning: root=%s symbols=%s elapsed_ms=%.2f",
+                    project_root,
+                    symbol_count,
+                    elapsed_ms,
+                )
+            else:
+                self._logger.info(
+                    "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
+                    project_root,
+                    symbol_count,
+                    elapsed_ms,
+                )
         QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
 
     def _handle_symbol_index_error(self, project_root: str, message: str, generation: int) -> None:
