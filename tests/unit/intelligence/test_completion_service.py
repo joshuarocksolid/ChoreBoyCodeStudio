@@ -111,3 +111,38 @@ def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path:
     completions = [item for item in service.complete(request) if item.insert_text == "helper"]
 
     assert len(completions) == 1
+
+
+def test_completion_service_boosts_recently_accepted_items(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    cache = SQLiteSymbolIndex(str(cache_path))
+    other_path = str((project_root / "other.py").resolve())
+    cache.upsert_symbols_for_files(
+        str(project_root),
+        {
+            other_path: [
+                IndexedSymbol(name="alpha_one", file_path=other_path, line_number=1),
+                IndexedSymbol(name="alpha_two", file_path=other_path, line_number=2),
+            ]
+        },
+    )
+
+    service = CompletionService(cache_db_path=str(cache_path))
+    request = CompletionRequest(
+        source_text="alp",
+        cursor_position=3,
+        current_file_path=str((project_root / "main.py").resolve()),
+        project_root=str(project_root.resolve()),
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    initial = service.complete(request)
+    assert initial[0].insert_text == "alpha_one"
+    preferred = next(item for item in initial if item.insert_text == "alpha_two")
+    service.record_acceptance(preferred)
+
+    boosted = service.complete(request)
+    assert boosted[0].insert_text == "alpha_two"

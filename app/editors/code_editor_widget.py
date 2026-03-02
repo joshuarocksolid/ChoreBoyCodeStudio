@@ -53,6 +53,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self._indent_style = "spaces"
         self._indent_size = DEFAULT_TAB_WIDTH
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
+        self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
         self._completion_enabled = True
         self._completion_auto_trigger = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
@@ -147,6 +148,10 @@ class CodeEditorWidget(QPlainTextEdit):
     def set_completion_provider(self, provider: Callable[[str, str, int, bool], list[CompletionItem]] | None) -> None:
         """Attach completion provider callback invoked during editor typing."""
         self._completion_provider = provider
+
+    def set_completion_accepted_callback(self, callback: Callable[[CompletionItem], None] | None) -> None:
+        """Attach callback invoked when completion item is accepted."""
+        self._completion_accepted_callback = callback
 
     def set_completion_preferences(self, *, enabled: bool, auto_trigger: bool, min_chars: int) -> None:
         """Apply completion behavior preferences."""
@@ -413,6 +418,8 @@ class CodeEditorWidget(QPlainTextEdit):
             cursor.removeSelectedText()
         cursor.insertText(completion_item.insert_text)
         self.setTextCursor(cursor)
+        if self._completion_accepted_callback is not None:
+            self._completion_accepted_callback(completion_item)
 
     def _build_bracket_match_selection(self) -> QTextEdit.ExtraSelection | None:
         cursor = self.textCursor()

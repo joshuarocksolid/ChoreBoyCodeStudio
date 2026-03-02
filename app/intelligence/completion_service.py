@@ -34,6 +34,7 @@ class CompletionService:
 
     def __init__(self, *, cache_db_path: str) -> None:
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
+        self._acceptance_scores: dict[str, int] = {}
 
     def complete(self, request: CompletionRequest) -> list[CompletionItem]:
         """Return ranked completion candidates for one editor query."""
@@ -75,6 +76,7 @@ class CompletionService:
             if score <= 0:
                 continue
             score += _source_score(candidate, current_file_path=current_file_path)
+            score += self._acceptance_boost(candidate)
             ranked_entry = RankedCompletionItem(item=candidate, score=score)
             dedupe_key = f"{candidate.insert_text}|{candidate.kind.value}"
             existing = deduped.get(dedupe_key)
@@ -89,6 +91,19 @@ class CompletionService:
                 len(entry.item.label),
             ),
         )
+
+    def record_acceptance(self, item: CompletionItem) -> None:
+        """Record a user-accepted completion for future ranking boosts."""
+        key = self._acceptance_key(item)
+        self._acceptance_scores[key] = min(self._acceptance_scores.get(key, 0) + 1, 100)
+
+    def _acceptance_boost(self, item: CompletionItem) -> int:
+        score = self._acceptance_scores.get(self._acceptance_key(item), 0)
+        return min(score * 5, 50)
+
+    @staticmethod
+    def _acceptance_key(item: CompletionItem) -> str:
+        return f"{item.insert_text}|{item.kind.value}"
 
 
 def _base_match_score(label: str, prefix: str) -> int:

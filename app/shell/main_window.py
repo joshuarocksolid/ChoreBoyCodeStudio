@@ -2645,8 +2645,12 @@ class MainWindow(QMainWindow):
         def on_cursor_position_changed() -> None:
             self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
+        def on_completion_accepted(item: CompletionItem) -> None:
+            self._completion_service.record_acceptance(item)
+
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_completion_provider(completion_provider)
+        editor_widget.set_completion_accepted_callback(on_completion_accepted)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
