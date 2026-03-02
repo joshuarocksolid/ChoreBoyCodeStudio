@@ -274,6 +274,10 @@ class MainWindow(QMainWindow):
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
         self._run_event_timer.start()
+        self._external_change_poll_timer = QTimer(self)
+        self._external_change_poll_timer.setInterval(1000)
+        self._external_change_poll_timer.timeout.connect(self._poll_external_file_changes)
+        self._external_change_poll_timer.start()
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -2976,6 +2980,16 @@ class MainWindow(QMainWindow):
         if not tab_state.is_dirty:
             tab_state.original_content = disk_content
             self._handle_editor_text_changed(file_path, editor_widget)
+
+    def _poll_external_file_changes(self) -> None:
+        stale_paths = self._editor_manager.stale_open_paths()
+        if not stale_paths:
+            return
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return
+        if active_tab.file_path in stale_paths:
+            self._check_for_external_file_change(active_tab.file_path)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)

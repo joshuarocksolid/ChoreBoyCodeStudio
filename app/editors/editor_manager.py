@@ -94,6 +94,21 @@ class EditorManager:
         tab.set_last_known_mtime(mtime)
         return tab
 
+    def stale_open_paths(self) -> list[str]:
+        """Return open file paths whose disk mtime changed since last snapshot."""
+        stale_paths: list[str] = []
+        for path in self._open_order:
+            tab = self._tabs_by_path[path]
+            current_mtime = self._read_file_mtime(path)
+            if current_mtime is None:
+                continue
+            if tab.last_known_mtime is None:
+                tab.set_last_known_mtime(current_mtime)
+                continue
+            if current_mtime != tab.last_known_mtime:
+                stale_paths.append(path)
+        return stale_paths
+
     def save_all(self) -> list[EditorTabState]:
         """Save every dirty tab in tab order and return saved tabs."""
         saved_tabs: list[EditorTabState] = []
