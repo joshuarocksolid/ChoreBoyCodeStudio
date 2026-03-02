@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt, Signal
+from PySide2.QtCore import QSize, Qt, Signal
+from PySide2.QtGui import QIcon
 from PySide2.QtWidgets import QToolButton, QVBoxLayout, QWidget
 
 
@@ -22,10 +23,20 @@ class ActivityBar(QWidget):
         self._layout.setSpacing(2)
         self._layout.addStretch()
 
-    def add_view(self, view_id: str, label: str, tooltip: str) -> None:
+    def add_view(
+        self,
+        view_id: str,
+        label: str,
+        tooltip: str,
+        icon: QIcon | None = None,
+    ) -> None:
         btn = QToolButton(self)
         btn.setObjectName(f"shell.activityBar.btn.{view_id}")
-        btn.setText(label)
+        if icon is not None and not icon.isNull():
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(20, 20))
+        else:
+            btn.setText(label)
         btn.setToolTip(tooltip)
         btn.setCheckable(True)
         btn.setFixedSize(32, 32)

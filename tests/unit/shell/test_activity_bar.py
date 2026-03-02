@@ -73,3 +73,20 @@ class TestActivityBar:
         bar._buttons["search"].click()
         assert changes == ["search"]
         assert bar.active_view() == "search"
+
+    def test_add_view_with_icon_sets_icon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        from PySide2.QtGui import QIcon, QPixmap
+
+        bar = ActivityBar()
+        icon = QIcon(QPixmap(20, 20))
+        bar.add_view("explorer", "E", "Explorer", icon=icon)
+        btn = bar._buttons["explorer"]
+        assert not btn.icon().isNull()
+        assert btn.text() == ""
+
+    def test_add_view_without_icon_uses_text(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        bar = ActivityBar()
+        bar.add_view("explorer", "E", "Explorer")
+        btn = bar._buttons["explorer"]
+        assert btn.icon().isNull()
+        assert btn.text() == "E"

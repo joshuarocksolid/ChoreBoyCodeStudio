@@ -8,6 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from PySide2.QtGui import QTextFormat  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
@@ -28,6 +29,10 @@ def editor() -> CodeEditorWidget:
     widget = CodeEditorWidget()
     widget.setPlainText("line 1\nline 2\nline 3\nline 4\nline 5\n")
     return widget
+
+
+def _selection_background_hex(selection) -> str:  # type: ignore[no-untyped-def]
+    return selection.format.background().color().name().lower()
 
 
 class TestSetDebugExecutionLine:
@@ -62,14 +67,21 @@ class TestDebugExecutionLineHighlight:
         editor.set_debug_execution_line(2)
         selections = editor.extraSelections()
         assert len(selections) >= 2
-        debug_sel = selections[0]
-        assert debug_sel.cursor.block().blockNumber() == 1
+        debug_matches = [
+            selection
+            for selection in selections
+            if _selection_background_hex(selection) == editor._debug_execution_line_bg.name().lower()
+            and selection.cursor.block().blockNumber() == 1
+        ]
+        assert debug_matches
 
     def test_extra_selections_no_debug_highlight_when_none(self, editor: CodeEditorWidget) -> None:
         editor.set_debug_execution_line(None)
         selections = editor.extraSelections()
-        for sel in selections:
-            assert sel.cursor.block().blockNumber() == editor.textCursor().block().blockNumber() or True
+        assert all(
+            _selection_background_hex(selection) != editor._debug_execution_line_bg.name().lower()
+            for selection in selections
+        )
 
     def test_debug_highlight_removed_after_clear(self, editor: CodeEditorWidget) -> None:
         editor.set_debug_execution_line(3)
@@ -77,6 +89,26 @@ class TestDebugExecutionLineHighlight:
         editor.clear_debug_execution_line()
         count_without = len(editor.extraSelections())
         assert count_without < count_with
+
+    def test_debug_highlight_paints_after_current_line_when_sharing_line(self, editor: CodeEditorWidget) -> None:
+        editor.go_to_line(2)
+        editor.set_debug_execution_line(2)
+        selections = editor.extraSelections()
+
+        current_line_index = next(
+            index
+            for index, selection in enumerate(selections)
+            if _selection_background_hex(selection) == editor._line_highlight.name().lower()
+            and bool(selection.format.property(QTextFormat.FullWidthSelection))
+        )
+        debug_line_index = next(
+            index
+            for index, selection in enumerate(selections)
+            if _selection_background_hex(selection) == editor._debug_execution_line_bg.name().lower()
+            and bool(selection.format.property(QTextFormat.FullWidthSelection))
+        )
+
+        assert debug_line_index > current_line_index
 
 
 class TestGutterPainting:

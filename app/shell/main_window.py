@@ -11,7 +11,7 @@ import time
 from typing import Callable, Optional
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
@@ -100,6 +100,7 @@ from app.shell.layout_persistence import (
     merge_layout_into_settings,
     parse_shell_layout_state,
 )
+from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import merge_editor_settings_snapshot, parse_editor_settings_snapshot
 from app.shell.icon_provider import (
@@ -112,6 +113,7 @@ from app.shell.icon_provider import (
     refresh_icon,
 )
 from app.shell.activity_bar import ActivityBar
+from app.shell.icons import explorer_icon, search_icon
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
@@ -249,6 +251,7 @@ class MainWindow(QMainWindow):
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
+        self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
@@ -652,6 +655,8 @@ class MainWindow(QMainWindow):
         return parse_intelligence_runtime_settings(settings_payload)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
+        if self._is_shutting_down:
+            return
         self._main_thread_dispatcher.dispatch(callback)
 
     @property
@@ -1261,6 +1266,9 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
+        previous_project_root = self._loaded_project.project_root if self._loaded_project is not None else None
+        if previous_project_root is not None:
+            self._persist_session_state(project_root=previous_project_root)
         self._loaded_project = loaded_project
         self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
@@ -1272,6 +1280,7 @@ class MainWindow(QMainWindow):
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
         self._breakpoints_by_file.clear()
+        self._restore_session_state(loaded_project.project_root)
         self._refresh_breakpoints_list()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
@@ -1295,6 +1304,88 @@ class MainWindow(QMainWindow):
             save_settings(settings, state_root=self._state_root)
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
+
+    def _persist_session_state(self, project_root: str | None = None) -> None:
+        target_project_root = project_root
+        if target_project_root is None:
+            if self._loaded_project is None:
+                return
+            target_project_root = self._loaded_project.project_root
+
+        open_files: list[SessionFileState] = []
+        for file_path in self._editor_manager.open_paths():
+            cursor_line = 1
+            cursor_column = 1
+            scroll_position = 0
+            editor_widget = self._editor_widgets_by_path.get(file_path)
+            if editor_widget is not None:
+                cursor = editor_widget.textCursor()
+                cursor_line = cursor.blockNumber() + 1
+                cursor_column = cursor.positionInBlock() + 1
+                scroll_position = editor_widget.verticalScrollBar().value()
+            open_files.append(
+                SessionFileState(
+                    file_path=file_path,
+                    cursor_line=cursor_line,
+                    cursor_column=cursor_column,
+                    scroll_position=scroll_position,
+                    breakpoints=tuple(sorted(self._breakpoints_by_file.get(file_path, set()))),
+                )
+            )
+
+        active_tab = self._editor_manager.active_tab()
+        active_file_path = None if active_tab is None else active_tab.file_path
+        session_state = SessionState(open_files=tuple(open_files), active_file_path=active_file_path)
+        try:
+            save_session_file(target_project_root, session_state)
+        except Exception as exc:
+            self._logger.warning("Failed to persist project session state for %s: %s", target_project_root, exc)
+
+    def _restore_session_state(self, project_root: str) -> None:
+        try:
+            session_state = load_session_file(project_root)
+        except Exception as exc:
+            self._logger.warning("Failed to load project session state for %s: %s", project_root, exc)
+            return
+        if session_state is None:
+            return
+
+        self._breakpoints_by_file.clear()
+        for file_state in session_state.open_files:
+            if file_state.breakpoints:
+                self._breakpoints_by_file[file_state.file_path] = set(file_state.breakpoints)
+
+        for file_state in session_state.open_files:
+            if not self._open_file_in_editor(file_state.file_path):
+                self._breakpoints_by_file.pop(file_state.file_path, None)
+                continue
+            editor_widget = self._editor_widgets_by_path.get(file_state.file_path)
+            if editor_widget is None:
+                continue
+            self._restore_editor_cursor_and_scroll(editor_widget, file_state)
+
+        if session_state.active_file_path is not None and self._editor_tabs_widget is not None:
+            active_index = self._tab_index_for_path(session_state.active_file_path)
+            if active_index >= 0:
+                self._editor_tabs_widget.setCurrentIndex(active_index)
+        self._refresh_breakpoints_list()
+
+    def _restore_editor_cursor_and_scroll(self, editor_widget: CodeEditorWidget, file_state: SessionFileState) -> None:
+        target_line = max(1, file_state.cursor_line)
+        target_column = max(1, file_state.cursor_column)
+        document = editor_widget.document()
+        block = document.findBlockByNumber(target_line - 1)
+        if block.isValid():
+            max_column_offset = max(0, block.length() - 1)
+            column_offset = min(target_column - 1, max_column_offset)
+            target_position = block.position() + column_offset
+        else:
+            target_position = max(0, document.characterCount() - 1)
+        cursor = editor_widget.textCursor()
+        cursor.setPosition(target_position)
+        editor_widget.setTextCursor(cursor)
+        scroll_position = max(0, file_state.scroll_position)
+        QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
 
     def _maybe_prompt_imported_project_setup(self, loaded_project: LoadedProject) -> None:
         metadata = loaded_project.metadata
@@ -2187,16 +2278,22 @@ class MainWindow(QMainWindow):
             editor = self._editor_widgets_by_path.get(resolved)
             if editor is not None:
                 if self._debug_execution_editor is not None and self._debug_execution_editor is not editor:
-                    self._debug_execution_editor.clear_debug_execution_line()
+                    self._clear_debug_execution_indicator()
                 editor.set_debug_execution_line(frame.line_number)
                 self._debug_execution_editor = editor
         elif state.execution_state in {DebugExecutionState.RUNNING, DebugExecutionState.EXITED}:
             self._clear_debug_execution_indicator()
 
     def _clear_debug_execution_indicator(self) -> None:
-        if self._debug_execution_editor is not None:
-            self._debug_execution_editor.clear_debug_execution_line()
-            self._debug_execution_editor = None
+        if self._debug_execution_editor is None:
+            return
+        editor = self._debug_execution_editor
+        self._debug_execution_editor = None
+        try:
+            editor.clear_debug_execution_line()
+        except RuntimeError:
+            # Widget wrapper may already be invalid while the window is closing.
+            return
 
     def _handle_debug_refresh_stack(self) -> None:
         if not self._run_service.supervisor.is_running():
@@ -2329,9 +2426,14 @@ class MainWindow(QMainWindow):
         )
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
+        if self._is_shutting_down:
+            return
         self._run_event_queue.put(event)
 
     def _process_queued_run_events(self) -> None:
+        if self._is_shutting_down:
+            self._drain_run_event_queue()
+            return
         while True:
             try:
                 event = self._run_event_queue.get_nowait()
@@ -2340,6 +2442,8 @@ class MainWindow(QMainWindow):
             self._apply_run_event(event)
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
+        if self._is_shutting_down:
+            return
         if event.event_type == "output":
             stream = event.stream or "stdout"
             text = event.text or ""
@@ -2557,24 +2661,51 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
+            self._is_shutting_down = True
+            self._begin_shutdown_teardown()
             self._stop_active_run_before_close()
-            self._background_tasks.cancel_all()
             self._flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
+            self._persist_session_state()
             event.accept()
             return
         event.ignore()
 
-    def _stop_active_run_before_close(self) -> None:
-        if not self._run_service.supervisor.is_running():
-            return
+    def _begin_shutdown_teardown(self) -> None:
+        self._autosave_timer.stop()
+        self._realtime_lint_timer.stop()
+        self._pending_realtime_lint_file_path = None
+        if hasattr(self, "_run_event_timer"):
+            self._run_event_timer.stop()
+        if hasattr(self, "_external_change_poll_timer"):
+            self._external_change_poll_timer.stop()
+        self._drain_run_event_queue()
+        self._background_tasks.cancel_all()
+        if self._active_search_worker is not None and self._active_search_worker.is_running():
+            self._active_search_worker.cancel()
+        self._active_search_worker = None
+        if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+            self._active_symbol_index_worker.cancel()
+        self._active_symbol_index_worker = None
+        self._clear_debug_execution_indicator()
+        if self._debug_panel is not None:
+            self._debug_panel.set_command_input_enabled(False)
 
-        try:
-            self._run_service.stop_run()
-        except Exception as exc:
-            self._logger.warning("Failed to stop active run during window close: %s", exc)
+    def _drain_run_event_queue(self) -> None:
+        while True:
+            try:
+                self._run_event_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _stop_active_run_before_close(self) -> None:
+        if self._run_service.supervisor.is_running():
+            try:
+                self._run_service.stop_run()
+            except Exception as exc:
+                self._logger.warning("Failed to stop active run during window close: %s", exc)
 
         self._run_session_controller.clear_active_session_mode()
         self._active_session_mode = None
@@ -2628,8 +2759,11 @@ class MainWindow(QMainWindow):
         outer_layout.setSpacing(0)
 
         self._activity_bar = ActivityBar(panel)
-        self._activity_bar.add_view("explorer", "\U0001F4C1", "Explorer")
-        self._activity_bar.add_view("search", "\U0001F50D", "Search")
+        tokens = self._resolve_theme_tokens()
+        normal = QColor(tokens.text_muted)
+        active = QColor(tokens.text_primary)
+        self._activity_bar.add_view("explorer", "\U0001F4C1", "Explorer", icon=explorer_icon(color_normal=normal, color_active=active))
+        self._activity_bar.add_view("search", "\U0001F50D", "Search", icon=search_icon(color_normal=normal, color_active=active))
         self._activity_bar.view_changed.connect(self._handle_sidebar_view_changed)
         outer_layout.addWidget(self._activity_bar)
 
@@ -2719,10 +2853,7 @@ class MainWindow(QMainWindow):
                 self._search_sidebar.focus_search()
 
     def _handle_search_open_file_at_line(self, file_path: str, line_number: int) -> None:
-        if self._open_file_in_editor(file_path):
-            editor_widget = self._active_editor_widget()
-            if editor_widget is not None:
-                editor_widget.go_to_line(line_number)
+        self._open_file_at_line(file_path, line_number)
 
     @staticmethod
     def _make_explorer_button(parent: QWidget, tooltip: str, icon: QIcon) -> QToolButton:
@@ -3081,6 +3212,11 @@ class MainWindow(QMainWindow):
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
+    def _release_editor_widget(self, widget: CodeEditorWidget) -> None:
+        if self._debug_execution_editor is widget:
+            self._clear_debug_execution_indicator()
+        widget.deleteLater()
+
     def _close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._project_tree_controller.close_deleted_editor_paths(
             deleted_path,
@@ -3089,7 +3225,7 @@ class MainWindow(QMainWindow):
             remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
             if self._editor_tabs_widget is not None
             else None,
-            release_editor_widget=lambda widget: widget.deleteLater(),
+            release_editor_widget=self._release_editor_widget,
             close_editor_file=self._editor_manager.close_file,
             breakpoints_by_file=self._breakpoints_by_file,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
@@ -3429,7 +3565,7 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget.removeTab(tab_index)
         widget = self._editor_widgets_by_path.pop(file_path, None)
         if widget is not None:
-            widget.deleteLater()
+            self._release_editor_widget(widget)
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
         self._refresh_breakpoints_list()
@@ -3449,6 +3585,7 @@ class MainWindow(QMainWindow):
         self._realtime_lint_timer.stop()
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
+        self._clear_debug_execution_indicator()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()

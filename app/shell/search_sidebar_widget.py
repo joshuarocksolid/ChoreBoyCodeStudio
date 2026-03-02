@@ -27,6 +27,7 @@ class SearchSidebarWidget(QWidget):
     """Sidebar panel for project-wide search and replace."""
 
     open_file_at_line = Signal(str, int)
+    _apply_results_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -38,6 +39,7 @@ class SearchSidebarWidget(QWidget):
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(300)
         self._debounce_timer.timeout.connect(self._run_search)
+        self._apply_results_requested.connect(self._apply_search_results)
         self._replace_visible = False
         self._build_ui()
 
@@ -156,6 +158,7 @@ class SearchSidebarWidget(QWidget):
         self._results_tree.setHeaderHidden(True)
         self._results_tree.setIndentation(16)
         self._results_tree.itemActivated.connect(self._on_result_activated)
+        self._results_tree.itemClicked.connect(self._on_result_activated)
         self._results_tree.itemDoubleClicked.connect(self._on_result_activated)
         outer.addWidget(self._results_tree, 1)
 
@@ -219,13 +222,9 @@ class SearchSidebarWidget(QWidget):
         self._active_worker.start()
 
     def _on_search_results(self, matches: list[SearchMatch], query: str) -> None:
-        from PySide2.QtCore import QMetaObject, Q_ARG
-        QMetaObject.invokeMethod(
-            self, "_apply_search_results",
-            Qt.QueuedConnection,
-        )
         self._pending_results = matches
         self._pending_query = query
+        self._apply_results_requested.emit()
 
     def _on_search_done(self) -> None:
         pass

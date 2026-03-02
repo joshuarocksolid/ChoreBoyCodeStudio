@@ -84,6 +84,20 @@ class TestSearchSidebarWidget:
         assert "3 result" in widget._summary_label.text()
         assert "2 file" in widget._summary_label.text()
 
+    def test_on_search_results_stages_results_without_import_error(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        matches = [
+            SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello world", 0, 5),
+        ]
+
+        widget._on_search_results(matches, "hello")
+
+        assert widget._pending_results == matches
+        assert widget._pending_query == "hello"
+        widget._apply_search_results()
+        assert widget._results_tree.topLevelItemCount() == 1
+        assert "1 result in 1 file" == widget._summary_label.text()
+
     def test_focus_search(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()
         widget.focus_search("test query")

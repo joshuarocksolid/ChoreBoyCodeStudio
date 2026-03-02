@@ -26,6 +26,7 @@ FREECAD_IMPORT_CHECK_ID = "freecad_import"
 STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
 GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
 TEMP_ROOT_WRITABLE_CHECK_ID = "temp_root_writable"
+MODULE_IMPORT_PROBE_TIMEOUT_SECONDS = 10
 
 
 def run_startup_capability_probe(
@@ -137,7 +138,27 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
     )
     command = [sys.executable, "-c", probe_script]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return CapabilityCheckResult(
+            check_id=check_id,
+            is_available=False,
+            message=(
+                f"Failed to import {module_name}: isolated probe timed out "
+                f"after {MODULE_IMPORT_PROBE_TIMEOUT_SECONDS}s"
+            ),
+            details={
+                "module": module_name,
+                "probe": "subprocess",
+                "timeout_seconds": MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+            },
+        )
     except OSError as exc:
         return CapabilityCheckResult(
             check_id=check_id,

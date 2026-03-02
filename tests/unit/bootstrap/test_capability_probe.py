@@ -51,9 +51,11 @@ def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.M
 def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """FreeCAD check should return a failed result when isolated probe errors."""
     command_calls: list[list[str]] = []
+    call_kwargs: list[dict[str, object]] = []
 
-    def fake_run(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
         command_calls.append(command)
+        call_kwargs.append(kwargs)
         return subprocess.CompletedProcess(
             args=command,
             returncode=1,
@@ -67,9 +69,31 @@ def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.M
     assert command_calls
     assert command_calls[0][0] == capability_probe.sys.executable
     assert command_calls[0][1] == "-c"
+    assert call_kwargs
+    assert call_kwargs[0]["timeout"] == capability_probe.MODULE_IMPORT_PROBE_TIMEOUT_SECONDS
     assert result.check_id == "freecad_import"
     assert result.is_available is False
     assert "No module named 'FreeCAD'" in result.message
+
+
+def test_check_freecad_availability_reports_probe_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FreeCAD check should return a failed result when isolated probe hangs."""
+
+    def fake_run(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
+        raise subprocess.TimeoutExpired(
+            cmd=command,
+            timeout=capability_probe.MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+        )
+
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
+    result = capability_probe.check_freecad_availability()
+
+    assert result.check_id == "freecad_import"
+    assert result.is_available is False
+    assert "timed out" in result.message
+    assert str(capability_probe.MODULE_IMPORT_PROBE_TIMEOUT_SECONDS) in result.message
+    assert result.details["probe"] == "subprocess"
+    assert result.details["timeout_seconds"] == capability_probe.MODULE_IMPORT_PROBE_TIMEOUT_SECONDS
 
 
 def test_check_freecad_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:

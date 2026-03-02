@@ -61,8 +61,14 @@ def _run_entry_script(entry_script_path: str) -> None:
 
 def _run_interactive_repl() -> None:
     console = code.InteractiveConsole(locals={"__name__": "__console__", "__package__": None})
+    banner = (
+        "ChoreBoy Python Console\n"
+        f"Python {sys.version} on {sys.platform}\n"
+        'Type "help", "copyright", "credits" or "license" for more information.\n'
+        "Type exit() or Ctrl-D to quit."
+    )
     console.interact(
-        banner="ChoreBoy Python Console (runner process). Type exit() or Ctrl-D to close.",
+        banner=banner,
         exitmsg="Python console session ended.",
     )
 

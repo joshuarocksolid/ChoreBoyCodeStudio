@@ -206,3 +206,51 @@ def test_search_worker_with_options(tmp_path: Path) -> None:
     worker.start()
     assert done.wait(timeout=2.0)
     assert seen == [1]
+
+
+def test_search_worker_on_results_exception_still_calls_done(tmp_path: Path) -> None:
+    """Worker should still execute on_done when on_results raises."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "alpha.py").write_text("needle\n", encoding="utf-8")
+
+    done = threading.Event()
+
+    def _raise_on_results(_matches: list[SearchMatch], _query: str) -> None:
+        raise RuntimeError("boom")
+
+    worker = SearchWorker(
+        project_root=project_root,
+        query="needle",
+        on_results=_raise_on_results,
+        on_done=done.set,
+    )
+    worker.start()
+
+    assert done.wait(timeout=2.0)
+
+
+def test_search_worker_on_done_exception_does_not_leave_thread_running(tmp_path: Path) -> None:
+    """Worker should finish even if on_done callback raises."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "alpha.py").write_text("needle\n", encoding="utf-8")
+    seen: list[int] = []
+
+    def _raise_on_done() -> None:
+        raise RuntimeError("done failure")
+
+    worker = SearchWorker(
+        project_root=project_root,
+        query="needle",
+        on_results=lambda matches, _query: seen.append(len(matches)),
+        on_done=_raise_on_done,
+    )
+    worker.start()
+
+    deadline = time.time() + 2.0
+    while worker.is_running() and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert worker.is_running() is False
+    assert seen == [1]

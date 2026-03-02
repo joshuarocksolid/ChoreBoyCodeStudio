@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -66,12 +67,28 @@ class _FakeRunSessionController:
         )
 
 
+class _FakeEditorWidget:
+    def __init__(self, *, clear_raises: bool = False) -> None:
+        self.clear_calls = 0
+        self.delete_calls = 0
+        self._clear_raises = clear_raises
+
+    def clear_debug_execution_line(self) -> None:
+        self.clear_calls += 1
+        if self._clear_raises:
+            raise RuntimeError("widget already deleted")
+
+    def deleteLater(self) -> None:  # noqa: N802 - Qt signature
+        self.delete_calls += 1
+
+
 def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._active_session_mode = constants.RUN_MODE_PYTHON_DEBUG
     window_any._debug_session = DebugSession()
     window_any._active_run_output_tail = _TailBuffer()
+    window_any._is_shutting_down = False
 
     python_console_lines: list[tuple[str, str]] = []
     debug_lines: list[str] = []
@@ -106,6 +123,7 @@ def test_start_session_in_debug_disables_python_console_session_and_enables_debu
     window_any._append_python_console_line = lambda _text, _stream="stdout": None
     window_any._refresh_run_action_states = lambda: None
     window_any._active_run_session_log_path = None
+    window_any._is_shutting_down = False
 
     started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
     python_console = cast(_FakePythonConsole, window_any._python_console_widget)
@@ -154,3 +172,54 @@ def test_handle_debug_navigate_ignores_non_project_file() -> None:
     MainWindow._handle_debug_navigate(window, "/tmp/ide/app/shell/main_window.py", 99)
 
     assert open_calls == []
+
+
+def test_enqueue_run_event_ignored_while_shutting_down() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._is_shutting_down = True
+    window_any._run_event_queue = queue.Queue()
+
+    MainWindow._enqueue_run_event(window, ProcessEvent(event_type="state", state="running"))
+
+    assert window_any._run_event_queue.empty() is True
+
+
+def test_process_queued_run_events_drains_without_applying_while_shutting_down() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._is_shutting_down = True
+    window_any._run_event_queue = queue.Queue()
+    window_any._run_event_queue.put(ProcessEvent(event_type="state", state="running"))
+    window_any._run_event_queue.put(ProcessEvent(event_type="state", state="exited"))
+
+    applied_events: list[ProcessEvent] = []
+    window_any._apply_run_event = lambda event: applied_events.append(event)
+
+    MainWindow._process_queued_run_events(window)
+
+    assert window_any._run_event_queue.empty() is True
+    assert applied_events == []
+
+
+def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    editor = _FakeEditorWidget()
+    window_any._debug_execution_editor = editor
+
+    MainWindow._release_editor_widget(window, editor)
+
+    assert window_any._debug_execution_editor is None
+    assert editor.clear_calls == 1
+    assert editor.delete_calls == 1
+
+
+def test_clear_debug_execution_indicator_handles_deleted_editor_wrapper() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._debug_execution_editor = _FakeEditorWidget(clear_raises=True)
+
+    MainWindow._clear_debug_execution_indicator(window)
+
+    assert window_any._debug_execution_editor is None

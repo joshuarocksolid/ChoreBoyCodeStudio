@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ class SearchOptions:
 
 
 _ALWAYS_SKIP_DIRS = {".cbcs", "__pycache__", ".git", ".hg", "node_modules", ".venv", "venv"}
+_LOGGER = logging.getLogger(__name__)
 
 
 def _compile_pattern(query: str, options: SearchOptions) -> re.Pattern[str] | None:
@@ -195,18 +197,26 @@ class SearchWorker:
         return self._thread is not None and self._thread.is_alive()
 
     def _run(self) -> None:
-        if self._cancel_event.is_set():
+        try:
+            if self._cancel_event.is_set():
+                return
+            matches = find_in_files(
+                self._project_root,
+                self._query,
+                max_results=self._max_results,
+                cancel_event=self._cancel_event,
+                options=self._options,
+            )
+            if not self._cancel_event.is_set() and self._on_results is not None:
+                try:
+                    self._on_results(matches, self._query)
+                except Exception:
+                    _LOGGER.exception("Search worker on_results callback failed.")
+        except Exception:
+            _LOGGER.exception("Search worker failed while collecting results.")
+        finally:
             if self._on_done is not None:
-                self._on_done()
-            return
-        matches = find_in_files(
-            self._project_root,
-            self._query,
-            max_results=self._max_results,
-            cancel_event=self._cancel_event,
-            options=self._options,
-        )
-        if not self._cancel_event.is_set() and self._on_results is not None:
-            self._on_results(matches, self._query)
-        if self._on_done is not None:
-            self._on_done()
+                try:
+                    self._on_done()
+                except Exception:
+                    _LOGGER.exception("Search worker on_done callback failed.")

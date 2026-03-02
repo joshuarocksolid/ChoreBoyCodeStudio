@@ -520,6 +520,13 @@ class CodeEditorWidget(QPlainTextEdit):
         """Rebuild ExtraSelections merging search highlights with existing highlights."""
         selections: list[QTextEdit.ExtraSelection] = []
 
+        line_selection = cast(Any, QTextEdit.ExtraSelection())
+        line_selection.format.setBackground(self._line_highlight)
+        line_selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+        line_selection.cursor = self.textCursor()
+        line_selection.cursor.clearSelection()
+        selections.append(line_selection)
+
         if self._debug_execution_line is not None:
             debug_sel = cast(Any, QTextEdit.ExtraSelection())
             debug_sel.format.setBackground(self._debug_execution_line_bg)
@@ -530,13 +537,6 @@ class CodeEditorWidget(QPlainTextEdit):
                 debug_cursor.clearSelection()
                 debug_sel.cursor = debug_cursor
                 selections.append(debug_sel)
-
-        line_selection = cast(Any, QTextEdit.ExtraSelection())
-        line_selection.format.setBackground(self._line_highlight)
-        line_selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-        line_selection.cursor = self.textCursor()
-        line_selection.cursor.clearSelection()
-        selections.append(line_selection)
 
         bracket_selection = self._build_bracket_match_selection()
         if bracket_selection is not None:

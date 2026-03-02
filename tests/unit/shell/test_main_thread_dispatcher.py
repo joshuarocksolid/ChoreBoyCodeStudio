@@ -71,6 +71,20 @@ def test_dispatcher_runs_callback_on_gui_thread() -> None:
     assert seen_gui_thread == [True]
 
 
+def test_main_window_dispatch_to_main_thread_noop_when_shutting_down() -> None:
+    dispatched: list[object] = []
+
+    class _FakeDispatcher:
+        def dispatch(self, callback) -> None:  # type: ignore[no-untyped-def]
+            dispatched.append(callback)
+
+    fake = SimpleNamespace(_is_shutting_down=True, _main_thread_dispatcher=_FakeDispatcher())
+
+    MainWindow._dispatch_to_main_thread(fake, lambda: None)
+
+    assert dispatched == []
+
+
 def test_schedule_search_results_uses_dispatcher() -> None:
     captured: dict[str, object] = {}
 
