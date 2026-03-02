@@ -28,6 +28,9 @@ class ShellThemeTokens:
     debug_running_color: str = ""
     debug_current_frame_bg: str = ""
     row_alt_bg: str = ""
+    search_match_bg: str = ""
+    search_current_match_bg: str = ""
+    activity_bar_bg: str = ""
 
 
 def tokens_from_palette(
@@ -69,6 +72,9 @@ def tokens_from_palette(
             debug_running_color="#3FB950",
             debug_current_frame_bg="#2D3A4A",
             row_alt_bg="#1E2329",
+            search_match_bg="#3A3D41",
+            search_current_match_bg="#515C6A",
+            activity_bar_bg="#1A1E22",
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -84,13 +90,16 @@ def tokens_from_palette(
         is_dark=False,
         tree_hover_bg="#E9ECEF",
         tree_selected_bg="#D0E2FF",
-            icon_primary="#495057",
-            icon_muted="#3366FF",
-            debug_paused_color="#D97706",
-            debug_running_color="#16A34A",
-            debug_current_frame_bg="#D0E2FF",
-            row_alt_bg="#F6F8FA",
-        )
+        icon_primary="#495057",
+        icon_muted="#3366FF",
+        debug_paused_color="#D97706",
+        debug_running_color="#16A34A",
+        debug_current_frame_bg="#D0E2FF",
+        row_alt_bg="#F6F8FA",
+        search_match_bg="#FFE066",
+        search_current_match_bg="#FF922B",
+        activity_bar_bg="#E9ECEF",
+    )
 
 
 def to_qcolor(hex_color: str) -> QColor:

@@ -79,6 +79,22 @@ def test_enabling_action_shows_button() -> None:
 
     visible_buttons = [
         btn for btn in widget.findChildren(QToolButton)
-        if btn.isVisible()
+        if not btn.isHidden()
     ]
     assert len(visible_buttons) == 1
+
+
+def test_python_console_action_is_not_rendered_in_top_toolbar() -> None:
+    from PySide2.QtWidgets import QAction, QToolButton
+
+    registry, actions = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry)
+
+    python_console_action: QAction = actions["shell.action.run.pythonConsole"]  # type: ignore[assignment]
+    python_console_action.setEnabled(True)
+
+    visible_buttons = [
+        btn for btn in widget.findChildren(QToolButton)
+        if not btn.isHidden()
+    ]
+    assert len(visible_buttons) == 0

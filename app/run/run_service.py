@@ -10,8 +10,16 @@ import sys
 import uuid
 from typing import Callable
 
-from app.bootstrap.paths import ensure_directory, project_logs_dir, project_runs_dir, resolve_app_root
+from app.bootstrap.paths import (
+    PathInput,
+    ensure_directory,
+    project_logs_dir,
+    project_runs_dir,
+    resolve_app_root,
+    resolve_global_state_root,
+)
 from app.core import constants
+from app.core.errors import RunLifecycleError
 from app.core.models import LoadedProject
 from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
@@ -40,11 +48,13 @@ class RunService:
         runtime_executable: str | None = None,
         runner_boot_path: str | None = None,
         now_factory: Callable[[], datetime] | None = None,
+        state_root: PathInput | None = None,
     ) -> None:
         self._on_event = on_event
         self._runtime_executable = runtime_executable
         self._runner_boot_path = str((Path(runner_boot_path).expanduser().resolve()) if runner_boot_path else resolve_app_root() / "run_runner.py")
         self._now_factory = now_factory or datetime.now
+        self._state_root = state_root
         self._supervisor = ProcessSupervisor(on_event=self._forward_event)
         self._current_session: RunSession | None = None
         self._is_debug_paused = False
@@ -67,7 +77,7 @@ class RunService:
 
     def start_run(
         self,
-        loaded_project: LoadedProject,
+        loaded_project: LoadedProject | None,
         *,
         entry_file: str | None = None,
         mode: str | None = None,
@@ -79,21 +89,47 @@ class RunService:
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
         run_id = generate_run_id(now=self._now_factory())
-        entry = entry_file or loaded_project.metadata.default_entry
-        run_mode = mode or loaded_project.metadata.default_mode or constants.RUN_MODE_PYTHON_SCRIPT
-        arguments = list(loaded_project.metadata.default_argv) if argv is None else list(argv)
-        normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
+        run_mode = mode or (
+            loaded_project.metadata.default_mode
+            if loaded_project is not None
+            else constants.RUN_MODE_PYTHON_REPL
+        )
 
-        resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
-        configured_working_directory = working_directory or loaded_project.metadata.working_directory
-        resolved_working_directory = (resolved_project_root / configured_working_directory).resolve()
-        log_file_path = build_run_log_path(resolved_project_root, run_id)
-        manifest_path = build_run_manifest_path(resolved_project_root, run_id)
+        if loaded_project is None:
+            if run_mode != constants.RUN_MODE_PYTHON_REPL:
+                raise RunLifecycleError("Open a project before running code.")
+            resolved_project_root = build_repl_context_root(state_root=self._state_root)
+            entry = entry_file or "__repl__.py"
+            arguments = [] if argv is None else list(argv)
+            home_directory = Path.home().expanduser().resolve()
+            configured_working_directory = working_directory or str(home_directory)
+            working_directory_candidate = Path(configured_working_directory).expanduser()
+            if working_directory_candidate.is_absolute():
+                resolved_working_directory = working_directory_candidate.resolve()
+            else:
+                resolved_working_directory = (home_directory / working_directory_candidate).resolve()
+            log_file_path = build_repl_log_path(run_id, state_root=self._state_root)
+            manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
+            merged_env_overrides = {} if env_overrides is None else dict(env_overrides)
+            effective_safe_mode = False if safe_mode is None else safe_mode
+            launch_cwd = str(resolved_working_directory)
+        else:
+            entry = entry_file or loaded_project.metadata.default_entry
+            arguments = list(loaded_project.metadata.default_argv) if argv is None else list(argv)
+            resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
+            configured_working_directory = working_directory or loaded_project.metadata.working_directory
+            resolved_working_directory = (resolved_project_root / configured_working_directory).resolve()
+            log_file_path = build_run_log_path(resolved_project_root, run_id)
+            manifest_path = build_run_manifest_path(resolved_project_root, run_id)
+            merged_env_overrides = dict(loaded_project.metadata.env_overrides)
+            if env_overrides is not None:
+                merged_env_overrides.update(env_overrides)
+            effective_safe_mode = loaded_project.metadata.safe_mode if safe_mode is None else safe_mode
+            launch_cwd = str(resolved_project_root)
+
+        normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
         ensure_directory(Path(log_file_path).parent)
         ensure_directory(Path(manifest_path).parent)
-        merged_env_overrides = dict(loaded_project.metadata.env_overrides)
-        if env_overrides is not None:
-            merged_env_overrides.update(env_overrides)
 
         timestamp = self._now_factory().isoformat(timespec="seconds")
         manifest = RunManifest(
@@ -105,7 +141,7 @@ class RunService:
             mode=run_mode,
             argv=arguments,
             env=merged_env_overrides,
-            safe_mode=loaded_project.metadata.safe_mode if safe_mode is None else safe_mode,
+            safe_mode=effective_safe_mode,
             log_file=str(log_file_path),
             timestamp=timestamp,
             breakpoints=normalized_breakpoints,
@@ -113,7 +149,7 @@ class RunService:
         save_run_manifest(manifest_path, manifest)
 
         command = self._build_runner_command(str(manifest_path))
-        self._supervisor.start(command, cwd=str(resolved_project_root), env=os.environ.copy())
+        self._supervisor.start(command, cwd=launch_cwd, env=os.environ.copy())
         self._current_session = RunSession(
             run_id=run_id,
             manifest_path=str(manifest_path),
@@ -184,6 +220,23 @@ def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
 def build_run_manifest_path(project_root: str | Path, run_id: str) -> Path:
     """Build run manifest path under `<project>/.cbcs/runs`."""
     runs_directory = project_runs_dir(str(Path(project_root).expanduser().resolve()))
+    return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
+
+
+def build_repl_context_root(*, state_root: PathInput | None = None) -> Path:
+    """Build global state-backed root for projectless REPL artifacts."""
+    return ensure_directory(resolve_global_state_root(state_root) / "repl")
+
+
+def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
+    """Build projectless REPL run log path under global state."""
+    logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
+    return logs_directory / f"{constants.RUN_LOG_FILENAME_PREFIX}{run_id}{constants.RUN_LOG_FILENAME_SUFFIX}"
+
+
+def build_repl_manifest_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
+    """Build projectless REPL manifest path under global state."""
+    runs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "runs")
     return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
 
 

@@ -8,6 +8,8 @@ the end of the current input line.
 
 from __future__ import annotations
 
+import code
+
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import (
     QColor,
@@ -57,7 +59,7 @@ class PythonConsoleWidget(QTextEdit):
         self._history: list[str] = []
         self._history_index: int = 0
         self._session_active: bool = False
-        self._debug_session_locked: bool = False
+        self._pending_block_lines: list[str] = []
 
         # Token-derived colors (set proper values via apply_theme).
         self._col_text: str = "#E9ECEF"
@@ -68,6 +70,7 @@ class PythonConsoleWidget(QTextEdit):
 
         self._setup_appearance()
         self._render_idle_hint()
+        self._show_prompt()
 
     # ------------------------------------------------------------------
     # Appearance / theme
@@ -101,36 +104,28 @@ class PythonConsoleWidget(QTextEdit):
     # Session lifecycle
     # ------------------------------------------------------------------
 
+    def clear(self) -> None:  # type: ignore[override]
+        super().clear()
+        self._prompt_anchor = -1
+        self._pending_block_lines.clear()
+
     def set_session_active(self, active: bool) -> None:
         """Show or hide the interactive prompt.
 
-        Call with ``True`` when a REPL/debug session starts, ``False`` when
-        it ends.  The session-end message should be appended *before* calling
-        with ``False`` so it appears above the deactivation notice.
+        Call with ``True`` when a REPL session starts and ``False`` when it
+        ends. The session-end message should be appended *before* calling with
+        ``False`` so it appears above the deactivation notice.
         """
         if active:
-            self._debug_session_locked = False
             self._session_active = True
-            self._history.clear()
-            self._history_index = 0
-            self._show_prompt()
+            self._pending_block_lines.clear()
+            if self._prompt_anchor < 0:
+                self._show_prompt()
         else:
             self._session_active = False
-            self._prompt_anchor = -1
-            self._debug_session_locked = False
-            self.setReadOnly(True)
-
-    def set_debug_session_locked(self, locked: bool) -> None:
-        """Toggle read-only hint mode used while debugger owns stdin."""
-        self._session_active = False
-        self._prompt_anchor = -1
-        self._debug_session_locked = locked
-        self.setReadOnly(True)
-        self.clear()
-        if locked:
-            self._render_debug_hint()
-        else:
-            self._render_idle_hint()
+            self._pending_block_lines.clear()
+            if self._prompt_anchor < 0:
+                self._show_prompt()
 
     # ------------------------------------------------------------------
     # Output appending (called by MainWindow on runner events)
@@ -150,7 +145,7 @@ class PythonConsoleWidget(QTextEdit):
 
         at_bottom = self._is_at_bottom()
 
-        if self._prompt_anchor < 0 or not self._session_active:
+        if self._prompt_anchor < 0:
             # No active prompt — just append to end.
             self._append_at_end(text, stream)
         else:
@@ -184,17 +179,17 @@ class PythonConsoleWidget(QTextEdit):
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
         key = event.key()
         # Cast to int for reliable bitwise tests across PySide2/PySide6 enum types.
-        mods = int(event.modifiers())
+        mods = _enum_int(event.modifiers())
 
-        _ctrl = int(Qt.ControlModifier)
-        _alt = int(Qt.AltModifier)
-        _shift = int(Qt.ShiftModifier)
+        _ctrl = _enum_int(Qt.ControlModifier)
+        _alt = _enum_int(Qt.AltModifier)
+        _shift = _enum_int(Qt.ShiftModifier)
 
         # Ctrl+C: copy selection or send interrupt signal.
         if key == Qt.Key_C and mods == _ctrl:
             if self.textCursor().hasSelection():
                 self.copy()
-            else:
+            elif self._session_active:
                 self.interrupt_requested.emit()
             return
 
@@ -210,10 +205,6 @@ class PythonConsoleWidget(QTextEdit):
                 cursor.movePosition(QTextCursor.End)
                 self.setTextCursor(cursor)
             super().keyPressEvent(event)
-            return
-
-        if not self._session_active:
-            # Ignore all editing keys when there is no active session.
             return
 
         if key in (Qt.Key_Return, Qt.Key_Enter):
@@ -283,7 +274,7 @@ class PythonConsoleWidget(QTextEdit):
     # ------------------------------------------------------------------
 
     def _submit(self) -> None:
-        command_text = self._get_input_text().rstrip()
+        line_text = self._get_input_text()
 
         # Visually commit the typed line (append newline).
         cursor = QTextCursor(self.document())
@@ -293,20 +284,32 @@ class PythonConsoleWidget(QTextEdit):
 
         # Invalidate the prompt anchor until the new prompt is shown.
         self._prompt_anchor = -1
+        candidate_lines = [*self._pending_block_lines, line_text]
+        source = "\n".join(candidate_lines)
+        complete = _is_source_complete(source)
+        has_visible_input = bool(source.strip())
 
-        if command_text:
-            if not self._history or self._history[-1] != command_text:
-                self._history.append(command_text)
+        if not complete:
+            self._pending_block_lines = candidate_lines
+            if self._session_active:
+                self._show_prompt(continuation=True)
+            return
+
+        self._pending_block_lines.clear()
+
+        if has_visible_input:
+            history_entry = source.rstrip("\n")
+            if not self._history or self._history[-1] != history_entry:
+                self._history.append(history_entry)
                 if len(self._history) > _MAX_HISTORY:
                     self._history.pop(0)
-        self._history_index = len(self._history)
-
-        # Show a new prompt immediately so the user can queue up commands.
-        if self._session_active:
+            self._history_index = len(self._history)
             self._show_prompt()
+            self.input_submitted.emit(source)
+            return
 
-        if command_text:
-            self.input_submitted.emit(command_text)
+        self._history_index = len(self._history)
+        self._show_prompt()
 
     def _history_up(self) -> None:
         if not self._history:
@@ -328,16 +331,17 @@ class PythonConsoleWidget(QTextEdit):
     # Prompt management
     # ------------------------------------------------------------------
 
-    def _show_prompt(self, prefill: str = "") -> None:
-        """Append the ``>>> `` prompt and position the cursor after it."""
+    def _show_prompt(self, prefill: str = "", *, continuation: bool = False) -> None:
+        """Append a prompt and position the cursor after it."""
         self.setReadOnly(False)
         cursor = QTextCursor(self.document())
         cursor.movePosition(QTextCursor.End)
+        prompt = _CONT_PROMPT if continuation else _PROMPT
 
         prompt_fmt = QTextCharFormat()
         prompt_fmt.setForeground(QColor(self._col_accent))
         prompt_fmt.setFontWeight(QFont.Bold)
-        cursor.insertText(_PROMPT, prompt_fmt)
+        cursor.insertText(prompt, prompt_fmt)
 
         default_fmt = self._default_fmt()
         cursor.setCharFormat(default_fmt)
@@ -352,28 +356,14 @@ class PythonConsoleWidget(QTextEdit):
 
     def _render_idle_hint(self) -> None:
         """Display a muted hint when no session is running."""
-        self.setReadOnly(True)
+        self.setReadOnly(False)
         cursor = QTextCursor(self.document())
         cursor.movePosition(QTextCursor.End)
         fmt = QTextCharFormat()
         fmt.setForeground(QColor(self._col_muted))
         fmt.setFontItalic(True)
         cursor.insertText(
-            "No active session \u2014 start a Python Console or Debug session to begin.",
-            fmt,
-        )
-        self.setTextCursor(cursor)
-
-    def _render_debug_hint(self) -> None:
-        """Display a muted hint while debug input is handled in Debug tab."""
-        self.setReadOnly(True)
-        cursor = QTextCursor(self.document())
-        cursor.movePosition(QTextCursor.End)
-        fmt = QTextCharFormat()
-        fmt.setForeground(QColor(self._col_muted))
-        fmt.setFontItalic(True)
-        cursor.insertText(
-            "Debug session active \u2014 use the Debug tab command input.",
+            "No active session \u2014 press Enter after a command to start Python Console.\n",
             fmt,
         )
         self.setTextCursor(cursor)
@@ -440,3 +430,17 @@ class PythonConsoleWidget(QTextEdit):
     @property
     def history(self) -> list[str]:
         return list(self._history)
+
+
+def _is_source_complete(source: str) -> bool:
+    """Return True when *source* forms a complete Python REPL block."""
+    try:
+        return code.compile_command(source, symbol="single") is not None
+    except (OverflowError, SyntaxError, ValueError):
+        # Syntax errors should still be submitted so runner REPL prints them.
+        return True
+
+
+def _enum_int(value: object) -> int:
+    enum_value = getattr(value, "value", value)
+    return int(enum_value)

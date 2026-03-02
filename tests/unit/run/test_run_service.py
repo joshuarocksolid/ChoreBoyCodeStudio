@@ -135,3 +135,33 @@ def test_start_run_uses_project_default_argv_when_not_overridden(tmp_path: Path,
     manifest = load_run_manifest(session.manifest_path)
 
     assert manifest.argv == ["--from-default"]
+
+
+def test_start_run_supports_projectless_repl_with_home_working_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Projectless REPL runs should default to home cwd and safe mode off."""
+    state_root = tmp_path / "state"
+    service = RunService(
+        runtime_executable=sys.executable,
+        runner_boot_path=str(tmp_path / "run_runner.py"),
+        state_root=str(state_root.resolve()),
+    )
+    launch_context: dict[str, str] = {}
+
+    def _capture_start(_command: list[str], *, cwd: str, env) -> None:  # type: ignore[no-untyped-def]
+        launch_context["cwd"] = cwd
+
+    monkeypatch.setattr(service.supervisor, "start", _capture_start)
+
+    session = service.start_run(None, mode="python_repl")
+    manifest = load_run_manifest(session.manifest_path)
+    expected_home = str(Path.home().expanduser().resolve())
+
+    assert manifest.mode == "python_repl"
+    assert manifest.safe_mode is False
+    assert manifest.working_directory == expected_home
+    assert launch_context["cwd"] == expected_home
+    assert "/repl/runs/" in session.manifest_path
+    assert "/repl/logs/" in session.log_file_path

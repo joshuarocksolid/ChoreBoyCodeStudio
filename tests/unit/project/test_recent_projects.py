@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.project.recent_projects import (
-    DEFAULT_MAX_RECENT_PROJECTS,
+    OPEN_RECENT_MENU_LIMIT,
     load_recent_projects,
     remember_recent_project,
 )
@@ -117,13 +117,34 @@ def test_load_recent_projects_limits_entries_to_max_count(tmp_path: Path) -> Non
     project_b = _write_valid_project(tmp_path / "project_b", name="Project B")
     project_c = _write_valid_project(tmp_path / "project_c", name="Project C")
 
-    remember_recent_project(project_a, state_root=state_root, max_entries=DEFAULT_MAX_RECENT_PROJECTS)
-    remember_recent_project(project_b, state_root=state_root, max_entries=DEFAULT_MAX_RECENT_PROJECTS)
-    remember_recent_project(project_c, state_root=state_root, max_entries=DEFAULT_MAX_RECENT_PROJECTS)
+    remember_recent_project(project_a, state_root=state_root)
+    remember_recent_project(project_b, state_root=state_root)
+    remember_recent_project(project_c, state_root=state_root)
 
     result = load_recent_projects(state_root=state_root, max_entries=max_entries)
 
     assert result == [str(project_c.resolve()), str(project_b.resolve())]
+
+
+def test_load_recent_projects_unbounded_by_default(tmp_path: Path) -> None:
+    """Without max_entries the full history should be returned."""
+    state_root = tmp_path / "state"
+    projects = []
+    for i in range(25):
+        p = _write_valid_project(tmp_path / f"project_{i:03d}", name=f"Project {i}")
+        projects.append(p)
+        remember_recent_project(p, state_root=state_root)
+
+    result = load_recent_projects(state_root=state_root)
+
+    assert len(result) == 25
+    assert result[0] == str(projects[-1].resolve())
+
+
+def test_open_recent_menu_limit_is_reasonable() -> None:
+    """OPEN_RECENT_MENU_LIMIT should be a small, positive integer for menus."""
+    assert isinstance(OPEN_RECENT_MENU_LIMIT, int)
+    assert 1 <= OPEN_RECENT_MENU_LIMIT <= 20
 
 
 def _write_valid_project(project_root: Path, *, name: str) -> Path:

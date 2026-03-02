@@ -68,7 +68,7 @@ class ProjectMetadata:
 
     schema_version: int
     name: str
-    default_entry: str = "run.py"
+    default_entry: str = "main.py"
     default_mode: str = "python_script"
     default_argv: list[str] = field(default_factory=list)
     working_directory: str = "."

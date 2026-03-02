@@ -13,6 +13,7 @@ import sys
 from types import ModuleType
 from typing import Any, Iterator
 
+from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.run.run_manifest import RunManifest
 
@@ -33,22 +34,26 @@ class RunnerExecutionContext:
         project_root = Path(manifest.project_root).expanduser().resolve()
         working_directory = Path(manifest.working_directory).expanduser().resolve()
 
-        entry_candidate = Path(manifest.entry_file).expanduser()
-        if not entry_candidate.is_absolute():
-            entry_candidate = project_root / entry_candidate
-        entry_script_path = entry_candidate.resolve()
+        if manifest.mode == constants.RUN_MODE_PYTHON_REPL:
+            entry_script_path = "<python_repl>"
+        else:
+            entry_candidate = Path(manifest.entry_file).expanduser()
+            if not entry_candidate.is_absolute():
+                entry_candidate = project_root / entry_candidate
+            entry_script_path = str(entry_candidate.resolve())
 
-        if not entry_script_path.exists():
-            raise RunLifecycleError(f"Entry file not found: {entry_script_path}")
-        if not entry_script_path.is_file():
-            raise RunLifecycleError(f"Entry path must be a file: {entry_script_path}")
+            entry_path = Path(entry_script_path)
+            if not entry_path.exists():
+                raise RunLifecycleError(f"Entry file not found: {entry_script_path}")
+            if not entry_path.is_file():
+                raise RunLifecycleError(f"Entry path must be a file: {entry_script_path}")
         if not working_directory.exists() or not working_directory.is_dir():
             raise RunLifecycleError(f"Working directory is invalid: {working_directory}")
 
         return cls(
             project_root=str(project_root),
             working_directory=str(working_directory),
-            entry_script_path=str(entry_script_path),
+            entry_script_path=entry_script_path,
             argv=list(manifest.argv),
             env_overrides=dict(manifest.env),
             safe_mode=manifest.safe_mode,

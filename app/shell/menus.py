@@ -27,6 +27,7 @@ class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
     on_new_project: Callable[[], object] | None = None
+    on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
@@ -125,6 +126,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+N",
         enabled=True,
         callback=callback_registry.on_new_project,
+    )
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.newProjectFromTemplate",
+        "New Project from Template...",
+        enabled=True,
+        callback=callback_registry.on_new_project_from_template,
     )
     _register_menu_action(
         file_menu,

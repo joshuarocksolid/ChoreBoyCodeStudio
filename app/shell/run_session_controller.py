@@ -49,7 +49,7 @@ class RunSessionController:
         append_console_line: Callable[[str, str], None],
         append_python_console_line: Callable[[str], None],
     ) -> RunSessionStartResult:
-        if loaded_project is None:
+        if loaded_project is None and mode != constants.RUN_MODE_PYTHON_REPL:
             return RunSessionStartResult(started=False, error_message="Open a project before running code.")
         if self._run_service.supervisor.is_running():
             return RunSessionStartResult(started=False)

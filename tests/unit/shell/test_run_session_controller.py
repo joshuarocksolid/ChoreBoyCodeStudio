@@ -41,7 +41,7 @@ class _FakeRunService:
 
     def start_run(  # type: ignore[no-untyped-def]
         self,
-        loaded_project: LoadedProject,
+        loaded_project: LoadedProject | None,
         *,
         mode: str,
         entry_file=None,
@@ -53,12 +53,14 @@ class _FakeRunService:
     ) -> RunSession:
         self.supervisor._running = True
         self.is_debug_mode = mode == constants.RUN_MODE_PYTHON_DEBUG
+        project_root = loaded_project.project_root if loaded_project is not None else "/tmp/repl"
+        entry = loaded_project.metadata.default_entry if loaded_project is not None else "__repl__.py"
         return RunSession(
             run_id="run123",
-            manifest_path=f"{loaded_project.project_root}/.cbcs/runs/run.json",
-            log_file_path=f"{loaded_project.project_root}/logs/run.log",
-            project_root=loaded_project.project_root,
-            entry_file=loaded_project.metadata.default_entry,
+            manifest_path=f"{project_root}/.cbcs/runs/run.json",
+            log_file_path=f"{project_root}/logs/run.log",
+            project_root=project_root,
+            entry_file=entry,
             mode=mode,
         )
 
@@ -119,6 +121,27 @@ def test_start_session_requires_loaded_project() -> None:
     assert result.error_message == "Open a project before running code."
 
 
+def test_start_session_allows_repl_without_loaded_project() -> None:
+    controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
+    result = controller.start_session(
+        loaded_project=None,
+        mode=constants.RUN_MODE_PYTHON_REPL,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        safe_mode=None,
+        breakpoints=None,
+        skip_save=True,
+        save_all=lambda: True,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+    assert result.started is True
+    assert controller.active_session_mode == constants.RUN_MODE_PYTHON_REPL
+
+
 def test_start_session_success_updates_active_mode_and_returns_session() -> None:
     controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
     lines: list[str] = []
@@ -152,6 +175,7 @@ def test_refresh_action_states_updates_run_action_enablement() -> None:
 
     controller.refresh_action_states(registry, has_project=False)
     assert registry.action("shell.action.run.run").enabled is False
+    assert registry.action("shell.action.run.pythonConsole").enabled is True
 
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is True

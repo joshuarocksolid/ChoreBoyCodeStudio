@@ -17,7 +17,7 @@ ALLOWED_DEFAULT_MODES = frozenset({"python_script", "qt_app", "freecad_headless"
 def build_default_project_manifest_payload(
     *,
     project_name: str,
-    default_entry: str = "run.py",
+    default_entry: str = "main.py",
     default_mode: str = "python_script",
     default_argv: list[str] | None = None,
     working_directory: str = ".",
@@ -133,7 +133,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     default_entry = _read_optional_non_empty_string(
         payload,
         "default_entry",
-        default="run.py",
+        default="main.py",
         manifest_path=resolved_path,
     )
     default_mode = _read_optional_non_empty_string(

@@ -20,7 +20,6 @@ _GROUP_1_IDS = (
     "shell.action.run.debug",
     "shell.action.run.stop",
     "shell.action.run.restart",
-    "shell.action.run.pythonConsole",
 )
 
 _GROUP_2_IDS = (

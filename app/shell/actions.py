@@ -30,21 +30,6 @@ def map_run_action_state(
     is_debug_paused: bool = False,
 ) -> RunActionState:
     """Map shell run lifecycle state to Run/Stop enabled flags."""
-    if not has_project:
-        return RunActionState(
-            run_enabled=False,
-            debug_enabled=False,
-            stop_enabled=False,
-            restart_enabled=False,
-            continue_enabled=False,
-            pause_enabled=False,
-            step_over_enabled=False,
-            step_into_enabled=False,
-            step_out_enabled=False,
-            toggle_breakpoint_enabled=False,
-            python_console_enabled=False,
-        )
-
     if is_running:
         return RunActionState(
             run_enabled=False,
@@ -58,6 +43,20 @@ def map_run_action_state(
             step_out_enabled=is_debug_mode and is_debug_paused,
             toggle_breakpoint_enabled=not is_debug_mode,
             python_console_enabled=False,
+        )
+    if not has_project:
+        return RunActionState(
+            run_enabled=False,
+            debug_enabled=False,
+            stop_enabled=False,
+            restart_enabled=False,
+            continue_enabled=False,
+            pause_enabled=False,
+            step_over_enabled=False,
+            step_into_enabled=False,
+            step_out_enabled=False,
+            toggle_breakpoint_enabled=False,
+            python_console_enabled=True,
         )
     return RunActionState(
         run_enabled=True,

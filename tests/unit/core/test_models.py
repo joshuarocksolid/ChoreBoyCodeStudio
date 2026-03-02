@@ -66,7 +66,7 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     """Project metadata should expose explicit defaults for omitted optional fields."""
     metadata = ProjectMetadata(schema_version=1, name="My Project")
 
-    assert metadata.default_entry == "run.py"
+    assert metadata.default_entry == "main.py"
     assert metadata.default_mode == "python_script"
     assert metadata.default_argv == []
     assert metadata.working_directory == "."
@@ -151,7 +151,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
         "metadata": {
             "schema_version": 1,
             "name": "Project Alpha",
-            "default_entry": "run.py",
+            "default_entry": "main.py",
             "default_mode": "python_script",
             "default_argv": [],
             "working_directory": ".",

@@ -39,6 +39,7 @@ def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
     assert manifest_path.exists()
     manifest_text = manifest_path.read_text(encoding="utf-8")
     assert '"name": "My Utility Project"' in manifest_text
+    assert '"default_entry": "main.py"' in manifest_text
     assert '"template": "utility_script"' in manifest_text
     assert '"default_mode": "python_script"' in manifest_text
 

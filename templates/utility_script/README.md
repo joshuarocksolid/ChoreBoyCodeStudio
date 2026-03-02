@@ -1,3 +1,3 @@
 # Utility Script Template
 
-This template provides a minimal `run.py` entrypoint for quick scripts.
+This template provides a minimal `main.py` entrypoint for quick scripts.

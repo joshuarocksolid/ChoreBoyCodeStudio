@@ -8,6 +8,7 @@ import time
 import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
+from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.core import constants
@@ -110,6 +111,31 @@ def test_run_service_python_repl_supports_input_and_output(tmp_path: Path) -> No
     assert any(event.event_type == "output" and "REPL_OK" in (event.text or "") for event in events)
 
 
+def test_run_service_projectless_python_repl_uses_home_cwd_and_executes_multiline(tmp_path: Path) -> None:
+    """Projectless REPL mode should run from home cwd and execute multiline blocks."""
+    events: list[ProcessEvent] = []
+    service = RunService(
+        on_event=events.append,
+        runtime_executable=None,
+        runner_boot_path=str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve()),
+        state_root=str((tmp_path / "state").resolve()),
+    )
+
+    session = service.start_run(None, mode=constants.RUN_MODE_PYTHON_REPL)
+    assert Path(session.manifest_path).exists()
+    assert _wait_until(lambda: service.supervisor.is_running())
+
+    service.send_input("import os\n")
+    service.send_input("print(os.getcwd())\n")
+    service.send_input("for i in range(2):\n    print(i)\n\n")
+    service.send_input("exit()\n")
+
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
+    output_text = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert str(Path.home().expanduser().resolve()) in output_text
+    assert "0\n1" in output_text
+
+
 def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) -> None:
     """Debug mode should pause on configured breakpoint and resume via stdin command."""
     project_root = tmp_path / "project"
@@ -133,8 +159,24 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
     assert _wait_until(lambda: service.supervisor.is_running())
     assert _wait_until(lambda: service.is_debug_paused, timeout_seconds=8.0)
 
-    service.send_input("continue\n")
-    # First continue may advance from initial debugger stop to configured breakpoint.
+    def _first_paused_frame() -> tuple[Path, int] | None:
+        for event in events:
+            if event.event_type != "output" or not event.text:
+                continue
+            parsed_event = parse_debug_output_line(event.text)
+            if parsed_event is None or parsed_event.event_type != "paused" or not parsed_event.frames:
+                continue
+            frame = parsed_event.frames[0]
+            return (Path(frame.file_path).resolve(), frame.line_number)
+        return None
+
+    assert _wait_until(lambda: _first_paused_frame() is not None, timeout_seconds=8.0)
+    first_paused_frame = _first_paused_frame()
+    assert first_paused_frame is not None
+    assert first_paused_frame[0] == script_path.resolve()
+    assert first_paused_frame[1] == 2
+
     service.send_input("continue\n")
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
-    assert any(event.event_type == "output" and "42" in (event.text or "") for event in events)
+    assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
+    assert any(event.event_type == "output" and "__CB_DEBUG_PAUSED__" in (event.text or "") for event in events)

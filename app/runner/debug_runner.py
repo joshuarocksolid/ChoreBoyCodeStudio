@@ -16,6 +16,21 @@ from app.run.run_manifest import RunManifest
 class MarkedPdb(pdb.Pdb):
     """PDB subclass that emits machine-readable pause events."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._skip_until_first_breakpoint = False
+
+    def configure_initial_breakpoint_seek(self, enabled: bool) -> None:
+        """Skip startup wrapper frames until first configured breakpoint is reached."""
+        self._skip_until_first_breakpoint = enabled
+
+    def user_line(self, frame):  # type: ignore[override]
+        if self._skip_until_first_breakpoint and not self.break_here(frame):
+            self.set_continue()
+            return
+        self._skip_until_first_breakpoint = False
+        super().user_line(frame)
+
     def interaction(self, frame, traceback):  # type: ignore[override]
         event = DebugEvent(
             event_type="paused",
@@ -43,13 +58,16 @@ class MarkedPdb(pdb.Pdb):
 def run_debug_session(manifest: RunManifest, entry_callable: Callable[[str], None], entry_script_path: str) -> int:
     """Run entry script under debugger with manifest breakpoints."""
     debugger = MarkedPdb()
+    has_valid_breakpoints = False
     for breakpoint_entry in manifest.breakpoints:
         file_path = str(breakpoint_entry["file_path"])
         line_number = int(breakpoint_entry["line_number"])
         try:
             debugger.set_break(file_path, line_number)
+            has_valid_breakpoints = True
         except Exception as exc:
             print(f"Failed to set breakpoint {file_path}:{line_number}: {exc}", file=sys.stderr)
+    debugger.configure_initial_breakpoint_seek(has_valid_breakpoints)
 
     try:
         print("__CB_DEBUG_RUNNING__")

@@ -399,7 +399,7 @@ my_project/
   logs/
   vendor/
   app/
-  run.py
+  main.py
   README.md
 ```
 
@@ -434,7 +434,7 @@ This file should be human-readable JSON and contain:
 {
   "schema_version": 1,
   "name": "My Project",
-  "default_entry": "run.py",
+  "default_entry": "main.py",
   "default_mode": "python_script",
   "working_directory": ".",
   "template": "utility_script",
@@ -624,7 +624,7 @@ Recommended manifest contents:
   "manifest_version": 1,
   "run_id": "20260228_153500_001",
   "project_root": "/home/default/projects/my_project",
-  "entry_file": "run.py",
+  "entry_file": "main.py",
   "working_directory": "/home/default/projects/my_project",
   "mode": "python_script",
   "argv": [],
@@ -1031,7 +1031,7 @@ This gives future flexibility without premature architecture complexity.
 The first end-to-end slice should prove the core value of the product:
 
 1. Open a project folder
-2. Open and edit `run.py`
+2. Open and edit `main.py`
 3. Save changes
 4. Press Run
 5. Launch separate runner process

@@ -52,7 +52,7 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
     assert metadata.to_dict() == {
         "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
         "name": "Defaulted Project",
-        "default_entry": "run.py",
+        "default_entry": "main.py",
         "default_mode": "python_script",
         "default_argv": [],
         "working_directory": ".",
@@ -72,7 +72,7 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
     assert payload == {
         "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
         "name": "Imported Project",
-        "default_entry": "run.py",
+        "default_entry": "main.py",
         "default_mode": "python_script",
         "default_argv": [],
         "working_directory": ".",

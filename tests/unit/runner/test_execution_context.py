@@ -69,6 +69,28 @@ def test_execution_context_from_manifest_rejects_missing_entry_file(tmp_path: Pa
         RunnerExecutionContext.from_manifest(manifest)
 
 
+def test_execution_context_from_manifest_allows_repl_without_entry_file(tmp_path: Path) -> None:
+    """REPL mode should not require an on-disk entry script."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    manifest = RunManifest(
+        manifest_version=constants.RUN_MANIFEST_VERSION,
+        run_id="run_1",
+        project_root=str(project_root.resolve()),
+        entry_file="__repl__.py",
+        working_directory=str(project_root.resolve()),
+        mode=constants.RUN_MODE_PYTHON_REPL,
+        argv=[],
+        env={},
+        safe_mode=False,
+        log_file=str((project_root / "logs" / "run.log").resolve()),
+        timestamp="2026-03-01T01:01:01",
+    )
+
+    context = RunnerExecutionContext.from_manifest(manifest)
+    assert context.entry_script_path == "<python_repl>"
+
+
 def test_apply_execution_context_sets_and_restores_runtime_state(tmp_path: Path) -> None:
     """Context manager should restore cwd, argv, sys.path, and env after execution."""
     manifest = _build_manifest(tmp_path)

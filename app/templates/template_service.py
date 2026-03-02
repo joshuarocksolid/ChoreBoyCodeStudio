@@ -105,7 +105,7 @@ class TemplateService:
         try:
             payload = build_default_project_manifest_payload(
                 project_name=project_name.strip(),
-                default_entry="run.py",
+                default_entry="main.py",
                 default_mode=default_mode,
                 working_directory=".",
                 template=template_id,

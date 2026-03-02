@@ -8,7 +8,7 @@ from pathlib import Path
 import tomllib
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
-from app.core.errors import ProjectEnumerationError, ProjectStructureValidationError
+from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.project.import_analysis import analyze_imported_project
 from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
@@ -42,14 +42,59 @@ def open_project_and_track_recent(
     loaded_project = open_project(project_root)
 
     # Local import keeps the recents module decoupled from service module import order.
-    from app.project.recent_projects import DEFAULT_MAX_RECENT_PROJECTS, remember_recent_project
+    from app.project.recent_projects import remember_recent_project
 
     remember_recent_project(
         loaded_project.project_root,
         state_root=state_root,
-        max_entries=DEFAULT_MAX_RECENT_PROJECTS if max_recent_entries is None else max_recent_entries,
+        max_entries=max_recent_entries,
     )
     return loaded_project
+
+
+def create_blank_project(destination_path: PathInput, *, project_name: str) -> Path:
+    """Create a new blank project with canonical metadata and root `main.py`."""
+    normalized_name = project_name.strip()
+    if not normalized_name:
+        raise AppValidationError("project_name must be a non-empty string.")
+
+    destination = Path(destination_path).expanduser().resolve()
+    if destination.exists():
+        if not destination.is_dir():
+            raise AppValidationError(f"Destination is not a directory: {destination}")
+        if any(destination.iterdir()):
+            raise AppValidationError(f"Destination is not empty: {destination}")
+    else:
+        try:
+            destination.mkdir(parents=True, exist_ok=False)
+        except OSError as exc:
+            raise AppValidationError(f"Unable to create destination folder: {exc}") from exc
+
+    manifest_path = project_manifest_path(destination)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = build_default_project_manifest_payload(
+        project_name=normalized_name,
+        default_entry="main.py",
+        default_mode="python_script",
+        working_directory=".",
+        template="blank_project",
+        safe_mode=True,
+    )
+    try:
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise AppValidationError(f"Unable to write project manifest: {exc}") from exc
+
+    entry_path = destination / "main.py"
+    if entry_path.exists() and not entry_path.is_file():
+        raise AppValidationError(f"Entry path exists but is not a file: {entry_path}")
+    if not entry_path.exists():
+        try:
+            entry_path.write_text("# Project entrypoint.\n", encoding="utf-8")
+        except OSError as exc:
+            raise AppValidationError(f"Unable to write main.py: {exc}") from exc
+
+    return destination
 
 
 def validate_project_structure(project_root: PathInput) -> Path:
@@ -206,7 +251,7 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
     if inferred_entry is None:
         raise ProjectStructureValidationError(
             "Project metadata is missing and no Python files were found. "
-            "Add a `.py` file (for example `run.py`) and try again.",
+            "Add a `.py` file (for example `main.py`) and try again.",
             project_root=project_root,
             manifest_path=manifest_path,
         )
@@ -237,7 +282,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     if pyproject_entry is not None:
         return pyproject_entry
 
-    prioritized_names = ("run.py", "main.py", "__main__.py")
+    prioritized_names = ("main.py", "run.py", "__main__.py")
     for name in prioritized_names:
         candidate = project_root / name
         if candidate.exists() and candidate.is_file():

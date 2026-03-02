@@ -14,7 +14,7 @@ The approach is:
 
 1. Use LibrePy (inside LibreOffice) as a **launcher** (or any Python context that can call subprocess).
 2. Spawn FreeCAD’s `AppRun` in console mode:
-   - `'/opt/freecad/AppRun', '-c', 'exec(open(".../run.py").read())'`
+   - `'/opt/freecad/AppRun', '-c', 'exec(open(".../main.py").read())'`
 3. The executed script can:
    - `import PySide2` and create a `QApplication()`
    - show windows and run a Qt event loop
@@ -57,7 +57,7 @@ We run Python code inside that runtime by calling:
 
 ```python
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/run.py").read())'],
+    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/main.py").read())'],
     start_new_session=True
 )
 ```
@@ -234,7 +234,7 @@ Standard folder:
 
 ```
 myapp/
-  run.py
+  main.py
   launcher.py
   vendor/          # optional (pg8000 etc)
   logs/
@@ -247,7 +247,7 @@ myapp/
 Key ideas:
 
 * `launcher.py`: spawns AppRun detached
-* `run.py`: bootstraps sys.path, logging, crash window, launches Qt
+* `main.py`: bootstraps sys.path, logging, crash window, launches Qt
 * `backend.py`: contains all probes and backend actions
 * `main_window.py`: Qt UI that triggers probes and displays output
 
@@ -258,7 +258,7 @@ Key ideas:
 ```python
 import subprocess
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/run.py").read())'],
+    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/main.py").read())'],
     start_new_session=True
 )
 ```

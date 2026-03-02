@@ -10,7 +10,7 @@ from PySide2.QtCore import Qt  # noqa: E402
 from PySide2.QtGui import QKeyEvent  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
-from app.shell.python_console_widget import PythonConsoleWidget, _PROMPT, _PROMPT_LEN  # noqa: E402
+from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -70,10 +70,10 @@ class TestIdleState:
         assert "No active session" in text
 
     def test_read_only_when_no_session(self, widget: PythonConsoleWidget) -> None:
-        assert widget.isReadOnly()
+        assert widget.isReadOnly() is False
 
-    def test_prompt_anchor_negative_before_session(self, widget: PythonConsoleWidget) -> None:
-        assert widget.prompt_anchor == -1
+    def test_prompt_anchor_available_before_session(self, widget: PythonConsoleWidget) -> None:
+        assert widget.prompt_anchor >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -95,34 +95,22 @@ class TestSessionActivation:
         text = _get_plain_text(widget)
         assert widget.prompt_anchor == len(text)
 
-    def test_deactivation_removes_prompt_and_locks(self, widget: PythonConsoleWidget) -> None:
+    def test_deactivation_keeps_prompt_ready_for_next_command(self, widget: PythonConsoleWidget) -> None:
         widget.set_session_active(True)
         widget.set_session_active(False)
-        assert widget.isReadOnly()
-        assert widget.prompt_anchor == -1
+        text = _get_plain_text(widget)
+        assert widget.isReadOnly() is False
+        assert widget.prompt_anchor >= 0
+        assert text.endswith(_PROMPT)
 
-    def test_reactivation_clears_history(self, widget: PythonConsoleWidget) -> None:
+    def test_reactivation_preserves_history(self, widget: PythonConsoleWidget) -> None:
         widget.set_session_active(True)
         _type_text(widget, "x = 1")
         _press(widget, Qt.Key_Return)
         assert len(widget.history) == 1
         widget.set_session_active(False)
         widget.set_session_active(True)
-        assert len(widget.history) == 0
-
-    def test_debug_lock_shows_read_only_hint(self, widget: PythonConsoleWidget) -> None:
-        widget.set_debug_session_locked(True)
-        text = _get_plain_text(widget)
-        assert widget.isReadOnly()
-        assert widget.prompt_anchor == -1
-        assert "Debug session active" in text
-
-    def test_debug_unlock_restores_idle_hint(self, widget: PythonConsoleWidget) -> None:
-        widget.set_debug_session_locked(True)
-        widget.set_debug_session_locked(False)
-        text = _get_plain_text(widget)
-        assert widget.isReadOnly()
-        assert "No active session" in text
+        assert len(widget.history) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +177,24 @@ class TestSubmission:
         _press(active_widget, Qt.Key_Return)
         text = _get_plain_text(active_widget)
         assert text.endswith(_PROMPT)
+
+    def test_multiline_submission_waits_for_complete_block(self, active_widget: PythonConsoleWidget) -> None:
+        submitted: list[str] = []
+        active_widget.input_submitted.connect(submitted.append)
+
+        _type_text(active_widget, "for i in range(2):")
+        _press(active_widget, Qt.Key_Return)
+        assert submitted == []
+        assert _get_plain_text(active_widget).endswith(_CONT_PROMPT)
+
+        _type_text(active_widget, "    print(i)")
+        _press(active_widget, Qt.Key_Return)
+        assert submitted == []
+        assert _get_plain_text(active_widget).endswith(_CONT_PROMPT)
+
+        _press(active_widget, Qt.Key_Return)
+        assert submitted == ["for i in range(2):\n    print(i)\n"]
+        assert _get_plain_text(active_widget).endswith(_PROMPT)
 
 
 # ---------------------------------------------------------------------------

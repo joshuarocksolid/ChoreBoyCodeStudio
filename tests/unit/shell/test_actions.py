@@ -8,13 +8,13 @@ pytestmark = pytest.mark.unit
 
 
 def test_map_run_action_state_without_project_disables_run_and_stop() -> None:
-    """No loaded project should disable run controls."""
+    """No loaded project should still allow Python Console start."""
     state = map_run_action_state(has_project=False, is_running=False)
     assert state.run_enabled is False
     assert state.debug_enabled is False
     assert state.stop_enabled is False
     assert state.pause_enabled is False
-    assert state.python_console_enabled is False
+    assert state.python_console_enabled is True
 
 
 def test_map_run_action_state_while_running_disables_run_enables_stop() -> None:
@@ -25,6 +25,15 @@ def test_map_run_action_state_while_running_disables_run_enables_stop() -> None:
     assert state.stop_enabled is True
     assert state.pause_enabled is False
     assert state.step_over_enabled is False
+
+
+def test_map_run_action_state_running_without_project_allows_stop_only() -> None:
+    """Projectless REPL runs should still expose Stop."""
+    state = map_run_action_state(has_project=False, is_running=True)
+    assert state.run_enabled is False
+    assert state.debug_enabled is False
+    assert state.stop_enabled is True
+    assert state.python_console_enabled is False
 
 
 def test_map_run_action_state_idle_project_enables_run_only() -> None:

@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from app.core.errors import ProjectManifestValidationError, ProjectStructureValidationError
+from app.core.errors import AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError
 from app.core.models import LoadedProject
 from app.project import project_service
 from app.project.project_service import (
+    create_blank_project,
     enumerate_project_entries,
     open_project,
     validate_project_structure,
@@ -74,6 +75,32 @@ def test_open_project_rejects_non_directory_project_root(tmp_path: Path) -> None
     assert "must be a directory" in str(exc_info.value)
 
 
+def test_create_blank_project_writes_manifest_and_main_entrypoint(tmp_path: Path) -> None:
+    """Blank project creation should seed canonical metadata and root main.py."""
+    destination = tmp_path / "blank_project"
+
+    created_path = create_blank_project(destination, project_name="Blank Project")
+    manifest_path = created_path / ".cbcs" / "project.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert created_path == destination.resolve()
+    assert (created_path / "main.py").exists()
+    assert payload["name"] == "Blank Project"
+    assert payload["default_entry"] == "main.py"
+    assert payload["default_mode"] == "python_script"
+    assert payload["template"] == "blank_project"
+
+
+def test_create_blank_project_rejects_non_empty_destination(tmp_path: Path) -> None:
+    """Blank project creation should fail when destination has existing files."""
+    destination = tmp_path / "existing_project"
+    destination.mkdir(parents=True)
+    (destination / "notes.txt").write_text("already here\n", encoding="utf-8")
+
+    with pytest.raises(AppValidationError, match="Destination is not empty"):
+        create_blank_project(destination, project_name="Existing Project")
+
+
 def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) -> None:
     """Opening a plain Python folder should create canonical project metadata."""
     project_root = tmp_path / "project_without_cbcs"
@@ -107,7 +134,7 @@ def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> 
 
 
 def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path: Path) -> None:
-    """Entrypoint inference should prefer run.py over other common names."""
+    """Entrypoint inference should prefer main.py over other common names."""
     project_root = tmp_path / "priority_project"
     project_root.mkdir()
     (project_root / "__main__.py").write_text("print('__main__')\n", encoding="utf-8")
@@ -117,7 +144,7 @@ def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path
 
     loaded_project = open_project(project_root)
 
-    assert loaded_project.metadata.default_entry == "run.py"
+    assert loaded_project.metadata.default_entry == "main.py"
 
 
 def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint(tmp_path: Path) -> None:

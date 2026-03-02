@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtCore import QPointF, QRect, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCursor, QTextFormat
+from PySide2.QtCore import QPointF, QRect, QRegularExpression, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCursor, QTextDocument, QTextFormat
 from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
+from app.editors.find_replace_bar import FindOptions
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
 from app.editors.syntax_json import JsonSyntaxHighlighter
 from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
@@ -75,6 +77,12 @@ class CodeEditorWidget(QPlainTextEdit):
         self._bracket_match_color = QColor("#FFD8A8")
         self._breakpoint_color = QColor("#E03131")
 
+        self._search_match_bg = QColor("#FFE066")
+        self._search_current_match_bg = QColor("#FF922B")
+        self._search_selections: list[QTextEdit.ExtraSelection] = []
+        self._search_match_positions: list[tuple[int, int]] = []
+        self._search_current_index: int = -1
+
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._highlight_current_line)
@@ -97,6 +105,10 @@ class CodeEditorWidget(QPlainTextEdit):
         self._breakpoint_color = QColor("#FF6B6B") if tokens.is_dark else QColor("#E03131")
         self._debug_execution_color = QColor(tokens.debug_paused_color) if tokens.debug_paused_color else self._debug_execution_color
         self._debug_execution_line_bg = QColor(tokens.debug_current_frame_bg) if tokens.debug_current_frame_bg else self._debug_execution_line_bg
+        if tokens.search_match_bg:
+            self._search_match_bg = QColor(tokens.search_match_bg)
+        if tokens.search_current_match_bg:
+            self._search_current_match_bg = QColor(tokens.search_current_match_bg)
         self._line_number_area.update()
         self._highlight_current_line()
         highlighter = self._highlighter
@@ -330,7 +342,182 @@ class CodeEditorWidget(QPlainTextEdit):
         if self.isReadOnly():
             self.setExtraSelections([])
             return
+        self._refresh_extra_selections()
 
+    def go_to_line(self, line_number: int) -> None:
+        safe_line = max(1, line_number)
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, safe_line - 1)
+        self.setTextCursor(cursor)
+        self.setFocus()
+
+    def word_under_cursor(self) -> str:
+        cursor = self.textCursor()
+        cursor.select(QTextCursor.WordUnderCursor)
+        return cursor.selectedText().strip()
+
+    def selected_text(self) -> str:
+        return self.textCursor().selectedText().replace("\u2029", "\n")
+
+    # ------------------------------------------------------------------
+    # Search API
+    # ------------------------------------------------------------------
+
+    def highlight_all_matches(self, query: str, options: FindOptions) -> int:
+        """Highlight all matches and return total count. Sets current index to -1."""
+        self._search_selections.clear()
+        self._search_match_positions.clear()
+        self._search_current_index = -1
+
+        if not query:
+            self._refresh_extra_selections()
+            return 0
+
+        pattern = self._compile_search_pattern(query, options)
+        if pattern is None:
+            self._refresh_extra_selections()
+            return 0
+
+        text = self.toPlainText()
+        for m in pattern.finditer(text):
+            start, end = m.start(), m.end()
+            self._search_match_positions.append((start, end))
+            sel = self._make_match_selection(start, end, is_current=False)
+            self._search_selections.append(sel)
+
+        self._refresh_extra_selections()
+        return len(self._search_match_positions)
+
+    def find_next(self) -> tuple[int, int]:
+        """Move to the next match. Returns (current_1indexed, total)."""
+        total = len(self._search_match_positions)
+        if total == 0:
+            return (0, 0)
+
+        cursor_pos = self.textCursor().position()
+        next_idx = 0
+        for i, (start, _end) in enumerate(self._search_match_positions):
+            if start >= cursor_pos:
+                next_idx = i
+                break
+        else:
+            next_idx = 0
+
+        self._go_to_match(next_idx)
+        return (self._search_current_index + 1, total)
+
+    def find_previous(self) -> tuple[int, int]:
+        """Move to previous match. Returns (current_1indexed, total)."""
+        total = len(self._search_match_positions)
+        if total == 0:
+            return (0, 0)
+
+        cursor_pos = self.textCursor().position()
+        cursor_sel_start = self.textCursor().selectionStart()
+        prev_idx = total - 1
+        for i in range(total - 1, -1, -1):
+            start, _end = self._search_match_positions[i]
+            if start < cursor_sel_start:
+                prev_idx = i
+                break
+        else:
+            prev_idx = total - 1
+
+        self._go_to_match(prev_idx)
+        return (self._search_current_index + 1, total)
+
+    def replace_current_match(self, replacement: str, query: str, options: FindOptions) -> tuple[int, int]:
+        """Replace the current match and move to next. Returns (current_1indexed, total)."""
+        if self._search_current_index < 0 or not self._search_match_positions:
+            return self.find_next()
+
+        start, end = self._search_match_positions[self._search_current_index]
+        cursor = self.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        cursor.insertText(replacement)
+        self.setTextCursor(cursor)
+
+        total = self.highlight_all_matches(query, options)
+        if total == 0:
+            return (0, 0)
+        return self.find_next()
+
+    def replace_all_matches(self, query: str, replacement: str, options: FindOptions) -> int:
+        """Replace all matches. Returns count of replacements made."""
+        if not self._search_match_positions:
+            return 0
+
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        offset = 0
+        count = 0
+        for start, end in self._search_match_positions:
+            adj_start = start + offset
+            adj_end = end + offset
+            cursor.setPosition(adj_start)
+            cursor.setPosition(adj_end, QTextCursor.KeepAnchor)
+            cursor.insertText(replacement)
+            offset += len(replacement) - (end - start)
+            count += 1
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
+
+        self.highlight_all_matches(query, options)
+        return count
+
+    def clear_search_highlights(self) -> None:
+        """Remove all search highlights."""
+        self._search_selections.clear()
+        self._search_match_positions.clear()
+        self._search_current_index = -1
+        self._refresh_extra_selections()
+
+    def _go_to_match(self, index: int) -> None:
+        if index < 0 or index >= len(self._search_match_positions):
+            return
+
+        self._search_current_index = index
+        start, end = self._search_match_positions[index]
+
+        self._search_selections = []
+        for i, (s, e) in enumerate(self._search_match_positions):
+            sel = self._make_match_selection(s, e, is_current=(i == index))
+            self._search_selections.append(sel)
+        self._refresh_extra_selections()
+
+        cursor = self.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        self.setTextCursor(cursor)
+        self.centerCursor()
+
+    def _make_match_selection(self, start: int, end: int, *, is_current: bool) -> QTextEdit.ExtraSelection:
+        sel = cast(Any, QTextEdit.ExtraSelection())
+        color = self._search_current_match_bg if is_current else self._search_match_bg
+        sel.format.setBackground(color)
+        cursor = QTextCursor(self.document())
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        sel.cursor = cursor
+        return sel
+
+    @staticmethod
+    def _compile_search_pattern(query: str, options: FindOptions) -> re.Pattern[str] | None:
+        flags = 0 if options.case_sensitive else re.IGNORECASE
+        if options.regex:
+            try:
+                return re.compile(query, flags)
+            except re.error:
+                return None
+        escaped = re.escape(query)
+        if options.whole_word:
+            escaped = rf"\b{escaped}\b"
+        return re.compile(escaped, flags)
+
+    def _refresh_extra_selections(self) -> None:
+        """Rebuild ExtraSelections merging search highlights with existing highlights."""
         selections: list[QTextEdit.ExtraSelection] = []
 
         if self._debug_execution_line is not None:
@@ -355,20 +542,8 @@ class CodeEditorWidget(QPlainTextEdit):
         if bracket_selection is not None:
             selections.append(bracket_selection)
 
+        selections.extend(self._search_selections)
         self.setExtraSelections(selections)
-
-    def go_to_line(self, line_number: int) -> None:
-        safe_line = max(1, line_number)
-        cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, safe_line - 1)
-        self.setTextCursor(cursor)
-        self.setFocus()
-
-    def word_under_cursor(self) -> str:
-        cursor = self.textCursor()
-        cursor.select(QTextCursor.WordUnderCursor)
-        return cursor.selectedText().strip()
 
     def indent_selection(self) -> None:
         selected = self.textCursor().selectedText()

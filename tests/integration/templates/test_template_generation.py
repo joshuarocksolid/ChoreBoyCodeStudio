@@ -83,6 +83,7 @@ def test_materialized_qt_template_contains_expected_entrypoints(tmp_path: Path) 
     manifest = loaded_project.metadata
 
     assert manifest.template == "qt_app"
+    assert manifest.default_entry == "main.py"
     assert manifest.default_mode == "qt_app"
-    assert (project_root / "run.py").exists()
+    assert (project_root / "main.py").exists()
     assert (project_root / "app" / "main_window.py").exists()

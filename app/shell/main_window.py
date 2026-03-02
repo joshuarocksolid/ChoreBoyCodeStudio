@@ -29,6 +29,7 @@ from PySide2.QtWidgets import (
     QShortcut,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QTabBar,
     QTabWidget,
     QToolButton,
@@ -75,6 +76,8 @@ from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
+from app.editors.find_replace_bar import FindOptions, FindReplaceBar
+from app.editors.quick_open_dialog import QuickOpenDialog
 from app.editors.formatting_service import format_text_basic
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
@@ -108,8 +111,10 @@ from app.shell.icon_provider import (
     new_folder_icon,
     refresh_icon,
 )
+from app.shell.activity_bar import ActivityBar
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.python_console_widget import PythonConsoleWidget
+from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.project.project_tree import build_project_tree
@@ -126,7 +131,8 @@ from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
-from app.project.project_service import open_project
+from app.project.project_service import create_blank_project, open_project
+from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
@@ -135,6 +141,7 @@ from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.run_session_controller import RunSessionController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
+from app.shell.welcome_widget import WelcomeWidget
 
 # Qt.UserRole is 0x0100 (256). Literal role IDs avoid enum typing mismatches across PySide shims.
 TREE_ROLE_ABSOLUTE_PATH = 256
@@ -162,6 +169,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._project_placeholder_label: QLabel | None = None
         self._breadcrumbs_label: QLabel | None = None
+        self._center_stack: QStackedWidget | None = None
+        self._welcome_widget: WelcomeWidget | None = None
         self._project_tree_widget: ProjectTreeWidget | None = None
         self._explorer_new_file_btn: QToolButton | None = None
         self._explorer_new_folder_btn: QToolButton | None = None
@@ -171,6 +180,9 @@ class MainWindow(QMainWindow):
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
         self._editor_tabs_widget: QTabWidget | None = None
+        self._activity_bar: ActivityBar | None = None
+        self._sidebar_stack: QStackedWidget | None = None
+        self._search_sidebar: SearchSidebarWidget | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._console_output_widget: QPlainTextEdit | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
@@ -239,7 +251,7 @@ class MainWindow(QMainWindow):
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
-        self._run_service = RunService(on_event=self._enqueue_run_event)
+        self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
         self._template_service = TemplateService()
         self._main_thread_dispatcher = MainThreadDispatcher(self)
@@ -289,6 +301,7 @@ class MainWindow(QMainWindow):
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
+                on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
@@ -332,6 +345,21 @@ class MainWindow(QMainWindow):
         self._external_change_poll_timer.setInterval(1000)
         self._external_change_poll_timer.timeout.connect(self._poll_external_file_changes)
         self._external_change_poll_timer.start()
+        QTimer.singleShot(0, self._try_restore_last_project)
+
+    def _try_restore_last_project(self) -> None:
+        """Attempt to reopen the last project from the previous session."""
+        try:
+            settings = load_settings(state_root=self._state_root)
+        except Exception:
+            return
+        last_path = settings.get(constants.LAST_PROJECT_PATH_KEY)
+        if not isinstance(last_path, str) or not last_path.strip():
+            return
+        project_root = Path(last_path.strip())
+        if not project_root.is_dir() or not (project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME).is_file():
+            return
+        self._open_project_by_path(str(project_root))
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -642,6 +670,20 @@ class MainWindow(QMainWindow):
         self._open_project_by_path(selected_path)
 
     def _handle_new_project_action(self) -> None:
+        project_details = self._prompt_for_new_project_destination()
+        if project_details is None:
+            return
+        project_name, destination_path = project_details
+
+        try:
+            created_path = create_blank_project(destination_path, project_name=project_name)
+        except AppValidationError as exc:
+            QMessageBox.warning(self, "Failed to create project", str(exc))
+            return
+
+        self._open_project_by_path(str(created_path))
+
+    def _handle_new_project_from_template_action(self) -> None:
         templates = self._template_service.list_templates()
         if not templates:
             QMessageBox.warning(self, "No templates available", "No project templates were found.")
@@ -651,26 +693,34 @@ class MainWindow(QMainWindow):
         if selected_template is None:
             return
 
-        project_name, ok = QInputDialog.getText(self, "New Project", "Project name:", QLineEdit.Normal, "")
-        if not ok or not project_name.strip():
+        project_details = self._prompt_for_new_project_destination()
+        if project_details is None:
             return
+        project_name, destination_path = project_details
 
-        destination_parent = QFileDialog.getExistingDirectory(self, "Choose Project Folder", str(Path.home()))
-        if not destination_parent:
-            return
-
-        destination_path = Path(destination_parent) / project_name.strip()
         try:
             created_path = self._template_service.materialize_template(
                 template_id=selected_template.template_id,
                 destination_path=destination_path,
-                project_name=project_name.strip(),
+                project_name=project_name,
             )
         except AppValidationError as exc:
             QMessageBox.warning(self, "Failed to create project", str(exc))
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _prompt_for_new_project_destination(self) -> tuple[str, Path] | None:
+        project_name, accepted_name = QInputDialog.getText(self, "New Project", "Project name:", QLineEdit.Normal, "")
+        normalized_name = project_name.strip()
+        if not accepted_name or not normalized_name:
+            return None
+
+        destination_parent = QFileDialog.getExistingDirectory(self, "Choose Project Folder", str(Path.home()))
+        if not destination_parent:
+            return None
+
+        return normalized_name, Path(destination_parent) / normalized_name
 
     def _handle_open_settings_action(self) -> None:
         settings_payload = load_settings(state_root=self._state_root)
@@ -735,59 +785,85 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Quick Open unavailable", "Open a project first.")
             return
 
-        query, ok = QInputDialog.getText(self, "Quick Open", "Filename query:", QLineEdit.Normal, "")
-        if not ok:
-            return
-
         candidates = [
             QuickOpenCandidate(relative_path=entry.relative_path, absolute_path=entry.absolute_path)
             for entry in self._loaded_project.entries
             if not entry.is_directory
         ]
-        ranked = rank_candidates(candidates, query, limit=50)
-        if not ranked:
-            QMessageBox.information(self, "Quick Open", "No matching files.")
-            return
 
-        labels = [candidate.relative_path for candidate in ranked]
-        selected_label, ok = QInputDialog.getItem(self, "Quick Open", "Open file:", labels, 0, editable=False)
-        if not ok:
-            return
+        if self._quick_open_dialog is None:
+            self._quick_open_dialog = QuickOpenDialog(self)
+            self._quick_open_dialog.file_selected.connect(self._open_file_in_editor)
 
-        selected_candidate = next(candidate for candidate in ranked if candidate.relative_path == selected_label)
-        self._open_file_in_editor(selected_candidate.absolute_path)
+        self._quick_open_dialog.set_candidates(candidates)
+        self._quick_open_dialog.open_dialog()
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
         if editor_widget is None:
-            QMessageBox.warning(self, "Find", "Open a file tab first.")
             return
-
-        query, ok = QInputDialog.getText(self, "Find", "Find text:", QLineEdit.Normal, "")
-        if not ok or not query:
+        if self._find_replace_bar is None:
             return
-        if not editor_widget.find(query):
-            QMessageBox.information(self, "Find", f"No matches for: {query}")
+        initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
+        self._find_replace_bar.open_find(initial)
 
     def _handle_replace_action(self) -> None:
         editor_widget = self._active_editor_widget()
         if editor_widget is None:
-            QMessageBox.warning(self, "Replace", "Open a file tab first.")
             return
+        if self._find_replace_bar is None:
+            return
+        initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
+        self._find_replace_bar.open_find_replace(initial)
 
-        find_text, ok = QInputDialog.getText(self, "Replace", "Find text:", QLineEdit.Normal, "")
-        if not ok or not find_text:
+    def _handle_find_bar_find(self, text: str, options: FindOptions) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None or self._find_replace_bar is None:
             return
-        replace_text, ok = QInputDialog.getText(self, "Replace", "Replace with:", QLineEdit.Normal, "")
-        if not ok:
-            return
+        total = editor_widget.highlight_all_matches(text, options)
+        if total > 0:
+            current, total = editor_widget.find_next()
+            self._find_replace_bar.update_match_count(current, total)
+        else:
+            self._find_replace_bar.update_match_count(0, 0)
 
-        content = editor_widget.toPlainText()
-        replaced_content = content.replace(find_text, replace_text)
-        if replaced_content == content:
-            QMessageBox.information(self, "Replace", "No matching text found.")
+    def _handle_find_bar_next(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None or self._find_replace_bar is None:
             return
-        editor_widget.setPlainText(replaced_content)
+        current, total = editor_widget.find_next()
+        self._find_replace_bar.update_match_count(current, total)
+
+    def _handle_find_bar_prev(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None or self._find_replace_bar is None:
+            return
+        current, total = editor_widget.find_previous()
+        self._find_replace_bar.update_match_count(current, total)
+
+    def _handle_find_bar_replace(self, replacement: str) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None or self._find_replace_bar is None:
+            return
+        query = self._find_replace_bar.find_text()
+        options = self._find_replace_bar.find_options()
+        current, total = editor_widget.replace_current_match(replacement, query, options)
+        self._find_replace_bar.update_match_count(current, total)
+
+    def _handle_find_bar_replace_all(self, replacement: str) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None or self._find_replace_bar is None:
+            return
+        query = self._find_replace_bar.find_text()
+        options = self._find_replace_bar.find_options()
+        editor_widget.replace_all_matches(query, replacement, options)
+        self._find_replace_bar.update_match_count(0, 0)
+
+    def _handle_find_bar_close(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.clear_search_highlights()
+            editor_widget.setFocus()
 
     def _handle_toggle_comment_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -824,22 +900,15 @@ class MainWindow(QMainWindow):
         if self._loaded_project is None:
             QMessageBox.warning(self, "Find in Files", "Open a project first.")
             return
-        query, ok = QInputDialog.getText(self, "Find in Files", "Find text:", QLineEdit.Normal, "")
-        if not ok or not query:
-            return
-
-        self._set_search_results([], f"{query} (searching...)")
-        if self._active_search_worker is not None and self._active_search_worker.is_running():
-            self._active_search_worker.cancel()
-        started_at = time.perf_counter()
-        self._active_search_worker = SearchWorker(
-            project_root=self._loaded_project.project_root,
-            query=query,
-            max_results=500,
-            on_results=lambda matches, search_query: self._schedule_search_results_update(matches, search_query),
-            on_done=lambda: self._handle_search_worker_done(started_at, query),
-        )
-        self._active_search_worker.start()
+        if self._activity_bar is not None:
+            self._activity_bar.set_active_view("search")
+            self._handle_sidebar_view_changed("search")
+        editor_widget = self._active_editor_widget()
+        initial = ""
+        if editor_widget is not None:
+            initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
+        if self._search_sidebar is not None and initial:
+            self._search_sidebar.focus_search(initial)
 
     def _handle_find_references_action(self) -> None:
         if self._loaded_project is None:
@@ -1163,6 +1232,26 @@ class MainWindow(QMainWindow):
             open_project_by_path=self._open_project_by_path,
         )
 
+    def _refresh_welcome_project_list(self) -> None:
+        if self._welcome_widget is None:
+            return
+        try:
+            recent_paths = load_recent_projects(state_root=self._state_root)
+        except Exception:
+            recent_paths = []
+        self._welcome_widget.set_recent_projects(recent_paths)
+
+    def _show_welcome_screen(self) -> None:
+        """Switch the center stack back to the welcome page."""
+        if self._center_stack is not None:
+            self._refresh_welcome_project_list()
+            self._center_stack.setCurrentIndex(0)
+
+    def _show_editor_screen(self) -> None:
+        """Switch the center stack to the editor page."""
+        if self._center_stack is not None:
+            self._center_stack.setCurrentIndex(1)
+
     def _show_open_project_error(self, project_root: str, details: str) -> None:
         self._logger.warning("Project open failed for %s: %s", project_root, details)
         QMessageBox.critical(
@@ -1173,12 +1262,15 @@ class MainWindow(QMainWindow):
 
     def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
         self._loaded_project = loaded_project
+        self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
         self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
         self._logger.info("Project loaded: %s", loaded_project.project_root)
         self._update_explorer_buttons_enabled()
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
+        if self._search_sidebar is not None:
+            self._search_sidebar.set_project_root(loaded_project.project_root)
         self._breakpoints_by_file.clear()
         self._refresh_breakpoints_list()
         self._refresh_open_recent_menu()
@@ -1193,7 +1285,16 @@ class MainWindow(QMainWindow):
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
         )
+        self._persist_last_project_path(loaded_project.project_root)
         QTimer.singleShot(0, lambda: self._maybe_prompt_imported_project_setup(loaded_project))
+
+    def _persist_last_project_path(self, project_root: str) -> None:
+        try:
+            settings = load_settings(state_root=self._state_root)
+            settings[constants.LAST_PROJECT_PATH_KEY] = project_root
+            save_settings(settings, state_root=self._state_root)
+        except Exception as exc:
+            self._logger.warning("Failed to persist last project path: %s", exc)
 
     def _maybe_prompt_imported_project_setup(self, loaded_project: LoadedProject) -> None:
         metadata = loaded_project.metadata
@@ -1785,8 +1886,8 @@ class MainWindow(QMainWindow):
         if self._python_console_widget is not None:
             if self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
                 self._python_console_widget.set_session_active(True)
-            elif self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                self._python_console_widget.set_debug_session_locked(True)
+            else:
+                self._python_console_widget.set_session_active(False)
         if self._debug_panel is not None:
             self._debug_panel.set_command_input_enabled(self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG)
         self._refresh_run_action_states()
@@ -1864,10 +1965,11 @@ class MainWindow(QMainWindow):
         if self._console_output_widget is not None:
             self._console_output_widget.clear()
         if self._python_console_widget is not None:
-            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                self._python_console_widget.set_debug_session_locked(True)
-            else:
-                self._python_console_widget.clear()
+            self._python_console_widget.clear()
+            self._python_console_widget.set_session_active(
+                self._active_session_mode == constants.RUN_MODE_PYTHON_REPL
+                and self._run_service.supervisor.is_running()
+            )
         if self._debug_panel is not None:
             self._debug_panel.clear_output()
 
@@ -2031,17 +2133,26 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Runner input failed", str(exc))
             return
-        self._append_debug_output_line(f">>> {command_text.rstrip()}")
+        if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+            self._append_debug_output_line(f">>> {command_text.rstrip()}")
 
     def _handle_python_console_submit(self, command_text: str) -> None:
         if not command_text.strip():
             return
         if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
             return
-        if not self._run_service.supervisor.is_running():
-            QMessageBox.warning(self, "Python Console", "Start a Python console or debug session first.")
-            return
-        self._send_runner_input(command_text.strip())
+        if self._run_service.supervisor.is_running():
+            if self._active_session_mode != constants.RUN_MODE_PYTHON_REPL:
+                QMessageBox.warning(
+                    self,
+                    "Python Console",
+                    "Python Console input is available only during a Python Console session.",
+                )
+                return
+        else:
+            if not self._handle_start_python_console_action():
+                return
+        self._send_runner_input(command_text)
 
     def _handle_python_console_interrupt(self) -> None:
         if self._run_service.supervisor.is_running():
@@ -2068,6 +2179,9 @@ class MainWindow(QMainWindow):
 
         if state.execution_state == DebugExecutionState.PAUSED and state.frames:
             frame = state.frames[0]
+            if not self._is_debug_navigation_target_allowed(frame.file_path):
+                self._clear_debug_execution_indicator()
+                return
             self._open_file_at_line(frame.file_path, frame.line_number)
             resolved = str(Path(frame.file_path).expanduser().resolve())
             editor = self._editor_widgets_by_path.get(resolved)
@@ -2095,7 +2209,20 @@ class MainWindow(QMainWindow):
         self._send_runner_input(locals_command())
 
     def _handle_debug_navigate(self, file_path: str, line_number: int) -> None:
+        if not self._is_debug_navigation_target_allowed(file_path):
+            return
         self._open_file_at_line(file_path, line_number)
+
+    def _is_debug_navigation_target_allowed(self, file_path: str) -> bool:
+        if self._loaded_project is None:
+            return True
+        candidate_path = Path(file_path).expanduser().resolve()
+        project_root_path = Path(self._loaded_project.project_root).expanduser().resolve()
+        try:
+            candidate_path.relative_to(project_root_path)
+            return True
+        except ValueError:
+            return False
 
     def _handle_debug_watch_evaluate(self, expression: str) -> None:
         if not self._run_service.supervisor.is_running():
@@ -2246,8 +2373,6 @@ class MainWindow(QMainWindow):
                 session_line = f"[system] Session finished (code={return_code})."
             if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._append_debug_output_line(session_line)
-                if self._python_console_widget is not None:
-                    self._python_console_widget.set_debug_session_locked(False)
             elif self._active_session_mode == constants.RUN_MODE_PYTHON_REPL:
                 self._append_python_console_line(session_line, stream="system")
                 if self._python_console_widget is not None:
@@ -2498,11 +2623,39 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         panel = QWidget(self)
         panel.setObjectName("shell.leftRegion")
-        layout = QVBoxLayout(panel)
+        outer_layout = QHBoxLayout(panel)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self._activity_bar = ActivityBar(panel)
+        self._activity_bar.add_view("explorer", "\U0001F4C1", "Explorer")
+        self._activity_bar.add_view("search", "\U0001F50D", "Search")
+        self._activity_bar.view_changed.connect(self._handle_sidebar_view_changed)
+        outer_layout.addWidget(self._activity_bar)
+
+        self._sidebar_stack = QStackedWidget(panel)
+        self._sidebar_stack.setObjectName("shell.sidebarStack")
+        outer_layout.addWidget(self._sidebar_stack, 1)
+
+        explorer_page = self._build_explorer_page()
+        self._sidebar_stack.addWidget(explorer_page)
+
+        self._search_sidebar = SearchSidebarWidget(panel)
+        self._search_sidebar.open_file_at_line.connect(self._handle_search_open_file_at_line)
+        self._sidebar_stack.addWidget(self._search_sidebar)
+
+        self._sidebar_stack.setCurrentIndex(0)
+        panel.setMinimumWidth(220)
+        return panel
+
+    def _build_explorer_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("shell.explorerPage")
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        header = QWidget(panel)
+        header = QWidget(page)
         header.setObjectName("shell.explorerHeader")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(10, 6, 6, 6)
@@ -2533,13 +2686,13 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(header)
 
-        self._project_placeholder_label = QLabel("No project loaded.", panel)
+        self._project_placeholder_label = QLabel("No project loaded.", page)
         self._project_placeholder_label.setObjectName("shell.leftRegion.body")
         self._project_placeholder_label.setWordWrap(True)
         self._project_placeholder_label.setContentsMargins(10, 8, 10, 8)
         layout.addWidget(self._project_placeholder_label)
 
-        self._project_tree_widget = ProjectTreeWidget(panel)
+        self._project_tree_widget = ProjectTreeWidget(page)
         self._project_tree_widget.setObjectName("shell.projectTree")
         self._project_tree_widget.setHeaderHidden(True)
         self._project_tree_widget.setIndentation(16)
@@ -2552,9 +2705,24 @@ class MainWindow(QMainWindow):
         self._project_tree_widget.itemExpanded.connect(self._handle_tree_item_expanded)
         self._project_tree_widget.itemCollapsed.connect(self._handle_tree_item_collapsed)
         layout.addWidget(self._project_tree_widget, 1)
-        panel.setMinimumWidth(220)
         self._update_explorer_buttons_enabled()
-        return panel
+        return page
+
+    def _handle_sidebar_view_changed(self, view_id: str) -> None:
+        if self._sidebar_stack is None:
+            return
+        if view_id == "explorer":
+            self._sidebar_stack.setCurrentIndex(0)
+        elif view_id == "search":
+            self._sidebar_stack.setCurrentIndex(1)
+            if self._search_sidebar is not None:
+                self._search_sidebar.focus_search()
+
+    def _handle_search_open_file_at_line(self, file_path: str, line_number: int) -> None:
+        if self._open_file_in_editor(file_path):
+            editor_widget = self._active_editor_widget()
+            if editor_widget is not None:
+                editor_widget.go_to_line(line_number)
 
     @staticmethod
     def _make_explorer_button(parent: QWidget, tooltip: str, icon: QIcon) -> QToolButton:
@@ -2615,18 +2783,52 @@ class MainWindow(QMainWindow):
         panel_layout.setContentsMargins(4, 0, 4, 4)
         panel_layout.setSpacing(0)
 
-        self._breadcrumbs_label = QLabel("Path: /", panel)
-        self._breadcrumbs_label.setObjectName("shell.editor.breadcrumbs")
-        panel_layout.addWidget(self._breadcrumbs_label, 0)
+        self._center_stack = QStackedWidget(panel)
+        self._center_stack.setObjectName("shell.centerStack")
 
-        self._editor_tabs_widget = QTabWidget(panel)
+        # Page 0: Welcome screen
+        self._welcome_widget = WelcomeWidget(self._center_stack)
+        self._welcome_widget.new_project_requested.connect(self._handle_new_project_action)
+        self._welcome_widget.open_project_requested.connect(self._handle_open_project_action)
+        self._welcome_widget.project_selected.connect(self._open_project_by_path)
+        self._center_stack.addWidget(self._welcome_widget)
+
+        # Page 1: Editor area (breadcrumbs + find/replace + tabs)
+        editor_page = QWidget(self._center_stack)
+        editor_page.setObjectName("shell.editorPage")
+        editor_layout = QVBoxLayout(editor_page)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(0)
+
+        self._breadcrumbs_label = QLabel("Path: /", editor_page)
+        self._breadcrumbs_label.setObjectName("shell.editor.breadcrumbs")
+        editor_layout.addWidget(self._breadcrumbs_label, 0)
+
+        self._find_replace_bar = FindReplaceBar(editor_page)
+        self._find_replace_bar.find_requested.connect(self._handle_find_bar_find)
+        self._find_replace_bar.find_next_requested.connect(self._handle_find_bar_next)
+        self._find_replace_bar.find_previous_requested.connect(self._handle_find_bar_prev)
+        self._find_replace_bar.replace_requested.connect(self._handle_find_bar_replace)
+        self._find_replace_bar.replace_all_requested.connect(self._handle_find_bar_replace_all)
+        self._find_replace_bar.close_requested.connect(self._handle_find_bar_close)
+        editor_layout.addWidget(self._find_replace_bar, 0)
+
+        self._editor_tabs_widget = QTabWidget(editor_page)
         self._editor_tabs_widget.setTabBar(_MiddleClickTabBar(self._editor_tabs_widget))
         self._editor_tabs_widget.setObjectName("shell.editorTabs")
         self._editor_tabs_widget.currentChanged.connect(self._handle_editor_tab_changed)
         self._editor_tabs_widget.setTabsClosable(True)
         self._editor_tabs_widget.tabCloseRequested.connect(self._handle_tab_close_requested)
         self._editor_tabs_widget.setMinimumWidth(480)
-        panel_layout.addWidget(self._editor_tabs_widget, 1)
+        editor_layout.addWidget(self._editor_tabs_widget, 1)
+
+        self._center_stack.addWidget(editor_page)
+
+        # Start on the welcome page
+        self._center_stack.setCurrentIndex(0)
+        self._refresh_welcome_project_list()
+
+        panel_layout.addWidget(self._center_stack, 1)
         return panel
 
     def _build_bottom_panel(self) -> QWidget:

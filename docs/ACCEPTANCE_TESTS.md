@@ -21,7 +21,7 @@ These acceptance tests focus on the first high-value vertical slice:
 
 1. launch the editor
 2. open a project
-3. open and edit `run.py`
+3. open and edit `main.py`
 4. save changes
 5. run user code in a separate runner process
 6. view stdout/stderr
@@ -75,7 +75,7 @@ If any of the above are missing, MVP is not complete.
 The following sample projects should exist for acceptance testing:
 
 ### A. Simple Success Project
-A minimal project whose `run.py` prints output and exits successfully.
+A minimal project whose `main.py` prints output and exits successfully.
 
 Example behavior:
 - prints `START`
@@ -83,14 +83,14 @@ Example behavior:
 - exits with success
 
 ### B. Failure Project
-A minimal project whose `run.py` raises an exception.
+A minimal project whose `main.py` raises an exception.
 
 Example behavior:
 - prints one line
 - raises an exception with traceback
 
 ### C. Long-Running Project
-A minimal project whose `run.py` keeps running until stopped.
+A minimal project whose `main.py` keeps running until stopped.
 
 Example behavior:
 - prints `tick` repeatedly
@@ -261,13 +261,13 @@ Verify that a selected file can be opened for editing.
 
 **Preconditions:**  
 - a valid project is open
-- project contains `run.py`
+- project contains `main.py`
 
 **Steps:**  
-1. In the project tree, click `run.py`.
+1. In the project tree, click `main.py`.
 
 **Expected Result:**  
-- `run.py` opens in an editor tab
+- `main.py` opens in an editor tab
 - file contents are visible
 - the current active file is clear in the UI
 - opening the same file again does not create unnecessary duplicate tabs
@@ -280,10 +280,10 @@ Verify that a selected file can be opened for editing.
 Verify editable state and unsaved-change tracking.
 
 **Preconditions:**  
-- `run.py` is open in an editor tab
+- `main.py` is open in an editor tab
 
 **Steps:**  
-1. Modify the contents of `run.py`.
+1. Modify the contents of `main.py`.
 2. Observe the tab/editor state.
 
 **Expected Result:**  
@@ -299,7 +299,7 @@ Verify editable state and unsaved-change tracking.
 Verify that edits are persisted correctly.
 
 **Preconditions:**  
-- `run.py` is open and modified
+- `main.py` is open and modified
 
 **Steps:**  
 1. Save the file.
@@ -339,7 +339,7 @@ Verify the most important process boundary in the architecture.
 
 **Preconditions:**  
 - a valid project is open
-- `run.py` is runnable
+- `main.py` is runnable
 
 **Steps:**  
 1. Open the success test project.
@@ -653,15 +653,18 @@ Verify editor/tree/output pane proportions are practical on first launch and per
 Verify users can execute interactive Python commands in a dedicated console session.
 
 **Preconditions:**  
-- valid project is open
+- editor is running (no project required)
 
 **Steps:**  
 1. Start Python Console mode.
-2. Submit commands (e.g., `x = 2`, `print(x + 3)`).
-3. Exit console session.
+2. Submit single-line commands (e.g., `x = 2`, `print(x + 3)`).
+3. Submit a multiline block (e.g., `for` loop) and complete it with continuation semantics.
+4. Exit console session.
 
 **Expected Result:**  
+- Python Console is available whether or not a project is open
 - submitted commands are accepted via stdin bridge
+- multiline continuation prompt behavior matches normal REPL (`>>>` / `...`)
 - output appears in console transcript
 - session terminates cleanly on exit/stop
 

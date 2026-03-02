@@ -8,7 +8,7 @@ from typing import Callable
 from app.core.errors import AppValidationError
 from app.core.models import LoadedProject
 from app.project.project_service import open_project_and_track_recent
-from app.project.recent_projects import load_recent_projects
+from app.project.recent_projects import OPEN_RECENT_MENU_LIMIT, load_recent_projects
 from app.shell.menus import MenuStubRegistry, build_recent_project_menu_items
 
 
@@ -60,7 +60,9 @@ class ProjectController:
             return
 
         open_recent_menu.clear()
-        recent_paths = load_recent_projects(state_root=self._state_root)
+        recent_paths = load_recent_projects(
+            state_root=self._state_root, max_entries=OPEN_RECENT_MENU_LIMIT,
+        )
         recent_items = build_recent_project_menu_items(recent_paths)
 
         if not recent_items:

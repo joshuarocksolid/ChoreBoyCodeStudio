@@ -362,7 +362,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 
 ### B12 — Execute user entry script in runner (`python_script`)
 - Status: `DONE`
-- Objective: run project `run.py` inside runner process.
+- Objective: run project `main.py` inside runner process.
 - Scope:
   - set cwd and `sys.path` deterministically
   - execute entrypoint
@@ -825,7 +825,7 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
 
 ### G02 — Interactive Python console mode
 - Status: `DONE`
-- Objective: enable stdin-backed interactive console session in runner process.
+- Objective: enable stdin-backed interactive console session in runner process, including projectless startup and multiline REPL semantics.
 - Primary files:
   - `app/run/process_supervisor.py`
   - `app/run/run_manifest.py`
@@ -834,7 +834,7 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/shell/main_window.py`
   - `tests/integration/run/test_run_service_integration.py`
 - Validation:
-  - REPL input/output covered by integration tests
+  - REPL input/output (single-line + multiline, including projectless startup) covered by integration tests
 
 ### G03 — Run/Debug top toolbar and lifecycle controls
 - Status: `DONE`

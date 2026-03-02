@@ -216,7 +216,7 @@ Ship and encourage a default structure like:
 
 ```
 myapp/
-  run.py
+  main.py
   launcher.py
   vendor/
   logs/
@@ -242,7 +242,7 @@ myapp/
 ### “Run target” conventions
 
 * Project declares entry point in `project.json` (simple, human-editable).
-* If missing, default to `run.py`.
+* If missing, default to `main.py`.
 
 ---
 
@@ -338,12 +338,12 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 +---------------------------------------------------------------+
 | Menu: File Edit Run Tools Help                                |
 +-------------------+-----------------------------+-------------+
-| Project (Files)   |  Editor Tabs                | Run Config   |
-| - myapp/          |  [main_window.py] [backend] | Entry: run.py|
+| Project (Files)   |  Editor Tabs                | Run Config    |
+| - myapp/          |  [main_window.py] [backend] | Entry: main.py|
 |   - app/          |  -------------------------  | Args:        |
 |   - logs/         |  | code editor area       | | Mode: Headless
 |   - vendor/       |  |                       | | CWD: project |
-|   - run.py        |  -------------------------  | [Run] [Stop] |
+|   - main.py       |  -------------------------  | [Run] [Stop] |
 +-------------------+-----------------------------+-------------+
 | Bottom Tabs:  Console | Problems | Run Log | Tasks            |
 | > output...                                                   |

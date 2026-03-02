@@ -157,3 +157,30 @@ def refresh_icon(color: str) -> QIcon:
         f"</svg>"
     )
     return _icon_from_svg(svg)
+
+
+def search_icon(color: str) -> QIcon:
+    """Magnifying glass icon for search actions."""
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+        f'<circle cx="7" cy="7" r="4.5" fill="none" stroke="{color}" '
+        f'stroke-width="1.4"/>'
+        f'<line x1="10.5" y1="10.5" x2="14" y2="14" stroke="{color}" '
+        f'stroke-width="1.6" stroke-linecap="round"/>'
+        f"</svg>"
+    )
+    return _icon_from_svg(svg)
+
+
+def explorer_icon(color: str) -> QIcon:
+    """File explorer / tree icon."""
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+        f'<path d="M2 2h5l1.5 1.5H14v4H2V2z" fill="{color}" '
+        f'fill-opacity="0.15" stroke="{color}" stroke-width="1.1" '
+        f'stroke-linejoin="round"/>'
+        f'<path d="M2 7.5h12v5H2z" fill="{color}" fill-opacity="0.08" '
+        f'stroke="{color}" stroke-width="1.1" stroke-linejoin="round"/>'
+        f"</svg>"
+    )
+    return _icon_from_svg(svg)
