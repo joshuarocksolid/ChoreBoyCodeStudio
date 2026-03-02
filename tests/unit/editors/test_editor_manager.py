@@ -1,6 +1,8 @@
 """Unit tests for editor tab manager behavior."""
 
+import os
 from pathlib import Path
+import time
 
 import pytest
 
@@ -109,3 +111,45 @@ def test_close_file_removes_tab_and_reassigns_active(tmp_path: Path) -> None:
 
     assert manager.get_tab(str(second.resolve())) is None
     assert manager.active_tab() is manager.get_tab(str(first.resolve()))
+
+
+def test_open_file_records_last_known_disk_mtime(tmp_path: Path) -> None:
+    """Opening file should capture baseline disk mtime for change detection."""
+    file_path = tmp_path / "mtime.py"
+    file_path.write_text("value = 1\n", encoding="utf-8")
+    manager = EditorManager()
+
+    opened = manager.open_file(str(file_path))
+
+    assert opened.tab.last_known_mtime is not None
+
+
+def test_acknowledge_disk_mtime_updates_tab_snapshot(tmp_path: Path) -> None:
+    """Acknowledging disk mtime should update per-tab mtime snapshot."""
+    file_path = tmp_path / "snapshot.py"
+    file_path.write_text("value = 1\n", encoding="utf-8")
+    manager = EditorManager()
+    opened = manager.open_file(str(file_path))
+
+    manager.acknowledge_disk_mtime(str(file_path), 123.0)
+
+    assert opened.tab.last_known_mtime == 123.0
+
+
+def test_stale_open_paths_reports_disk_modified_files(tmp_path: Path) -> None:
+    """Manager should detect open tabs whose disk mtime changed."""
+    file_path = tmp_path / "stale.py"
+    file_path.write_text("value = 1\n", encoding="utf-8")
+    manager = EditorManager()
+    opened = manager.open_file(str(file_path))
+
+    assert manager.stale_open_paths() == []
+
+    file_path.write_text("value = 2\n", encoding="utf-8")
+    baseline = opened.tab.last_known_mtime or time.time()
+    os.utime(file_path, (baseline + 5.0, baseline + 5.0))
+    stale = manager.stale_open_paths()
+    assert stale == [str(file_path.resolve())]
+
+    manager.acknowledge_disk_mtime(str(file_path), manager.current_disk_mtime(str(file_path)))
+    assert manager.stale_open_paths() == []

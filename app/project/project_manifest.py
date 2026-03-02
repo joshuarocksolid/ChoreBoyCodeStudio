@@ -19,12 +19,14 @@ def build_default_project_manifest_payload(
     project_name: str,
     default_entry: str = "run.py",
     default_mode: str = "python_script",
+    default_argv: list[str] | None = None,
     working_directory: str = ".",
     template: str = "utility_script",
     safe_mode: bool = True,
     run_configs: list[dict[str, Any]] | None = None,
     env_overrides: Mapping[str, str] | None = None,
     project_notes: str = "",
+    import_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a canonical manifest payload for new/imported projects."""
     if not _is_non_empty_string(project_name):
@@ -35,6 +37,10 @@ def build_default_project_manifest_payload(
         raise ValueError("default_mode must be a non-empty string.")
     if default_mode not in ALLOWED_DEFAULT_MODES:
         raise ValueError(f"default_mode must be one of: {sorted(ALLOWED_DEFAULT_MODES)}.")
+    if default_argv is not None and (
+        not isinstance(default_argv, list) or any(not isinstance(value, str) for value in default_argv)
+    ):
+        raise ValueError("default_argv must be a list of strings.")
     if not _is_non_empty_string(working_directory):
         raise ValueError("working_directory must be a non-empty string.")
     if not _is_non_empty_string(template):
@@ -43,6 +49,8 @@ def build_default_project_manifest_payload(
         raise ValueError("safe_mode must be a boolean.")
     if not isinstance(project_notes, str):
         raise ValueError("project_notes must be a string.")
+    if import_metadata is not None and not isinstance(import_metadata, Mapping):
+        raise ValueError("import_metadata must be an object.")
 
     normalized_run_configs: list[dict[str, Any]] = []
     for index, run_config in enumerate(run_configs or []):
@@ -57,17 +65,26 @@ def build_default_project_manifest_payload(
                 raise ValueError("env_overrides must contain only string keys and values.")
             normalized_env_overrides[key] = value
 
+    normalized_import_metadata: dict[str, Any] = {}
+    if import_metadata is not None:
+        for key, value in import_metadata.items():
+            if not isinstance(key, str):
+                raise ValueError("import_metadata keys must be strings.")
+            normalized_import_metadata[key] = value
+
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,
         name=project_name.strip(),
         default_entry=default_entry.strip(),
         default_mode=default_mode.strip(),
+        default_argv=[] if default_argv is None else list(default_argv),
         working_directory=working_directory.strip(),
         template=template.strip(),
         safe_mode=safe_mode,
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        import_metadata=normalized_import_metadata,
     )
     return metadata.to_dict()
 
@@ -125,6 +142,20 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         default="python_script",
         manifest_path=resolved_path,
     )
+    default_argv = payload.get("default_argv", [])
+    if default_argv is None:
+        default_argv = []
+    if not isinstance(default_argv, list):
+        _raise_validation_error("default_argv must be a list.", field="default_argv", manifest_path=resolved_path)
+    normalized_default_argv: list[str] = []
+    for index, raw_argv in enumerate(default_argv):
+        if not isinstance(raw_argv, str):
+            _raise_validation_error(
+                "default_argv entries must be strings.",
+                field=f"default_argv[{index}]",
+                manifest_path=resolved_path,
+            )
+        normalized_default_argv.append(raw_argv)
     if default_mode not in ALLOWED_DEFAULT_MODES:
         _raise_validation_error(
             f"Unsupported default_mode: {default_mode}. Allowed values: {sorted(ALLOWED_DEFAULT_MODES)}.",
@@ -191,17 +222,34 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     if not isinstance(project_notes, str):
         _raise_validation_error("project_notes must be a string.", field="project_notes", manifest_path=resolved_path)
 
+    import_metadata = payload.get("import_metadata", {})
+    if import_metadata is None:
+        import_metadata = {}
+    if not isinstance(import_metadata, dict):
+        _raise_validation_error("import_metadata must be an object.", field="import_metadata", manifest_path=resolved_path)
+    normalized_import_metadata: dict[str, Any] = {}
+    for key, value in import_metadata.items():
+        if not isinstance(key, str):
+            _raise_validation_error(
+                "import_metadata keys must be strings.",
+                field="import_metadata",
+                manifest_path=resolved_path,
+            )
+        normalized_import_metadata[key] = value
+
     return ProjectMetadata(
         schema_version=schema_version,
         name=name,
         default_entry=default_entry,
         default_mode=default_mode,
+        default_argv=normalized_default_argv,
         working_directory=working_directory,
         template=template,
         safe_mode=safe_mode,
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        import_metadata=normalized_import_metadata,
     )
 
 

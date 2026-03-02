@@ -72,21 +72,28 @@ class RunService:
         entry_file: str | None = None,
         mode: str | None = None,
         argv: list[str] | None = None,
+        working_directory: str | None = None,
+        env_overrides: dict[str, str] | None = None,
+        safe_mode: bool | None = None,
         breakpoints: list[dict[str, int | str]] | None = None,
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
         run_id = generate_run_id(now=self._now_factory())
         entry = entry_file or loaded_project.metadata.default_entry
         run_mode = mode or loaded_project.metadata.default_mode or constants.RUN_MODE_PYTHON_SCRIPT
-        arguments = [] if argv is None else list(argv)
+        arguments = list(loaded_project.metadata.default_argv) if argv is None else list(argv)
         normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
 
         resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
-        resolved_working_directory = (resolved_project_root / loaded_project.metadata.working_directory).resolve()
+        configured_working_directory = working_directory or loaded_project.metadata.working_directory
+        resolved_working_directory = (resolved_project_root / configured_working_directory).resolve()
         log_file_path = build_run_log_path(resolved_project_root, run_id)
         manifest_path = build_run_manifest_path(resolved_project_root, run_id)
         ensure_directory(Path(log_file_path).parent)
         ensure_directory(Path(manifest_path).parent)
+        merged_env_overrides = dict(loaded_project.metadata.env_overrides)
+        if env_overrides is not None:
+            merged_env_overrides.update(env_overrides)
 
         timestamp = self._now_factory().isoformat(timespec="seconds")
         manifest = RunManifest(
@@ -97,8 +104,8 @@ class RunService:
             working_directory=str(resolved_working_directory),
             mode=run_mode,
             argv=arguments,
-            env=dict(loaded_project.metadata.env_overrides),
-            safe_mode=loaded_project.metadata.safe_mode,
+            env=merged_env_overrides,
+            safe_mode=loaded_project.metadata.safe_mode if safe_mode is None else safe_mode,
             log_file=str(log_file_path),
             timestamp=timestamp,
             breakpoints=normalized_breakpoints,

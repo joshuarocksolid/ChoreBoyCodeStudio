@@ -51,3 +51,27 @@ def toggle_comment_lines(text: str, *, comment_prefix: str = "# ") -> str:
         else:
             transformed.append(f"{indent}{comment_prefix}{body}")
     return "\n".join(transformed)
+
+
+def smart_backspace_columns(line_text: str, cursor_column: int, *, indent_text: str = "    ") -> int:
+    """Return how many columns smart-backspace should remove."""
+    if cursor_column <= 0:
+        return 0
+    prefix = line_text[:cursor_column]
+    if not prefix:
+        return 0
+    if prefix.strip():
+        return 0
+
+    if indent_text == "\t":
+        return 1 if prefix.endswith("\t") else 0
+
+    if "\t" in prefix:
+        return 0
+    unit = max(1, len(indent_text))
+    remove_count = len(prefix) % unit
+    if remove_count == 0:
+        remove_count = unit
+    if not prefix.endswith(" " * remove_count):
+        return 0
+    return remove_count

@@ -31,19 +31,28 @@ class MenuCallbacks:
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
+    on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
     on_find_in_files: Callable[[], object] | None = None
+    on_find_references: Callable[[], object] | None = None
+    on_rename_symbol: Callable[[], object] | None = None
     on_toggle_comment: Callable[[], object] | None = None
     on_indent: Callable[[], object] | None = None
     on_outdent: Callable[[], object] | None = None
     on_go_to_definition: Callable[[], object] | None = None
+    on_signature_help: Callable[[], object] | None = None
+    on_hover_info: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
+    on_run_pytest_project: Callable[[], object] | None = None
+    on_run_pytest_current_file: Callable[[], object] | None = None
+    on_run_with_config: Callable[[], object] | None = None
+    on_manage_run_configs: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
@@ -55,6 +64,10 @@ class MenuCallbacks:
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_reset_layout: Callable[[], object] | None = None
+    on_format_current_file: Callable[[], object] | None = None
+    on_lint_current_file: Callable[[], object] | None = None
+    on_apply_safe_fixes: Callable[[], object] | None = None
+    on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
@@ -152,7 +165,14 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         callback=callback_registry.on_save_all,
     )
     file_menu.addSeparator()
-    _register_menu_action(file_menu, actions, "shell.action.file.settings", "Settings...")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.settings",
+        "Settings...",
+        enabled=True,
+        callback=callback_registry.on_open_settings,
+    )
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -208,6 +228,24 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     _register_menu_action(
         edit_menu,
         actions,
+        "shell.action.edit.findReferences",
+        "Find References",
+        "Shift+F12",
+        enabled=True,
+        callback=callback_registry.on_find_references,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.renameSymbol",
+        "Rename Symbol",
+        "F2",
+        enabled=True,
+        callback=callback_registry.on_rename_symbol,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
         "shell.action.edit.toggleComment",
         "Toggle Comment",
         "Ctrl+/",
@@ -241,6 +279,24 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         enabled=True,
         callback=callback_registry.on_go_to_definition,
     )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.signatureHelp",
+        "Signature Help",
+        "Ctrl+Shift+Space",
+        enabled=True,
+        callback=callback_registry.on_signature_help,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.hoverInfo",
+        "Show Hover Info",
+        "Ctrl+K",
+        enabled=True,
+        callback=callback_registry.on_hover_info,
+    )
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
@@ -259,6 +315,36 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Debug",
         "Ctrl+F5",
         callback=callback_registry.on_debug,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pytestProject",
+        "Run Project Tests",
+        "Ctrl+Shift+T",
+        callback=callback_registry.on_run_pytest_project,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.pytestCurrentFile",
+        "Run Current File Tests",
+        "Ctrl+Alt+T",
+        callback=callback_registry.on_run_pytest_current_file,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.runWithConfig",
+        "Run With Configuration...",
+        callback=callback_registry.on_run_with_config,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.manageRunConfigs",
+        "Manage Run Configurations...",
+        callback=callback_registry.on_manage_run_configs,
     )
     _register_menu_action(
         run_menu,
@@ -354,7 +440,38 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
-    _register_menu_action(tools_menu, actions, "shell.action.tools.lintCurrentFile", "Lint Current File")
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.formatCurrentFile",
+        "Format Current File",
+        enabled=True,
+        callback=callback_registry.on_format_current_file,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.lintCurrentFile",
+        "Lint Current File",
+        enabled=True,
+        callback=callback_registry.on_lint_current_file,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.applySafeFixes",
+        "Apply Safe Fixes (Current File)",
+        enabled=True,
+        callback=callback_registry.on_apply_safe_fixes,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.rebuildIntelligenceCache",
+        "Rebuild Intelligence Cache",
+        enabled=True,
+        callback=callback_registry.on_rebuild_intelligence_cache,
+    )
     _register_menu_action(
         tools_menu,
         actions,

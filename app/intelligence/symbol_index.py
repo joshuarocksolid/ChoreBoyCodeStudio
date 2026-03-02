@@ -18,6 +18,11 @@ class SymbolLocation:
     name: str
     file_path: str
     line_number: int
+    symbol_kind: str = "symbol"
+    container_name: str = ""
+    signature_text: str = ""
+    doc_excerpt: str = ""
+    column_number: int | None = None
 
 
 def to_indexed_symbols(index: dict[str, list["SymbolLocation"]]) -> list["SymbolLocation"]:
@@ -39,11 +44,13 @@ class SymbolIndexWorker:
         cache_db_path: str,
         on_done: Callable[[int], None] | None = None,
         on_error: Callable[[str], None] | None = None,
+        should_commit: Callable[[], bool] | None = None,
     ) -> None:
         self._project_root = str(Path(project_root).expanduser().resolve())
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
         self._on_done = on_done
         self._on_error = on_error
+        self._should_commit = should_commit
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -59,15 +66,22 @@ class SymbolIndexWorker:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def _can_commit(self) -> bool:
+        if self._cancel_event.is_set():
+            return False
+        if self._should_commit is not None and not self._should_commit():
+            return False
+        return True
+
     def _run(self) -> None:
         try:
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
             python_files = _list_python_source_files(self._project_root)
             current_fingerprints = {str(path): _file_fingerprint(path) for path in python_files}
             cache = SQLiteSymbolIndex(self._cache_db_path)
             cached_fingerprints = cache.lookup_file_fingerprints(self._project_root)
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
 
             deleted_files = sorted(path for path in cached_fingerprints.keys() if path not in current_fingerprints)
@@ -78,27 +92,43 @@ class SymbolIndexWorker:
             )
 
             if deleted_files:
+                if not self._can_commit():
+                    return
                 cache.remove_symbols_for_files(self._project_root, deleted_files)
                 cache.remove_file_fingerprints(self._project_root, deleted_files)
 
             symbols_by_file: dict[str, list[IndexedSymbol]] = {}
             for file_path in changed_files:
-                if self._cancel_event.is_set():
+                if not self._can_commit():
                     return
                 extracted = _extract_symbols(Path(file_path))
                 symbols_by_file[file_path] = [
-                    IndexedSymbol(name=symbol.name, file_path=symbol.file_path, line_number=symbol.line_number)
+                    IndexedSymbol(
+                        name=symbol.name,
+                        file_path=symbol.file_path,
+                        line_number=symbol.line_number,
+                        symbol_kind=symbol.symbol_kind,
+                        container_name=symbol.container_name,
+                        signature_text=symbol.signature_text,
+                        doc_excerpt=symbol.doc_excerpt,
+                        column_number=symbol.column_number,
+                        fingerprint_version=1,
+                    )
                     for symbol in extracted
                 ]
 
             if symbols_by_file:
+                if not self._can_commit():
+                    return
                 cache.upsert_symbols_for_files(self._project_root, symbols_by_file)
             if changed_files:
+                if not self._can_commit():
+                    return
                 cache.upsert_file_fingerprints(
                     self._project_root,
                     {file_path: current_fingerprints[file_path] for file_path in changed_files},
                 )
-            if self._cancel_event.is_set():
+            if not self._can_commit():
                 return
             symbol_count = cache.count_symbols(self._project_root)
             if self._on_done is not None:
@@ -132,11 +162,20 @@ def _extract_symbols(file_path: Path) -> list[SymbolLocation]:
     symbols: list[SymbolLocation] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            symbol_kind = "class" if isinstance(node, ast.ClassDef) else "function"
+            signature_text = ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                signature_text = f"{node.name}({_format_arguments(node.args)})"
+            doc_text = ast.get_docstring(node) or ""
             symbols.append(
                 SymbolLocation(
                     name=node.name,
                     file_path=str(file_path.resolve()),
                     line_number=int(node.lineno),
+                    symbol_kind=symbol_kind,
+                    signature_text=signature_text,
+                    doc_excerpt=doc_text.strip().splitlines()[0] if doc_text else "",
+                    column_number=int(node.col_offset),
                 )
             )
     return symbols
@@ -155,3 +194,33 @@ def _list_python_source_files(project_root: str | Path) -> list[Path]:
 def _file_fingerprint(file_path: Path) -> tuple[int, int]:
     file_stat = file_path.stat()
     return (int(file_stat.st_mtime_ns), int(file_stat.st_size))
+
+
+def _format_arguments(arguments: ast.arguments) -> str:
+    rendered: list[str] = []
+    positional = [*arguments.posonlyargs, *arguments.args]
+    defaults = [None] * (len(positional) - len(arguments.defaults)) + list(arguments.defaults)
+    for argument, default in zip(positional, defaults):
+        if default is None:
+            rendered.append(argument.arg)
+        else:
+            rendered.append(f"{argument.arg}={_safe_unparse(default)}")
+    if arguments.vararg is not None:
+        rendered.append(f"*{arguments.vararg.arg}")
+    elif arguments.kwonlyargs:
+        rendered.append("*")
+    for argument, default in zip(arguments.kwonlyargs, arguments.kw_defaults):
+        if default is None:
+            rendered.append(argument.arg)
+        else:
+            rendered.append(f"{argument.arg}={_safe_unparse(default)}")
+    if arguments.kwarg is not None:
+        rendered.append(f"**{arguments.kwarg.arg}")
+    return ", ".join(rendered)
+
+
+def _safe_unparse(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)
+    except Exception:  # pragma: no cover - defensive fallback
+        return "..."

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 import types
 
@@ -17,7 +18,7 @@ from app.runner.execution_context import RunnerExecutionContext, apply_execution
 pytestmark = pytest.mark.unit
 
 
-def _build_manifest(tmp_path: Path, *, entry_file: str = "run.py") -> RunManifest:
+def _build_manifest(tmp_path: Path, *, entry_file: str = "run.py", safe_mode: bool = True) -> RunManifest:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True, exist_ok=True)
     (project_root / entry_file).write_text("print('ok')\n", encoding="utf-8")
@@ -30,7 +31,7 @@ def _build_manifest(tmp_path: Path, *, entry_file: str = "run.py") -> RunManifes
         mode="python_script",
         argv=["--arg"],
         env={"CUSTOM_ENV": "value"},
-        safe_mode=True,
+        safe_mode=safe_mode,
         log_file=str((project_root / "logs" / "run.log").resolve()),
         timestamp="2026-03-01T01:01:01",
     )
@@ -95,3 +96,78 @@ def test_apply_execution_context_sets_and_restores_runtime_state(tmp_path: Path)
         sys.modules["app"] = original_app_module
     else:
         sys.modules.pop("app", None)
+
+
+def test_apply_execution_context_blocks_subprocess_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should prevent user subprocess execution primitives."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    original_run = subprocess.run
+
+    with apply_execution_context(context):
+        assert subprocess.run is not original_run
+        with pytest.raises(PermissionError, match="safe mode"):
+            subprocess.run(["echo", "hi"], check=False)
+
+    assert subprocess.run is original_run
+
+
+def test_apply_execution_context_blocks_write_outside_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should block write attempts outside project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    outside_target = tmp_path / "outside.txt"
+    original_open = open
+
+    with apply_execution_context(context):
+        with pytest.raises(PermissionError, match="outside project root"):
+            with open(outside_target, "w", encoding="utf-8"):
+                pass
+
+    assert open is original_open
+
+
+def test_apply_execution_context_allows_write_within_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should allow writes under project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    inside_target = Path(context.project_root) / "inside.txt"
+
+    with apply_execution_context(context):
+        with open(inside_target, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+
+    assert inside_target.read_text(encoding="utf-8") == "ok"
+
+
+def test_apply_execution_context_leaves_subprocess_available_when_safe_mode_disabled(tmp_path: Path) -> None:
+    """Safe mode disabled should not monkeypatch subprocess APIs."""
+    manifest = _build_manifest(tmp_path, safe_mode=False)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    original_run = subprocess.run
+
+    with apply_execution_context(context):
+        assert subprocess.run is original_run
+
+
+def test_apply_execution_context_blocks_write_outside_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should block writes targeting paths outside project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    outside_path = tmp_path / "outside.txt"
+
+    with apply_execution_context(context):
+        with pytest.raises(PermissionError, match="outside project root"):
+            outside_path.write_text("blocked\n", encoding="utf-8")
+
+
+def test_apply_execution_context_allows_write_within_project_in_safe_mode(tmp_path: Path) -> None:
+    """Safe mode should permit writes under the project root."""
+    manifest = _build_manifest(tmp_path, safe_mode=True)
+    context = RunnerExecutionContext.from_manifest(manifest)
+    inside_path = Path(context.project_root) / "allowed.txt"
+
+    with apply_execution_context(context):
+        inside_path.write_text("ok\n", encoding="utf-8")
+
+    assert inside_path.read_text(encoding="utf-8") == "ok\n"

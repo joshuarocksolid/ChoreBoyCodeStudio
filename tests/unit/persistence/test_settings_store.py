@@ -86,9 +86,50 @@ def test_settings_payload_can_store_editor_preferences(tmp_path: Path) -> None:
         constants.UI_EDITOR_SETTINGS_KEY: {
             constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
             constants.UI_EDITOR_FONT_SIZE_KEY: 12,
+            constants.UI_EDITOR_INDENT_STYLE_KEY: "tabs",
+            constants.UI_EDITOR_INDENT_SIZE_KEY: 1,
+            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: False,
+            constants.UI_EDITOR_FORMAT_ON_SAVE_KEY: True,
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY: False,
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: False,
         },
     }
     save_json_object(path, payload)
     loaded = load_json_object(path, default={"schema_version": 1})
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 2
     assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_FONT_SIZE_KEY] == 12
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_STYLE_KEY] == "tabs"
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INDENT_SIZE_KEY] == 1
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY] is False
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_FORMAT_ON_SAVE_KEY] is True
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY] is False
+    assert loaded[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY] is False
+
+
+def test_settings_payload_can_store_intelligence_cache_preferences(tmp_path: Path) -> None:
+    """Intelligence cache flags should round-trip in settings payload."""
+    path = tmp_path / "state" / "settings.json"
+    payload = {
+        "schema_version": 1,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY: {
+            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY: False,
+            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY: False,
+            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY: False,
+            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY: False,
+            constants.UI_INTELLIGENCE_CACHE_ENABLED_KEY: False,
+            constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY: True,
+            constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY: False,
+            constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY: True,
+        },
+    }
+    save_json_object(path, payload)
+    loaded = load_json_object(path, default={"schema_version": 1})
+    intelligence_settings = loaded[constants.UI_INTELLIGENCE_SETTINGS_KEY]
+    assert intelligence_settings[constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_CACHE_ENABLED_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY] is True
+    assert intelligence_settings[constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY] is False
+    assert intelligence_settings[constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY] is True

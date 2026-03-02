@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 import queue
 from pathlib import Path
 import subprocess
@@ -12,6 +14,7 @@ from PySide2.QtCore import QEvent, QTimer, Qt
 from PySide2.QtGui import QCloseEvent
 from PySide2.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -47,13 +50,29 @@ from app.debug.debug_command_service import (
     step_over_command,
 )
 from app.debug.debug_session import DebugSession
-from app.intelligence.diagnostics_service import find_unresolved_imports
+from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
+from app.intelligence.cache_controls import (
+    IntelligenceRuntimeSettings,
+    parse_intelligence_runtime_settings,
+    rebuild_symbol_cache,
+    should_refresh_index_after_save,
+)
+from app.intelligence.diagnostics_service import DiagnosticSeverity, analyze_python_file, find_unresolved_imports
+from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
+from app.intelligence.reference_service import find_references
+from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
+from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
+from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_service import CompletionRequest, CompletionService
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.editorconfig import resolve_editorconfig_indentation
+from app.editors.formatting_service import format_text_basic
+from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
@@ -63,6 +82,7 @@ from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
+from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -73,9 +93,20 @@ from app.shell.layout_persistence import (
     merge_layout_into_settings,
     parse_shell_layout_state,
 )
+from app.shell.settings_dialog import SettingsDialog
+from app.shell.settings_models import merge_editor_settings_snapshot, parse_editor_settings_snapshot
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import tokens_from_palette
 from app.project.project_tree import build_project_tree
+from app.project.run_configs import (
+    RunConfiguration,
+    env_overrides_to_text,
+    parse_env_overrides_text,
+    parse_run_config,
+    parse_run_configs,
+    remove_run_config,
+    upsert_run_config,
+)
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
@@ -95,6 +126,7 @@ TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
 PROBLEM_ROLE_FILE_PATH = 320
 PROBLEM_ROLE_LINE_NUMBER = 321
+PROBLEM_ROLE_DIAGNOSTIC_CODE = 322
 
 
 class MainWindow(QMainWindow):
@@ -133,13 +165,41 @@ class MainWindow(QMainWindow):
         self._tree_clipboard_path: str | None = None
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
-        self._editor_tab_width, self._editor_font_size = self._load_editor_preferences()
+        (
+            self._editor_tab_width,
+            self._editor_font_size,
+            self._editor_indent_style,
+            self._editor_indent_size,
+            self._editor_detect_indentation_from_file,
+            self._editor_format_on_save,
+            self._editor_trim_trailing_whitespace_on_save,
+            self._editor_insert_final_newline_on_save,
+        ) = self._load_editor_preferences()
+        (
+            self._completion_enabled,
+            self._completion_auto_trigger,
+            self._completion_min_chars,
+        ) = self._load_completion_preferences()
+        (
+            self._diagnostics_enabled,
+            self._diagnostics_realtime,
+            self._quick_fixes_enabled,
+            self._quick_fix_require_preview_for_multifile,
+        ) = self._load_diagnostics_preferences()
+        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
+        self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
+        self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(500)
         self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
+        self._pending_realtime_lint_file_path: str | None = None
+        self._realtime_lint_timer = QTimer(self)
+        self._realtime_lint_timer.setSingleShot(True)
+        self._realtime_lint_timer.setInterval(300)
+        self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
@@ -148,6 +208,7 @@ class MainWindow(QMainWindow):
         self._debug_session = DebugSession()
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
+        self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event)
         self._run_session_controller = RunSessionController(self._run_service)
@@ -168,8 +229,13 @@ class MainWindow(QMainWindow):
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
+                on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
+                on_run_pytest_project=self._handle_run_pytest_project_action,
+                on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
+                on_run_with_config=self._handle_run_with_configuration_action,
+                on_manage_run_configs=self._handle_manage_run_configurations_action,
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
                 on_continue_debug=self._handle_continue_debug_action,
@@ -181,6 +247,10 @@ class MainWindow(QMainWindow):
                 on_start_python_console=self._handle_start_python_console_action,
                 on_clear_console=self._handle_clear_console_action,
                 on_reset_layout=self._handle_reset_layout_action,
+                on_format_current_file=self._handle_format_current_file_action,
+                on_lint_current_file=self._handle_lint_current_file_action,
+                on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
+                on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_new_project=self._handle_new_project_action,
@@ -189,10 +259,14 @@ class MainWindow(QMainWindow):
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
+                on_find_references=self._handle_find_references_action,
+                on_rename_symbol=self._handle_rename_symbol_action,
                 on_toggle_comment=self._handle_toggle_comment_action,
                 on_indent=self._handle_indent_action,
                 on_outdent=self._handle_outdent_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
+                on_signature_help=self._handle_signature_help_action,
+                on_hover_info=self._handle_hover_info_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -212,6 +286,10 @@ class MainWindow(QMainWindow):
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
         self._run_event_timer.start()
+        self._external_change_poll_timer = QTimer(self)
+        self._external_change_poll_timer.setInterval(1000)
+        self._external_change_poll_timer.timeout.connect(self._poll_external_file_changes)
+        self._external_change_poll_timer.start()
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -304,19 +382,138 @@ class MainWindow(QMainWindow):
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, int, bool, bool, bool, bool]:
         settings_payload = load_settings(state_root=self._state_root)
         editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
         if not isinstance(editor_settings, dict):
-            return (constants.UI_EDITOR_TAB_WIDTH_DEFAULT, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+            return (
+                constants.UI_EDITOR_TAB_WIDTH_DEFAULT,
+                constants.UI_EDITOR_FONT_SIZE_DEFAULT,
+                constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
+                constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
+                constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+                constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
+                constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
+                constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
+            )
 
         tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
         font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
+        indent_style = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
+        indent_size = editor_settings.get(constants.UI_EDITOR_INDENT_SIZE_KEY, constants.UI_EDITOR_INDENT_SIZE_DEFAULT)
+        detect_indentation_from_file = editor_settings.get(
+            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY,
+            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
+        )
+        format_on_save = editor_settings.get(
+            constants.UI_EDITOR_FORMAT_ON_SAVE_KEY,
+            constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
+        )
+        trim_trailing_whitespace_on_save = editor_settings.get(
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY,
+            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
+        )
+        insert_final_newline_on_save = editor_settings.get(
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY,
+            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
+        )
         if not isinstance(tab_width, int):
             tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
         if not isinstance(font_size, int):
             font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
-        return (max(2, tab_width), max(8, font_size))
+        if indent_style not in {"spaces", "tabs"}:
+            indent_style = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
+        if not isinstance(indent_size, int):
+            indent_size = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
+        if not isinstance(detect_indentation_from_file, bool):
+            detect_indentation_from_file = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
+        if not isinstance(format_on_save, bool):
+            format_on_save = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
+        if not isinstance(trim_trailing_whitespace_on_save, bool):
+            trim_trailing_whitespace_on_save = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
+        if not isinstance(insert_final_newline_on_save, bool):
+            insert_final_newline_on_save = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
+        return (
+            max(2, tab_width),
+            max(8, font_size),
+            str(indent_style),
+            max(1, indent_size),
+            detect_indentation_from_file,
+            format_on_save,
+            trim_trailing_whitespace_on_save,
+            insert_final_newline_on_save,
+        )
+
+    def _load_completion_preferences(self) -> tuple[bool, bool, int]:
+        settings_payload = load_settings(state_root=self._state_root)
+        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+        if not isinstance(intelligence_settings, dict):
+            return (
+                constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
+                constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
+                constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
+            )
+
+        enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
+        )
+        auto_trigger = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY,
+            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
+        )
+        min_chars = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
+            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
+        )
+        if not isinstance(enabled, bool):
+            enabled = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
+        if not isinstance(auto_trigger, bool):
+            auto_trigger = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
+        if not isinstance(min_chars, int):
+            min_chars = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
+        return (enabled, auto_trigger, max(1, min_chars))
+
+    def _load_diagnostics_preferences(self) -> tuple[bool, bool, bool, bool]:
+        settings_payload = load_settings(state_root=self._state_root)
+        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+        if not isinstance(intelligence_settings, dict):
+            return (
+                constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+                constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
+                constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
+                constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
+            )
+
+        diagnostics_enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+        )
+        diagnostics_realtime = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY,
+            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
+        )
+        quick_fixes_enabled = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY,
+            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
+        )
+        quick_fix_require_preview = intelligence_settings.get(
+            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY,
+            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
+        )
+        if not isinstance(diagnostics_enabled, bool):
+            diagnostics_enabled = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
+        if not isinstance(diagnostics_realtime, bool):
+            diagnostics_realtime = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
+        if not isinstance(quick_fixes_enabled, bool):
+            quick_fixes_enabled = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
+        if not isinstance(quick_fix_require_preview, bool):
+            quick_fix_require_preview = constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT
+        return diagnostics_enabled, diagnostics_realtime, quick_fixes_enabled, quick_fix_require_preview
+
+    def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
+        settings_payload = load_settings(state_root=self._state_root)
+        return parse_intelligence_runtime_settings(settings_payload)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         QTimer.singleShot(0, callback)
@@ -366,6 +563,50 @@ class MainWindow(QMainWindow):
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _handle_open_settings_action(self) -> None:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        dialog = SettingsDialog(snapshot, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        updated_snapshot = dialog.snapshot()
+        merged_settings = merge_editor_settings_snapshot(settings_payload, updated_snapshot)
+        save_settings(merged_settings, state_root=self._state_root)
+
+        (
+            self._editor_tab_width,
+            self._editor_font_size,
+            self._editor_indent_style,
+            self._editor_indent_size,
+            self._editor_detect_indentation_from_file,
+            self._editor_format_on_save,
+            self._editor_trim_trailing_whitespace_on_save,
+            self._editor_insert_final_newline_on_save,
+        ) = self._load_editor_preferences()
+        (
+            self._completion_enabled,
+            self._completion_auto_trigger,
+            self._completion_min_chars,
+        ) = self._load_completion_preferences()
+        (
+            self._diagnostics_enabled,
+            self._diagnostics_realtime,
+            self._quick_fixes_enabled,
+            self._quick_fix_require_preview_for_multifile,
+        ) = self._load_diagnostics_preferences()
+        if not self._diagnostics_enabled or not self._diagnostics_realtime:
+            self._realtime_lint_timer.stop()
+            self._pending_realtime_lint_file_path = None
+        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
+        if not self._intelligence_runtime_settings.cache_enabled:
+            if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+                self._active_symbol_index_worker.cancel()
+        elif self._loaded_project is not None:
+            self._start_symbol_indexing(self._loaded_project.project_root)
+        self._apply_editor_preferences_to_open_editors()
+        self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
         labels = [f"{template.display_name} ({template.template_id})" for template in templates]
@@ -488,6 +729,154 @@ class MainWindow(QMainWindow):
         )
         self._active_search_worker.start()
 
+    def _handle_find_references_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Find References", "Open a project first.")
+            return
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Find References", "Open a file tab first.")
+            return
+
+        started_at = time.perf_counter()
+        result = find_references(
+            project_root=self._loaded_project.project_root,
+            current_file_path=active_tab.file_path,
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+        )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 1200.0:
+                self._logger.warning(
+                    "References latency warning: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    result.symbol_name,
+                    elapsed_ms,
+                    len(result.hits),
+                )
+            else:
+                self._logger.info(
+                    "References telemetry: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    result.symbol_name,
+                    elapsed_ms,
+                    len(result.hits),
+                )
+        if not result.symbol_name:
+            QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
+            return
+        if not result.hits:
+            QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
+            return
+
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        for hit in result.hits:
+            marker = "def" if hit.is_definition else "ref"
+            item = QListWidgetItem(
+                f"[{marker}] {Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1} | {hit.line_text}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(hit.file_path)
+            item.setData(PROBLEM_ROLE_FILE_PATH, hit.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, hit.line_number)
+
+    def _handle_rename_symbol_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Rename Symbol", "Open a project first.")
+            return
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Rename Symbol", "Open a file tab first.")
+            return
+
+        old_symbol = editor_widget.word_under_cursor()
+        if not old_symbol:
+            QMessageBox.information(self, "Rename Symbol", "Place cursor on a symbol first.")
+            return
+        new_symbol, ok = QInputDialog.getText(self, "Rename Symbol", f"Rename '{old_symbol}' to:", QLineEdit.Normal, old_symbol)
+        if not ok:
+            return
+        new_symbol = new_symbol.strip()
+        if not new_symbol or new_symbol == old_symbol:
+            return
+        if not new_symbol.isidentifier():
+            QMessageBox.warning(self, "Rename Symbol", "New name must be a valid Python identifier.")
+            return
+
+        if not self._handle_save_all_action():
+            QMessageBox.warning(self, "Rename Symbol", "Fix save errors before renaming.")
+            return
+
+        started_at = time.perf_counter()
+        plan = plan_rename_symbol(
+            project_root=self._loaded_project.project_root,
+            current_file_path=active_tab.file_path,
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+            new_symbol=new_symbol,
+        )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            hit_count = 0 if plan is None else len(plan.hits)
+            if elapsed_ms > 800.0:
+                self._logger.warning(
+                    "Rename planning latency warning: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    old_symbol,
+                    new_symbol,
+                    elapsed_ms,
+                    hit_count,
+                )
+            else:
+                self._logger.info(
+                    "Rename planning telemetry: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                    active_tab.file_path,
+                    old_symbol,
+                    new_symbol,
+                    elapsed_ms,
+                    hit_count,
+                )
+        if plan is None or not plan.hits:
+            QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
+            return
+
+        preview_lines = [f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}" for hit in plan.hits[:20]]
+        preview_body = "\n".join(preview_lines)
+        if len(plan.hits) > 20:
+            preview_body += f"\n... and {len(plan.hits) - 20} more occurrence(s)"
+        confirm = QMessageBox.question(
+            self,
+            "Rename Preview",
+            (
+                f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'?\n"
+                f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n\n"
+                f"{preview_body}"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            result = apply_rename_plan(plan)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
+            return
+
+        self._refresh_open_tabs_from_disk(result.changed_files)
+        self._reload_current_project()
+        QMessageBox.information(
+            self,
+            "Rename Symbol",
+            f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+        )
+
     def _handle_go_to_definition_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Go To Definition", "Open a project first.")
@@ -501,7 +890,6 @@ class MainWindow(QMainWindow):
         if not symbol_name:
             QMessageBox.information(self, "Go To Definition", "Place cursor on a symbol first.")
             return
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
         project_root = self._loaded_project.project_root
         current_file_path = active_tab.file_path
 
@@ -510,7 +898,7 @@ class MainWindow(QMainWindow):
                 project_root=project_root,
                 current_file_path=current_file_path,
                 symbol_name=symbol_name,
-                cache_db_path=str(cache_db),
+                cache_db_path=self._symbol_cache_db_path,
             )
 
         def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
@@ -524,6 +912,56 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
 
         self._background_tasks.run(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
+
+    def _handle_signature_help_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Signature Help", "Open a file tab first.")
+            return
+
+        signature = resolve_signature_help(editor_widget.toPlainText(), editor_widget.textCursor().position())
+        if signature is None:
+            QMessageBox.information(self, "Signature Help", "No callable signature information available.")
+            return
+
+        details = [
+            signature.signature_text,
+            f"Active parameter index: {signature.argument_index}",
+        ]
+        if signature.doc_summary:
+            details.append(f"Doc: {signature.doc_summary}")
+        details.append(f"Source: {signature.source}")
+        QMessageBox.information(self, "Signature Help", "\n".join(details))
+
+    def _handle_hover_info_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Hover Info", "Open a file tab first.")
+            return
+
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        hover_info = resolve_hover_info(
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+            current_file_path=active_tab.file_path,
+            project_root=project_root,
+            cache_db_path=self._symbol_cache_db_path,
+        )
+        if hover_info is None:
+            QMessageBox.information(self, "Hover Info", "No symbol info available.")
+            return
+
+        details = [f"Symbol: {hover_info.symbol_name}", f"Kind: {hover_info.symbol_kind}"]
+        if hover_info.file_path:
+            details.append(f"File: {hover_info.file_path}")
+        if hover_info.line_number is not None:
+            details.append(f"Line: {hover_info.line_number}")
+        if hover_info.doc_summary:
+            details.append(f"Doc: {hover_info.doc_summary}")
+        details.append(f"Source: {hover_info.source}")
+        QMessageBox.information(self, "Hover Info", "\n".join(details))
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -633,6 +1071,8 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        if self._intelligence_runtime_settings.force_full_reindex_on_open:
+            self._rebuild_intelligence_cache()
         self._start_symbol_indexing(loaded_project.project_root)
         self._logger.info(
             "Project open telemetry: root=%s files=%s elapsed_ms=%.2f",
@@ -640,6 +1080,131 @@ class MainWindow(QMainWindow):
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
         )
+        QTimer.singleShot(0, lambda: self._maybe_prompt_imported_project_setup(loaded_project))
+
+    def _maybe_prompt_imported_project_setup(self, loaded_project: LoadedProject) -> None:
+        metadata = loaded_project.metadata
+        if metadata.template != "imported_external":
+            return
+        import_metadata = metadata.import_metadata
+        if import_metadata.get("onboarding_completed") is True:
+            return
+
+        detected_signals = import_metadata.get("detected_signals", [])
+        runtime_warnings = import_metadata.get("runtime_warnings", [])
+        signal_text = ", ".join(detected_signals) if isinstance(detected_signals, list) and detected_signals else "none"
+        warnings_text = (
+            "\n".join(f"• {warning}" for warning in runtime_warnings)
+            if isinstance(runtime_warnings, list) and runtime_warnings
+            else "• No immediate runtime warnings detected."
+        )
+        message = (
+            "This appears to be an imported Python project.\n\n"
+            f"Detected project signals: {signal_text}\n"
+            f"Inferred default entry: {metadata.default_entry}\n"
+            f"Inferred run mode: {metadata.default_mode}\n\n"
+            f"Runtime compatibility notes:\n{warnings_text}\n\n"
+            "Would you like to review and adjust these defaults now?"
+        )
+        review_defaults = (
+            QMessageBox.question(
+                self,
+                "Imported Project Setup",
+                message,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            == QMessageBox.Yes
+        )
+
+        default_entry = metadata.default_entry
+        default_mode = metadata.default_mode
+        default_working_directory = metadata.working_directory
+        default_argv = list(metadata.default_argv)
+        if review_defaults:
+            selected_entry, accepted_entry = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Default entry file (relative to project root):",
+                QLineEdit.Normal,
+                default_entry,
+            )
+            if accepted_entry and selected_entry.strip():
+                default_entry = selected_entry.strip()
+            mode_choices = [
+                constants.RUN_MODE_PYTHON_SCRIPT,
+                constants.RUN_MODE_QT_APP,
+                constants.RUN_MODE_FREECAD_HEADLESS,
+            ]
+            default_mode_index = mode_choices.index(default_mode) if default_mode in mode_choices else 0
+            selected_mode, accepted_mode = QInputDialog.getItem(
+                self,
+                "Imported Project Setup",
+                "Default run mode:",
+                mode_choices,
+                default_mode_index,
+                False,
+            )
+            if accepted_mode and selected_mode:
+                default_mode = selected_mode
+            selected_working_directory, accepted_working_directory = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Working directory (relative to project root):",
+                QLineEdit.Normal,
+                default_working_directory,
+            )
+            if accepted_working_directory and selected_working_directory.strip():
+                default_working_directory = selected_working_directory.strip()
+            argv_text, accepted_argv = QInputDialog.getText(
+                self,
+                "Imported Project Setup",
+                "Default arguments (space-separated):",
+                QLineEdit.Normal,
+                " ".join(default_argv),
+            )
+            if accepted_argv:
+                default_argv = [token for token in argv_text.split(" ") if token.strip()]
+
+        self._persist_imported_project_setup_defaults(
+            loaded_project=loaded_project,
+            default_entry=default_entry,
+            default_mode=default_mode,
+            default_working_directory=default_working_directory,
+            default_argv=default_argv,
+        )
+
+    def _persist_imported_project_setup_defaults(
+        self,
+        *,
+        loaded_project: LoadedProject,
+        default_entry: str,
+        default_mode: str,
+        default_working_directory: str,
+        default_argv: list[str],
+    ) -> None:
+        payload = loaded_project.metadata.to_dict()
+        payload["default_entry"] = default_entry
+        payload["default_mode"] = default_mode
+        payload["working_directory"] = default_working_directory
+        payload["default_argv"] = list(default_argv)
+        import_metadata = dict(payload.get("import_metadata", {}))
+        import_metadata["onboarding_completed"] = True
+        import_metadata["onboarding_completed_at"] = datetime.now(timezone.utc).isoformat()
+        payload["import_metadata"] = import_metadata
+        manifest_path = Path(loaded_project.manifest_path)
+        try:
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Imported Project Setup", f"Unable to save setup choices: {exc}")
+            return
+        if (
+            default_entry != loaded_project.metadata.default_entry
+            or default_mode != loaded_project.metadata.default_mode
+            or default_working_directory != loaded_project.metadata.working_directory
+            or default_argv != loaded_project.metadata.default_argv
+        ):
+            self._reload_current_project()
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
         dirty_tabs = [tab for tab in self._editor_manager.all_tabs() if tab.is_dirty]
@@ -681,6 +1246,7 @@ class MainWindow(QMainWindow):
         return not any_failure
 
     def _save_tab(self, file_path: str) -> bool:
+        self._apply_format_on_save_if_enabled(file_path)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
         except (OSError, ValueError) as exc:
@@ -697,8 +1263,42 @@ class MainWindow(QMainWindow):
         self._autosave_store.delete_draft(saved_tab.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
+        if should_refresh_index_after_save(
+            self._intelligence_runtime_settings,
+            has_loaded_project=self._loaded_project is not None,
+        ) and self._loaded_project is not None:
+            self._start_symbol_indexing(self._loaded_project.project_root)
+        if saved_tab.file_path.lower().endswith(".py"):
+            self._render_lint_diagnostics_for_file(saved_tab.file_path, manual=False)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
+
+    def _apply_format_on_save_if_enabled(self, file_path: str) -> None:
+        if not self._editor_format_on_save:
+            return
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return
+        result = format_text_basic(
+            tab_state.current_content,
+            trim_trailing_whitespace=self._editor_trim_trailing_whitespace_on_save,
+            ensure_final_newline=self._editor_insert_final_newline_on_save,
+        )
+        if not result.changed:
+            return
+
+        self._editor_manager.update_tab_content(file_path, result.formatted_text)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if editor_widget is None:
+            return
+        cursor = editor_widget.textCursor()
+        cursor_position = cursor.position()
+        editor_widget.blockSignals(True)
+        editor_widget.setPlainText(result.formatted_text)
+        editor_widget.blockSignals(False)
+        restored_cursor = editor_widget.textCursor()
+        restored_cursor.setPosition(min(cursor_position, len(result.formatted_text)))
+        editor_widget.setTextCursor(restored_cursor)
 
     def _refresh_save_action_states(self) -> None:
         if self._menu_registry is None:
@@ -724,6 +1324,302 @@ class MainWindow(QMainWindow):
                 breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
         return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
 
+    def _handle_run_pytest_project_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run Project Tests", "Open a project first.")
+            return
+        project_root = self._loaded_project.project_root
+        self._append_console_line(f"Running pytest in {project_root}", stream="system")
+
+        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
+            return run_pytest_project(project_root)
+
+        def on_success(result: PytestRunResult) -> None:
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Pytest run failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Run Project Tests", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_project",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_run_pytest_current_file_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run Current File Tests", "Open a project first.")
+            return
+        loaded_project = self._loaded_project
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Run Current File Tests", "Open a file tab first.")
+            return
+        target_path = Path(active_tab.file_path).expanduser().resolve()
+        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
+        try:
+            target_path.relative_to(project_root_path)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Run Current File Tests",
+                "Current file is outside project root and cannot be run as a test target.",
+            )
+            return
+        self._append_console_line(f"Running pytest for {target_path}", stream="system")
+
+        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
+            return run_pytest_target(loaded_project.project_root, str(target_path))
+
+        def on_success(result: PytestRunResult) -> None:
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Pytest target run failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Run Current File Tests", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_target",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_run_with_configuration_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Run With Configuration", "Open a project first.")
+            return
+        configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        if not configs:
+            QMessageBox.information(
+                self,
+                "Run With Configuration",
+                "No run configurations are defined. Use 'Manage Run Configurations...' first.",
+            )
+            return
+        names = [config.name for config in configs]
+        selected_name, accepted = QInputDialog.getItem(
+            self,
+            "Run With Configuration",
+            "Select run configuration:",
+            names,
+            0,
+            False,
+        )
+        if not accepted or not selected_name:
+            return
+        selected_config = next((config for config in configs if config.name == selected_name), None)
+        if selected_config is None:
+            QMessageBox.warning(self, "Run With Configuration", "Selected configuration could not be resolved.")
+            return
+        self._start_session(
+            mode=selected_config.mode,
+            entry_file=selected_config.entry_file,
+            argv=selected_config.argv,
+            working_directory=selected_config.working_directory,
+            env_overrides=selected_config.env_overrides,
+            safe_mode=selected_config.safe_mode,
+        )
+
+    def _handle_manage_run_configurations_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Manage Run Configurations", "Open a project first.")
+            return
+        existing_configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        choices = [config.name for config in existing_configs]
+        create_label = "<Create new configuration>"
+        choices.append(create_label)
+        selected_name, accepted_selection = QInputDialog.getItem(
+            self,
+            "Manage Run Configurations",
+            "Select configuration to edit:",
+            choices,
+            0,
+            False,
+        )
+        if not accepted_selection or not selected_name:
+            return
+        selected_config = next((config for config in existing_configs if config.name == selected_name), None)
+        if selected_config is not None:
+            action_choice, accepted_action = QInputDialog.getItem(
+                self,
+                "Manage Run Configurations",
+                f"Action for '{selected_config.name}':",
+                ["Edit", "Delete"],
+                0,
+                False,
+            )
+            if not accepted_action or not action_choice:
+                return
+            if action_choice == "Delete":
+                confirm = QMessageBox.question(
+                    self,
+                    "Manage Run Configurations",
+                    f"Delete run configuration '{selected_config.name}'?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if confirm != QMessageBox.Yes:
+                    return
+                remaining_configs = remove_run_config(existing_configs, selected_config.name)
+                self._persist_run_configurations(remaining_configs)
+                QMessageBox.information(
+                    self,
+                    "Manage Run Configurations",
+                    f"Deleted configuration '{selected_config.name}'.",
+                )
+                return
+        if selected_name == create_label or selected_config is None:
+            selected_config = RunConfiguration(
+                name="Default",
+                entry_file=self._loaded_project.metadata.default_entry,
+                mode=self._loaded_project.metadata.default_mode,
+                argv=list(self._loaded_project.metadata.default_argv),
+                working_directory=self._loaded_project.metadata.working_directory,
+                env_overrides=dict(self._loaded_project.metadata.env_overrides),
+                safe_mode=self._loaded_project.metadata.safe_mode,
+            )
+
+        config_name, accepted_name = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Configuration name:",
+            QLineEdit.Normal,
+            selected_config.name,
+        )
+        if not accepted_name or not config_name.strip():
+            return
+        entry_file, accepted_entry = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Entry file (relative to project root):",
+            QLineEdit.Normal,
+            selected_config.entry_file,
+        )
+        if not accepted_entry or not entry_file.strip():
+            return
+        mode_choices = [
+            constants.RUN_MODE_PYTHON_SCRIPT,
+            constants.RUN_MODE_QT_APP,
+            constants.RUN_MODE_FREECAD_HEADLESS,
+            constants.RUN_MODE_PYTHON_DEBUG,
+        ]
+        selected_mode, accepted_mode = QInputDialog.getItem(
+            self,
+            "Manage Run Configurations",
+            "Run mode:",
+            mode_choices,
+            mode_choices.index(selected_config.mode) if selected_config.mode in mode_choices else 0,
+            False,
+        )
+        if not accepted_mode or not selected_mode:
+            return
+        argv_text, accepted_argv = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Arguments (space-separated):",
+            QLineEdit.Normal,
+            " ".join(selected_config.argv),
+        )
+        if not accepted_argv:
+            return
+        working_directory_text, accepted_working_directory = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Working directory override (blank uses project default):",
+            QLineEdit.Normal,
+            "" if selected_config.working_directory is None else selected_config.working_directory,
+        )
+        if not accepted_working_directory:
+            return
+        env_overrides_text, accepted_env = QInputDialog.getText(
+            self,
+            "Manage Run Configurations",
+            "Env overrides (comma-separated KEY=VALUE):",
+            QLineEdit.Normal,
+            env_overrides_to_text(selected_config.env_overrides),
+        )
+        if not accepted_env:
+            return
+        safe_mode_choices = ["project_default", "enabled", "disabled"]
+        if selected_config.safe_mode is True:
+            safe_mode_index = 1
+        elif selected_config.safe_mode is False:
+            safe_mode_index = 2
+        else:
+            safe_mode_index = 0
+        safe_mode_choice, accepted_safe_mode = QInputDialog.getItem(
+            self,
+            "Manage Run Configurations",
+            "Safe mode override:",
+            safe_mode_choices,
+            safe_mode_index,
+            False,
+        )
+        if not accepted_safe_mode or not safe_mode_choice:
+            return
+
+        try:
+            parsed_env_overrides = parse_env_overrides_text(env_overrides_text)
+            parsed_safe_mode = None
+            if safe_mode_choice == "enabled":
+                parsed_safe_mode = True
+            elif safe_mode_choice == "disabled":
+                parsed_safe_mode = False
+            updated_config = parse_run_config(
+                {
+                    "name": config_name.strip(),
+                    "entry_file": entry_file.strip(),
+                    "mode": selected_mode,
+                    "argv": [token for token in argv_text.split(" ") if token.strip()],
+                    "working_directory": working_directory_text.strip() or None,
+                    "env_overrides": parsed_env_overrides,
+                    "safe_mode": parsed_safe_mode,
+                }
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Manage Run Configurations", str(exc))
+            return
+        merged_configs = upsert_run_config(existing_configs, updated_config)
+        self._persist_run_configurations(merged_configs)
+        QMessageBox.information(
+            self,
+            "Manage Run Configurations",
+            f"Saved configuration '{updated_config.name}'.",
+        )
+
+    def _persist_run_configurations(self, run_configs: list[RunConfiguration]) -> None:
+        if self._loaded_project is None:
+            return
+        manifest_path = Path(self._loaded_project.manifest_path)
+        payload = self._loaded_project.metadata.to_dict()
+        payload["run_configs"] = [config.to_payload() for config in run_configs]
+        try:
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "Manage Run Configurations", f"Unable to save run configurations: {exc}")
+            return
+        self._reload_current_project()
+
+    def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
+        if result.stdout.strip():
+            for line in result.stdout.splitlines():
+                self._append_console_line(line, stream="stdout")
+        if result.stderr.strip():
+            for line in result.stderr.splitlines():
+                self._append_console_line(line, stream="stderr")
+        if result.failures:
+            self._set_problems(result.failures)
+        else:
+            self._set_problems([])
+        status = "passed" if result.succeeded else "failed"
+        self._append_console_line(
+            f"Pytest run {status} (code={result.return_code}, elapsed_ms={result.elapsed_ms:.2f}).",
+            stream="system",
+        )
+
     def _handle_start_python_console_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_REPL, skip_save=True)
 
@@ -736,12 +1632,22 @@ class MainWindow(QMainWindow):
         self,
         *,
         mode: str,
+        entry_file: str | None = None,
+        argv: list[str] | None = None,
+        working_directory: str | None = None,
+        env_overrides: dict[str, str] | None = None,
+        safe_mode: bool | None = None,
         breakpoints: list[dict[str, int | str]] | None = None,
         skip_save: bool = False,
     ) -> bool:
         result = self._run_session_controller.start_session(
             loaded_project=self._loaded_project,
             mode=mode,
+            entry_file=entry_file,
+            argv=argv,
+            working_directory=working_directory,
+            env_overrides=env_overrides,
+            safe_mode=safe_mode,
             breakpoints=breakpoints,
             skip_save=skip_save,
             save_all=self._handle_save_all_action,
@@ -843,6 +1749,159 @@ class MainWindow(QMainWindow):
             self._python_console_output_widget.clear()
         if self._debug_inspector_output_widget is not None:
             self._debug_inspector_output_widget.clear()
+
+    def _handle_format_current_file_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        editor_widget = self._active_editor_widget()
+        if active_tab is None or editor_widget is None:
+            QMessageBox.warning(self, "Format Current File", "Open a file tab first.")
+            return
+
+        result = format_text_basic(editor_widget.toPlainText())
+        if not result.changed:
+            QMessageBox.information(self, "Format Current File", "File is already formatted.")
+            return
+
+        cursor = editor_widget.textCursor()
+        cursor_position = cursor.position()
+        editor_widget.blockSignals(True)
+        editor_widget.setPlainText(result.formatted_text)
+        editor_widget.blockSignals(False)
+        restored_cursor = editor_widget.textCursor()
+        restored_cursor.setPosition(min(cursor_position, len(result.formatted_text)))
+        editor_widget.setTextCursor(restored_cursor)
+
+        self._handle_editor_text_changed(active_tab.file_path, editor_widget)
+        QMessageBox.information(self, "Format Current File", "Formatting applied.")
+
+    def _handle_lint_current_file_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Lint Current File", "Open a file tab first.")
+            return
+        if not active_tab.file_path.lower().endswith(".py"):
+            QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+            return
+        self._render_lint_diagnostics_for_file(active_tab.file_path, manual=True)
+
+    def _handle_apply_safe_fixes_action(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
+            return
+        self._apply_safe_fixes_for_file(active_tab.file_path)
+
+    def _render_lint_diagnostics_for_file(self, file_path: str, *, manual: bool) -> None:
+        if not self._diagnostics_enabled:
+            if manual:
+                QMessageBox.information(
+                    self,
+                    "Lint Current File",
+                    "Diagnostics are currently disabled in Settings.",
+                )
+            return
+        if not manual and not self._diagnostics_realtime:
+            return
+        if not file_path.lower().endswith(".py"):
+            if manual:
+                QMessageBox.information(self, "Lint Current File", "Linting is currently available for Python files only.")
+            return
+        started_at = time.perf_counter()
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        diagnostics = analyze_python_file(file_path, project_root=project_root)
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 180.0:
+                self._logger.warning(
+                    "Diagnostics latency warning: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(diagnostics),
+                )
+            else:
+                self._logger.info(
+                    "Diagnostics telemetry: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(diagnostics),
+                )
+        if self._problems_list_widget is None:
+            return
+        self._problems_list_widget.clear()
+        if not diagnostics:
+            self._problems_list_widget.addItem(QListWidgetItem("No diagnostics found in current file."))
+            return
+        severity_prefix = {
+            DiagnosticSeverity.ERROR: "error",
+            DiagnosticSeverity.WARNING: "warn",
+            DiagnosticSeverity.INFO: "info",
+        }
+        for diagnostic in diagnostics:
+            prefix = severity_prefix.get(diagnostic.severity, "info")
+            item = QListWidgetItem(
+                f"[{prefix}] {Path(diagnostic.file_path).name}:{diagnostic.line_number} {diagnostic.code} | {diagnostic.message}",
+                self._problems_list_widget,
+            )
+            item.setToolTip(diagnostic.file_path)
+            item.setData(PROBLEM_ROLE_FILE_PATH, diagnostic.file_path)
+            item.setData(PROBLEM_ROLE_LINE_NUMBER, diagnostic.line_number)
+            item.setData(PROBLEM_ROLE_DIAGNOSTIC_CODE, diagnostic.code)
+
+    def _apply_safe_fixes_for_file(self, file_path: str) -> None:
+        if not self._quick_fixes_enabled:
+            QMessageBox.information(self, "Apply Safe Fixes", "Quick fixes are currently disabled in Settings.")
+            return
+        if not file_path.lower().endswith(".py"):
+            QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
+            return
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        diagnostics = analyze_python_file(file_path, project_root=project_root)
+        fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
+        if not fixes:
+            QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
+            return
+
+        affected_paths = {fix.file_path for fix in fixes}
+        affected_paths.update(fix.target_path for fix in fixes if fix.target_path)
+        should_confirm = self._quick_fix_require_preview_for_multifile or len(affected_paths) > 1
+        if should_confirm:
+            preview = "\n".join(f"- {fix.title}" for fix in fixes[:20])
+            if len(fixes) > 20:
+                preview += f"\n- ... and {len(fixes) - 20} more"
+            confirm = QMessageBox.question(
+                self,
+                "Apply Safe Fixes",
+                f"Apply {len(fixes)} safe fix(es)?\n\n{preview}",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if confirm != QMessageBox.Yes:
+                return
+
+        try:
+            changed_lines = apply_quick_fixes(fixes)
+        except OSError as exc:
+            QMessageBox.warning(self, "Apply Safe Fixes", f"Failed to apply fixes: {exc}")
+            return
+
+        if changed_lines <= 0:
+            QMessageBox.information(self, "Apply Safe Fixes", "No changes were applied.")
+            return
+
+        self._refresh_open_tabs_from_disk([file_path])
+        self._render_lint_diagnostics_for_file(file_path, manual=True)
+        QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
+
+    def _handle_rebuild_intelligence_cache_action(self) -> None:
+        deleted = self._rebuild_intelligence_cache()
+        if deleted is None:
+            return
+        if self._loaded_project is not None and self._intelligence_runtime_settings.cache_enabled:
+            self._start_symbol_indexing(self._loaded_project.project_root)
+        if deleted:
+            QMessageBox.information(self, "Rebuild Intelligence Cache", "Cache rebuilt successfully.")
+            return
+        QMessageBox.information(self, "Rebuild Intelligence Cache", "No existing cache found. Reindex initialized.")
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
@@ -1120,29 +2179,63 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: setattr(self, "_active_search_worker", None))
 
     def _start_symbol_indexing(self, project_root: str) -> None:
+        if not self._intelligence_runtime_settings.cache_enabled:
+            return
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
-        cache_db = global_cache_dir(self._state_root) / "symbols.sqlite3"
+        self._symbol_index_generation += 1
+        generation = self._symbol_index_generation
         started_at = time.perf_counter()
         self._active_symbol_index_worker = SymbolIndexWorker(
             project_root=project_root,
-            cache_db_path=str(cache_db),
-            on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at),
-            on_error=lambda message: self._handle_symbol_index_error(project_root, message),
+            cache_db_path=self._symbol_cache_db_path,
+            on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at, generation),
+            on_error=lambda message: self._handle_symbol_index_error(project_root, message, generation),
+            should_commit=lambda: generation == self._symbol_index_generation,
         )
         self._active_symbol_index_worker.start()
 
-    def _handle_symbol_index_done(self, project_root: str, symbol_count: int, started_at: float) -> None:
+    def _rebuild_intelligence_cache(self) -> bool | None:
+        if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
+            self._active_symbol_index_worker.cancel()
+        self._symbol_index_generation += 1
+        try:
+            deleted = rebuild_symbol_cache(self._symbol_cache_db_path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rebuild Intelligence Cache", f"Unable to rebuild cache: {exc}")
+            return None
+        return deleted
+
+    def _handle_symbol_index_done(
+        self,
+        project_root: str,
+        symbol_count: int,
+        started_at: float,
+        generation: int,
+    ) -> None:
+        if generation != self._symbol_index_generation:
+            return
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-        self._logger.info(
-            "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
-            project_root,
-            symbol_count,
-            elapsed_ms,
-        )
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            if elapsed_ms > 2500.0:
+                self._logger.warning(
+                    "Symbol index latency warning: root=%s symbols=%s elapsed_ms=%.2f",
+                    project_root,
+                    symbol_count,
+                    elapsed_ms,
+                )
+            else:
+                self._logger.info(
+                    "Symbol index telemetry: root=%s symbols=%s elapsed_ms=%.2f",
+                    project_root,
+                    symbol_count,
+                    elapsed_ms,
+                )
         QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
 
-    def _handle_symbol_index_error(self, project_root: str, message: str) -> None:
+    def _handle_symbol_index_error(self, project_root: str, message: str, generation: int) -> None:
+        if generation != self._symbol_index_generation:
+            return
         self._logger.warning("Symbol index failed for %s: %s", project_root, message)
         QTimer.singleShot(0, lambda: setattr(self, "_active_symbol_index_worker", None))
 
@@ -1160,6 +2253,28 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             resolved_line = None
         self._open_file_at_line(str(file_path), resolved_line)
+
+    def _show_problems_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
+        if self._problems_list_widget is None:
+            return
+        item = self._problems_list_widget.itemAt(position)
+        if item is None:
+            return
+
+        diagnostic_code = item.data(PROBLEM_ROLE_DIAGNOSTIC_CODE)
+        file_path = item.data(PROBLEM_ROLE_FILE_PATH)
+        if not file_path:
+            return
+
+        menu = QMenu(self)
+        apply_fixes_action = None
+        if self._quick_fixes_enabled and diagnostic_code in {"PY220", "PY221", "PY200"}:
+            apply_fixes_action = menu.addAction("Apply Safe Fixes for File")
+        if apply_fixes_action is None:
+            return
+        chosen = menu.exec_(self._problems_list_widget.viewport().mapToGlobal(position))
+        if chosen == apply_fixes_action:
+            self._apply_safe_fixes_for_file(str(file_path))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
@@ -1354,6 +2469,8 @@ class MainWindow(QMainWindow):
         self._problems_list_widget.setObjectName("shell.bottom.problems")
         self._problems_list_widget.itemActivated.connect(self._handle_problem_item_activation)
         self._problems_list_widget.itemDoubleClicked.connect(self._handle_problem_item_activation)
+        self._problems_list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._problems_list_widget.customContextMenuRequested.connect(self._show_problems_context_menu)
         tabs.addTab(self._problems_list_widget, "Problems")
 
         self._run_log_output_widget = QPlainTextEdit(tabs)
@@ -1684,10 +2801,33 @@ class MainWindow(QMainWindow):
 
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
-        editor_widget.set_editor_preferences(tab_width=self._editor_tab_width, font_point_size=self._editor_font_size)
+        editor_widget.set_editor_preferences(
+            tab_width=self._editor_tab_width,
+            font_point_size=self._editor_font_size,
+            indent_style=self._editor_indent_style,
+            indent_size=self._editor_indent_size,
+        )
+        editor_widget.set_completion_preferences(
+            enabled=self._completion_enabled,
+            auto_trigger=self._completion_auto_trigger,
+            min_chars=self._completion_min_chars,
+        )
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
         tab_file_path = opened_result.tab.file_path
+
+        def completion_provider(
+            _prefix: str,
+            source_text: str,
+            cursor_position: int,
+            manual_trigger: bool,
+        ) -> list[CompletionItem]:
+            return self._request_editor_completions(
+                file_path=tab_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                manual_trigger=manual_trigger,
+            )
 
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
             self._handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
@@ -1698,7 +2838,12 @@ class MainWindow(QMainWindow):
         def on_cursor_position_changed() -> None:
             self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
+        def on_completion_accepted(item: CompletionItem) -> None:
+            self._completion_service.record_acceptance(item)
+
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
+        editor_widget.set_completion_provider(completion_provider)
+        editor_widget.set_completion_accepted_callback(on_completion_accepted)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
@@ -1708,6 +2853,11 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         self._editor_tabs_widget.setCurrentIndex(tab_index)
         self._maybe_restore_draft(opened_result.tab, editor_widget)
+        self._apply_detected_indentation_for_widget(
+            opened_result.tab.file_path,
+            editor_widget,
+            editor_widget.toPlainText(),
+        )
         self._handle_editor_tab_changed(tab_index)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
@@ -1753,6 +2903,7 @@ class MainWindow(QMainWindow):
             self._autosave_store.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
+        self._schedule_realtime_lint(tab_state.file_path)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -1804,6 +2955,43 @@ class MainWindow(QMainWindow):
             return None
         return self._editor_widgets_by_path.get(active_tab.file_path)
 
+    def _request_editor_completions(
+        self,
+        *,
+        file_path: str,
+        source_text: str,
+        cursor_position: int,
+        manual_trigger: bool,
+    ) -> list[CompletionItem]:
+        started_at = time.perf_counter()
+        request = CompletionRequest(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=file_path,
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            trigger_is_manual=manual_trigger,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+        )
+        completions = list(self._completion_service.complete(request))
+        if self._intelligence_runtime_settings.metrics_logging_enabled:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 150.0:
+                self._logger.warning(
+                    "Completion latency warning: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(completions),
+                )
+            else:
+                self._logger.info(
+                    "Completion telemetry: file=%s elapsed_ms=%.2f count=%s",
+                    file_path,
+                    elapsed_ms,
+                    len(completions),
+                )
+        return completions
+
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:
             return
@@ -1814,18 +3002,157 @@ class MainWindow(QMainWindow):
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_path)
+        self._check_for_external_file_change(tab_path)
+        self._render_lint_diagnostics_for_file(tab_path, manual=False)
 
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
         self._autosave_timer.stop()
+        self._realtime_lint_timer.stop()
         self._pending_autosave_payloads.clear()
+        self._pending_realtime_lint_file_path = None
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
         self._update_breadcrumb_for_path(None)
+
+    def _apply_editor_preferences_to_open_editors(self) -> None:
+        for file_path, editor_widget in self._editor_widgets_by_path.items():
+            editor_widget.set_editor_preferences(
+                tab_width=self._editor_tab_width,
+                font_point_size=self._editor_font_size,
+                indent_style=self._editor_indent_style,
+                indent_size=self._editor_indent_size,
+            )
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, editor_widget.toPlainText())
+            editor_widget.set_completion_preferences(
+                enabled=self._completion_enabled,
+                auto_trigger=self._completion_auto_trigger,
+                min_chars=self._completion_min_chars,
+            )
+
+    def _apply_detected_indentation_for_widget(
+        self,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        source_text: str,
+    ) -> None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        editorconfig_indent = resolve_editorconfig_indentation(file_path, project_root=project_root)
+        if editorconfig_indent is not None:
+            editor_widget.set_editor_preferences(
+                tab_width=max(1, editorconfig_indent.tab_width),
+                font_point_size=self._editor_font_size,
+                indent_style=editorconfig_indent.indent_style,
+                indent_size=max(1, editorconfig_indent.indent_size),
+            )
+            return
+        if not self._editor_detect_indentation_from_file:
+            return
+        if not file_path.lower().endswith((".py", ".json", ".md", ".txt")):
+            return
+        detected = detect_indentation_style_and_size(source_text)
+        if detected is None:
+            return
+        style, size = detected
+        editor_widget.set_editor_preferences(
+            tab_width=self._editor_tab_width,
+            font_point_size=self._editor_font_size,
+            indent_style=style,
+            indent_size=size,
+        )
+
+    def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
+        for file_path in file_paths:
+            tab_state = self._editor_manager.get_tab(file_path)
+            editor_widget = self._editor_widgets_by_path.get(file_path)
+            if tab_state is None or editor_widget is None:
+                continue
+            try:
+                refreshed = Path(file_path).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(refreshed)
+            editor_widget.blockSignals(False)
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, refreshed)
+            updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
+            updated_tab.mark_saved(last_known_mtime=self._editor_manager.current_disk_mtime(file_path))
+            tab_index = self._tab_index_for_path(file_path)
+            if self._editor_tabs_widget is not None and tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, updated_tab.display_name)
+        self._refresh_save_action_states()
+
+    def _check_for_external_file_change(self, file_path: str) -> None:
+        tab_state = self._editor_manager.get_tab(file_path)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if tab_state is None or editor_widget is None:
+            return
+
+        current_mtime = self._editor_manager.current_disk_mtime(file_path)
+        if current_mtime is None or current_mtime == tab_state.last_known_mtime:
+            return
+
+        try:
+            disk_content = Path(file_path).read_text(encoding="utf-8")
+        except OSError:
+            self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+            return
+
+        if disk_content == tab_state.current_content:
+            tab_state.mark_saved(last_known_mtime=current_mtime)
+            self._refresh_save_action_states()
+            return
+
+        if tab_state.is_dirty:
+            message = (
+                "This file changed on disk while you have unsaved changes.\n\n"
+                "Reloading will discard editor changes."
+            )
+        else:
+            message = "This file changed on disk. Reload the file from disk?"
+
+        choice = QMessageBox.question(
+            self,
+            "External file change detected",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No if tab_state.is_dirty else QMessageBox.Yes,
+        )
+
+        if choice == QMessageBox.Yes:
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(disk_content)
+            editor_widget.blockSignals(False)
+            self._apply_detected_indentation_for_widget(file_path, editor_widget, disk_content)
+            refreshed_tab = self._editor_manager.update_tab_content(file_path, disk_content)
+            refreshed_tab.mark_saved(last_known_mtime=current_mtime)
+            tab_index = self._tab_index_for_path(file_path)
+            if self._editor_tabs_widget is not None and tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, refreshed_tab.display_name)
+            self._pending_autosave_payloads.pop(file_path, None)
+            self._autosave_store.delete_draft(file_path)
+            self._refresh_save_action_states()
+            self._update_editor_status_for_path(file_path)
+            return
+
+        self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+        if not tab_state.is_dirty:
+            tab_state.original_content = disk_content
+            self._handle_editor_text_changed(file_path, editor_widget)
+
+    def _poll_external_file_changes(self) -> None:
+        stale_paths = self._editor_manager.stale_open_paths()
+        if not stale_paths:
+            return
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return
+        if active_tab.file_path in stale_paths:
+            self._check_for_external_file_change(active_tab.file_path)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)
@@ -1854,6 +3181,24 @@ class MainWindow(QMainWindow):
     def _schedule_autosave(self, file_path: str, content: str) -> None:
         self._pending_autosave_payloads[file_path] = content
         self._autosave_timer.start()
+
+    def _schedule_realtime_lint(self, file_path: str) -> None:
+        if not self._diagnostics_enabled or not self._diagnostics_realtime:
+            return
+        if not file_path.lower().endswith(".py"):
+            return
+        self._pending_realtime_lint_file_path = file_path
+        self._realtime_lint_timer.start()
+
+    def _run_scheduled_realtime_lint(self) -> None:
+        file_path = self._pending_realtime_lint_file_path
+        self._pending_realtime_lint_file_path = None
+        if file_path is None:
+            return
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None or active_tab.file_path != file_path:
+            return
+        self._render_lint_diagnostics_for_file(file_path, manual=False)
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:

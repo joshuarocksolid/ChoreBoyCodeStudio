@@ -34,7 +34,11 @@ class EditorManager:
             return OpenedTabResult(tab=existing_tab, was_already_open=True)
 
         content = self._read_file_contents(normalized_path)
-        tab = EditorTabState.from_file(normalized_path, content)
+        tab = EditorTabState.from_file(
+            normalized_path,
+            content,
+            last_known_mtime=self._read_file_mtime(normalized_path),
+        )
         self._tabs_by_path[normalized_path] = tab
         self._open_order.append(normalized_path)
         self._active_file_path = normalized_path
@@ -76,8 +80,34 @@ class EditorManager:
         tab = self._require_tab(file_path)
         path = Path(tab.file_path)
         path.write_text(tab.current_content, encoding="utf-8")
-        tab.mark_saved()
+        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path))
         return tab
+
+    def current_disk_mtime(self, file_path: str) -> float | None:
+        """Return latest on-disk mtime for file path, if available."""
+        normalized_path = str(Path(file_path).expanduser().resolve())
+        return self._read_file_mtime(normalized_path)
+
+    def acknowledge_disk_mtime(self, file_path: str, mtime: float | None) -> EditorTabState:
+        """Record observed disk mtime for an open tab."""
+        tab = self._require_tab(file_path)
+        tab.set_last_known_mtime(mtime)
+        return tab
+
+    def stale_open_paths(self) -> list[str]:
+        """Return open file paths whose disk mtime changed since last snapshot."""
+        stale_paths: list[str] = []
+        for path in self._open_order:
+            tab = self._tabs_by_path[path]
+            current_mtime = self._read_file_mtime(path)
+            if current_mtime is None:
+                continue
+            if tab.last_known_mtime is None:
+                tab.set_last_known_mtime(current_mtime)
+                continue
+            if current_mtime != tab.last_known_mtime:
+                stale_paths.append(path)
+        return stale_paths
 
     def save_all(self) -> list[EditorTabState]:
         """Save every dirty tab in tab order and return saved tabs."""
@@ -134,3 +164,10 @@ class EditorManager:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError(f"File is not valid UTF-8 text: {file_path}") from exc
+
+    def _read_file_mtime(self, file_path: str) -> float | None:
+        path = Path(file_path)
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return None
