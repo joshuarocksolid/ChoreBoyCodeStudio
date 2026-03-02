@@ -1172,7 +1172,7 @@ class MainWindow(QMainWindow):
             return
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         diagnostics = analyze_python_file(file_path, project_root=project_root)
-        fixes = plan_safe_fixes_for_file(file_path, diagnostics)
+        fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
         if not fixes:
             QMessageBox.information(self, "Apply Safe Fixes", "No safe fixes available for current file.")
             return
@@ -1557,7 +1557,7 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         apply_fixes_action = None
-        if diagnostic_code == "PY220":
+        if diagnostic_code in {"PY220", "PY200"}:
             apply_fixes_action = menu.addAction("Apply Safe Fixes for File")
         if apply_fixes_action is None:
             return
