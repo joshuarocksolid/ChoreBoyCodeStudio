@@ -186,6 +186,7 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 
 ### Help
 
+* Load Example Project... (copies CRUD showcase into user-chosen folder)
 * Getting Started (built-in)
 * Keyboard Shortcuts
 * About / Version

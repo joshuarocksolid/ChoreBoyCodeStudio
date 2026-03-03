@@ -81,6 +81,7 @@ class MenuCallbacks:
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
+    on_help_load_example_project: Callable[[], object] | None = None
     on_help_getting_started: Callable[[], object] | None = None
     on_help_shortcuts: Callable[[], object] | None = None
     on_help_about: Callable[[], object] | None = None
@@ -626,6 +627,15 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
 
     help_menu = menu_bar.addMenu("&Help")
     help_menu.setObjectName("shell.menu.help")
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.loadExampleProject",
+        "Load Example Project...",
+        enabled=True,
+        callback=callback_registry.on_help_load_example_project,
+    )
+    help_menu.addSeparator()
     _register_menu_action(
         help_menu,
         actions,

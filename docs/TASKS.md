@@ -664,6 +664,27 @@ Release class default for this phase: `ENHANCEMENT` unless explicitly marked oth
   - manual timing evidence from target-like runtime for final sign-off
 - Depends on: `B03`, `E02`, `E04`
 
+### E09 — Help-menu example project loader
+- Status: `DONE`
+- Release class: `ENHANCEMENT`
+- Objective: provide a runnable CRUD showcase project accessible only through Help > Load Example Project.
+- Scope:
+  - bundled example project under `example_projects/crud_showcase/`
+  - `ExampleProjectService` in `app/examples/example_project_service.py`
+  - Help menu action + handler in `app/shell/menus.py` and `app/shell/main_window.py`
+  - Getting Started content updated to advertise the example project
+- Primary files:
+  - `example_projects/crud_showcase/**`
+  - `app/examples/example_project_service.py`
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `app/ui/help/getting_started.md`
+- Tests:
+  - unit tests for menu wiring, service materialization, and SQLite CRUD logic
+  - integration tests for project creation and metadata validation
+- Acceptance linkage: `AT-33`
+- Depends on: `D01`, `E05`
+
 ---
 
 ## 11) Phase F — Release hardening and final gate
@@ -744,6 +765,7 @@ This matrix provides the canonical test-layer + validation expectations for rema
 | E05 | manual_acceptance | onboarding discoverability walkthrough evidence | RELEASE-CRITICAL |
 | E06 | manual_acceptance | light/dark visual validation artifacts | RELEASE-CRITICAL |
 | E07 | integration + manual_acceptance | responsiveness checks + timing evidence against thresholds | RELEASE-CRITICAL |
+| E09 | unit + integration | menu wiring, service materialization, CRUD repository, project load | ENHANCEMENT |
 | F01 | unit + integration + runtime_parity | run targeted suites for all shipped modules | RELEASE-CRITICAL |
 | F02 | manual_acceptance | execute AT runbook and capture outcomes | RELEASE-CRITICAL |
 | F03 | n/a (docs contract) | doc diff review aligned to shipped behavior | RELEASE-CRITICAL |

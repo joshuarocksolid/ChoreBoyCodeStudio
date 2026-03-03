@@ -102,6 +102,7 @@ from app.packaging.packager import package_project
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
+from app.examples.example_project_service import ExampleProjectService
 from app.shell.layout_persistence import (
     DEFAULT_TOP_SPLITTER_SIZES,
     DEFAULT_VERTICAL_SPLITTER_SIZES,
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):
             state_root=self._state_root,
         )
         self._template_service = TemplateService()
+        self._example_project_service = ExampleProjectService()
         self._main_thread_dispatcher = MainThreadDispatcher(self)
         self._background_tasks = BackgroundTaskRunner(
             dispatch_to_main_thread=self._dispatch_to_main_thread
@@ -367,6 +369,7 @@ class MainWindow(QMainWindow):
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
+                on_help_load_example_project=self._handle_load_example_project_action,
                 on_help_getting_started=self._handle_getting_started_action,
                 on_help_shortcuts=self._handle_shortcuts_action,
                 on_help_about=self._handle_about_action,
@@ -1321,6 +1324,23 @@ class MainWindow(QMainWindow):
         self._problems_panel.set_results("Outline", result_items)
         self._update_problems_tab_title(self._problems_panel.problem_count())
         self._focus_problems_tab()
+
+    def _handle_load_example_project_action(self) -> None:
+        project_details = self._prompt_for_new_project_destination()
+        if project_details is None:
+            return
+        project_name, destination_path = project_details
+
+        try:
+            created_path = self._example_project_service.materialize_showcase(
+                destination_path=destination_path,
+                project_name=project_name,
+            )
+        except AppValidationError as exc:
+            QMessageBox.warning(self, "Failed to load example project", str(exc))
+            return
+
+        self._open_project_by_path(str(created_path))
 
     def _handle_getting_started_action(self) -> None:
         self._show_help_file("Getting Started", "getting_started.md")

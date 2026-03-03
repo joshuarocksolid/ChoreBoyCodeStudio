@@ -858,6 +858,14 @@ Each template should include:
 
 Templates should have their own version marker so support and upgrades can reason about what a project was created from.
 
+## 18.4 Example projects (Help-only)
+
+Example projects are bundled under `example_projects/` at the repository root. They use the same `template.json` + source file layout as regular templates but are **not** discovered by the New Project template picker.
+
+A dedicated `ExampleProjectService` (in `app/examples/example_project_service.py`) delegates to `TemplateService` with its own root path, keeping the boundary clean.
+
+Example projects are only accessible through `Help > Load Example Project...`. This avoids cluttering the New Project workflow while giving users a rich, runnable starting point.
+
 ---
 
 ## 19. Capability Probe

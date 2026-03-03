@@ -795,6 +795,32 @@ Verify modern lexical+semantic highlighting quality while preserving responsiven
 
 ---
 
+## AT-33 — Example project loads from Help menu
+
+**Purpose:**  
+Verify the Help > Load Example Project... flow creates a valid, runnable CRUD showcase project.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Choose **Help > Load Example Project...**
+2. Enter a project name (e.g. "My Example").
+3. Choose a destination folder.
+4. Confirm the project opens automatically in the editor.
+5. Verify the project tree shows `main.py`, `app/`, `README.md`.
+6. Open `app/repository.py` and confirm it contains SQLite CRUD logic.
+7. Open `app/main_window.py` and confirm it uses PySide2 widgets.
+8. Press **F5** to run the project (on systems with PySide2 available via AppRun).
+
+**Expected Result:**  
+- the project is created with valid `.cbcs/project.json` metadata (template = `crud_showcase`)
+- all expected files are present
+- the project opens and displays correctly in the editor
+- the example does NOT appear in the New Project template picker
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

@@ -120,6 +120,31 @@ def test_readonly_semantic_modifier_uses_constant_semantic_color() -> None:
     assert editor._semantic_token_colors["constant"].name().lower() in colors
 
 
+@pytest.mark.parametrize(
+    "token_type",
+    ["function", "class", "method", "import"],
+)
+def test_readonly_non_variable_token_keeps_own_color(token_type: str) -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("some_name = 1\n")
+    editor.set_semantic_token_spans(
+        [
+            SemanticTokenSpan(
+                start=0,
+                end=9,
+                token_type=token_type,
+                token_modifiers=(MODIFIER_READONLY,),
+            )
+        ]
+    )
+    expected_color = editor._semantic_token_colors[token_type].name().lower()
+    constant_color = editor._semantic_token_colors["constant"].name().lower()
+    colors = [selection.format.foreground().color().name().lower() for selection in editor.extraSelections()]
+    assert expected_color in colors, f"{token_type} span should use its own color, not constant"
+    if expected_color != constant_color:
+        assert constant_color not in colors, f"{token_type} span should not be colored as constant"
+
+
 def test_semantic_signature_skips_rebuild_for_equivalent_spans() -> None:
     editor = CodeEditorWidget()
     editor.setPlainText("value = 1\n")

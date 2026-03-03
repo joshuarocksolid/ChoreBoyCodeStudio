@@ -114,6 +114,17 @@ Open `Tools > FreeCAD Headless Notes` for safe guidance.
 
 ## Good Next Step
 
-Build one small tool you can use right away.
+Try the built-in example project to see a working app in action:
+
+1. Go to `Help > Load Example Project...`
+2. Choose a name and destination folder.
+3. The project opens automatically.
+4. Press `F5` to run it.
+
+The example includes a task manager with SQLite storage, a Qt widget showcase,
+and an optional FreeCAD probe tab.  It is a great starting point for
+understanding what you can build.
+
+After that, build one small tool you can use right away.
 Keep the loop simple: edit -> save -> run -> check `Run Log` -> improve.
 Small wins are the fastest path to bigger projects.

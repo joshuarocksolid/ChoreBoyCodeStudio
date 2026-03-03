@@ -363,7 +363,10 @@ class CodeEditorWidget(QPlainTextEdit):
             self._semantic_selections.append(selection)
 
     def _semantic_color_for_span(self, span: SemanticTokenSpan) -> QColor | None:
-        if MODIFIER_READONLY in span.token_modifiers:
+        if (
+            MODIFIER_READONLY in span.token_modifiers
+            and span.token_type in ("variable", "constant", "property")
+        ):
             readonly_color = self._semantic_token_colors.get("constant")
             if readonly_color is not None:
                 return readonly_color
