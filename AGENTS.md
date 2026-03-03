@@ -46,12 +46,13 @@ These constraints are non-negotiable unless the docs are explicitly updated:
 1. Users are on a **locked-down ChoreBoy system**.
 2. The main runtime is **FreeCAD AppRun** at `/opt/freecad/AppRun`.
 3. The available Python environment is **not** a normal system Python setup.
-4. `PySide2` is available in the FreeCAD runtime.
-5. `import FreeCAD` works for headless/backend operations.
-6. Some FreeCAD features that depend on GUI modules do **not** work in console mode.
-7. `subprocess` is allowed and is a core primitive.
-8. `SQLite` is available and should be preferred for lightweight local persistence.
-9. Pure-Python vendored dependencies are acceptable; system package assumptions are not.
+4. The FreeCAD runtime ships **Python 3.9.2**. All code must be compatible with **Python 3.9** (no 3.10+ features). See `docs/DISCOVERY.md` section 1A and `.cursor/rules/python39_compatibility.mdc`.
+5. `PySide2` is available in the FreeCAD runtime.
+6. `import FreeCAD` works for headless/backend operations.
+7. Some FreeCAD features that depend on GUI modules do **not** work in console mode.
+8. `subprocess` is allowed and is a core primitive.
+9. `SQLite` is available and should be preferred for lightweight local persistence.
+10. Pure-Python vendored dependencies are acceptable; system package assumptions are not.
 
 Do not introduce architecture that depends on:
 - apt installs

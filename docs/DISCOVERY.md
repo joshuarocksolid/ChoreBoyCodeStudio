@@ -31,6 +31,21 @@ This effectively creates a new “application platform” for ChoreBoy:
 
 ---
 
+## 1A. Hard Constraint: Python 3.9
+
+The FreeCAD AppRun runtime on ChoreBoy ships **Python 3.9.2**. This is the only Python available to applications launched through AppRun.
+
+**All application code, vendored libraries, and test code must be compatible with Python 3.9.**
+
+Key implications:
+
+- Do not use `match`/`case` (3.10+), `ExceptionGroup` (3.11+), `type` aliases (3.12+), or other post-3.9 features.
+- Built-in generic annotations (`list[int]`, `dict[str, int]`) are available (PEP 585 landed in 3.9).
+- Before vendoring a dependency, verify it supports Python 3.9.
+- See `.cursor/rules/python39_compatibility.mdc` for the full syntax reference.
+
+---
+
 ## 2. Why This Matters
 
 ### LibreOffice / LibrePy limitations (current pain)
@@ -129,7 +144,7 @@ These probes were run and verified on ChoreBoy:
 
 ### ✅ Python Runtime / Paths
 
-* `sys.version`: **3.9.2**
+* `sys.version`: **3.9.2** (see [section 1A](#1a-hard-constraint-python-39) — all code must target 3.9)
 * `sys.executable`: `/opt/freecad/usr/bin/FreeCAD`
 * `sys.path` includes `/home/default/myapp` and FreeCAD Mod directories
 
@@ -192,26 +207,53 @@ These probes were run and verified on ChoreBoy:
 
 ---
 
-## 4A. Launch/Runtime findings from 2026-03-03 investigation
+## 4A. Hidden Folders Are Unreliable on ChoreBoy
+
+**Date discovered:** 2026-03-02
+
+### Finding
+
+Hidden (dot-prefixed) directories such as `.cbcs/` or `.choreboy_code_studio/` are **not reliably usable** on the ChoreBoy locked-down environment. Observed problems include:
+
+* The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
+* Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
+* Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
+
+### Evidence
+
+Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for logging (primary path, temp path, stderr) because the hidden `.choreboy_code_studio/` global state directory was not always writable or accessible.
+
+### Recommendation
+
+All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
+
+* Use `cbcs/` instead of `.cbcs/` for per-project metadata.
+* Use `choreboy_code_studio/` instead of `.choreboy_code_studio/` for global app state.
+
+This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
+
+### Migration note
+
+The codebase currently defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"` in `app/core/constants.py`. These are tracked for migration to visible names in a follow-up task.
+
+---
+
+## 4B. Additional Launch/Runtime Findings (2026-03-03)
 
 ### Confirmed blockers
 
-1. **Dot-prefixed app directories are unreliable in target launch context**
-   - Paths like `.choreboy_code_studio` / `.cbcs` may fail due permissions/policy behavior.
-   - Current app contracts should avoid requiring dot-prefixed metadata/state paths.
-
-2. **Python 3.9 runtime typing crash was a real startup blocker**
+1. **Python 3.9 runtime typing crash was a real startup blocker**
    - Crash signature:
      - `TypeError: unsupported operand type(s) for |: 'types.GenericAlias' and 'NoneType'`
    - Triggered by runtime-evaluated type alias expression in `syntax_registry.py`.
    - Any runtime-evaluated typing expression using `|` must remain Python 3.9-safe.
 
-3. **“Silent” launch failures were often logging-channel mismatch**
+2. **“Silent” launch failures were often logging-channel mismatch**
    - Global home log path may be unwritable.
    - Fallback logs land under `/tmp/choreboy_code_studio/logs/app.log`.
    - Debug workflow must inspect active fallback log path, not only expected home path.
 
-4. **Capability probe can report FreeCAD false negatives**
+3. **Capability probe can report FreeCAD false negatives**
    - Subprocess probe attempting to execute `/opt/freecad/usr/bin/FreeCAD` may fail with `Permission denied`.
    - Treat this as probe-launch constraint, not definitive proof that in-process `import FreeCAD` is impossible.
 
@@ -332,6 +374,8 @@ myapp/
     backend.py
     main_window.py
 ```
+
+> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden folders are unreliable on ChoreBoy (see section 4A).
 
 Key ideas:
 
