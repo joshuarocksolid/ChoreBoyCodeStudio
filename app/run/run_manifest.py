@@ -32,7 +32,6 @@ class RunManifest:
     mode: str
     argv: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
-    safe_mode: bool = True
     timestamp: str = ""
     breakpoints: list[dict[str, int | str]] = field(default_factory=list)
 
@@ -47,7 +46,6 @@ class RunManifest:
             "mode": self.mode,
             "argv": list(self.argv),
             "env": dict(self.env),
-            "safe_mode": self.safe_mode,
             "timestamp": self.timestamp,
             "breakpoints": [dict(entry) for entry in self.breakpoints],
         }
@@ -87,10 +85,6 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
     if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
         _raise_manifest_error("env must be an object of string key/value pairs.", field="env", manifest_path=manifest_path)
 
-    safe_mode = payload.get("safe_mode", True)
-    if not isinstance(safe_mode, bool):
-        _raise_manifest_error("safe_mode must be a boolean.", field="safe_mode", manifest_path=manifest_path)
-
     timestamp = _require_non_empty_string(payload, "timestamp", manifest_path=manifest_path)
     breakpoints = _parse_breakpoints(payload.get("breakpoints", []), manifest_path=manifest_path)
 
@@ -104,7 +98,6 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
         mode=mode,
         argv=list(argv),
         env=dict(env),
-        safe_mode=safe_mode,
         timestamp=timestamp,
         breakpoints=breakpoints,
     )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -97,9 +96,9 @@ class TestPackageProject:
         assert isinstance(result, PackageResult)
         assert result.success is True
         assert result.error is None
-        assert Path(result.zip_path).exists()
+        assert Path(result.output_path).is_dir()
 
-    def test_zip_contains_desktop_file_at_root(self, tmp_path: Path) -> None:
+    def test_folder_contains_desktop_file(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -110,13 +109,10 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            desktop_files = [n for n in names if n.endswith(".desktop")]
-            assert len(desktop_files) == 1
-            assert "/" not in desktop_files[0]  # at zip root
+        desktop_path = Path(result.output_path) / "my_project.desktop"
+        assert desktop_path.is_file()
 
-    def test_zip_contains_hidden_project_folder(self, tmp_path: Path) -> None:
+    def test_folder_contains_hidden_project_subfolder(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -127,12 +123,10 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            hidden_entries = [n for n in names if n.startswith(".my_project/")]
-            assert len(hidden_entries) > 0
+        hidden = Path(result.output_path) / ".my_project"
+        assert hidden.is_dir()
 
-    def test_zip_includes_source_files(self, tmp_path: Path) -> None:
+    def test_includes_source_files(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -146,12 +140,11 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            assert ".test_app/main.py" in names
-            assert ".test_app/app/widget.py" in names
+        hidden = Path(result.output_path) / ".test_app"
+        assert (hidden / "main.py").is_file()
+        assert (hidden / "app" / "widget.py").is_file()
 
-    def test_zip_excludes_pycache(self, tmp_path: Path) -> None:
+    def test_excludes_pycache(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -165,12 +158,10 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            pycache_entries = [n for n in names if "__pycache__" in n]
-            assert pycache_entries == []
+        hidden = Path(result.output_path) / ".proj"
+        assert not (hidden / "__pycache__").exists()
 
-    def test_zip_excludes_cbcs_runs_and_cache(self, tmp_path: Path) -> None:
+    def test_excludes_cbcs_runs_and_cache(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -180,9 +171,9 @@ class TestPackageProject:
         runs = cbcs / "runs"
         runs.mkdir()
         (runs / "run_001.json").write_text("{}")
-        cache = cbcs / "cache"
-        cache.mkdir()
-        (cache / "index.db").write_bytes(b"\x00")
+        cache_dir = cbcs / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "index.db").write_bytes(b"\x00")
 
         result = package_project(
             project_root=str(project),
@@ -190,13 +181,12 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            assert not any(".cbcs/runs" in n for n in names)
-            assert not any(".cbcs/cache" in n for n in names)
-            assert any(".cbcs/project.json" in n for n in names)
+        hidden = Path(result.output_path) / ".proj"
+        assert not (hidden / ".cbcs" / "runs").exists()
+        assert not (hidden / ".cbcs" / "cache").exists()
+        assert (hidden / ".cbcs" / "project.json").is_file()
 
-    def test_zip_excludes_cbcs_logs_dir(self, tmp_path: Path) -> None:
+    def test_excludes_cbcs_logs_dir(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -210,12 +200,10 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            log_entries = [n for n in names if ".cbcs/logs" in n]
-            assert log_entries == []
+        hidden = Path(result.output_path) / ".proj"
+        assert not (hidden / ".cbcs" / "logs").exists()
 
-    def test_zip_excludes_pyc_files(self, tmp_path: Path) -> None:
+    def test_excludes_pyc_files(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -227,10 +215,9 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            names = zf.namelist()
-            pyc_entries = [n for n in names if n.endswith(".pyc")]
-            assert pyc_entries == []
+        hidden = Path(result.output_path) / ".proj"
+        pyc_files = list(hidden.rglob("*.pyc"))
+        assert pyc_files == []
 
     def test_error_on_missing_project_root(self, tmp_path: Path) -> None:
         result = package_project(
@@ -255,9 +242,9 @@ class TestPackageProject:
             output_dir=str(out),
         )
         assert result.success is True
-        assert Path(result.zip_path).exists()
+        assert Path(result.output_path).is_dir()
 
-    def test_desktop_entry_content_in_zip_is_valid(self, tmp_path: Path) -> None:
+    def test_desktop_entry_content_is_valid(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -268,12 +255,12 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        with zipfile.ZipFile(result.zip_path, "r") as zf:
-            desktop_name = [n for n in zf.namelist() if n.endswith(".desktop")][0]
-            content = zf.read(desktop_name).decode("utf-8")
-            assert "[Desktop Entry]" in content
-            assert "Name=Cool Tool" in content
-            assert "/opt/freecad/AppRun" in content
+        desktop_path = Path(result.output_path) / "cool_tool.desktop"
+        content = desktop_path.read_text(encoding="utf-8")
+        assert "[Desktop Entry]" in content
+        assert "Name=Cool Tool" in content
+        assert "/opt/freecad/AppRun" in content
+        assert "/home/default/cool_tool/.cool_tool/main.py" in content
 
     def test_result_metadata_fields(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
@@ -288,3 +275,4 @@ class TestPackageProject:
         )
         assert result.desktop_name == "my_app.desktop"
         assert result.project_folder_name == ".my_app"
+        assert Path(result.output_path).name == "my_app"

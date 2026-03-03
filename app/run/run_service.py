@@ -84,7 +84,6 @@ class RunService:
         argv: list[str] | None = None,
         working_directory: str | None = None,
         env_overrides: dict[str, str] | None = None,
-        safe_mode: bool | None = None,
         breakpoints: list[dict[str, int | str]] | None = None,
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
@@ -111,7 +110,6 @@ class RunService:
             manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
             log_path = build_repl_log_path(run_id, state_root=self._state_root)
             merged_env_overrides = {} if env_overrides is None else dict(env_overrides)
-            effective_safe_mode = False if safe_mode is None else safe_mode
             launch_cwd = str(resolved_working_directory)
         else:
             entry = entry_file or loaded_project.metadata.default_entry
@@ -124,7 +122,6 @@ class RunService:
             merged_env_overrides = dict(loaded_project.metadata.env_overrides)
             if env_overrides is not None:
                 merged_env_overrides.update(env_overrides)
-            effective_safe_mode = loaded_project.metadata.safe_mode if safe_mode is None else safe_mode
             launch_cwd = str(resolved_project_root)
 
         normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
@@ -142,7 +139,6 @@ class RunService:
             mode=run_mode,
             argv=arguments,
             env=merged_env_overrides,
-            safe_mode=effective_safe_mode,
             timestamp=timestamp,
             breakpoints=normalized_breakpoints,
         )

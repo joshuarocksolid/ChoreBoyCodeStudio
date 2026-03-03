@@ -36,7 +36,6 @@ def test_project_structure_constant_values() -> None:
     assert constants.RUN_EXIT_USER_CODE_ERROR == 1
     assert constants.RUN_EXIT_BOOTSTRAP_ERROR == 2
     assert constants.RUN_EXIT_INVALID_MANIFEST == 3
-    assert constants.RUN_EXIT_SAFE_MODE_BLOCKED == 4
     assert constants.RUN_EXIT_TERMINATED_BY_USER == 130
 
 

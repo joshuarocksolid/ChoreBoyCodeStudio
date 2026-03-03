@@ -72,7 +72,6 @@ class ProjectMetadata:
     default_argv: list[str] = field(default_factory=list)
     working_directory: str = "."
     template: str = "utility_script"
-    safe_mode: bool = True
     run_configs: list[dict[str, Any]] = field(default_factory=list)
     env_overrides: dict[str, str] = field(default_factory=dict)
     project_notes: str = ""
@@ -86,7 +85,6 @@ class ProjectMetadata:
             "default_argv": list(self.default_argv),
             "working_directory": self.working_directory,
             "template": self.template,
-            "safe_mode": self.safe_mode,
             "run_configs": [dict(config) for config in self.run_configs],
             "env_overrides": dict(self.env_overrides),
             "project_notes": self.project_notes,

@@ -56,7 +56,6 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
-        "safe_mode": True,
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
@@ -74,7 +73,6 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
-        "safe_mode": True,
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
@@ -96,21 +94,6 @@ def test_load_project_manifest_rejects_missing_required_name() -> None:
 
     assert exc_info.value.field == "name"
     assert "Missing required field" in str(exc_info.value)
-
-
-def test_load_project_manifest_rejects_invalid_safe_mode_type() -> None:
-    """safe_mode must be boolean when provided."""
-    with pytest.raises(ProjectManifestValidationError) as exc_info:
-        parse_project_manifest(
-            {
-                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
-                "name": "Bad Safe Mode",
-                "safe_mode": "yes",
-            }
-        )
-
-    assert exc_info.value.field == "safe_mode"
-    assert "must be a boolean" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_invalid_run_configs_type() -> None:

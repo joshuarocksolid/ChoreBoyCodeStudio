@@ -41,7 +41,6 @@ class RunSessionController:
         argv: list[str] | None,
         working_directory: str | None,
         env_overrides: dict[str, str] | None,
-        safe_mode: bool | None,
         breakpoints: list[dict[str, int | str]] | None,
         skip_save: bool,
         save_all: Callable[[], bool],
@@ -69,7 +68,6 @@ class RunSessionController:
                 argv=argv,
                 working_directory=working_directory,
                 env_overrides=env_overrides,
-                safe_mode=safe_mode,
                 breakpoints=breakpoints,
             )
         except Exception as exc:

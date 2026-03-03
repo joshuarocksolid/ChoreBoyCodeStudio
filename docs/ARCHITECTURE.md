@@ -258,27 +258,21 @@ No subsystem should rely on accidental current working directory behavior.
 
 The runner should support explicit execution modes.
 
-## 8.1 `python_script`
+## 8.1 Normal runs
 
-For normal Python entrypoints that do not require Qt or special FreeCAD behavior.
+Normal script execution uses `python_script` internally. There is no separate
+`qt_app` or `freecad_headless` mode; all script runs follow the same launch
+path. The only user-facing mode distinctions are **Run** vs **Debug** vs **REPL**.
 
-## 8.2 `qt_app`
-
-For project entrypoints that create their own PySide2 application or windows.
-
-## 8.3 `freecad_headless`
-
-For backend tasks that rely on `import FreeCAD` but must avoid GUI-only modules.
-
-## 8.4 `python_repl`
+## 8.2 `python_repl`
 
 For interactive Python console sessions where users submit commands over stdin and receive near-live output in the shell.
 
-## 8.5 `python_debug`
+## 8.3 `python_debug`
 
 For breakpoint-driven debug sessions. This mode executes user code inside the runner process under debugger control and accepts debug commands from the editor.
 
-## 8.6 Future `freecad_gui`
+## 8.4 Future `freecad_gui`
 
 Reserved for future cases where GUI-dependent export workflows need a different launch strategy.
 
@@ -419,11 +413,9 @@ This file should be human-readable JSON and contain:
 * project name
 * schema version
 * default entry point
-* default run mode
 * default working directory
 * saved run configurations
 * template type
-* safe-mode preferences
 * optional env overrides
 * optional project notes
 
@@ -434,10 +426,8 @@ This file should be human-readable JSON and contain:
   "schema_version": 1,
   "name": "My Project",
   "default_entry": "main.py",
-  "default_mode": "python_script",
   "working_directory": ".",
   "template": "utility_script",
-  "safe_mode": true,
   "run_configs": []
 }
 ```
@@ -614,7 +604,6 @@ Recommended manifest contents:
 * execution mode
 * argv
 * environment overrides
-* safe-mode flags
 * log file path
 * timestamp
 * optional breakpoint payloads (for `python_debug`)
@@ -631,7 +620,6 @@ Recommended manifest contents:
   "mode": "python_script",
   "argv": [],
   "env": {},
-  "safe_mode": true,
   "log_file": "/home/default/projects/my_project/.cbcs/logs/run_20260228_153500.log",
   "breakpoints": [
     {
@@ -679,7 +667,6 @@ Define clear meanings:
 * `1`: user code failed
 * `2`: runner bootstrap/config failure
 * `3`: manifest invalid
-* `4`: safe-mode blocked operation
 * `130`: terminated by user
 
 ---
@@ -840,7 +827,9 @@ Templates should be first-class architecture, not just starter files.
 
 ### `qt_app`
 
-For user-facing GUI apps.
+For user-facing GUI apps. The template provides PySide2/Qt starter files but
+does not set any mode-specific behavior; projects run via the standard
+`python_script` execution path.
 
 ### `headless_tool`
 
@@ -893,17 +882,7 @@ This is especially important because environment assumptions are fragile in cons
 
 Default file pickers and open dialogs should anchor to user-home-friendly locations.
 
-## 20.2 Safe mode
-
-Per-project safe mode may:
-
-* disable subprocess
-* block writes outside project root unless explicitly approved
-* warn on dangerous patterns
-
-This does not need to be a sandbox in v1. It is a workflow safety layer.
-
-## 20.3 Supportability over total lockdown
+## 20.2 Supportability over total lockdown
 
 The architecture should prefer transparent behavior and strong warnings over brittle pseudo-security mechanisms that are hard to support.
 

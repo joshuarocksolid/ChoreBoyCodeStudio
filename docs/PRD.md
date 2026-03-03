@@ -283,9 +283,6 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 # 11) Security / Safety
 
 * Don’t encourage system browsing outside Home by default; start users in Home folder concepts (matches ChoreBoy File Manager mental model). 
-* Runner process should have a “safe mode” option:
-
-  * disables subprocess calls unless user explicitly enables for the project
 * Clear messaging that projects are “user files” and should be backed up to USB. 
 
 ---

@@ -1,9 +1,9 @@
-"""Project packaging: create distributable .zip with .desktop launcher."""
+"""Project packaging: create distributable folder with .desktop launcher."""
 
 from __future__ import annotations
 
 import re
-import zipfile
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +18,7 @@ _APPRUN_PATH = "/opt/freecad/AppRun"
 class PackageResult:
     """Outcome of a project packaging operation."""
 
-    zip_path: str
+    output_path: str
     desktop_name: str
     project_folder_name: str
     success: bool
@@ -72,7 +72,7 @@ def build_desktop_entry(
 
 
 def _should_exclude(rel_path: Path) -> bool:
-    """Return True if *rel_path* should be excluded from the package zip."""
+    """Return True if *rel_path* should be excluded from the package."""
     parts_str = rel_path.as_posix()
     for excluded in _EXCLUDED_DIR_NAMES:
         if parts_str == excluded or parts_str.startswith(excluded + "/"):
@@ -89,18 +89,18 @@ def package_project(
     entry_file: str,
     output_dir: str,
 ) -> PackageResult:
-    """Create a distributable .zip for the project.
+    """Create a distributable folder for the project.
 
-    The zip contains:
-    - ``<sanitized>.desktop`` at the root
-    - ``.<sanitized>/`` folder with all project source files
+    The folder ``<output_dir>/<sanitized>/`` contains:
+    - ``<sanitized>.desktop`` launcher file
+    - ``.<sanitized>/`` hidden subfolder with all project source files
 
     Returns a :class:`PackageResult` with outcome details.
     """
     root = Path(project_root)
     if not root.is_dir():
         return PackageResult(
-            zip_path="",
+            output_path="",
             desktop_name="",
             project_folder_name="",
             success=False,
@@ -110,28 +110,31 @@ def package_project(
     sanitized = sanitize_project_name(project_name)
     hidden_folder = f".{sanitized}"
     desktop_name = f"{sanitized}.desktop"
-    install_dir = f"/home/default/{hidden_folder}"
 
     out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    zip_path = out / f"{sanitized}.zip"
+    package_dir = out / sanitized
+    project_dest = package_dir / hidden_folder
+    install_dir = f"/home/default/{sanitized}/{hidden_folder}"
 
     try:
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            desktop_content = build_desktop_entry(project_name, entry_file, install_dir)
-            zf.writestr(desktop_name, desktop_content)
+        package_dir.mkdir(parents=True, exist_ok=True)
+        project_dest.mkdir(parents=True, exist_ok=True)
 
-            for file_path in sorted(root.rglob("*")):
-                if not file_path.is_file():
-                    continue
-                rel = file_path.relative_to(root)
-                if _should_exclude(rel):
-                    continue
-                arcname = f"{hidden_folder}/{rel.as_posix()}"
-                zf.write(file_path, arcname)
+        for file_path in sorted(root.rglob("*")):
+            if not file_path.is_file():
+                continue
+            rel = file_path.relative_to(root)
+            if _should_exclude(rel):
+                continue
+            dest = project_dest / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file_path, dest)
+
+        desktop_content = build_desktop_entry(project_name, entry_file, install_dir)
+        (package_dir / desktop_name).write_text(desktop_content, encoding="utf-8")
     except Exception as exc:
         return PackageResult(
-            zip_path=str(zip_path),
+            output_path=str(package_dir),
             desktop_name=desktop_name,
             project_folder_name=hidden_folder,
             success=False,
@@ -139,7 +142,7 @@ def package_project(
         )
 
     return PackageResult(
-        zip_path=str(zip_path),
+        output_path=str(package_dir),
         desktop_name=desktop_name,
         project_folder_name=hidden_folder,
         success=True,

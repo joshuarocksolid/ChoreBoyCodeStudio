@@ -15,7 +15,6 @@ class RunConfiguration:
     argv: list[str]
     working_directory: str | None = None
     env_overrides: dict[str, str] = field(default_factory=dict)
-    safe_mode: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -27,8 +26,6 @@ class RunConfiguration:
             payload["working_directory"] = self.working_directory
         if self.env_overrides:
             payload["env_overrides"] = dict(self.env_overrides)
-        if self.safe_mode is not None:
-            payload["safe_mode"] = self.safe_mode
         return payload
 
 
@@ -39,7 +36,6 @@ def parse_run_config(raw_payload: Mapping[str, Any]) -> RunConfiguration:
     argv = raw_payload.get("argv", [])
     working_directory = raw_payload.get("working_directory")
     env_overrides = raw_payload.get("env_overrides", {})
-    safe_mode = raw_payload.get("safe_mode")
 
     if not isinstance(name, str) or not name.strip():
         raise ValueError("run config name must be a non-empty string")
@@ -56,8 +52,6 @@ def parse_run_config(raw_payload: Mapping[str, Any]) -> RunConfiguration:
         if not isinstance(key, str) or not isinstance(value, str):
             raise ValueError("run config env_overrides must contain string key/value pairs")
         normalized_env_overrides[key] = value
-    if safe_mode is not None and not isinstance(safe_mode, bool):
-        raise ValueError("run config safe_mode must be a boolean when provided")
 
     return RunConfiguration(
         name=name.strip(),
@@ -65,7 +59,6 @@ def parse_run_config(raw_payload: Mapping[str, Any]) -> RunConfiguration:
         argv=[item for item in argv if item.strip()],
         working_directory=None if working_directory is None else working_directory.strip(),
         env_overrides=normalized_env_overrides,
-        safe_mode=safe_mode,
     )
 
 

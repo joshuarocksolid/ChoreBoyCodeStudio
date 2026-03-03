@@ -137,7 +137,6 @@ class ReplSessionManager:
             mode=constants.RUN_MODE_PYTHON_REPL,
             argv=[],
             env={},
-            safe_mode=False,
             timestamp=datetime.now().isoformat(timespec="seconds"),
             breakpoints=[],
         )

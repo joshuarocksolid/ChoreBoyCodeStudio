@@ -20,7 +20,6 @@ def build_default_project_manifest_payload(
     default_argv: list[str] | None = None,
     working_directory: str = ".",
     template: str = "utility_script",
-    safe_mode: bool = True,
     run_configs: list[dict[str, Any]] | None = None,
     env_overrides: Mapping[str, str] | None = None,
     project_notes: str = "",
@@ -38,8 +37,6 @@ def build_default_project_manifest_payload(
         raise ValueError("working_directory must be a non-empty string.")
     if not _is_non_empty_string(template):
         raise ValueError("template must be a non-empty string.")
-    if not isinstance(safe_mode, bool):
-        raise ValueError("safe_mode must be a boolean.")
     if not isinstance(project_notes, str):
         raise ValueError("project_notes must be a string.")
 
@@ -63,7 +60,6 @@ def build_default_project_manifest_payload(
         default_argv=[] if default_argv is None else list(default_argv),
         working_directory=working_directory.strip(),
         template=template.strip(),
-        safe_mode=safe_mode,
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
@@ -146,10 +142,6 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         manifest_path=resolved_path,
     )
 
-    safe_mode = payload.get("safe_mode", True)
-    if not isinstance(safe_mode, bool):
-        _raise_validation_error("safe_mode must be a boolean.", field="safe_mode", manifest_path=resolved_path)
-
     run_configs = payload.get("run_configs", [])
     if not isinstance(run_configs, list):
         _raise_validation_error("run_configs must be a list.", field="run_configs", manifest_path=resolved_path)
@@ -199,7 +191,6 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         default_argv=normalized_default_argv,
         working_directory=working_directory,
         template=template,
-        safe_mode=safe_mode,
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,

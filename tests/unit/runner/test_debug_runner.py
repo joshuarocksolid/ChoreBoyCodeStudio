@@ -35,7 +35,6 @@ def test_run_debug_session_returns_success_for_clean_script(
         mode=constants.RUN_MODE_PYTHON_DEBUG,
         argv=[],
         env={},
-        safe_mode=True,
         timestamp="2026-03-01T00:00:00",
         breakpoints=[],
     )
@@ -65,7 +64,6 @@ def test_run_debug_session_first_pause_targets_user_breakpoint(
         mode=constants.RUN_MODE_PYTHON_DEBUG,
         argv=[],
         env={},
-        safe_mode=True,
         timestamp="2026-03-01T00:00:00",
         breakpoints=[{"file_path": str(script_path.resolve()), "line_number": 2}],
     )
@@ -108,7 +106,6 @@ def test_run_debug_session_no_breakpoints_does_not_pause(
         mode=constants.RUN_MODE_PYTHON_DEBUG,
         argv=[],
         env={},
-        safe_mode=True,
         timestamp="2026-03-01T00:00:00",
         breakpoints=[],
     )

@@ -97,7 +97,6 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
             default_entry="run.py",
             working_directory=".",
             env_overrides={"BASE_ENV": "1"},
-            safe_mode=True,
         ),
         entries=[],
     )
@@ -111,7 +110,6 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
         argv=["--flag"],
         working_directory="app",
         env_overrides={"EXTRA_ENV": "2"},
-        safe_mode=False,
     )
     manifest = load_run_manifest(session.manifest_path)
 
@@ -121,7 +119,6 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     assert manifest.argv == ["--flag"]
     assert manifest.env["BASE_ENV"] == "1"
     assert manifest.env["EXTRA_ENV"] == "2"
-    assert manifest.safe_mode is False
     assert manifest.log_file == session.log_file_path
     assert Path(manifest.log_file).name.endswith(".log")
 
@@ -155,7 +152,7 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Projectless REPL runs should default to home cwd and safe mode off."""
+    """Projectless REPL runs should default to home cwd."""
     state_root = tmp_path / "state"
     service = RunService(
         runtime_executable=sys.executable,
@@ -174,7 +171,6 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     expected_home = str(Path.home().expanduser().resolve())
 
     assert manifest.mode == "python_repl"
-    assert manifest.safe_mode is False
     assert manifest.working_directory == expected_home
     assert manifest.log_file == session.log_file_path
     assert launch_context["cwd"] == expected_home

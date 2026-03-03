@@ -25,7 +25,6 @@ def _write_project_manifest(project_root: Path, name: str) -> None:
                 "name": name,
                 "default_entry": "run.py",
                 "working_directory": ".",
-                "safe_mode": True,
             }
         ),
         encoding="utf-8",

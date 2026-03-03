@@ -48,7 +48,6 @@ class _FakeRunService:
         argv=None,
         working_directory=None,
         env_overrides=None,
-        safe_mode=None,
         breakpoints=None,
     ) -> RunSession:
         self.supervisor._running = True
@@ -110,7 +109,6 @@ def test_start_session_requires_loaded_project() -> None:
         argv=None,
         working_directory=None,
         env_overrides=None,
-        safe_mode=None,
         breakpoints=None,
         skip_save=False,
         save_all=lambda: True,
@@ -132,7 +130,6 @@ def test_start_session_rejects_repl_without_loaded_project() -> None:
         argv=None,
         working_directory=None,
         env_overrides=None,
-        safe_mode=None,
         breakpoints=None,
         skip_save=True,
         save_all=lambda: True,
@@ -154,7 +151,6 @@ def test_start_session_success_updates_active_mode_and_returns_session() -> None
         argv=None,
         working_directory=None,
         env_overrides=None,
-        safe_mode=None,
         breakpoints=None,
         skip_save=True,
         save_all=lambda: True,

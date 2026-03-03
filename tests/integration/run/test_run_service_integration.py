@@ -34,7 +34,6 @@ def _build_loaded_project(project_root: Path) -> LoadedProject:
             name="Test Project",
             default_entry="run.py",
             working_directory=".",
-            safe_mode=True,
         ),
         entries=[],
     )

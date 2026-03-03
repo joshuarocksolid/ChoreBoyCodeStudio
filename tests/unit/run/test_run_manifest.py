@@ -25,7 +25,6 @@ def test_run_manifest_round_trip_save_and_load(tmp_path: Path) -> None:
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
         argv=["--foo", "bar"],
         env={"ENV_A": "1"},
-        safe_mode=True,
         timestamp="2026-03-01T01:01:01",
         breakpoints=[{"file_path": str((tmp_path / "project" / "run.py").resolve()), "line_number": 3}],
     )
@@ -50,7 +49,6 @@ def test_parse_run_manifest_rejects_invalid_mode() -> None:
                 "mode": "unknown",
                 "argv": [],
                 "env": {},
-                "safe_mode": True,
                 "timestamp": "2026-03-01T01:01:01",
             }
         )
@@ -70,7 +68,6 @@ def test_parse_run_manifest_requires_absolute_paths() -> None:
                 "mode": constants.RUN_MODE_PYTHON_SCRIPT,
                 "argv": [],
                 "env": {},
-                "safe_mode": True,
                 "timestamp": "2026-03-01T01:01:01",
             }
         )
@@ -90,7 +87,6 @@ def test_parse_run_manifest_validates_breakpoint_shape() -> None:
                 "mode": constants.RUN_MODE_PYTHON_DEBUG,
                 "argv": [],
                 "env": {},
-                "safe_mode": True,
                 "timestamp": "2026-03-01T01:01:01",
                 "breakpoints": [{"file_path": "/tmp/project/run.py", "line_number": 0}],
             }

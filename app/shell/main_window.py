@@ -1711,7 +1711,6 @@ class MainWindow(QMainWindow):
             argv=selected_config.argv,
             working_directory=selected_config.working_directory,
             env_overrides=selected_config.env_overrides,
-            safe_mode=selected_config.safe_mode,
         )
 
     def _handle_manage_run_configurations_action(self) -> None:
@@ -1769,7 +1768,6 @@ class MainWindow(QMainWindow):
                 argv=list(self._loaded_project.metadata.default_argv),
                 working_directory=self._loaded_project.metadata.working_directory,
                 env_overrides=dict(self._loaded_project.metadata.env_overrides),
-                safe_mode=self._loaded_project.metadata.safe_mode,
             )
 
         config_name, accepted_name = QInputDialog.getText(
@@ -1817,31 +1815,9 @@ class MainWindow(QMainWindow):
         )
         if not accepted_env:
             return
-        safe_mode_choices = ["project_default", "enabled", "disabled"]
-        if selected_config.safe_mode is True:
-            safe_mode_index = 1
-        elif selected_config.safe_mode is False:
-            safe_mode_index = 2
-        else:
-            safe_mode_index = 0
-        safe_mode_choice, accepted_safe_mode = QInputDialog.getItem(
-            self,
-            "Manage Run Configurations",
-            "Safe mode override:",
-            safe_mode_choices,
-            safe_mode_index,
-            False,
-        )
-        if not accepted_safe_mode or not safe_mode_choice:
-            return
 
         try:
             parsed_env_overrides = parse_env_overrides_text(env_overrides_text)
-            parsed_safe_mode = None
-            if safe_mode_choice == "enabled":
-                parsed_safe_mode = True
-            elif safe_mode_choice == "disabled":
-                parsed_safe_mode = False
             updated_config = parse_run_config(
                 {
                     "name": config_name.strip(),
@@ -1849,7 +1825,6 @@ class MainWindow(QMainWindow):
                     "argv": [token for token in argv_text.split(" ") if token.strip()],
                     "working_directory": working_directory_text.strip() or None,
                     "env_overrides": parsed_env_overrides,
-                    "safe_mode": parsed_safe_mode,
                 }
             )
         except ValueError as exc:
@@ -1918,7 +1893,6 @@ class MainWindow(QMainWindow):
         argv: list[str] | None = None,
         working_directory: str | None = None,
         env_overrides: dict[str, str] | None = None,
-        safe_mode: bool | None = None,
         breakpoints: list[dict[str, int | str]] | None = None,
         skip_save: bool = False,
     ) -> bool:
@@ -1929,7 +1903,6 @@ class MainWindow(QMainWindow):
             argv=argv,
             working_directory=working_directory,
             env_overrides=env_overrides,
-            safe_mode=safe_mode,
             breakpoints=breakpoints,
             skip_save=skip_save,
             save_all=self._handle_save_all_action,
@@ -2505,9 +2478,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Package created",
-                    f"Package written to:\n{result.zip_path}\n\n"
-                    f"To install, extract the zip into the user's home folder.\n"
-                    f"The .desktop file can be placed in ~/Desktop/ or\n"
+                    f"Project packaged to:\n{result.output_path}\n\n"
+                    f"The .desktop file inside can be placed on ~/Desktop/ or\n"
                     f"~/.local/share/applications/ for a launcher shortcut.",
                 )
             else:

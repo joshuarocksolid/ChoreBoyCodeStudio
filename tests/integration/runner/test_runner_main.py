@@ -13,7 +13,7 @@ from app.runner.runner_main import run_from_manifest_path
 pytestmark = pytest.mark.integration
 
 
-def _build_manifest(tmp_path: Path, script_contents: str, *, safe_mode: bool = True) -> Path:
+def _build_manifest(tmp_path: Path, script_contents: str) -> Path:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     (project_root / "run.py").write_text(script_contents, encoding="utf-8")
@@ -29,7 +29,6 @@ def _build_manifest(tmp_path: Path, script_contents: str, *, safe_mode: bool = T
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
         argv=[],
         env={},
-        safe_mode=safe_mode,
         timestamp="2026-03-01T01:01:01",
     )
     save_run_manifest(manifest_path, manifest)
@@ -65,28 +64,3 @@ def test_runner_returns_invalid_manifest_code_for_missing_manifest(tmp_path: Pat
     missing_manifest = tmp_path / "missing_manifest.json"
     exit_code = run_from_manifest_path(str(missing_manifest))
     assert exit_code == constants.RUN_EXIT_INVALID_MANIFEST
-
-
-def test_runner_blocks_subprocess_calls_when_safe_mode_enabled(tmp_path: Path) -> None:
-    """Safe-mode runs should fail when script attempts subprocess execution."""
-    script = (
-        "import subprocess\n"
-        "subprocess.run(['echo', 'SAFE_MODE_TEST'], check=False)\n"
-    )
-    manifest_path = _build_manifest(tmp_path, script, safe_mode=True)
-
-    exit_code = run_from_manifest_path(str(manifest_path))
-
-    assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
-
-
-def test_runner_blocks_writes_outside_project_when_safe_mode_enabled(tmp_path: Path) -> None:
-    """Safe-mode runs should block file writes outside project root."""
-    outside_path = tmp_path / "outside.txt"
-    script = f"open({str(outside_path)!r}, 'w').write('blocked')\n"
-    manifest_path = _build_manifest(tmp_path, script, safe_mode=True)
-
-    exit_code = run_from_manifest_path(str(manifest_path))
-
-    assert exit_code == constants.RUN_EXIT_USER_CODE_ERROR
-    assert not outside_path.exists()

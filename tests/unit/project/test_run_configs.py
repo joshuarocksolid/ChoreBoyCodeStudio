@@ -31,7 +31,6 @@ def test_parse_run_config_normalizes_payload() -> None:
     assert config.argv == ["--verbose"]
     assert config.working_directory is None
     assert config.env_overrides == {}
-    assert config.safe_mode is None
 
 
 def test_parse_run_config_normalizes_optional_overrides() -> None:
@@ -42,13 +41,11 @@ def test_parse_run_config_normalizes_optional_overrides() -> None:
             "argv": [],
             "working_directory": "app",
             "env_overrides": {"APP_ENV": "dev"},
-            "safe_mode": False,
         }
     )
 
     assert config.working_directory == "app"
     assert config.env_overrides == {"APP_ENV": "dev"}
-    assert config.safe_mode is False
 
 
 def test_parse_run_configs_skips_invalid_and_duplicate_names() -> None:

@@ -105,7 +105,6 @@ class TemplateService:
                 default_entry="main.py",
                 working_directory=".",
                 template=template_id,
-                safe_mode=True,
             )
         except ValueError as exc:
             raise AppValidationError(str(exc)) from exc

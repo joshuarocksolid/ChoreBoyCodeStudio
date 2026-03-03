@@ -76,7 +76,6 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         default_entry="main.py",
         working_directory=".",
         template="blank_project",
-        safe_mode=True,
     )
     try:
         manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -259,7 +258,6 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         default_entry=inferred_entry,
         working_directory=".",
         template="imported_external",
-        safe_mode=True,
     )
 
     try:

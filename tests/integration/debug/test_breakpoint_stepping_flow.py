@@ -33,7 +33,6 @@ def _build_loaded_project(project_root: Path) -> LoadedProject:
             name="Debug Project",
             default_entry="run.py",
             working_directory=".",
-            safe_mode=True,
         ),
         entries=[],
     )
