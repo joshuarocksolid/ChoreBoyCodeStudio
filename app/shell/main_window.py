@@ -1384,7 +1384,7 @@ class MainWindow(QMainWindow):
             self,
             "About",
             (
-                "ChoreBoy Code Studio\n"
+                f"ChoreBoy Code Studio v{constants.APP_VERSION}\n"
                 "Project-first editor + runner for constrained systems.\n"
                 "\n"
                 "Licensed under the MIT License.\n"
@@ -1451,7 +1451,7 @@ class MainWindow(QMainWindow):
         self._loaded_project = loaded_project
         self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
-        self.setWindowTitle(f"ChoreBoy Code Studio — {loaded_project.metadata.name}")
+        self.setWindowTitle(f"ChoreBoy Code Studio v{constants.APP_VERSION} — {loaded_project.metadata.name}")
         self._logger.info("Project loaded: %s", loaded_project.project_root)
         self._update_explorer_buttons_enabled()
         self._populate_project_tree(loaded_project)
@@ -2965,7 +2965,7 @@ class MainWindow(QMainWindow):
 
     def _configure_window_frame(self) -> None:
         self.setObjectName("shell.mainWindow")
-        self.setWindowTitle("ChoreBoy Code Studio")
+        self.setWindowTitle(f"ChoreBoy Code Studio v{constants.APP_VERSION}")
         self.resize(1280, 820)
         self.setMinimumSize(960, 640)
 

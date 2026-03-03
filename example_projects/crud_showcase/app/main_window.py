@@ -36,6 +36,7 @@ from PySide2.QtWidgets import (
     QPushButton,
     QSplitter,
     QStatusBar,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTabWidget,
@@ -133,7 +134,7 @@ class StatusBadgeDelegate(QStyledItemDelegate):
         painter.drawText(pill_rect, Qt.AlignCenter, label)
 
         # Selection highlight overlay
-        if option.state & 0x00000008:  # QStyle.State_Selected
+        if option.state & QStyle.State_Selected:
             painter.setPen(Qt.NoPen)
             sel = QColor(self._tokens.row_selected)
             sel.setAlpha(80)

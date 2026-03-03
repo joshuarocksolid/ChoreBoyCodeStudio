@@ -1,5 +1,7 @@
 """Shared constants for bootstrap/path contracts."""
 
+APP_VERSION = "0.1"
+
 APP_RUN_PATH = "/opt/freecad/AppRun"
 
 GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"
