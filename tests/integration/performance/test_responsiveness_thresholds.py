@@ -17,8 +17,8 @@ pytestmark = pytest.mark.integration
 
 
 def _write_project_manifest(project_root: Path, name: str) -> None:
-    (project_root / ".cbcs").mkdir(parents=True, exist_ok=True)
-    (project_root / ".cbcs" / "project.json").write_text(
+    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
+    (project_root / "cbcs" / "project.json").write_text(
         json.dumps(
             {
                 "schema_version": 1,

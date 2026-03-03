@@ -28,7 +28,7 @@ def _wait_until(predicate, timeout_seconds: float = 6.0) -> bool:
 def _build_loaded_project(project_root: Path) -> LoadedProject:
     return LoadedProject(
         project_root=str(project_root.resolve()),
-        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
         metadata=ProjectMetadata(
             schema_version=1,
             name="Debug Session Project",
@@ -42,7 +42,7 @@ def _build_loaded_project(project_root: Path) -> LoadedProject:
 def test_debug_session_tracks_paused_and_running_markers(tmp_path: Path) -> None:
     """DebugSession should ingest output markers emitted by running debug process."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     script_path = project_root / "run.py"
     script_path.write_text("x = 5\nx = x + 1\nprint(x)\n", encoding="utf-8")
     loaded_project = _build_loaded_project(project_root)

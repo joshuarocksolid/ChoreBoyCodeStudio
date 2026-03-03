@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import subprocess
 import sys
 import uuid
@@ -90,7 +91,41 @@ def check_pyside2_availability() -> CapabilityCheckResult:
 
 def check_freecad_availability() -> CapabilityCheckResult:
     """Check that FreeCAD is importable without mutating editor runtime state."""
-    return _check_module_import_in_subprocess("FreeCAD", FREECAD_IMPORT_CHECK_ID)
+    result = _check_module_import_in_subprocess("FreeCAD", FREECAD_IMPORT_CHECK_ID)
+    if result.is_available:
+        return result
+
+    if "isolated probe launch failed" not in result.message:
+        return result
+
+    app_run_path = Path(constants.APP_RUN_PATH).expanduser().resolve()
+    if not app_run_path.exists() or not os.access(app_run_path, os.X_OK):
+        return result
+
+    fallback = _check_module_import_with_command(
+        module_name="FreeCAD",
+        check_id=FREECAD_IMPORT_CHECK_ID,
+        command=[str(app_run_path), "-c", "import importlib;importlib.import_module('FreeCAD')"],
+        probe_name="apprun_subprocess",
+    )
+    if fallback.is_available:
+        return CapabilityCheckResult(
+            check_id=FREECAD_IMPORT_CHECK_ID,
+            is_available=True,
+            message="FreeCAD import succeeded via AppRun probe.",
+            details={"module": "FreeCAD", "probe": "apprun_subprocess", "path": str(app_run_path)},
+        )
+    return CapabilityCheckResult(
+        check_id=FREECAD_IMPORT_CHECK_ID,
+        is_available=False,
+        message=f"{result.message} | AppRun fallback also failed: {fallback.message}",
+        details={
+            "module": "FreeCAD",
+            "primary_probe": result.details.get("probe"),
+            "fallback_probe": fallback.details.get("probe"),
+            "path": str(app_run_path),
+        },
+    )
 
 
 def check_writable_state_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
@@ -136,7 +171,21 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
         "import importlib;"
         f"importlib.import_module({module_name!r})"
     )
-    command = [sys.executable, "-c", probe_script]
+    return _check_module_import_with_command(
+        module_name=module_name,
+        check_id=check_id,
+        command=[sys.executable, "-c", probe_script],
+        probe_name="subprocess",
+    )
+
+
+def _check_module_import_with_command(
+    *,
+    module_name: str,
+    check_id: str,
+    command: list[str],
+    probe_name: str,
+) -> CapabilityCheckResult:
     try:
         completed = subprocess.run(
             command,
@@ -155,7 +204,7 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
             ),
             details={
                 "module": module_name,
-                "probe": "subprocess",
+                "probe": probe_name,
                 "timeout_seconds": MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
             },
         )
@@ -164,7 +213,7 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
             check_id=check_id,
             is_available=False,
             message=f"Failed to import {module_name}: isolated probe launch failed ({exc})",
-            details={"module": module_name, "probe": "subprocess"},
+            details={"module": module_name, "probe": probe_name},
         )
 
     if completed.returncode == 0:
@@ -172,7 +221,7 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
             check_id=check_id,
             is_available=True,
             message=f"{module_name} import succeeded.",
-            details={"module": module_name},
+            details={"module": module_name, "probe": probe_name},
         )
 
     stderr = (completed.stderr or "").strip()
@@ -190,7 +239,7 @@ def _check_module_import_in_subprocess(module_name: str, check_id: str) -> Capab
         check_id=check_id,
         is_available=False,
         message=f"Failed to import {module_name}: {reason}",
-        details={"module": module_name, "probe": "subprocess", "return_code": completed.returncode},
+        details={"module": module_name, "probe": probe_name, "return_code": completed.returncode},
     )
 
 

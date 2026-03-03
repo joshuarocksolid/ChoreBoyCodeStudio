@@ -208,13 +208,13 @@ def generate_run_id(*, now: datetime | None = None) -> str:
 
 
 def build_run_manifest_path(project_root: str | Path, run_id: str) -> Path:
-    """Build run manifest path under `<project>/.cbcs/runs`."""
+    """Build run manifest path under `<project>/cbcs/runs`."""
     runs_directory = project_runs_dir(str(Path(project_root).expanduser().resolve()))
     return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
 
 
 def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
-    """Build run log path under `<project>/.cbcs/logs`."""
+    """Build run log path under `<project>/cbcs/logs`."""
     return project_logs_dir(project_root) / f"run_{run_id}.log"
 
 

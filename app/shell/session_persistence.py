@@ -77,7 +77,7 @@ def parse_session_state(payload: Mapping[str, Any]) -> SessionState:
 
 
 def save_session_file(project_root: PathInput, session_state: SessionState) -> Path:
-    """Persist project session state to <project>/.cbcs/session.json."""
+    """Persist project session state to <project>/cbcs/session.json."""
     path = _project_session_path(project_root)
     ensure_directory(path.parent)
     return save_json_object(path, serialize_session_state(session_state))

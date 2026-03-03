@@ -79,7 +79,7 @@ def try_ensure_directory(path: PathInput) -> Tuple[Optional[Path], Optional[OSEr
 
 
 def project_cbcs_dir(project_root: PathInput) -> Path:
-    """Return the .cbcs metadata directory inside a project root."""
+    """Return the cbcs metadata directory inside a project root."""
     return _normalize_project_root(project_root) / constants.PROJECT_META_DIRNAME
 
 

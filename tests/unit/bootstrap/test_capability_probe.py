@@ -110,6 +110,33 @@ def test_check_freecad_availability_reports_import_success(monkeypatch: pytest.M
     assert "succeeded" in result.message
 
 
+def test_check_freecad_availability_uses_apprun_fallback_after_probe_launch_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FreeCAD check should retry via AppRun when python executable probe can't launch."""
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("#!/bin/sh\n", encoding="utf-8")
+    app_run.chmod(0o755)
+    monkeypatch.setattr(capability_probe.constants, "APP_RUN_PATH", str(app_run))
+
+    command_calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:  # type: ignore[no-untyped-def]
+        command_calls.append(command)
+        if command[0] == capability_probe.sys.executable:
+            raise OSError("Permission denied")
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
+    result = capability_probe.check_freecad_availability()
+
+    assert len(command_calls) == 2
+    assert command_calls[0][0] == capability_probe.sys.executable
+    assert command_calls[1][0] == str(app_run.resolve())
+    assert result.is_available is True
+    assert "AppRun probe" in result.message
+
+
 def test_check_writable_state_path_uses_resolved_state_root(tmp_path: Path) -> None:
     """State-root writability should succeed for writable locations."""
     result = capability_probe.check_writable_state_path(state_root=tmp_path / "state")

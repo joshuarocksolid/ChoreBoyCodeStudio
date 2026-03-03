@@ -81,7 +81,7 @@ Why this is optimal on ChoreBoy:
 ### Execution pipeline
 
 * Code Studio spawns:
-  `['/opt/freecad/AppRun', '-c', 'exec(open(".../runner_boot.py").read())']`
+  `['/opt/freecad/AppRun', '-c', 'import os,runpy,sys; ...; runpy.run_path(".../run_runner.py", run_name="__main__")']`
 * Runner receives:
 
   * project root
@@ -250,8 +250,8 @@ myapp/
 
 ## Where settings live
 
-* Global settings: `~/.choreboy_code_studio/settings.json` (or under Home)
-* Per-project: `<project>/.cbcs/project.json`
+* Global settings: `~/choreboy_code_studio_state/settings.json` (or under Home)
+* Per-project: `<project>/cbcs/project.json`
 
 ## What settings include
 

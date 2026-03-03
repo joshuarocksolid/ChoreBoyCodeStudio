@@ -9,6 +9,7 @@ import keyword
 from pathlib import Path
 import re
 
+from app.core import constants
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.persistence.sqlite_index import SQLiteSymbolIndex
@@ -159,7 +160,7 @@ def provide_project_module_items(*, project_root: str | None, prefix: str, limit
 
     candidates: list[str] = []
     for file_path in root.rglob("*.py"):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         module_name = _module_name_from_path(root, file_path)
         if module_name is None:

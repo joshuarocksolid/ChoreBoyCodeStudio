@@ -16,9 +16,9 @@ pytestmark = pytest.mark.integration
 
 
 def _write_valid_project(project_root: Path) -> None:
-    (project_root / ".cbcs").mkdir(parents=True, exist_ok=True)
+    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
     (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / ".cbcs" / "project.json").write_text(
+    (project_root / "cbcs" / "project.json").write_text(
         json.dumps({"schema_version": 1, "name": "bundle_project"}, indent=2),
         encoding="utf-8",
     )
@@ -44,7 +44,7 @@ def test_build_support_bundle_includes_expected_artifacts(tmp_path: Path) -> Non
     assert bundle_path.exists()
     with zipfile.ZipFile(bundle_path, "r") as archive:
         names = set(archive.namelist())
-        assert "project/.cbcs/project.json" in names
+        assert "project/cbcs/project.json" in names
         assert "global_logs/app.log" in names
         assert "diagnostics/project_health.json" in names
 
@@ -56,7 +56,7 @@ def test_build_support_bundle_includes_run_log_when_provided(tmp_path: Path) -> 
 
     app_log_path = configure_app_logging(state_root=state_root).log_path
     app_log_path.write_text("app log\n", encoding="utf-8")
-    run_log_path = project_root / ".cbcs" / "logs" / "run_20260302_120000.log"
+    run_log_path = project_root / "cbcs" / "logs" / "run_20260302_120000.log"
     run_log_path.parent.mkdir(parents=True, exist_ok=True)
     run_log_path.write_text("stdout line\nstderr line\n", encoding="utf-8")
 

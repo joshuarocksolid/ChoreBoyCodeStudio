@@ -31,7 +31,7 @@ class AppValidationError(ValueError):
 
 
 class ProjectManifestValidationError(AppValidationError):
-    """Raised when `.cbcs/project.json` fails validation."""
+    """Raised when `cbcs/project.json` fails validation."""
 
 
 class ProjectLoadValidationError(AppValidationError):

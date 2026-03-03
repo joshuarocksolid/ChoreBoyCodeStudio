@@ -34,7 +34,7 @@ class SearchOptions:
     exclude_globs: list[str] | None = None
 
 
-_ALWAYS_SKIP_DIRS = {".cbcs", "__pycache__", ".git", ".hg", "node_modules", ".venv", "venv"}
+_ALWAYS_SKIP_DIRS = {"cbcs", "__pycache__", ".git", ".hg", "node_modules", ".venv", "venv"}
 _LOGGER = logging.getLogger(__name__)
 
 

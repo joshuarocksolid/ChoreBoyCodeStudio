@@ -97,13 +97,13 @@ Example behavior:
 
 ### D. Invalid / Non-importable Project
 A folder that cannot be treated as a Python project, such as:
-- no `.cbcs/project.json` and no `.py` files
-- corrupted/invalid `.cbcs/project.json`
+- no `cbcs/project.json` and no `.py` files
+- corrupted/invalid `cbcs/project.json`
 
 Used to verify project validation and actionable errors.
 
 ### E. Importable Existing Python Folder
-A plain Python folder without `.cbcs/project.json` that includes runnable `.py` files.
+A plain Python folder without `cbcs/project.json` that includes runnable `.py` files.
 
 Used to verify first-open metadata initialization and import-friendly open behavior.
 
@@ -173,7 +173,7 @@ Verify that a normal project can be opened from disk.
 
 **Preconditions:**  
 - a valid test project exists, either:
-  - already containing `.cbcs/project.json`, or
+  - already containing `cbcs/project.json`, or
   - a plain Python folder that can be imported on first open
 
 **Steps:**  
@@ -186,7 +186,7 @@ Verify that a normal project can be opened from disk.
 - project metadata is recognized
 - the project name or equivalent project state is visible in the UI
 - the project tree populates with project files
-- if metadata was missing but the folder is importable, `.cbcs/project.json` is initialized automatically
+- if metadata was missing but the folder is importable, `cbcs/project.json` is initialized automatically
 
 ---
 
@@ -218,7 +218,7 @@ Verify that users can open normal Python folders that were not created by Code S
 
 **Preconditions:**  
 - an importable existing Python folder exists
-- folder does not contain `.cbcs/project.json`
+- folder does not contain `cbcs/project.json`
 
 **Steps:**  
 1. Launch the editor.
@@ -227,7 +227,7 @@ Verify that users can open normal Python folders that were not created by Code S
 
 **Expected Result:**  
 - the folder opens as a project without manual metadata setup
-- `.cbcs/project.json` is created with canonical defaults
+- `cbcs/project.json` is created with canonical defaults
 - inferred entrypoint is usable for Run
 - project tree and editor flows work as normal
 
@@ -814,7 +814,7 @@ Verify the Help > Load Example Project... flow creates a valid, runnable CRUD sh
 8. Press **F5** to run the project (on systems with PySide2 available via AppRun).
 
 **Expected Result:**  
-- the project is created with valid `.cbcs/project.json` metadata (template = `crud_showcase`)
+- the project is created with valid `cbcs/project.json` metadata (template = `crud_showcase`)
 - all expected files are present
 - the project opens and displays correctly in the editor
 - the example does NOT appear in the New Project template picker

@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9 runtim
         _toml_module = None
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
+from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
@@ -110,25 +111,25 @@ def validate_project_structure(project_root: PathInput) -> Path:
     cbcs_dir = project_cbcs_dir(resolved_root)
     if cbcs_dir.exists() and not cbcs_dir.is_dir():
         raise ProjectStructureValidationError(
-            "Project metadata path .cbcs exists but is not a directory.",
+            "Project metadata path cbcs exists but is not a directory.",
             project_root=resolved_root,
         )
     if not cbcs_dir.exists() or not cbcs_dir.is_dir():
         raise ProjectStructureValidationError(
-            "Missing required metadata directory: .cbcs.",
+            "Missing required metadata directory: cbcs.",
             project_root=resolved_root,
         )
 
     manifest_path = project_manifest_path(resolved_root)
     if manifest_path.exists() and not manifest_path.is_file():
         raise ProjectStructureValidationError(
-            "Project manifest path .cbcs/project.json exists but is not a file.",
+            "Project manifest path cbcs/project.json exists but is not a file.",
             project_root=resolved_root,
             manifest_path=manifest_path,
         )
     if not manifest_path.exists() or not manifest_path.is_file():
         raise ProjectStructureValidationError(
-            "Missing required project manifest file: .cbcs/project.json.",
+            "Missing required project manifest file: cbcs/project.json.",
             project_root=resolved_root,
             manifest_path=manifest_path,
         )
@@ -141,7 +142,7 @@ def enumerate_project_entries(project_root: PathInput) -> list[ProjectFileEntry]
 
     Policy for T07:
     - include both files and directories
-    - exclude `.cbcs` metadata subtree from UI-facing project entries
+    - exclude `cbcs` metadata subtree from UI-facing project entries
     - keep stable lexical ordering by relative path
     """
     try:
@@ -176,7 +177,7 @@ def enumerate_project_entries(project_root: PathInput) -> list[ProjectFileEntry]
             followlinks=False,
         ):
             current_path = Path(current_dir)
-            dir_names[:] = sorted(name for name in dir_names if name != ".cbcs")
+            dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
             file_names.sort()
 
             for directory_name in dir_names:
@@ -234,12 +235,12 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
 
     if cbcs_dir.exists() and not cbcs_dir.is_dir():
         raise ProjectStructureValidationError(
-            "Project metadata path .cbcs exists but is not a directory.",
+            "Project metadata path cbcs exists but is not a directory.",
             project_root=project_root,
         )
     if manifest_path.exists() and not manifest_path.is_file():
         raise ProjectStructureValidationError(
-            "Project manifest path .cbcs/project.json exists but is not a file.",
+            "Project manifest path cbcs/project.json exists but is not a file.",
             project_root=project_root,
             manifest_path=manifest_path,
         )
@@ -274,7 +275,7 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as exc:
         raise ProjectStructureValidationError(
-            f"Unable to initialize project metadata at .cbcs/project.json: {exc}",
+            f"Unable to initialize project metadata at cbcs/project.json: {exc}",
             project_root=project_root,
             manifest_path=manifest_path,
         ) from exc
@@ -305,7 +306,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
 
     for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
         current_path = Path(current_dir)
-        dir_names[:] = sorted(name for name in dir_names if name != ".cbcs")
+        dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
         python_files = sorted(name for name in file_names if name.endswith(".py"))
         if python_files:
             return (current_path / python_files[0]).relative_to(project_root).as_posix()
@@ -380,7 +381,7 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
 
 def _infer_recursive_package_main(project_root: Path) -> str | None:
     for candidate in sorted(project_root.rglob("__main__.py")):
-        if ".cbcs" in candidate.parts:
+        if constants.PROJECT_META_DIRNAME in candidate.parts:
             continue
         if candidate.parent == project_root:
             continue

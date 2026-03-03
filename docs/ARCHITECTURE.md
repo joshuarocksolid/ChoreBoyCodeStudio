@@ -152,9 +152,9 @@ The system consists of five major parts:
 1. User opens Code Studio.
 2. Editor performs startup capability probe.
 3. User opens or creates a project folder.
-4. Editor loads `.cbcs/project.json` and project files.
+4. Editor loads `cbcs/project.json` and project files.
    If metadata is missing but the folder is a Python project, editor bootstraps canonical
-   `.cbcs/project.json` metadata on first open, then proceeds through normal load.
+   `cbcs/project.json` metadata on first open, then proceeds through normal load.
 5. User edits files in tabs.
 6. On run, editor creates a run manifest and launches a separate runner process.
 7. Runner executes user code in AppRun runtime.
@@ -227,13 +227,13 @@ Recommended pattern:
 ### Recommended boot style
 
 ```python
-/opt/freecad/AppRun -c 'exec(open("/absolute/path/to/run_editor.py").read(), {"__name__": "__main__"})'
+/opt/freecad/AppRun -c 'import os,runpy,sys;root="/absolute/path/to/repo";sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path("/absolute/path/to/run_editor.py", run_name="__main__")'
 ```
 
 And similarly for runner:
 
 ```python
-/opt/freecad/AppRun -c 'exec(open("/absolute/path/to/run_runner.py").read(), {"__name__": "__main__"})'
+/opt/freecad/AppRun -c 'import os,runpy,sys;root="/absolute/path/to/repo";sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path("/absolute/path/to/run_runner.py", run_name="__main__")'
 ```
 
 ## 7.2 Why this design
@@ -385,7 +385,7 @@ Recommended project shape:
 
 ```text
 my_project/
-  .cbcs/
+  cbcs/
     project.json
     runs/
     logs/
@@ -401,7 +401,7 @@ my_project/
 Per-project metadata lives at:
 
 ```text
-<project>/.cbcs/project.json
+<project>/cbcs/project.json
 ```
 
 If the folder is opened without existing metadata and contains Python source files, the
@@ -449,13 +449,13 @@ SQLite can still be used for caches and indexes, but not for the project’s pri
 Global app state should live under a single dedicated home path, for example:
 
 ```text
-~/.choreboy_code_studio/
+~/choreboy_code_studio_state/
 ```
 
 Recommended contents:
 
 ```text
-~/.choreboy_code_studio/
+~/choreboy_code_studio_state/
   settings.json
   recent_projects.json
   logs/
@@ -624,7 +624,7 @@ Recommended manifest contents:
   "mode": "python_script",
   "argv": [],
   "env": {},
-  "log_file": "/home/default/projects/my_project/.cbcs/logs/run_20260228_153500.log",
+  "log_file": "/home/default/projects/my_project/cbcs/logs/run_20260228_153500.log",
   "breakpoints": [
     {
       "file_path": "/home/default/projects/my_project/app/main.py",
@@ -710,13 +710,13 @@ The editor must write a persistent app log for the shell itself.
 Editor log:
 
 ```text
-~/.choreboy_code_studio/logs/app.log
+~/choreboy_code_studio_state/logs/app.log
 ```
 
 Project run logs:
 
 ```text
-<project>/.cbcs/logs/run_YYYYMMDD_HHMMSS.log
+<project>/cbcs/logs/run_YYYYMMDD_HHMMSS.log
 ```
 
 ## 14.6 Logging requirements
@@ -995,7 +995,7 @@ Critical contracts should be testable without bringing up the full editor UI whe
 
 The following should have explicit version numbers:
 
-* `.cbcs/project.json`
+* `cbcs/project.json`
 * run manifest
 * support bundle format
 * template format

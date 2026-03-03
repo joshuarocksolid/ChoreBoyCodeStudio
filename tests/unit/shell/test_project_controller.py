@@ -48,7 +48,7 @@ class _FakeMenu:
 def _loaded_project(path: str) -> LoadedProject:
     return LoadedProject(
         project_root=path,
-        manifest_path=str(Path(path) / ".cbcs" / "project.json"),
+        manifest_path=str(Path(path) / "cbcs" / "project.json"),
         metadata=ProjectMetadata(schema_version=1, name="proj"),
         entries=[ProjectFileEntry(relative_path="run.py", absolute_path=str(Path(path) / "run.py"), is_directory=False)],
     )

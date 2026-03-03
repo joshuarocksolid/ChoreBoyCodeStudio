@@ -9,6 +9,7 @@ import shutil
 from typing import Any
 
 from app.bootstrap.paths import resolve_app_root
+from app.core import constants
 from app.core.errors import AppValidationError
 from app.project.project_manifest import build_default_project_manifest_payload
 
@@ -97,7 +98,7 @@ class TemplateService:
     def _inject_project_manifest(self, *, destination: Path, project_name: str, template_id: str) -> None:
         if not project_name.strip():
             raise AppValidationError("project_name must be a non-empty string.")
-        manifest_path = destination / ".cbcs" / "project.json"
+        manifest_path = destination / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             payload = build_default_project_manifest_payload(

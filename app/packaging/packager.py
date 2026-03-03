@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-_EXCLUDED_DIR_NAMES = {"__pycache__", ".cbcs/runs", ".cbcs/logs", ".cbcs/cache"}
+_EXCLUDED_DIR_NAMES = {"__pycache__", "cbcs/runs", "cbcs/logs", "cbcs/cache"}
 
 _EXCLUDED_SUFFIXES = {".pyc"}
 
@@ -48,15 +48,17 @@ def build_desktop_entry(
 
     *project_name* is the human-readable name shown in the launcher.
     *entry_file* is the Python entry point relative to *install_dir*.
-    *install_dir* is the absolute path where the hidden project folder will live
-    (e.g. ``/home/default/.myapp``).
+    *install_dir* is the absolute path where packaged project files will live
+    (e.g. ``/home/default/myapp/app_files``).
     """
     entry_path = f"{install_dir}/{entry_file}"
     exec_line = (
         f"{_APPRUN_PATH} -c "
-        f"\"p='{entry_path}';"
-        f"exec(compile(open(p,'r',encoding='utf-8').read(),p,'exec'),"
-        f"{{'__name__':'__main__','__file__':p}})\""
+        f"\"import os,runpy,sys;"
+        f"root='{install_dir}';"
+        f"sys.path.insert(0,root) if root not in sys.path else None;"
+        f"os.chdir(root);"
+        f"runpy.run_path('{entry_path}', run_name='__main__')\""
     )
     return (
         "[Desktop Entry]\n"
@@ -93,7 +95,7 @@ def package_project(
 
     The folder ``<output_dir>/<sanitized>/`` contains:
     - ``<sanitized>.desktop`` launcher file
-    - ``.<sanitized>/`` hidden subfolder with all project source files
+    - ``app_files/`` subfolder with all project source files
 
     Returns a :class:`PackageResult` with outcome details.
     """
@@ -108,13 +110,13 @@ def package_project(
         )
 
     sanitized = sanitize_project_name(project_name)
-    hidden_folder = f".{sanitized}"
+    project_files_folder = "app_files"
     desktop_name = f"{sanitized}.desktop"
 
     out = Path(output_dir)
     package_dir = out / sanitized
-    project_dest = package_dir / hidden_folder
-    install_dir = f"/home/default/{sanitized}/{hidden_folder}"
+    project_dest = package_dir / project_files_folder
+    install_dir = f"/home/default/{sanitized}/{project_files_folder}"
 
     try:
         if package_dir.exists():
@@ -138,7 +140,7 @@ def package_project(
         return PackageResult(
             output_path=str(package_dir),
             desktop_name=desktop_name,
-            project_folder_name=hidden_folder,
+            project_folder_name=project_files_folder,
             success=False,
             error=str(exc),
         )
@@ -146,6 +148,6 @@ def package_project(
     return PackageResult(
         output_path=str(package_dir),
         desktop_name=desktop_name,
-        project_folder_name=hidden_folder,
+        project_folder_name=project_files_folder,
         success=True,
     )

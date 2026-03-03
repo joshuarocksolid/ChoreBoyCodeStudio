@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from app.core import constants
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
 
 # Defensive fallback: well-known Python 3.x stdlib top-level module names.
@@ -109,7 +110,7 @@ def find_unresolved_imports(
             resolved_overrides[str(Path(p).expanduser().resolve())] = src
     diagnostics: list[ImportDiagnostic] = []
     for file_path in sorted(root.rglob("*.py")):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         override = resolved_overrides.get(str(file_path.resolve()))
         diagnostics.extend(

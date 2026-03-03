@@ -25,7 +25,7 @@ def test_list_templates_discovers_expected_builtin_templates() -> None:
 
 
 def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
-    """Materialized project should include injected `.cbcs/project.json` fields."""
+    """Materialized project should include injected `cbcs/project.json` fields."""
     service = TemplateService(templates_root=str(_repo_templates_root()))
     destination = tmp_path / "new_project"
 
@@ -35,7 +35,7 @@ def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
         project_name="My Utility Project",
     )
 
-    manifest_path = created / ".cbcs" / "project.json"
+    manifest_path = created / "cbcs" / "project.json"
     assert manifest_path.exists()
     manifest_text = manifest_path.read_text(encoding="utf-8")
     assert '"name": "My Utility Project"' in manifest_text

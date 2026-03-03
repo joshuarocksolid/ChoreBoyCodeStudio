@@ -8,6 +8,7 @@ from pathlib import Path
 import threading
 from typing import Callable
 
+from app.core import constants
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
 
 
@@ -185,7 +186,7 @@ def _list_python_source_files(project_root: str | Path) -> list[Path]:
     root = Path(project_root).expanduser().resolve()
     python_files: list[Path] = []
     for file_path in sorted(root.rglob("*.py")):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         python_files.append(file_path.resolve())
     return python_files

@@ -56,7 +56,7 @@ class _FakeRunService:
         entry = loaded_project.metadata.default_entry if loaded_project is not None else "__repl__.py"
         return RunSession(
             run_id="run123",
-            manifest_path=f"{project_root}/.cbcs/runs/run.json",
+            manifest_path=f"{project_root}/cbcs/runs/run.json",
             log_file_path=f"{project_root}/logs/run_run123.log",
             project_root=project_root,
             entry_file=entry,
@@ -76,7 +76,7 @@ class _FakeRunService:
 def _loaded_project() -> LoadedProject:
     return LoadedProject(
         project_root="/tmp/project",
-        manifest_path="/tmp/project/.cbcs/project.json",
+        manifest_path="/tmp/project/cbcs/project.json",
         metadata=ProjectMetadata(schema_version=1, name="proj"),
         entries=[],
     )

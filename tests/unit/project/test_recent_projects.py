@@ -148,7 +148,7 @@ def test_open_recent_menu_limit_is_reasonable() -> None:
 
 
 def _write_valid_project(project_root: Path, *, name: str) -> Path:
-    manifest_path = project_root / ".cbcs" / "project.json"
+    manifest_path = project_root / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
         json.dumps(

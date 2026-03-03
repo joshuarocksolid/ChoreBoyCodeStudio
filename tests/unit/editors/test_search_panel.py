@@ -28,10 +28,10 @@ def test_find_in_files_returns_matches_with_line_numbers(tmp_path: Path) -> None
 
 
 def test_find_in_files_ignores_cbcs_metadata_directory(tmp_path: Path) -> None:
-    """Search should skip .cbcs metadata files."""
+    """Search should skip cbcs metadata files."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
-    (project_root / ".cbcs" / "secret.txt").write_text("needle", encoding="utf-8")
+    (project_root / "cbcs").mkdir(parents=True)
+    (project_root / "cbcs" / "secret.txt").write_text("needle", encoding="utf-8")
 
     assert find_in_files(project_root, "needle") == []
 

@@ -104,7 +104,7 @@ The repository is no longer “empty scaffolding.” Core foundation work is alr
 ### Architecture guardrails
 
 - Never execute user project code in the editor process.
-- Keep project metadata filesystem-first (`.cbcs/project.json`).
+- Keep project metadata filesystem-first (`cbcs/project.json`).
 - Use explicit JSON contracts for runner manifests.
 - Prefer diagnosability over cleverness.
 
@@ -315,7 +315,7 @@ The following slices finish the MVP gate defined in `docs/ACCEPTANCE_TESTS.md`.
 - Objective: guarantee one durable log file per run.
 - Scope:
   - create run ID generation helper
-  - create log path helper under `<project>/.cbcs/logs`
+  - create log path helper under `<project>/cbcs/logs`
   - ensure dirs exist
 - Primary files:
   - `app/run/run_service.py` (new)

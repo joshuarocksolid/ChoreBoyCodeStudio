@@ -44,7 +44,7 @@ def test_open_project_returns_loaded_project_for_valid_minimal_layout(tmp_path: 
 
     assert isinstance(loaded_project, LoadedProject)
     assert loaded_project.project_root == str(project_root.resolve())
-    assert loaded_project.manifest_path == str((project_root / ".cbcs" / "project.json").resolve())
+    assert loaded_project.manifest_path == str((project_root / "cbcs" / "project.json").resolve())
     assert loaded_project.metadata.name == "Project Alpha"
     assert [entry.relative_path for entry in loaded_project.entries] == [
         "app",
@@ -80,7 +80,7 @@ def test_create_blank_project_writes_manifest_and_main_entrypoint(tmp_path: Path
     destination = tmp_path / "blank_project"
 
     created_path = create_blank_project(destination, project_name="Blank Project")
-    manifest_path = created_path / ".cbcs" / "project.json"
+    manifest_path = created_path / "cbcs" / "project.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert created_path == destination.resolve()
@@ -107,7 +107,7 @@ def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) ->
     (project_root / "run.py").write_text("print('hello')\n", encoding="utf-8")
 
     loaded_project = open_project(project_root)
-    manifest_path = project_root / ".cbcs" / "project.json"
+    manifest_path = project_root / "cbcs" / "project.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert loaded_project.metadata.name == "project_without_cbcs"
@@ -117,15 +117,15 @@ def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) ->
 
 
 def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> None:
-    """Opening a folder with `.cbcs` but no manifest should regenerate metadata."""
+    """Opening a folder with `cbcs` but no manifest should regenerate metadata."""
     project_root = tmp_path / "project_without_manifest"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     (project_root / "main.py").write_text("print('hello')\n", encoding="utf-8")
 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "main.py"
-    assert (project_root / ".cbcs" / "project.json").exists()
+    assert (project_root / "cbcs" / "project.json").exists()
 
 
 def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path: Path) -> None:
@@ -244,9 +244,9 @@ def test_validate_project_structure_rejects_missing_cbcs_directory(tmp_path: Pat
 
 
 def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path) -> None:
-    """Structure validation should fail clearly when `.cbcs/project.json` is missing."""
+    """Structure validation should fail clearly when `cbcs/project.json` is missing."""
     project_root = tmp_path / "project_without_manifest"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
 
     with pytest.raises(ProjectStructureValidationError) as exc_info:
         validate_project_structure(project_root)
@@ -257,7 +257,7 @@ def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path
 def test_open_project_propagates_manifest_validation_error_with_path_context(tmp_path: Path) -> None:
     """Manifest parse failures should bubble as project-manifest validation errors."""
     project_root = tmp_path / "project_bad_manifest"
-    manifest_path = project_root / ".cbcs" / "project.json"
+    manifest_path = project_root / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text("{ not valid json", encoding="utf-8")
 
@@ -291,7 +291,7 @@ def test_enumerate_project_entries_is_deterministic_and_excludes_cbcs(tmp_path: 
         "notes.txt",
         "run.py",
     ]
-    assert all(not entry.relative_path.startswith(".cbcs") for entry in first)
+    assert all(not entry.relative_path.startswith("cbcs") for entry in first)
 
 
 def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:
@@ -319,7 +319,7 @@ def test_open_project_and_track_recent_does_not_mutate_recents_on_failure(tmp_pa
 
 
 def _write_valid_manifest(project_root: Path, *, name: str) -> Path:
-    manifest_path = project_root / ".cbcs" / "project.json"
+    manifest_path = project_root / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
         json.dumps(
