@@ -6,9 +6,10 @@ Run this file with F5 inside ChoreBoy Code Studio.
 
 import sys
 
+from PySide2.QtGui import QFont
 from PySide2.QtWidgets import QApplication
 
-from app.main_window import MainWindow
+from app.theme import build_stylesheet, detect_dark_mode, get_tokens
 
 
 def main():
@@ -16,7 +17,17 @@ def main():
     if app is None:
         app = QApplication(sys.argv)
 
-    window = MainWindow()
+    is_dark = detect_dark_mode()
+    tokens = get_tokens(is_dark)
+    app.setStyleSheet(build_stylesheet(tokens))
+
+    font = app.font()
+    font.setPointSize(12)
+    app.setFont(font)
+
+    from app.main_window import MainWindow
+
+    window = MainWindow(tokens=tokens)
     window.show()
     return app.exec_()
 
