@@ -1004,3 +1004,30 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/editors/code_editor_widget.py`
   - `run_editor.py`
 
+### G19 — Syntax highlighting modernization (stateful + semantic overlay)
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: close the syntax-highlighting quality gap with stateful lexical highlighting, theme-tokenized syntax colors, bounded large-file behavior, and async semantic overlays.
+- Scope:
+  - shared syntax engine/token contract and language registry for editor highlighters
+  - stateful Python lexer with multiline string support and expanded token categories
+  - improved JSON/Markdown token precedence and fenced-block state handling
+  - semantic token spans computed off-UI-thread and applied with revision guards
+  - large-file safeguards for bracket matching/search overlay density
+  - pure-Python vendoring decision gate executed; keep stdlib/stateful in-repo backend for now, revisit vendoring only if future benchmark deltas justify it
+- Primary files:
+  - `app/editors/syntax_engine.py`
+  - `app/editors/syntax_registry.py`
+  - `app/editors/syntax_python.py`
+  - `app/editors/syntax_json.py`
+  - `app/editors/syntax_markdown.py`
+  - `app/editors/code_editor_widget.py`
+  - `app/intelligence/semantic_tokens.py`
+  - `app/shell/theme_tokens.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/editors/test_syntax_highlighters.py`
+  - `tests/unit/editors/test_code_editor_widget_highlighting.py`
+  - `tests/unit/editors/test_syntax_registry.py`
+  - `tests/unit/intelligence/test_semantic_tokens.py`
+  - `tests/integration/performance/test_editor_highlighting_performance.py`
+

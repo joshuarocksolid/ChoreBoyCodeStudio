@@ -4,27 +4,27 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtCore import QEvent, QPointF, QRect, QRegularExpression, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat
+from PySide2.QtCore import QEvent, QPointF, QRect, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCharFormat, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QToolTip, QWidget
 
 from app.editors.find_replace_bar import FindOptions
+from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
-from app.editors.syntax_json import JsonSyntaxHighlighter
-from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
-from app.editors.syntax_python import PythonSyntaxHighlighter
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
+from app.intelligence.semantic_tokens import SemanticTokenSpan
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
 DEFAULT_FONT_FAMILY = "monospace"
 DEFAULT_COMPLETION_MIN_CHARS = 2
+LARGE_FILE_CHAR_THRESHOLD = 250_000
+MAX_SEARCH_SELECTIONS_LARGE_FILE = 400
 
 
 class _LineNumberArea(QWidget):
@@ -56,6 +56,8 @@ class CodeEditorWidget(QPlainTextEdit):
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._highlighter: object | None = None
+        self._syntax_registry = default_syntax_highlighter_registry()
+        self._syntax_palette: dict[str, str] = {}
         self._tab_width = DEFAULT_TAB_WIDTH
         self._comment_prefix = "# "
         self._indent_style = "spaces"
@@ -91,6 +93,16 @@ class CodeEditorWidget(QPlainTextEdit):
         self._diagnostic_selections: list[QTextEdit.ExtraSelection] = []
         self._diagnostic_lines: dict[int, DiagnosticSeverity] = {}
         self._diagnostic_ranges: list[tuple[int, int, str]] = []
+        self._semantic_spans: list[SemanticTokenSpan] = []
+        self._semantic_selections: list[QTextEdit.ExtraSelection] = []
+        self._semantic_token_colors: dict[str, QColor] = {
+            "function": QColor("#1C7ED6"),
+            "class": QColor("#1864AB"),
+            "parameter": QColor("#2B8A3E"),
+            "import": QColor("#9C36B5"),
+        }
+        self._cached_non_cursor_selections: list[QTextEdit.ExtraSelection] = []
+        self._overlay_cache_dirty = True
 
         self.setMouseTracking(True)
         self.blockCountChanged.connect(self._update_line_number_area_width)
@@ -126,11 +138,22 @@ class CodeEditorWidget(QPlainTextEdit):
             self._diag_warning_color = QColor(tokens.diag_warning_color)
         if tokens.diag_info_color:
             self._diag_info_color = QColor(tokens.diag_info_color)
+        self._syntax_palette = syntax_palette_from_tokens(tokens)
+        self._semantic_token_colors = {
+            "function": QColor(tokens.syntax_semantic_function),
+            "class": QColor(tokens.syntax_semantic_class),
+            "parameter": QColor(tokens.syntax_semantic_parameter),
+            "import": QColor(tokens.syntax_semantic_import),
+        }
+        self._rebuild_semantic_selections()
+        self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
-        highlighter = self._highlighter
-        if hasattr(highlighter, "set_dark_mode"):
-            highlighter.set_dark_mode(tokens.is_dark)  # type: ignore[union-attr]
+        self._syntax_registry.apply_theme(
+            self._highlighter,
+            is_dark=tokens.is_dark,
+            syntax_palette=self._syntax_palette,
+        )
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
         self._breakpoint_toggled_callback = callback
@@ -160,6 +183,7 @@ class CodeEditorWidget(QPlainTextEdit):
         if self._debug_execution_line == line_number:
             return
         self._debug_execution_line = line_number
+        self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
 
@@ -216,6 +240,7 @@ class CodeEditorWidget(QPlainTextEdit):
             if cur_severity is None or _SEVERITY_PRIORITY.get(diag.severity, 2) < _SEVERITY_PRIORITY.get(cur_severity, 2):
                 self._diagnostic_lines[diag.line_number] = diag.severity
 
+        self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
         self._line_number_area.update()
 
@@ -223,8 +248,48 @@ class CodeEditorWidget(QPlainTextEdit):
         self._diagnostic_selections.clear()
         self._diagnostic_lines.clear()
         self._diagnostic_ranges.clear()
+        self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
         self._line_number_area.update()
+
+    def set_semantic_token_spans(self, spans: list[SemanticTokenSpan]) -> None:
+        """Apply semantic token spans as overlay selections."""
+        self._semantic_spans = list(spans)
+        self._rebuild_semantic_selections()
+        self._mark_overlay_cache_dirty()
+        self._refresh_extra_selections()
+
+    def clear_semantic_tokens(self) -> None:
+        self._semantic_spans.clear()
+        self._semantic_selections.clear()
+        self._mark_overlay_cache_dirty()
+        self._refresh_extra_selections()
+
+    def _rebuild_semantic_selections(self) -> None:
+        self._semantic_selections = []
+        if self._is_large_document():
+            return
+        document = self.document()
+        max_position = max(0, document.characterCount() - 1)
+        for span in self._semantic_spans:
+            if span.end <= span.start:
+                continue
+            if span.start >= max_position:
+                continue
+            start = max(0, span.start)
+            end = min(max_position, span.end)
+            if end <= start:
+                continue
+            color = self._semantic_token_colors.get(span.token_type)
+            if color is None:
+                continue
+            selection = cast(Any, QTextEdit.ExtraSelection())
+            selection.format.setForeground(color)
+            cursor = QTextCursor(document)
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
+            selection.cursor = cursor
+            self._semantic_selections.append(selection)
 
     def _diag_color_for_severity(self, severity: DiagnosticSeverity) -> QColor:
         if severity == DiagnosticSeverity.ERROR:
@@ -262,16 +327,23 @@ class CodeEditorWidget(QPlainTextEdit):
             bottom = top + int(self.blockBoundingRect(block).height())
 
     def set_language_for_path(self, file_path: str) -> None:
-        extension = Path(file_path).suffix.lower()
         document = self.document()
-        if extension == ".py":
-            self._highlighter = PythonSyntaxHighlighter(document, is_dark=self._is_dark)
-        elif extension in {".json"}:
-            self._highlighter = JsonSyntaxHighlighter(document, is_dark=self._is_dark)
-        elif extension in {".md", ".markdown"}:
-            self._highlighter = MarkdownSyntaxHighlighter(document, is_dark=self._is_dark)
-        else:
-            self._highlighter = None
+        previous_highlighter = self._highlighter
+        if hasattr(previous_highlighter, "setDocument"):
+            previous_highlighter.setDocument(None)  # type: ignore[union-attr]
+
+        sample_lines: list[str] = []
+        block = document.firstBlock()
+        while block.isValid() and len(sample_lines) < 4:
+            sample_lines.append(block.text())
+            block = block.next()
+        self._highlighter = self._syntax_registry.create_for_path(
+            file_path=file_path,
+            document=document,
+            is_dark=self._is_dark,
+            syntax_palette=self._syntax_palette,
+            sample_text="\n".join(sample_lines),
+        )
 
     def set_editor_preferences(
         self,
@@ -497,6 +569,7 @@ class CodeEditorWidget(QPlainTextEdit):
             sel = self._make_match_selection(start, end, is_current=False)
             self._search_selections.append(sel)
 
+        self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
         return len(self._search_match_positions)
 
@@ -583,6 +656,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self._search_selections.clear()
         self._search_match_positions.clear()
         self._search_current_index = -1
+        self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
 
     def _go_to_match(self, index: int) -> None:
@@ -596,6 +670,7 @@ class CodeEditorWidget(QPlainTextEdit):
         for i, (s, e) in enumerate(self._search_match_positions):
             sel = self._make_match_selection(s, e, is_current=(i == index))
             self._search_selections.append(sel)
+        self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
 
         cursor = self.textCursor()
@@ -628,7 +703,7 @@ class CodeEditorWidget(QPlainTextEdit):
         return re.compile(escaped, flags)
 
     def _refresh_extra_selections(self) -> None:
-        """Rebuild ExtraSelections merging search highlights with existing highlights."""
+        """Rebuild ExtraSelections with cached non-cursor overlays."""
         selections: list[QTextEdit.ExtraSelection] = []
 
         line_selection = cast(Any, QTextEdit.ExtraSelection())
@@ -638,6 +713,20 @@ class CodeEditorWidget(QPlainTextEdit):
         line_selection.cursor.clearSelection()
         selections.append(line_selection)
 
+        if not self._is_large_document():
+            selections.extend(self._build_bracket_match_selections())
+
+        selections.extend(self._non_cursor_extra_selections())
+        self.setExtraSelections(selections)
+
+    def _non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
+        if self._overlay_cache_dirty:
+            self._cached_non_cursor_selections = self._build_non_cursor_extra_selections()
+            self._overlay_cache_dirty = False
+        return list(self._cached_non_cursor_selections)
+
+    def _build_non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
+        selections: list[QTextEdit.ExtraSelection] = []
         if self._debug_execution_line is not None:
             debug_sel = cast(Any, QTextEdit.ExtraSelection())
             debug_sel.format.setBackground(self._debug_execution_line_bg)
@@ -648,14 +737,23 @@ class CodeEditorWidget(QPlainTextEdit):
                 debug_cursor.clearSelection()
                 debug_sel.cursor = debug_cursor
                 selections.append(debug_sel)
-
-        bracket_selection = self._build_bracket_match_selection()
-        if bracket_selection is not None:
-            selections.append(bracket_selection)
-
         selections.extend(self._diagnostic_selections)
-        selections.extend(self._search_selections)
-        self.setExtraSelections(selections)
+        selections.extend(self._semantic_selections)
+        selections.extend(self._bounded_search_selections())
+        return selections
+
+    def _bounded_search_selections(self) -> list[QTextEdit.ExtraSelection]:
+        if not self._is_large_document():
+            return self._search_selections
+        if 0 <= self._search_current_index < len(self._search_selections):
+            return [self._search_selections[self._search_current_index]]
+        return self._search_selections[:MAX_SEARCH_SELECTIONS_LARGE_FILE]
+
+    def _mark_overlay_cache_dirty(self) -> None:
+        self._overlay_cache_dirty = True
+
+    def _is_large_document(self) -> bool:
+        return self.document().characterCount() > LARGE_FILE_CHAR_THRESHOLD
 
     def indent_selection(self) -> None:
         selected = self.textCursor().selectedText()
@@ -776,30 +874,32 @@ class CodeEditorWidget(QPlainTextEdit):
         if self._completion_accepted_callback is not None:
             self._completion_accepted_callback(completion_item)
 
-    def _build_bracket_match_selection(self) -> QTextEdit.ExtraSelection | None:
+    def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]:
+        if self._is_large_document():
+            return []
         cursor = self.textCursor()
-        document_text = self.toPlainText()
+        document = self.document()
+        max_index = max(0, document.characterCount() - 1)
         position = cursor.position()
-        if not document_text:
-            return None
+        if max_index <= 0 or position <= 0:
+            return []
         pairs = {"(": ")", "[": "]", "{": "}"}
         inverse_pairs = {")": "(", "]": "[", "}": "{"}
-        if position > 0:
-            current_char = document_text[position - 1]
-            if current_char in pairs:
-                match_position = self._find_matching_bracket(document_text, position - 1, current_char, pairs[current_char])
-                if match_position is not None:
-                    return self._selection_for_position(match_position)
-            if current_char in inverse_pairs:
-                match_position = self._find_matching_bracket_backward(
-                    document_text,
-                    position - 1,
-                    inverse_pairs[current_char],
-                    current_char,
-                )
-                if match_position is not None:
-                    return self._selection_for_position(match_position)
-        return None
+        current_char = str(document.characterAt(position - 1))
+        if current_char in pairs:
+            match_position = self._find_matching_bracket(document, position - 1, current_char, pairs[current_char], max_index)
+            if match_position is not None:
+                return [self._selection_for_position(position - 1), self._selection_for_position(match_position)]
+        if current_char in inverse_pairs:
+            match_position = self._find_matching_bracket_backward(
+                document,
+                position - 1,
+                inverse_pairs[current_char],
+                current_char,
+            )
+            if match_position is not None:
+                return [self._selection_for_position(position - 1), self._selection_for_position(match_position)]
+        return []
 
     def _selection_for_position(self, position: int) -> QTextEdit.ExtraSelection:
         selection = cast(Any, QTextEdit.ExtraSelection())
@@ -810,10 +910,17 @@ class CodeEditorWidget(QPlainTextEdit):
         selection.cursor = cursor
         return selection
 
-    def _find_matching_bracket(self, text: str, start: int, opening: str, closing: str) -> int | None:
+    def _find_matching_bracket(
+        self,
+        document,  # type: ignore[no-untyped-def]
+        start: int,
+        opening: str,
+        closing: str,
+        max_index: int,
+    ) -> int | None:
         depth = 0
-        for index in range(start, len(text)):
-            character = text[index]
+        for index in range(start, max_index):
+            character = str(document.characterAt(index))
             if character == opening:
                 depth += 1
             elif character == closing:
@@ -822,10 +929,16 @@ class CodeEditorWidget(QPlainTextEdit):
                     return index
         return None
 
-    def _find_matching_bracket_backward(self, text: str, start: int, opening: str, closing: str) -> int | None:
+    def _find_matching_bracket_backward(
+        self,
+        document,  # type: ignore[no-untyped-def]
+        start: int,
+        opening: str,
+        closing: str,
+    ) -> int | None:
         depth = 0
         for index in range(start, -1, -1):
-            character = text[index]
+            character = str(document.characterAt(index))
             if character == closing:
                 depth += 1
             elif character == opening:

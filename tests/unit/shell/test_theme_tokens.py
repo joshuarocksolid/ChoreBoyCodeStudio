@@ -63,12 +63,18 @@ class TestTokensFromPalette:
         assert tokens.window_bg == "#1F2428"
         assert tokens.accent == "#5B8CFF"
         assert tokens.tree_hover_bg != ""
+        assert tokens.syntax_keyword != ""
+        assert tokens.syntax_markdown_code != ""
+        assert tokens.syntax_semantic_function != ""
 
     def test_light_tokens_have_expected_fields(self) -> None:
         tokens = tokens_from_palette(_make_palette(), force_mode="light")
         assert tokens.window_bg == "#F8F9FA"
         assert tokens.accent == "#3366FF"
         assert tokens.tree_hover_bg != ""
+        assert tokens.syntax_keyword != ""
+        assert tokens.syntax_markdown_code != ""
+        assert tokens.syntax_semantic_function != ""
 
     def test_light_and_dark_produce_different_tokens(self) -> None:
         light = tokens_from_palette(_make_palette(), force_mode="light")
@@ -76,3 +82,5 @@ class TestTokensFromPalette:
         assert light.window_bg != dark.window_bg
         assert light.editor_bg != dark.editor_bg
         assert light.text_primary != dark.text_primary
+        assert light.syntax_keyword != dark.syntax_keyword
+        assert light.syntax_semantic_function != dark.syntax_semantic_function

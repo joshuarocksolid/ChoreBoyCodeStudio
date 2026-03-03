@@ -67,6 +67,7 @@ from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
+from app.intelligence.semantic_tokens import SemanticTokenSpan, build_python_semantic_spans
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
         self._debug_panel: DebugPanelWidget | None = None
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
+        self._state_root = state_root
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
@@ -203,7 +205,6 @@ class MainWindow(QMainWindow):
         self._vertical_splitter: QSplitter | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
-        self._state_root = state_root
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
@@ -263,6 +264,7 @@ class MainWindow(QMainWindow):
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
+        self._semantic_revision_by_file: dict[str, int] = {}
         self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
@@ -3516,10 +3518,19 @@ class MainWindow(QMainWindow):
             update_tab_path_and_name=lambda tab_index, new_path: self._update_tab_path_and_name(tab_index, new_path),
             breakpoints_by_file=self._breakpoints_by_file,
             apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
-            update_widget_language=lambda widget, new_path: widget.set_language_for_path(new_path),
+            update_widget_language=self._update_widget_language_for_path,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
             maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
         )
+        self._semantic_revision_by_file = {
+            path: revision
+            for path, revision in self._semantic_revision_by_file.items()
+            if path in self._editor_widgets_by_path
+        }
+
+    def _update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
+        widget.set_language_for_path(new_path)
+        self._schedule_semantic_token_refresh(new_path, widget)
 
     def _update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         if self._editor_tabs_widget is None:
@@ -3604,6 +3615,9 @@ class MainWindow(QMainWindow):
             existing_index = self._tab_index_for_path(opened_result.tab.file_path)
             if existing_index >= 0:
                 self._editor_tabs_widget.setCurrentIndex(existing_index)
+                existing_widget = self._editor_widgets_by_path.get(opened_result.tab.file_path)
+                if existing_widget is not None:
+                    self._schedule_semantic_token_refresh(opened_result.tab.file_path, existing_widget)
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -3623,8 +3637,8 @@ class MainWindow(QMainWindow):
             min_chars=self._completion_min_chars,
         )
         editor_widget.apply_theme(self._resolve_theme_tokens())
-        editor_widget.set_language_for_path(opened_result.tab.file_path)
         editor_widget.setPlainText(opened_result.tab.current_content)
+        editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
 
         def completion_provider(
@@ -3670,6 +3684,7 @@ class MainWindow(QMainWindow):
             editor_widget.toPlainText(),
         )
         self._handle_editor_tab_changed(tab_index)
+        self._schedule_semantic_token_refresh(opened_result.tab.file_path, editor_widget)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
         self._logger.info(
@@ -3715,6 +3730,7 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
+        self._schedule_semantic_token_refresh(tab_state.file_path, editor_widget)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -3823,6 +3839,8 @@ class MainWindow(QMainWindow):
         widget = self._editor_widgets_by_path.pop(file_path, None)
         if widget is not None:
             self._release_editor_widget(widget)
+        self._semantic_revision_by_file.pop(file_path, None)
+        self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
         self._stored_lint_diagnostics.pop(file_path, None)
@@ -3845,6 +3863,9 @@ class MainWindow(QMainWindow):
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
         self._clear_debug_execution_indicator()
+        for file_path in list(self._semantic_revision_by_file):
+            self._background_tasks.cancel(self._semantic_task_key(file_path))
+        self._semantic_revision_by_file.clear()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -4038,6 +4059,65 @@ class MainWindow(QMainWindow):
         if active_tab is None or active_tab.file_path != file_path:
             return
         self._render_lint_diagnostics_for_file(file_path, trigger="realtime")
+    @staticmethod
+    def _semantic_task_key(file_path: str) -> str:
+        return f"semantic_tokens:{file_path}"
+
+    def _schedule_semantic_token_refresh(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
+        if not file_path.lower().endswith(".py"):
+            editor_widget.clear_semantic_tokens()
+            self._semantic_revision_by_file.pop(file_path, None)
+            self._background_tasks.cancel(self._semantic_task_key(file_path))
+            return
+
+        source_text = editor_widget.toPlainText()
+        if len(source_text) > 500_000:
+            editor_widget.clear_semantic_tokens()
+            self._semantic_revision_by_file.pop(file_path, None)
+            self._background_tasks.cancel(self._semantic_task_key(file_path))
+            return
+
+        revision = self._semantic_revision_by_file.get(file_path, 0) + 1
+        self._semantic_revision_by_file[file_path] = revision
+        started_at = time.perf_counter()
+
+        def task(cancel_event) -> list[SemanticTokenSpan]:  # type: ignore[no-untyped-def]
+            if cancel_event.is_set():
+                return []
+            spans = build_python_semantic_spans(source_text)
+            if cancel_event.is_set():
+                return []
+            return spans
+
+        def on_success(spans: list[SemanticTokenSpan]) -> None:
+            if self._semantic_revision_by_file.get(file_path) != revision:
+                return
+            widget = self._editor_widgets_by_path.get(file_path)
+            if widget is None:
+                return
+            widget.set_semantic_token_spans(spans)
+            if self._intelligence_runtime_settings.metrics_logging_enabled:
+                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                if elapsed_ms > 160.0:
+                    self._logger.warning(
+                        "Semantic tokens latency warning: file=%s elapsed_ms=%.2f count=%s",
+                        file_path,
+                        elapsed_ms,
+                        len(spans),
+                    )
+
+        def on_error(exc: Exception) -> None:
+            widget = self._editor_widgets_by_path.get(file_path)
+            if widget is not None:
+                widget.clear_semantic_tokens()
+            self._logger.debug("Semantic token refresh failed: file=%s error=%s", file_path, exc)
+
+        self._background_tasks.run(
+            key=self._semantic_task_key(file_path),
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:

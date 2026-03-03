@@ -539,6 +539,9 @@ Text editing behavior:
 * tabs
 * dirty state
 * syntax highlighting
+* stateful lexical highlighting per language (multiline-aware block state)
+* language highlighter registry (extension/sniff based) to avoid hardcoded branching
+* optional semantic token overlay fed by background analysis with document-revision guards
 * line numbers and breakpoint gutter markers
 * search within file
 * quick open support
@@ -1021,6 +1024,7 @@ Use **internal extension seams**:
 * optional vendored tool integrations
 
 This gives future flexibility without premature architecture complexity.
+Vendored tooling (when used) should remain pure-Python, live behind internal interfaces, and pass explicit quality/performance gates before cutover.
 
 ---
 
