@@ -203,19 +203,27 @@ def icon_package(color: str = "#5B8CFF") -> QIcon:
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     c = QColor(color)
+    fill = QColor(color)
+    fill.setAlpha(38)
+
     pen = p.pen()
     pen.setColor(c)
-    pen.setWidthF(1.5)
+    pen.setWidthF(1.4)
     p.setPen(pen)
+
+    p.setBrush(fill)
+    p.drawRoundedRect(QRectF(2, 5, 12, 9.5), 1.2, 1.2)
+
     p.setBrush(Qt.NoBrush)
-    # Box body
-    p.drawRect(QRectF(2, 5, 12, 9))
-    # Lid / flap lines
-    p.drawLine(QPointF(2, 5), QPointF(5, 2))
-    p.drawLine(QPointF(14, 5), QPointF(11, 2))
-    p.drawLine(QPointF(5, 2), QPointF(11, 2))
-    # Vertical ribbon
-    p.drawLine(QPointF(8, 2), QPointF(8, 14))
+    p.drawLine(QPointF(2, 9), QPointF(14, 9))
+    p.drawLine(QPointF(8, 5), QPointF(8, 9))
+
+    lid = QPolygonF([
+        QPointF(2, 5), QPointF(5, 2), QPointF(11, 2), QPointF(14, 5),
+    ])
+    p.setBrush(fill)
+    p.drawPolygon(lid)
+
     p.end()
     return QIcon(pm)
 

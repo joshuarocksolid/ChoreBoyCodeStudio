@@ -11,8 +11,6 @@ Demonstrates a range of PySide2 / Qt widgets that ChoreBoy users can reuse:
   - QSplitter for resizable panels
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path
@@ -46,7 +44,7 @@ from app.freecad_probe import probe_freecad
 from app.repository import Task, TaskRepository
 
 
-def _project_root() -> Path:
+def _project_root():
     """Resolve project root from the entry-point location."""
     if "__file__" in dir(sys.modules["__main__"]):
         return Path(sys.modules["__main__"].__file__).resolve().parent
@@ -56,12 +54,7 @@ def _project_root() -> Path:
 class TaskDialog(QDialog):
     """Reusable dialog for creating or editing a task."""
 
-    def __init__(
-        self,
-        parent: QWidget | None = None,
-        title: str = "New Task",
-        task: Task | None = None,
-    ) -> None:
+    def __init__(self, parent=None, title="New Task", task=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(380)
@@ -99,20 +92,20 @@ class TaskDialog(QDialog):
         btn_row.addWidget(cancel_btn)
         layout.addRow(btn_row)
 
-    def task_title(self) -> str:
+    def task_title(self):
         return self.title_edit.text().strip()
 
-    def task_description(self) -> str:
+    def task_description(self):
         return self.description_edit.toPlainText().strip()
 
-    def task_status(self) -> str:
+    def task_status(self):
         return self.status_combo.currentText()
 
 
 class MainWindow(QMainWindow):
     """Primary application window showcasing Qt widgets + SQLite CRUD."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.setWindowTitle("CRUD Showcase — ChoreBoy Example Project")
         self.resize(820, 560)
@@ -127,7 +120,7 @@ class MainWindow(QMainWindow):
 
     # ---- toolbar ----
 
-    def _build_toolbar(self) -> None:
+    def _build_toolbar(self):
         toolbar = QToolBar("Actions", self)
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
@@ -152,7 +145,7 @@ class MainWindow(QMainWindow):
 
     # ---- central area ----
 
-    def _build_central_area(self) -> None:
+    def _build_central_area(self):
         tabs = QTabWidget(self)
 
         # Tab 1: task table + detail splitter
@@ -217,21 +210,21 @@ class MainWindow(QMainWindow):
 
     # ---- status bar ----
 
-    def _build_status_bar(self) -> None:
+    def _build_status_bar(self):
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
         self._status_label = QLabel("")
         self._status.addPermanentWidget(self._status_label)
         self._update_status_counts()
 
-    def _update_status_counts(self) -> None:
+    def _update_status_counts(self):
         counts = self._repo.count_by_status()
         text = "  |  ".join(f"{k}: {v}" for k, v in counts.items())
         self._status_label.setText(text)
 
     # ---- table helpers ----
 
-    def _refresh_table(self) -> None:
+    def _refresh_table(self):
         status_filter = self._filter_combo.currentText() if hasattr(self, "_filter_combo") else "All"
         if status_filter == "All":
             status_filter = ""
@@ -248,7 +241,7 @@ class MainWindow(QMainWindow):
         self._update_status_counts()
         self._detail_browser.clear()
 
-    def _selected_task(self) -> Task | None:
+    def _selected_task(self):
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             return None
@@ -262,7 +255,7 @@ class MainWindow(QMainWindow):
 
     # ---- slots ----
 
-    def _on_selection_changed(self) -> None:
+    def _on_selection_changed(self):
         task = self._selected_task()
         if task is None:
             self._detail_browser.clear()
@@ -273,7 +266,7 @@ class MainWindow(QMainWindow):
             f"{task.description or '(no description)'}"
         )
 
-    def _on_new_task(self) -> None:
+    def _on_new_task(self):
         dlg = TaskDialog(self, title="New Task")
         if dlg.exec_() != QDialog.Accepted:
             return
@@ -284,7 +277,7 @@ class MainWindow(QMainWindow):
         self._status.showMessage("Task created.", 3000)
         self._refresh_table()
 
-    def _on_edit_task(self) -> None:
+    def _on_edit_task(self):
         task = self._selected_task()
         if task is None:
             QMessageBox.information(self, "Edit", "Select a task first.")
@@ -299,7 +292,7 @@ class MainWindow(QMainWindow):
         self._status.showMessage("Task updated.", 3000)
         self._refresh_table()
 
-    def _on_delete_task(self) -> None:
+    def _on_delete_task(self):
         task = self._selected_task()
         if task is None:
             QMessageBox.information(self, "Delete", "Select a task first.")
@@ -316,12 +309,12 @@ class MainWindow(QMainWindow):
         self._status.showMessage("Task deleted.", 3000)
         self._refresh_table()
 
-    def _on_run_probe(self) -> None:
+    def _on_run_probe(self):
         results = probe_freecad()
         lines = [f"<b>{key}:</b> {value}" for key, value in results.items()]
         self._probe_output.setHtml("<br/>".join(lines))
         self._status.showMessage("FreeCAD probe complete.", 3000)
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event):
         self._repo.close()
         super().closeEvent(event)

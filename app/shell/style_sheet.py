@@ -508,6 +508,17 @@ QToolButton#shell\\.toolbar\\.btn\\.debug:hover {{
 QToolButton#shell\\.toolbar\\.btn\\.debug:pressed {{
     background: {"#645214" if tokens.is_dark else "#FCD34D"};
 }}
+/* -- Package button (blue accent) -------------------------------------- */
+QToolButton#shell\\.toolbar\\.btn\\.package {{
+    background: {"#1B2A4A" if tokens.is_dark else "#E8EEFF"};
+    color: {"#7EA8FF" if tokens.is_dark else "#2952CC"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.package:hover {{
+    background: {"#243758" if tokens.is_dark else "#D6E0FF"};
+}}
+QToolButton#shell\\.toolbar\\.btn\\.package:pressed {{
+    background: {"#2E4468" if tokens.is_dark else "#C4D4FF"};
+}}
 QFrame#shell\\.toolbar\\.separator {{
     color: {tokens.border};
 }}

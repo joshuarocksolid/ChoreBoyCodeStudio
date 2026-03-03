@@ -6,15 +6,13 @@ normal desktop), every function returns a graceful fallback message instead of
 crashing.
 """
 
-from __future__ import annotations
 
-
-def probe_freecad() -> dict[str, str]:
+def probe_freecad():
     """Return a dict of FreeCAD capability facts, or fallback messages."""
-    results: dict[str, str] = {}
+    results = {}
 
     try:
-        import FreeCAD  # type: ignore[import-untyped]
+        import FreeCAD
         results["FreeCAD available"] = "Yes"
         results["FreeCAD version"] = FreeCAD.Version()[0] + "." + FreeCAD.Version()[1]
     except ImportError:
@@ -22,7 +20,7 @@ def probe_freecad() -> dict[str, str]:
         results["FreeCAD version"] = "N/A"
 
     try:
-        import FreeCAD  # type: ignore[import-untyped]  # noqa: F811
+        import FreeCAD  # noqa: F811
         doc = FreeCAD.newDocument("ProbeTest")
         box = doc.addObject("Part::Box", "TestBox")
         results["Headless Part::Box"] = f"Created — dims {box.Length}x{box.Width}x{box.Height}"

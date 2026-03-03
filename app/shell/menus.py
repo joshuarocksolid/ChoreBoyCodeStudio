@@ -82,6 +82,8 @@ class MenuCallbacks:
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
     on_help_load_example_project: Callable[[], object] | None = None
+    on_help_open_app_log: Callable[[], object] | None = None
+    on_help_open_log_folder: Callable[[], object] | None = None
     on_help_getting_started: Callable[[], object] | None = None
     on_help_shortcuts: Callable[[], object] | None = None
     on_help_about: Callable[[], object] | None = None
@@ -634,6 +636,23 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Load Example Project...",
         enabled=True,
         callback=callback_registry.on_help_load_example_project,
+    )
+    help_menu.addSeparator()
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.openAppLog",
+        "Open Application Log",
+        enabled=True,
+        callback=callback_registry.on_help_open_app_log,
+    )
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.openLogFolder",
+        "Open Log Folder",
+        enabled=True,
+        callback=callback_registry.on_help_open_log_folder,
     )
     help_menu.addSeparator()
     _register_menu_action(

@@ -37,7 +37,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_cache_dir, project_logs_dir
+from app.bootstrap.paths import global_app_log_path, global_cache_dir, global_logs_dir, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
@@ -370,6 +370,8 @@ class MainWindow(QMainWindow):
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
                 on_help_load_example_project=self._handle_load_example_project_action,
+                on_help_open_app_log=self._handle_open_app_log_action,
+                on_help_open_log_folder=self._handle_open_log_folder_action,
                 on_help_getting_started=self._handle_getting_started_action,
                 on_help_shortcuts=self._handle_shortcuts_action,
                 on_help_about=self._handle_about_action,
@@ -1344,6 +1346,29 @@ class MainWindow(QMainWindow):
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _handle_open_app_log_action(self) -> None:
+        from PySide2.QtCore import QUrl
+        from PySide2.QtGui import QDesktopServices
+
+        log_path = global_app_log_path(self._state_root)
+        if not log_path.exists():
+            QMessageBox.information(
+                self, "Application Log",
+                f"No log file found at:\n{log_path}",
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
+
+    def _handle_open_log_folder_action(self) -> None:
+        log_dir = global_logs_dir(self._state_root)
+        if not log_dir.exists():
+            QMessageBox.information(
+                self, "Log Folder",
+                f"Log folder does not exist yet:\n{log_dir}",
+            )
+            return
+        self._reveal_path_in_file_manager(str(log_dir))
 
     def _handle_getting_started_action(self) -> None:
         self._show_help_file("Getting Started", "getting_started.md")

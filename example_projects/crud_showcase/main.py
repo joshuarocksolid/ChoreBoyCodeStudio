@@ -11,7 +11,7 @@ from PySide2.QtWidgets import QApplication
 from app.main_window import MainWindow
 
 
-def main() -> int:
+def main():
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
