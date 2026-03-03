@@ -67,7 +67,6 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     metadata = ProjectMetadata(schema_version=1, name="My Project")
 
     assert metadata.default_entry == "main.py"
-    assert metadata.default_mode == "python_script"
     assert metadata.default_argv == []
     assert metadata.working_directory == "."
     assert metadata.template == "utility_script"
@@ -75,7 +74,6 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     assert metadata.run_configs == []
     assert metadata.env_overrides == {}
     assert metadata.project_notes == ""
-    assert metadata.import_metadata == {}
 
 
 def test_project_metadata_serializes_to_stable_schema() -> None:
@@ -84,11 +82,10 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         schema_version=1,
         name="Custom Project",
         default_entry="app/start.py",
-        default_mode="qt_app",
         working_directory="app",
         template="qt_app",
         safe_mode=False,
-        run_configs=[{"id": "default", "mode": "qt_app"}],
+        run_configs=[{"id": "default"}],
         env_overrides={"APP_ENV": "dev"},
         project_notes="Launches a Qt UI.",
     )
@@ -97,15 +94,13 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         "schema_version": 1,
         "name": "Custom Project",
         "default_entry": "app/start.py",
-        "default_mode": "qt_app",
         "default_argv": [],
         "working_directory": "app",
         "template": "qt_app",
         "safe_mode": False,
-        "run_configs": [{"id": "default", "mode": "qt_app"}],
+        "run_configs": [{"id": "default"}],
         "env_overrides": {"APP_ENV": "dev"},
         "project_notes": "Launches a Qt UI.",
-        "import_metadata": {},
     }
 
 
@@ -152,7 +147,6 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
             "schema_version": 1,
             "name": "Project Alpha",
             "default_entry": "main.py",
-            "default_mode": "python_script",
             "default_argv": [],
             "working_directory": ".",
             "template": "utility_script",
@@ -160,8 +154,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
             "run_configs": [],
             "env_overrides": {},
             "project_notes": "",
-            "import_metadata": {},
-        },
+            },
         "entries": [
             {
                 "relative_path": "run.py",

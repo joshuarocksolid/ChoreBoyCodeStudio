@@ -13,8 +13,6 @@ from app.core.errors import RunManifestValidationError
 ALLOWED_RUN_MODES = frozenset(
     {
         constants.RUN_MODE_PYTHON_SCRIPT,
-        constants.RUN_MODE_QT_APP,
-        constants.RUN_MODE_FREECAD_HEADLESS,
         constants.RUN_MODE_PYTHON_REPL,
         constants.RUN_MODE_PYTHON_DEBUG,
     }

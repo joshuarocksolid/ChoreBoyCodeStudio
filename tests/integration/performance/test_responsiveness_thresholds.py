@@ -24,7 +24,6 @@ def _write_project_manifest(project_root: Path, name: str) -> None:
                 "schema_version": 1,
                 "name": name,
                 "default_entry": "run.py",
-                "default_mode": "python_script",
                 "working_directory": ".",
                 "safe_mode": True,
             }

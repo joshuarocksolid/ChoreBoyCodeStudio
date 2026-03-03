@@ -10,7 +10,6 @@ import tomllib
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
-from app.project.import_analysis import analyze_imported_project
 from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
 
 
@@ -75,7 +74,6 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
     payload = build_default_project_manifest_payload(
         project_name=normalized_name,
         default_entry="main.py",
-        default_mode="python_script",
         working_directory=".",
         template="blank_project",
         safe_mode=True,
@@ -259,11 +257,9 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
     payload = build_default_project_manifest_payload(
         project_name=_derive_project_name(project_root),
         default_entry=inferred_entry,
-        default_mode="python_script",
         working_directory=".",
         template="imported_external",
         safe_mode=True,
-        import_metadata=analyze_imported_project(project_root, inferred_entry).to_metadata_payload(),
     )
 
     try:

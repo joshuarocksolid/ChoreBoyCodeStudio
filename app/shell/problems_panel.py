@@ -117,6 +117,51 @@ def severity_icon(severity: DiagnosticSeverity | str, color_hex: str) -> QIcon:
 
 _FILE_ICON_CACHE: dict[str, QIcon] = {}
 
+_TAB_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
+
+
+def _make_tab_error_icon(color_hex: str) -> QIcon:
+    pixmap = QPixmap(10, 10)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(QColor(color_hex))
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(1, 1, 8, 8)
+    p.end()
+    return QIcon(pixmap)
+
+
+def _make_tab_warning_icon(color_hex: str) -> QIcon:
+    pixmap = QPixmap(10, 10)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(QColor(color_hex))
+    p.setPen(Qt.NoPen)
+    triangle = QPolygon()
+    triangle.append(QPoint(5, 0))
+    triangle.append(QPoint(10, 10))
+    triangle.append(QPoint(0, 10))
+    p.drawPolygon(triangle)
+    p.end()
+    return QIcon(pixmap)
+
+
+def tab_diagnostic_icon(severity: DiagnosticSeverity | str, color_hex: str) -> QIcon:
+    """Return a small 10x10 icon for use in editor tab bars."""
+    key = (str(severity), color_hex)
+    cached = _TAB_ICON_CACHE.get(key)
+    if cached is not None:
+        return cached
+    sev = str(severity)
+    if sev == DiagnosticSeverity.WARNING or sev == "warning":
+        icon = _make_tab_warning_icon(color_hex)
+    else:
+        icon = _make_tab_error_icon(color_hex)
+    _TAB_ICON_CACHE[key] = icon
+    return icon
+
 
 def _file_group_icon(color_hex: str) -> QIcon:
     cached = _FILE_ICON_CACHE.get(color_hex)

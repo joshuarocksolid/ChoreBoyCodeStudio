@@ -33,7 +33,6 @@ def _build_loaded_project(project_root: Path) -> LoadedProject:
             schema_version=1,
             name="Test Project",
             default_entry="run.py",
-            default_mode=constants.RUN_MODE_PYTHON_SCRIPT,
             working_directory=".",
             safe_mode=True,
         ),

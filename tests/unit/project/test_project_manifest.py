@@ -53,7 +53,6 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
         "name": "Defaulted Project",
         "default_entry": "main.py",
-        "default_mode": "python_script",
         "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
@@ -61,7 +60,6 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
-        "import_metadata": {},
     }
 
 
@@ -73,7 +71,6 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
         "name": "Imported Project",
         "default_entry": "main.py",
-        "default_mode": "python_script",
         "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
@@ -81,14 +78,7 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
-        "import_metadata": {},
     }
-
-
-def test_build_default_project_manifest_payload_rejects_unknown_mode() -> None:
-    """Helper should reject unsupported run modes before writing manifests."""
-    with pytest.raises(ValueError, match="default_mode must be one of"):
-        build_default_project_manifest_payload(project_name="Imported Project", default_mode="future_mode")
 
 
 def test_load_project_manifest_rejects_non_object_payload() -> None:
@@ -138,21 +128,6 @@ def test_load_project_manifest_rejects_invalid_run_configs_type() -> None:
     assert "must be a list" in str(exc_info.value)
 
 
-def test_load_project_manifest_rejects_invalid_import_metadata_type() -> None:
-    """import_metadata must remain an object for stable onboarding metadata."""
-    with pytest.raises(ProjectManifestValidationError) as exc_info:
-        parse_project_manifest(
-            {
-                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
-                "name": "Bad Import Metadata",
-                "import_metadata": "not-an-object",
-            }
-        )
-
-    assert exc_info.value.field == "import_metadata"
-    assert "must be an object" in str(exc_info.value)
-
-
 def test_load_project_manifest_rejects_unsupported_schema_version() -> None:
     """Unknown schema versions should fail with actionable messaging."""
     with pytest.raises(ProjectManifestValidationError) as exc_info:
@@ -160,21 +135,6 @@ def test_load_project_manifest_rejects_unsupported_schema_version() -> None:
 
     assert exc_info.value.field == "schema_version"
     assert "Unsupported schema_version" in str(exc_info.value)
-
-
-def test_load_project_manifest_rejects_unknown_default_mode() -> None:
-    """default_mode must be an allowed runtime mode value."""
-    with pytest.raises(ProjectManifestValidationError) as exc_info:
-        parse_project_manifest(
-            {
-                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
-                "name": "Bad Mode",
-                "default_mode": "future_mode",
-            }
-        )
-
-    assert exc_info.value.field == "default_mode"
-    assert "Unsupported default_mode" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_invalid_default_argv_type() -> None:

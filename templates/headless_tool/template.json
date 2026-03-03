@@ -2,6 +2,5 @@
   "template_id": "headless_tool",
   "display_name": "Headless FreeCAD Tool",
   "description": "Starter tool for FreeCAD-safe headless automation.",
-  "default_mode": "freecad_headless",
   "template_version": 1
 }
