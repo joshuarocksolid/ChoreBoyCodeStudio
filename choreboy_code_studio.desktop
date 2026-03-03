@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ChoreBoy Code Studio
+Comment=Launch ChoreBoy Code Studio (Qt via FreeCAD AppRun)
+#Icon=/home/default/choreboy_code_studio/app/ui/icons/app_icon.png
+Terminal=false
+Categories=Utility;Development;
+
+Exec=/opt/freecad/AppRun -c "p='/home/default/choreboy_code_studio/run_editor.py';exec(compile(open(p,'r',encoding='utf-8').read(),p,'exec'),{'__name__':'__main__','__file__':p})"

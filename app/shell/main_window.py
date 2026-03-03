@@ -494,6 +494,9 @@ class MainWindow(QMainWindow):
         try:
             tokens = self._resolve_theme_tokens()
             self.setStyleSheet(build_shell_style_sheet(tokens))
+            if self._quick_open_dialog is not None:
+                self._quick_open_dialog.deleteLater()
+                self._quick_open_dialog = None
             for editor_widget in self._editor_widgets_by_path.values():
                 editor_widget.apply_theme(tokens)
             if self._python_console_widget is not None:
