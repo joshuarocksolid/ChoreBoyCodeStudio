@@ -30,7 +30,7 @@ def test_build_support_bundle_includes_expected_artifacts(tmp_path: Path) -> Non
     state_root = tmp_path / "state"
     _write_valid_project(project_root)
 
-    app_log_path = configure_app_logging(state_root=state_root)
+    app_log_path = configure_app_logging(state_root=state_root).log_path
     app_log_path.write_text("app log\n", encoding="utf-8")
     health_report = run_project_health_check(project_root, state_root=state_root)
 
@@ -54,7 +54,7 @@ def test_build_support_bundle_includes_run_log_when_provided(tmp_path: Path) -> 
     state_root = tmp_path / "state"
     _write_valid_project(project_root)
 
-    app_log_path = configure_app_logging(state_root=state_root)
+    app_log_path = configure_app_logging(state_root=state_root).log_path
     app_log_path.write_text("app log\n", encoding="utf-8")
     run_log_path = project_root / ".cbcs" / "logs" / "run_20260302_120000.log"
     run_log_path.parent.mkdir(parents=True, exist_ok=True)

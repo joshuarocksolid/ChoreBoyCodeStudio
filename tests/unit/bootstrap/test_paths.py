@@ -77,3 +77,26 @@ def test_ensure_directory_is_idempotent(tmp_path: Path) -> None:
     assert second == target
     assert target.exists()
     assert target.is_dir()
+
+
+def test_try_ensure_directory_returns_path_on_success(tmp_path: Path) -> None:
+    """Successful creation should return (path, None)."""
+    target = tmp_path / "new_dir" / "nested"
+    result_path, error = paths.try_ensure_directory(target)
+
+    assert result_path == target
+    assert error is None
+    assert target.exists()
+    assert target.is_dir()
+
+
+def test_try_ensure_directory_returns_error_on_failure(tmp_path: Path) -> None:
+    """When parent is a file, mkdir fails; should return (None, OSError)."""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("I am a file")
+    target = blocker / "child"
+
+    result_path, error = paths.try_ensure_directory(target)
+
+    assert result_path is None
+    assert isinstance(error, OSError)

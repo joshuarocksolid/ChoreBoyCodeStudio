@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import tempfile
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 from app.core import constants
 
@@ -68,6 +68,14 @@ def ensure_directory(path: PathInput) -> Path:
     directory = _normalize_absolute_path(path, "path")
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def try_ensure_directory(path: PathInput) -> Tuple[Optional[Path], Optional[OSError]]:
+    """Attempt to create a directory; return (path, None) on success or (None, error) on failure."""
+    try:
+        return ensure_directory(path), None
+    except OSError as exc:
+        return None, exc
 
 
 def project_cbcs_dir(project_root: PathInput) -> Path:
