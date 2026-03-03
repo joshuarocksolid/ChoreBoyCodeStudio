@@ -223,10 +223,11 @@ def test_analyze_python_file_skips_dotted_import_when_top_level_known(tmp_path: 
 
 
 def test_analyze_python_file_still_flags_without_known_modules(tmp_path: Path) -> None:
+    """Non-stdlib modules are still flagged when known_runtime_modules is None."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     file_path = project_root / "run.py"
-    file_path.write_text("import os\nos.getcwd()\n", encoding="utf-8")
+    file_path.write_text("import nonexistent_package\nnonexistent_package.run()\n", encoding="utf-8")
 
     diagnostics = analyze_python_file(
         str(file_path), project_root=str(project_root), known_runtime_modules=None,
@@ -234,7 +235,7 @@ def test_analyze_python_file_still_flags_without_known_modules(tmp_path: Path) -
     py200 = [d for d in diagnostics if d.code == "PY200"]
 
     assert len(py200) == 1
-    assert "os" in py200[0].message
+    assert "nonexistent_package" in py200[0].message
 
 
 def test_find_unresolved_imports_respects_known_runtime_modules(tmp_path: Path) -> None:
@@ -249,3 +250,115 @@ def test_find_unresolved_imports_respects_known_runtime_modules(tmp_path: Path) 
 
     assert len(diagnostics) == 1
     assert "nonexistent" in diagnostics[0].message
+
+
+# ---------------------------------------------------------------------------
+# vendor/ directory import resolution
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_resolves_import_from_vendor_module(tmp_path: Path) -> None:
+    """A .py module under vendor/ should be treated as resolvable."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir()
+    (vendor_dir / "vendored_lib.py").write_text("x = 1\n", encoding="utf-8")
+    file_path = project_root / "main.py"
+    file_path.write_text("import vendored_lib\nvendored_lib.x\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=frozenset(),
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 0
+
+
+def test_analyze_resolves_import_from_vendor_package(tmp_path: Path) -> None:
+    """A package under vendor/ should be treated as resolvable."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_pkg = project_root / "vendor" / "mypkg"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    file_path = project_root / "main.py"
+    file_path.write_text("import mypkg\nmypkg\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=frozenset(),
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 0
+
+
+def test_find_unresolved_imports_resolves_vendor_module(tmp_path: Path) -> None:
+    """find_unresolved_imports should also respect vendor/ modules."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir()
+    (vendor_dir / "vendored_lib.py").write_text("x = 1\n", encoding="utf-8")
+    (project_root / "main.py").write_text("import vendored_lib\nvendored_lib.x\n", encoding="utf-8")
+
+    diagnostics = find_unresolved_imports(str(project_root), known_runtime_modules=frozenset())
+
+    assert len(diagnostics) == 0
+
+
+# ---------------------------------------------------------------------------
+# stdlib fallback (defensive, when probe has not completed)
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_does_not_flag_stdlib_when_known_modules_is_none(tmp_path: Path) -> None:
+    """stdlib modules like os, sys must not be flagged even when known_runtime_modules is None."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text(
+        "import os\nimport sys\nimport json\nimport traceback\n"
+        "from datetime import datetime\nfrom pathlib import Path\n"
+        "os.getcwd()\nsys.exit()\njson.dumps({})\ntraceback.format_exc()\n"
+        "datetime.now()\nPath('.')\n",
+        encoding="utf-8",
+    )
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=None,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 0
+
+
+def test_analyze_does_not_flag_stdlib_when_known_modules_is_empty(tmp_path: Path) -> None:
+    """stdlib modules must not be flagged even when known_runtime_modules is an empty set."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("import os\nimport sys\nos.getcwd()\nsys.exit()\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=frozenset(),
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 0
+
+
+def test_analyze_still_flags_unknown_module_with_stdlib_fallback(tmp_path: Path) -> None:
+    """Non-stdlib modules should still be flagged even with fallback active."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("import os\nimport totally_fake\nos.getcwd()\ntotally_fake.run()\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path), project_root=str(project_root), known_runtime_modules=None,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "totally_fake" in py200[0].message

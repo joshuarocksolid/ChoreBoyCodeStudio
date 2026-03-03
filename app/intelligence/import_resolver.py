@@ -25,12 +25,13 @@ def resolve_project_import(
         return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=None)
     root = Path(project_root).expanduser().resolve()
     module_path = Path(*module_name.split("."))
-    module_file = (root / module_path).with_suffix(".py")
-    package_init = root / module_path / "__init__.py"
-    if module_file.exists():
-        return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(module_file.resolve()))
-    if package_init.exists():
-        return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(package_init.resolve()))
+    for base in (root, root / "vendor"):
+        module_file = (base / module_path).with_suffix(".py")
+        package_init = base / module_path / "__init__.py"
+        if module_file.exists():
+            return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(module_file.resolve()))
+        if package_init.exists():
+            return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(package_init.resolve()))
     return ImportResolution(module_name=module_name, is_resolved=False, resolved_path=None)
 
 

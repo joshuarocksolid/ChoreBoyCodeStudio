@@ -2264,6 +2264,7 @@ class MainWindow(QMainWindow):
             if isinstance(modules, frozenset) and modules:
                 self._known_runtime_modules = modules
                 self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
+                self._relint_open_python_files()
 
         def on_error(exc: Exception) -> None:
             self._logger.warning("Runtime module probe failed: %s", exc)
@@ -2271,6 +2272,13 @@ class MainWindow(QMainWindow):
         self._background_tasks.run(
             key="runtime_module_probe", task=task, on_success=on_success, on_error=on_error,
         )
+
+    def _relint_open_python_files(self) -> None:
+        """Re-lint all currently open Python file tabs and refresh the problems panel."""
+        for file_path in list(self._editor_widgets_by_path):
+            if file_path.lower().endswith(".py"):
+                self._render_lint_diagnostics_for_file(file_path, trigger="tab_change")
+        self._render_merged_problems_panel()
 
     def _handle_refresh_runtime_modules_action(self) -> None:
         self._start_runtime_module_probe()

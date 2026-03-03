@@ -276,3 +276,32 @@ class TestPackageProject:
         assert result.desktop_name == "my_app.desktop"
         assert result.project_folder_name == ".my_app"
         assert Path(result.output_path).name == "my_app"
+
+    def test_repackage_removes_stale_files(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "a.py").write_text("print('a')\n")
+        (project / "b.py").write_text("print('b')\n")
+        out = tmp_path / "out"
+
+        package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file="a.py",
+            output_dir=str(out),
+        )
+        hidden = out / "proj" / ".proj"
+        assert (hidden / "b.py").is_file()
+
+        (project / "b.py").unlink()
+
+        result = package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file="a.py",
+            output_dir=str(out),
+        )
+        assert result.success is True
+        hidden = Path(result.output_path) / ".proj"
+        assert (hidden / "a.py").is_file()
+        assert not (hidden / "b.py").exists()

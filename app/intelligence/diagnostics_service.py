@@ -7,6 +7,54 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+# Defensive fallback: well-known Python 3.x stdlib top-level module names.
+# Used when the runtime probe has not yet completed or failed, so that
+# common imports like ``os``, ``sys``, ``json`` are never flagged as
+# unresolved.  This is intentionally a broad but not exhaustive set —
+# the runtime probe provides the authoritative list once available.
+_STDLIB_FALLBACK: frozenset[str] = frozenset({
+    "abc", "argparse", "array", "ast", "asyncio", "atexit",
+    "base64", "binascii", "bisect", "builtins", "bz2",
+    "cProfile", "calendar", "cmath", "cmd", "code", "codecs",
+    "codeop", "collections", "colorsys", "compileall", "concurrent",
+    "configparser", "contextlib", "contextvars", "copy", "copyreg", "csv",
+    "ctypes", "curses",
+    "dataclasses", "datetime", "dbm", "decimal", "difflib", "dis", "doctest",
+    "email", "encodings", "enum", "errno",
+    "faulthandler", "fcntl", "filecmp", "fileinput", "fnmatch",
+    "fractions", "ftplib", "functools",
+    "gc", "getopt", "getpass", "gettext", "glob", "graphlib", "grp", "gzip",
+    "hashlib", "heapq", "hmac", "html", "http",
+    "idlelib", "imaplib", "importlib", "inspect", "io", "ipaddress",
+    "itertools",
+    "json",
+    "keyword",
+    "linecache", "locale", "logging", "lzma",
+    "mailbox", "marshal", "math", "mimetypes", "mmap", "modulefinder",
+    "multiprocessing",
+    "netrc", "numbers",
+    "operator", "optparse", "os",
+    "pathlib", "pdb", "pickle", "pickletools", "pkgutil", "platform",
+    "plistlib", "poplib", "posixpath", "pprint", "profile", "pstats",
+    "pty", "pwd", "py_compile", "pyclbr", "pydoc",
+    "queue", "quopri",
+    "random", "re", "readline", "reprlib", "resource", "rlcompleter",
+    "runpy",
+    "sched", "secrets", "select", "selectors", "shelve", "shlex",
+    "shutil", "signal", "site", "smtplib", "socket", "socketserver",
+    "sqlite3", "ssl", "stat", "statistics", "string", "stringprep",
+    "struct", "subprocess", "symtable", "sys", "sysconfig", "syslog",
+    "tarfile", "tempfile", "termios", "textwrap", "threading", "time",
+    "timeit", "tkinter", "token", "tokenize", "tomllib", "trace",
+    "traceback", "tracemalloc", "tty", "turtle", "types", "typing",
+    "unicodedata", "unittest", "urllib", "uuid",
+    "venv",
+    "warnings", "wave", "weakref", "webbrowser",
+    "wsgiref",
+    "xml", "xmlrpc",
+    "zipfile", "zipimport", "zlib", "zoneinfo",
+})
+
 
 @dataclass(frozen=True)
 class ImportDiagnostic:
@@ -168,13 +216,15 @@ def _is_import_resolvable(
     known_runtime_modules: frozenset[str] | None = None,
 ) -> bool:
     top_level = module_name.split(".")[0]
-    if known_runtime_modules and top_level in known_runtime_modules:
+    effective_modules = known_runtime_modules if known_runtime_modules else _STDLIB_FALLBACK
+    if top_level in effective_modules:
         return True
     module_path = Path(*module_name.split("."))
-    if (project_root / module_path).with_suffix(".py").exists():
-        return True
-    if (project_root / module_path / "__init__.py").exists():
-        return True
+    for base in (project_root, project_root / "vendor"):
+        if (base / module_path).with_suffix(".py").exists():
+            return True
+        if (base / module_path / "__init__.py").exists():
+            return True
     return False
 
 

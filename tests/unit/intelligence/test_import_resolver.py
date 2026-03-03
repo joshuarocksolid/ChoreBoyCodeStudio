@@ -97,3 +97,51 @@ def test_resolve_project_import_still_unresolved_without_known_modules(tmp_path:
     unresolved = resolve_project_import(str(project_root), "FreeCAD")
 
     assert unresolved.is_resolved is False
+
+
+# ---------------------------------------------------------------------------
+# vendor/ directory import resolution
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_project_import_resolves_vendor_module(tmp_path: Path) -> None:
+    """A .py file under vendor/ should resolve."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir()
+    (vendor_dir / "vendored_lib.py").write_text("x = 1\n", encoding="utf-8")
+
+    resolved = resolve_project_import(str(project_root), "vendored_lib")
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is not None and resolved.resolved_path.endswith("vendored_lib.py")
+
+
+def test_resolve_project_import_resolves_vendor_package(tmp_path: Path) -> None:
+    """A package under vendor/ should resolve."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_pkg = project_root / "vendor" / "mypkg"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+
+    resolved = resolve_project_import(str(project_root), "mypkg")
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is not None and resolved.resolved_path.endswith("__init__.py")
+
+
+def test_resolve_project_import_vendor_dotted_submodule(tmp_path: Path) -> None:
+    """A dotted import under vendor/ should resolve."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    vendor_pkg = project_root / "vendor" / "mypkg"
+    vendor_pkg.mkdir(parents=True)
+    (vendor_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (vendor_pkg / "sub.py").write_text("y = 2\n", encoding="utf-8")
+
+    resolved = resolve_project_import(str(project_root), "mypkg.sub")
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is not None and resolved.resolved_path.endswith("sub.py")
