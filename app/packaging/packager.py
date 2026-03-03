@@ -117,6 +117,8 @@ def package_project(
     install_dir = f"/home/default/{sanitized}/{hidden_folder}"
 
     try:
+        if package_dir.exists():
+            shutil.rmtree(package_dir)
         package_dir.mkdir(parents=True, exist_ok=True)
         project_dest.mkdir(parents=True, exist_ok=True)
 
