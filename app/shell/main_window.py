@@ -2574,7 +2574,11 @@ class MainWindow(QMainWindow):
         project_root = self._loaded_project.project_root
         project_name = self._loaded_project.metadata.name
         entry_file = self._loaded_project.metadata.default_entry
-        output_dir = str(Path.home())
+        output_dir = QFileDialog.getExistingDirectory(
+            self, "Choose Package Output Folder", str(Path.home()),
+        )
+        if not output_dir:
+            return
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return package_project(

@@ -73,6 +73,25 @@ def build_desktop_entry(
     )
 
 
+def _paths_overlap(a: Path, b: Path) -> bool:
+    """Return True if resolved *a* and *b* are the same path or nested."""
+    ra = a.resolve()
+    rb = b.resolve()
+    if ra == rb:
+        return True
+    try:
+        ra.relative_to(rb)
+        return True
+    except ValueError:
+        pass
+    try:
+        rb.relative_to(ra)
+        return True
+    except ValueError:
+        pass
+    return False
+
+
 def _should_exclude(rel_path: Path) -> bool:
     """Return True if *rel_path* should be excluded from the package."""
     parts_str = rel_path.as_posix()
@@ -117,6 +136,20 @@ def package_project(
     package_dir = out / sanitized
     project_dest = package_dir / project_files_folder
     install_dir = f"/home/default/{sanitized}/{project_files_folder}"
+
+    if _paths_overlap(package_dir, root):
+        return PackageResult(
+            output_path=str(package_dir),
+            desktop_name=desktop_name,
+            project_folder_name=project_files_folder,
+            success=False,
+            error=(
+                f"Package output path '{package_dir.resolve()}' overlaps with "
+                f"the project directory '{root.resolve()}'. "
+                "Choose a different output location to avoid overwriting "
+                "the project."
+            ),
+        )
 
     try:
         if package_dir.exists():

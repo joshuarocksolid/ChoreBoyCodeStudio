@@ -8,6 +8,7 @@ import pytest
 
 from app.packaging.packager import (
     PackageResult,
+    _paths_overlap,
     build_desktop_entry,
     package_project,
     sanitize_project_name,
@@ -303,3 +304,107 @@ class TestPackageProject:
         hidden = Path(result.output_path) / "app_files"
         assert (hidden / "a.py").is_file()
         assert not (hidden / "b.py").exists()
+
+
+class TestPathsOverlap:
+    def test_same_path(self, tmp_path: Path) -> None:
+        d = tmp_path / "alpha"
+        d.mkdir()
+        assert _paths_overlap(d, d) is True
+
+    def test_a_is_parent_of_b(self, tmp_path: Path) -> None:
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        parent.mkdir()
+        child.mkdir()
+        assert _paths_overlap(parent, child) is True
+
+    def test_b_is_parent_of_a(self, tmp_path: Path) -> None:
+        parent = tmp_path / "parent"
+        child = parent / "child"
+        parent.mkdir()
+        child.mkdir()
+        assert _paths_overlap(child, parent) is True
+
+    def test_disjoint_paths(self, tmp_path: Path) -> None:
+        a = tmp_path / "aaa"
+        b = tmp_path / "bbb"
+        a.mkdir()
+        b.mkdir()
+        assert _paths_overlap(a, b) is False
+
+    def test_symlink_resolved_collision(self, tmp_path: Path) -> None:
+        real = tmp_path / "real_dir"
+        real.mkdir()
+        link = tmp_path / "link_dir"
+        link.symlink_to(real)
+        assert _paths_overlap(real, link) is True
+
+
+class TestPackageProjectOverlapGuard:
+    """Verify that packaging refuses to proceed when output overlaps the project."""
+
+    def _make_project(self, path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "main.py").write_text("print('hello')\n")
+        return path
+
+    def test_same_path_collision(self, tmp_path: Path) -> None:
+        project = self._make_project(tmp_path / "my_project")
+        result = package_project(
+            project_root=str(project),
+            project_name="my_project",
+            entry_file="main.py",
+            output_dir=str(tmp_path),
+        )
+        assert result.success is False
+        assert "overlaps" in (result.error or "")
+        assert (project / "main.py").is_file(), "project must not be deleted"
+
+    def test_package_inside_project_root(self, tmp_path: Path) -> None:
+        project = self._make_project(tmp_path / "proj")
+        result = package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file="main.py",
+            output_dir=str(project),
+        )
+        assert result.success is False
+        assert "overlaps" in (result.error or "")
+
+    def test_project_inside_package_dir(self, tmp_path: Path) -> None:
+        outer = tmp_path / "outer"
+        project = self._make_project(outer / "inner")
+        result = package_project(
+            project_root=str(project),
+            project_name="outer",
+            entry_file="main.py",
+            output_dir=str(tmp_path),
+        )
+        assert result.success is False
+        assert "overlaps" in (result.error or "")
+
+    def test_symlink_resolved_collision(self, tmp_path: Path) -> None:
+        real_project = self._make_project(tmp_path / "real_proj")
+        link = tmp_path / "link_proj"
+        link.symlink_to(real_project)
+        result = package_project(
+            project_root=str(link),
+            project_name="real_proj",
+            entry_file="main.py",
+            output_dir=str(tmp_path),
+        )
+        assert result.success is False
+        assert "overlaps" in (result.error or "")
+        assert (real_project / "main.py").is_file(), "project must not be deleted"
+
+    def test_non_overlapping_still_succeeds(self, tmp_path: Path) -> None:
+        project = self._make_project(tmp_path / "src_project")
+        result = package_project(
+            project_root=str(project),
+            project_name="src_project",
+            entry_file="main.py",
+            output_dir=str(tmp_path / "out"),
+        )
+        assert result.success is True
+        assert Path(result.output_path).is_dir()
