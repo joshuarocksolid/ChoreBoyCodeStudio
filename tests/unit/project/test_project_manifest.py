@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 def test_load_project_manifest_returns_structured_model_for_minimal_valid_payload(tmp_path: Path) -> None:
     """Minimal valid payload should load into a structured metadata model."""
-    manifest_path = tmp_path / ".cbcs" / "project.json"
+    manifest_path = tmp_path / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
         json.dumps(
@@ -137,7 +137,7 @@ def test_load_project_manifest_rejects_invalid_default_argv_type() -> None:
 
 def test_load_project_manifest_rejects_malformed_json_with_manifest_path(tmp_path: Path) -> None:
     """Malformed JSON should raise a validation error tied to the source path."""
-    manifest_path = tmp_path / ".cbcs" / "project.json"
+    manifest_path = tmp_path / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text("{ this is not valid json", encoding="utf-8")
 

@@ -7,6 +7,7 @@ import difflib
 from pathlib import Path
 import re
 
+from app.core import constants
 from app.intelligence.diagnostics_service import CodeDiagnostic
 
 
@@ -257,7 +258,7 @@ def _discover_project_modules(project_root: str) -> set[str]:
     root = Path(project_root).expanduser().resolve()
     discovered: set[str] = set()
     for file_path in root.rglob("*.py"):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         relative = file_path.relative_to(root)
         if relative.name == "__init__.py":

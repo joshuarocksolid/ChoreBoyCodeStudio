@@ -28,7 +28,7 @@ def _wait_until(predicate, timeout_seconds: float = 5.0) -> bool:
 def _build_loaded_project(project_root: Path) -> LoadedProject:
     return LoadedProject(
         project_root=str(project_root.resolve()),
-        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
         metadata=ProjectMetadata(
             schema_version=1,
             name="Test Project",
@@ -42,7 +42,7 @@ def _build_loaded_project(project_root: Path) -> LoadedProject:
 def test_run_service_starts_runner_and_writes_artifacts(tmp_path: Path) -> None:
     """Run service should create manifest/log artifacts and emit process events."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     (project_root / "run.py").write_text("print('RUN_SERVICE_OK')\n", encoding="utf-8")
     loaded_project = _build_loaded_project(project_root)
 
@@ -70,7 +70,7 @@ def test_run_service_starts_runner_and_writes_artifacts(tmp_path: Path) -> None:
 def test_run_service_stop_terminates_long_running_run(tmp_path: Path) -> None:
     """Stop should terminate long-running runs with user-terminated exit flag."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     (project_root / "run.py").write_text("import time\nprint('tick')\ntime.sleep(30)\n", encoding="utf-8")
     loaded_project = _build_loaded_project(project_root)
 
@@ -92,7 +92,7 @@ def test_run_service_stop_terminates_long_running_run(tmp_path: Path) -> None:
 def test_run_service_python_repl_supports_input_and_output(tmp_path: Path) -> None:
     """Python REPL mode should accept stdin and emit evaluated output."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     (project_root / "run.py").write_text("print('unused')\n", encoding="utf-8")
     loaded_project = _build_loaded_project(project_root)
 
@@ -140,7 +140,7 @@ def test_run_service_projectless_python_repl_uses_home_cwd_and_executes_multilin
 def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) -> None:
     """Debug mode should pause on configured breakpoint and resume via stdin command."""
     project_root = tmp_path / "project"
-    (project_root / ".cbcs").mkdir(parents=True)
+    (project_root / "cbcs").mkdir(parents=True)
     script_path = project_root / "run.py"
     script_path.write_text("value = 41\nvalue = value + 1\nprint(value)\n", encoding="utf-8")
     loaded_project = _build_loaded_project(project_root)

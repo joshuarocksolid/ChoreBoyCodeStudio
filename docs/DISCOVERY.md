@@ -14,7 +14,7 @@ The approach is:
 
 1. Use LibrePy (inside LibreOffice) as a **launcher** (or any Python context that can call subprocess).
 2. Spawn FreeCAD’s `AppRun` in console mode:
-   - `'/opt/freecad/AppRun', '-c', 'exec(open(".../main.py").read())'`
+   - `'/opt/freecad/AppRun', '-c', 'import os,runpy,sys; ...; runpy.run_path(".../main.py", run_name="__main__")'`
 3. The executed script can:
    - `import PySide2` and create a `QApplication()`
    - show windows and run a Qt event loop
@@ -57,7 +57,13 @@ We run Python code inside that runtime by calling:
 
 ```python
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/main.py").read())'],
+    [
+        '/opt/freecad/AppRun',
+        '-c',
+        "import os,runpy,sys;root='/home/default/myapp';"
+        "sys.path.insert(0,root) if root not in sys.path else None;"
+        "os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')",
+    ],
     start_new_session=True
 )
 ```
@@ -81,8 +87,10 @@ We confirmed the ChoreBoy desktop environment can launch our Qt apps directly us
 ### Recommended pattern
 
 1. Rename `main.py` to `main.py` and treat it as the single entrypoint.
-2. Create a `.desktop` file whose `Exec=` runs FreeCAD’s runtime and `exec()`s `main.py`.
-3. IMPORTANT: define `__file__` explicitly in the `exec()` globals (because `AppRun -c` does not set it for code loaded from disk).
+2. Create a `.desktop` file whose `Exec=` runs FreeCAD’s runtime and uses deterministic bootstrap:
+   - normalize `sys.path`
+   - set `cwd`
+   - launch with `runpy.run_path(...)`
 
 ### Example `.desktop` (MyApp)
 
@@ -96,7 +104,7 @@ Comment=Launch MyApp (Qt via FreeCAD AppRun)
 Terminal=false
 Categories=Utility;
 
-Exec=/opt/freecad/AppRun -c "p='/home/default/myapp/main.py';exec(compile(open(p,'r',encoding='utf-8').read(),p,'exec'),{'__name__':'__main__','__file__':p})"
+Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/myapp';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')"
 ```
 
 ### Install locations
@@ -181,6 +189,38 @@ These probes were run and verified on ChoreBoy:
 * `psql` not available on PATH
 
 **Implication:** Direct Postgres requires vendoring a pure-Python client (recommended: pg8000) or implementing a bridge.
+
+---
+
+## 4A. Launch/Runtime findings from 2026-03-03 investigation
+
+### Confirmed blockers
+
+1. **Dot-prefixed app directories are unreliable in target launch context**
+   - Paths like `.choreboy_code_studio` / `.cbcs` may fail due permissions/policy behavior.
+   - Current app contracts should avoid requiring dot-prefixed metadata/state paths.
+
+2. **Python 3.9 runtime typing crash was a real startup blocker**
+   - Crash signature:
+     - `TypeError: unsupported operand type(s) for |: 'types.GenericAlias' and 'NoneType'`
+   - Triggered by runtime-evaluated type alias expression in `syntax_registry.py`.
+   - Any runtime-evaluated typing expression using `|` must remain Python 3.9-safe.
+
+3. **“Silent” launch failures were often logging-channel mismatch**
+   - Global home log path may be unwritable.
+   - Fallback logs land under `/tmp/choreboy_code_studio/logs/app.log`.
+   - Debug workflow must inspect active fallback log path, not only expected home path.
+
+4. **Capability probe can report FreeCAD false negatives**
+   - Subprocess probe attempting to execute `/opt/freecad/usr/bin/FreeCAD` may fail with `Permission denied`.
+   - Treat this as probe-launch constraint, not definitive proof that in-process `import FreeCAD` is impossible.
+
+### Launch contract refinement
+
+Preferred launch style for ChoreBoy:
+- avoid `exec(open(...).read())` boot patterns;
+- use explicit bootstrap (`sys.path`, `cwd`) + `runpy.run_path`;
+- route failures to known log path and/or stderr-visible channel.
 
 ---
 
@@ -284,7 +324,7 @@ myapp/
   main.py
   launcher.py
   vendor/          # optional (pg8000 etc)
-  .cbcs/
+  cbcs/
     project.json
     logs/
   app/
@@ -307,7 +347,13 @@ Key ideas:
 ```python
 import subprocess
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/main.py").read())'],
+    [
+        '/opt/freecad/AppRun',
+        '-c',
+        "import os,runpy,sys;root='/home/default/myapp';"
+        "sys.path.insert(0,root) if root not in sys.path else None;"
+        "os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')",
+    ],
     start_new_session=True
 )
 ```

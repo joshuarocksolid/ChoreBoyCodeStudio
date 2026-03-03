@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
+from app.core import constants
+
 
 @dataclass(frozen=True)
 class ImportRewritePreview:
@@ -26,7 +28,7 @@ def plan_import_rewrites(project_root: str, old_relative_path: str, new_relative
     root = Path(project_root).expanduser().resolve()
     previews: list[ImportRewritePreview] = []
     for file_path in sorted(root.rglob("*.py")):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         original_text = file_path.read_text(encoding="utf-8")
         rewritten_text, changed_lines = _rewrite_import_lines(original_text, old_module, new_module)

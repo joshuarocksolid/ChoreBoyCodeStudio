@@ -26,7 +26,7 @@ def test_materialize_showcase_creates_project_with_manifest(tmp_path: Path) -> N
         project_name="My Example",
     )
 
-    manifest_path = created / ".cbcs" / "project.json"
+    manifest_path = created / "cbcs" / "project.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["name"] == "My Example"

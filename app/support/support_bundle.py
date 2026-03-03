@@ -41,7 +41,7 @@ def build_support_bundle(
 
     with zipfile.ZipFile(bundle_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         if manifest_file.exists():
-            archive.write(manifest_file, arcname="project/.cbcs/project.json")
+            archive.write(manifest_file, arcname="project/cbcs/project.json")
         if app_log_file.exists():
             archive.write(app_log_file, arcname="global_logs/app.log")
         if run_log_file is not None and run_log_file.exists():

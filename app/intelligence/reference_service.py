@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import tokenize
 
+from app.core import constants
+
 
 @dataclass(frozen=True)
 class ReferenceHit:
@@ -51,7 +53,7 @@ def find_references(
     definition_positions = _collect_definition_positions(root, symbol_name=symbol_name)
     hits: list[ReferenceHit] = []
     for file_path in sorted(root.rglob("*.py")):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         hits.extend(
             _collect_references_from_file(
@@ -82,7 +84,7 @@ def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
 def _collect_definition_positions(project_root: Path, *, symbol_name: str) -> set[tuple[str, int, int]]:
     positions: set[tuple[str, int, int]] = set()
     for file_path in sorted(project_root.rglob("*.py")):
-        if ".cbcs" in file_path.parts:
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
         positions.update(_collect_file_definitions(file_path.resolve(), symbol_name=symbol_name))
     return positions

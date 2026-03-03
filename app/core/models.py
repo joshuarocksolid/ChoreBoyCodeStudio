@@ -64,7 +64,7 @@ class CapabilityProbeReport:
 
 @dataclass(frozen=True)
 class ProjectMetadata:
-    """Canonical `.cbcs/project.json` metadata model."""
+    """Canonical `cbcs/project.json` metadata model."""
 
     schema_version: int
     name: str

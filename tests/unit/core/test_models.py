@@ -121,7 +121,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
     metadata = ProjectMetadata(schema_version=1, name="Project Alpha")
     loaded_project = LoadedProject(
         project_root="/tmp/project_alpha",
-        manifest_path="/tmp/project_alpha/.cbcs/project.json",
+        manifest_path="/tmp/project_alpha/cbcs/project.json",
         metadata=metadata,
         entries=[
             ProjectFileEntry(
@@ -139,7 +139,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
 
     assert loaded_project.to_dict() == {
         "project_root": "/tmp/project_alpha",
-        "manifest_path": "/tmp/project_alpha/.cbcs/project.json",
+        "manifest_path": "/tmp/project_alpha/cbcs/project.json",
         "metadata": {
             "schema_version": 1,
             "name": "Project Alpha",

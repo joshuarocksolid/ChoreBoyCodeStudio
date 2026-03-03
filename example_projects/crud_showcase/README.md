@@ -52,7 +52,7 @@ crud_showcase/
     repository.py      <- SQLite CRUD operations
     freecad_probe.py   <- optional FreeCAD detection
   README.md            <- this file
-  .cbcs/
+  cbcs/
     project.json       <- project metadata
 ```
 

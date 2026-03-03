@@ -33,23 +33,23 @@ def test_generate_run_id_includes_timestamp_and_random_suffix() -> None:
 
 
 def test_build_run_manifest_path_uses_project_contract(tmp_path: Path) -> None:
-    """Run manifest should target .cbcs/runs directory."""
+    """Run manifest should target cbcs/runs directory."""
     project_root = tmp_path / "project_alpha"
     run_id = "20260301_050607_abcd12"
 
     manifest_path = build_run_manifest_path(project_root, run_id)
 
-    assert manifest_path == project_root / ".cbcs" / "runs" / f"run_manifest_{run_id}.json"
+    assert manifest_path == project_root / "cbcs" / "runs" / f"run_manifest_{run_id}.json"
 
 
 def test_build_run_log_path_uses_project_logs_contract(tmp_path: Path) -> None:
-    """Run log should target .cbcs/logs inside the project."""
+    """Run log should target cbcs/logs inside the project."""
     project_root = tmp_path / "project_alpha"
     run_id = "20260301_050607_abcd12"
 
     log_path = build_run_log_path(project_root, run_id)
 
-    assert log_path == project_root / ".cbcs" / "logs" / f"run_{run_id}.log"
+    assert log_path == project_root / "cbcs" / "logs" / f"run_{run_id}.log"
 
 
 def test_resolve_runtime_executable_prefers_explicit_config(tmp_path: Path) -> None:
@@ -90,7 +90,7 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     (project_root / "app" / "main.py").write_text("print('main')\n", encoding="utf-8")
     loaded_project = LoadedProject(
         project_root=str(project_root.resolve()),
-        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
         metadata=ProjectMetadata(
             schema_version=1,
             name="demo",
@@ -130,7 +130,7 @@ def test_start_run_uses_project_default_argv_when_not_overridden(tmp_path: Path,
     (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
     loaded_project = LoadedProject(
         project_root=str(project_root.resolve()),
-        manifest_path=str((project_root / ".cbcs" / "project.json").resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
         metadata=ProjectMetadata(
             schema_version=1,
             name="demo",

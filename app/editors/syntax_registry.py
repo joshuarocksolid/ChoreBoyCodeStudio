@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Optional
 
 from PySide2.QtGui import QTextDocument
 
@@ -14,7 +14,9 @@ from app.editors.syntax_json import JsonSyntaxHighlighter
 from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
 
-HighlighterFactory = Callable[[QTextDocument, bool, Mapping[str, str] | None], object]
+# Keep this alias Python 3.9-safe. Runtime-evaluated ``Mapping[...] | None`` can
+# fail under older runtimes when not protected as a postponed annotation.
+HighlighterFactory = Callable[[QTextDocument, bool, Optional[Mapping[str, str]]], object]
 _COMMON_MARKDOWN_BASENAMES = {
     "readme",
     "changelog",

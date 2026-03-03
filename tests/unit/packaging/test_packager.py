@@ -39,43 +39,41 @@ class TestSanitizeProjectName:
 
 class TestBuildDesktopEntry:
     def test_contains_desktop_entry_header(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
         assert "[Desktop Entry]" in content
 
     def test_type_is_application(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
         assert "Type=Application" in content
 
     def test_name_matches_project(self) -> None:
-        content = build_desktop_entry("My App", "main.py", "/home/default/.myapp")
+        content = build_desktop_entry("My App", "main.py", "/home/default/myapp/app_files")
         assert "Name=My App" in content
 
     def test_terminal_false(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
         assert "Terminal=false" in content
 
     def test_exec_uses_apprun(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
         assert "/opt/freecad/AppRun" in content
 
     def test_exec_contains_entry_file_path(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
-        assert "/home/default/.myapp/main.py" in content
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        assert "/home/default/myapp/app_files/main.py" in content
 
-    def test_exec_sets_dunder_file(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
-        assert "'__file__'" in content
-
-    def test_exec_sets_dunder_name(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/.myapp")
-        assert "'__name__':'__main__'" in content
+    def test_exec_bootstraps_runpy_and_sys_path(self) -> None:
+        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        assert "runpy.run_path" in content
+        assert "sys.path.insert(0,root)" in content
+        assert "os.chdir(root)" in content
 
     def test_custom_entry_file(self) -> None:
-        content = build_desktop_entry("myapp", "app/run.py", "/home/default/.myapp")
-        assert "/home/default/.myapp/app/run.py" in content
+        content = build_desktop_entry("myapp", "app/run.py", "/home/default/myapp/app_files")
+        assert "/home/default/myapp/app_files/app/run.py" in content
 
     def test_comment_mentions_project(self) -> None:
-        content = build_desktop_entry("Cool Tool", "main.py", "/home/default/.cool_tool")
+        content = build_desktop_entry("Cool Tool", "main.py", "/home/default/cool_tool/app_files")
         assert "Cool Tool" in content
 
 
@@ -84,8 +82,8 @@ class TestPackageProject:
         project = tmp_path / "my_project"
         project.mkdir()
         (project / "main.py").write_text("print('hello')\n")
-        (project / ".cbcs").mkdir()
-        (project / ".cbcs" / "project.json").write_text("{}")
+        (project / "cbcs").mkdir()
+        (project / "cbcs" / "project.json").write_text("{}")
 
         result = package_project(
             project_root=str(project),
@@ -112,7 +110,7 @@ class TestPackageProject:
         desktop_path = Path(result.output_path) / "my_project.desktop"
         assert desktop_path.is_file()
 
-    def test_folder_contains_hidden_project_subfolder(self, tmp_path: Path) -> None:
+    def test_folder_contains_project_subfolder(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
@@ -123,7 +121,7 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".my_project"
+        hidden = Path(result.output_path) / "app_files"
         assert hidden.is_dir()
 
     def test_includes_source_files(self, tmp_path: Path) -> None:
@@ -140,7 +138,7 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".test_app"
+        hidden = Path(result.output_path) / "app_files"
         assert (hidden / "main.py").is_file()
         assert (hidden / "app" / "widget.py").is_file()
 
@@ -158,14 +156,14 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".proj"
+        hidden = Path(result.output_path) / "app_files"
         assert not (hidden / "__pycache__").exists()
 
     def test_excludes_cbcs_runs_and_cache(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
-        cbcs = project / ".cbcs"
+        cbcs = project / "cbcs"
         cbcs.mkdir()
         (cbcs / "project.json").write_text("{}")
         runs = cbcs / "runs"
@@ -181,16 +179,16 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".proj"
-        assert not (hidden / ".cbcs" / "runs").exists()
-        assert not (hidden / ".cbcs" / "cache").exists()
-        assert (hidden / ".cbcs" / "project.json").is_file()
+        hidden = Path(result.output_path) / "app_files"
+        assert not (hidden / "cbcs" / "runs").exists()
+        assert not (hidden / "cbcs" / "cache").exists()
+        assert (hidden / "cbcs" / "project.json").is_file()
 
     def test_excludes_cbcs_logs_dir(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / "main.py").write_text("print(1)\n")
-        logs = project / ".cbcs" / "logs"
+        logs = project / "cbcs" / "logs"
         logs.mkdir(parents=True)
         (logs / "run.log").write_text("log data")
 
@@ -200,8 +198,8 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".proj"
-        assert not (hidden / ".cbcs" / "logs").exists()
+        hidden = Path(result.output_path) / "app_files"
+        assert not (hidden / "cbcs" / "logs").exists()
 
     def test_excludes_pyc_files(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
@@ -215,7 +213,7 @@ class TestPackageProject:
             entry_file="main.py",
             output_dir=str(tmp_path / "out"),
         )
-        hidden = Path(result.output_path) / ".proj"
+        hidden = Path(result.output_path) / "app_files"
         pyc_files = list(hidden.rglob("*.pyc"))
         assert pyc_files == []
 
@@ -260,7 +258,7 @@ class TestPackageProject:
         assert "[Desktop Entry]" in content
         assert "Name=Cool Tool" in content
         assert "/opt/freecad/AppRun" in content
-        assert "/home/default/cool_tool/.cool_tool/main.py" in content
+        assert "/home/default/cool_tool/app_files/main.py" in content
 
     def test_result_metadata_fields(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
@@ -274,7 +272,7 @@ class TestPackageProject:
             output_dir=str(tmp_path / "out"),
         )
         assert result.desktop_name == "my_app.desktop"
-        assert result.project_folder_name == ".my_app"
+        assert result.project_folder_name == "app_files"
         assert Path(result.output_path).name == "my_app"
 
     def test_repackage_removes_stale_files(self, tmp_path: Path) -> None:
@@ -290,7 +288,7 @@ class TestPackageProject:
             entry_file="a.py",
             output_dir=str(out),
         )
-        hidden = out / "proj" / ".proj"
+        hidden = out / "proj" / "app_files"
         assert (hidden / "b.py").is_file()
 
         (project / "b.py").unlink()
@@ -302,6 +300,6 @@ class TestPackageProject:
             output_dir=str(out),
         )
         assert result.success is True
-        hidden = Path(result.output_path) / ".proj"
+        hidden = Path(result.output_path) / "app_files"
         assert (hidden / "a.py").is_file()
         assert not (hidden / "b.py").exists()

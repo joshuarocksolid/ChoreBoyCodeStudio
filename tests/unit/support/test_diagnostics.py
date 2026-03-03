@@ -13,9 +13,9 @@ pytestmark = pytest.mark.unit
 
 
 def _write_valid_project(project_root: Path) -> None:
-    (project_root / ".cbcs").mkdir(parents=True, exist_ok=True)
+    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
     (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / ".cbcs" / "project.json").write_text(
+    (project_root / "cbcs" / "project.json").write_text(
         json.dumps({"schema_version": 1, "name": "diag_project"}, indent=2),
         encoding="utf-8",
     )

@@ -68,7 +68,7 @@ def build_default_project_manifest_payload(
 
 
 def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
-    """Load `<project>/.cbcs/project.json` and return structured metadata."""
+    """Load `<project>/cbcs/project.json` and return structured metadata."""
     path = Path(manifest_path).expanduser().resolve()
     try:
         raw_payload = path.read_text(encoding="utf-8")

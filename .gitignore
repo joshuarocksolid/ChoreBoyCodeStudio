@@ -37,7 +37,7 @@ Thumbs.db
 .idea/
 
 # ChoreBoy Code Studio runtime artifacts
-.choreboy_code_studio/
-**/.cbcs/runs/
-**/.cbcs/logs/
-**/.cbcs/cache/
+choreboy_code_studio_state/
+**/cbcs/runs/
+**/cbcs/logs/
+**/cbcs/cache/

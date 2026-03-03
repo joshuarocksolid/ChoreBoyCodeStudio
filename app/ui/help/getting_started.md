@@ -101,7 +101,7 @@ Open `Tools > FreeCAD Headless Notes` for safe guidance.
 - Save often with `Ctrl+S`.
 - Use `Ctrl+Shift+S` for `Save All` when multiple files are open.
 - Back up project folders to USB regularly.
-- Per-run logs are stored in your project under `.cbcs/logs`, which is useful for debugging later.
+- Per-run logs are stored in your project under `cbcs/logs`, which is useful for debugging later.
 
 ## Shortcuts to Remember
 

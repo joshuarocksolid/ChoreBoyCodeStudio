@@ -74,7 +74,7 @@ If a change affects launching, execution, logging, output capture, or crash hand
 Projects must remain ordinary folders on disk. Prefer transparent file-based storage over opaque internal state.
 
 ### 5.4 Project metadata must stay human-readable
-Canonical project metadata belongs in project files such as `.cbcs/project.json`, not hidden in a database.
+Canonical project metadata belongs in project files such as `cbcs/project.json`, not hidden in a database.
 
 ### 5.5 Use SQLite only for caches, indexes, or optional acceleration
 Do not move the project’s primary identity or project metadata into SQLite.
