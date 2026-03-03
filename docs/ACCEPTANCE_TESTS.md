@@ -772,6 +772,29 @@ Verify variable/stack inspection affordances in debug workflows.
 
 ---
 
+## AT-32 — Syntax highlighting modernization and adaptive performance
+
+**Purpose:**  
+Verify modern lexical+semantic highlighting quality while preserving responsiveness under sustained edits and large files.
+
+**Preconditions:**  
+- project contains at least one medium Python file (~2,000 LOC) and one very large file (>250k chars)
+- editor can switch between light and dark themes
+
+**Steps:**  
+1. Open the medium Python file and verify role-based highlighting (keywords, decorators, functions/methods, classes, parameters, imports).
+2. Type a short burst of edits (multiple quick keystrokes) and confirm semantic coloring updates without visible jitter/freeze.
+3. Open the large file and confirm adaptive mode reduces expensive overlays while keeping editing responsive.
+4. Switch light/dark theme with multiple editor tabs open and verify syntax readability remains consistent in both themes.
+
+**Expected Result:**  
+- lexical tokens are stateful/consistent (including multiline constructs and modern Python syntax)
+- semantic token overlays are stable while typing and do not visibly lag behind active edits
+- large-file adaptive behavior keeps interaction smooth (no sustained UI stalls from highlighting overlays)
+- light/dark themes both preserve readable contrast for lexical and semantic token categories
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

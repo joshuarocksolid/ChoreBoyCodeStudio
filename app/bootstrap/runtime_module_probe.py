@@ -15,6 +15,7 @@ from app.core import constants
 
 RUNTIME_MODULES_CACHE_FILENAME = "runtime_modules.json"
 PROBE_TIMEOUT_SECONDS = 30
+_PROBE_STDOUT_PREVIEW_CHARS = 240
 
 PROBE_SCRIPT = (
     "import sys, json, pkgutil;"
@@ -22,6 +23,69 @@ PROBE_SCRIPT = (
     "[mods.add(name) for _, name, _ in pkgutil.iter_modules()];"
     "print(json.dumps(sorted(mods)))"
 )
+
+
+def _normalize_module_payload(payload: Any) -> frozenset[str] | None:
+    """Validate probe payload shape and normalize to a module-name set."""
+    if not isinstance(payload, list):
+        return None
+    normalized: set[str] = set()
+    for item in payload:
+        if not isinstance(item, str):
+            return None
+        name = item.strip()
+        if not name:
+            continue
+        normalized.add(name)
+    return frozenset(normalized)
+
+
+def _extract_module_list_from_stdout(stdout: str) -> frozenset[str] | None:
+    """Parse module JSON from possibly noisy probe stdout."""
+    if not stdout:
+        return None
+    candidates: list[str] = []
+    stripped = stdout.strip()
+    if stripped:
+        candidates.append(stripped)
+    for line in stdout.splitlines():
+        candidate = line.strip()
+        if candidate:
+            candidates.append(candidate)
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        normalized = _normalize_module_payload(parsed)
+        if normalized is not None:
+            return normalized
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(stdout):
+        if char != "[":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(stdout[index:])
+        except json.JSONDecodeError:
+            continue
+        normalized = _normalize_module_payload(parsed)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _stdout_preview(stdout: str) -> str:
+    """Return compact preview for probe parse failures."""
+    if not stdout:
+        return "<empty>"
+    compact = " | ".join(line.strip() for line in stdout.splitlines() if line.strip())
+    if not compact:
+        return "<whitespace>"
+    if len(compact) <= _PROBE_STDOUT_PREVIEW_CHARS:
+        return compact
+    return f"{compact[:_PROBE_STDOUT_PREVIEW_CHARS]}..."
 
 
 @dataclass(frozen=True)
@@ -99,20 +163,19 @@ def probe_runtime_modules(runtime_path: str) -> RuntimeModuleProbeResult:
             error_message=f"Probe exited with code {completed.returncode}: {stderr}",
         )
 
-    try:
-        module_list = json.loads(completed.stdout.strip())
-    except (json.JSONDecodeError, ValueError) as exc:
+    module_set = _extract_module_list_from_stdout(completed.stdout)
+    if module_set is None:
         return RuntimeModuleProbeResult(
             modules=frozenset(),
             runtime_path=runtime_path,
             python_version=python_version,
             probed_at=now,
             success=False,
-            error_message=f"Failed to parse probe output: {exc}",
+            error_message=f"Failed to parse probe output as module list. stdout={_stdout_preview(completed.stdout)}",
         )
 
     return RuntimeModuleProbeResult(
-        modules=frozenset(module_list),
+        modules=module_set,
         runtime_path=runtime_path,
         python_version=python_version,
         probed_at=now,

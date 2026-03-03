@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+import re
 from typing import Any
 
 from PySide2.QtGui import QTextDocument
@@ -14,6 +15,18 @@ from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
 from app.editors.syntax_python import PythonSyntaxHighlighter
 
 HighlighterFactory = Callable[[QTextDocument, bool, Mapping[str, str] | None], object]
+_COMMON_MARKDOWN_BASENAMES = {
+    "readme",
+    "changelog",
+    "changes",
+    "history",
+    "license",
+    "copying",
+    "contributing",
+    "authors",
+}
+_COMMON_PYTHON_BASENAMES = {"sconstruct", "sconscript", "wscript", "conanfile"}
+_PYTHON_LINE_PATTERN = re.compile(r"^\s*(?:def|class|async\s+def|from\s+\w+\s+import|import\s+\w+)\b")
 
 
 class SyntaxHighlighterRegistry:
@@ -66,15 +79,56 @@ class SyntaxHighlighterRegistry:
         if sample_text:
             stripped = sample_text.lstrip()
             first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
-            if first_line.startswith("#!") and "python" in first_line:
+            lower_first = first_line.lower()
+            if first_line.startswith("#!") and "python" in lower_first:
                 return ".py"
-            if stripped.startswith("{") or stripped.startswith("["):
+            if self._looks_like_json(stripped):
                 return ".json"
-            if stripped.startswith("#") or stripped.startswith("```"):
+            if self._looks_like_markdown(stripped):
                 return ".md"
-        if not Path(file_path).suffix and file_path.lower().endswith("readme"):
+            if self._looks_like_python(stripped):
+                return ".py"
+        path_obj = Path(file_path)
+        if path_obj.suffix:
+            return None
+        basename = path_obj.name.lower()
+        if basename in _COMMON_MARKDOWN_BASENAMES:
             return ".md"
+        if basename in _COMMON_PYTHON_BASENAMES:
+            return ".py"
         return None
+
+    @staticmethod
+    def _looks_like_json(stripped: str) -> bool:
+        if not stripped:
+            return False
+        if stripped.startswith("{") or stripped.startswith("["):
+            return True
+        if stripped.startswith('"') and ":" in stripped[:220]:
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_markdown(stripped: str) -> bool:
+        if not stripped:
+            return False
+        first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
+        if first_line.startswith(("#", "```", "~~~", "> ", "- ", "* ")):
+            return True
+        if re.match(r"^\d+[.)]\s+\S", first_line):
+            return True
+        if "[" in first_line and "](" in first_line:
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_python(stripped: str) -> bool:
+        if not stripped:
+            return False
+        for line in stripped.splitlines()[:10]:
+            if _PYTHON_LINE_PATTERN.match(line):
+                return True
+        return False
 
 
 def _python_factory(document: QTextDocument, is_dark: bool, syntax_palette: Mapping[str, str] | None) -> object:
@@ -97,9 +151,9 @@ def default_syntax_highlighter_registry() -> SyntaxHighlighterRegistry:
     global _DEFAULT_REGISTRY
     if _DEFAULT_REGISTRY is None:
         registry = SyntaxHighlighterRegistry()
-        registry.register({".py", ".pyw"}, _python_factory)
-        registry.register({".json"}, _json_factory)
-        registry.register({".md", ".markdown"}, _markdown_factory)
+        registry.register({".py", ".pyw", ".pyi"}, _python_factory)
+        registry.register({".json", ".jsonc", ".json5"}, _json_factory)
+        registry.register({".md", ".markdown", ".mdx", ".mkd"}, _markdown_factory)
         _DEFAULT_REGISTRY = registry
     return _DEFAULT_REGISTRY
 
@@ -124,7 +178,10 @@ def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
         "markdown_emphasis": tokens.syntax_markdown_emphasis,
         "markdown_code": tokens.syntax_markdown_code,
         "semantic_function": tokens.syntax_semantic_function,
+        "semantic_method": tokens.syntax_semantic_method,
         "semantic_class": tokens.syntax_semantic_class,
         "semantic_parameter": tokens.syntax_semantic_parameter,
         "semantic_import": tokens.syntax_semantic_import,
+        "semantic_variable": tokens.syntax_semantic_variable,
+        "semantic_property": tokens.syntax_semantic_property,
     }

@@ -37,9 +37,12 @@ DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
     "markdown_emphasis": "#5F3DC4",
     "markdown_code": "#C73E0A",
     "semantic_function": "#1C7ED6",
+    "semantic_method": "#1971C2",
     "semantic_class": "#1864AB",
     "semantic_parameter": "#2B8A3E",
     "semantic_import": "#9C36B5",
+    "semantic_variable": "#2F9E44",
+    "semantic_property": "#1A73E8",
 }
 DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "keyword": "#7EA8FF",
@@ -59,9 +62,12 @@ DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "markdown_emphasis": "#B197FC",
     "markdown_code": "#FF8C5A",
     "semantic_function": "#79C0FF",
+    "semantic_method": "#8CC8FF",
     "semantic_class": "#A5D6FF",
     "semantic_parameter": "#56D364",
     "semantic_import": "#D2A8FF",
+    "semantic_variable": "#7EE787",
+    "semantic_property": "#5CC8FF",
 }
 
 

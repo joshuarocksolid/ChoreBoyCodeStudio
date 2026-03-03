@@ -86,6 +86,48 @@ class TestPythonSyntaxHighlighter:
         assert _color_at(document, 2, source.splitlines()[2].index("1")) == _LIGHT_COLORS["number"].lower()
         assert _color_at(document, 3, source.splitlines()[3].index("6")) == _LIGHT_COLORS["number"].lower()
 
+    def test_fstring_expressions_highlight_inner_tokens(self) -> None:
+        source = 'value = f"item {count + 1}"\n'
+        document, _ = _render(PythonSyntaxHighlighter, source, is_dark=False)
+        plus_color = _color_at(document, 0, source.index("+"))
+        number_color = _color_at(document, 0, source.index("1"))
+        brace_color = _color_at(document, 0, source.index("{"))
+        assert plus_color == _LIGHT_COLORS["operator"].lower()
+        assert number_color == _LIGHT_COLORS["number"].lower()
+        assert brace_color == _LIGHT_COLORS["punctuation"].lower()
+
+    def test_soft_keywords_match_and_case_are_highlighted(self) -> None:
+        source = "match value:\n    case 1:\n        pass\n"
+        document, _ = _render(PythonSyntaxHighlighter, source, is_dark=False)
+        match_color = _color_at(document, 0, 0)
+        case_color = _color_at(document, 1, source.splitlines()[1].index("case"))
+        assert match_color == _LIGHT_COLORS["keyword"].lower()
+        assert case_color == _LIGHT_COLORS["keyword"].lower()
+
+    def test_multiline_signature_parameters_and_annotations_are_highlighted(self) -> None:
+        source = (
+            "def build(\n"
+            "    first: int,\n"
+            "    second: str,\n"
+            ") -> bool:\n"
+            "    return True\n"
+        )
+        document, _ = _render(PythonSyntaxHighlighter, source, is_dark=False)
+        first_color = _color_at(document, 1, source.splitlines()[1].index("first"))
+        second_color = _color_at(document, 2, source.splitlines()[2].index("second"))
+        int_color = _color_at(document, 1, source.splitlines()[1].index("int"))
+        bool_color = _color_at(document, 3, source.splitlines()[3].index("bool"))
+        assert first_color == _LIGHT_COLORS["parameter"].lower()
+        assert second_color == _LIGHT_COLORS["parameter"].lower()
+        assert int_color == _LIGHT_COLORS["class"].lower()
+        assert bool_color == _LIGHT_COLORS["class"].lower()
+
+    def test_decorator_with_arguments_is_highlighted(self) -> None:
+        source = "@cached(ttl=30)\ndef build(x):\n"
+        document, _ = _render(PythonSyntaxHighlighter, source, is_dark=False)
+        decorator_color = _color_at(document, 0, 0)
+        assert decorator_color == _LIGHT_COLORS["decorator"].lower()
+
     def test_set_dark_mode_rebuilds_palette(self) -> None:
         document = QTextDocument()
         highlighter = PythonSyntaxHighlighter(document, is_dark=False)
@@ -118,6 +160,14 @@ class TestJsonSyntaxHighlighter:
         quote_color = _color_at(document, 0, source.index('\\"'))
         assert quote_color == JSON_LIGHT["string"].lower()
 
+    def test_unterminated_string_keeps_string_state_across_lines(self) -> None:
+        source = '{"name": "hello\nworld"}\n'
+        document, _ = _render(JsonSyntaxHighlighter, source, is_dark=False)
+        line_one_color = _color_at(document, 0, source.splitlines()[0].index("h"))
+        line_two_color = _color_at(document, 1, source.splitlines()[1].index("w"))
+        assert line_one_color == JSON_LIGHT["string"].lower()
+        assert line_two_color == JSON_LIGHT["string"].lower()
+
     def test_light_and_dark_color_tables_differ(self) -> None:
         assert JSON_LIGHT != JSON_DARK
 
@@ -138,6 +188,30 @@ class TestMarkdownSyntaxHighlighter:
         assert heading_color == MD_LIGHT["markdown_heading"].lower()
         assert emphasis_color == MD_LIGHT["markdown_emphasis"].lower()
         assert code_color == MD_LIGHT["markdown_code"].lower()
+
+    def test_fence_closing_requires_matching_delimiter(self) -> None:
+        source = "```python\nvalue = 1\n~~~\n```\n"
+        document, _ = _render(MarkdownSyntaxHighlighter, source, is_dark=False)
+        line_two_color = _color_at(document, 1, 0)
+        line_three_color = _color_at(document, 2, 0)
+        assert line_two_color == MD_LIGHT["markdown_code"].lower()
+        assert line_three_color == MD_LIGHT["markdown_code"].lower()
+
+    def test_tilde_fence_and_info_string_are_highlighted(self) -> None:
+        source = "~~~json\n{\"x\": 1}\n~~~\n"
+        document, _ = _render(MarkdownSyntaxHighlighter, source, is_dark=False)
+        code_line_color = _color_at(document, 1, 0)
+        info_color = _color_at(document, 0, source.splitlines()[0].index("json"))
+        assert code_line_color == MD_LIGHT["markdown_code"].lower()
+        assert info_color == MD_LIGHT["markdown_emphasis"].lower()
+
+    def test_links_and_strikethrough_are_emphasized(self) -> None:
+        source = "- [site](https://example.com) ~~deprecated~~\n"
+        document, _ = _render(MarkdownSyntaxHighlighter, source, is_dark=False)
+        link_color = _color_at(document, 0, source.index("site"))
+        strike_color = _color_at(document, 0, source.index("deprecated"))
+        assert link_color == MD_LIGHT["markdown_emphasis"].lower()
+        assert strike_color == MD_LIGHT["markdown_emphasis"].lower()
 
     def test_light_and_dark_color_tables_differ(self) -> None:
         assert MD_LIGHT != MD_DARK

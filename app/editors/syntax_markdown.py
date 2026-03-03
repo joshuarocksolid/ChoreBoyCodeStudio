@@ -19,10 +19,15 @@ _DARK_COLORS = {
 }
 
 _STATE_NORMAL = 0
-_STATE_CODE_FENCE = 1
-_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s.+$")
-_FENCE_PATTERN = re.compile(r"^\s*(```|~~~)")
-_INLINE_CODE_PATTERN = re.compile(r"`[^`]+`")
+_STATE_FENCE_BACKTICK_BASE = 1000
+_STATE_FENCE_TILDE_BASE = 2000
+_MAX_FENCE_LENGTH = 120
+_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+.+$")
+_SETEXT_UNDERLINE_PATTERN = re.compile(r"^\s{0,3}(=+|-+)\s*$")
+_FENCE_OPEN_PATTERN = re.compile(r"^\s{0,3}(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
+_LIST_PREFIX_PATTERN = re.compile(r"^\s{0,3}(?:>\s?|[-+*]\s+|\d+[.)]\s+|\[[ xX]\]\s+)")
+_LINK_PATTERN = re.compile(r"\[[^\]\n]+\]\([^) \n]+(?:\s+\"[^\"]*\")?\)")
+_STRIKETHROUGH_PATTERN = re.compile(r"~~[^~\n][^~\n]*~~")
 _EMPHASIS_PATTERNS = [
     re.compile(r"\*\*[^*\n]+\*\*"),
     re.compile(r"__[^_\n]+__"),
@@ -71,25 +76,51 @@ class MarkdownSyntaxHighlighter(ThemedSyntaxHighlighter):
         self.setCurrentBlockState(_STATE_NORMAL)
         previous_state = self.previousBlockState()
 
-        if previous_state == _STATE_CODE_FENCE:
+        previous_fence = self._decode_fence_state(previous_state)
+        if previous_fence is not None:
             self._apply_token(0, len(text), "code")
-            if _FENCE_PATTERN.match(text):
+            if self._is_matching_closing_fence(
+                text,
+                marker_char=previous_fence[0],
+                minimum_length=previous_fence[1],
+            ):
                 self.setCurrentBlockState(_STATE_NORMAL)
             else:
-                self.setCurrentBlockState(_STATE_CODE_FENCE)
+                self.setCurrentBlockState(previous_state)
             return
 
-        if _FENCE_PATTERN.match(text):
+        opening_fence = self._match_opening_fence(text)
+        if opening_fence is not None:
             self._apply_token(0, len(text), "code")
-            self.setCurrentBlockState(_STATE_CODE_FENCE)
+            marker_char, marker_length, info_text = opening_fence
+            info_match = re.search(r"[A-Za-z0-9_+-]+", info_text)
+            if info_match is not None:
+                info_offset = len(text) - len(info_text)
+                self._apply_token(
+                    info_offset + info_match.start(),
+                    info_offset + info_match.end(),
+                    "emphasis",
+                )
+            self.setCurrentBlockState(self._encode_fence_state(marker_char=marker_char, marker_length=marker_length))
             return
 
-        if _HEADING_PATTERN.match(text):
+        if _HEADING_PATTERN.match(text) or _SETEXT_UNDERLINE_PATTERN.match(text):
             self._apply_token(0, len(text), "heading")
 
-        code_spans = self._apply_pattern(_INLINE_CODE_PATTERN, text, [], "code")
+        list_prefix_match = _LIST_PREFIX_PATTERN.match(text)
+        if list_prefix_match is not None:
+            self._apply_token(0, list_prefix_match.end(), "heading")
+
+        code_spans = self._highlight_inline_code_spans(text)
+        protected_spans = list(code_spans)
+
+        link_spans = self._apply_pattern(_LINK_PATTERN, text, protected_spans, "emphasis")
+        protected_spans.extend(link_spans)
+        strike_spans = self._apply_pattern(_STRIKETHROUGH_PATTERN, text, protected_spans, "emphasis")
+        protected_spans.extend(strike_spans)
         for pattern in _EMPHASIS_PATTERNS:
-            self._apply_pattern(pattern, text, code_spans, "emphasis")
+            pattern_spans = self._apply_pattern(pattern, text, protected_spans, "emphasis")
+            protected_spans.extend(pattern_spans)
 
     def _apply_pattern(
         self,
@@ -106,6 +137,77 @@ class MarkdownSyntaxHighlighter(ThemedSyntaxHighlighter):
             self._apply_token(start, end, token_name)
             spans.append((start, end))
         return spans
+
+    def _highlight_inline_code_spans(self, text: str) -> list[tuple[int, int]]:
+        spans: list[tuple[int, int]] = []
+        cursor = 0
+        while cursor < len(text):
+            if text[cursor] != "`":
+                cursor += 1
+                continue
+            marker_start = cursor
+            while cursor < len(text) and text[cursor] == "`":
+                cursor += 1
+            marker_length = cursor - marker_start
+            if marker_length <= 0:
+                continue
+            close_start = self._find_matching_backtick_run(text, start=cursor, marker_length=marker_length)
+            if close_start is None:
+                continue
+            close_end = close_start + marker_length
+            self._apply_token(marker_start, close_end, "code")
+            spans.append((marker_start, close_end))
+            cursor = close_end
+        return spans
+
+    @staticmethod
+    def _find_matching_backtick_run(text: str, *, start: int, marker_length: int) -> int | None:
+        cursor = start
+        while cursor < len(text):
+            if text[cursor] != "`":
+                cursor += 1
+                continue
+            run_start = cursor
+            while cursor < len(text) and text[cursor] == "`":
+                cursor += 1
+            if cursor - run_start == marker_length:
+                return run_start
+        return None
+
+    def _match_opening_fence(self, text: str) -> tuple[str, int, str] | None:
+        match = _FENCE_OPEN_PATTERN.match(text)
+        if match is None:
+            return None
+        marker = match.group("marker")
+        marker_char = marker[0]
+        marker_length = len(marker)
+        if marker_char == "`" and "`" in match.group("info"):
+            return None
+        return (marker_char, marker_length, match.group("info"))
+
+    @staticmethod
+    def _encode_fence_state(*, marker_char: str, marker_length: int) -> int:
+        length = min(_MAX_FENCE_LENGTH, max(3, marker_length))
+        if marker_char == "~":
+            return _STATE_FENCE_TILDE_BASE + length
+        return _STATE_FENCE_BACKTICK_BASE + length
+
+    @staticmethod
+    def _decode_fence_state(state: int) -> tuple[str, int] | None:
+        if _STATE_FENCE_BACKTICK_BASE <= state < _STATE_FENCE_BACKTICK_BASE + _MAX_FENCE_LENGTH + 1:
+            return ("`", state - _STATE_FENCE_BACKTICK_BASE)
+        if _STATE_FENCE_TILDE_BASE <= state < _STATE_FENCE_TILDE_BASE + _MAX_FENCE_LENGTH + 1:
+            return ("~", state - _STATE_FENCE_TILDE_BASE)
+        return None
+
+    @staticmethod
+    def _is_matching_closing_fence(text: str, *, marker_char: str, minimum_length: int) -> bool:
+        stripped = text.strip()
+        if len(stripped) < minimum_length:
+            return False
+        if not stripped or any(ch != marker_char for ch in stripped):
+            return False
+        return len(stripped) >= minimum_length
 
     def _apply_token(self, start: int, end: int, token_name: str) -> None:
         if end <= start:

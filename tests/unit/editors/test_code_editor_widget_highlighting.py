@@ -9,7 +9,9 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtGui import QTextCursor  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
+from app.core import constants  # noqa: E402
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
 from app.intelligence.semantic_tokens import SemanticTokenSpan  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -52,3 +54,50 @@ def test_large_documents_skip_bracket_matching_scan() -> None:
     editor.setTextCursor(cursor)
     assert editor._is_large_document() is True
     assert editor._build_bracket_match_selections() == []
+
+
+def test_reduced_highlighting_mode_suppresses_semantic_overlay() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("def build(value):\n    return value\n")
+    editor.set_highlighting_policy(
+        adaptive_mode=constants.HIGHLIGHTING_MODE_REDUCED,
+        reduced_threshold_chars=250_000,
+        lexical_only_threshold_chars=600_000,
+    )
+    editor.set_semantic_token_spans(
+        [
+            SemanticTokenSpan(start=4, end=9, token_type="function"),
+            SemanticTokenSpan(start=10, end=15, token_type="parameter"),
+        ]
+    )
+    assert editor._semantic_selections == []
+
+
+def test_lexical_only_mode_skips_non_cursor_overlays() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("def build(value):\n    return value\n")
+    editor.set_semantic_token_spans([SemanticTokenSpan(start=4, end=9, token_type="function")])
+    editor.set_highlighting_policy(
+        adaptive_mode=constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
+        reduced_threshold_chars=10,
+        lexical_only_threshold_chars=10,
+    )
+    assert editor._non_cursor_extra_selections() == []
+
+
+def test_large_documents_cap_overlay_decorations_to_viewport_budget() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("value = 1\n" * 40_000)
+    diagnostics = [
+        CodeDiagnostic(
+            code="T001",
+            severity=DiagnosticSeverity.WARNING,
+            file_path="/tmp/main.py",
+            line_number=index + 1,
+            message="warning",
+        )
+        for index in range(3_000)
+    ]
+    editor.set_diagnostics(diagnostics)
+    # One line highlight + capped non-cursor overlays.
+    assert len(editor.extraSelections()) <= 701

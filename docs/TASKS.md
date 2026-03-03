@@ -1031,3 +1031,43 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `tests/unit/intelligence/test_semantic_tokens.py`
   - `tests/integration/performance/test_editor_highlighting_performance.py`
 
+### G20 — Syntax highlighting v2 hard cutover + perf gates
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: finish modernization cutover with adaptive scheduling, expanded semantic taxonomy, viewport-aware overlay limits, and enforceable regression gates.
+- Scope:
+  - shared highlighting thresholds centralized in runtime settings/constants (`normal`/`reduced`/`lexical_only`)
+  - semantic pipeline debounce/coalescing with cancellation-aware extraction and `.pyw` / shebang parity
+  - Python lexical v2 upgrades (soft keywords, f-string expression tokening, multiline signature parameters)
+  - Markdown/JSON/registry modernization for richer edge handling and extensionless sniff coverage
+  - theme taxonomy expansion for semantic method/variable/property parity in light+dark modes
+  - viewport-capped overlay application and no-op refresh guards in large buffers
+  - regression gates for lexical/semantic/theme-switch/adaptive-mode behavior + docs contract sync
+- Primary files:
+  - `app/core/constants.py`
+  - `app/intelligence/cache_controls.py`
+  - `app/intelligence/semantic_tokens.py`
+  - `app/intelligence/latency_tracker.py`
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/syntax_python.py`
+  - `app/editors/syntax_json.py`
+  - `app/editors/syntax_markdown.py`
+  - `app/editors/syntax_registry.py`
+  - `app/editors/syntax_engine.py`
+  - `app/shell/theme_tokens.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/intelligence/test_latency_tracker.py`
+  - `tests/unit/intelligence/test_cache_controls.py`
+  - `tests/unit/intelligence/test_semantic_tokens.py`
+  - `tests/unit/shell/test_settings_models.py`
+  - `tests/unit/shell/test_theme_tokens.py`
+  - `tests/unit/shell/test_main_window_semantic_policy.py`
+  - `tests/unit/editors/test_syntax_highlighters.py`
+  - `tests/unit/editors/test_syntax_registry.py`
+  - `tests/unit/editors/test_code_editor_widget_highlighting.py`
+  - `tests/integration/performance/test_editor_highlighting_performance.py`
+  - `tests/integration/performance/test_responsiveness_thresholds.py`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/TASKS.md`
+

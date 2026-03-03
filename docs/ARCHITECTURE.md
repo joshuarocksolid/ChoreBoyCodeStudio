@@ -531,7 +531,11 @@ Text editing behavior:
 * syntax highlighting
 * stateful lexical highlighting per language (multiline-aware block state)
 * language highlighter registry (extension/sniff based) to avoid hardcoded branching
-* optional semantic token overlay fed by background analysis with document-revision guards
+* semantic token overlay fed by background analysis with document-revision guards
+* debounced/coalesced semantic refresh scheduling with keyed background-task replacement
+* cancellation-aware semantic extraction to avoid stale or long-running token walks
+* adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
+* viewport-capped overlay application for large buffers (diagnostics/search/semantic decorations)
 * line numbers and breakpoint gutter markers
 * search within file
 * quick open support
@@ -910,10 +914,24 @@ Current implementation explicitly offloads:
 * unresolved import analysis
 * project health checks
 * support bundle generation
+* semantic token extraction
 
 to background workers/tasks to avoid blocking the UI thread.
 
-## 21.3 Process-first for risky work
+## 21.3 Highlight pipeline performance gates
+
+The editor highlighting contract is performance-gated with integration tests:
+
+* Python lexical full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
+* Python semantic extraction at ~2,000 LOC: p95 <= 120ms
+* semantic extraction under typing-burst variants: p95 <= 140ms
+* theme-switch apply cost across 10 open editors: p95 <= 150ms per editor
+* large-file mode must keep overlay volume bounded (viewport-capped non-cursor selections)
+* bracket-match path must remain bounded on large files (no unbounded cursor-move scans)
+
+These gates are part of release validation and should be updated only with explicit evidence.
+
+## 21.4 Process-first for risky work
 
 If work is expensive or failure-prone, prefer process boundaries over thread complexity.
 

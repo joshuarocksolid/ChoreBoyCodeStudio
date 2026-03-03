@@ -252,6 +252,49 @@ def test_find_unresolved_imports_respects_known_runtime_modules(tmp_path: Path) 
     assert "nonexistent" in diagnostics[0].message
 
 
+def test_analyze_python_file_runtime_probe_can_resolve_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Optional runtime probe fallback should resolve modules importable in runtime."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text("import FreeCAD\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.intelligence.diagnostics_service.is_runtime_module_importable",
+        lambda module_name: module_name == "FreeCAD",
+    )
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        known_runtime_modules=frozenset(),
+        allow_runtime_import_probe=True,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert py200 == []
+
+
+def test_analyze_python_file_runtime_probe_disabled_keeps_unresolved(tmp_path: Path) -> None:
+    """Runtime fallback is opt-in and should not run unless explicitly enabled."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text("import FreeCAD\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        known_runtime_modules=frozenset(),
+        allow_runtime_import_probe=False,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "FreeCAD" in py200[0].message
+
+
 # ---------------------------------------------------------------------------
 # vendor/ directory import resolution
 # ---------------------------------------------------------------------------

@@ -66,6 +66,9 @@ class TestTokensFromPalette:
         assert tokens.syntax_keyword != ""
         assert tokens.syntax_markdown_code != ""
         assert tokens.syntax_semantic_function != ""
+        assert tokens.syntax_semantic_method != ""
+        assert tokens.syntax_semantic_variable != ""
+        assert tokens.syntax_semantic_property != ""
 
     def test_light_tokens_have_expected_fields(self) -> None:
         tokens = tokens_from_palette(_make_palette(), force_mode="light")
@@ -75,6 +78,9 @@ class TestTokensFromPalette:
         assert tokens.syntax_keyword != ""
         assert tokens.syntax_markdown_code != ""
         assert tokens.syntax_semantic_function != ""
+        assert tokens.syntax_semantic_method != ""
+        assert tokens.syntax_semantic_variable != ""
+        assert tokens.syntax_semantic_property != ""
 
     def test_light_and_dark_produce_different_tokens(self) -> None:
         light = tokens_from_palette(_make_palette(), force_mode="light")
@@ -84,3 +90,6 @@ class TestTokensFromPalette:
         assert light.text_primary != dark.text_primary
         assert light.syntax_keyword != dark.syntax_keyword
         assert light.syntax_semantic_function != dark.syntax_semantic_function
+        assert light.syntax_semantic_method != dark.syntax_semantic_method
+        assert light.syntax_semantic_variable != dark.syntax_semantic_variable
+        assert light.syntax_semantic_property != dark.syntax_semantic_property

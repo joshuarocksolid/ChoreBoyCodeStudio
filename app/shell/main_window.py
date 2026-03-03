@@ -67,6 +67,7 @@ from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
+from app.intelligence.latency_tracker import RollingLatencyTracker
 from app.intelligence.semantic_tokens import SemanticTokenSpan, build_python_semantic_spans
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
@@ -254,6 +255,11 @@ class MainWindow(QMainWindow):
         self._realtime_lint_timer.setSingleShot(True)
         self._realtime_lint_timer.setInterval(300)
         self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
+        self._pending_semantic_refreshes: dict[str, CodeEditorWidget] = {}
+        self._semantic_refresh_timer = QTimer(self)
+        self._semantic_refresh_timer.setSingleShot(True)
+        self._semantic_refresh_timer.setInterval(120)
+        self._semantic_refresh_timer.timeout.connect(self._flush_scheduled_semantic_token_refreshes)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
@@ -265,6 +271,9 @@ class MainWindow(QMainWindow):
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._semantic_revision_by_file: dict[str, int] = {}
+        self._semantic_schedule_count = 0
+        self._semantic_superseded_count = 0
+        self._semantic_refresh_latency = RollingLatencyTracker("semantic_refresh_ms", window_size=180, snapshot_interval=30)
         self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
@@ -362,6 +371,7 @@ class MainWindow(QMainWindow):
                 if isinstance(center_layout, QVBoxLayout):
                     center_layout.insertWidget(0, self._toolbar, 0)
         self._apply_theme_styles()
+        self._apply_runtime_intelligence_preferences_to_open_editors()
         self._sync_theme_menu_check_state()
         self._restore_layout_from_settings()
         self._refresh_open_recent_menu()
@@ -862,6 +872,7 @@ class MainWindow(QMainWindow):
         elif self._loaded_project is not None:
             self._start_symbol_indexing(self._loaded_project.project_root)
         self._apply_editor_preferences_to_open_editors()
+        self._apply_runtime_intelligence_preferences_to_open_editors()
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
@@ -1253,7 +1264,10 @@ class MainWindow(QMainWindow):
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return find_unresolved_imports(
-                project_root, source_overrides=source_overrides, known_runtime_modules=known_modules,
+                project_root,
+                source_overrides=source_overrides,
+                known_runtime_modules=known_modules,
+                allow_runtime_import_probe=True,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
@@ -2091,6 +2105,7 @@ class MainWindow(QMainWindow):
         diagnostics = analyze_python_file(
             file_path, project_root=project_root, source=buffer_source,
             known_runtime_modules=self._known_runtime_modules,
+            allow_runtime_import_probe=True,
         )
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -2127,6 +2142,7 @@ class MainWindow(QMainWindow):
             diagnostics = analyze_python_file(
                 file_path, project_root=project_root, source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
+                allow_runtime_import_probe=True,
             )
             self._stored_lint_diagnostics[file_path] = diagnostics
             self._push_diagnostics_to_editor(file_path, diagnostics)
@@ -2202,6 +2218,7 @@ class MainWindow(QMainWindow):
         diagnostics = analyze_python_file(
             file_path, project_root=project_root,
             known_runtime_modules=self._known_runtime_modules,
+            allow_runtime_import_probe=True,
         )
         fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
         if not fixes:
@@ -2254,20 +2271,50 @@ class MainWindow(QMainWindow):
     # Runtime module probe
     # ------------------------------------------------------------------
 
-    def _start_runtime_module_probe(self) -> None:
+    def _start_runtime_module_probe(self, *, user_initiated: bool = False) -> None:
         state_root = self._state_root
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return probe_and_cache_runtime_modules(state_root=state_root)
 
         def on_success(modules: object) -> None:
-            if isinstance(modules, frozenset) and modules:
-                self._known_runtime_modules = modules
-                self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
-                self._relint_open_python_files()
+            if not isinstance(modules, frozenset):
+                self._logger.warning(
+                    "Runtime module probe returned unexpected payload type: %s",
+                    type(modules).__name__,
+                )
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned an unexpected result type."
+                        " See app logs for details.",
+                    )
+                return
+            if not modules:
+                self._logger.warning(
+                    "Runtime module probe returned an empty module set; unresolved-import diagnostics may be incomplete."
+                )
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned no modules."
+                        " FreeCAD/runtime imports may still show unresolved until probing succeeds.",
+                    )
+                return
+            self._known_runtime_modules = modules
+            self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
+            self._relint_open_python_files()
 
         def on_error(exc: Exception) -> None:
             self._logger.warning("Runtime module probe failed: %s", exc)
+            if user_initiated:
+                QMessageBox.warning(
+                    self,
+                    "Refresh Runtime Modules",
+                    f"Runtime module probe failed: {exc}",
+                )
 
         self._background_tasks.run(
             key="runtime_module_probe", task=task, on_success=on_success, on_error=on_error,
@@ -2281,7 +2328,7 @@ class MainWindow(QMainWindow):
         self._render_merged_problems_panel()
 
     def _handle_refresh_runtime_modules_action(self) -> None:
-        self._start_runtime_module_probe()
+        self._start_runtime_module_probe(user_initiated=True)
 
     def _send_runner_input(self, command_text: str) -> None:
         text = command_text if command_text.endswith("\n") else f"{command_text}\n"
@@ -3597,7 +3644,11 @@ class MainWindow(QMainWindow):
                 self._editor_tabs_widget.setCurrentIndex(existing_index)
                 existing_widget = self._editor_widgets_by_path.get(opened_result.tab.file_path)
                 if existing_widget is not None:
-                    self._schedule_semantic_token_refresh(opened_result.tab.file_path, existing_widget)
+                    self._schedule_semantic_token_refresh(
+                        opened_result.tab.file_path,
+                        existing_widget,
+                        immediate=True,
+                    )
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -3616,6 +3667,7 @@ class MainWindow(QMainWindow):
             auto_trigger=self._completion_auto_trigger,
             min_chars=self._completion_min_chars,
         )
+        self._apply_runtime_intelligence_preferences_to_editor(editor_widget)
         editor_widget.apply_theme(self._resolve_theme_tokens())
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
@@ -3664,7 +3716,11 @@ class MainWindow(QMainWindow):
             editor_widget.toPlainText(),
         )
         self._handle_editor_tab_changed(tab_index)
-        self._schedule_semantic_token_refresh(opened_result.tab.file_path, editor_widget)
+        self._schedule_semantic_token_refresh(
+            opened_result.tab.file_path,
+            editor_widget,
+            immediate=True,
+        )
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
         self._logger.info(
@@ -3819,6 +3875,7 @@ class MainWindow(QMainWindow):
         widget = self._editor_widgets_by_path.pop(file_path, None)
         if widget is not None:
             self._release_editor_widget(widget)
+        self._pending_semantic_refreshes.pop(file_path, None)
         self._semantic_revision_by_file.pop(file_path, None)
         self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._editor_manager.close_file(file_path)
@@ -3840,8 +3897,10 @@ class MainWindow(QMainWindow):
             self._editor_tabs_widget.clear()
         self._autosave_timer.stop()
         self._realtime_lint_timer.stop()
+        self._semantic_refresh_timer.stop()
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
+        self._pending_semantic_refreshes.clear()
         self._clear_debug_execution_indicator()
         for file_path in list(self._semantic_revision_by_file):
             self._background_tasks.cancel(self._semantic_task_key(file_path))
@@ -3871,6 +3930,18 @@ class MainWindow(QMainWindow):
                 auto_trigger=self._completion_auto_trigger,
                 min_chars=self._completion_min_chars,
             )
+
+    def _apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
+        for editor_widget in self._editor_widgets_by_path.values():
+            self._apply_runtime_intelligence_preferences_to_editor(editor_widget)
+
+    def _apply_runtime_intelligence_preferences_to_editor(self, editor_widget: CodeEditorWidget) -> None:
+        editor_widget.set_metrics_logging_enabled(self._intelligence_runtime_settings.metrics_logging_enabled)
+        editor_widget.set_highlighting_policy(
+            adaptive_mode=self._intelligence_runtime_settings.highlighting_adaptive_mode,
+            reduced_threshold_chars=self._intelligence_runtime_settings.highlighting_reduced_threshold_chars,
+            lexical_only_threshold_chars=self._intelligence_runtime_settings.highlighting_lexical_only_threshold_chars,
+        )
 
     def _apply_detected_indentation_for_widget(
         self,
@@ -4043,19 +4114,50 @@ class MainWindow(QMainWindow):
     def _semantic_task_key(file_path: str) -> str:
         return f"semantic_tokens:{file_path}"
 
-    def _schedule_semantic_token_refresh(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
-        if not file_path.lower().endswith(".py"):
+    def _schedule_semantic_token_refresh(
+        self,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        *,
+        immediate: bool = False,
+    ) -> None:
+        if immediate:
+            self._pending_semantic_refreshes.pop(file_path, None)
+            self._run_semantic_token_refresh(file_path, editor_widget)
+            return
+        self._pending_semantic_refreshes[file_path] = editor_widget
+        self._semantic_refresh_timer.start()
+
+    def _flush_scheduled_semantic_token_refreshes(self) -> None:
+        if not self._pending_semantic_refreshes:
+            return
+        pending_items = list(self._pending_semantic_refreshes.items())
+        self._pending_semantic_refreshes.clear()
+        for file_path, editor_widget in pending_items:
+            if self._editor_widgets_by_path.get(file_path) is not editor_widget:
+                continue
+            self._run_semantic_token_refresh(file_path, editor_widget)
+
+    def _run_semantic_token_refresh(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
+        source_text = editor_widget.toPlainText()
+        if not self._should_enable_python_semantic_tokens(file_path=file_path, source_text=source_text):
             editor_widget.clear_semantic_tokens()
             self._semantic_revision_by_file.pop(file_path, None)
             self._background_tasks.cancel(self._semantic_task_key(file_path))
             return
 
-        source_text = editor_widget.toPlainText()
-        if len(source_text) > 500_000:
-            editor_widget.clear_semantic_tokens()
-            self._semantic_revision_by_file.pop(file_path, None)
-            self._background_tasks.cancel(self._semantic_task_key(file_path))
-            return
+        self._semantic_schedule_count += 1
+        if file_path in self._semantic_revision_by_file:
+            self._semantic_superseded_count += 1
+        if (
+            self._intelligence_runtime_settings.metrics_logging_enabled
+            and self._semantic_schedule_count % 80 == 0
+        ):
+            self._logger.info(
+                "Semantic scheduling telemetry: scheduled=%s superseded=%s",
+                self._semantic_schedule_count,
+                self._semantic_superseded_count,
+            )
 
         revision = self._semantic_revision_by_file.get(file_path, 0) + 1
         self._semantic_revision_by_file[file_path] = revision
@@ -4064,7 +4166,7 @@ class MainWindow(QMainWindow):
         def task(cancel_event) -> list[SemanticTokenSpan]:  # type: ignore[no-untyped-def]
             if cancel_event.is_set():
                 return []
-            spans = build_python_semantic_spans(source_text)
+            spans = build_python_semantic_spans(source_text, should_cancel=cancel_event.is_set)
             if cancel_event.is_set():
                 return []
             return spans
@@ -4076,14 +4178,29 @@ class MainWindow(QMainWindow):
             if widget is None:
                 return
             widget.set_semantic_token_spans(spans)
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            snapshot = self._semantic_refresh_latency.record(elapsed_ms)
             if self._intelligence_runtime_settings.metrics_logging_enabled:
-                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 if elapsed_ms > 160.0:
                     self._logger.warning(
                         "Semantic tokens latency warning: file=%s elapsed_ms=%.2f count=%s",
                         file_path,
                         elapsed_ms,
                         len(spans),
+                    )
+                elif snapshot is not None:
+                    self._logger.info(
+                        (
+                            "Semantic tokens telemetry: file=%s elapsed_ms=%.2f count=%s "
+                            "window_count=%s p50_ms=%.2f p95_ms=%.2f max_ms=%.2f"
+                        ),
+                        file_path,
+                        elapsed_ms,
+                        len(spans),
+                        snapshot.count,
+                        snapshot.p50_ms,
+                        snapshot.p95_ms,
+                        snapshot.max_ms,
                     )
 
         def on_error(exc: Exception) -> None:
@@ -4098,6 +4215,21 @@ class MainWindow(QMainWindow):
             on_success=on_success,
             on_error=on_error,
         )
+
+    def _should_enable_python_semantic_tokens(self, *, file_path: str, source_text: str) -> bool:
+        source_size = len(source_text)
+        reduced_threshold = self._intelligence_runtime_settings.highlighting_reduced_threshold_chars
+        adaptive_mode = self._intelligence_runtime_settings.highlighting_adaptive_mode
+        if adaptive_mode != constants.HIGHLIGHTING_MODE_NORMAL:
+            return False
+        if source_size >= reduced_threshold:
+            return False
+        suffix = Path(file_path).suffix.lower()
+        if suffix in {".py", ".pyw"}:
+            return True
+        stripped = source_text.lstrip()
+        first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
+        return first_line.startswith("#!") and "python" in first_line.lower()
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:

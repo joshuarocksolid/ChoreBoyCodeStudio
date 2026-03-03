@@ -100,3 +100,66 @@ def test_probe_on_success_triggers_relint() -> None:
 
     assert window_any._known_runtime_modules == modules
     assert relint_calls == [True]
+
+
+def test_probe_on_success_empty_modules_logs_warning_and_skips_relint() -> None:
+    """Empty probe payload should not relint and should be diagnosable."""
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+
+    warning_messages: list[str] = []
+    window_any._known_runtime_modules = None
+    window_any._state_root = None
+    window_any._logger = SimpleNamespace(
+        info=lambda *_a, **_kw: None,
+        warning=lambda message, *_a, **_kw: warning_messages.append(str(message)),
+    )
+    relint_calls: list[bool] = []
+    window_any._relint_open_python_files = lambda: relint_calls.append(True)
+
+    captured_on_success = {}
+
+    class FakeBackgroundTasks:
+        def run(self, *, key: str, task: Any, on_success: Any, on_error: Any) -> None:
+            captured_on_success[key] = on_success
+
+    window_any._background_tasks = FakeBackgroundTasks()
+
+    MainWindow._start_runtime_module_probe(window)
+    captured_on_success["runtime_module_probe"](frozenset())
+
+    assert relint_calls == []
+    assert warning_messages
+
+
+def test_probe_on_success_empty_modules_user_initiated_shows_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Manual refresh should show a warning when probe returns no modules."""
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+
+    window_any._known_runtime_modules = None
+    window_any._state_root = None
+    window_any._logger = SimpleNamespace(
+        info=lambda *_a, **_kw: None,
+        warning=lambda *_a, **_kw: None,
+    )
+    window_any._relint_open_python_files = lambda: None
+
+    shown_messages: list[str] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda _parent, _title, text: shown_messages.append(text),
+    )
+
+    captured_on_success = {}
+
+    class FakeBackgroundTasks:
+        def run(self, *, key: str, task: Any, on_success: Any, on_error: Any) -> None:
+            captured_on_success[key] = on_success
+
+    window_any._background_tasks = FakeBackgroundTasks()
+
+    MainWindow._start_runtime_module_probe(window, user_initiated=True)
+    captured_on_success["runtime_module_probe"](frozenset())
+
+    assert shown_messages

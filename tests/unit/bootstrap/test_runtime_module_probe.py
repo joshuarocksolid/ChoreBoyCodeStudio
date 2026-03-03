@@ -114,6 +114,32 @@ class TestProbeRuntimeModules:
         assert result.success is False
         assert "parse probe output" in result.error_message.lower()
 
+    def test_probe_tolerates_trailing_non_json_stdout_noise(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Probe should parse module JSON even when runtime appends banner noise."""
+        modules_json = json.dumps(["FreeCAD", "os", "sys"])
+        call_count = 0
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(command, 0, stdout="3.9.2\n", stderr="")
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=modules_json + "\nLoading Post Frame Workbench Module...\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(runtime_module_probe.subprocess, "run", fake_run)
+
+        result = probe_runtime_modules("/opt/freecad/AppRun")
+
+        assert result.success is True
+        assert "FreeCAD" in result.modules
+
 
 # ---------------------------------------------------------------------------
 # Cache round-trip

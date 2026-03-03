@@ -53,9 +53,12 @@ class ShellThemeTokens:
     syntax_markdown_emphasis: str = ""
     syntax_markdown_code: str = ""
     syntax_semantic_function: str = ""
+    syntax_semantic_method: str = ""
     syntax_semantic_class: str = ""
     syntax_semantic_parameter: str = ""
     syntax_semantic_import: str = ""
+    syntax_semantic_variable: str = ""
+    syntax_semantic_property: str = ""
 
 
 def tokens_from_palette(
@@ -122,9 +125,12 @@ def tokens_from_palette(
             syntax_markdown_emphasis="#B197FC",
             syntax_markdown_code="#FF8C5A",
             syntax_semantic_function="#79C0FF",
+            syntax_semantic_method="#8CC8FF",
             syntax_semantic_class="#A5D6FF",
             syntax_semantic_parameter="#56D364",
             syntax_semantic_import="#D2A8FF",
+            syntax_semantic_variable="#7EE787",
+            syntax_semantic_property="#5CC8FF",
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -171,9 +177,12 @@ def tokens_from_palette(
         syntax_markdown_emphasis="#5F3DC4",
         syntax_markdown_code="#C73E0A",
         syntax_semantic_function="#1C7ED6",
+        syntax_semantic_method="#1971C2",
         syntax_semantic_class="#1864AB",
         syntax_semantic_parameter="#2B8A3E",
         syntax_semantic_import="#9C36B5",
+        syntax_semantic_variable="#2F9E44",
+        syntax_semantic_property="#1A73E8",
     )
 
 

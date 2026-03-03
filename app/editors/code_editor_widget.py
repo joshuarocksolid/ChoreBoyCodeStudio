@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable
 from typing import Any, cast
 
-from PySide2.QtCore import QEvent, QPointF, QRect, QSize, QStringListModel, Qt
+from PySide2.QtCore import QEvent, QPoint, QPointF, QRect, QSize, QStringListModel, Qt
 from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCharFormat, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QToolTip, QWidget
 
+from app.bootstrap.logging_setup import get_subsystem_logger
+from app.core import constants
 from app.editors.find_replace_bar import FindOptions
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
+from app.intelligence.latency_tracker import RollingLatencyTracker
 from app.intelligence.semantic_tokens import SemanticTokenSpan
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -23,8 +27,13 @@ DEFAULT_TAB_WIDTH = 4
 DEFAULT_FONT_POINT_SIZE = 10
 DEFAULT_FONT_FAMILY = "monospace"
 DEFAULT_COMPLETION_MIN_CHARS = 2
-LARGE_FILE_CHAR_THRESHOLD = 250_000
+LARGE_FILE_CHAR_THRESHOLD = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
 MAX_SEARCH_SELECTIONS_LARGE_FILE = 400
+MAX_OVERLAY_SELECTIONS_LARGE_FILE = 700
+VIEWPORT_CHAR_MARGIN = 8000
+LANGUAGE_ATTACH_WARNING_MS = 80.0
+THEME_APPLY_WARNING_MS = 90.0
+OVERLAY_REFRESH_WARNING_MS = 24.0
 
 
 class _LineNumberArea(QWidget):
@@ -49,6 +58,17 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._logger = get_subsystem_logger("editors")
+        self._metrics_logging_enabled = False
+        self._active_file_path: str | None = None
+        self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
+        self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
+        self._highlighting_lexical_only_threshold_chars = (
+            constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT
+        )
+        self._language_attach_latency = RollingLatencyTracker("editor_language_attach_ms", window_size=120, snapshot_interval=30)
+        self._theme_apply_latency = RollingLatencyTracker("editor_theme_apply_ms", window_size=120, snapshot_interval=30)
+        self._overlay_refresh_latency = RollingLatencyTracker("editor_overlay_refresh_ms", window_size=180, snapshot_interval=75)
         self._line_number_area = _LineNumberArea(self)
         self._breakpoints: set[int] = set()
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
@@ -97,12 +117,19 @@ class CodeEditorWidget(QPlainTextEdit):
         self._semantic_selections: list[QTextEdit.ExtraSelection] = []
         self._semantic_token_colors: dict[str, QColor] = {
             "function": QColor("#1C7ED6"),
+            "method": QColor("#1971C2"),
             "class": QColor("#1864AB"),
             "parameter": QColor("#2B8A3E"),
             "import": QColor("#9C36B5"),
+            "variable": QColor("#2F9E44"),
+            "property": QColor("#1A73E8"),
         }
         self._cached_non_cursor_selections: list[QTextEdit.ExtraSelection] = []
         self._overlay_cache_dirty = True
+        self._overlay_generation = 0
+        self._last_applied_overlay_generation = -1
+        self._last_applied_cursor_position = -1
+        self._last_applied_effective_mode = ""
 
         self.setMouseTracking(True)
         self.blockCountChanged.connect(self._update_line_number_area_width)
@@ -120,6 +147,7 @@ class CodeEditorWidget(QPlainTextEdit):
         )
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        started_at = time.perf_counter()
         self._is_dark = tokens.is_dark
         self._gutter_bg = QColor(tokens.gutter_bg)
         self._gutter_text = QColor(tokens.gutter_text)
@@ -141,9 +169,12 @@ class CodeEditorWidget(QPlainTextEdit):
         self._syntax_palette = syntax_palette_from_tokens(tokens)
         self._semantic_token_colors = {
             "function": QColor(tokens.syntax_semantic_function),
+            "method": QColor(tokens.syntax_semantic_method),
             "class": QColor(tokens.syntax_semantic_class),
             "parameter": QColor(tokens.syntax_semantic_parameter),
             "import": QColor(tokens.syntax_semantic_import),
+            "variable": QColor(tokens.syntax_semantic_variable),
+            "property": QColor(tokens.syntax_semantic_property),
         }
         self._rebuild_semantic_selections()
         self._mark_overlay_cache_dirty()
@@ -154,6 +185,35 @@ class CodeEditorWidget(QPlainTextEdit):
             is_dark=tokens.is_dark,
             syntax_palette=self._syntax_palette,
         )
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        self._record_latency_metric(self._theme_apply_latency, elapsed_ms, warning_threshold_ms=THEME_APPLY_WARNING_MS)
+
+    def set_metrics_logging_enabled(self, enabled: bool) -> None:
+        self._metrics_logging_enabled = enabled
+
+    def set_highlighting_policy(
+        self,
+        *,
+        adaptive_mode: str,
+        reduced_threshold_chars: int,
+        lexical_only_threshold_chars: int,
+    ) -> None:
+        valid_modes = {
+            constants.HIGHLIGHTING_MODE_NORMAL,
+            constants.HIGHLIGHTING_MODE_REDUCED,
+            constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
+        }
+        self._highlighting_adaptive_mode = (
+            adaptive_mode if adaptive_mode in valid_modes else constants.HIGHLIGHTING_MODE_NORMAL
+        )
+        self._highlighting_reduced_threshold_chars = max(1, int(reduced_threshold_chars))
+        self._highlighting_lexical_only_threshold_chars = max(
+            self._highlighting_reduced_threshold_chars,
+            int(lexical_only_threshold_chars),
+        )
+        self._rebuild_semantic_selections()
+        self._mark_overlay_cache_dirty()
+        self._refresh_extra_selections()
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
         self._breakpoint_toggled_callback = callback
@@ -254,12 +314,16 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def set_semantic_token_spans(self, spans: list[SemanticTokenSpan]) -> None:
         """Apply semantic token spans as overlay selections."""
+        if spans == self._semantic_spans:
+            return
         self._semantic_spans = list(spans)
         self._rebuild_semantic_selections()
         self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
 
     def clear_semantic_tokens(self) -> None:
+        if not self._semantic_spans and not self._semantic_selections:
+            return
         self._semantic_spans.clear()
         self._semantic_selections.clear()
         self._mark_overlay_cache_dirty()
@@ -267,7 +331,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _rebuild_semantic_selections(self) -> None:
         self._semantic_selections = []
-        if self._is_large_document():
+        if self._effective_highlighting_mode() != constants.HIGHLIGHTING_MODE_NORMAL:
             return
         document = self.document()
         max_position = max(0, document.characterCount() - 1)
@@ -327,6 +391,7 @@ class CodeEditorWidget(QPlainTextEdit):
             bottom = top + int(self.blockBoundingRect(block).height())
 
     def set_language_for_path(self, file_path: str) -> None:
+        started_at = time.perf_counter()
         document = self.document()
         previous_highlighter = self._highlighter
         if hasattr(previous_highlighter, "setDocument"):
@@ -343,6 +408,13 @@ class CodeEditorWidget(QPlainTextEdit):
             is_dark=self._is_dark,
             syntax_palette=self._syntax_palette,
             sample_text="\n".join(sample_lines),
+        )
+        self._active_file_path = file_path
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        self._record_latency_metric(
+            self._language_attach_latency,
+            elapsed_ms,
+            warning_threshold_ms=LANGUAGE_ATTACH_WARNING_MS,
         )
 
     def set_editor_preferences(
@@ -704,7 +776,17 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _refresh_extra_selections(self) -> None:
         """Rebuild ExtraSelections with cached non-cursor overlays."""
+        started_at = time.perf_counter()
         selections: list[QTextEdit.ExtraSelection] = []
+        effective_mode = self._effective_highlighting_mode()
+        cursor_position = self.textCursor().position()
+        if (
+            not self._overlay_cache_dirty
+            and self._overlay_generation == self._last_applied_overlay_generation
+            and cursor_position == self._last_applied_cursor_position
+            and effective_mode == self._last_applied_effective_mode
+        ):
+            return
 
         line_selection = cast(Any, QTextEdit.ExtraSelection())
         line_selection.format.setBackground(self._line_highlight)
@@ -713,11 +795,27 @@ class CodeEditorWidget(QPlainTextEdit):
         line_selection.cursor.clearSelection()
         selections.append(line_selection)
 
-        if not self._is_large_document():
+        if effective_mode == constants.HIGHLIGHTING_MODE_NORMAL and not self._is_large_document():
             selections.extend(self._build_bracket_match_selections())
 
-        selections.extend(self._non_cursor_extra_selections())
+        if effective_mode != constants.HIGHLIGHTING_MODE_LEXICAL_ONLY:
+            non_cursor = self._non_cursor_extra_selections()
+            if self._is_large_document():
+                non_cursor = self._viewport_cap_selections(
+                    non_cursor,
+                    max_count=MAX_OVERLAY_SELECTIONS_LARGE_FILE,
+                )
+            selections.extend(non_cursor)
         self.setExtraSelections(selections)
+        self._last_applied_overlay_generation = self._overlay_generation
+        self._last_applied_cursor_position = cursor_position
+        self._last_applied_effective_mode = effective_mode
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        self._record_latency_metric(
+            self._overlay_refresh_latency,
+            elapsed_ms,
+            warning_threshold_ms=OVERLAY_REFRESH_WARNING_MS,
+        )
 
     def _non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
         if self._overlay_cache_dirty:
@@ -727,6 +825,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _build_non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
         selections: list[QTextEdit.ExtraSelection] = []
+        effective_mode = self._effective_highlighting_mode()
         if self._debug_execution_line is not None:
             debug_sel = cast(Any, QTextEdit.ExtraSelection())
             debug_sel.format.setBackground(self._debug_execution_line_bg)
@@ -738,7 +837,8 @@ class CodeEditorWidget(QPlainTextEdit):
                 debug_sel.cursor = debug_cursor
                 selections.append(debug_sel)
         selections.extend(self._diagnostic_selections)
-        selections.extend(self._semantic_selections)
+        if effective_mode == constants.HIGHLIGHTING_MODE_NORMAL:
+            selections.extend(self._semantic_selections)
         selections.extend(self._bounded_search_selections())
         return selections
 
@@ -751,9 +851,87 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _mark_overlay_cache_dirty(self) -> None:
         self._overlay_cache_dirty = True
+        self._overlay_generation += 1
 
     def _is_large_document(self) -> bool:
-        return self.document().characterCount() > LARGE_FILE_CHAR_THRESHOLD
+        return self.document().characterCount() > self._highlighting_reduced_threshold_chars
+
+    def _effective_highlighting_mode(self) -> str:
+        if self._highlighting_adaptive_mode == constants.HIGHLIGHTING_MODE_LEXICAL_ONLY:
+            return constants.HIGHLIGHTING_MODE_LEXICAL_ONLY
+        document_size = self.document().characterCount()
+        if document_size >= self._highlighting_lexical_only_threshold_chars:
+            return constants.HIGHLIGHTING_MODE_LEXICAL_ONLY
+        if (
+            self._highlighting_adaptive_mode == constants.HIGHLIGHTING_MODE_REDUCED
+            or document_size >= self._highlighting_reduced_threshold_chars
+        ):
+            return constants.HIGHLIGHTING_MODE_REDUCED
+        return constants.HIGHLIGHTING_MODE_NORMAL
+
+    def _viewport_cap_selections(
+        self,
+        selections: list[QTextEdit.ExtraSelection],
+        *,
+        max_count: int,
+    ) -> list[QTextEdit.ExtraSelection]:
+        if len(selections) <= max_count:
+            return selections
+        visible_start, visible_end = self._visible_document_window()
+        filtered: list[QTextEdit.ExtraSelection] = []
+        for selection in selections:
+            cursor = selection.cursor
+            start = cursor.selectionStart()
+            end = cursor.selectionEnd()
+            if end <= start:
+                start = cursor.position()
+                end = start + 1
+            if start >= visible_end or end <= visible_start:
+                continue
+            filtered.append(selection)
+            if len(filtered) >= max_count:
+                break
+        if filtered:
+            return filtered
+        return selections[:max_count]
+
+    def _visible_document_window(self) -> tuple[int, int]:
+        max_position = max(0, self.document().characterCount() - 1)
+        top_cursor = self.cursorForPosition(QPoint(0, 0))
+        bottom_cursor = self.cursorForPosition(QPoint(0, max(0, self.viewport().height() - 1)))
+        start = max(0, min(top_cursor.position(), bottom_cursor.position()) - VIEWPORT_CHAR_MARGIN)
+        end = min(max_position, max(top_cursor.position(), bottom_cursor.position()) + VIEWPORT_CHAR_MARGIN)
+        return (start, max(start + 1, end))
+
+    def _record_latency_metric(
+        self,
+        tracker: RollingLatencyTracker,
+        elapsed_ms: float,
+        *,
+        warning_threshold_ms: float,
+    ) -> None:
+        snapshot = tracker.record(elapsed_ms)
+        if not self._metrics_logging_enabled:
+            return
+        file_label = self._active_file_path or "<unsaved>"
+        if elapsed_ms > warning_threshold_ms:
+            self._logger.warning(
+                "Editor latency warning: file=%s metric=%s elapsed_ms=%.2f",
+                file_label,
+                tracker.metric_name,
+                elapsed_ms,
+            )
+            return
+        if snapshot is not None:
+            self._logger.info(
+                "Editor latency telemetry: file=%s metric=%s count=%s p50_ms=%.2f p95_ms=%.2f max_ms=%.2f",
+                file_label,
+                snapshot.metric_name,
+                snapshot.count,
+                snapshot.p50_ms,
+                snapshot.p95_ms,
+                snapshot.max_ms,
+            )
 
     def indent_selection(self) -> None:
         selected = self.textCursor().selectedText()

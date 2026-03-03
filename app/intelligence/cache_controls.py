@@ -17,6 +17,11 @@ class IntelligenceRuntimeSettings:
     incremental_indexing: bool = constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_DEFAULT
     metrics_logging_enabled: bool = constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT
     force_full_reindex_on_open: bool = constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT
+    highlighting_adaptive_mode: str = constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
+    highlighting_reduced_threshold_chars: int = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
+    highlighting_lexical_only_threshold_chars: int = (
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT
+    )
 
 
 def parse_intelligence_runtime_settings(settings_payload: Mapping[str, Any]) -> IntelligenceRuntimeSettings:
@@ -41,6 +46,39 @@ def parse_intelligence_runtime_settings(settings_payload: Mapping[str, Any]) -> 
         constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY,
         constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT,
     )
+    highlighting_adaptive_mode = intelligence_settings.get(
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_KEY,
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT,
+    )
+    highlighting_reduced_threshold_chars = intelligence_settings.get(
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_KEY,
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT,
+    )
+    highlighting_lexical_only_threshold_chars = intelligence_settings.get(
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_KEY,
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT,
+    )
+
+    valid_modes = {
+        constants.HIGHLIGHTING_MODE_NORMAL,
+        constants.HIGHLIGHTING_MODE_REDUCED,
+        constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
+    }
+    parsed_mode = (
+        str(highlighting_adaptive_mode)
+        if str(highlighting_adaptive_mode) in valid_modes
+        else constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
+    )
+    reduced_threshold = _coerce_positive_int(
+        highlighting_reduced_threshold_chars,
+        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT,
+    )
+    lexical_only_threshold = _coerce_positive_int(
+        highlighting_lexical_only_threshold_chars,
+        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT,
+    )
+    if lexical_only_threshold < reduced_threshold:
+        lexical_only_threshold = reduced_threshold
 
     return IntelligenceRuntimeSettings(
         cache_enabled=cache_enabled if isinstance(cache_enabled, bool) else constants.UI_INTELLIGENCE_CACHE_ENABLED_DEFAULT,
@@ -59,6 +97,9 @@ def parse_intelligence_runtime_settings(settings_payload: Mapping[str, Any]) -> 
             if isinstance(force_full_reindex_on_open, bool)
             else constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT
         ),
+        highlighting_adaptive_mode=parsed_mode,
+        highlighting_reduced_threshold_chars=reduced_threshold,
+        highlighting_lexical_only_threshold_chars=lexical_only_threshold,
     )
 
 
@@ -74,3 +115,11 @@ def rebuild_symbol_cache(cache_db_path: str) -> bool:
         return False
     path.unlink()
     return True
+
+
+def _coerce_positive_int(value: Any, *, default: int) -> int:
+    if not isinstance(value, int):
+        return default
+    if value <= 0:
+        return default
+    return value

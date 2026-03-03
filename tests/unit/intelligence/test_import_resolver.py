@@ -99,6 +99,27 @@ def test_resolve_project_import_still_unresolved_without_known_modules(tmp_path:
     assert unresolved.is_resolved is False
 
 
+def test_resolve_project_import_runtime_probe_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    monkeypatch.setattr(
+        "app.intelligence.import_resolver.is_runtime_module_importable",
+        lambda module_name: module_name == "FreeCAD",
+    )
+    resolved = resolve_project_import(
+        str(project_root),
+        "FreeCAD.Part",
+        known_runtime_modules=frozenset(),
+        allow_runtime_import_probe=True,
+    )
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is None
+
+
 # ---------------------------------------------------------------------------
 # vendor/ directory import resolution
 # ---------------------------------------------------------------------------

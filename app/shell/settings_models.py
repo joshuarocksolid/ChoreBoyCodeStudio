@@ -34,6 +34,11 @@ class EditorSettingsSnapshot:
     incremental_indexing: bool = constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_DEFAULT
     metrics_logging_enabled: bool = constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT
     force_full_reindex_on_open: bool = constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT
+    highlighting_adaptive_mode: str = constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
+    highlighting_reduced_threshold_chars: int = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
+    highlighting_lexical_only_threshold_chars: int = (
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT
+    )
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
     auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
@@ -56,6 +61,32 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
+    _valid_highlighting_modes = {
+        constants.HIGHLIGHTING_MODE_NORMAL,
+        constants.HIGHLIGHTING_MODE_REDUCED,
+        constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
+    }
+    highlighting_mode_raw = intelligence_settings.get(
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_KEY,
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT,
+    )
+    highlighting_mode = (
+        str(highlighting_mode_raw)
+        if str(highlighting_mode_raw) in _valid_highlighting_modes
+        else constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
+    )
+    highlighting_reduced_threshold_chars = _coerce_int(
+        intelligence_settings.get(constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_KEY),
+        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT,
+        minimum=1,
+    )
+    highlighting_lexical_only_threshold_chars = _coerce_int(
+        intelligence_settings.get(constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_KEY),
+        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT,
+        minimum=1,
+    )
+    if highlighting_lexical_only_threshold_chars < highlighting_reduced_threshold_chars:
+        highlighting_lexical_only_threshold_chars = highlighting_reduced_threshold_chars
 
     tab_width = _coerce_int(
         editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY),
@@ -150,6 +181,9 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             intelligence_settings.get(constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY),
             default=constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT,
         ),
+        highlighting_adaptive_mode=highlighting_mode,
+        highlighting_reduced_threshold_chars=highlighting_reduced_threshold_chars,
+        highlighting_lexical_only_threshold_chars=highlighting_lexical_only_threshold_chars,
         theme_mode=theme_mode,
         auto_open_console_on_run_output=_coerce_bool(
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY),
@@ -193,6 +227,23 @@ def merge_editor_settings_snapshot(
         constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY: bool(snapshot.incremental_indexing),
         constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY: bool(snapshot.metrics_logging_enabled),
         constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY: bool(snapshot.force_full_reindex_on_open),
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_KEY: (
+            snapshot.highlighting_adaptive_mode
+            if snapshot.highlighting_adaptive_mode
+            in {
+                constants.HIGHLIGHTING_MODE_NORMAL,
+                constants.HIGHLIGHTING_MODE_REDUCED,
+                constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
+            }
+            else constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
+        ),
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_KEY: max(
+            1, int(snapshot.highlighting_reduced_threshold_chars)
+        ),
+        constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_KEY: max(
+            int(snapshot.highlighting_reduced_threshold_chars),
+            int(snapshot.highlighting_lexical_only_threshold_chars),
+        ),
     }
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     mode = snapshot.theme_mode if snapshot.theme_mode in _valid_modes else constants.UI_THEME_MODE_DEFAULT

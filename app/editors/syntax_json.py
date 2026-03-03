@@ -25,6 +25,9 @@ _DARK_COLORS = {
 _LITERAL_PATTERN = re.compile(r"\b(?:true|false|null)\b")
 _NUMBER_PATTERN = re.compile(r"(?<![\w.])-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?(?![\w.])")
 _PUNCTUATION_PATTERN = re.compile(r"[{}\[\]:,]")
+_STATE_NORMAL = 0
+_STATE_STRING = 1
+_STATE_STRING_ESCAPED = 2
 
 
 class JsonSyntaxHighlighter(ThemedSyntaxHighlighter):
@@ -66,35 +69,52 @@ class JsonSyntaxHighlighter(ThemedSyntaxHighlighter):
         return base
 
     def highlightBlock(self, text: str) -> None:  # noqa: N802 - Qt API
-        string_spans = self._highlight_string_tokens(text)
+        self.setCurrentBlockState(_STATE_NORMAL)
+        string_spans = self._highlight_string_tokens(text, previous_state=self.previousBlockState())
         self._apply_pattern(_PUNCTUATION_PATTERN, text, string_spans, "punctuation")
         self._apply_pattern(_LITERAL_PATTERN, text, string_spans, "literal")
         self._apply_pattern(_NUMBER_PATTERN, text, string_spans, "number")
 
-    def _highlight_string_tokens(self, text: str) -> list[tuple[int, int]]:
+    def _highlight_string_tokens(self, text: str, *, previous_state: int) -> list[tuple[int, int]]:
         spans: list[tuple[int, int]] = []
         index = 0
+        continued_string = previous_state in {_STATE_STRING, _STATE_STRING_ESCAPED}
+        start: int | None = 0 if previous_state in {_STATE_STRING, _STATE_STRING_ESCAPED} else None
+        in_string = start is not None
+        escaped = previous_state == _STATE_STRING_ESCAPED
         while index < len(text):
-            if text[index] != '"':
+            if not in_string:
+                if text[index] != '"':
+                    index += 1
+                    continue
+                start = index
+                in_string = True
+                escaped = False
                 index += 1
                 continue
-            start = index
+
+            current = text[index]
+            if current == '"' and not escaped:
+                end = index + 1
+                spans.append((start or 0, end))
+                token_name = "key" if self._is_key_token(text, end) and not continued_string else "string"
+                self._apply_token(start or 0, end, token_name)
+                start = None
+                in_string = False
+                escaped = False
+                continued_string = False
+                index = end
+                continue
+            if current == "\\" and not escaped:
+                escaped = True
+            else:
+                escaped = False
             index += 1
-            escaped = False
-            while index < len(text):
-                current = text[index]
-                if current == '"' and not escaped:
-                    index += 1
-                    break
-                if current == "\\" and not escaped:
-                    escaped = True
-                else:
-                    escaped = False
-                index += 1
-            end = index
-            spans.append((start, end))
-            token_name = "key" if self._is_key_token(text, end) else "string"
-            self._apply_token(start, end, token_name)
+
+        if in_string and start is not None:
+            spans.append((start, len(text)))
+            self._apply_token(start, len(text), "string")
+            self.setCurrentBlockState(_STATE_STRING_ESCAPED if escaped else _STATE_STRING)
         return spans
 
     def _is_key_token(self, text: str, token_end: int) -> bool:

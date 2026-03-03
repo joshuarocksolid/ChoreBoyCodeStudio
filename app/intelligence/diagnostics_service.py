@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from app.intelligence.runtime_import_probe import is_runtime_module_importable
+
 # Defensive fallback: well-known Python 3.x stdlib top-level module names.
 # Used when the runtime probe has not yet completed or failed, so that
 # common imports like ``os``, ``sys``, ``json`` are never flagged as
@@ -91,6 +93,7 @@ def find_unresolved_imports(
     *,
     source_overrides: dict[str, str] | None = None,
     known_runtime_modules: frozenset[str] | None = None,
+    allow_runtime_import_probe: bool = False,
 ) -> list[ImportDiagnostic]:
     """Find unresolved project-local imports in Python files.
 
@@ -110,7 +113,13 @@ def find_unresolved_imports(
             continue
         override = resolved_overrides.get(str(file_path.resolve()))
         diagnostics.extend(
-            _diagnostics_for_file(root, file_path, source=override, known_runtime_modules=known_runtime_modules)
+            _diagnostics_for_file(
+                root,
+                file_path,
+                source=override,
+                known_runtime_modules=known_runtime_modules,
+                allow_runtime_import_probe=allow_runtime_import_probe,
+            )
         )
     return diagnostics
 
@@ -121,6 +130,7 @@ def analyze_python_file(
     project_root: str | None = None,
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
+    allow_runtime_import_probe: bool = False,
 ) -> list[CodeDiagnostic]:
     """Run focused diagnostics for one Python file.
 
@@ -163,6 +173,7 @@ def analyze_python_file(
             _unresolved_import_diagnostics(
                 Path(project_root).expanduser().resolve(), path, syntax_tree,
                 known_runtime_modules=known_runtime_modules,
+                allow_runtime_import_probe=allow_runtime_import_probe,
             )
         )
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
@@ -175,6 +186,7 @@ def _diagnostics_for_file(
     *,
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
+    allow_runtime_import_probe: bool = False,
 ) -> list[ImportDiagnostic]:
     if source is None:
         try:
@@ -188,7 +200,11 @@ def _diagnostics_for_file(
 
     diagnostics: list[ImportDiagnostic] = []
     for diagnostic in _unresolved_import_diagnostics(
-        project_root, file_path.resolve(), tree, known_runtime_modules=known_runtime_modules,
+        project_root,
+        file_path.resolve(),
+        tree,
+        known_runtime_modules=known_runtime_modules,
+        allow_runtime_import_probe=allow_runtime_import_probe,
     ):
         diagnostics.append(
             ImportDiagnostic(
@@ -214,6 +230,7 @@ def _is_import_resolvable(
     project_root: Path,
     module_name: str,
     known_runtime_modules: frozenset[str] | None = None,
+    allow_runtime_import_probe: bool = False,
 ) -> bool:
     top_level = module_name.split(".")[0]
     effective_modules = known_runtime_modules if known_runtime_modules else _STDLIB_FALLBACK
@@ -225,6 +242,8 @@ def _is_import_resolvable(
             return True
         if (base / module_path / "__init__.py").exists():
             return True
+    if allow_runtime_import_probe and is_runtime_module_importable(top_level):
+        return True
     return False
 
 
@@ -234,12 +253,18 @@ def _unresolved_import_diagnostics(
     syntax_tree: ast.AST,
     *,
     known_runtime_modules: frozenset[str] | None = None,
+    allow_runtime_import_probe: bool = False,
 ) -> list[CodeDiagnostic]:
     diagnostics: list[CodeDiagnostic] = []
     for node in ast.walk(syntax_tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if _is_import_resolvable(project_root, alias.name, known_runtime_modules):
+                if _is_import_resolvable(
+                    project_root,
+                    alias.name,
+                    known_runtime_modules,
+                    allow_runtime_import_probe=allow_runtime_import_probe,
+                ):
                     continue
                 diagnostics.append(
                     CodeDiagnostic(
@@ -255,7 +280,12 @@ def _unresolved_import_diagnostics(
         elif isinstance(node, ast.ImportFrom):
             if node.module is None or node.level > 0:
                 continue
-            if _is_import_resolvable(project_root, node.module, known_runtime_modules):
+            if _is_import_resolvable(
+                project_root,
+                node.module,
+                known_runtime_modules,
+                allow_runtime_import_probe=allow_runtime_import_probe,
+            ):
                 continue
             diagnostics.append(
                 CodeDiagnostic(

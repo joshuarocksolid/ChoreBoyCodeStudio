@@ -23,6 +23,9 @@ def test_parse_intelligence_runtime_settings_uses_defaults_for_missing_payload()
     assert settings.incremental_indexing is True
     assert settings.metrics_logging_enabled is True
     assert settings.force_full_reindex_on_open is False
+    assert settings.highlighting_adaptive_mode == "normal"
+    assert settings.highlighting_reduced_threshold_chars == 250_000
+    assert settings.highlighting_lexical_only_threshold_chars == 600_000
 
 
 def test_parse_intelligence_runtime_settings_reads_boolean_flags() -> None:
@@ -33,6 +36,9 @@ def test_parse_intelligence_runtime_settings_reads_boolean_flags() -> None:
                 "incremental_indexing": False,
                 "metrics_logging_enabled": False,
                 "force_full_reindex_on_open": True,
+                "highlighting_adaptive_mode": "reduced",
+                "highlighting_reduced_threshold_chars": 180000,
+                "highlighting_lexical_only_threshold_chars": 360000,
             }
         }
     )
@@ -41,6 +47,24 @@ def test_parse_intelligence_runtime_settings_reads_boolean_flags() -> None:
     assert settings.incremental_indexing is False
     assert settings.metrics_logging_enabled is False
     assert settings.force_full_reindex_on_open is True
+    assert settings.highlighting_adaptive_mode == "reduced"
+    assert settings.highlighting_reduced_threshold_chars == 180000
+    assert settings.highlighting_lexical_only_threshold_chars == 360000
+
+
+def test_parse_intelligence_runtime_settings_clamps_invalid_highlighting_values() -> None:
+    settings = parse_intelligence_runtime_settings(
+        {
+            "intelligence": {
+                "highlighting_adaptive_mode": "garbage",
+                "highlighting_reduced_threshold_chars": -1,
+                "highlighting_lexical_only_threshold_chars": 10,
+            }
+        }
+    )
+    assert settings.highlighting_adaptive_mode == "normal"
+    assert settings.highlighting_reduced_threshold_chars == 250_000
+    assert settings.highlighting_lexical_only_threshold_chars == 250_000
 
 
 def test_should_refresh_index_after_save_requires_project_and_enabled_flags() -> None:
