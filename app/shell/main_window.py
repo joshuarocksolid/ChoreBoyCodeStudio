@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+
 import json
 import queue
 from pathlib import Path
@@ -117,7 +117,7 @@ from app.shell.icon_provider import (
 from app.shell.activity_bar import ActivityBar
 from app.shell.icons import explorer_icon, search_icon
 from app.shell.debug_panel_widget import DebugPanelWidget
-from app.shell.problems_panel import ProblemsPanel, ResultItem
+from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
@@ -1386,10 +1386,12 @@ class MainWindow(QMainWindow):
         self._update_explorer_buttons_enabled()
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
+        self._stored_lint_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
         self._breakpoints_by_file.clear()
         self._restore_session_state(loaded_project.project_root)
+        self._lint_all_open_files()
         self._refresh_breakpoints_list()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
@@ -1404,7 +1406,6 @@ class MainWindow(QMainWindow):
             (time.perf_counter() - started_at) * 1000.0,
         )
         self._persist_last_project_path(loaded_project.project_root)
-        QTimer.singleShot(0, lambda: self._maybe_prompt_imported_project_setup(loaded_project))
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
@@ -1495,130 +1496,6 @@ class MainWindow(QMainWindow):
         editor_widget.setTextCursor(cursor)
         scroll_position = max(0, file_state.scroll_position)
         QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
-
-    def _maybe_prompt_imported_project_setup(self, loaded_project: LoadedProject) -> None:
-        metadata = loaded_project.metadata
-        if metadata.template != "imported_external":
-            return
-        import_metadata = metadata.import_metadata
-        if import_metadata.get("onboarding_completed") is True:
-            return
-
-        detected_signals = import_metadata.get("detected_signals", [])
-        runtime_warnings = import_metadata.get("runtime_warnings", [])
-        signal_text = ", ".join(detected_signals) if isinstance(detected_signals, list) and detected_signals else "none"
-        warnings_text = (
-            "\n".join(f"• {warning}" for warning in runtime_warnings)
-            if isinstance(runtime_warnings, list) and runtime_warnings
-            else "• No immediate runtime warnings detected."
-        )
-        message = (
-            "This appears to be an imported Python project.\n\n"
-            f"Detected project signals: {signal_text}\n"
-            f"Inferred default entry: {metadata.default_entry}\n"
-            f"Inferred run mode: {metadata.default_mode}\n\n"
-            f"Runtime compatibility notes:\n{warnings_text}\n\n"
-            "Would you like to review and adjust these defaults now?"
-        )
-        review_defaults = (
-            QMessageBox.question(
-                self,
-                "Imported Project Setup",
-                message,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            == QMessageBox.Yes
-        )
-
-        default_entry = metadata.default_entry
-        default_mode = metadata.default_mode
-        default_working_directory = metadata.working_directory
-        default_argv = list(metadata.default_argv)
-        if review_defaults:
-            selected_entry, accepted_entry = QInputDialog.getText(
-                self,
-                "Imported Project Setup",
-                "Default entry file (relative to project root):",
-                QLineEdit.Normal,
-                default_entry,
-            )
-            if accepted_entry and selected_entry.strip():
-                default_entry = selected_entry.strip()
-            mode_choices = [
-                constants.RUN_MODE_PYTHON_SCRIPT,
-                constants.RUN_MODE_QT_APP,
-                constants.RUN_MODE_FREECAD_HEADLESS,
-            ]
-            default_mode_index = mode_choices.index(default_mode) if default_mode in mode_choices else 0
-            selected_mode, accepted_mode = QInputDialog.getItem(
-                self,
-                "Imported Project Setup",
-                "Default run mode:",
-                mode_choices,
-                default_mode_index,
-                False,
-            )
-            if accepted_mode and selected_mode:
-                default_mode = selected_mode
-            selected_working_directory, accepted_working_directory = QInputDialog.getText(
-                self,
-                "Imported Project Setup",
-                "Working directory (relative to project root):",
-                QLineEdit.Normal,
-                default_working_directory,
-            )
-            if accepted_working_directory and selected_working_directory.strip():
-                default_working_directory = selected_working_directory.strip()
-            argv_text, accepted_argv = QInputDialog.getText(
-                self,
-                "Imported Project Setup",
-                "Default arguments (space-separated):",
-                QLineEdit.Normal,
-                " ".join(default_argv),
-            )
-            if accepted_argv:
-                default_argv = [token for token in argv_text.split(" ") if token.strip()]
-
-        self._persist_imported_project_setup_defaults(
-            loaded_project=loaded_project,
-            default_entry=default_entry,
-            default_mode=default_mode,
-            default_working_directory=default_working_directory,
-            default_argv=default_argv,
-        )
-
-    def _persist_imported_project_setup_defaults(
-        self,
-        *,
-        loaded_project: LoadedProject,
-        default_entry: str,
-        default_mode: str,
-        default_working_directory: str,
-        default_argv: list[str],
-    ) -> None:
-        payload = loaded_project.metadata.to_dict()
-        payload["default_entry"] = default_entry
-        payload["default_mode"] = default_mode
-        payload["working_directory"] = default_working_directory
-        payload["default_argv"] = list(default_argv)
-        import_metadata = dict(payload.get("import_metadata", {}))
-        import_metadata["onboarding_completed"] = True
-        import_metadata["onboarding_completed_at"] = datetime.now(timezone.utc).isoformat()
-        payload["import_metadata"] = import_metadata
-        manifest_path = Path(loaded_project.manifest_path)
-        try:
-            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        except OSError as exc:
-            QMessageBox.warning(self, "Imported Project Setup", f"Unable to save setup choices: {exc}")
-            return
-        if (
-            default_entry != loaded_project.metadata.default_entry
-            or default_mode != loaded_project.metadata.default_mode
-            or default_working_directory != loaded_project.metadata.working_directory
-            or default_argv != loaded_project.metadata.default_argv
-        ):
-            self._reload_current_project()
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
         dirty_tabs = [tab for tab in self._editor_manager.all_tabs() if tab.is_dirty]
@@ -1829,7 +1706,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Run With Configuration", "Selected configuration could not be resolved.")
             return
         self._start_session(
-            mode=selected_config.mode,
+            mode=constants.RUN_MODE_PYTHON_SCRIPT,
             entry_file=selected_config.entry_file,
             argv=selected_config.argv,
             working_directory=selected_config.working_directory,
@@ -1889,7 +1766,6 @@ class MainWindow(QMainWindow):
             selected_config = RunConfiguration(
                 name="Default",
                 entry_file=self._loaded_project.metadata.default_entry,
-                mode=self._loaded_project.metadata.default_mode,
                 argv=list(self._loaded_project.metadata.default_argv),
                 working_directory=self._loaded_project.metadata.working_directory,
                 env_overrides=dict(self._loaded_project.metadata.env_overrides),
@@ -1913,22 +1789,6 @@ class MainWindow(QMainWindow):
             selected_config.entry_file,
         )
         if not accepted_entry or not entry_file.strip():
-            return
-        mode_choices = [
-            constants.RUN_MODE_PYTHON_SCRIPT,
-            constants.RUN_MODE_QT_APP,
-            constants.RUN_MODE_FREECAD_HEADLESS,
-            constants.RUN_MODE_PYTHON_DEBUG,
-        ]
-        selected_mode, accepted_mode = QInputDialog.getItem(
-            self,
-            "Manage Run Configurations",
-            "Run mode:",
-            mode_choices,
-            mode_choices.index(selected_config.mode) if selected_config.mode in mode_choices else 0,
-            False,
-        )
-        if not accepted_mode or not selected_mode:
             return
         argv_text, accepted_argv = QInputDialog.getText(
             self,
@@ -1986,7 +1846,6 @@ class MainWindow(QMainWindow):
                 {
                     "name": config_name.strip(),
                     "entry_file": entry_file.strip(),
-                    "mode": selected_mode,
                     "argv": [token for token in argv_text.split(" ") if token.strip()],
                     "working_directory": working_directory_text.strip() or None,
                     "env_overrides": parsed_env_overrides,
@@ -2278,14 +2137,61 @@ class MainWindow(QMainWindow):
                 )
         self._stored_lint_diagnostics[file_path] = diagnostics
         self._push_diagnostics_to_editor(file_path, diagnostics)
+        self._update_tab_diagnostic_indicator(file_path, diagnostics)
         self._render_merged_problems_panel()
         self._update_status_bar_diagnostics(diagnostics)
+
+    def _lint_all_open_files(self) -> None:
+        """Run diagnostics for every open Python file and rebuild the problems panel."""
+        if not self._diagnostics_enabled:
+            return
+        for file_path in list(self._editor_widgets_by_path.keys()):
+            if not file_path.lower().endswith(".py"):
+                continue
+            project_root = None if self._loaded_project is None else self._loaded_project.project_root
+            editor_widget = self._editor_widgets_by_path.get(file_path)
+            buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
+            diagnostics = analyze_python_file(
+                file_path, project_root=project_root, source=buffer_source,
+                known_runtime_modules=self._known_runtime_modules,
+            )
+            self._stored_lint_diagnostics[file_path] = diagnostics
+            self._push_diagnostics_to_editor(file_path, diagnostics)
+            self._update_tab_diagnostic_indicator(file_path, diagnostics)
+        self._render_merged_problems_panel()
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is not None:
+            active_diags = self._stored_lint_diagnostics.get(active_tab.file_path, [])
+            self._update_status_bar_diagnostics(active_diags)
 
     def _push_diagnostics_to_editor(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
         editor_widget = self._editor_widgets_by_path.get(file_path)
         if editor_widget is None:
             return
         editor_widget.set_diagnostics(diagnostics)
+
+    def _update_tab_diagnostic_indicator(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        tab_index = self._tab_index_for_path(file_path)
+        if tab_index < 0:
+            return
+        has_error = any(d.severity == DiagnosticSeverity.ERROR for d in diagnostics)
+        has_warning = any(d.severity == DiagnosticSeverity.WARNING for d in diagnostics)
+        if has_error:
+            icon = tab_diagnostic_icon(DiagnosticSeverity.ERROR, "#E03131")
+        elif has_warning:
+            icon = tab_diagnostic_icon(DiagnosticSeverity.WARNING, "#D97706")
+        else:
+            icon = QIcon()
+        self._editor_tabs_widget.setTabIcon(tab_index, icon)
+
+    def _clear_all_tab_diagnostic_indicators(self) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        empty = QIcon()
+        for index in range(self._editor_tabs_widget.count()):
+            self._editor_tabs_widget.setTabIcon(index, empty)
 
     def _update_status_bar_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
         if self._status_controller is None:
@@ -2903,6 +2809,7 @@ class MainWindow(QMainWindow):
         if self._problems_panel is not None:
             self._problems_panel.clear()
             self._update_problems_tab_title(0)
+        self._clear_all_tab_diagnostic_indicators()
 
     def _handle_problem_item_activation(self, file_path: str, line_number: int) -> None:
         if not file_path:
@@ -3936,6 +3843,8 @@ class MainWindow(QMainWindow):
         self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
+        self._stored_lint_diagnostics.pop(file_path, None)
+        self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
 
@@ -4150,7 +4059,6 @@ class MainWindow(QMainWindow):
         if active_tab is None or active_tab.file_path != file_path:
             return
         self._render_lint_diagnostics_for_file(file_path, trigger="realtime")
-
     @staticmethod
     def _semantic_task_key(file_path: str) -> str:
         return f"semantic_tokens:{file_path}"

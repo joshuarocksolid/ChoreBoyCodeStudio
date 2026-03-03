@@ -2,6 +2,5 @@
   "template_id": "qt_app",
   "display_name": "Qt App",
   "description": "Starter GUI app using PySide2 imports in AppRun runtime.",
-  "default_mode": "qt_app",
   "template_version": 1
 }

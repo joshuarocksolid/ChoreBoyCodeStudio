@@ -95,7 +95,6 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
             schema_version=1,
             name="demo",
             default_entry="run.py",
-            default_mode="python_script",
             working_directory=".",
             env_overrides={"BASE_ENV": "1"},
             safe_mode=True,
@@ -108,7 +107,7 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     session = service.start_run(
         loaded_project,
         entry_file="app/main.py",
-        mode="qt_app",
+        mode="python_script",
         argv=["--flag"],
         working_directory="app",
         env_overrides={"EXTRA_ENV": "2"},
@@ -117,7 +116,7 @@ def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: p
     manifest = load_run_manifest(session.manifest_path)
 
     assert manifest.entry_file == "app/main.py"
-    assert manifest.mode == "qt_app"
+    assert manifest.mode == "python_script"
     assert manifest.working_directory == str((project_root / "app").resolve())
     assert manifest.argv == ["--flag"]
     assert manifest.env["BASE_ENV"] == "1"
@@ -139,7 +138,6 @@ def test_start_run_uses_project_default_argv_when_not_overridden(tmp_path: Path,
             schema_version=1,
             name="demo",
             default_entry="run.py",
-            default_mode="python_script",
             default_argv=["--from-default"],
         ),
         entries=[],

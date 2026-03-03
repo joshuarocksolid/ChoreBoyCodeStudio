@@ -41,7 +41,6 @@ def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
     assert '"name": "My Utility Project"' in manifest_text
     assert '"default_entry": "main.py"' in manifest_text
     assert '"template": "utility_script"' in manifest_text
-    assert '"default_mode": "python_script"' in manifest_text
 
 
 def test_materialize_template_rejects_non_empty_destination(tmp_path: Path) -> None:

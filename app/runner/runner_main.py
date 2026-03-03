@@ -72,11 +72,7 @@ def execute_manifest(manifest: RunManifest) -> int:
         print(f"[runner] run_id={manifest.run_id} mode={manifest.mode} entry={manifest.entry_file}")
         try:
             with apply_execution_context(execution_context):
-                if manifest.mode in {
-                    constants.RUN_MODE_PYTHON_SCRIPT,
-                    constants.RUN_MODE_QT_APP,
-                    constants.RUN_MODE_FREECAD_HEADLESS,
-                }:
+                if manifest.mode == constants.RUN_MODE_PYTHON_SCRIPT:
                     _run_entry_script(execution_context.entry_script_path)
                 elif manifest.mode == constants.RUN_MODE_PYTHON_REPL:
                     _run_interactive_repl()

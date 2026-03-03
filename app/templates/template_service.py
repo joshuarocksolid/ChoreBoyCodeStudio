@@ -22,7 +22,6 @@ class TemplateMetadata:
     template_id: str
     display_name: str
     description: str
-    default_mode: str
     template_version: int
     source_path: str
 
@@ -73,7 +72,6 @@ class TemplateService:
             destination=destination,
             project_name=project_name,
             template_id=template.template_id,
-            default_mode=template.default_mode,
         )
         return destination
 
@@ -92,12 +90,11 @@ class TemplateService:
             template_id=_require_non_empty_string(payload, "template_id"),
             display_name=_require_non_empty_string(payload, "display_name"),
             description=_require_non_empty_string(payload, "description"),
-            default_mode=_require_non_empty_string(payload, "default_mode"),
             template_version=_require_int(payload, "template_version"),
             source_path=str(template_dir.resolve()),
         )
 
-    def _inject_project_manifest(self, *, destination: Path, project_name: str, template_id: str, default_mode: str) -> None:
+    def _inject_project_manifest(self, *, destination: Path, project_name: str, template_id: str) -> None:
         if not project_name.strip():
             raise AppValidationError("project_name must be a non-empty string.")
         manifest_path = destination / ".cbcs" / "project.json"
@@ -106,7 +103,6 @@ class TemplateService:
             payload = build_default_project_manifest_payload(
                 project_name=project_name.strip(),
                 default_entry="main.py",
-                default_mode=default_mode,
                 working_directory=".",
                 template=template_id,
                 safe_mode=True,

@@ -90,7 +90,7 @@ class RunService:
         """Create run artifacts and launch a supervised runner process."""
         run_id = generate_run_id(now=self._now_factory())
         run_mode = mode or (
-            loaded_project.metadata.default_mode
+            constants.RUN_MODE_PYTHON_SCRIPT
             if loaded_project is not None
             else constants.RUN_MODE_PYTHON_REPL
         )
