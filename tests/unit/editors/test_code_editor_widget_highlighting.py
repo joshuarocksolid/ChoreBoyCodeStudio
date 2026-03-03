@@ -12,7 +12,7 @@ from PySide2.QtWidgets import QApplication  # noqa: E402
 from app.core import constants  # noqa: E402
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
-from app.intelligence.semantic_tokens import SemanticTokenSpan  # noqa: E402
+from app.intelligence.semantic_tokens import MODIFIER_READONLY, SemanticTokenSpan  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -101,3 +101,31 @@ def test_large_documents_cap_overlay_decorations_to_viewport_budget() -> None:
     editor.set_diagnostics(diagnostics)
     # One line highlight + capped non-cursor overlays.
     assert len(editor.extraSelections()) <= 701
+
+
+def test_readonly_semantic_modifier_uses_constant_semantic_color() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("APP_DIR = '/tmp'\n")
+    editor.set_semantic_token_spans(
+        [
+            SemanticTokenSpan(
+                start=0,
+                end=7,
+                token_type="variable",
+                token_modifiers=(MODIFIER_READONLY,),
+            )
+        ]
+    )
+    colors = [selection.format.foreground().color().name().lower() for selection in editor.extraSelections()]
+    assert editor._semantic_token_colors["constant"].name().lower() in colors
+
+
+def test_semantic_signature_skips_rebuild_for_equivalent_spans() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("value = 1\n")
+    spans_a = [SemanticTokenSpan(start=0, end=5, token_type="variable", token_modifiers=("readonly", "reference"))]
+    spans_b = [SemanticTokenSpan(start=0, end=5, token_type="variable", token_modifiers=("reference", "readonly"))]
+    editor.set_semantic_token_spans(spans_a)
+    generation_after_first = editor._overlay_generation
+    editor.set_semantic_token_spans(spans_b)
+    assert editor._overlay_generation == generation_after_first

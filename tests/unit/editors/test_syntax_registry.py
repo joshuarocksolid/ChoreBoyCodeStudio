@@ -93,3 +93,4 @@ def test_syntax_palette_includes_extended_semantic_keys() -> None:
     assert palette["semantic_import"] == tokens.syntax_semantic_import
     assert palette["semantic_variable"] == tokens.syntax_semantic_variable
     assert palette["semantic_property"] == tokens.syntax_semantic_property
+    assert palette["semantic_constant"] == tokens.syntax_semantic_constant

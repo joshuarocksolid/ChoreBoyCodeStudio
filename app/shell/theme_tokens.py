@@ -59,6 +59,7 @@ class ShellThemeTokens:
     syntax_semantic_import: str = ""
     syntax_semantic_variable: str = ""
     syntax_semantic_property: str = ""
+    syntax_semantic_constant: str = ""
 
 
 def tokens_from_palette(
@@ -131,6 +132,7 @@ def tokens_from_palette(
             syntax_semantic_import="#D2A8FF",
             syntax_semantic_variable="#7EE787",
             syntax_semantic_property="#5CC8FF",
+            syntax_semantic_constant="#FFD580",
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -183,6 +185,7 @@ def tokens_from_palette(
         syntax_semantic_import="#9C36B5",
         syntax_semantic_variable="#2F9E44",
         syntax_semantic_property="#1A73E8",
+        syntax_semantic_constant="#C97A00",
     )
 
 

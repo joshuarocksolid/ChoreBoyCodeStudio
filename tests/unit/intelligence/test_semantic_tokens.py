@@ -5,13 +5,21 @@ from __future__ import annotations
 import pytest
 
 from app.intelligence.semantic_tokens import (
+    MODIFIER_DECLARATION,
+    MODIFIER_READONLY,
+    MODIFIER_REFERENCE,
+    PARSE_STATE_CANCELLED,
+    PARSE_STATE_FAILED,
+    PARSE_STATE_RECOVERED,
     TOKEN_CLASS,
+    TOKEN_CONSTANT,
     TOKEN_FUNCTION,
     TOKEN_IMPORT,
     TOKEN_METHOD,
     TOKEN_PARAMETER,
     TOKEN_PROPERTY,
     TOKEN_VARIABLE,
+    build_python_semantic_result,
     build_python_semantic_spans,
 )
 
@@ -44,9 +52,10 @@ def test_handles_partially_typed_python_source() -> None:
         "        return value\n"
         "    def broken(\n"
     )
-    spans = build_python_semantic_spans(source)
-    assert spans
-    assert any(span.token_type == TOKEN_CLASS for span in spans)
+    result = build_python_semantic_result(source)
+    assert result.parse_state == PARSE_STATE_RECOVERED
+    assert result.spans
+    assert any(span.token_type == TOKEN_CLASS for span in result.spans)
 
 
 def test_extracts_variable_and_property_tokens() -> None:
@@ -63,6 +72,26 @@ def test_extracts_variable_and_property_tokens() -> None:
     assert TOKEN_PROPERTY in token_types
 
 
+def test_extracts_identifier_references_for_calls_constants_and_classes() -> None:
+    source = (
+        "class Demo:\n"
+        "    def run(self):\n"
+        "        return self.value\n"
+        "APP_DIR = '/tmp'\n"
+        "app = Demo()\n"
+        "app.run()\n"
+        "print(APP_DIR)\n"
+    )
+    spans = build_python_semantic_spans(source)
+    by_text = [(source[span.start:span.end], span.token_type, set(span.token_modifiers)) for span in spans]
+
+    assert ("app", TOKEN_VARIABLE, {MODIFIER_REFERENCE}) in by_text
+    assert ("run", TOKEN_METHOD, {MODIFIER_REFERENCE}) in by_text
+    assert ("Demo", TOKEN_CLASS, {MODIFIER_REFERENCE, MODIFIER_READONLY}) in by_text
+    assert ("APP_DIR", TOKEN_CONSTANT, {MODIFIER_DECLARATION, MODIFIER_READONLY}) in by_text
+    assert ("APP_DIR", TOKEN_CONSTANT, {MODIFIER_REFERENCE, MODIFIER_READONLY}) in by_text
+
+
 def test_extraction_honors_cancellation_signal() -> None:
     source = "x = 1\n" * 2000
     calls = 0
@@ -72,5 +101,12 @@ def test_extraction_honors_cancellation_signal() -> None:
         calls += 1
         return calls >= 2
 
-    spans = build_python_semantic_spans(source, should_cancel=should_cancel)
-    assert spans == []
+    result = build_python_semantic_result(source, should_cancel=should_cancel)
+    assert result.spans == []
+    assert result.parse_state == PARSE_STATE_CANCELLED
+
+
+def test_reports_failed_parse_state_when_recovery_not_possible() -> None:
+    result = build_python_semantic_result("def broken(\n")
+    assert result.spans == []
+    assert result.parse_state == PARSE_STATE_FAILED

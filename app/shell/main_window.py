@@ -68,7 +68,13 @@ from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
 from app.intelligence.latency_tracker import RollingLatencyTracker
-from app.intelligence.semantic_tokens import SemanticTokenSpan, build_python_semantic_spans
+from app.intelligence.semantic_tokens import (
+    PARSE_STATE_CANCELLED,
+    PARSE_STATE_FAILED,
+    SemanticTokenExtractionResult,
+    SemanticTokenSpan,
+    build_python_semantic_result,
+)
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -186,6 +192,7 @@ class MainWindow(QMainWindow):
         self._activity_bar: ActivityBar | None = None
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
+        self._quick_open_dialog: QuickOpenDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._run_log_panel: RunLogPanel | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
@@ -271,6 +278,9 @@ class MainWindow(QMainWindow):
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._semantic_revision_by_file: dict[str, int] = {}
+        self._semantic_source_fingerprint_by_file: dict[str, tuple[int, int]] = {}
+        self._semantic_last_good_spans_by_file: dict[str, list[SemanticTokenSpan]] = {}
+        self._semantic_last_applied_signature_by_file: dict[str, tuple[tuple[int, int, str, tuple[str, ...]], ...]] = {}
         self._semantic_schedule_count = 0
         self._semantic_superseded_count = 0
         self._semantic_refresh_latency = RollingLatencyTracker("semantic_refresh_ms", window_size=180, snapshot_interval=30)
@@ -1339,11 +1349,9 @@ class MainWindow(QMainWindow):
         )
 
     def _show_help_file(self, title: str, file_name: str) -> None:
-        help_path = Path(__file__).resolve().parents[1] / "ui" / "help" / file_name
-        if not help_path.exists():
-            QMessageBox.warning(self, title, f"Help file not found: {help_path}")
-            return
-        QMessageBox.information(self, title, help_path.read_text(encoding="utf-8"))
+        from app.ui.help.help_dialog import show_help_file
+
+        show_help_file(title, file_name, self._resolve_theme_tokens(), parent=self)
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
@@ -3554,6 +3562,21 @@ class MainWindow(QMainWindow):
             for path, revision in self._semantic_revision_by_file.items()
             if path in self._editor_widgets_by_path
         }
+        self._semantic_source_fingerprint_by_file = {
+            path: fingerprint
+            for path, fingerprint in self._semantic_source_fingerprint_by_file.items()
+            if path in self._editor_widgets_by_path
+        }
+        self._semantic_last_good_spans_by_file = {
+            path: spans
+            for path, spans in self._semantic_last_good_spans_by_file.items()
+            if path in self._editor_widgets_by_path
+        }
+        self._semantic_last_applied_signature_by_file = {
+            path: signature
+            for path, signature in self._semantic_last_applied_signature_by_file.items()
+            if path in self._editor_widgets_by_path
+        }
 
     def _update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
@@ -3877,6 +3900,9 @@ class MainWindow(QMainWindow):
             self._release_editor_widget(widget)
         self._pending_semantic_refreshes.pop(file_path, None)
         self._semantic_revision_by_file.pop(file_path, None)
+        self._semantic_source_fingerprint_by_file.pop(file_path, None)
+        self._semantic_last_good_spans_by_file.pop(file_path, None)
+        self._semantic_last_applied_signature_by_file.pop(file_path, None)
         self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
@@ -3905,6 +3931,9 @@ class MainWindow(QMainWindow):
         for file_path in list(self._semantic_revision_by_file):
             self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._semantic_revision_by_file.clear()
+        self._semantic_source_fingerprint_by_file.clear()
+        self._semantic_last_good_spans_by_file.clear()
+        self._semantic_last_applied_signature_by_file.clear()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -4143,8 +4172,15 @@ class MainWindow(QMainWindow):
         if not self._should_enable_python_semantic_tokens(file_path=file_path, source_text=source_text):
             editor_widget.clear_semantic_tokens()
             self._semantic_revision_by_file.pop(file_path, None)
+            self._semantic_source_fingerprint_by_file.pop(file_path, None)
+            self._semantic_last_good_spans_by_file.pop(file_path, None)
+            self._semantic_last_applied_signature_by_file.pop(file_path, None)
             self._background_tasks.cancel(self._semantic_task_key(file_path))
             return
+        source_fingerprint = (len(source_text), hash(source_text))
+        if self._semantic_source_fingerprint_by_file.get(file_path) == source_fingerprint:
+            return
+        self._semantic_source_fingerprint_by_file[file_path] = source_fingerprint
 
         self._semantic_schedule_count += 1
         if file_path in self._semantic_revision_by_file:
@@ -4163,21 +4199,31 @@ class MainWindow(QMainWindow):
         self._semantic_revision_by_file[file_path] = revision
         started_at = time.perf_counter()
 
-        def task(cancel_event) -> list[SemanticTokenSpan]:  # type: ignore[no-untyped-def]
+        def task(cancel_event) -> SemanticTokenExtractionResult:  # type: ignore[no-untyped-def]
             if cancel_event.is_set():
-                return []
-            spans = build_python_semantic_spans(source_text, should_cancel=cancel_event.is_set)
-            if cancel_event.is_set():
-                return []
-            return spans
+                return SemanticTokenExtractionResult(spans=[], parse_state=PARSE_STATE_CANCELLED)
+            return build_python_semantic_result(source_text, should_cancel=cancel_event.is_set)
 
-        def on_success(spans: list[SemanticTokenSpan]) -> None:
+        def on_success(result: SemanticTokenExtractionResult) -> None:
             if self._semantic_revision_by_file.get(file_path) != revision:
                 return
             widget = self._editor_widgets_by_path.get(file_path)
             if widget is None:
                 return
-            widget.set_semantic_token_spans(spans)
+            if result.is_cancelled:
+                return
+            spans_to_apply = list(result.spans)
+            if result.parse_state == PARSE_STATE_FAILED:
+                previous_spans = self._semantic_last_good_spans_by_file.get(file_path)
+                if previous_spans is not None:
+                    spans_to_apply = list(previous_spans)
+            else:
+                self._semantic_last_good_spans_by_file[file_path] = list(result.spans)
+
+            signature = self._semantic_span_signature(spans_to_apply)
+            if self._semantic_last_applied_signature_by_file.get(file_path) != signature:
+                widget.set_semantic_token_spans(spans_to_apply)
+                self._semantic_last_applied_signature_by_file[file_path] = signature
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
             snapshot = self._semantic_refresh_latency.record(elapsed_ms)
             if self._intelligence_runtime_settings.metrics_logging_enabled:
@@ -4186,7 +4232,7 @@ class MainWindow(QMainWindow):
                         "Semantic tokens latency warning: file=%s elapsed_ms=%.2f count=%s",
                         file_path,
                         elapsed_ms,
-                        len(spans),
+                        len(spans_to_apply),
                     )
                 elif snapshot is not None:
                     self._logger.info(
@@ -4196,7 +4242,7 @@ class MainWindow(QMainWindow):
                         ),
                         file_path,
                         elapsed_ms,
-                        len(spans),
+                        len(spans_to_apply),
                         snapshot.count,
                         snapshot.p50_ms,
                         snapshot.p95_ms,
@@ -4204,9 +4250,6 @@ class MainWindow(QMainWindow):
                     )
 
         def on_error(exc: Exception) -> None:
-            widget = self._editor_widgets_by_path.get(file_path)
-            if widget is not None:
-                widget.clear_semantic_tokens()
             self._logger.debug("Semantic token refresh failed: file=%s error=%s", file_path, exc)
 
         self._background_tasks.run(
@@ -4230,6 +4273,22 @@ class MainWindow(QMainWindow):
         stripped = source_text.lstrip()
         first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
         return first_line.startswith("#!") and "python" in first_line.lower()
+
+    @staticmethod
+    def _semantic_span_signature(
+        spans: list[SemanticTokenSpan],
+    ) -> tuple[tuple[int, int, str, tuple[str, ...]], ...]:
+        normalized = [
+            (
+                span.start,
+                span.end,
+                span.token_type,
+                tuple(sorted(span.token_modifiers)),
+            )
+            for span in spans
+        ]
+        normalized.sort()
+        return tuple(normalized)
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:

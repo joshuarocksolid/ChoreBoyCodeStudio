@@ -184,4 +184,5 @@ def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
         "semantic_import": tokens.syntax_semantic_import,
         "semantic_variable": tokens.syntax_semantic_variable,
         "semantic_property": tokens.syntax_semantic_property,
+        "semantic_constant": tokens.syntax_semantic_constant,
     }

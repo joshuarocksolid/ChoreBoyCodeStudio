@@ -20,7 +20,7 @@ from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.intelligence.latency_tracker import RollingLatencyTracker
-from app.intelligence.semantic_tokens import SemanticTokenSpan
+from app.intelligence.semantic_tokens import MODIFIER_READONLY, SemanticTokenSpan
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
@@ -34,6 +34,7 @@ VIEWPORT_CHAR_MARGIN = 8000
 LANGUAGE_ATTACH_WARNING_MS = 80.0
 THEME_APPLY_WARNING_MS = 90.0
 OVERLAY_REFRESH_WARNING_MS = 24.0
+MAX_SEMANTIC_SELECTIONS_PER_REFRESH = 1800
 
 
 class _LineNumberArea(QWidget):
@@ -123,7 +124,9 @@ class CodeEditorWidget(QPlainTextEdit):
             "import": QColor("#9C36B5"),
             "variable": QColor("#2F9E44"),
             "property": QColor("#1A73E8"),
+            "constant": QColor("#C97A00"),
         }
+        self._semantic_span_signature: tuple[tuple[int, int, str, tuple[str, ...]], ...] = ()
         self._cached_non_cursor_selections: list[QTextEdit.ExtraSelection] = []
         self._overlay_cache_dirty = True
         self._overlay_generation = 0
@@ -175,6 +178,7 @@ class CodeEditorWidget(QPlainTextEdit):
             "import": QColor(tokens.syntax_semantic_import),
             "variable": QColor(tokens.syntax_semantic_variable),
             "property": QColor(tokens.syntax_semantic_property),
+            "constant": QColor(tokens.syntax_semantic_constant),
         }
         self._rebuild_semantic_selections()
         self._mark_overlay_cache_dirty()
@@ -314,8 +318,10 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def set_semantic_token_spans(self, spans: list[SemanticTokenSpan]) -> None:
         """Apply semantic token spans as overlay selections."""
-        if spans == self._semantic_spans:
+        signature = self._semantic_signature(spans)
+        if signature == self._semantic_span_signature:
             return
+        self._semantic_span_signature = signature
         self._semantic_spans = list(spans)
         self._rebuild_semantic_selections()
         self._mark_overlay_cache_dirty()
@@ -325,6 +331,7 @@ class CodeEditorWidget(QPlainTextEdit):
         if not self._semantic_spans and not self._semantic_selections:
             return
         self._semantic_spans.clear()
+        self._semantic_span_signature = ()
         self._semantic_selections.clear()
         self._mark_overlay_cache_dirty()
         self._refresh_extra_selections()
@@ -335,7 +342,7 @@ class CodeEditorWidget(QPlainTextEdit):
             return
         document = self.document()
         max_position = max(0, document.characterCount() - 1)
-        for span in self._semantic_spans:
+        for span in self._prioritized_semantic_spans():
             if span.end <= span.start:
                 continue
             if span.start >= max_position:
@@ -344,7 +351,7 @@ class CodeEditorWidget(QPlainTextEdit):
             end = min(max_position, span.end)
             if end <= start:
                 continue
-            color = self._semantic_token_colors.get(span.token_type)
+            color = self._semantic_color_for_span(span)
             if color is None:
                 continue
             selection = cast(Any, QTextEdit.ExtraSelection())
@@ -354,6 +361,50 @@ class CodeEditorWidget(QPlainTextEdit):
             cursor.setPosition(end, QTextCursor.KeepAnchor)
             selection.cursor = cursor
             self._semantic_selections.append(selection)
+
+    def _semantic_color_for_span(self, span: SemanticTokenSpan) -> QColor | None:
+        if MODIFIER_READONLY in span.token_modifiers:
+            readonly_color = self._semantic_token_colors.get("constant")
+            if readonly_color is not None:
+                return readonly_color
+        direct = self._semantic_token_colors.get(span.token_type)
+        if direct is not None:
+            return direct
+        if span.token_type == "constant":
+            return self._semantic_token_colors.get("constant") or self._semantic_token_colors.get("variable")
+        return None
+
+    def _prioritized_semantic_spans(self) -> list[SemanticTokenSpan]:
+        if len(self._semantic_spans) <= MAX_SEMANTIC_SELECTIONS_PER_REFRESH:
+            return list(self._semantic_spans)
+        visible_start, visible_end = self._visible_document_window()
+        viewport_first: list[SemanticTokenSpan] = []
+        non_viewport: list[SemanticTokenSpan] = []
+        for span in self._semantic_spans:
+            if span.end <= span.start:
+                continue
+            if span.start < visible_end and span.end > visible_start:
+                viewport_first.append(span)
+            else:
+                non_viewport.append(span)
+        if len(viewport_first) >= MAX_SEMANTIC_SELECTIONS_PER_REFRESH:
+            return viewport_first[:MAX_SEMANTIC_SELECTIONS_PER_REFRESH]
+        remaining = MAX_SEMANTIC_SELECTIONS_PER_REFRESH - len(viewport_first)
+        return viewport_first + non_viewport[:remaining]
+
+    @staticmethod
+    def _semantic_signature(spans: list[SemanticTokenSpan]) -> tuple[tuple[int, int, str, tuple[str, ...]], ...]:
+        normalized = [
+            (
+                span.start,
+                span.end,
+                span.token_type,
+                tuple(sorted(span.token_modifiers)),
+            )
+            for span in spans
+        ]
+        normalized.sort()
+        return tuple(normalized)
 
     def _diag_color_for_severity(self, severity: DiagnosticSeverity) -> QColor:
         if severity == DiagnosticSeverity.ERROR:

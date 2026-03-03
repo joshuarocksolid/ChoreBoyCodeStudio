@@ -931,4 +931,46 @@ QTreeWidget#shell\\.searchSidebar\\.results::branch {{
     border-image: none;
     image: none;
 }}
+/* -- Help dialog --------------------------------------------------------- */
+QDialog#shell\\.helpDialog {{
+    background: {tokens.panel_bg};
+}}
+QWidget#shell\\.helpDialog\\.header {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.helpDialog\\.icon {{
+    font-size: 20px;
+}}
+QLabel#shell\\.helpDialog\\.title {{
+    font-size: 17px;
+    font-weight: 700;
+    color: {tokens.text_primary};
+}}
+QTextBrowser#shell\\.helpDialog\\.browser {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    padding: 16px 24px;
+    font-size: 13px;
+}}
+QWidget#shell\\.helpDialog\\.footer {{
+    background: {tokens.panel_bg};
+    border-top: 1px solid {tokens.border};
+}}
+QPushButton#shell\\.helpDialog\\.closeBtn {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+    border-radius: 5px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.helpDialog\\.closeBtn:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+}}
+QPushButton#shell\\.helpDialog\\.closeBtn:pressed {{
+    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+}}
 """

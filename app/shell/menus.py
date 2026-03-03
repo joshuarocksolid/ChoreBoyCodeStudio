@@ -162,6 +162,10 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         enabled=True,
         callback=callback_registry.on_quick_open,
     )
+    quick_open_action = actions.get("shell.action.file.quickOpen")
+    if quick_open_action is not None:
+        quick_open_action.setToolTip("Search project files by name and open the selected file.")
+        quick_open_action.setStatusTip("Search project files by name and open the selected file.")
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -206,6 +210,8 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     edit_menu.setObjectName("shell.menu.edit")
     _register_menu_action(edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z")
     _register_menu_action(edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z")
+    if quick_open_action is not None:
+        edit_menu.addAction(quick_open_action)
     edit_menu.addSeparator()
     _register_menu_action(
         edit_menu,
@@ -646,6 +652,8 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
     )
 
     qt_core = importlib.import_module("PySide2.QtCore")
+    if quick_open_action is not None:
+        quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
     for m in (file_menu, open_recent_menu, edit_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)

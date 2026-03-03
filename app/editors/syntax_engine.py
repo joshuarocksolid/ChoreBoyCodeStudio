@@ -43,6 +43,7 @@ DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
     "semantic_import": "#9C36B5",
     "semantic_variable": "#2F9E44",
     "semantic_property": "#1A73E8",
+    "semantic_constant": "#C97A00",
 }
 DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "keyword": "#7EA8FF",
@@ -68,6 +69,7 @@ DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "semantic_import": "#D2A8FF",
     "semantic_variable": "#7EE787",
     "semantic_property": "#5CC8FF",
+    "semantic_constant": "#FFD580",
 }
 
 
