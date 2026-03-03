@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+
 import pytest
 
 pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
 
 from PySide2.QtGui import QPalette, QTextDocument  # noqa: E402
 
+import app.editors.syntax_registry as syntax_registry_module  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
@@ -94,3 +98,21 @@ def test_syntax_palette_includes_extended_semantic_keys() -> None:
     assert palette["semantic_variable"] == tokens.syntax_semantic_variable
     assert palette["semantic_property"] == tokens.syntax_semantic_property
     assert palette["semantic_constant"] == tokens.syntax_semantic_constant
+
+
+def test_highlighter_factory_alias_avoids_runtime_union_operator() -> None:
+    """HighlighterFactory alias must stay Python 3.9 runtime-compatible."""
+    source = inspect.getsource(syntax_registry_module)
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not node.targets:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or target.id != "HighlighterFactory":
+            continue
+        alias_expression = ast.get_source_segment(source, node.value) or ""
+        assert "| None" not in alias_expression
+        return
+    pytest.fail("HighlighterFactory assignment not found")

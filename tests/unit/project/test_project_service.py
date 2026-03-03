@@ -161,6 +161,29 @@ def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint
     assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
 
 
+def test_open_project_auto_initialize_skips_pyproject_inference_without_toml_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing TOML parser should not crash project import path inference."""
+    project_root = tmp_path / "pyproject_without_toml_parser"
+    (project_root / "src" / "my_app").mkdir(parents=True)
+    (project_root / "src" / "my_app" / "cli.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (project_root / "pyproject.toml").write_text(
+        "[project]\n"
+        "name = \"my-app\"\n"
+        "[project.scripts]\n"
+        "my-app = \"my_app.cli:main\"\n",
+        encoding="utf-8",
+    )
+    (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
+
+    monkeypatch.setattr(project_service, "_TOML_MODULE", None)
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "run.py"
+
+
 def test_open_project_auto_initialize_uses_top_level_python_before_recursive(tmp_path: Path) -> None:
     """Top-level python files should be preferred over nested files after priority names."""
     project_root = tmp_path / "top_level_project"

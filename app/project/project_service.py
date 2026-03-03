@@ -5,12 +5,21 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import tomllib
+
+try:  # Python 3.11+
+    import tomllib as _toml_module
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9 runtimes
+    try:
+        import tomli as _toml_module  # type: ignore[import-not-found]
+    except ModuleNotFoundError:  # pragma: no cover - no TOML parser available
+        _toml_module = None
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
+
+_TOML_MODULE = _toml_module
 
 
 def open_project(project_root: PathInput) -> LoadedProject:
@@ -315,9 +324,13 @@ def _infer_entry_from_pyproject(project_root: Path) -> str | None:
     if not pyproject_path.exists() or not pyproject_path.is_file():
         return None
 
+    if _TOML_MODULE is None:
+        return None
+
+    toml_decode_error = getattr(_TOML_MODULE, "TOMLDecodeError", ValueError)
     try:
-        payload = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+        payload = _TOML_MODULE.loads(pyproject_path.read_text(encoding="utf-8"))
+    except (OSError, toml_decode_error):
         return None
 
     script_targets: list[str] = []
