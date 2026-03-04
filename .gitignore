@@ -41,3 +41,5 @@ choreboy_code_studio_state/
 **/cbcs/runs/
 **/cbcs/logs/
 **/cbcs/cache/
+
+django_probe/

@@ -21,7 +21,7 @@ def _start_editor() -> int:
         application = application_class(sys.argv)
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
-    window.show()
+    window.showMaximized()
     return application.exec_()
 
 
