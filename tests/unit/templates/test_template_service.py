@@ -56,3 +56,39 @@ def test_materialize_template_rejects_non_empty_destination(tmp_path: Path) -> N
             destination_path=destination,
             project_name="Will Fail",
         )
+
+
+def test_materialize_template_ignores_legacy_hidden_metadata_directories(tmp_path: Path) -> None:
+    """Legacy hidden metadata directories should never be copied into projects."""
+    templates_root = tmp_path / "templates"
+    template_dir = templates_root / "custom_template"
+    template_dir.mkdir(parents=True, exist_ok=True)
+    (template_dir / "template.json").write_text(
+        """
+{
+  "template_id": "custom_template",
+  "display_name": "Custom",
+  "description": "Custom template",
+  "template_version": 1
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (template_dir / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    hidden_metadata_dir = template_dir / ".cbcs"
+    hidden_metadata_dir.mkdir(parents=True, exist_ok=True)
+    (hidden_metadata_dir / "legacy.txt").write_text("legacy\n", encoding="utf-8")
+
+    service = TemplateService(templates_root=str(templates_root))
+    destination = tmp_path / "generated_project"
+    created = service.materialize_template(
+        template_id="custom_template",
+        destination_path=destination,
+        project_name="Generated",
+    )
+
+    assert created == destination.resolve()
+    assert (created / "main.py").exists()
+    assert (created / ".cbcs").exists() is False
+    assert (created / "cbcs" / "project.json").exists()

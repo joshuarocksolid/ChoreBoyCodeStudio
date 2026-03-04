@@ -14,6 +14,11 @@ from app.core.errors import AppValidationError
 from app.project.project_manifest import build_default_project_manifest_payload
 
 TEMPLATE_METADATA_FILENAME = "template.json"
+LEGACY_HIDDEN_METADATA_DIRS = (
+    ".cbcs",
+    ".choreboy_code_studio",
+    ".choreboy_code_studio_state",
+)
 
 
 @dataclass(frozen=True)
@@ -68,13 +73,22 @@ class TemplateService:
             destination.mkdir(parents=True, exist_ok=False)
 
         source_path = Path(template.source_path)
-        shutil.copytree(source_path, destination, dirs_exist_ok=True)
+        shutil.copytree(
+            source_path,
+            destination,
+            dirs_exist_ok=True,
+            ignore=self._ignore_legacy_hidden_metadata_dirs,
+        )
         self._inject_project_manifest(
             destination=destination,
             project_name=project_name,
             template_id=template.template_id,
         )
         return destination
+
+    @staticmethod
+    def _ignore_legacy_hidden_metadata_dirs(_directory: str, names: list[str]) -> set[str]:
+        return {name for name in names if name in LEGACY_HIDDEN_METADATA_DIRS}
 
     def _find_template(self, template_id: str) -> TemplateMetadata:
         for template in self.list_templates():
