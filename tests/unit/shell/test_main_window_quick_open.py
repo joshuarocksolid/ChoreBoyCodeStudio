@@ -10,8 +10,16 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.shell.main_window import MainWindow
+from app.shell.theme_tokens import ShellThemeTokens
 
 pytestmark = pytest.mark.unit
+
+_DUMMY_TOKENS = ShellThemeTokens(
+    window_bg="#1F2428", panel_bg="#262C33", editor_bg="#1B1F23",
+    text_primary="#E9ECEF", text_muted="#ADB5BD", border="#3C434A",
+    accent="#5B8CFF", gutter_bg="#1F2428", gutter_text="#6C757D",
+    line_highlight="#252B33", is_dark=True,
+)
 
 
 class _FakeSignal:
@@ -29,8 +37,9 @@ class _FakeSignal:
 class _FakeQuickOpenDialog:
     instances: list["_FakeQuickOpenDialog"] = []
 
-    def __init__(self, _parent) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, _parent, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
         self.file_selected = _FakeSignal()
+        self.file_selected_at_line = _FakeSignal()
         self.set_candidates_calls: list[list[Any]] = []
         self.open_calls = 0
         _FakeQuickOpenDialog.instances.append(self)
@@ -81,8 +90,12 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
         ]
     )
     window_any._quick_open_dialog = None
+    window_any._editor_manager = None
+    window_any._tree_file_icon_map = {}
     opened_paths: list[str] = []
     window_any._open_file_in_editor = lambda path: opened_paths.append(path)
+    window_any._open_file_at_line = lambda path, line: None
+    monkeypatch.setattr(MainWindow, "_resolve_theme_tokens", lambda _self: _DUMMY_TOKENS)
 
     MainWindow._handle_quick_open_action(window)
 

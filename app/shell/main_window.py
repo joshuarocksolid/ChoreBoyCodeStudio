@@ -3786,6 +3786,8 @@ class MainWindow(QMainWindow):
         return -1
 
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
+        if self._editor_manager.get_tab(file_path) is None:
+            return
         tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
         if self._editor_tabs_widget is None:
             return

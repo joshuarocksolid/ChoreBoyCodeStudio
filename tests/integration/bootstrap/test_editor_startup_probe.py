@@ -132,6 +132,9 @@ class _FakeMainWindow:
     def show(self) -> None:
         self.show_calls += 1
 
+    def showMaximized(self) -> None:
+        self.show_calls += 1
+
 
 def test_start_editor_launches_main_window_with_startup_report(monkeypatch: pytest.MonkeyPatch) -> None:
     """Shell launch should pass startup capability report into MainWindow."""
