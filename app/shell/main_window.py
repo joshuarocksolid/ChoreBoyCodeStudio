@@ -118,6 +118,7 @@ from app.shell.settings_models import (
     parse_editor_settings_snapshot,
     parse_main_window_settings,
 )
+from app.shell.shortcut_preferences import build_effective_shortcut_map, close_tab_shortcut_id
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
@@ -214,6 +215,7 @@ class MainWindow(QMainWindow):
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
         self._vertical_splitter: QSplitter | None = None
+        self._close_tab_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
@@ -252,6 +254,8 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._theme_mode = self._load_theme_mode()
+        self._shortcut_overrides = self._load_shortcut_overrides()
+        self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
@@ -359,8 +363,7 @@ class MainWindow(QMainWindow):
 
         self._configure_window_frame()
         self._build_layout_shell()
-        close_tab_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
-        close_tab_shortcut.activated.connect(self._close_active_tab)
+        self._configure_close_tab_shortcut()
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
@@ -426,6 +429,7 @@ class MainWindow(QMainWindow):
                 on_help_shortcuts=self._handle_shortcuts_action,
                 on_help_about=self._handle_about_action,
             ),
+            shortcut_overrides=self._effective_shortcuts,
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
@@ -595,6 +599,27 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
+
+    def _load_shortcut_overrides(self) -> dict[str, str]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return dict(snapshot.shortcut_overrides)
+
+    def _configure_close_tab_shortcut(self) -> None:
+        if self._close_tab_shortcut is None:
+            self._close_tab_shortcut = QShortcut(QKeySequence(), self)
+            self._close_tab_shortcut.activated.connect(self._close_active_tab)
+        close_tab_sequence = self._effective_shortcuts.get(close_tab_shortcut_id(), "")
+        self._close_tab_shortcut.setKey(QKeySequence(close_tab_sequence))
+
+    def _apply_shortcut_overrides_runtime(self) -> None:
+        self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
+        if self._menu_registry is not None:
+            for action_id, action in self._menu_registry.actions.items():
+                if action is None:
+                    continue
+                action.setShortcut(QKeySequence(self._effective_shortcuts.get(action_id, "")))
+        self._configure_close_tab_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
         settings_payload = load_settings(state_root=self._state_root)
@@ -781,6 +806,7 @@ class MainWindow(QMainWindow):
             self._auto_open_console_on_run_output,
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
+        self._shortcut_overrides = self._load_shortcut_overrides()
         if not self._diagnostics_enabled or not self._diagnostics_realtime:
             self._realtime_lint_timer.stop()
             self._pending_realtime_lint_file_path = None
@@ -792,6 +818,7 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         self._apply_editor_preferences_to_open_editors()
         self._apply_runtime_intelligence_preferences_to_open_editors()
+        self._apply_shortcut_overrides_runtime()
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:

@@ -5,8 +5,9 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
+from app.shell.shortcut_preferences import normalize_shortcut
 
 @dataclass(frozen=True)
 class MenuStubRegistry:
@@ -115,7 +116,12 @@ def build_recent_project_menu_items(project_paths: list[str]) -> list[RecentProj
     return items
 
 
-def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -> MenuStubRegistry:
+def build_menu_stubs(
+    main_window: Any,
+    callbacks: MenuCallbacks | None = None,
+    *,
+    shortcut_overrides: Mapping[str, str] | None = None,
+) -> MenuStubRegistry:
     """Create top-level shell menus and stable action IDs."""
     callback_registry = callbacks or MenuCallbacks()
     actions: dict[str, Any] = {}
@@ -135,6 +141,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+N",
         enabled=True,
         callback=callback_registry.on_new_project,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         file_menu,
@@ -152,6 +159,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+O",
         enabled=True,
         callback=callback_registry.on_open_project,
+        shortcut_overrides=shortcut_overrides,
     )
     open_recent_menu = file_menu.addMenu("Open Recent")
     open_recent_menu.setObjectName("shell.menu.file.openRecent")
@@ -164,6 +172,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+P",
         enabled=True,
         callback=callback_registry.on_quick_open,
+        shortcut_overrides=shortcut_overrides,
     )
     quick_open_action = actions.get("shell.action.file.quickOpen")
     if quick_open_action is not None:
@@ -178,6 +187,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+S",
         enabled=True,
         callback=callback_registry.on_save,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(file_menu, actions, "shell.action.file.saveAs", "Save As...")
     _register_menu_action(
@@ -188,6 +198,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Shift+S",
         enabled=True,
         callback=callback_registry.on_save_all,
+        shortcut_overrides=shortcut_overrides,
     )
     file_menu.addSeparator()
     _register_menu_action(
@@ -207,12 +218,17 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Q",
         enabled=True,
         callback=main_window.close,
+        shortcut_overrides=shortcut_overrides,
     )
 
     edit_menu = menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
-    _register_menu_action(edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z")
-    _register_menu_action(edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z")
+    _register_menu_action(
+        edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z", shortcut_overrides=shortcut_overrides
+    )
+    _register_menu_action(
+        edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z", shortcut_overrides=shortcut_overrides
+    )
     if quick_open_action is not None:
         edit_menu.addAction(quick_open_action)
     edit_menu.addSeparator()
@@ -224,6 +240,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+F",
         enabled=True,
         callback=callback_registry.on_find,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -233,6 +250,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+H",
         enabled=True,
         callback=callback_registry.on_replace,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -242,6 +260,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+G",
         enabled=True,
         callback=callback_registry.on_go_to_line,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -251,6 +270,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Shift+F",
         enabled=True,
         callback=callback_registry.on_find_in_files,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -260,6 +280,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Shift+F12",
         enabled=True,
         callback=callback_registry.on_find_references,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -269,6 +290,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "F2",
         enabled=True,
         callback=callback_registry.on_rename_symbol,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -278,6 +300,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+/",
         enabled=True,
         callback=callback_registry.on_toggle_comment,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -287,6 +310,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Tab",
         enabled=True,
         callback=callback_registry.on_indent,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -296,6 +320,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Shift+Tab",
         enabled=True,
         callback=callback_registry.on_outdent,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -305,6 +330,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "F12",
         enabled=True,
         callback=callback_registry.on_go_to_definition,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -314,6 +340,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+Shift+Space",
         enabled=True,
         callback=callback_registry.on_signature_help,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         edit_menu,
@@ -323,6 +350,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+K",
         enabled=True,
         callback=callback_registry.on_hover_info,
+        shortcut_overrides=shortcut_overrides,
     )
 
     run_menu = menu_bar.addMenu("&Run")
@@ -334,6 +362,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Run",
         "F5",
         callback=callback_registry.on_run,
+        shortcut_overrides=shortcut_overrides,
     )
     run_action = actions.get("shell.action.run.run")
     if run_action is not None:
@@ -346,6 +375,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Debug",
         "Ctrl+F5",
         callback=callback_registry.on_debug,
+        shortcut_overrides=shortcut_overrides,
     )
     debug_action = actions.get("shell.action.run.debug")
     if debug_action is not None:
@@ -358,6 +388,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Run Project Tests",
         "Ctrl+Shift+T",
         callback=callback_registry.on_run_pytest_project,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -366,6 +397,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Run Current File Tests",
         "Ctrl+Alt+T",
         callback=callback_registry.on_run_pytest_current_file,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -388,6 +420,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Stop",
         "Shift+F5",
         callback=callback_registry.on_stop,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -396,6 +429,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Restart",
         "Ctrl+Shift+F5",
         callback=callback_registry.on_restart,
+        shortcut_overrides=shortcut_overrides,
     )
     run_menu.addSeparator()
     _register_menu_action(
@@ -405,6 +439,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Continue",
         "F6",
         callback=callback_registry.on_continue_debug,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -413,6 +448,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Pause",
         "Ctrl+F6",
         callback=callback_registry.on_pause_debug,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -421,6 +457,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Step Over",
         "F10",
         callback=callback_registry.on_step_over,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -429,6 +466,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Step Into",
         "F11",
         callback=callback_registry.on_step_into,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -437,6 +475,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Step Out",
         "Shift+F11",
         callback=callback_registry.on_step_out,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -445,6 +484,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Toggle Breakpoint",
         "F9",
         callback=callback_registry.on_toggle_breakpoint,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         run_menu,
@@ -462,6 +502,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         "Ctrl+`",
         enabled=True,
         callback=callback_registry.on_start_python_console,
+        shortcut_overrides=shortcut_overrides,
     )
     python_console_action = actions.get("shell.action.run.pythonConsole")
     if python_console_action is not None:
@@ -524,6 +565,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         shortcut="Ctrl+=",
         enabled=True,
         callback=callback_registry.on_zoom_in,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         view_menu,
@@ -533,6 +575,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         shortcut="Ctrl+-",
         enabled=True,
         callback=callback_registry.on_zoom_out,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         view_menu,
@@ -542,6 +585,7 @@ def build_menu_stubs(main_window: Any, callbacks: MenuCallbacks | None = None) -
         shortcut="Ctrl+0",
         enabled=True,
         callback=callback_registry.on_zoom_reset,
+        shortcut_overrides=shortcut_overrides,
     )
 
     tools_menu = menu_bar.addMenu("&Tools")
@@ -698,13 +742,18 @@ def _register_menu_action(
     shortcut: str | None = None,
     enabled: bool = False,
     callback: Callable[[], object] | None = None,
+    shortcut_overrides: Mapping[str, str] | None = None,
 ) -> None:
     action_class = importlib.import_module("PySide2.QtWidgets").QAction
 
     action = action_class(label, menu)
     action.setObjectName(action_id)
-    if shortcut:
-        action.setShortcut(shortcut)
+    effective_shortcut = shortcut
+    if shortcut_overrides is not None and action_id in shortcut_overrides:
+        override = normalize_shortcut(shortcut_overrides[action_id])
+        effective_shortcut = override if override else None
+    if effective_shortcut:
+        action.setShortcut(effective_shortcut)
     action.setEnabled(enabled)
     if callback is not None:
         action.triggered.connect(callback)
