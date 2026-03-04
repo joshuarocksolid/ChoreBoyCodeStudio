@@ -12,6 +12,11 @@ This file is the **execution backlog** for shipping a polished ChoreBoy Code Stu
 
 This version replaces the previous broad checklist with a **thin-slice, test-traceable plan**.
 
+> Designer planning artifacts are tracked separately under `docs/designer/`:
+> - `docs/designer/TASKS.md`
+> - `docs/designer/WIREFRAME.md`
+> - `docs/designer/ARCHITECTURE_PLAN.md`
+
 ---
 
 ## 2) How to use this backlog
