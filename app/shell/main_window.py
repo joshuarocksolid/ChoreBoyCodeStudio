@@ -36,7 +36,7 @@ from PySide2.QtWidgets import (
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_app_log_path, global_cache_dir, global_logs_dir, project_logs_dir
-from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
+from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
@@ -2291,11 +2291,62 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _start_runtime_module_probe(self, *, user_initiated: bool = False) -> None:
-        self._diagnostics_orchestrator.start_runtime_module_probe(user_initiated=user_initiated)
+        orchestrator = getattr(self, "_diagnostics_orchestrator", None)
+        if orchestrator is not None:
+            orchestrator.start_runtime_module_probe(user_initiated=user_initiated)
+            return
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return probe_and_cache_runtime_modules(state_root=self._state_root)
+
+        def on_success(modules: object) -> None:
+            if not isinstance(modules, frozenset):
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned an unexpected result type."
+                        " See app logs for details.",
+                    )
+                return
+            if not modules:
+                self._logger.warning(
+                    "Runtime module probe returned an empty module set; unresolved-import diagnostics may be incomplete."
+                )
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned no modules."
+                        " FreeCAD/runtime imports may still show unresolved until probing succeeds.",
+                    )
+                return
+            self._known_runtime_modules = modules
+            self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
+            self._relint_open_python_files()
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Runtime module probe failed: %s", exc)
+            if user_initiated:
+                QMessageBox.warning(self, "Refresh Runtime Modules", f"Runtime module probe failed: {exc}")
+
+        self._background_tasks.run(
+            key="runtime_module_probe",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _relint_open_python_files(self) -> None:
         """Re-lint all currently open Python file tabs and refresh the problems panel."""
-        self._diagnostics_orchestrator.relint_open_python_files()
+        orchestrator = getattr(self, "_diagnostics_orchestrator", None)
+        if orchestrator is not None:
+            orchestrator.relint_open_python_files()
+            return
+        for file_path in self._editor_widgets_by_path.keys():
+            if file_path.lower().endswith(".py"):
+                self._render_lint_diagnostics_for_file(file_path, trigger="tab_change")
+        self._render_merged_problems_panel()
 
     def _handle_refresh_runtime_modules_action(self) -> None:
         self._start_runtime_module_probe(user_initiated=True)
@@ -2615,12 +2666,23 @@ class MainWindow(QMainWindow):
         coordinator = getattr(self, "_run_output_coordinator", None)
         if coordinator is not None:
             return coordinator
+        run_session_controller = getattr(self, "_run_session_controller", None)
+        get_active_session_mode = (
+            (lambda: getattr(run_session_controller, "active_session_mode", None))
+            if run_session_controller is not None
+            else (lambda: getattr(self, "_active_session_mode", None))
+        )
+        set_active_session_mode = getattr(run_session_controller, "set_active_session_mode", None)
+        if set_active_session_mode is None:
+            set_active_session_mode = lambda mode: setattr(self, "_active_session_mode", mode)
+        output_tail = getattr(self, "_active_run_output_tail", None)
+        append_output_tail = output_tail.append if output_tail is not None else (lambda _chunk: None)
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._is_shutting_down,
-            get_active_session_mode=lambda: self._run_session_controller.active_session_mode,
-            set_active_session_mode=self._run_session_controller.set_active_session_mode,
+            get_active_session_mode=get_active_session_mode,
+            set_active_session_mode=set_active_session_mode,
             get_debug_session=lambda: self._debug_session,
-            append_output_tail=self._active_run_output_tail.append,
+            append_output_tail=append_output_tail,
             append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
             append_debug_output_line=self._append_debug_output_line,
             apply_debug_inspector_event=self._apply_debug_inspector_event,
@@ -2709,7 +2771,11 @@ class MainWindow(QMainWindow):
         self._update_problems_tab_title(self._problems_panel.problem_count())
 
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        self._search_results_coordinator.schedule_results_update(matches, query)
+        coordinator = getattr(self, "_search_results_coordinator", None)
+        if coordinator is None:
+            self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
+            return
+        coordinator.schedule_results_update(matches, query)
 
     def _handle_search_worker_done(self, started_at: float, query: str) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0

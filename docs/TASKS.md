@@ -1093,3 +1093,36 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `docs/ACCEPTANCE_TESTS.md`
   - `docs/TASKS.md`
 
+### G21 — Customizable editor settings (shortcuts, syntax colors, linter)
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: deliver user-facing customization for keybindings, syntax token colors (light/dark), and lint rule behavior with persisted settings.
+- Scope:
+  - keybinding metadata + override model with conflict detection and runtime application
+  - settings dialog Keybindings tab (search/edit/reset)
+  - syntax color override model + Settings Syntax Colors tab with theme-specific overrides and color picking
+  - lint profile model + Settings Linter tab (rule enablement + severity overrides)
+  - diagnostics pipeline integration for lint profile suppression/severity remap
+  - docs/test coverage updates for new settings contracts
+- Primary files:
+  - `app/core/constants.py`
+  - `app/shell/shortcut_preferences.py`
+  - `app/shell/syntax_color_preferences.py`
+  - `app/intelligence/lint_profile.py`
+  - `app/shell/settings_models.py`
+  - `app/shell/settings_dialog.py`
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `app/shell/theme_tokens.py`
+  - `app/intelligence/diagnostics_service.py`
+  - `tests/unit/shell/test_settings_models.py`
+  - `tests/unit/shell/test_shortcut_preferences.py`
+  - `tests/unit/shell/test_syntax_color_preferences.py`
+  - `tests/unit/shell/test_menus_shortcut_overrides.py`
+  - `tests/unit/shell/test_settings_dialog.py`
+  - `tests/unit/intelligence/test_lint_profile.py`
+  - `tests/unit/intelligence/test_diagnostics_service.py`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/TASKS.md`
+

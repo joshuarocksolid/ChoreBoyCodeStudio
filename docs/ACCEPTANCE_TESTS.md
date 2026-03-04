@@ -821,6 +821,71 @@ Verify the Help > Load Example Project... flow creates a valid, runnable CRUD sh
 
 ---
 
+## AT-34 — Keyboard shortcut customization persists and applies live
+
+**Purpose:**  
+Verify users can customize command shortcuts from Settings and observe immediate effect.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Open **File > Settings... > Keybindings**.
+2. Change the **Run** shortcut from `F5` to another valid binding (e.g. `Ctrl+R`).
+3. Save settings.
+4. Open the **Run** menu and verify displayed shortcut updated.
+5. Reopen settings and verify the custom value persisted.
+
+**Expected Result:**  
+- updated shortcut appears in menu/action surfaces after save
+- keybinding value persists across settings reopen and app restart
+- conflicting assignments are prevented or explicitly resolved in-UI
+
+---
+
+## AT-35 — Syntax color customization (light + dark) persists
+
+**Purpose:**  
+Verify syntax token colors can be customized per theme and remain readable.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Open **File > Settings... > Syntax Colors**.
+2. Select **Light Theme**, change one lexical token color (e.g. `keyword`), save.
+3. Reopen settings and confirm value persisted.
+4. Select **Dark Theme**, change one token color, save.
+5. Switch themes from **View > Theme** and verify editor remains readable in both modes.
+
+**Expected Result:**  
+- light and dark overrides are independently persisted
+- active editor theme reflects configured syntax colors
+- both themes preserve usable contrast and readability
+
+---
+
+## AT-36 — Linter profile customization changes diagnostics behavior
+
+**Purpose:**  
+Verify rule-level lint settings (enable + severity) affect diagnostics output.
+
+**Preconditions:**  
+- project with Python file producing at least one `PY220` and one `PY230` diagnostic
+
+**Steps:**  
+1. Open **File > Settings... > Linter**.
+2. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
+3. Save settings and re-run linting for affected file.
+4. Reopen settings and verify changes persisted.
+
+**Expected Result:**  
+- disabled rule diagnostics are suppressed
+- severity override is reflected in problems/editor indicators
+- lint profile persists across settings reopen and app restart
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
