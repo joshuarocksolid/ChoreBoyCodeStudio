@@ -76,6 +76,7 @@ class SettingsDialog(QDialog):
         self._active_syntax_theme_key = THEME_LIGHT
         self._has_shortcut_conflicts = False
         self._has_invalid_syntax_colors = False
+        self._ok_button = None
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget(self)
