@@ -160,6 +160,7 @@ from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
+from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
@@ -295,6 +296,7 @@ class MainWindow(QMainWindow):
         self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
+        self._run_output_coordinator: RunOutputCoordinator | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
         self._repl_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
@@ -2557,6 +2559,41 @@ class MainWindow(QMainWindow):
     def _auto_start_repl(self) -> None:
         self._repl_manager.start()
 
+    def _get_run_output_coordinator(self) -> RunOutputCoordinator:
+        coordinator = getattr(self, "_run_output_coordinator", None)
+        if coordinator is not None:
+            return coordinator
+        coordinator = RunOutputCoordinator(
+            is_shutting_down=lambda: self._is_shutting_down,
+            get_active_session_mode=lambda: getattr(self, "_active_session_mode", None),
+            set_active_session_mode=lambda mode: setattr(self, "_active_session_mode", mode),
+            get_debug_session=lambda: self._debug_session,
+            append_output_tail=self._active_run_output_tail.append,
+            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
+            append_debug_output_line=self._append_debug_output_line,
+            apply_debug_inspector_event=self._apply_debug_inspector_event,
+            refresh_run_action_states=self._refresh_run_action_states,
+            set_run_status=lambda status, return_code=None: self._set_run_status(status, return_code=return_code),
+            focus_run_log_tab=self._focus_run_log_tab,
+            focus_problems_tab=self._focus_problems_tab,
+            set_debug_command_input_enabled=lambda enabled: (
+                self._debug_panel.set_command_input_enabled(enabled)
+                if getattr(self, "_debug_panel", None) is not None
+                else None
+            ),
+            clear_controller_active_session_mode=self._run_session_controller.clear_active_session_mode,
+            finalize_run_log=self._finalize_run_log,
+            update_problems_from_output=self._update_problems_from_output,
+            auto_open_console_on_run_output_enabled=lambda: bool(
+                getattr(self, "_auto_open_console_on_run_output", False)
+            ),
+            auto_open_problems_on_run_failure_enabled=lambda: bool(
+                getattr(self, "_auto_open_problems_on_run_failure", False)
+            ),
+        )
+        self._run_output_coordinator = coordinator
+        return coordinator
+
     def _process_queued_run_events(self) -> None:
         if self._is_shutting_down:
             self._drain_run_event_queue()
@@ -2569,68 +2606,7 @@ class MainWindow(QMainWindow):
             self._apply_run_event(event)
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
-        if self._is_shutting_down:
-            return
-        if event.event_type == "output":
-            stream = event.stream or "stdout"
-            text = event.text or ""
-            parsed_debug_event = self._debug_session.ingest_output_line(text)
-            if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running", "stack"}:
-                if parsed_debug_event.message:
-                    self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
-                self._apply_debug_inspector_event()
-                self._refresh_run_action_states()
-                return
-            # Contract: run/debug session output is always shown in the Run Log tab.
-            # The Python Console tab is reserved for REPL session output only.
-            self._active_run_output_tail.append(text)
-            self._append_console_line(text, stream=stream)
-            if getattr(self, "_auto_open_console_on_run_output", False):
-                self._focus_run_log_tab()
-            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                for line in text.rstrip().splitlines():
-                    self._append_debug_output_line(line)
-            return
-
-        if event.event_type == "exit":
-            return_code = event.return_code
-            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                self._debug_session.mark_exited()
-                self._apply_debug_inspector_event()
-            if event.terminated_by_user:
-                self._append_console_line(f"Run terminated by user (code={return_code}).\n", stream="system")
-                session_line = f"[system] Session terminated (code={return_code})."
-                self._set_run_status("terminated", return_code=return_code)
-            else:
-                self._append_console_line(f"Run finished (code={return_code}).\n", stream="system")
-                session_line = f"[system] Session finished (code={return_code})."
-                if return_code == constants.RUN_EXIT_SUCCESS:
-                    self._set_run_status("success", return_code=return_code)
-                else:
-                    self._set_run_status("failed", return_code=return_code)
-            if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-                self._append_debug_output_line(session_line)
-            if self._debug_panel is not None:
-                self._debug_panel.set_command_input_enabled(False)
-
-            self._active_session_mode = None
-            self._run_session_controller.clear_active_session_mode()
-            self._refresh_run_action_states()
-            self._finalize_run_log(return_code=return_code)
-            problems = self._update_problems_from_output()
-            if (
-                not event.terminated_by_user
-                and (return_code or 0) != constants.RUN_EXIT_SUCCESS
-                and problems
-                and getattr(self, "_auto_open_problems_on_run_failure", False)
-            ):
-                self._focus_problems_tab()
-            return
-
-        if event.event_type == "state":
-            if event.state in {"running", "stopping"}:
-                self._set_run_status(event.state)
-            self._refresh_run_action_states()
+        self._get_run_output_coordinator().apply(event)
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._console_model.append(stream, text)
