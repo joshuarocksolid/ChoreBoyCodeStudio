@@ -1137,6 +1137,7 @@ To reduce ambiguity for humans and AI agents:
 * `ACCEPTANCE_TESTS.md` defines **how success is validated**
 * `TASKS.md` defines **implementation slices**
 * `AGENTS.md` defines **how AI agents should work in this repo**
+* `docs/designer/ARCHITECTURE_PLAN.md` defines the **Designer subsystem plan** (`.ui` builder module boundaries, contracts, and rollout), with companion wireframe/backlog docs in `docs/designer/`
 
 If a change affects system structure, update `ARCHITECTURE.md`.
 
