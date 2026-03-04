@@ -13,6 +13,11 @@ from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdi
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
+from app.editors.editor_overlay_policy import (
+    effective_highlighting_mode,
+    is_large_document,
+    visible_document_window,
+)
 from app.editors.find_replace_bar import FindOptions
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
 from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
@@ -908,20 +913,18 @@ class CodeEditorWidget(QPlainTextEdit):
         self._overlay_generation += 1
 
     def _is_large_document(self) -> bool:
-        return self.document().characterCount() > self._highlighting_reduced_threshold_chars
+        return is_large_document(
+            document_size=self.document().characterCount(),
+            reduced_threshold_chars=self._highlighting_reduced_threshold_chars,
+        )
 
     def _effective_highlighting_mode(self) -> str:
-        if self._highlighting_adaptive_mode == constants.HIGHLIGHTING_MODE_LEXICAL_ONLY:
-            return constants.HIGHLIGHTING_MODE_LEXICAL_ONLY
-        document_size = self.document().characterCount()
-        if document_size >= self._highlighting_lexical_only_threshold_chars:
-            return constants.HIGHLIGHTING_MODE_LEXICAL_ONLY
-        if (
-            self._highlighting_adaptive_mode == constants.HIGHLIGHTING_MODE_REDUCED
-            or document_size >= self._highlighting_reduced_threshold_chars
-        ):
-            return constants.HIGHLIGHTING_MODE_REDUCED
-        return constants.HIGHLIGHTING_MODE_NORMAL
+        return effective_highlighting_mode(
+            adaptive_mode=self._highlighting_adaptive_mode,
+            document_size=self.document().characterCount(),
+            reduced_threshold_chars=self._highlighting_reduced_threshold_chars,
+            lexical_only_threshold_chars=self._highlighting_lexical_only_threshold_chars,
+        )
 
     def _viewport_cap_selections(
         self,
@@ -953,9 +956,12 @@ class CodeEditorWidget(QPlainTextEdit):
         max_position = max(0, self.document().characterCount() - 1)
         top_cursor = self.cursorForPosition(QPoint(0, 0))
         bottom_cursor = self.cursorForPosition(QPoint(0, max(0, self.viewport().height() - 1)))
-        start = max(0, min(top_cursor.position(), bottom_cursor.position()) - VIEWPORT_CHAR_MARGIN)
-        end = min(max_position, max(top_cursor.position(), bottom_cursor.position()) + VIEWPORT_CHAR_MARGIN)
-        return (start, max(start + 1, end))
+        return visible_document_window(
+            top_position=top_cursor.position(),
+            bottom_position=bottom_cursor.position(),
+            max_position=max_position,
+            margin=VIEWPORT_CHAR_MARGIN,
+        )
 
     def _record_latency_metric(
         self,
