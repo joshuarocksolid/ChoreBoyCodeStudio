@@ -20,6 +20,7 @@ from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_pa
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
+from app.project.file_excludes import should_exclude_name
 from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
 
 _TOML_MODULE = _toml_module
@@ -43,7 +44,10 @@ class ProjectRootAssessment:
     inferred_entry: str | None = None
 
 
-def open_project(project_root: PathInput) -> LoadedProject:
+def open_project(
+    project_root: PathInput,
+    exclude_patterns: list[str] | None = None,
+) -> LoadedProject:
     """Load a project root into a structured object for shell consumers."""
     resolved_root = _require_existing_project_root(project_root)
     assessment = assess_project_root(resolved_root)
@@ -58,7 +62,13 @@ def open_project(project_root: PathInput) -> LoadedProject:
     manifest_path = project_manifest_path(resolved_root)
 
     metadata = load_project_manifest(manifest_path)
-    entries = enumerate_project_entries(resolved_root)
+
+    from app.project.file_excludes import compute_effective_excludes
+    effective_excludes = compute_effective_excludes(
+        exclude_patterns or [],
+        metadata.exclude_patterns,
+    )
+    entries = enumerate_project_entries(resolved_root, exclude_patterns=effective_excludes)
 
     return LoadedProject(
         project_root=str(resolved_root),
@@ -132,9 +142,10 @@ def open_project_and_track_recent(
     *,
     state_root: PathInput | None = None,
     max_recent_entries: int | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> LoadedProject:
     """Open a project and update persisted recents only after success."""
-    loaded_project = open_project(project_root)
+    loaded_project = open_project(project_root, exclude_patterns=exclude_patterns)
 
     # Local import keeps the recents module decoupled from service module import order.
     from app.project.recent_projects import remember_recent_project
@@ -223,7 +234,10 @@ def validate_project_structure(project_root: PathInput) -> Path:
     return resolved_root
 
 
-def enumerate_project_entries(project_root: PathInput) -> list[ProjectFileEntry]:
+def enumerate_project_entries(
+    project_root: PathInput,
+    exclude_patterns: list[str] | None = None,
+) -> list[ProjectFileEntry]:
     """Recursively enumerate project entries in deterministic sorted order.
 
     Policy for T07:
@@ -263,8 +277,16 @@ def enumerate_project_entries(project_root: PathInput) -> list[ProjectFileEntry]
             followlinks=False,
         ):
             current_path = Path(current_dir)
-            dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-            file_names.sort()
+            _active_excludes = exclude_patterns or []
+            dir_names[:] = sorted(
+                name for name in dir_names
+                if name != constants.PROJECT_META_DIRNAME
+                and not should_exclude_name(name, _active_excludes)
+            )
+            file_names = sorted(
+                name for name in file_names
+                if not should_exclude_name(name, _active_excludes)
+            )
 
             for directory_name in dir_names:
                 directory_path = current_path / directory_name

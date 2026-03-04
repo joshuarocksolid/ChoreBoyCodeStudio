@@ -34,7 +34,7 @@ class SearchOptions:
     exclude_globs: list[str] | None = None
 
 
-_ALWAYS_SKIP_DIRS = {"cbcs", "__pycache__", ".git", ".hg", "node_modules", ".venv", "venv"}
+_STRUCTURAL_SKIP_DIRS = {"cbcs"}
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -81,6 +81,7 @@ def find_in_files(
     max_results: int = 200,
     cancel_event: threading.Event | None = None,
     options: SearchOptions | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> list[SearchMatch]:
     """Search text files under project root for query."""
     if not query.strip():
@@ -93,6 +94,7 @@ def find_in_files(
 
     root = Path(project_root).expanduser().resolve()
     results: list[SearchMatch] = []
+    _active_excludes = exclude_patterns or []
 
     for file_path in sorted(root.rglob("*")):
         if cancel_event is not None and cancel_event.is_set():
@@ -101,10 +103,22 @@ def find_in_files(
             break
         if not file_path.is_file():
             continue
-        if any(part in _ALWAYS_SKIP_DIRS for part in file_path.parts):
+        if any(part in _STRUCTURAL_SKIP_DIRS for part in file_path.parts):
             continue
-
         rel_path = file_path.relative_to(root).as_posix()
+        if _active_excludes:
+            _skip = False
+            for ep in _active_excludes:
+                if "/" in ep:
+                    if fnmatch.fnmatch(rel_path, ep):
+                        _skip = True
+                        break
+                else:
+                    if any(fnmatch.fnmatch(part, ep) for part in file_path.relative_to(root).parts):
+                        _skip = True
+                        break
+            if _skip:
+                continue
         if not _should_include_file(rel_path, opts):
             continue
 
@@ -174,6 +188,7 @@ class SearchWorker:
         options: SearchOptions | None = None,
         on_results: Callable[[list[SearchMatch], str], None] | None = None,
         on_done: Callable[[], None] | None = None,
+        exclude_patterns: list[str] | None = None,
     ) -> None:
         self._project_root = str(Path(project_root).expanduser().resolve())
         self._query = query
@@ -181,6 +196,7 @@ class SearchWorker:
         self._options = options
         self._on_results = on_results
         self._on_done = on_done
+        self._exclude_patterns = exclude_patterns
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -206,6 +222,7 @@ class SearchWorker:
                 max_results=self._max_results,
                 cancel_event=self._cancel_event,
                 options=self._options,
+                exclude_patterns=self._exclude_patterns,
             )
             if not self._cancel_event.is_set() and self._on_results is not None:
                 try:

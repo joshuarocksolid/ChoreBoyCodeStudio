@@ -147,6 +147,7 @@ from app.project.run_configs import (
 )
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
+from app.project.file_excludes import parse_global_exclude_patterns
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import create_blank_project, open_project
 from app.project.recent_projects import load_recent_projects
@@ -799,6 +800,7 @@ class MainWindow(QMainWindow):
         previous_theme_mode = snapshot.theme_mode
         previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
         previous_diagnostics_enabled = snapshot.diagnostics_enabled
+        previous_file_exclude_patterns = list(snapshot.file_exclude_patterns)
         dialog = SettingsDialog(snapshot, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -859,6 +861,15 @@ class MainWindow(QMainWindow):
         if not self._diagnostics_enabled:
             self._stored_lint_diagnostics.clear()
             self._render_merged_problems_panel()
+        if updated_snapshot.file_exclude_patterns != previous_file_exclude_patterns:
+            self._reload_current_project()
+            if self._search_sidebar is not None and self._loaded_project is not None:
+                from app.project.file_excludes import compute_effective_excludes
+                effective_excludes = compute_effective_excludes(
+                    updated_snapshot.file_exclude_patterns,
+                    self._loaded_project.metadata.exclude_patterns,
+                )
+                self._search_sidebar.set_exclude_patterns(effective_excludes)
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
@@ -1422,7 +1433,12 @@ class MainWindow(QMainWindow):
             confirm_proceed=self._confirm_proceed_with_unsaved_changes,
             on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
             on_error=self._show_open_project_error,
+            exclude_patterns=self._load_global_exclude_patterns(),
         )
+
+    def _load_global_exclude_patterns(self) -> list[str]:
+        settings_payload = load_settings(state_root=self._state_root)
+        return parse_global_exclude_patterns(settings_payload)
 
     def _refresh_open_recent_menu(self) -> None:
         self._project_controller.refresh_open_recent_menu(
@@ -1473,6 +1489,12 @@ class MainWindow(QMainWindow):
         self._stored_lint_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
+            from app.project.file_excludes import compute_effective_excludes
+            effective_excludes = compute_effective_excludes(
+                self._load_global_exclude_patterns(),
+                loaded_project.metadata.exclude_patterns,
+            )
+            self._search_sidebar.set_exclude_patterns(effective_excludes)
         self._breakpoints_by_file.clear()
         self._restore_session_state(loaded_project.project_root)
         self._lint_all_open_files()
@@ -3635,7 +3657,10 @@ class MainWindow(QMainWindow):
     def _reload_current_project(self) -> None:
         if self._loaded_project is None:
             return
-        self._loaded_project = open_project(self._loaded_project.project_root)
+        self._loaded_project = open_project(
+            self._loaded_project.project_root,
+            exclude_patterns=self._load_global_exclude_patterns(),
+        )
         self._populate_project_tree(self._loaded_project)
         self._start_symbol_indexing(self._loaded_project.project_root)
 

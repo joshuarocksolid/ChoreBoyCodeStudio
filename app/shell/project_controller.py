@@ -26,6 +26,7 @@ class ProjectController:
         confirm_proceed: Callable[[str], bool],
         on_loaded: Callable[[LoadedProject], None],
         on_error: Callable[[str, str], None],
+        exclude_patterns: list[str] | None = None,
     ) -> bool:
         if not confirm_proceed("opening another project"):
             return False
@@ -34,6 +35,7 @@ class ProjectController:
             loaded_project = open_project_and_track_recent(
                 project_root,
                 state_root=self._state_root,
+                exclude_patterns=exclude_patterns,
             )
         except (AppValidationError, ValueError) as exc:
             on_error(project_root, str(exc))

@@ -264,6 +264,7 @@ class SearchSidebarWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("shell.searchSidebar")
         self._project_root: str | None = None
+        self._exclude_patterns: list[str] = []
         self._active_worker: SearchWorker | None = None
         self._last_matches: list[SearchMatch] = []
         self._debounce_timer = QTimer(self)
@@ -467,6 +468,9 @@ class SearchSidebarWidget(QWidget):
             badge_bg=badge_bg,
         )
 
+    def set_exclude_patterns(self, patterns: list[str]) -> None:
+        self._exclude_patterns = list(patterns)
+
     def set_project_root(self, project_root: str | None) -> None:
         self._project_root = project_root
         if project_root is None:
@@ -550,6 +554,7 @@ class SearchSidebarWidget(QWidget):
             options=options,
             on_results=self._on_search_results,
             on_done=self._on_search_done,
+            exclude_patterns=self._exclude_patterns or None,
         )
         self._active_worker.start()
 

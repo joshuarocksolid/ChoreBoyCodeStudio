@@ -9,10 +9,12 @@ from PySide2.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QKeySequenceEdit,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QFontComboBox,
     QFormLayout,
@@ -30,6 +32,7 @@ from PySide2.QtGui import QColor, QFont
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
 
+from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
 from app.shell.settings_models import EditorSettingsSnapshot
 from app.shell.shortcut_preferences import (
     SHORTCUT_COMMANDS,
@@ -280,6 +283,49 @@ class SettingsDialog(QDialog):
         linter_layout.addWidget(self._linter_table, 1)
         self._populate_linter_table()
 
+        files_tab = QWidget(tabs)
+        files_layout = QVBoxLayout(files_tab)
+        tabs.addTab(files_tab, "Files")
+
+        excludes_group = QGroupBox("File Exclusions")
+        excludes_vbox = QVBoxLayout(excludes_group)
+
+        excludes_help = QLabel(
+            "Glob patterns for files and folders to hide from the explorer, "
+            "Quick Open, and search results. Patterns are matched against "
+            "names and relative paths."
+        )
+        excludes_help.setWordWrap(True)
+        excludes_vbox.addWidget(excludes_help)
+
+        self._file_excludes_list = QListWidget(excludes_group)
+        for pattern in snapshot.file_exclude_patterns:
+            self._file_excludes_list.addItem(pattern)
+        excludes_vbox.addWidget(self._file_excludes_list, 1)
+
+        add_row = QHBoxLayout()
+        self._file_exclude_input = QLineEdit(excludes_group)
+        self._file_exclude_input.setPlaceholderText("e.g. *.pyc, build, .mypy_cache")
+        self._file_exclude_input.returnPressed.connect(self._handle_add_file_exclude)
+        add_row.addWidget(self._file_exclude_input, 1)
+        add_btn = QPushButton("Add", excludes_group)
+        add_btn.clicked.connect(self._handle_add_file_exclude)
+        add_row.addWidget(add_btn)
+        excludes_vbox.addLayout(add_row)
+
+        btn_row = QHBoxLayout()
+        remove_btn = QPushButton("Remove Selected", excludes_group)
+        remove_btn.clicked.connect(self._handle_remove_file_exclude)
+        btn_row.addWidget(remove_btn)
+        reset_btn = QPushButton("Reset to Defaults", excludes_group)
+        reset_btn.clicked.connect(self._handle_reset_file_excludes)
+        btn_row.addWidget(reset_btn)
+        btn_row.addStretch(1)
+        excludes_vbox.addLayout(btn_row)
+
+        files_layout.addWidget(excludes_group)
+        files_layout.addStretch(1)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -319,6 +365,7 @@ class SettingsDialog(QDialog):
             syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
             syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
             lint_rule_overrides=self._lint_rule_overrides_snapshot(),
+            file_exclude_patterns=self._file_exclude_patterns_snapshot(),
         )
 
     def _populate_shortcut_table(self, snapshot: EditorSettingsSnapshot) -> None:
@@ -677,6 +724,43 @@ class SettingsDialog(QDialog):
 
     def _lint_rule_overrides_snapshot(self) -> dict[str, dict[str, object]]:
         return {code: dict(value) for code, value in self._lint_rule_overrides.items()}
+
+    def _file_exclude_patterns_snapshot(self) -> list[str]:
+        patterns: list[str] = []
+        for i in range(self._file_excludes_list.count()):
+            item = self._file_excludes_list.item(i)
+            if item is not None:
+                text = item.text().strip()
+                if text:
+                    patterns.append(text)
+        return patterns
+
+    def _handle_add_file_exclude(self) -> None:
+        text = self._file_exclude_input.text().strip()
+        if not text:
+            return
+        for part in text.split(","):
+            pattern = part.strip()
+            if not pattern:
+                continue
+            existing = [
+                self._file_excludes_list.item(i).text()
+                for i in range(self._file_excludes_list.count())
+                if self._file_excludes_list.item(i) is not None
+            ]
+            if pattern not in existing:
+                self._file_excludes_list.addItem(pattern)
+        self._file_exclude_input.clear()
+
+    def _handle_remove_file_exclude(self) -> None:
+        selected = self._file_excludes_list.currentRow()
+        if selected >= 0:
+            self._file_excludes_list.takeItem(selected)
+
+    def _handle_reset_file_excludes(self) -> None:
+        self._file_excludes_list.clear()
+        for pattern in DEFAULT_EXCLUDE_PATTERNS:
+            self._file_excludes_list.addItem(pattern)
 
     def _refresh_validation_state(self) -> None:
         if self._ok_button is None:

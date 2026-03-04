@@ -75,10 +75,11 @@ class ProjectMetadata:
     run_configs: list[dict[str, Any]] = field(default_factory=list)
     env_overrides: dict[str, str] = field(default_factory=dict)
     project_notes: str = ""
+    exclude_patterns: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation with explicit defaults."""
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "name": self.name,
             "default_entry": self.default_entry,
@@ -89,6 +90,9 @@ class ProjectMetadata:
             "env_overrides": dict(self.env_overrides),
             "project_notes": self.project_notes,
         }
+        if self.exclude_patterns:
+            payload["exclude_patterns"] = list(self.exclude_patterns)
+        return payload
 
 
 @dataclass(frozen=True)

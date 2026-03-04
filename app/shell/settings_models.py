@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
 from app.intelligence.lint_profile import parse_lint_rule_overrides
+from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS, parse_global_exclude_patterns
 from app.shell.shortcut_preferences import parse_shortcut_overrides
 from app.shell.syntax_color_preferences import (
     THEME_DARK,
@@ -54,6 +55,7 @@ class EditorSettingsSnapshot:
     syntax_color_overrides_light: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
     lint_rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    file_exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     shortcut_overrides = parse_shortcut_overrides(settings_payload)
     syntax_color_overrides = parse_syntax_color_overrides(settings_payload)
     lint_rule_overrides = parse_lint_rule_overrides(settings_payload)
+    file_exclude_patterns = parse_global_exclude_patterns(settings_payload)
     theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
     if not isinstance(theme_settings, dict):
         theme_settings = {}
@@ -186,6 +189,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         syntax_color_overrides_light=syntax_color_overrides.get(THEME_LIGHT, {}),
         syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
         lint_rule_overrides=lint_rule_overrides,
+        file_exclude_patterns=file_exclude_patterns,
     )
 
 
@@ -327,6 +331,9 @@ def merge_editor_settings_snapshot(
     }
     merged[constants.UI_LINTER_SETTINGS_KEY] = {
         constants.UI_LINTER_RULE_OVERRIDES_KEY: _normalize_lint_rule_override_map(snapshot.lint_rule_overrides),
+    }
+    merged[constants.UI_FILE_EXCLUDES_SETTINGS_KEY] = {
+        constants.UI_FILE_EXCLUDES_PATTERNS_KEY: list(snapshot.file_exclude_patterns),
     }
     return merged
 

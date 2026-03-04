@@ -23,6 +23,7 @@ def build_default_project_manifest_payload(
     run_configs: list[dict[str, Any]] | None = None,
     env_overrides: Mapping[str, str] | None = None,
     project_notes: str = "",
+    exclude_patterns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build a canonical manifest payload for new/imported projects."""
     if not _is_non_empty_string(project_name):
@@ -53,6 +54,16 @@ def build_default_project_manifest_payload(
                 raise ValueError("env_overrides must contain only string keys and values.")
             normalized_env_overrides[key] = value
 
+    normalized_exclude_patterns: list[str] = []
+    if exclude_patterns is not None:
+        if not isinstance(exclude_patterns, list):
+            raise ValueError("exclude_patterns must be a list of strings.")
+        for item in exclude_patterns:
+            if not isinstance(item, str):
+                raise ValueError("exclude_patterns entries must be strings.")
+            if item.strip():
+                normalized_exclude_patterns.append(item.strip())
+
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,
         name=project_name.strip(),
@@ -63,6 +74,7 @@ def build_default_project_manifest_payload(
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        exclude_patterns=normalized_exclude_patterns,
     )
     return metadata.to_dict()
 
@@ -184,6 +196,24 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     if not isinstance(project_notes, str):
         _raise_validation_error("project_notes must be a string.", field="project_notes", manifest_path=resolved_path)
 
+    exclude_patterns_raw = payload.get("exclude_patterns", [])
+    if exclude_patterns_raw is None:
+        exclude_patterns_raw = []
+    if not isinstance(exclude_patterns_raw, list):
+        _raise_validation_error(
+            "exclude_patterns must be a list.", field="exclude_patterns", manifest_path=resolved_path
+        )
+    normalized_exclude_patterns: list[str] = []
+    for index, item in enumerate(exclude_patterns_raw):
+        if not isinstance(item, str):
+            _raise_validation_error(
+                "exclude_patterns entries must be strings.",
+                field=f"exclude_patterns[{index}]",
+                manifest_path=resolved_path,
+            )
+        if item.strip():
+            normalized_exclude_patterns.append(item.strip())
+
     return ProjectMetadata(
         schema_version=schema_version,
         name=name,
@@ -194,6 +224,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
+        exclude_patterns=normalized_exclude_patterns,
     )
 
 

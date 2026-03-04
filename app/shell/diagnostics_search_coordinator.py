@@ -61,12 +61,12 @@ class DiagnosticsOrchestrator:
             return
         if self._get_active_tab_file_path() != file_path:
             return
-        self._render_lint_for_file(file_path, "realtime")
+        self._render_lint_for_file(file_path, trigger="realtime")
 
     def relint_open_python_files(self) -> None:
         for file_path in self._get_open_editor_paths():
             if file_path.lower().endswith(".py"):
-                self._render_lint_for_file(file_path, "tab_change")
+                self._render_lint_for_file(file_path, trigger="tab_change")
         self._render_merged_problems_panel()
 
     def start_runtime_module_probe(self, *, user_initiated: bool = False) -> None:
