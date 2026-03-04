@@ -71,3 +71,13 @@ def test_settings_dialog_snapshot_includes_lint_rule_overrides() -> None:
 
     snapshot = dialog.snapshot()
     assert snapshot.lint_rule_overrides["PY220"]["enabled"] is False
+
+
+def test_settings_dialog_reset_all_keybindings_restores_defaults() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    run_editor = dialog._shortcut_editors["shell.action.run.run"]
+    run_editor.setKeySequence(QKeySequence("Ctrl+R"))
+
+    dialog._handle_reset_all_shortcuts()
+    snapshot = dialog.snapshot()
+    assert snapshot.shortcut_overrides == {}

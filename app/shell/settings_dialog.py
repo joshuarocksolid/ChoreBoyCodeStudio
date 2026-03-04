@@ -13,6 +13,7 @@ from PySide2.QtWidgets import (
     QKeySequenceEdit,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QFontComboBox,
     QFormLayout,
     QColorDialog,
@@ -76,6 +77,7 @@ class SettingsDialog(QDialog):
         self._active_syntax_theme_key = THEME_LIGHT
         self._has_shortcut_conflicts = False
         self._has_invalid_syntax_colors = False
+        self._is_updating_shortcut_editors = False
         self._ok_button = None
 
         layout = QVBoxLayout(self)
@@ -204,6 +206,10 @@ class SettingsDialog(QDialog):
         self._shortcut_search_input.setPlaceholderText("Search commands...")
         self._shortcut_search_input.textChanged.connect(self._filter_shortcut_rows)
         keybindings_layout.addWidget(self._shortcut_search_input)
+
+        self._shortcut_reset_all_btn = QPushButton("Reset All Keybindings", keybindings_tab)
+        self._shortcut_reset_all_btn.clicked.connect(self._handle_reset_all_shortcuts)
+        keybindings_layout.addWidget(self._shortcut_reset_all_btn)
 
         self._shortcut_conflict_label = QLabel(keybindings_tab)
         self._shortcut_conflict_label.setStyleSheet("color: #C92A2A;")
@@ -349,10 +355,67 @@ class SettingsDialog(QDialog):
         if editor is None:
             return
         default_shortcuts = default_shortcut_map()
+        self._is_updating_shortcut_editors = True
         editor.setKeySequence(QKeySequence(default_shortcuts.get(action_id, "")))
+        self._is_updating_shortcut_editors = False
         self._refresh_shortcut_conflicts()
 
-    def _handle_shortcut_changed(self, _action_id: str) -> None:
+    def _handle_shortcut_changed(self, action_id: str) -> None:
+        if self._is_updating_shortcut_editors:
+            self._refresh_shortcut_conflicts()
+            return
+        editor = self._shortcut_editors.get(action_id)
+        if editor is None:
+            self._refresh_shortcut_conflicts()
+            return
+        assigned_shortcut = normalize_shortcut(editor.keySequence().toString())
+        if not assigned_shortcut or not editor.hasFocus():
+            self._refresh_shortcut_conflicts()
+            return
+        conflicting_action_ids = [
+            conflict_action_id
+            for conflict_action_id, shortcut in self._current_shortcut_map().items()
+            if conflict_action_id != action_id and normalize_shortcut(shortcut) == assigned_shortcut
+        ]
+        if not conflicting_action_ids:
+            self._refresh_shortcut_conflicts()
+            return
+        command_labels = {
+            command.action_id: f"{command.category} / {command.label}"
+            for command in SHORTCUT_COMMANDS
+        }
+        conflict_names = ", ".join(command_labels.get(item, item) for item in conflicting_action_ids)
+        choice = QMessageBox.question(
+            self,
+            "Shortcut Conflict",
+            (
+                f"'{assigned_shortcut}' is already assigned to {conflict_names}.\n\n"
+                "Do you want to reassign it to this command?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        self._is_updating_shortcut_editors = True
+        try:
+            if choice == QMessageBox.Yes:
+                for conflict_action_id in conflicting_action_ids:
+                    conflict_editor = self._shortcut_editors.get(conflict_action_id)
+                    if conflict_editor is not None:
+                        conflict_editor.setKeySequence(QKeySequence())
+            else:
+                editor.setKeySequence(QKeySequence())
+        finally:
+            self._is_updating_shortcut_editors = False
+        self._refresh_shortcut_conflicts()
+
+    def _handle_reset_all_shortcuts(self) -> None:
+        defaults = default_shortcut_map()
+        self._is_updating_shortcut_editors = True
+        try:
+            for action_id, editor in self._shortcut_editors.items():
+                editor.setKeySequence(QKeySequence(defaults.get(action_id, "")))
+        finally:
+            self._is_updating_shortcut_editors = False
         self._refresh_shortcut_conflicts()
 
     def _filter_shortcut_rows(self, query: str) -> None:

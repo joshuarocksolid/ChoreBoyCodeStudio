@@ -119,7 +119,11 @@ from app.shell.settings_models import (
     parse_editor_settings_snapshot,
     parse_main_window_settings,
 )
-from app.shell.shortcut_preferences import build_effective_shortcut_map, close_tab_shortcut_id
+from app.shell.shortcut_preferences import (
+    SHORTCUT_COMMANDS,
+    build_effective_shortcut_map,
+    close_tab_shortcut_id,
+)
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
@@ -793,6 +797,8 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
         previous_theme_mode = snapshot.theme_mode
+        previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
+        previous_diagnostics_enabled = snapshot.diagnostics_enabled
         dialog = SettingsDialog(snapshot, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -846,6 +852,13 @@ class MainWindow(QMainWindow):
         self._apply_runtime_intelligence_preferences_to_open_editors()
         self._apply_shortcut_overrides_runtime()
         self._apply_theme_styles()
+        lint_profile_changed = self._lint_rule_overrides != previous_lint_rule_overrides
+        diagnostics_enabled_changed = self._diagnostics_enabled != previous_diagnostics_enabled
+        if self._diagnostics_enabled and (lint_profile_changed or diagnostics_enabled_changed):
+            self._relint_open_python_files()
+        if not self._diagnostics_enabled:
+            self._stored_lint_diagnostics.clear()
+            self._render_merged_problems_panel()
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
@@ -1337,7 +1350,7 @@ class MainWindow(QMainWindow):
         self._show_help_file("Getting Started", "getting_started.md")
 
     def _handle_shortcuts_action(self) -> None:
-        self._show_help_file("Keyboard Shortcuts", "shortcuts.md")
+        self._show_help_markdown("Keyboard Shortcuts", self._build_shortcuts_help_markdown())
 
     def _handle_headless_notes_action(self) -> None:
         self._show_help_file("FreeCAD Headless Notes", "headless_notes.md")
@@ -1363,6 +1376,33 @@ class MainWindow(QMainWindow):
         from app.ui.help.help_dialog import show_help_file
 
         show_help_file(title, file_name, self._resolve_theme_tokens(), parent=self)
+
+    def _show_help_markdown(self, title: str, markdown_text: str) -> None:
+        from app.ui.help.help_dialog import show_help_markdown
+
+        show_help_markdown(title, markdown_text, self._resolve_theme_tokens(), parent=self)
+
+    def _build_shortcuts_help_markdown(self) -> str:
+        lines: list[str] = ["# Keyboard Shortcuts", ""]
+        grouped: dict[str, list[tuple[str, str]]] = {}
+        for command in SHORTCUT_COMMANDS:
+            shortcut = self._effective_shortcuts.get(command.action_id, "")
+            if not shortcut:
+                continue
+            grouped.setdefault(command.category, []).append((command.label, shortcut))
+        for category in sorted(grouped.keys()):
+            lines.append(f"## {category}")
+            lines.append("")
+            for label, shortcut in sorted(grouped[category], key=lambda item: item[0].lower()):
+                lines.append(f"- **{shortcut}**: {label}")
+            lines.append("")
+        if len(lines) <= 2:
+            lines.extend(["No shortcuts are currently assigned.", ""])
+        lines.extend([
+            "_Customize shortcuts in **File > Settings > Keybindings**._",
+            "",
+        ])
+        return "\n".join(lines)
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
