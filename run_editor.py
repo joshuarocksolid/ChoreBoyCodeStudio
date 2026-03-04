@@ -3,10 +3,10 @@
 import logging
 import importlib
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from app.bootstrap.capability_probe import run_startup_capability_probe
-from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger
+from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.core.models import CapabilityProbeReport
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
@@ -21,11 +21,11 @@ def _start_editor() -> int:
         application = application_class(sys.argv)
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
-    window.show()
+    window.showMaximized()
     return application.exec_()
 
 
-def _load_qt_runtime() -> tuple[object, object]:
+def _load_qt_runtime() -> tuple[Any, Any]:
     """Load runtime-only Qt dependencies lazily."""
     application_class = importlib.import_module("PySide2.QtWidgets").QApplication
     main_window_class = importlib.import_module("app.shell.main_window").MainWindow
@@ -59,13 +59,20 @@ def _log_capability_probe_results(logger: logging.Logger, report: CapabilityProb
 def main() -> int:
     """Initialize logging first, then run editor startup safely."""
     global _LAST_STARTUP_CAPABILITY_REPORT
-    try:
-        configure_app_logging()
-    except Exception:
-        logging.getLogger(__name__).exception("Failed to initialize editor logging.")
-        return 1
+    logging_result = configure_app_logging()
 
     logger = get_subsystem_logger("editor")
+
+    for warning in logging_result.warnings:
+        logger.warning(warning)
+
+    if logging_result.tier == TIER_STDERR:
+        print(
+            "WARNING: Could not create log file. Logging to stderr only. "
+            "Check directory permissions.",
+            file=sys.stderr,
+        )
+
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)

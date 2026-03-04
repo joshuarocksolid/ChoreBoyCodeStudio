@@ -11,6 +11,7 @@ from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
 from app.project.project_manifest import (
     PROJECT_METADATA_SCHEMA_VERSION,
+    build_default_project_manifest_payload,
     load_project_manifest,
     parse_project_manifest,
 )
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 def test_load_project_manifest_returns_structured_model_for_minimal_valid_payload(tmp_path: Path) -> None:
     """Minimal valid payload should load into a structured metadata model."""
-    manifest_path = tmp_path / ".cbcs" / "project.json"
+    manifest_path = tmp_path / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(
         json.dumps(
@@ -51,11 +52,27 @@ def test_load_project_manifest_applies_explicit_defaults() -> None:
     assert metadata.to_dict() == {
         "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
         "name": "Defaulted Project",
-        "default_entry": "run.py",
-        "default_mode": "python_script",
+        "default_entry": "main.py",
+        "default_argv": [],
         "working_directory": ".",
         "template": "utility_script",
-        "safe_mode": True,
+        "run_configs": [],
+        "env_overrides": {},
+        "project_notes": "",
+    }
+
+
+def test_build_default_project_manifest_payload_returns_canonical_defaults() -> None:
+    """Default payload helper should emit deterministic canonical manifest fields."""
+    payload = build_default_project_manifest_payload(project_name="Imported Project")
+
+    assert payload == {
+        "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
+        "name": "Imported Project",
+        "default_entry": "main.py",
+        "default_argv": [],
+        "working_directory": ".",
+        "template": "utility_script",
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
@@ -77,21 +94,6 @@ def test_load_project_manifest_rejects_missing_required_name() -> None:
 
     assert exc_info.value.field == "name"
     assert "Missing required field" in str(exc_info.value)
-
-
-def test_load_project_manifest_rejects_invalid_safe_mode_type() -> None:
-    """safe_mode must be boolean when provided."""
-    with pytest.raises(ProjectManifestValidationError) as exc_info:
-        parse_project_manifest(
-            {
-                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
-                "name": "Bad Safe Mode",
-                "safe_mode": "yes",
-            }
-        )
-
-    assert exc_info.value.field == "safe_mode"
-    assert "must be a boolean" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_invalid_run_configs_type() -> None:
@@ -118,24 +120,24 @@ def test_load_project_manifest_rejects_unsupported_schema_version() -> None:
     assert "Unsupported schema_version" in str(exc_info.value)
 
 
-def test_load_project_manifest_rejects_unknown_default_mode() -> None:
-    """default_mode must be an allowed runtime mode value."""
+def test_load_project_manifest_rejects_invalid_default_argv_type() -> None:
+    """default_argv must be a list of strings."""
     with pytest.raises(ProjectManifestValidationError) as exc_info:
         parse_project_manifest(
             {
                 "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
-                "name": "Bad Mode",
-                "default_mode": "future_mode",
+                "name": "Bad Argv",
+                "default_argv": "not-a-list",
             }
         )
 
-    assert exc_info.value.field == "default_mode"
-    assert "Unsupported default_mode" in str(exc_info.value)
+    assert exc_info.value.field == "default_argv"
+    assert "must be a list" in str(exc_info.value)
 
 
 def test_load_project_manifest_rejects_malformed_json_with_manifest_path(tmp_path: Path) -> None:
     """Malformed JSON should raise a validation error tied to the source path."""
-    manifest_path = tmp_path / ".cbcs" / "project.json"
+    manifest_path = tmp_path / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text("{ this is not valid json", encoding="utf-8")
 

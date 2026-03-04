@@ -31,7 +31,7 @@ class AppValidationError(ValueError):
 
 
 class ProjectManifestValidationError(AppValidationError):
-    """Raised when `.cbcs/project.json` fails validation."""
+    """Raised when `cbcs/project.json` fails validation."""
 
 
 class ProjectLoadValidationError(AppValidationError):
@@ -65,3 +65,11 @@ class ProjectStructureValidationError(ProjectLoadValidationError):
 
 class ProjectEnumerationError(ProjectLoadValidationError):
     """Raised when project file enumeration fails unexpectedly."""
+
+
+class RunManifestValidationError(AppValidationError):
+    """Raised when runner manifest validation fails."""
+
+
+class RunLifecycleError(AppValidationError):
+    """Raised when run lifecycle actions fail (launch/stop/state)."""

@@ -46,12 +46,13 @@ These constraints are non-negotiable unless the docs are explicitly updated:
 1. Users are on a **locked-down ChoreBoy system**.
 2. The main runtime is **FreeCAD AppRun** at `/opt/freecad/AppRun`.
 3. The available Python environment is **not** a normal system Python setup.
-4. `PySide2` is available in the FreeCAD runtime.
-5. `import FreeCAD` works for headless/backend operations.
-6. Some FreeCAD features that depend on GUI modules do **not** work in console mode.
-7. `subprocess` is allowed and is a core primitive.
-8. `SQLite` is available and should be preferred for lightweight local persistence.
-9. Pure-Python vendored dependencies are acceptable; system package assumptions are not.
+4. The FreeCAD runtime ships **Python 3.9.2**. All code must be compatible with **Python 3.9** (no 3.10+ features). See `docs/DISCOVERY.md` section 1A and `.cursor/rules/python39_compatibility.mdc`.
+5. `PySide2` is available in the FreeCAD runtime.
+6. `import FreeCAD` works for headless/backend operations.
+7. Some FreeCAD features that depend on GUI modules do **not** work in console mode.
+8. `subprocess` is allowed and is a core primitive.
+9. `SQLite` is available and should be preferred for lightweight local persistence.
+10. Pure-Python vendored dependencies are acceptable; system package assumptions are not.
 
 Do not introduce architecture that depends on:
 - apt installs
@@ -74,7 +75,7 @@ If a change affects launching, execution, logging, output capture, or crash hand
 Projects must remain ordinary folders on disk. Prefer transparent file-based storage over opaque internal state.
 
 ### 5.4 Project metadata must stay human-readable
-Canonical project metadata belongs in project files such as `.cbcs/project.json`, not hidden in a database.
+Canonical project metadata belongs in project files such as `cbcs/project.json`, not hidden in a database.
 
 ### 5.5 Use SQLite only for caches, indexes, or optional acceleration
 Do not move the project’s primary identity or project metadata into SQLite.
@@ -351,7 +352,7 @@ When in doubt, preserve the architecture and reduce complexity.
 
 ### FreeCAD AppRun runtime
 
-The update script downloads FreeCAD 0.21.2 AppImage and extracts it to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides the real PySide2 5.15.8, FreeCAD headless backend, and embedded Python 3.10 runtime. No PySide6 shim is needed.
+The update script downloads FreeCAD 1.0+ AppImage and extracts it to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides the real PySide2, FreeCAD headless backend, and embedded Python runtime. No PySide6 shim is needed.
 
 ### Running tests
 

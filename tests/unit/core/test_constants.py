@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 def test_global_state_constant_values() -> None:
     """Global state naming stays stable for downstream path contracts."""
     assert constants.APP_RUN_PATH == "/opt/freecad/AppRun"
-    assert constants.GLOBAL_STATE_DIRNAME == ".choreboy_code_studio"
+    assert constants.GLOBAL_STATE_DIRNAME == "choreboy_code_studio_state"
     assert constants.GLOBAL_SETTINGS_FILENAME == "settings.json"
     assert constants.GLOBAL_RECENT_PROJECTS_FILENAME == "recent_projects.json"
     assert constants.GLOBAL_LOGS_DIRNAME == "logs"
@@ -25,11 +25,18 @@ def test_global_state_constant_values() -> None:
 
 def test_project_structure_constant_values() -> None:
     """Project-local path names must match architecture docs."""
-    assert constants.PROJECT_META_DIRNAME == ".cbcs"
+    assert constants.PROJECT_META_DIRNAME == "cbcs"
     assert constants.PROJECT_MANIFEST_FILENAME == "project.json"
     assert constants.PROJECT_RUNS_DIRNAME == "runs"
     assert constants.PROJECT_CACHE_DIRNAME == "cache"
-    assert constants.PROJECT_LOGS_DIRNAME == "logs"
+    assert constants.RUN_MANIFEST_FILENAME_PREFIX == "run_manifest_"
+    assert constants.RUN_ID_TIMESTAMP_FORMAT == "%Y%m%d_%H%M%S"
+    assert constants.RUN_MANIFEST_VERSION == 1
+    assert constants.RUN_EXIT_SUCCESS == 0
+    assert constants.RUN_EXIT_USER_CODE_ERROR == 1
+    assert constants.RUN_EXIT_BOOTSTRAP_ERROR == 2
+    assert constants.RUN_EXIT_INVALID_MANIFEST == 3
+    assert constants.RUN_EXIT_TERMINATED_BY_USER == 130
 
 
 def test_temp_namespace_constant_is_stable() -> None:

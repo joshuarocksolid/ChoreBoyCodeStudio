@@ -21,13 +21,12 @@ These acceptance tests focus on the first high-value vertical slice:
 
 1. launch the editor
 2. open a project
-3. open and edit `run.py`
+3. open and edit `main.py`
 4. save changes
 5. run user code in a separate runner process
 6. view stdout/stderr
 7. view traceback on failure
-8. write per-run logs
-9. stop a running script safely
+8. stop a running script safely
 
 These tests are intentionally biased toward:
 - real user workflows
@@ -75,7 +74,7 @@ If any of the above are missing, MVP is not complete.
 The following sample projects should exist for acceptance testing:
 
 ### A. Simple Success Project
-A minimal project whose `run.py` prints output and exits successfully.
+A minimal project whose `main.py` prints output and exits successfully.
 
 Example behavior:
 - prints `START`
@@ -83,23 +82,30 @@ Example behavior:
 - exits with success
 
 ### B. Failure Project
-A minimal project whose `run.py` raises an exception.
+A minimal project whose `main.py` raises an exception.
 
 Example behavior:
 - prints one line
 - raises an exception with traceback
 
 ### C. Long-Running Project
-A minimal project whose `run.py` keeps running until stopped.
+A minimal project whose `main.py` keeps running until stopped.
 
 Example behavior:
 - prints `tick` repeatedly
 - remains active long enough to test Stop behavior
 
-### D. Invalid Project
-A folder missing required metadata or containing invalid `.cbcs/project.json`.
+### D. Invalid / Non-importable Project
+A folder that cannot be treated as a Python project, such as:
+- no `cbcs/project.json` and no `.py` files
+- corrupted/invalid `cbcs/project.json`
 
 Used to verify project validation and actionable errors.
+
+### E. Importable Existing Python Folder
+A plain Python folder without `cbcs/project.json` that includes runnable `.py` files.
+
+Used to verify first-open metadata initialization and import-friendly open behavior.
 
 ---
 
@@ -166,7 +172,9 @@ Verify that runtime assumptions are checked explicitly.
 Verify that a normal project can be opened from disk.
 
 **Preconditions:**  
-- a valid test project exists with `.cbcs/project.json`
+- a valid test project exists, either:
+  - already containing `cbcs/project.json`, or
+  - a plain Python folder that can be imported on first open
 
 **Steps:**  
 1. Launch the editor.
@@ -178,16 +186,17 @@ Verify that a normal project can be opened from disk.
 - project metadata is recognized
 - the project name or equivalent project state is visible in the UI
 - the project tree populates with project files
+- if metadata was missing but the folder is importable, `cbcs/project.json` is initialized automatically
 
 ---
 
 ## AT-04 — Invalid project fails with actionable error
 
 **Purpose:**  
-Verify that broken projects fail safely and clearly.
+Verify that broken or non-importable folders fail safely and clearly.
 
 **Preconditions:**  
-- an invalid test project exists
+- an invalid/non-importable test folder exists
 
 **Steps:**  
 1. Launch the editor.
@@ -199,6 +208,28 @@ Verify that broken projects fail safely and clearly.
 - the user receives a clear, actionable error
 - the editor remains stable
 - the error is diagnosable through UI messaging and/or logs
+
+---
+
+## AT-24 — Existing Python folder imports on first open
+
+**Purpose:**  
+Verify that users can open normal Python folders that were not created by Code Studio.
+
+**Preconditions:**  
+- an importable existing Python folder exists
+- folder does not contain `cbcs/project.json`
+
+**Steps:**  
+1. Launch the editor.
+2. Choose **Open Project**.
+3. Select the importable Python folder.
+
+**Expected Result:**  
+- the folder opens as a project without manual metadata setup
+- `cbcs/project.json` is created with canonical defaults
+- inferred entrypoint is usable for Run
+- project tree and editor flows work as normal
 
 ---
 
@@ -229,13 +260,13 @@ Verify that a selected file can be opened for editing.
 
 **Preconditions:**  
 - a valid project is open
-- project contains `run.py`
+- project contains `main.py`
 
 **Steps:**  
-1. In the project tree, click `run.py`.
+1. In the project tree, click `main.py`.
 
 **Expected Result:**  
-- `run.py` opens in an editor tab
+- `main.py` opens in an editor tab
 - file contents are visible
 - the current active file is clear in the UI
 - opening the same file again does not create unnecessary duplicate tabs
@@ -248,10 +279,10 @@ Verify that a selected file can be opened for editing.
 Verify editable state and unsaved-change tracking.
 
 **Preconditions:**  
-- `run.py` is open in an editor tab
+- `main.py` is open in an editor tab
 
 **Steps:**  
-1. Modify the contents of `run.py`.
+1. Modify the contents of `main.py`.
 2. Observe the tab/editor state.
 
 **Expected Result:**  
@@ -267,7 +298,7 @@ Verify editable state and unsaved-change tracking.
 Verify that edits are persisted correctly.
 
 **Preconditions:**  
-- `run.py` is open and modified
+- `main.py` is open and modified
 
 **Steps:**  
 1. Save the file.
@@ -307,7 +338,7 @@ Verify the most important process boundary in the architecture.
 
 **Preconditions:**  
 - a valid project is open
-- `run.py` is runnable
+- `main.py` is runnable
 
 **Steps:**  
 1. Open the success test project.
@@ -587,17 +618,281 @@ Verify field-support workflow.
 
 **Expected Result:**  
 - the support bundle is created successfully
-- expected diagnostic artifacts are included
+- expected diagnostic artifacts (app log, project metadata, latest run log when available) are included
 - the bundle is suitable for transfer and support review
 
 ---
 
-## 10. Minimum MVP Gate
+## 10. Post-MVP UX and Debug Acceptance Tests
+
+## AT-25 — Split layout defaults and persistence
+
+**Purpose:**  
+Verify editor/tree/output pane proportions are practical on first launch and persist after user adjustment.
+
+**Preconditions:**  
+- editor can launch with a writable settings path
+
+**Steps:**  
+1. Launch editor on a clean settings profile.
+2. Verify initial tree/editor split is editor-favoring.
+3. Adjust splitter positions.
+4. Close and relaunch editor.
+
+**Expected Result:**  
+- initial default layout is productive (tree not oversized)
+- adjusted layout is restored on relaunch
+- reset-layout action restores known-good defaults
+
+---
+
+## AT-26 — Interactive Python console input/output
+
+**Purpose:**  
+Verify users can execute interactive Python commands in a dedicated console session.
+
+**Preconditions:**  
+- editor is running (no project required)
+
+**Steps:**  
+1. Start Python Console mode.
+2. Submit single-line commands (e.g., `x = 2`, `print(x + 3)`).
+3. Submit a multiline block (e.g., `for` loop) and complete it with continuation semantics.
+4. Exit console session.
+
+**Expected Result:**  
+- Python Console is available whether or not a project is open
+- submitted commands are accepted via stdin bridge
+- multiline continuation prompt behavior matches normal REPL (`>>>` / `...`)
+- output appears in console transcript
+- session terminates cleanly on exit/stop
+
+---
+
+## AT-27 — Project tree file operations parity
+
+**Purpose:**  
+Verify modern explorer actions are available and reliable from the project tree.
+
+**Preconditions:**  
+- project with nested files/folders is open
+
+**Steps:**  
+1. Use tree context menu for create/rename/delete/duplicate.
+2. Use cut/copy/paste and drag-drop move.
+3. Use copy path / copy relative path / reveal in file manager.
+
+**Expected Result:**  
+- filesystem operations complete successfully with clear confirmations on destructive actions
+- tree refreshes to reflect resulting state
+- path copy actions return correct values
+
+---
+
+## AT-28 — Move/rename import rewrite policy behavior
+
+**Purpose:**  
+Verify Python import update workflow and policy controls for file move/rename.
+
+**Preconditions:**  
+- project has at least two Python modules with imports between them
+
+**Steps:**  
+1. Move/rename an imported module.
+2. Validate policy prompt default is **Ask every time**.
+3. Select Always and verify persistence on next move.
+4. Select Never and verify rewrites are skipped.
+
+**Expected Result:**  
+- Ask/Always/Never policy works as documented
+- import rewrites are previewed and applied only when permitted
+- no silent overwrite or hidden partial refactor behavior
+
+---
+
+## AT-29 — Run/Debug top toolbar usability
+
+**Purpose:**  
+Verify top-of-window Run/Debug controls are discoverable and state-coherent.
+
+**Preconditions:**  
+- project is open
+
+**Steps:**  
+1. Use toolbar to run and stop a normal script.
+2. Start debug session.
+3. Verify stepping/continue controls enable only when paused.
+4. Verify Pause control is enabled only while actively debugging/running.
+
+**Expected Result:**  
+- run/debug controls are visible and functional
+- invalid actions are disabled by state
+- toolbar behavior matches menu shortcuts
+
+---
+
+## AT-30 — Breakpoints and stepping workflow
+
+**Purpose:**  
+Verify practical debugging via gutter breakpoints and step controls.
+
+**Preconditions:**  
+- debug-eligible Python project open
+
+**Steps:**  
+1. Toggle breakpoint from editor gutter.
+2. Start Debug.
+3. Confirm execution pauses at breakpoint.
+4. Use continue/step commands and observe progress.
+
+**Expected Result:**  
+- breakpoints are honored by runner debug mode
+- paused/running transitions are visible
+- stepping commands function without crashing editor
+
+---
+
+## AT-31 — Debug inspection and watch evaluation
+
+**Purpose:**  
+Verify variable/stack inspection affordances in debug workflows.
+
+**Preconditions:**  
+- active paused debug session
+
+**Steps:**  
+1. Use debug inspector actions to request stack and locals.
+2. Add watch expressions and evaluate.
+3. Continue and stop debug session.
+
+**Expected Result:**  
+- inspector output updates with stack/locals command results
+- watch expressions can be evaluated in paused context
+- debug session exits cleanly and editor remains stable
+
+---
+
+## AT-32 — Syntax highlighting modernization and adaptive performance
+
+**Purpose:**  
+Verify modern lexical+semantic highlighting quality while preserving responsiveness under sustained edits and large files.
+
+**Preconditions:**  
+- project contains at least one medium Python file (~2,000 LOC) and one very large file (>250k chars)
+- editor can switch between light and dark themes
+
+**Steps:**  
+1. Open the medium Python file and verify role-based highlighting (keywords, decorators, functions/methods, classes, parameters, imports).
+2. Type a short burst of edits (multiple quick keystrokes) and confirm semantic coloring updates without visible jitter/freeze.
+3. Open the large file and confirm adaptive mode reduces expensive overlays while keeping editing responsive.
+4. Switch light/dark theme with multiple editor tabs open and verify syntax readability remains consistent in both themes.
+
+**Expected Result:**  
+- lexical tokens are stateful/consistent (including multiline constructs and modern Python syntax)
+- semantic token overlays are stable while typing and do not visibly lag behind active edits
+- large-file adaptive behavior keeps interaction smooth (no sustained UI stalls from highlighting overlays)
+- light/dark themes both preserve readable contrast for lexical and semantic token categories
+
+---
+
+## AT-33 — Example project loads from Help menu
+
+**Purpose:**  
+Verify the Help > Load Example Project... flow creates a valid, runnable CRUD showcase project.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Choose **Help > Load Example Project...**
+2. Enter a project name (e.g. "My Example").
+3. Choose a destination folder.
+4. Confirm the project opens automatically in the editor.
+5. Verify the project tree shows `main.py`, `app/`, `README.md`.
+6. Open `app/repository.py` and confirm it contains SQLite CRUD logic.
+7. Open `app/main_window.py` and confirm it uses PySide2 widgets.
+8. Press **F5** to run the project (on systems with PySide2 available via AppRun).
+
+**Expected Result:**  
+- the project is created with valid `cbcs/project.json` metadata (template = `crud_showcase`)
+- all expected files are present
+- the project opens and displays correctly in the editor
+- the example does NOT appear in the New Project template picker
+
+---
+
+## AT-34 — Keyboard shortcut customization persists and applies live
+
+**Purpose:**  
+Verify users can customize command shortcuts from Settings and observe immediate effect.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Open **File > Settings... > Keybindings**.
+2. Change the **Run** shortcut from `F5` to another valid binding (e.g. `Ctrl+R`).
+3. Save settings.
+4. Open the **Run** menu and verify displayed shortcut updated.
+5. Reopen settings and verify the custom value persisted.
+
+**Expected Result:**  
+- updated shortcut appears in menu/action surfaces after save
+- keybinding value persists across settings reopen and app restart
+- conflicting assignments are prevented or explicitly resolved in-UI
+
+---
+
+## AT-35 — Syntax color customization (light + dark) persists
+
+**Purpose:**  
+Verify syntax token colors can be customized per theme and remain readable.
+
+**Preconditions:**  
+- editor is running
+
+**Steps:**  
+1. Open **File > Settings... > Syntax Colors**.
+2. Select **Light Theme**, change one lexical token color (e.g. `keyword`), save.
+3. Reopen settings and confirm value persisted.
+4. Select **Dark Theme**, change one token color, save.
+5. Switch themes from **View > Theme** and verify editor remains readable in both modes.
+
+**Expected Result:**  
+- light and dark overrides are independently persisted
+- active editor theme reflects configured syntax colors
+- both themes preserve usable contrast and readability
+
+---
+
+## AT-36 — Linter profile customization changes diagnostics behavior
+
+**Purpose:**  
+Verify rule-level lint settings (enable + severity) affect diagnostics output.
+
+**Preconditions:**  
+- project with Python file producing at least one `PY220` and one `PY230` diagnostic
+
+**Steps:**  
+1. Open **File > Settings... > Linter**.
+2. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
+3. Save settings and re-run linting for affected file.
+4. Reopen settings and verify changes persisted.
+
+**Expected Result:**  
+- disabled rule diagnostics are suppressed
+- severity override is reflected in problems/editor indicators
+- lint profile persists across settings reopen and app restart
+
+---
+
+## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
 - AT-01 — Editor launches successfully
 - AT-03 — Valid project opens successfully
+- AT-24 — Existing Python folder imports on first open
 - AT-05 — Project tree displays project contents
 - AT-06 — File opens in editor tab
 - AT-07 — File can be edited and marked dirty
@@ -605,6 +900,7 @@ The following tests are the minimum gate for MVP:
 - AT-10 — Run launches user code in a separate runner process
 - AT-11 — Successful run shows stdout in console
 - AT-12 — Failed run shows traceback information
+- AT-13 — stderr is visible to the user
 - AT-14 — Per-run log file is written to disk
 - AT-15 — Stop terminates a long-running script safely
 - AT-16 — Editor survives user-code failure
@@ -613,7 +909,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 11. Completion Rule
+## 12. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -627,7 +923,7 @@ A feature is complete only when:
 
 ---
 
-## 12. Maintenance Rules
+## 13. Maintenance Rules
 
 Update this file when:
 

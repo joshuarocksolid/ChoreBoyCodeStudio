@@ -152,7 +152,9 @@ The system consists of five major parts:
 1. User opens Code Studio.
 2. Editor performs startup capability probe.
 3. User opens or creates a project folder.
-4. Editor loads `.cbcs/project.json` and project files.
+4. Editor loads `cbcs/project.json` and project files.
+   If metadata is missing but the folder is a Python project, editor bootstraps canonical
+   `cbcs/project.json` metadata on first open, then proceeds through normal load.
 5. User edits files in tabs.
 6. On run, editor creates a run manifest and launches a separate runner process.
 7. Runner executes user code in AppRun runtime.
@@ -225,13 +227,13 @@ Recommended pattern:
 ### Recommended boot style
 
 ```python
-/opt/freecad/AppRun -c 'exec(open("/absolute/path/to/run_editor.py").read(), {"__name__": "__main__"})'
+/opt/freecad/AppRun -c 'import os,runpy,sys;root="/absolute/path/to/repo";sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path("/absolute/path/to/run_editor.py", run_name="__main__")'
 ```
 
 And similarly for runner:
 
 ```python
-/opt/freecad/AppRun -c 'exec(open("/absolute/path/to/run_runner.py").read(), {"__name__": "__main__"})'
+/opt/freecad/AppRun -c 'import os,runpy,sys;root="/absolute/path/to/repo";sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path("/absolute/path/to/run_runner.py", run_name="__main__")'
 ```
 
 ## 7.2 Why this design
@@ -256,17 +258,19 @@ No subsystem should rely on accidental current working directory behavior.
 
 The runner should support explicit execution modes.
 
-## 8.1 `python_script`
+## 8.1 Normal runs
 
-For normal Python entrypoints that do not require Qt or special FreeCAD behavior.
+Normal script execution uses `python_script` internally. There is no separate
+`qt_app` or `freecad_headless` mode; all script runs follow the same launch
+path. The only user-facing mode distinctions are **Run** vs **Debug** vs **REPL**.
 
-## 8.2 `qt_app`
+## 8.2 `python_repl`
 
-For project entrypoints that create their own PySide2 application or windows.
+For interactive Python console sessions where users submit commands over stdin and receive near-live output in the shell.
 
-## 8.3 `freecad_headless`
+## 8.3 `python_debug`
 
-For backend tasks that rely on `import FreeCAD` but must avoid GUI-only modules.
+For breakpoint-driven debug sessions. This mode executes user code inside the runner process under debugger control and accepts debug commands from the editor.
 
 ## 8.4 Future `freecad_gui`
 
@@ -275,6 +279,8 @@ Reserved for future cases where GUI-dependent export workflows need a different 
 ### Rule
 
 Execution mode must be explicit in run config or inferable from template defaults, not guessed from fragile heuristics.
+
+For `python_debug`, breakpoints and debug-control commands must flow through explicit editor↔runner contracts; the editor process must never execute debug-target project code directly.
 
 ---
 
@@ -336,7 +342,6 @@ choreboy_code_studio/
       __init__.py
       runner_main.py
       execution_context.py
-      output_bridge.py
       traceback_formatter.py
     persistence/
       __init__.py
@@ -380,14 +385,14 @@ Recommended project shape:
 
 ```text
 my_project/
-  .cbcs/
+  cbcs/
     project.json
     runs/
+    logs/
     cache/
-  logs/
   vendor/
   app/
-  run.py
+  main.py
   README.md
 ```
 
@@ -396,19 +401,21 @@ my_project/
 Per-project metadata lives at:
 
 ```text
-<project>/.cbcs/project.json
+<project>/cbcs/project.json
 ```
+
+If the folder is opened without existing metadata and contains Python source files, the
+editor initializes this file automatically with canonical defaults and an inferred entrypoint.
+The initialized file remains the single source of truth going forward.
 
 This file should be human-readable JSON and contain:
 
 * project name
 * schema version
 * default entry point
-* default run mode
 * default working directory
 * saved run configurations
 * template type
-* safe-mode preferences
 * optional env overrides
 * optional project notes
 
@@ -418,11 +425,9 @@ This file should be human-readable JSON and contain:
 {
   "schema_version": 1,
   "name": "My Project",
-  "default_entry": "run.py",
-  "default_mode": "python_script",
+  "default_entry": "main.py",
   "working_directory": ".",
   "template": "utility_script",
-  "safe_mode": true,
   "run_configs": []
 }
 ```
@@ -444,13 +449,13 @@ SQLite can still be used for caches and indexes, but not for the project’s pri
 Global app state should live under a single dedicated home path, for example:
 
 ```text
-~/.choreboy_code_studio/
+~/choreboy_code_studio_state/
 ```
 
 Recommended contents:
 
 ```text
-~/.choreboy_code_studio/
+~/choreboy_code_studio_state/
   settings.json
   recent_projects.json
   logs/
@@ -464,6 +469,8 @@ Recommended contents:
 * recent projects
 * editor preferences
 * global shortcuts/preferences
+* syntax-color customization overrides (light/dark token maps)
+* linter rule profile overrides (enablement + severity)
 * last-opened window layout
 * compatibility probe results cache
 * optional global search/index cache
@@ -502,6 +509,21 @@ Owns the main window and top-level composition.
 
 It coordinates services but should not contain deep business logic.
 
+Current implementation keeps `MainWindow` as composition root and delegates
+domain orchestration to focused shell controllers:
+
+* `project_controller` for open/recent project flows
+* `run_session_controller` for run/debug/repl lifecycle control wiring
+* `project_tree_controller` for tree move/delete/remap side effects
+* `background_tasks` for keyed off-UI-thread task execution and replacement
+
+Key shell responsibilities include:
+
+* run/debug toolbar and action state mapping
+* split-pane layout persistence and reset behavior
+* project-tree context action wiring
+* bottom-pane composition (console, Python console, problems, debug inspector, run log)
+
 ## 12.4 `editors`
 
 Text editing behavior:
@@ -509,8 +531,17 @@ Text editing behavior:
 * tabs
 * dirty state
 * syntax highlighting
+* stateful lexical highlighting per language (multiline-aware block state)
+* language highlighter registry (extension/sniff based) to avoid hardcoded branching
+* semantic token overlay fed by background analysis with document-revision guards
+* debounced/coalesced semantic refresh scheduling with keyed background-task replacement
+* cancellation-aware semantic extraction to avoid stale or long-running token walks
+* adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
+* viewport-capped overlay application for large buffers (diagnostics/search/semantic decorations)
+* line numbers and breakpoint gutter markers
 * search within file
 * quick open support
+* code-navigation affordances (go-to-definition, breadcrumbs)
 
 ## 12.5 `project`
 
@@ -547,6 +578,9 @@ Runner-side subsystem:
 Stores:
 
 * settings
+  * keybinding overrides
+  * syntax-color overrides (theme-aware)
+  * linter rule overrides
 * autosave drafts
 * optional indexes
 * lightweight caches
@@ -579,9 +613,9 @@ Recommended manifest contents:
 * execution mode
 * argv
 * environment overrides
-* safe-mode flags
 * log file path
 * timestamp
+* optional breakpoint payloads (for `python_debug`)
 
 ### Example
 
@@ -590,13 +624,18 @@ Recommended manifest contents:
   "manifest_version": 1,
   "run_id": "20260228_153500_001",
   "project_root": "/home/default/projects/my_project",
-  "entry_file": "run.py",
+  "entry_file": "main.py",
   "working_directory": "/home/default/projects/my_project",
   "mode": "python_script",
   "argv": [],
   "env": {},
-  "safe_mode": true,
-  "log_file": "/home/default/projects/my_project/logs/run_20260228_153500.log"
+  "log_file": "/home/default/projects/my_project/cbcs/logs/run_20260228_153500.log",
+  "breakpoints": [
+    {
+      "file_path": "/home/default/projects/my_project/app/main.py",
+      "line_number": 42
+    }
+  ]
 }
 ```
 
@@ -612,7 +651,7 @@ This architecture strongly prefers a manifest file over complex shell quoting be
 
 ## 13.3 Runner output protocol
 
-For v1, standard stdout/stderr is sufficient.
+For baseline run mode, standard stdout/stderr is sufficient.
 
 Recommended enhancement:
 
@@ -625,6 +664,8 @@ Recommended enhancement:
   * `warning`
   * `status`
 
+Current debug-capable builds may also emit explicit debug lifecycle markers (for example paused/running markers) so editor controls can synchronize state while preserving full output logs.
+
 Human output and structured output may coexist, but the protocol must stay simple.
 
 ## 13.4 Exit codes
@@ -635,7 +676,6 @@ Define clear meanings:
 * `1`: user code failed
 * `2`: runner bootstrap/config failure
 * `3`: manifest invalid
-* `4`: safe-mode blocked operation
 * `130`: terminated by user
 
 ---
@@ -645,6 +685,12 @@ Define clear meanings:
 ## 14.1 Console
 
 The console pane should show near-live stdout/stderr from the current run.
+
+For responsiveness on high-output workloads, console buffering should be bounded and trim oldest entries once the configured cap is exceeded.
+
+Current implementation also maintains a bounded run-output tail buffer for
+traceback/problem extraction so very long runs do not accumulate unbounded
+in-memory output strings.
 
 ## 14.2 Problems
 
@@ -657,7 +703,8 @@ The problems pane should show:
 
 ## 14.3 Run Log
 
-The run log pane should show the saved per-run log tail, not only transient pipe output.
+The run log pane should show saved per-run log content from disk, not only transient pipe output.
+Current implementation refreshes the Run Log tab from the active run log file after run exit.
 
 ## 14.4 Application Log
 
@@ -668,13 +715,13 @@ The editor must write a persistent app log for the shell itself.
 Editor log:
 
 ```text
-~/.choreboy_code_studio/logs/app.log
+~/choreboy_code_studio_state/logs/app.log
 ```
 
 Project run logs:
 
 ```text
-<project>/logs/run_YYYYMMDD_HHMMSS.log
+<project>/cbcs/logs/run_YYYYMMDD_HHMMSS.log
 ```
 
 ## 14.6 Logging requirements
@@ -745,6 +792,7 @@ This allows stable reopen and recovery workflows.
 Recommended v1 behavior:
 
 * autosave drafts to a recovery store
+* debounce draft writes to avoid per-keystroke disk churn
 * do not silently overwrite source files unless autosave-to-file is explicitly enabled
 * restore drafts after crash
 
@@ -758,6 +806,9 @@ This is safer for support and easier to reason about.
 
 Start with filesystem-based search and optional in-memory indexing.
 
+Current implementation uses cooperative-cancel search workers and line-streaming
+file scans so cancellation and first-result latency remain responsive.
+
 ## 17.2 SQLite-backed index
 
 If project size justifies it, use SQLite for:
@@ -766,6 +817,10 @@ If project size justifies it, use SQLite for:
 * quick-open candidate cache
 * symbol cache
 * search acceleration
+
+Current implementation stores per-file symbol index fingerprints
+(`mtime_ns` + file size) so symbol indexing can update incrementally instead of
+rebuilding every file on each pass.
 
 ## 17.3 Design rule
 
@@ -781,7 +836,9 @@ Templates should be first-class architecture, not just starter files.
 
 ### `qt_app`
 
-For user-facing GUI apps.
+For user-facing GUI apps. The template provides PySide2/Qt starter files but
+does not set any mode-specific behavior; projects run via the standard
+`python_script` execution path.
 
 ### `headless_tool`
 
@@ -806,6 +863,14 @@ Each template should include:
 
 Templates should have their own version marker so support and upgrades can reason about what a project was created from.
 
+## 18.4 Example projects (Help-only)
+
+Example projects are bundled under `example_projects/` at the repository root. They use the same `template.json` + source file layout as regular templates but are **not** discovered by the New Project template picker.
+
+A dedicated `ExampleProjectService` (in `app/examples/example_project_service.py`) delegates to `TemplateService` with its own root path, keeping the boundary clean.
+
+Example projects are only accessible through `Help > Load Example Project...`. This avoids cluttering the New Project workflow while giving users a rich, runnable starting point.
+
 ---
 
 ## 19. Capability Probe
@@ -820,7 +885,6 @@ Suggested checks:
 * QtUiTools available
 * writable global settings path
 * writable temp path
-* project logs writable
 * optional vendored package availability
 
 The probe should generate a user-visible compatibility summary.
@@ -835,17 +899,7 @@ This is especially important because environment assumptions are fragile in cons
 
 Default file pickers and open dialogs should anchor to user-home-friendly locations.
 
-## 20.2 Safe mode
-
-Per-project safe mode may:
-
-* disable subprocess
-* block writes outside project root unless explicitly approved
-* warn on dangerous patterns
-
-This does not need to be a sandbox in v1. It is a workflow safety layer.
-
-## 20.3 Supportability over total lockdown
+## 20.2 Supportability over total lockdown
 
 The architecture should prefer transparent behavior and strong warnings over brittle pseudo-security mechanisms that are hard to support.
 
@@ -865,7 +919,32 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 * project health check
 * large file loading
 
-## 21.3 Process-first for risky work
+Current implementation explicitly offloads:
+
+* find-in-files
+* symbol indexing
+* go-to-definition cache refresh path
+* unresolved import analysis
+* project health checks
+* support bundle generation
+* semantic token extraction
+
+to background workers/tasks to avoid blocking the UI thread.
+
+## 21.3 Highlight pipeline performance gates
+
+The editor highlighting contract is performance-gated with integration tests:
+
+* Python lexical full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
+* Python semantic extraction at ~2,000 LOC: p95 <= 120ms
+* semantic extraction under typing-burst variants: p95 <= 140ms
+* theme-switch apply cost across 10 open editors: p95 <= 150ms per editor
+* large-file mode must keep overlay volume bounded (viewport-capped non-cursor selections)
+* bracket-match path must remain bounded on large files (no unbounded cursor-move scans)
+
+These gates are part of release validation and should be updated only with explicit evidence.
+
+## 21.4 Process-first for risky work
 
 If work is expensive or failure-prone, prefer process boundaries over thread complexity.
 
@@ -884,7 +963,6 @@ For:
 * manifest creation
 * settings parsing
 * project metadata
-* log path generation
 * problem parsing
 * capability probe helpers
 
@@ -922,7 +1000,7 @@ Critical contracts should be testable without bringing up the full editor UI whe
 
 The following should have explicit version numbers:
 
-* `.cbcs/project.json`
+* `cbcs/project.json`
 * run manifest
 * support bundle format
 * template format
@@ -956,6 +1034,7 @@ Use **internal extension seams**:
 * optional vendored tool integrations
 
 This gives future flexibility without premature architecture complexity.
+Vendored tooling (when used) should remain pure-Python, live behind internal interfaces, and pass explicit quality/performance gates before cutover.
 
 ---
 
@@ -964,7 +1043,7 @@ This gives future flexibility without premature architecture complexity.
 The first end-to-end slice should prove the core value of the product:
 
 1. Open a project folder
-2. Open and edit `run.py`
+2. Open and edit `main.py`
 3. Save changes
 4. Press Run
 5. Launch separate runner process
@@ -983,7 +1062,7 @@ Everything else should build on top of this slice.
 
 The architecture explicitly does **not** require v1 support for:
 
-* full debugger/breakpoints
+* advanced debugger parity beyond baseline line breakpoints/stepping/inspection
 * LSP and language servers
 * Git integration
 * package management

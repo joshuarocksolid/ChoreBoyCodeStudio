@@ -1,0 +1,34 @@
+---
+description: Avoid hidden (dot-prefixed) folders on ChoreBoy
+alwaysApply: true
+---
+
+# No Hidden Folders on ChoreBoy
+
+ChoreBoy's locked-down environment does not reliably support hidden (dot-prefixed) directories. See `docs/DISCOVERY.md` section 4A for full details.
+
+## Constraint
+
+Never use dot-prefixed directory names for project metadata, app state, logs, caches, or any user-facing storage paths.
+
+## Reason
+
+- The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
+- Permission and ACL behavior for dot-prefixed directories may differ under ChoreBoy's security policies.
+- Directory creation can silently fail or be denied for hidden paths.
+
+## What to use instead
+
+Use visible (non-dot-prefixed) directory names:
+
+- `cbcs/` not `.cbcs/` for per-project metadata.
+- `choreboy_code_studio/` not `.choreboy_code_studio/` for global app state.
+- Same principle for any new directories: logs, caches, run state, etc.
+
+## Scope
+
+Applies to both per-project metadata directories and global app state directories. This includes any new storage paths introduced in future work.
+
+## Current migration status
+
+`app/core/constants.py` still defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"`. These are known legacy values tracked for migration to visible names.

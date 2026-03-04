@@ -1,0 +1,31 @@
+---
+description: Enforce Python 3.9 compatibility for all project code
+alwaysApply: true
+---
+
+# Python 3.9 Compatibility
+
+The ChoreBoy FreeCAD AppRun runtime ships **Python 3.9.2**. All application code, vendored libraries, and tests must run on Python 3.9.
+
+## Prohibited (3.10+)
+
+- `match` / `case` statements (3.10)
+- `X | Y` union syntax in type annotations at runtime (3.10) — use `Union[X, Y]` or guard with `from __future__ import annotations`
+- `ParamSpec`, `TypeAlias` from `typing` (3.10) — import from `typing_extensions` if needed
+- `ExceptionGroup` / `except*` (3.11)
+- `tomllib` (3.11) — use `tomli` vendored or avoid TOML parsing
+- `TaskGroup` from `asyncio` (3.11)
+- `type` keyword aliases (3.12)
+
+## Safe to use (available in 3.9)
+
+- Built-in generics in annotations: `list[int]`, `dict[str, int]`, `tuple[str, ...]` (PEP 585)
+- `str.removeprefix()` / `str.removesuffix()`
+- `zoneinfo` module
+- Walrus operator `:=` (3.8+)
+- f-strings (3.6+)
+
+## Guidance
+
+- When unsure about annotation compatibility, add `from __future__ import annotations` at the top of the module.
+- Before adding a new dependency, verify it still publishes wheels or pure-Python packages supporting Python 3.9.

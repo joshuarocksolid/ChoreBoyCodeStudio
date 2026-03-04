@@ -66,11 +66,10 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     """Project metadata should expose explicit defaults for omitted optional fields."""
     metadata = ProjectMetadata(schema_version=1, name="My Project")
 
-    assert metadata.default_entry == "run.py"
-    assert metadata.default_mode == "python_script"
+    assert metadata.default_entry == "main.py"
+    assert metadata.default_argv == []
     assert metadata.working_directory == "."
     assert metadata.template == "utility_script"
-    assert metadata.safe_mode is True
     assert metadata.run_configs == []
     assert metadata.env_overrides == {}
     assert metadata.project_notes == ""
@@ -82,11 +81,9 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         schema_version=1,
         name="Custom Project",
         default_entry="app/start.py",
-        default_mode="qt_app",
         working_directory="app",
         template="qt_app",
-        safe_mode=False,
-        run_configs=[{"id": "default", "mode": "qt_app"}],
+        run_configs=[{"id": "default"}],
         env_overrides={"APP_ENV": "dev"},
         project_notes="Launches a Qt UI.",
     )
@@ -95,11 +92,10 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
         "schema_version": 1,
         "name": "Custom Project",
         "default_entry": "app/start.py",
-        "default_mode": "qt_app",
+        "default_argv": [],
         "working_directory": "app",
         "template": "qt_app",
-        "safe_mode": False,
-        "run_configs": [{"id": "default", "mode": "qt_app"}],
+        "run_configs": [{"id": "default"}],
         "env_overrides": {"APP_ENV": "dev"},
         "project_notes": "Launches a Qt UI.",
     }
@@ -125,7 +121,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
     metadata = ProjectMetadata(schema_version=1, name="Project Alpha")
     loaded_project = LoadedProject(
         project_root="/tmp/project_alpha",
-        manifest_path="/tmp/project_alpha/.cbcs/project.json",
+        manifest_path="/tmp/project_alpha/cbcs/project.json",
         metadata=metadata,
         entries=[
             ProjectFileEntry(
@@ -143,19 +139,18 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
 
     assert loaded_project.to_dict() == {
         "project_root": "/tmp/project_alpha",
-        "manifest_path": "/tmp/project_alpha/.cbcs/project.json",
+        "manifest_path": "/tmp/project_alpha/cbcs/project.json",
         "metadata": {
             "schema_version": 1,
             "name": "Project Alpha",
-            "default_entry": "run.py",
-            "default_mode": "python_script",
+            "default_entry": "main.py",
+            "default_argv": [],
             "working_directory": ".",
             "template": "utility_script",
-            "safe_mode": True,
             "run_configs": [],
             "env_overrides": {},
             "project_notes": "",
-        },
+            },
         "entries": [
             {
                 "relative_path": "run.py",

@@ -5,6 +5,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-editor/
 venv/
 env/
 
@@ -36,8 +37,9 @@ Thumbs.db
 .idea/
 
 # ChoreBoy Code Studio runtime artifacts
-.choreboy_code_studio/
-**/.cbcs/runs/
-**/.cbcs/cache/
-**/logs/*
-!**/logs/.gitkeep
+choreboy_code_studio_state/
+**/cbcs/runs/
+**/cbcs/logs/
+**/cbcs/cache/
+
+django_probe/

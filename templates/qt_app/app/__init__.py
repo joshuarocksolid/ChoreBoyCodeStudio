@@ -1,0 +1,1 @@
+"""Qt app template package."""

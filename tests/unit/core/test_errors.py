@@ -20,13 +20,13 @@ def test_project_manifest_validation_error_keeps_field_and_manifest_path_context
     error = ProjectManifestValidationError(
         "Missing required field.",
         field="name",
-        manifest_path=Path("/tmp/example/.cbcs/project.json"),
+        manifest_path=Path("/tmp/example/cbcs/project.json"),
     )
 
     assert error.field == "name"
-    assert error.manifest_path == Path("/tmp/example/.cbcs/project.json")
+    assert error.manifest_path == Path("/tmp/example/cbcs/project.json")
     assert "field=name" in str(error)
-    assert "path=/tmp/example/.cbcs/project.json" in str(error)
+    assert "path=/tmp/example/cbcs/project.json" in str(error)
 
 
 def test_project_manifest_validation_error_is_validation_error() -> None:
@@ -39,7 +39,7 @@ def test_project_manifest_validation_error_is_validation_error() -> None:
 def test_project_structure_validation_error_keeps_project_root_context() -> None:
     """Project structure errors should preserve root context for diagnostics."""
     error = ProjectStructureValidationError(
-        "Project folder is missing .cbcs directory.",
+        "Project folder is missing cbcs directory.",
         project_root=Path("/tmp/example_project"),
     )
 

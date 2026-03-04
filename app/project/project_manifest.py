@@ -11,11 +11,64 @@ from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
 
 PROJECT_METADATA_SCHEMA_VERSION = 1
-ALLOWED_DEFAULT_MODES = frozenset({"python_script", "qt_app", "freecad_headless"})
+
+
+def build_default_project_manifest_payload(
+    *,
+    project_name: str,
+    default_entry: str = "main.py",
+    default_argv: list[str] | None = None,
+    working_directory: str = ".",
+    template: str = "utility_script",
+    run_configs: list[dict[str, Any]] | None = None,
+    env_overrides: Mapping[str, str] | None = None,
+    project_notes: str = "",
+) -> dict[str, Any]:
+    """Build a canonical manifest payload for new/imported projects."""
+    if not _is_non_empty_string(project_name):
+        raise ValueError("project_name must be a non-empty string.")
+    if not _is_non_empty_string(default_entry):
+        raise ValueError("default_entry must be a non-empty string.")
+    if default_argv is not None and (
+        not isinstance(default_argv, list) or any(not isinstance(value, str) for value in default_argv)
+    ):
+        raise ValueError("default_argv must be a list of strings.")
+    if not _is_non_empty_string(working_directory):
+        raise ValueError("working_directory must be a non-empty string.")
+    if not _is_non_empty_string(template):
+        raise ValueError("template must be a non-empty string.")
+    if not isinstance(project_notes, str):
+        raise ValueError("project_notes must be a string.")
+
+    normalized_run_configs: list[dict[str, Any]] = []
+    for index, run_config in enumerate(run_configs or []):
+        if not isinstance(run_config, dict):
+            raise ValueError(f"run_configs[{index}] must be an object.")
+        normalized_run_configs.append(dict(run_config))
+
+    normalized_env_overrides: dict[str, str] = {}
+    if env_overrides is not None:
+        for key, value in env_overrides.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError("env_overrides must contain only string keys and values.")
+            normalized_env_overrides[key] = value
+
+    metadata = ProjectMetadata(
+        schema_version=PROJECT_METADATA_SCHEMA_VERSION,
+        name=project_name.strip(),
+        default_entry=default_entry.strip(),
+        default_argv=[] if default_argv is None else list(default_argv),
+        working_directory=working_directory.strip(),
+        template=template.strip(),
+        run_configs=normalized_run_configs,
+        env_overrides=normalized_env_overrides,
+        project_notes=project_notes,
+    )
+    return metadata.to_dict()
 
 
 def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
-    """Load `<project>/.cbcs/project.json` and return structured metadata."""
+    """Load `<project>/cbcs/project.json` and return structured metadata."""
     path = Path(manifest_path).expanduser().resolve()
     try:
         raw_payload = path.read_text(encoding="utf-8")
@@ -58,21 +111,23 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     default_entry = _read_optional_non_empty_string(
         payload,
         "default_entry",
-        default="run.py",
+        default="main.py",
         manifest_path=resolved_path,
     )
-    default_mode = _read_optional_non_empty_string(
-        payload,
-        "default_mode",
-        default="python_script",
-        manifest_path=resolved_path,
-    )
-    if default_mode not in ALLOWED_DEFAULT_MODES:
-        _raise_validation_error(
-            f"Unsupported default_mode: {default_mode}. Allowed values: {sorted(ALLOWED_DEFAULT_MODES)}.",
-            field="default_mode",
-            manifest_path=resolved_path,
-        )
+    default_argv = payload.get("default_argv", [])
+    if default_argv is None:
+        default_argv = []
+    if not isinstance(default_argv, list):
+        _raise_validation_error("default_argv must be a list.", field="default_argv", manifest_path=resolved_path)
+    normalized_default_argv: list[str] = []
+    for index, raw_argv in enumerate(default_argv):
+        if not isinstance(raw_argv, str):
+            _raise_validation_error(
+                "default_argv entries must be strings.",
+                field=f"default_argv[{index}]",
+                manifest_path=resolved_path,
+            )
+        normalized_default_argv.append(raw_argv)
 
     working_directory = _read_optional_non_empty_string(
         payload,
@@ -86,10 +141,6 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         default="utility_script",
         manifest_path=resolved_path,
     )
-
-    safe_mode = payload.get("safe_mode", True)
-    if not isinstance(safe_mode, bool):
-        _raise_validation_error("safe_mode must be a boolean.", field="safe_mode", manifest_path=resolved_path)
 
     run_configs = payload.get("run_configs", [])
     if not isinstance(run_configs, list):
@@ -137,10 +188,9 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         schema_version=schema_version,
         name=name,
         default_entry=default_entry,
-        default_mode=default_mode,
+        default_argv=normalized_default_argv,
         working_directory=working_directory,
         template=template,
-        safe_mode=safe_mode,
         run_configs=normalized_run_configs,
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,

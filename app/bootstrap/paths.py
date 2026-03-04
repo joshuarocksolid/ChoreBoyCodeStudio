@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import tempfile
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 from app.core import constants
 
@@ -70,8 +70,16 @@ def ensure_directory(path: PathInput) -> Path:
     return directory
 
 
+def try_ensure_directory(path: PathInput) -> Tuple[Optional[Path], Optional[OSError]]:
+    """Attempt to create a directory; return (path, None) on success or (None, error) on failure."""
+    try:
+        return ensure_directory(path), None
+    except OSError as exc:
+        return None, exc
+
+
 def project_cbcs_dir(project_root: PathInput) -> Path:
-    """Return the .cbcs metadata directory inside a project root."""
+    """Return the cbcs metadata directory inside a project root."""
     return _normalize_project_root(project_root) / constants.PROJECT_META_DIRNAME
 
 
@@ -85,14 +93,14 @@ def project_runs_dir(project_root: PathInput) -> Path:
     return project_cbcs_dir(project_root) / constants.PROJECT_RUNS_DIRNAME
 
 
+def project_logs_dir(project_root: PathInput) -> Path:
+    """Return the per-project run logs directory path."""
+    return project_cbcs_dir(project_root) / constants.PROJECT_LOGS_DIRNAME
+
+
 def project_cache_dir(project_root: PathInput) -> Path:
     """Return the per-project cache directory path."""
     return project_cbcs_dir(project_root) / constants.PROJECT_CACHE_DIRNAME
-
-
-def project_logs_dir(project_root: PathInput) -> Path:
-    """Return the per-project logs directory path."""
-    return _normalize_project_root(project_root) / constants.PROJECT_LOGS_DIRNAME
 
 
 def resolve_project_path(project_root: PathInput, relative_path: PathInput) -> Path:

@@ -1,152 +1,95 @@
-# ChoreBoy Code Studio — Testing Strategy (Setup Baseline)
+# ChoreBoy Code Studio — Test Strategy & Current Validation
 
-## 1. Purpose
+## 1) Purpose
 
-This document defines the initial testing framework setup for the project before implementation code exists.
+This document captures the **active** testing strategy and commands for the shipped implementation.
 
-Current scope is setup only:
-- configure automated testing conventions
-- establish test directory layout
-- document execution cadence and gates
-- do not add real test cases yet
-
-## 2. Core Constraints
-
-Testing strategy must remain aligned with the canonical docs:
+It aligns with:
 - `AGENTS.md`
-- `docs/PRD.md`
-- `docs/DISCOVERY.md`
 - `docs/ARCHITECTURE.md`
 - `docs/ACCEPTANCE_TESTS.md`
+- `docs/TASKS.md`
 
-Key constraints to preserve:
-- target runtime is FreeCAD AppRun (`/opt/freecad/AppRun`), not normal system Python
-- user project code must run in a separate runner process
-- UI-heavy behavior is validated primarily through manual acceptance flows
-- supportability artifacts (logs, traceback, explicit failure behavior) are first-class
+## 2) Framework and markers
 
-## 3. Framework Baseline
+- Test runner: `pytest`
+- Markers (defined in `pyproject.toml`):
+  - `unit`
+  - `integration`
+  - `runtime_parity`
+  - `manual_acceptance`
 
-Automated framework:
-- `pytest` as the default test runner
-- built-in `unittest.mock` for unit-test isolation only
+## 3) Test layout
 
-Deferred until implementation matures:
-- broad UI automation (`pytest-qt`, etc.)
-- strict coverage thresholds as a blocking gate
+- `tests/unit/` — deterministic contract tests
+- `tests/integration/` — multi-component filesystem/subprocess/runtime boundary tests
+- `tests/runtime_parity/` — reserved for AppRun-specific checks where applicable
 
-Configured markers in `pyproject.toml`:
-- `unit`
-- `integration`
-- `runtime_parity`
-- `manual_acceptance`
+## 4) What is covered
 
-## 4. Test Layout
+Implemented coverage includes:
 
-The repository test scaffold is:
-- `tests/unit/`
-- `tests/integration/`
-- `tests/runtime_parity/`
+- bootstrap, logging, capability probe, path contracts
+- project manifest/schema validation, project loading, and first-open metadata initialization for plain Python folders
+- recent project persistence
+- editor tab manager, dirty/save semantics, autosave store
+- project tree model, quick-open ranking, find-in-files scanning
+- run manifest schema, run id/log path generation
+- process supervisor lifecycle and stop behavior
+- runner bootstrap, execution context, traceback logging
+- run orchestration end-to-end (manifest -> runner -> output -> log)
+- diagnostics and support bundle generation
+- built-in template discovery/materialization and generated-project execution
+- responsiveness threshold checks (integration timing assertions)
 
-Guidance:
-- `unit` for pure business logic and deterministic contracts
-- `integration` for editor/runner, filesystem, and protocol boundaries
-- `runtime_parity` for tests that require `/opt/freecad/AppRun` on the dev machine
+## 5) Core commands
 
-## 5. Test Pyramid and Gate Model
-
-1. Unit tests (fast local feedback)
-2. Integration tests (boundary and contract confidence)
-3. Manual acceptance checks on target-like/runtime-parity behavior
-
-Manual acceptance remains the release confidence gate for UI workflows, per `docs/ACCEPTANCE_TESTS.md`.
-
-## 6. Execution Cadence
-
-During active development:
-- run unit tests manually and frequently
-- run integration tests manually before merging larger slices
-- run runtime-parity tests manually when touching runner/runtime-sensitive behavior
-
-Before release candidates:
-- execute the acceptance checklist manually (`AT-01` through `AT-16` minimum)
-
-## 7. Local Commands (When Coding Starts)
-
-These commands are documented now for consistency; they are not required to run during setup.
+Activate venv:
 
 ```bash
-python -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
-python -m pytest -m unit
-python -m pytest -m integration
-python -m pytest -m runtime_parity
 ```
 
-`requirements-dev.txt` is the single development dependency manifest for this repo.
-
-If runtime-parity tests require explicit AppRun location, run with:
+Run full suite:
 
 ```bash
-CBCS_APPRUN=/opt/freecad/AppRun python -m pytest -m runtime_parity
+python -m pytest -v
 ```
 
-## 7.1 Dev parity launch command
-
-For quick local runtime checks in a ChoreBoy-like launch model, use the dev-only root launcher:
+Run focused suites:
 
 ```bash
-python dev_launch_editor.py
+python -m pytest -v tests/unit
+python -m pytest -v tests/integration
+python -m pytest -v tests/integration/performance
 ```
 
-This starts `run_editor.py` through FreeCAD runtime using detached process behavior (`start_new_session=True`).
-The launcher also prepends the repository root to `sys.path` because some FreeCAD AppImage `-c` runs do not include the project directory by default.
-Run this command from repository root, or call it by absolute path.
-
-Default runtime path used by this launcher:
-
-```text
-/opt/freecad/AppRun
-```
-
-Override runtime path when needed:
+Type check:
 
 ```bash
-python dev_launch_editor.py --apprun /path/to/AppRun-or-FreeCAD.AppImage
+python -m mypy app/ dev_launch_editor.py run_editor.py run_runner.py launcher.py
 ```
 
-or:
+Expected mypy baseline in cloud VM remains 4 known pre-existing errors:
+- `app/shell/status_bar.py` (`setProperty` bytes typing mismatch)
+- `run_editor.py` dynamic Qt loader object typing (3 errors)
 
-```bash
-CBCS_APPRUN=/path/to/AppRun-or-FreeCAD.AppImage python dev_launch_editor.py
-```
+## 6) Manual acceptance validation
 
-If you prefer plain `pytest`, the repo now configures `pythonpath = ["."]` so collection should match `python -m pytest`.
+Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
-Preview the resolved command without launching:
+- MVP gate (`AT-01`, `AT-03`, `AT-24`, `AT-05`, `AT-06`, `AT-07`, `AT-08`, `AT-10`, `AT-11`, `AT-12`, `AT-14`, `AT-15`, `AT-16`) validated with GUI evidence.
+- Extended checks (`AT-17`, `AT-19`, `AT-20`, `AT-21`, `AT-22`, `AT-23`) validated with GUI + artifact evidence.
+- `AT-18` draft recovery is validated via integration simulation test (`tests/integration/persistence/test_autosave_recovery.py`) because force-kill GUI simulation is unsafe in this cloud session.
 
-```bash
-python dev_launch_editor.py --dry-run
-```
+## 7) Notes for cloud environment
 
-## 8. Traceability Starter (Tasks -> Test Layers)
+- `/opt/freecad/AppRun` and `FreeCAD` module are absent in cloud VM; related diagnostics correctly report those as unavailable.
+- PySide2 in cloud uses a compatibility shim to run against PySide6.
 
-Initial mapping to keep aligned while implementation starts:
-- `T02` to `T04`, `T14`, `T15`: mostly `unit` coverage first
-- `T16` to `T22`: primarily `integration` and `runtime_parity` coverage
-- acceptance correlation for core vertical slice: `AT-10` to `AT-16`
+## 8) Current baseline result
 
-Update this mapping as tasks move from TODO to DONE.
+At latest validation checkpoint:
 
-## 9. Setup Status
-
-Completed in this setup slice:
-- pytest configuration added in `pyproject.toml`
-- test directory scaffold added under `tests/`
-- this strategy document created
-
-Intentionally deferred:
-- writing actual tests
-- running test suites
+- `python -m pytest -q` -> **150 passed** (no known test warnings)
+- `mypy` -> **4 known pre-existing errors (expected baseline)**

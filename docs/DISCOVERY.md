@@ -14,7 +14,7 @@ The approach is:
 
 1. Use LibrePy (inside LibreOffice) as a **launcher** (or any Python context that can call subprocess).
 2. Spawn FreeCAD’s `AppRun` in console mode:
-   - `'/opt/freecad/AppRun', '-c', 'exec(open(".../run.py").read())'`
+   - `'/opt/freecad/AppRun', '-c', 'import os,runpy,sys; ...; runpy.run_path(".../main.py", run_name="__main__")'`
 3. The executed script can:
    - `import PySide2` and create a `QApplication()`
    - show windows and run a Qt event loop
@@ -28,6 +28,21 @@ This effectively creates a new “application platform” for ChoreBoy:
 - **FreeCAD headless backend engine**
 - **SQLite local persistence**
 - Optional: **Postgres connectivity** via vendored pure-Python driver (pg8000), if needed.
+
+---
+
+## 1A. Hard Constraint: Python 3.9
+
+The FreeCAD AppRun runtime on ChoreBoy ships **Python 3.9.2**. This is the only Python available to applications launched through AppRun.
+
+**All application code, vendored libraries, and test code must be compatible with Python 3.9.**
+
+Key implications:
+
+- Do not use `match`/`case` (3.10+), `ExceptionGroup` (3.11+), `type` aliases (3.12+), or other post-3.9 features.
+- Built-in generic annotations (`list[int]`, `dict[str, int]`) are available (PEP 585 landed in 3.9).
+- Before vendoring a dependency, verify it supports Python 3.9.
+- See `.cursor/rules/python39_compatibility.mdc` for the full syntax reference.
 
 ---
 
@@ -57,7 +72,13 @@ We run Python code inside that runtime by calling:
 
 ```python
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/run.py").read())'],
+    [
+        '/opt/freecad/AppRun',
+        '-c',
+        "import os,runpy,sys;root='/home/default/myapp';"
+        "sys.path.insert(0,root) if root not in sys.path else None;"
+        "os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')",
+    ],
     start_new_session=True
 )
 ```
@@ -68,13 +89,62 @@ This detaches the spawned process from LibreOffice/LibrePy so the Qt app can rem
 
 ---
 
+## 3A. New Discovery: Launching Qt Apps via `.desktop` Files (No LibrePy Launcher)
+
+We confirmed the ChoreBoy desktop environment can launch our Qt apps directly using a `.desktop` application shortcut.
+
+### Why this matters
+
+- Removes the need for `launcher.py` and LibrePy as a “bootstrap”.
+- Users can launch apps like any normal desktop app (icon, menu entry, etc.).
+- Makes distribution/UX much cleaner (copy folder + install shortcut).
+
+### Recommended pattern
+
+1. Rename `main.py` to `main.py` and treat it as the single entrypoint.
+2. Create a `.desktop` file whose `Exec=` runs FreeCAD’s runtime and uses deterministic bootstrap:
+   - normalize `sys.path`
+   - set `cwd`
+   - launch with `runpy.run_path(...)`
+
+### Example `.desktop` (MyApp)
+
+```ini
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MyApp
+Comment=Launch MyApp (Qt via FreeCAD AppRun)
+#Icon=/home/default/myapp/icon.png
+Terminal=false
+Categories=Utility;
+
+Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/myapp';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')"
+```
+
+### Install locations
+
+- Per-user launcher:
+  - `~/.local/share/applications/myapp.desktop`
+- Desktop icon:
+  - `~/Desktop/myapp.desktop`
+
+After placing the file, ensure it is marked executable (from a terminal or file manager).
+
+### Notes
+
+- If the system requires “trusting” desktop shortcuts, you may need to right-click the icon and choose “Allow Launching” the first time.
+- If you want the app to keep working when moved, hardcode the absolute path (recommended on ChoreBoy).
+
+---
+
 ## 4. Confirmed Capability Matrix
 
 These probes were run and verified on ChoreBoy:
 
 ### ✅ Python Runtime / Paths
 
-* `sys.version`: **3.9.2**
+* `sys.version`: **3.9.2** (see [section 1A](#1a-hard-constraint-python-39) — all code must target 3.9)
 * `sys.executable`: `/opt/freecad/usr/bin/FreeCAD`
 * `sys.path` includes `/home/default/myapp` and FreeCAD Mod directories
 
@@ -134,6 +204,70 @@ These probes were run and verified on ChoreBoy:
 * `psql` not available on PATH
 
 **Implication:** Direct Postgres requires vendoring a pure-Python client (recommended: pg8000) or implementing a bridge.
+
+---
+
+## 4A. Hidden Folders Are Unreliable on ChoreBoy
+
+**Date discovered:** 2026-03-02
+
+### Finding
+
+Hidden (dot-prefixed) directories such as `.cbcs/` or `.choreboy_code_studio/` are **not reliably usable** on the ChoreBoy locked-down environment. Observed problems include:
+
+* The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
+* Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
+* Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
+
+### Evidence
+
+Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for logging (primary path, temp path, stderr) because the hidden `.choreboy_code_studio/` global state directory was not always writable or accessible.
+
+### Recommendation
+
+All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
+
+* Use `cbcs/` instead of `.cbcs/` for per-project metadata.
+* Use `choreboy_code_studio/` instead of `.choreboy_code_studio/` for global app state.
+
+This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
+
+### Migration status
+
+The migration is complete in current code:
+
+* `PROJECT_META_DIRNAME = "cbcs"`
+* `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
+
+in `app/core/constants.py`, so new project metadata and app state paths are visible (non-dot-prefixed).
+
+---
+
+## 4B. Additional Launch/Runtime Findings (2026-03-03)
+
+### Confirmed blockers
+
+1. **Python 3.9 runtime typing crash was a real startup blocker**
+   - Crash signature:
+     - `TypeError: unsupported operand type(s) for |: 'types.GenericAlias' and 'NoneType'`
+   - Triggered by runtime-evaluated type alias expression in `syntax_registry.py`.
+   - Any runtime-evaluated typing expression using `|` must remain Python 3.9-safe.
+
+2. **“Silent” launch failures were often logging-channel mismatch**
+   - Global home log path may be unwritable.
+   - Fallback logs land under `/tmp/choreboy_code_studio/logs/app.log`.
+   - Debug workflow must inspect active fallback log path, not only expected home path.
+
+3. **Capability probe can report FreeCAD false negatives**
+   - Subprocess probe attempting to execute `/opt/freecad/usr/bin/FreeCAD` may fail with `Permission denied`.
+   - Treat this as probe-launch constraint, not definitive proof that in-process `import FreeCAD` is impossible.
+
+### Launch contract refinement
+
+Preferred launch style for ChoreBoy:
+- avoid `exec(open(...).read())` boot patterns;
+- use explicit bootstrap (`sys.path`, `cwd`) + `runpy.run_path`;
+- route failures to known log path and/or stderr-visible channel.
 
 ---
 
@@ -234,20 +368,24 @@ Standard folder:
 
 ```
 myapp/
-  run.py
+  main.py
   launcher.py
   vendor/          # optional (pg8000 etc)
-  logs/
+  cbcs/
+    project.json
+    logs/
   app/
     __init__.py
     backend.py
     main_window.py
 ```
 
+> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden folders are unreliable on ChoreBoy (see section 4A).
+
 Key ideas:
 
 * `launcher.py`: spawns AppRun detached
-* `run.py`: bootstraps sys.path, logging, crash window, launches Qt
+* `main.py`: bootstraps sys.path, logging, crash window, launches Qt
 * `backend.py`: contains all probes and backend actions
 * `main_window.py`: Qt UI that triggers probes and displays output
 
@@ -258,7 +396,13 @@ Key ideas:
 ```python
 import subprocess
 subprocess.Popen(
-    ['/opt/freecad/AppRun', '-c', 'exec(open("/home/default/myapp/run.py").read())'],
+    [
+        '/opt/freecad/AppRun',
+        '-c',
+        "import os,runpy,sys;root='/home/default/myapp';"
+        "sys.path.insert(0,root) if root not in sys.path else None;"
+        "os.chdir(root);runpy.run_path('/home/default/myapp/main.py', run_name='__main__')",
+    ],
     start_new_session=True
 )
 ```

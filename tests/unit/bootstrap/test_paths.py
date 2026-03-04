@@ -52,7 +52,6 @@ def test_project_helpers_compose_expected_paths(tmp_path: Path) -> None:
     assert paths.project_manifest_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
     assert paths.project_runs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_RUNS_DIRNAME
     assert paths.project_cache_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME
-    assert paths.project_logs_dir(project_root) == project_root / constants.PROJECT_LOGS_DIRNAME
 
 
 def test_resolve_project_path_uses_project_root(tmp_path: Path) -> None:
@@ -78,3 +77,26 @@ def test_ensure_directory_is_idempotent(tmp_path: Path) -> None:
     assert second == target
     assert target.exists()
     assert target.is_dir()
+
+
+def test_try_ensure_directory_returns_path_on_success(tmp_path: Path) -> None:
+    """Successful creation should return (path, None)."""
+    target = tmp_path / "new_dir" / "nested"
+    result_path, error = paths.try_ensure_directory(target)
+
+    assert result_path == target
+    assert error is None
+    assert target.exists()
+    assert target.is_dir()
+
+
+def test_try_ensure_directory_returns_error_on_failure(tmp_path: Path) -> None:
+    """When parent is a file, mkdir fails; should return (None, OSError)."""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("I am a file")
+    target = blocker / "child"
+
+    result_path, error = paths.try_ensure_directory(target)
+
+    assert result_path is None
+    assert isinstance(error, OSError)

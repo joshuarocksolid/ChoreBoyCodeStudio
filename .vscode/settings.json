@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv-editor/bin/python",
+  "basedpyright.analysis.venvPath": ".",
+  "basedpyright.analysis.venv": ".venv-editor",
+  "files.watcherExclude": {
+    "**/.venv-editor/**": true,
+    "**/squashfs-root/**": true
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  }
+}

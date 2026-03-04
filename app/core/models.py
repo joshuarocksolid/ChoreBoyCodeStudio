@@ -64,15 +64,14 @@ class CapabilityProbeReport:
 
 @dataclass(frozen=True)
 class ProjectMetadata:
-    """Canonical `.cbcs/project.json` metadata model."""
+    """Canonical `cbcs/project.json` metadata model."""
 
     schema_version: int
     name: str
-    default_entry: str = "run.py"
-    default_mode: str = "python_script"
+    default_entry: str = "main.py"
+    default_argv: list[str] = field(default_factory=list)
     working_directory: str = "."
     template: str = "utility_script"
-    safe_mode: bool = True
     run_configs: list[dict[str, Any]] = field(default_factory=list)
     env_overrides: dict[str, str] = field(default_factory=dict)
     project_notes: str = ""
@@ -83,10 +82,9 @@ class ProjectMetadata:
             "schema_version": self.schema_version,
             "name": self.name,
             "default_entry": self.default_entry,
-            "default_mode": self.default_mode,
+            "default_argv": list(self.default_argv),
             "working_directory": self.working_directory,
             "template": self.template,
-            "safe_mode": self.safe_mode,
             "run_configs": [dict(config) for config in self.run_configs],
             "env_overrides": dict(self.env_overrides),
             "project_notes": self.project_notes,
