@@ -740,32 +740,64 @@ QPushButton#shell\\.findBar\\.replaceAllBtn:pressed {{
 QDialog#shell\\.quickOpen {{
     background: {tokens.panel_bg};
     border: 1px solid {tokens.border};
-    border-radius: 6px;
+    border-radius: 8px;
 }}
 QLineEdit#shell\\.quickOpen\\.input {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: none;
     border-bottom: 1px solid {tokens.border};
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: 10px 14px 10px 6px;
+    font-size: 14px;
 }}
-QListWidget#shell\\.quickOpen\\.results {{
+QLineEdit#shell\\.quickOpen\\.input:focus {{
+    border-bottom: 2px solid {tokens.accent};
+}}
+QListView#shell\\.quickOpen\\.results {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};
     border: none;
     outline: none;
-    font-size: 12px;
 }}
-QListWidget#shell\\.quickOpen\\.results::item {{
-    padding: 4px 12px;
+QListView#shell\\.quickOpen\\.results::item {{
+    padding: 0px;
+    border-bottom: 1px solid {tokens.border};
 }}
-QListWidget#shell\\.quickOpen\\.results::item:hover {{
+QListView#shell\\.quickOpen\\.results::item:last {{
+    border-bottom: none;
+}}
+QListView#shell\\.quickOpen\\.results::item:hover {{
     background: {tokens.tree_hover_bg};
 }}
-QListWidget#shell\\.quickOpen\\.results::item:selected {{
+QListView#shell\\.quickOpen\\.results::item:selected {{
     background: {tokens.tree_selected_bg};
-    color: {tokens.text_primary};
+}}
+QLabel#shell\\.quickOpen\\.empty {{
+    color: {tokens.text_muted};
+    font-size: 13px;
+    padding: 24px;
+}}
+QLabel#shell\\.quickOpen\\.count {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+}}
+QListView#shell\\.quickOpen\\.results QScrollBar:vertical {{
+    width: 6px;
+    background: transparent;
+    margin: 2px 1px;
+}}
+QListView#shell\\.quickOpen\\.results QScrollBar::handle:vertical {{
+    background: {tokens.text_muted};
+    border-radius: 3px;
+    min-height: 20px;
+}}
+QListView#shell\\.quickOpen\\.results QScrollBar::add-line:vertical,
+QListView#shell\\.quickOpen\\.results QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QListView#shell\\.quickOpen\\.results QScrollBar::add-page:vertical,
+QListView#shell\\.quickOpen\\.results QScrollBar::sub-page:vertical {{
+    background: transparent;
 }}
 /* -- Activity bar -------------------------------------------------------- */
 QWidget#shell\\.activityBar {{

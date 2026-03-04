@@ -34,37 +34,36 @@ class TestQuickOpenDialog:
     def test_set_candidates_populates_list(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]
         dialog = QuickOpenDialog()
         dialog.set_candidates(sample_candidates)
-        assert dialog._results_list.count() == 4
+        assert dialog._list_model.rowCount() == 4
 
     def test_typing_filters_results(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]
         dialog = QuickOpenDialog()
         dialog.set_candidates(sample_candidates)
         dialog._search_input.setText("main")
-        count = dialog._results_list.count()
+        count = dialog._list_model.rowCount()
         assert count == 2
 
     def test_typing_no_match_shows_empty(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]
         dialog = QuickOpenDialog()
         dialog.set_candidates(sample_candidates)
         dialog._search_input.setText("zzznomatchzzz")
-        assert dialog._results_list.count() == 0
+        assert dialog._list_model.rowCount() == 0
 
     def test_clearing_search_restores_all(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]
         dialog = QuickOpenDialog()
         dialog.set_candidates(sample_candidates)
         dialog._search_input.setText("main")
-        assert dialog._results_list.count() == 2
+        assert dialog._list_model.rowCount() == 2
         dialog._search_input.clear()
-        assert dialog._results_list.count() == 4
+        assert dialog._list_model.rowCount() == 4
 
     def test_file_selected_signal(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]
         dialog = QuickOpenDialog()
         dialog.set_candidates(sample_candidates)
         selected_paths: list[str] = []
         dialog.file_selected.connect(lambda path: selected_paths.append(path))
-        first_item = dialog._results_list.item(0)
-        assert first_item is not None
-        dialog._on_item_activated(first_item)
+        idx = dialog._list_model.index(0, 0)
+        dialog._on_item_activated(idx)
         assert len(selected_paths) == 1
 
     def test_accept_current_selects_first(self, _ensure_qapp, sample_candidates) -> None:  # type: ignore[no-untyped-def]

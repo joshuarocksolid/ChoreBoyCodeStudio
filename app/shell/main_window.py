@@ -85,7 +85,7 @@ from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
 from app.editors.formatting_service import format_text_basic
 from app.editors.indentation import detect_indentation_style_and_size
-from app.editors.quick_open import QuickOpenCandidate, rank_candidates
+from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_store import load_settings, save_settings
@@ -876,15 +876,26 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Quick Open unavailable", "Open a project first.")
             return
 
+        open_paths = set(self._editor_manager.open_paths()) if self._editor_manager else set()
         candidates = [
-            QuickOpenCandidate(relative_path=entry.relative_path, absolute_path=entry.absolute_path)
+            QuickOpenCandidate(
+                relative_path=entry.relative_path,
+                absolute_path=entry.absolute_path,
+                is_open=entry.absolute_path in open_paths,
+            )
             for entry in self._loaded_project.entries
             if not entry.is_directory
         ]
 
         if self._quick_open_dialog is None:
-            self._quick_open_dialog = QuickOpenDialog(self)
+            tokens = self._resolve_theme_tokens()
+            self._quick_open_dialog = QuickOpenDialog(
+                self,
+                tokens=tokens,
+                icon_map=self._tree_file_icon_map,
+            )
             self._quick_open_dialog.file_selected.connect(self._open_file_in_editor)
+            self._quick_open_dialog.file_selected_at_line.connect(self._open_file_at_line)
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
