@@ -41,6 +41,10 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.theme_mode == "system"
     assert snapshot.auto_open_console_on_run_output is True
     assert snapshot.auto_open_problems_on_run_failure is True
+    assert snapshot.shortcut_overrides == {}
+    assert snapshot.syntax_color_overrides_light == {}
+    assert snapshot.syntax_color_overrides_dark == {}
+    assert snapshot.lint_rule_overrides == {}
 
 
 def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
@@ -77,6 +81,20 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "auto_open_console_on_run_output": False,
                 "auto_open_problems_on_run_failure": False,
             },
+            "keybindings": {
+                "overrides": {
+                    "shell.action.run.run": "Ctrl+R",
+                }
+            },
+            "syntax_colors": {
+                "light": {"keyword": "#123456"},
+                "dark": {"keyword": "#654321"},
+            },
+            "linter": {
+                "rule_overrides": {
+                    "PY220": {"enabled": False, "severity": "info"},
+                }
+            },
         }
     )
 
@@ -105,6 +123,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.highlighting_lexical_only_threshold_chars == 480000
     assert snapshot.auto_open_console_on_run_output is False
     assert snapshot.auto_open_problems_on_run_failure is False
+    assert snapshot.shortcut_overrides == {"shell.action.run.run": "Ctrl+R"}
+    assert snapshot.syntax_color_overrides_light == {"keyword": "#123456"}
+    assert snapshot.syntax_color_overrides_dark == {"keyword": "#654321"}
+    assert snapshot.lint_rule_overrides == {"PY220": {"enabled": False, "severity": "info"}}
 
 
 def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() -> None:
@@ -134,6 +156,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         highlighting_lexical_only_threshold_chars=500000,
         auto_open_console_on_run_output=False,
         auto_open_problems_on_run_failure=False,
+        shortcut_overrides={"shell.action.run.run": "Ctrl+R"},
+        syntax_color_overrides_light={"keyword": "#123456"},
+        syntax_color_overrides_dark={"keyword": "#654321"},
+        lint_rule_overrides={"PY220": {"enabled": False, "severity": "info"}},
     )
     merged = merge_editor_settings_snapshot({"schema_version": 1}, snapshot)
 
@@ -157,6 +183,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["theme"]["mode"] == "system"
     assert merged["output"]["auto_open_console_on_run_output"] is False
     assert merged["output"]["auto_open_problems_on_run_failure"] is False
+    assert merged["keybindings"]["overrides"] == {"shell.action.run.run": "Ctrl+R"}
+    assert merged["syntax_colors"]["light"] == {"keyword": "#123456"}
+    assert merged["syntax_colors"]["dark"] == {"keyword": "#654321"}
+    assert merged["linter"]["rule_overrides"] == {"PY220": {"enabled": False, "severity": "info"}}
 
 
 def test_parse_theme_mode_reads_explicit_dark() -> None:

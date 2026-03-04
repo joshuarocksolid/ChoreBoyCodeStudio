@@ -469,6 +469,8 @@ Recommended contents:
 * recent projects
 * editor preferences
 * global shortcuts/preferences
+* syntax-color customization overrides (light/dark token maps)
+* linter rule profile overrides (enablement + severity)
 * last-opened window layout
 * compatibility probe results cache
 * optional global search/index cache
@@ -576,6 +578,9 @@ Runner-side subsystem:
 Stores:
 
 * settings
+  * keybinding overrides
+  * syntax-color overrides (theme-aware)
+  * linter rule overrides
 * autosave drafts
 * optional indexes
 * lightweight caches

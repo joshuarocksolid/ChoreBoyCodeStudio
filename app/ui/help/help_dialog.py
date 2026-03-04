@@ -220,3 +220,14 @@ def show_help_file(
     text = help_path.read_text(encoding="utf-8")
     dlg = HelpDialog(title, text, tokens, parent=parent)
     dlg.exec_()
+
+
+def show_help_markdown(
+    title: str,
+    markdown_text: str,
+    tokens: ShellThemeTokens,
+    parent: QWidget | None = None,
+) -> None:
+    """Show inline markdown content in the themed help dialog."""
+    dlg = HelpDialog(title, markdown_text, tokens, parent=parent)
+    dlg.exec_()

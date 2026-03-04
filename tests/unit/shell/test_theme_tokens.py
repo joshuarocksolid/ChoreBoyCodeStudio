@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
 
-from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
+from app.shell.theme_tokens import apply_syntax_token_overrides, tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -96,3 +96,17 @@ class TestTokensFromPalette:
         assert light.syntax_semantic_variable != dark.syntax_semantic_variable
         assert light.syntax_semantic_property != dark.syntax_semantic_property
         assert light.syntax_semantic_constant != dark.syntax_semantic_constant
+
+    def test_apply_syntax_token_overrides_updates_target_fields_only(self) -> None:
+        tokens = tokens_from_palette(_make_palette(), force_mode="light")
+        overridden = apply_syntax_token_overrides(
+            tokens,
+            {
+                "keyword": "#123456",
+                "semantic_method": "#654321",
+                "unknown": "#ABCDEF",
+            },
+        )
+        assert overridden.syntax_keyword == "#123456"
+        assert overridden.syntax_semantic_method == "#654321"
+        assert overridden.syntax_string == tokens.syntax_string

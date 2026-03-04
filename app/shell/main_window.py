@@ -36,7 +36,7 @@ from PySide2.QtWidgets import (
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_app_log_path, global_cache_dir, global_logs_dir, project_logs_dir
-from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
+from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
@@ -60,6 +60,7 @@ from app.intelligence.cache_controls import (
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
+from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
@@ -118,6 +119,11 @@ from app.shell.settings_models import (
     parse_editor_settings_snapshot,
     parse_main_window_settings,
 )
+from app.shell.shortcut_preferences import (
+    SHORTCUT_COMMANDS,
+    build_effective_shortcut_map,
+    close_tab_shortcut_id,
+)
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
@@ -134,7 +140,7 @@ from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_i
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
-from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.project.project_tree import build_project_tree
 from app.project.run_configs import (
     env_overrides_to_text,
@@ -214,6 +220,7 @@ class MainWindow(QMainWindow):
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
         self._vertical_splitter: QSplitter | None = None
+        self._close_tab_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
@@ -252,6 +259,10 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._theme_mode = self._load_theme_mode()
+        self._shortcut_overrides = self._load_shortcut_overrides()
+        self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
+        self._syntax_color_overrides = self._load_syntax_color_overrides()
+        self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
@@ -359,8 +370,7 @@ class MainWindow(QMainWindow):
 
         self._configure_window_frame()
         self._build_layout_shell()
-        close_tab_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
-        close_tab_shortcut.activated.connect(self._close_active_tab)
+        self._configure_close_tab_shortcut()
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
@@ -426,6 +436,7 @@ class MainWindow(QMainWindow):
                 on_help_shortcuts=self._handle_shortcuts_action,
                 on_help_about=self._handle_about_action,
             ),
+            shortcut_overrides=self._effective_shortcuts,
         )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
@@ -536,8 +547,16 @@ class MainWindow(QMainWindow):
         palette = self.palette()
         mode = self._theme_mode
         if mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-            return tokens_from_palette(palette, force_mode=mode)
-        return tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+            base_tokens = tokens_from_palette(palette, force_mode=mode)
+        else:
+            base_tokens = tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+        theme_key = (
+            constants.UI_SYNTAX_COLORS_DARK_KEY
+            if base_tokens.is_dark
+            else constants.UI_SYNTAX_COLORS_LIGHT_KEY
+        )
+        syntax_overrides = self._syntax_color_overrides.get(theme_key, {})
+        return apply_syntax_token_overrides(base_tokens, syntax_overrides)
 
     def _apply_theme_styles(self) -> None:
         if self._is_applying_theme_styles:
@@ -595,6 +614,40 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
+
+    def _load_shortcut_overrides(self) -> dict[str, str]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return dict(snapshot.shortcut_overrides)
+
+    def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return {
+            constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
+            constants.UI_SYNTAX_COLORS_DARK_KEY: dict(snapshot.syntax_color_overrides_dark),
+        }
+
+    def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
+
+    def _configure_close_tab_shortcut(self) -> None:
+        if self._close_tab_shortcut is None:
+            self._close_tab_shortcut = QShortcut(QKeySequence(), self)
+            self._close_tab_shortcut.activated.connect(self._close_active_tab)
+        close_tab_sequence = self._effective_shortcuts.get(close_tab_shortcut_id(), "")
+        self._close_tab_shortcut.setKey(QKeySequence(close_tab_sequence))
+
+    def _apply_shortcut_overrides_runtime(self) -> None:
+        self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
+        if self._menu_registry is not None:
+            for action_id, action in self._menu_registry.actions.items():
+                if action is None:
+                    continue
+                action.setShortcut(QKeySequence(self._effective_shortcuts.get(action_id, "")))
+        self._configure_close_tab_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
         settings_payload = load_settings(state_root=self._state_root)
@@ -744,6 +797,8 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
         previous_theme_mode = snapshot.theme_mode
+        previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
+        previous_diagnostics_enabled = snapshot.diagnostics_enabled
         dialog = SettingsDialog(snapshot, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -781,6 +836,9 @@ class MainWindow(QMainWindow):
             self._auto_open_console_on_run_output,
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
+        self._shortcut_overrides = self._load_shortcut_overrides()
+        self._syntax_color_overrides = self._load_syntax_color_overrides()
+        self._lint_rule_overrides = self._load_lint_rule_overrides()
         if not self._diagnostics_enabled or not self._diagnostics_realtime:
             self._realtime_lint_timer.stop()
             self._pending_realtime_lint_file_path = None
@@ -792,6 +850,15 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         self._apply_editor_preferences_to_open_editors()
         self._apply_runtime_intelligence_preferences_to_open_editors()
+        self._apply_shortcut_overrides_runtime()
+        self._apply_theme_styles()
+        lint_profile_changed = self._lint_rule_overrides != previous_lint_rule_overrides
+        diagnostics_enabled_changed = self._diagnostics_enabled != previous_diagnostics_enabled
+        if self._diagnostics_enabled and (lint_profile_changed or diagnostics_enabled_changed):
+            self._relint_open_python_files()
+        if not self._diagnostics_enabled:
+            self._stored_lint_diagnostics.clear()
+            self._render_merged_problems_panel()
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
@@ -1187,15 +1254,23 @@ class MainWindow(QMainWindow):
                 source_overrides=source_overrides,
                 known_runtime_modules=known_modules,
                 allow_runtime_import_probe=True,
+                lint_rule_overrides=self._lint_rule_overrides,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
             if self._problems_panel is None:
                 return
+            _, unresolved_import_severity = resolve_lint_rule_settings("PY200", self._lint_rule_overrides)
+            if unresolved_import_severity == LINT_SEVERITY_ERROR:
+                diagnostic_severity = DiagnosticSeverity.ERROR
+            elif unresolved_import_severity == LINT_SEVERITY_INFO:
+                diagnostic_severity = DiagnosticSeverity.INFO
+            else:
+                diagnostic_severity = DiagnosticSeverity.WARNING
             import_diags = [
                 CodeDiagnostic(
                     code="PY200",
-                    severity=DiagnosticSeverity.ERROR,
+                    severity=diagnostic_severity,
                     file_path=d.file_path,
                     line_number=d.line_number,
                     message=d.message,
@@ -1275,7 +1350,7 @@ class MainWindow(QMainWindow):
         self._show_help_file("Getting Started", "getting_started.md")
 
     def _handle_shortcuts_action(self) -> None:
-        self._show_help_file("Keyboard Shortcuts", "shortcuts.md")
+        self._show_help_markdown("Keyboard Shortcuts", self._build_shortcuts_help_markdown())
 
     def _handle_headless_notes_action(self) -> None:
         self._show_help_file("FreeCAD Headless Notes", "headless_notes.md")
@@ -1301,6 +1376,33 @@ class MainWindow(QMainWindow):
         from app.ui.help.help_dialog import show_help_file
 
         show_help_file(title, file_name, self._resolve_theme_tokens(), parent=self)
+
+    def _show_help_markdown(self, title: str, markdown_text: str) -> None:
+        from app.ui.help.help_dialog import show_help_markdown
+
+        show_help_markdown(title, markdown_text, self._resolve_theme_tokens(), parent=self)
+
+    def _build_shortcuts_help_markdown(self) -> str:
+        lines: list[str] = ["# Keyboard Shortcuts", ""]
+        grouped: dict[str, list[tuple[str, str]]] = {}
+        for command in SHORTCUT_COMMANDS:
+            shortcut = self._effective_shortcuts.get(command.action_id, "")
+            if not shortcut:
+                continue
+            grouped.setdefault(command.category, []).append((command.label, shortcut))
+        for category in sorted(grouped.keys()):
+            lines.append(f"## {category}")
+            lines.append("")
+            for label, shortcut in sorted(grouped[category], key=lambda item: item[0].lower()):
+                lines.append(f"- **{shortcut}**: {label}")
+            lines.append("")
+        if len(lines) <= 2:
+            lines.extend(["No shortcuts are currently assigned.", ""])
+        lines.extend([
+            "_Customize shortcuts in **File > Settings > Keybindings**._",
+            "",
+        ])
+        return "\n".join(lines)
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
@@ -2060,6 +2162,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root, source=buffer_source,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            lint_rule_overrides=self._lint_rule_overrides,
         )
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -2097,6 +2200,7 @@ class MainWindow(QMainWindow):
                 file_path, project_root=project_root, source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
                 allow_runtime_import_probe=True,
+                lint_rule_overrides=self._lint_rule_overrides,
             )
             self._stored_lint_diagnostics[file_path] = diagnostics
             self._push_diagnostics_to_editor(file_path, diagnostics)
@@ -2173,6 +2277,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            lint_rule_overrides=self._lint_rule_overrides,
         )
         fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
         if not fixes:
@@ -2226,11 +2331,62 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _start_runtime_module_probe(self, *, user_initiated: bool = False) -> None:
-        self._diagnostics_orchestrator.start_runtime_module_probe(user_initiated=user_initiated)
+        orchestrator = getattr(self, "_diagnostics_orchestrator", None)
+        if orchestrator is not None:
+            orchestrator.start_runtime_module_probe(user_initiated=user_initiated)
+            return
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return probe_and_cache_runtime_modules(state_root=self._state_root)
+
+        def on_success(modules: object) -> None:
+            if not isinstance(modules, frozenset):
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned an unexpected result type."
+                        " See app logs for details.",
+                    )
+                return
+            if not modules:
+                self._logger.warning(
+                    "Runtime module probe returned an empty module set; unresolved-import diagnostics may be incomplete."
+                )
+                if user_initiated:
+                    QMessageBox.warning(
+                        self,
+                        "Refresh Runtime Modules",
+                        "Runtime module probe returned no modules."
+                        " FreeCAD/runtime imports may still show unresolved until probing succeeds.",
+                    )
+                return
+            self._known_runtime_modules = modules
+            self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
+            self._relint_open_python_files()
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Runtime module probe failed: %s", exc)
+            if user_initiated:
+                QMessageBox.warning(self, "Refresh Runtime Modules", f"Runtime module probe failed: {exc}")
+
+        self._background_tasks.run(
+            key="runtime_module_probe",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _relint_open_python_files(self) -> None:
         """Re-lint all currently open Python file tabs and refresh the problems panel."""
-        self._diagnostics_orchestrator.relint_open_python_files()
+        orchestrator = getattr(self, "_diagnostics_orchestrator", None)
+        if orchestrator is not None:
+            orchestrator.relint_open_python_files()
+            return
+        for file_path in self._editor_widgets_by_path.keys():
+            if file_path.lower().endswith(".py"):
+                self._render_lint_diagnostics_for_file(file_path, trigger="tab_change")
+        self._render_merged_problems_panel()
 
     def _handle_refresh_runtime_modules_action(self) -> None:
         self._start_runtime_module_probe(user_initiated=True)
@@ -2550,12 +2706,23 @@ class MainWindow(QMainWindow):
         coordinator = getattr(self, "_run_output_coordinator", None)
         if coordinator is not None:
             return coordinator
+        run_session_controller = getattr(self, "_run_session_controller", None)
+        get_active_session_mode = (
+            (lambda: getattr(run_session_controller, "active_session_mode", None))
+            if run_session_controller is not None
+            else (lambda: getattr(self, "_active_session_mode", None))
+        )
+        set_active_session_mode = getattr(run_session_controller, "set_active_session_mode", None)
+        if set_active_session_mode is None:
+            set_active_session_mode = lambda mode: setattr(self, "_active_session_mode", mode)
+        output_tail = getattr(self, "_active_run_output_tail", None)
+        append_output_tail = output_tail.append if output_tail is not None else (lambda _chunk: None)
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._is_shutting_down,
-            get_active_session_mode=lambda: self._run_session_controller.active_session_mode,
-            set_active_session_mode=self._run_session_controller.set_active_session_mode,
+            get_active_session_mode=get_active_session_mode,
+            set_active_session_mode=set_active_session_mode,
             get_debug_session=lambda: self._debug_session,
-            append_output_tail=self._active_run_output_tail.append,
+            append_output_tail=append_output_tail,
             append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
             append_debug_output_line=self._append_debug_output_line,
             apply_debug_inspector_event=self._apply_debug_inspector_event,
@@ -2644,7 +2811,11 @@ class MainWindow(QMainWindow):
         self._update_problems_tab_title(self._problems_panel.problem_count())
 
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        self._search_results_coordinator.schedule_results_update(matches, query)
+        coordinator = getattr(self, "_search_results_coordinator", None)
+        if coordinator is None:
+            self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
+            return
+        coordinator.schedule_results_update(matches, query)
 
     def _handle_search_worker_done(self, started_at: float, query: str) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
