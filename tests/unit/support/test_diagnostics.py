@@ -44,5 +44,20 @@ def test_run_project_health_check_reports_invalid_project_structure(tmp_path: Pa
 
     structure_check = next(check for check in report.checks if check.check_id == "project_structure")
     assert structure_check.is_ok is False
-    assert "Missing required metadata directory" in structure_check.message
+    assert "no Python files were found" in structure_check.message
     assert any(check.check_id.startswith("runtime.") for check in report.checks)
+
+
+def test_run_project_health_check_flags_importable_python_folder_state(tmp_path: Path) -> None:
+    project_root = tmp_path / "importable_project"
+    project_root.mkdir()
+    (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
+
+    report = run_project_health_check(project_root, state_root=tmp_path / "state")
+
+    structure_check = next(check for check in report.checks if check.check_id == "project_structure")
+    manifest_check = next(check for check in report.checks if check.check_id == "project_manifest")
+    assert structure_check.is_ok is True
+    assert structure_check.details["state"] == "importable_python_folder"
+    assert structure_check.details["inferred_entry"] == "run.py"
+    assert manifest_check.is_ok is True

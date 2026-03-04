@@ -8,7 +8,7 @@ from typing import Any
 from app.bootstrap.capability_probe import run_startup_capability_probe
 from app.bootstrap.paths import PathInput
 from app.core.errors import AppValidationError
-from app.project.project_service import open_project, validate_project_structure
+from app.project.project_service import ProjectRootState, assess_project_root, open_project
 
 
 @dataclass(frozen=True)
@@ -58,23 +58,31 @@ def run_project_health_check(
     checks: list[DiagnosticItem] = []
     normalized_project_root = str(project_root)
 
-    try:
-        resolved_root = validate_project_structure(project_root)
-        normalized_project_root = str(resolved_root)
+    project_assessment = assess_project_root(project_root)
+    normalized_project_root = str(project_assessment.project_root)
+    if project_assessment.state != ProjectRootState.INVALID:
         checks.append(
             DiagnosticItem(
                 check_id="project_structure",
                 is_ok=True,
-                message="Project structure is valid.",
-                details={"project_root": normalized_project_root},
+                message=project_assessment.message,
+                details={
+                    "project_root": normalized_project_root,
+                    "state": project_assessment.state.value,
+                    "inferred_entry": project_assessment.inferred_entry,
+                },
             )
         )
-    except AppValidationError as exc:
+    else:
         checks.append(
             DiagnosticItem(
                 check_id="project_structure",
                 is_ok=False,
-                message=str(exc),
+                message=project_assessment.message,
+                details={
+                    "project_root": normalized_project_root,
+                    "state": project_assessment.state.value,
+                },
             )
         )
         capability_report = run_startup_capability_probe(state_root=state_root, temp_root=temp_root)

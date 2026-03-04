@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 try:  # Python 3.11+
@@ -23,9 +25,34 @@ from app.project.project_manifest import build_default_project_manifest_payload,
 _TOML_MODULE = _toml_module
 
 
+class ProjectRootState(str, Enum):
+    """Classification for project root metadata readiness."""
+
+    CANONICAL = "canonical_project"
+    IMPORTABLE = "importable_python_folder"
+    INVALID = "invalid_folder"
+
+
+@dataclass(frozen=True)
+class ProjectRootAssessment:
+    """Classification result for a candidate project root."""
+
+    state: ProjectRootState
+    project_root: Path
+    message: str
+    inferred_entry: str | None = None
+
+
 def open_project(project_root: PathInput) -> LoadedProject:
     """Load a project root into a structured object for shell consumers."""
     resolved_root = _require_existing_project_root(project_root)
+    assessment = assess_project_root(resolved_root)
+    if assessment.state == ProjectRootState.INVALID:
+        raise ProjectStructureValidationError(
+            assessment.message,
+            project_root=resolved_root,
+            manifest_path=project_manifest_path(resolved_root),
+        )
     _initialize_missing_project_metadata(resolved_root)
     resolved_root = validate_project_structure(resolved_root)
     manifest_path = project_manifest_path(resolved_root)
@@ -38,6 +65,65 @@ def open_project(project_root: PathInput) -> LoadedProject:
         manifest_path=str(manifest_path),
         metadata=metadata,
         entries=entries,
+    )
+
+
+def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
+    """Classify project root as canonical, importable, or invalid."""
+    try:
+        resolved_root = _require_existing_project_root(project_root)
+    except ProjectStructureValidationError as exc:
+        fallback_root = exc.project_root if exc.project_root is not None else Path(project_root).expanduser()
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=fallback_root,
+            message=str(exc),
+        )
+
+    cbcs_dir = project_cbcs_dir(resolved_root)
+    manifest_path = project_manifest_path(resolved_root)
+    if cbcs_dir.exists() and not cbcs_dir.is_dir():
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=resolved_root,
+            message="Project metadata path cbcs exists but is not a directory.",
+        )
+    if manifest_path.exists() and not manifest_path.is_file():
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=resolved_root,
+            message="Project manifest path cbcs/project.json exists but is not a file.",
+        )
+    if cbcs_dir.is_dir() and manifest_path.is_file():
+        return ProjectRootAssessment(
+            state=ProjectRootState.CANONICAL,
+            project_root=resolved_root,
+            message="Project has canonical cbcs/project.json metadata.",
+        )
+
+    try:
+        inferred_entry = _infer_default_entry_file(resolved_root)
+    except OSError as exc:
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=resolved_root,
+            message=f"Unable to inspect project files for Python entrypoints: {exc}",
+        )
+    if inferred_entry is None:
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=resolved_root,
+            message=(
+                "Project metadata is missing and no Python files were found. "
+                "Add a `.py` file (for example `main.py`) and try again."
+            ),
+        )
+
+    return ProjectRootAssessment(
+        state=ProjectRootState.IMPORTABLE,
+        project_root=resolved_root,
+        message="Project is importable and metadata can be initialized automatically.",
+        inferred_entry=inferred_entry,
     )
 
 
