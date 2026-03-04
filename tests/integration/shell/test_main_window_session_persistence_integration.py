@@ -91,3 +91,48 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     assert restored_second_widget.textCursor().blockNumber() + 1 == 2
     assert restored_second_widget.textCursor().positionInBlock() + 1 == 2
     window.close()
+
+
+def test_opening_second_project_persists_and_restores_first_project_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Switching projects should persist first-session state and restore it when reopened."""
+    app = _ensure_qapplication(monkeypatch)
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+
+    project_one = tmp_path / "project_one"
+    create_blank_project(str(project_one.resolve()), project_name="Project One")
+    project_one_file = project_one / "first.py"
+    project_one_file.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    project_two = tmp_path / "project_two"
+    create_blank_project(str(project_two.resolve()), project_name="Project Two")
+    project_two_file = project_two / "second.py"
+    project_two_file.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+
+    assert window._open_project_by_path(str(project_one.resolve())) is True
+    project_one_path = str(project_one_file.resolve())
+    assert window._open_file_in_editor(project_one_path) is True
+    widget_one = window._editor_widgets_by_path[project_one_path]
+    _set_cursor_position(widget_one, line=3, column=2)
+    window._breakpoints_by_file[project_one_path] = {2}
+
+    # Opening another project should persist current project-one session state.
+    assert window._open_project_by_path(str(project_two.resolve())) is True
+    project_two_path = str(project_two_file.resolve())
+    assert window._open_file_in_editor(project_two_path) is True
+
+    # Reopen project one and verify its previous editor state is restored.
+    assert window._open_project_by_path(str(project_one.resolve())) is True
+    app.processEvents()
+    assert project_one_path in window._editor_widgets_by_path
+    restored_widget = window._editor_widgets_by_path[project_one_path]
+    assert restored_widget.textCursor().blockNumber() + 1 == 3
+    assert restored_widget.textCursor().positionInBlock() + 1 == 2
+    assert window._breakpoints_by_file[project_one_path] == {2}
+    window.close()

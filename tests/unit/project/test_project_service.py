@@ -11,6 +11,8 @@ from app.core.errors import AppValidationError, ProjectManifestValidationError, 
 from app.core.models import LoadedProject
 from app.project import project_service
 from app.project.project_service import (
+    ProjectRootState,
+    assess_project_root,
     create_blank_project,
     enumerate_project_entries,
     open_project,
@@ -241,6 +243,40 @@ def test_validate_project_structure_rejects_missing_cbcs_directory(tmp_path: Pat
         validate_project_structure(project_root)
 
     assert "Missing required metadata directory" in str(exc_info.value)
+
+
+def test_assess_project_root_returns_canonical_state_for_valid_project(tmp_path: Path) -> None:
+    project_root = tmp_path / "canonical_project"
+    _write_valid_manifest(project_root, name="Canonical")
+
+    assessment = assess_project_root(project_root)
+
+    assert assessment.state == ProjectRootState.CANONICAL
+    assert assessment.project_root == project_root.resolve()
+    assert assessment.inferred_entry is None
+
+
+def test_assess_project_root_returns_importable_state_for_python_folder(tmp_path: Path) -> None:
+    project_root = tmp_path / "python_folder"
+    project_root.mkdir()
+    (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
+
+    assessment = assess_project_root(project_root)
+
+    assert assessment.state == ProjectRootState.IMPORTABLE
+    assert assessment.project_root == project_root.resolve()
+    assert assessment.inferred_entry == "run.py"
+
+
+def test_assess_project_root_returns_invalid_state_for_non_python_folder(tmp_path: Path) -> None:
+    project_root = tmp_path / "invalid_folder"
+    project_root.mkdir()
+    (project_root / "README.md").write_text("# not python\n", encoding="utf-8")
+
+    assessment = assess_project_root(project_root)
+
+    assert assessment.state == ProjectRootState.INVALID
+    assert "no Python files were found" in assessment.message
 
 
 def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path) -> None:

@@ -89,6 +89,58 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
     assert rewrites == [("/tmp/project/old.py", "/tmp/project/new.py")]
 
 
+def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> None:
+    """Directory moves should remap all nested open editors and breakpoints."""
+    controller = ProjectTreeController()
+    widget_a = _FakeWidget()
+    widget_b = _FakeWidget()
+    editor_widgets = {
+        "/tmp/project/pkg/a.py": widget_a,
+        "/tmp/project/pkg/sub/b.py": widget_b,
+    }
+    breakpoints = {
+        "/tmp/project/pkg/a.py": {2},
+        "/tmp/project/pkg/sub/b.py": {7, 9},
+    }
+    updated_tabs: list[tuple[int, str]] = []
+    rewrites: list[tuple[str, str]] = []
+
+    controller.apply_path_move_updates(
+        "/tmp/project/pkg",
+        "/tmp/project/lib",
+        remap_editor_paths=lambda _old, _new: {
+            "/tmp/project/pkg/a.py": "/tmp/project/lib/a.py",
+            "/tmp/project/pkg/sub/b.py": "/tmp/project/lib/sub/b.py",
+        },
+        editor_widgets_by_path=editor_widgets,
+        tab_index_for_path=lambda path: 1 if path.endswith("a.py") else 2,
+        update_tab_path_and_name=lambda index, path: updated_tabs.append((index, path)),
+        breakpoints_by_file=breakpoints,
+        apply_breakpoints_to_widget=lambda w, values: w.set_breakpoints(values),  # type: ignore[attr-defined]
+        update_widget_language=lambda w, path: w.set_language_for_path(path),  # type: ignore[attr-defined]
+        refresh_breakpoints_list=lambda: None,
+        maybe_rewrite_imports=lambda source, destination: rewrites.append((source, destination)),
+    )
+
+    assert sorted(editor_widgets.keys()) == [
+        "/tmp/project/lib/a.py",
+        "/tmp/project/lib/sub/b.py",
+    ]
+    assert breakpoints == {
+        "/tmp/project/lib/a.py": {2},
+        "/tmp/project/lib/sub/b.py": {7, 9},
+    }
+    assert widget_a.breakpoints == {2}
+    assert widget_b.breakpoints == {7, 9}
+    assert widget_a.language_path == "/tmp/project/lib/a.py"
+    assert widget_b.language_path == "/tmp/project/lib/sub/b.py"
+    assert updated_tabs == [
+        (1, "/tmp/project/lib/a.py"),
+        (2, "/tmp/project/lib/sub/b.py"),
+    ]
+    assert rewrites == [("/tmp/project/pkg", "/tmp/project/lib")]
+
+
 def test_maybe_rewrite_imports_for_move_honors_ask_policy_cancel(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     controller = ProjectTreeController()
     project_root = tmp_path / "project"

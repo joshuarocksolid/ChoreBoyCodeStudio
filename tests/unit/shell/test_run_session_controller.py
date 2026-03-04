@@ -10,7 +10,7 @@ from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
 from app.run.run_service import RunSession
 from app.shell.menus import MenuStubRegistry
-from app.shell.run_session_controller import RunSessionController
+from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
 
 pytestmark = pytest.mark.unit
 
@@ -117,6 +117,7 @@ def test_start_session_requires_loaded_project() -> None:
         append_python_console_line=lambda _text: None,
     )
     assert result.started is False
+    assert result.failure_reason == RunSessionStartFailureReason.NO_PROJECT
     assert result.error_message == "Open a project before running code."
 
 
@@ -138,6 +139,7 @@ def test_start_session_rejects_repl_without_loaded_project() -> None:
         append_python_console_line=lambda _text: None,
     )
     assert result.started is False
+    assert result.failure_reason == RunSessionStartFailureReason.NO_PROJECT
     assert result.error_message == "Open a project before running code."
 
 
@@ -160,10 +162,88 @@ def test_start_session_success_updates_active_mode_and_returns_session() -> None
     )
 
     assert result.started is True
+    assert result.failure_reason is None
     assert result.session is not None
     assert controller.active_session_mode == constants.RUN_MODE_PYTHON_REPL
     assert "prepared" in lines
     assert any("Run started" in line for line in lines)
+
+
+def test_start_session_returns_already_running_reason_when_supervisor_active() -> None:
+    run_service = _FakeRunService()
+    run_service.supervisor._running = True
+    controller = RunSessionController(run_service)  # type: ignore[arg-type]
+
+    result = controller.start_session(
+        loaded_project=_loaded_project(),
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        skip_save=True,
+        save_all=lambda: True,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+
+    assert result.started is False
+    assert result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING
+    assert result.error_message is None
+
+
+def test_start_session_returns_save_failed_reason_when_save_all_fails() -> None:
+    controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
+
+    result = controller.start_session(
+        loaded_project=_loaded_project(),
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        skip_save=False,
+        save_all=lambda: False,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+
+    assert result.started is False
+    assert result.failure_reason == RunSessionStartFailureReason.SAVE_FAILED
+    assert result.error_message == "Fix save errors before running."
+
+
+def test_start_session_returns_start_exception_reason_when_run_service_raises() -> None:
+    class _RaisingRunService(_FakeRunService):
+        def start_run(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("boom")
+
+    controller = RunSessionController(_RaisingRunService())  # type: ignore[arg-type]
+    lines: list[tuple[str, str]] = []
+
+    result = controller.start_session(
+        loaded_project=_loaded_project(),
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        skip_save=True,
+        save_all=lambda: True,
+        before_start=lambda: None,
+        append_console_line=lambda text, stream: lines.append((text, stream)),
+        append_python_console_line=lambda _text: None,
+    )
+
+    assert result.started is False
+    assert result.failure_reason == RunSessionStartFailureReason.START_EXCEPTION
+    assert result.error_message == "boom"
+    assert lines[-1] == ("Run failed to start: boom\n", "stderr")
 
 
 def test_refresh_action_states_updates_run_action_enablement() -> None:

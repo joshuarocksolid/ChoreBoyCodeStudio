@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from unittest.mock import patch
-
 import pytest
+
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtCore import Qt
+from PySide2.QtWidgets import QApplication
 
 from app.shell.welcome_widget import WelcomeWidget
 
@@ -15,11 +14,18 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture()
-def widget(qtbot):
+def _ensure_qapp():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+
+@pytest.fixture()
+def widget(_ensure_qapp):  # type: ignore[no-untyped-def]
     w = WelcomeWidget()
-    qtbot.addWidget(w)
     w.show()
-    qtbot.waitExposed(w)
+    _ensure_qapp.processEvents()
     return w
 
 
@@ -88,24 +94,27 @@ def test_clearing_search_restores_full_list(widget: WelcomeWidget) -> None:
     assert widget._project_list.count() == 2
 
 
-def test_new_project_signal(widget: WelcomeWidget, qtbot) -> None:
+def test_new_project_signal(widget: WelcomeWidget) -> None:
     """Clicking 'New Project' should emit new_project_requested."""
-    with qtbot.waitSignal(widget.new_project_requested, timeout=500):
-        widget._new_project_btn.click()
+    emitted = {"value": False}
+    widget.new_project_requested.connect(lambda: emitted.__setitem__("value", True))
+    widget._new_project_btn.click()
+    assert emitted["value"] is True
 
 
-def test_open_project_signal(widget: WelcomeWidget, qtbot) -> None:
+def test_open_project_signal(widget: WelcomeWidget) -> None:
     """Clicking 'Open Project' should emit open_project_requested."""
-    with qtbot.waitSignal(widget.open_project_requested, timeout=500):
-        widget._open_project_btn.click()
+    emitted = {"value": False}
+    widget.open_project_requested.connect(lambda: emitted.__setitem__("value", True))
+    widget._open_project_btn.click()
+    assert emitted["value"] is True
 
 
-def test_double_click_emits_project_selected(widget: WelcomeWidget, qtbot) -> None:
+def test_double_click_emits_project_selected(widget: WelcomeWidget) -> None:
     """Double-clicking a project item should emit project_selected with the path."""
     widget.set_recent_projects(["/home/user/proj"])
-
-    with qtbot.waitSignal(widget.project_selected, timeout=500) as blocker:
-        item = widget._project_list.item(0)
-        widget._project_list.itemDoubleClicked.emit(item)
-
-    assert blocker.args == ["/home/user/proj"]
+    captured: list[str] = []
+    widget.project_selected.connect(lambda path: captured.append(path))
+    item = widget._project_list.item(0)
+    widget._project_list.itemDoubleClicked.emit(item)
+    assert captured == ["/home/user/proj"]

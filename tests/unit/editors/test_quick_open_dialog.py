@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.quick_open_dialog import QuickOpenDialog
 

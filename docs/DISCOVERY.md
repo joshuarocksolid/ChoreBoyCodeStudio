@@ -232,9 +232,14 @@ All project metadata directories, app state directories, log directories, and ca
 
 This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
 
-### Migration note
+### Migration status
 
-The codebase currently defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"` in `app/core/constants.py`. These are tracked for migration to visible names in a follow-up task.
+The migration is complete in current code:
+
+* `PROJECT_META_DIRNAME = "cbcs"`
+* `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
+
+in `app/core/constants.py`, so new project metadata and app state paths are visible (non-dot-prefixed).
 
 ---
 

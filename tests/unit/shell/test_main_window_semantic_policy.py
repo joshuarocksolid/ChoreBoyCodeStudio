@@ -6,6 +6,8 @@ from typing import Any, cast
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings
 from app.shell.main_window import MainWindow

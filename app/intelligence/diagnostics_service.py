@@ -10,7 +10,7 @@ from pathlib import Path
 from app.core import constants
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
 
-# Defensive fallback: well-known Python 3.x stdlib top-level module names.
+# Defensive fallback: well-known Python 3.9 stdlib top-level module names.
 # Used when the runtime probe has not yet completed or failed, so that
 # common imports like ``os``, ``sys``, ``json`` are never flagged as
 # unresolved.  This is intentionally a broad but not exhaustive set —
@@ -48,7 +48,7 @@ _STDLIB_FALLBACK: frozenset[str] = frozenset({
     "sqlite3", "ssl", "stat", "statistics", "string", "stringprep",
     "struct", "subprocess", "symtable", "sys", "sysconfig", "syslog",
     "tarfile", "tempfile", "termios", "textwrap", "threading", "time",
-    "timeit", "tkinter", "token", "tokenize", "tomllib", "trace",
+    "timeit", "tkinter", "token", "tokenize", "trace",
     "traceback", "tracemalloc", "tty", "turtle", "types", "typing",
     "unicodedata", "unittest", "urllib", "uuid",
     "venv",

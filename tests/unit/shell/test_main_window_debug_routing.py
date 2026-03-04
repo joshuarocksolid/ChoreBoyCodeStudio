@@ -17,7 +17,7 @@ from app.run.problem_parser import ProblemEntry  # noqa: E402
 from app.run.process_supervisor import ProcessEvent  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
-from app.shell.run_session_controller import RunSessionStartResult  # noqa: E402
+from app.shell.run_session_controller import RunSessionStartFailureReason, RunSessionStartResult  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -78,6 +78,15 @@ class _FakeRunSessionController:
                 mode=self.active_session_mode,
             ),
         )
+
+
+class _FailingRunSessionController:
+    def __init__(self, result: RunSessionStartResult) -> None:
+        self._result = result
+        self.active_session_mode: str | None = None
+
+    def start_session(self, **_kwargs):  # type: ignore[no-untyped-def]
+        return self._result
 
 
 class _FakeEditorWidget:
@@ -203,6 +212,69 @@ def test_start_session_in_debug_enables_debug_input() -> None:
 
     assert started is True
     assert debug_panel.enabled_calls == [True]
+
+
+def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = object()
+    window_any._run_session_controller = _FailingRunSessionController(
+        RunSessionStartResult(
+            started=False,
+            failure_reason=RunSessionStartFailureReason.NO_PROJECT,
+            error_message="Open something first (legacy wording changed).",
+        )
+    )
+    window_any._debug_panel = None
+    window_any._handle_save_all_action = lambda: True
+    window_any._prepare_for_session_start = lambda: None
+    window_any._append_console_line = lambda _text, _stream="stdout": None
+    window_any._append_python_console_line = lambda _text, _stream="stdout": None
+    window_any._refresh_run_action_states = lambda: None
+    window_any._auto_open_console_on_run_output = False
+    window_any._set_run_status = lambda _status: None
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda _parent, title, text: warnings.append((title, text)),
+    )
+
+    started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
+
+    assert started is False
+    assert warnings == [("Run unavailable", "Open something first (legacy wording changed).")]
+
+
+def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = object()
+    window_any._run_session_controller = _FailingRunSessionController(
+        RunSessionStartResult(
+            started=False,
+            failure_reason=RunSessionStartFailureReason.ALREADY_RUNNING,
+        )
+    )
+    window_any._debug_panel = None
+    window_any._handle_save_all_action = lambda: True
+    window_any._prepare_for_session_start = lambda: None
+    window_any._append_console_line = lambda _text, _stream="stdout": None
+    window_any._append_python_console_line = lambda _text, _stream="stdout": None
+    window_any._refresh_run_action_states = lambda: None
+    window_any._auto_open_console_on_run_output = False
+    window_any._set_run_status = lambda _status: None
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda _parent, title, text: warnings.append((title, text)),
+    )
+
+    started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
+
+    assert started is False
+    assert warnings == []
 
 
 def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation() -> None:
