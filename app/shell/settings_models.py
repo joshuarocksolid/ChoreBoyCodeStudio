@@ -213,6 +213,35 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
     )
 
 
+def merge_theme_mode(settings_payload: Mapping[str, Any], theme_mode: str) -> dict[str, Any]:
+    """Merge validated theme mode into settings payload."""
+    merged = dict(settings_payload)
+    valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
+    normalized_mode = theme_mode if theme_mode in valid_modes else constants.UI_THEME_MODE_DEFAULT
+    theme_payload = merged.get(constants.UI_THEME_SETTINGS_KEY, {})
+    if not isinstance(theme_payload, dict):
+        theme_payload = {}
+    theme_payload = dict(theme_payload)
+    theme_payload[constants.UI_THEME_MODE_KEY] = normalized_mode
+    merged[constants.UI_THEME_SETTINGS_KEY] = theme_payload
+    return merged
+
+
+def merge_import_update_policy(settings_payload: Mapping[str, Any], policy_value: str) -> dict[str, Any]:
+    """Merge import-update policy value into settings payload."""
+    merged = dict(settings_payload)
+    normalized_policy = policy_value.strip() if policy_value.strip() else constants.UI_IMPORT_UPDATE_POLICY_DEFAULT
+    merged[constants.UI_IMPORT_UPDATE_POLICY_KEY] = normalized_policy
+    return merged
+
+
+def merge_last_project_path(settings_payload: Mapping[str, Any], project_root: str) -> dict[str, Any]:
+    """Merge last opened project root into settings payload."""
+    merged = dict(settings_payload)
+    merged[constants.LAST_PROJECT_PATH_KEY] = str(project_root)
+    return merged
+
+
 def merge_editor_settings_snapshot(
     settings_payload: Mapping[str, Any],
     snapshot: EditorSettingsSnapshot,

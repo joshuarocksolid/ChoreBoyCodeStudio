@@ -113,7 +113,10 @@ from app.shell.session_persistence import SessionFileState, SessionState, load_s
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
     MainWindowSettingsSnapshot,
+    merge_import_update_policy,
+    merge_last_project_path,
     merge_editor_settings_snapshot,
+    merge_theme_mode,
     parse_editor_settings_snapshot,
     parse_main_window_settings,
 )
@@ -547,21 +550,13 @@ class MainWindow(QMainWindow):
 
     def _load_theme_mode(self) -> str:
         settings_payload = load_settings(state_root=self._state_root)
-        theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
-        if not isinstance(theme_settings, dict):
-            return constants.UI_THEME_MODE_DEFAULT
-        raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
-        valid = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
-        return str(raw) if str(raw) in valid else constants.UI_THEME_MODE_DEFAULT
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return snapshot.theme_mode
 
     def _persist_theme_mode(self, mode: str) -> None:
         settings_payload = load_settings(state_root=self._state_root)
-        theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
-        if not isinstance(theme_settings, dict):
-            theme_settings = {}
-        theme_settings[constants.UI_THEME_MODE_KEY] = mode
-        settings_payload[constants.UI_THEME_SETTINGS_KEY] = theme_settings
-        save_settings(settings_payload, state_root=self._state_root)
+        merged = merge_theme_mode(settings_payload, mode)
+        save_settings(merged, state_root=self._state_root)
 
     def _handle_set_theme(self, mode: str) -> None:
         if mode == self._theme_mode:
@@ -606,8 +601,8 @@ class MainWindow(QMainWindow):
 
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
         settings_payload = load_settings(state_root=self._state_root)
-        settings_payload[constants.UI_IMPORT_UPDATE_POLICY_KEY] = policy.value
-        save_settings(settings_payload, state_root=self._state_root)
+        merged = merge_import_update_policy(settings_payload, policy.value)
+        save_settings(merged, state_root=self._state_root)
         self._import_update_policy = policy
 
     def _load_main_window_settings(self) -> MainWindowSettingsSnapshot:
@@ -1343,8 +1338,8 @@ class MainWindow(QMainWindow):
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
             settings = load_settings(state_root=self._state_root)
-            settings[constants.LAST_PROJECT_PATH_KEY] = project_root
-            save_settings(settings, state_root=self._state_root)
+            merged = merge_last_project_path(settings, project_root)
+            save_settings(merged, state_root=self._state_root)
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
 

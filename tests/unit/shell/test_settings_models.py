@@ -6,7 +6,10 @@ import pytest
 
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
+    merge_import_update_policy,
+    merge_last_project_path,
     merge_editor_settings_snapshot,
+    merge_theme_mode,
     parse_editor_settings_snapshot,
     parse_main_window_settings,
 )
@@ -307,3 +310,18 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
     assert runtime.highlighting_adaptive_mode == "reduced"
     assert runtime.highlighting_reduced_threshold_chars == 200000
     assert runtime.highlighting_lexical_only_threshold_chars == 400000
+
+
+def test_merge_theme_mode_normalizes_invalid_values() -> None:
+    merged = merge_theme_mode({"theme": {"mode": "dark"}}, "bad-mode")
+    assert merged["theme"]["mode"] == "system"
+
+
+def test_merge_import_update_policy_defaults_blank_value() -> None:
+    merged = merge_import_update_policy({}, "   ")
+    assert merged["python_import_update_policy"] == "ask"
+
+
+def test_merge_last_project_path_sets_project_root_key() -> None:
+    merged = merge_last_project_path({}, "/tmp/project")
+    assert merged["last_project_path"] == "/tmp/project"
