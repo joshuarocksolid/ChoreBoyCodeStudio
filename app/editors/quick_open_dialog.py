@@ -23,6 +23,7 @@ from PySide2.QtWidgets import (
     QLineEdit,
     QListView,
     QStackedLayout,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QVBoxLayout,
@@ -81,8 +82,8 @@ class QuickOpenDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        is_selected = bool(option.state & option.state.__class__.State_Selected)
-        is_hover = bool(option.state & option.state.__class__.State_MouseOver)
+        is_selected = bool(option.state & QStyle.State_Selected)
+        is_hover = bool(option.state & QStyle.State_MouseOver)
 
         if is_selected:
             painter.fillRect(option.rect, QColor(self._tokens.tree_selected_bg))
