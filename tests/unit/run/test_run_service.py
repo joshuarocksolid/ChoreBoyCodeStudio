@@ -8,10 +8,13 @@ import sys
 
 import pytest
 
+from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
+from app.run.process_supervisor import ProcessEvent
 from app.run.run_manifest import load_run_manifest
 from app.run.run_service import (
     RunService,
+    RunSession,
     build_run_log_path,
     build_run_manifest_path,
     generate_run_id,
@@ -176,3 +179,48 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     assert launch_context["cwd"] == expected_home
     assert "/repl/runs/" in session.manifest_path
     assert "/repl/logs/" in session.log_file_path
+
+
+def test_forward_event_tracks_debug_pause_and_resume_markers(tmp_path: Path) -> None:
+    """Debug protocol output markers should update pause state deterministically."""
+    captured_events: list[ProcessEvent] = []
+    service = RunService(
+        on_event=captured_events.append,
+        runtime_executable=sys.executable,
+        runner_boot_path=str(tmp_path / "run_runner.py"),
+    )
+
+    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
+        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_PAUSED__\n")
+    )
+    assert service.is_debug_paused is True
+
+    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
+        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_RUNNING__\n")
+    )
+    assert service.is_debug_paused is False
+    assert [event.event_type for event in captured_events] == ["output", "output"]
+
+
+def test_forward_event_exit_clears_active_session_state(tmp_path: Path) -> None:
+    """Exit events should clear current session metadata and debug pause state."""
+    service = RunService(
+        runtime_executable=sys.executable,
+        runner_boot_path=str(tmp_path / "run_runner.py"),
+    )
+    service._current_session = RunSession(  # noqa: SLF001 - characterization test for private state
+        run_id="run123",
+        manifest_path="/tmp/run_manifest.json",
+        log_file_path="/tmp/run.log",
+        project_root="/tmp/project",
+        entry_file="main.py",
+        mode=constants.RUN_MODE_PYTHON_DEBUG,
+    )
+    service._is_debug_paused = True  # noqa: SLF001 - characterization test for private state
+
+    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
+        ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False)
+    )
+
+    assert service.current_session is None
+    assert service.is_debug_paused is False

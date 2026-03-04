@@ -65,6 +65,7 @@ def test_run_service_starts_runner_and_writes_artifacts(tmp_path: Path) -> None:
     log_path = Path(session.log_file_path)
     assert log_path.exists()
     assert "RUN_SERVICE_OK" in log_path.read_text(encoding="utf-8")
+    assert service.current_session is None
 
 
 def test_run_service_stop_terminates_long_running_run(tmp_path: Path) -> None:
@@ -181,3 +182,4 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
     assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
     assert any(event.event_type == "output" and "__CB_DEBUG_PAUSED__" in (event.text or "") for event in events)
+    assert service.is_debug_paused is False

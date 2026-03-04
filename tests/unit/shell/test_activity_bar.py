@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.shell.activity_bar import ActivityBar
 
 

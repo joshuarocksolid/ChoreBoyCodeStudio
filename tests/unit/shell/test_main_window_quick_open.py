@@ -7,6 +7,8 @@ from typing import Any, cast
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.unit
