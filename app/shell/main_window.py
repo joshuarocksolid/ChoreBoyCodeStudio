@@ -150,7 +150,6 @@ from app.project.run_configs import (
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.project.project_service import create_blank_project, open_project
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
@@ -161,6 +160,7 @@ from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
 from app.shell.run_output_coordinator import RunOutputCoordinator
+from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
@@ -315,6 +315,25 @@ class MainWindow(QMainWindow):
         self._logger = get_subsystem_logger("shell")
         self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
         self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
+        self._project_tree_action_coordinator = ProjectTreeActionCoordinator(
+            project_tree_controller=self._project_tree_controller,
+            editor_widgets_by_path=self._editor_widgets_by_path,
+            tab_index_for_path=self._tab_index_for_path,
+            remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
+            if self._editor_tabs_widget is not None
+            else None,
+            release_editor_widget=self._release_editor_widget,
+            close_editor_file=self._editor_manager.close_file,
+            breakpoints_by_file=self._breakpoints_by_file,
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+            remap_editor_paths=self._editor_manager.remap_paths_for_move,
+            update_tab_path_and_name=self._update_tab_path_and_name,
+            apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
+            update_widget_language=self._update_widget_language_for_path,
+            maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
+            prune_semantic_state=self._prune_semantic_state_maps,
+            reload_project=self._reload_current_project,
+        )
 
         self._configure_window_frame()
         self._build_layout_shell()
@@ -3281,34 +3300,26 @@ class MainWindow(QMainWindow):
         file_name, ok = QInputDialog.getText(self, "New File", "File name:", QLineEdit.Normal, "")
         if not ok or not file_name.strip():
             return
-        result = create_file(str(Path(destination_directory) / file_name.strip()))
-        if not result.success:
-            QMessageBox.warning(self, "New File", result.message)
-            return
-        self._reload_current_project()
+        error_message = self._project_tree_action_coordinator.handle_new_file(destination_directory, file_name.strip())
+        if error_message is not None:
+            QMessageBox.warning(self, "New File", error_message)
 
     def _handle_tree_new_folder(self, destination_directory: str) -> None:
         folder_name, ok = QInputDialog.getText(self, "New Folder", "Folder name:", QLineEdit.Normal, "")
         if not ok or not folder_name.strip():
             return
-        result = create_directory(str(Path(destination_directory) / folder_name.strip()))
-        if not result.success:
-            QMessageBox.warning(self, "New Folder", result.message)
-            return
-        self._reload_current_project()
+        error_message = self._project_tree_action_coordinator.handle_new_folder(destination_directory, folder_name.strip())
+        if error_message is not None:
+            QMessageBox.warning(self, "New Folder", error_message)
 
     def _handle_tree_rename(self, source_path: str) -> None:
         source = Path(source_path)
         new_name, ok = QInputDialog.getText(self, "Rename", "New name:", QLineEdit.Normal, source.name)
         if not ok or not new_name.strip() or new_name.strip() == source.name:
             return
-        destination = source.with_name(new_name.strip())
-        result = rename_path(str(source), str(destination))
-        if not result.success:
-            QMessageBox.warning(self, "Rename", result.message)
-            return
-        self._apply_path_move_updates(str(source), str(destination))
-        self._reload_current_project()
+        error_message = self._project_tree_action_coordinator.handle_rename(source_path, new_name.strip())
+        if error_message is not None:
+            QMessageBox.warning(self, "Rename", error_message)
 
     def _handle_tree_delete(self, target_path: str) -> None:
         confirmation = QMessageBox.question(
@@ -3320,19 +3331,14 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
-        result = delete_path(target_path)
-        if not result.success:
-            QMessageBox.warning(self, "Delete", result.message)
-            return
-        self._close_deleted_editor_paths(target_path)
-        self._reload_current_project()
+        error_message = self._project_tree_action_coordinator.handle_delete(target_path)
+        if error_message is not None:
+            QMessageBox.warning(self, "Delete", error_message)
 
     def _handle_tree_duplicate(self, source_path: str) -> None:
-        result = duplicate_path(source_path)
-        if not result.success:
-            QMessageBox.warning(self, "Duplicate", result.message)
-            return
-        self._reload_current_project()
+        error_message = self._project_tree_action_coordinator.handle_duplicate(source_path)
+        if error_message is not None:
+            QMessageBox.warning(self, "Duplicate", error_message)
 
     def _handle_tree_bulk_delete(self, paths: list[str]) -> None:
         names = "\n".join(f"  • {Path(p).name}" for p in paths)
@@ -3345,63 +3351,31 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
-        failed: list[str] = []
-        for target_path in paths:
-            result = delete_path(target_path)
-            if result.success:
-                self._close_deleted_editor_paths(target_path)
-            else:
-                failed.append(f"{Path(target_path).name}: {result.message}")
+        failed = self._project_tree_action_coordinator.handle_bulk_delete(paths)
         if failed:
             QMessageBox.warning(self, "Delete", "\n".join(failed))
-        self._reload_current_project()
 
     def _handle_tree_bulk_duplicate(self, paths: list[str]) -> None:
-        failed: list[str] = []
-        for source_path in paths:
-            result = duplicate_path(source_path)
-            if not result.success:
-                failed.append(f"{Path(source_path).name}: {result.message}")
+        failed = self._project_tree_action_coordinator.handle_bulk_duplicate(paths)
         if failed:
             QMessageBox.warning(self, "Duplicate", "\n".join(failed))
-        self._reload_current_project()
 
     def _handle_tree_paste(self, destination_directory: str) -> None:
-        if not self._tree_clipboard_paths:
-            return
-        dest_dir = Path(destination_directory).resolve()
-        failed: list[str] = []
-        for clipboard_path in list(self._tree_clipboard_paths):
-            source = Path(clipboard_path).resolve()
-            destination = dest_dir / source.name
-            if self._tree_clipboard_cut:
-                result = move_path(str(source), str(destination))
-                if result.success:
-                    self._apply_path_move_updates(str(source), str(destination))
-                else:
-                    failed.append(f"{source.name}: {result.message}")
-            else:
-                result = copy_path(str(source), str(destination))
-                if not result.success:
-                    failed.append(f"{source.name}: {result.message}")
-        if self._tree_clipboard_cut:
-            self._tree_clipboard_paths = []
-            self._tree_clipboard_cut = False
+        failed, next_paths, next_cut = self._project_tree_action_coordinator.handle_paste(
+            destination_directory=destination_directory,
+            clipboard_paths=self._tree_clipboard_paths,
+            clipboard_cut=self._tree_clipboard_cut,
+        )
+        self._tree_clipboard_paths = next_paths
+        self._tree_clipboard_cut = next_cut
         if failed:
             QMessageBox.warning(self, "Paste", "\n".join(failed))
-        self._reload_current_project()
 
     def _handle_project_tree_drop(self, source_path: str, target_path: str) -> bool:
-        source = Path(source_path).resolve()
-        target = Path(target_path).resolve()
-        destination_directory = target if target.is_dir() else target.parent
-        destination = destination_directory / source.name
-        result = move_path(str(source), str(destination))
-        if not result.success:
-            QMessageBox.warning(self, "Move", result.message)
+        error_message = self._project_tree_action_coordinator.handle_drop_move(source_path, target_path)
+        if error_message is not None:
+            QMessageBox.warning(self, "Move", error_message)
             return False
-        self._apply_path_move_updates(str(source), str(destination))
-        self._reload_current_project()
         return True
 
     def _reveal_path_in_file_manager(self, path: str) -> None:
@@ -3418,33 +3392,12 @@ class MainWindow(QMainWindow):
         widget.deleteLater()
 
     def _close_deleted_editor_paths(self, deleted_path: str) -> None:
-        self._project_tree_controller.close_deleted_editor_paths(
-            deleted_path,
-            editor_widgets_by_path=self._editor_widgets_by_path,
-            tab_index_for_path=self._tab_index_for_path,
-            remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
-            if self._editor_tabs_widget is not None
-            else None,
-            release_editor_widget=self._release_editor_widget,
-            close_editor_file=self._editor_manager.close_file,
-            breakpoints_by_file=self._breakpoints_by_file,
-            refresh_breakpoints_list=self._refresh_breakpoints_list,
-        )
+        self._project_tree_action_coordinator.close_deleted_editor_paths(deleted_path)
 
     def _apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
-        self._project_tree_controller.apply_path_move_updates(
-            source_path,
-            destination_path,
-            remap_editor_paths=self._editor_manager.remap_paths_for_move,
-            editor_widgets_by_path=self._editor_widgets_by_path,
-            tab_index_for_path=self._tab_index_for_path,
-            update_tab_path_and_name=lambda tab_index, new_path: self._update_tab_path_and_name(tab_index, new_path),
-            breakpoints_by_file=self._breakpoints_by_file,
-            apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
-            update_widget_language=self._update_widget_language_for_path,
-            refresh_breakpoints_list=self._refresh_breakpoints_list,
-            maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
-        )
+        self._project_tree_action_coordinator.apply_path_move_updates(source_path, destination_path)
+
+    def _prune_semantic_state_maps(self) -> None:
         self._semantic_revision_by_file = {
             path: revision
             for path, revision in self._semantic_revision_by_file.items()
