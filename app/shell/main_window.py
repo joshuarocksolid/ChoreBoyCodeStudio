@@ -135,7 +135,7 @@ from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_i
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
-from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.project.project_tree import build_project_tree
 from app.project.run_configs import (
     env_overrides_to_text,
@@ -256,6 +256,7 @@ class MainWindow(QMainWindow):
         self._theme_mode = self._load_theme_mode()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
+        self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
@@ -540,8 +541,16 @@ class MainWindow(QMainWindow):
         palette = self.palette()
         mode = self._theme_mode
         if mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-            return tokens_from_palette(palette, force_mode=mode)
-        return tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+            base_tokens = tokens_from_palette(palette, force_mode=mode)
+        else:
+            base_tokens = tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+        theme_key = (
+            constants.UI_SYNTAX_COLORS_DARK_KEY
+            if base_tokens.is_dark
+            else constants.UI_SYNTAX_COLORS_LIGHT_KEY
+        )
+        syntax_overrides = self._syntax_color_overrides.get(theme_key, {})
+        return apply_syntax_token_overrides(base_tokens, syntax_overrides)
 
     def _apply_theme_styles(self) -> None:
         if self._is_applying_theme_styles:
@@ -604,6 +613,14 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return dict(snapshot.shortcut_overrides)
+
+    def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return {
+            constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
+            constants.UI_SYNTAX_COLORS_DARK_KEY: dict(snapshot.syntax_color_overrides_dark),
+        }
 
     def _configure_close_tab_shortcut(self) -> None:
         if self._close_tab_shortcut is None:
@@ -807,6 +824,7 @@ class MainWindow(QMainWindow):
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
         self._shortcut_overrides = self._load_shortcut_overrides()
+        self._syntax_color_overrides = self._load_syntax_color_overrides()
         if not self._diagnostics_enabled or not self._diagnostics_realtime:
             self._realtime_lint_timer.stop()
             self._pending_realtime_lint_file_path = None
@@ -819,6 +837,7 @@ class MainWindow(QMainWindow):
         self._apply_editor_preferences_to_open_editors()
         self._apply_runtime_intelligence_preferences_to_open_editors()
         self._apply_shortcut_overrides_runtime()
+        self._apply_theme_styles()
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:

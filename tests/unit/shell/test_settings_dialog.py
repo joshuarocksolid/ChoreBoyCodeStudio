@@ -42,3 +42,23 @@ def test_settings_dialog_detects_conflicting_shortcuts_and_disables_ok() -> None
 
     assert dialog._ok_button is not None
     assert dialog._ok_button.isEnabled() is False
+
+
+def test_settings_dialog_snapshot_includes_syntax_color_overrides() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    keyword_input = dialog._syntax_color_inputs["keyword"]
+    keyword_input.setText("#112233")
+    dialog._handle_syntax_color_text_edited("keyword")
+
+    snapshot = dialog.snapshot()
+    assert snapshot.syntax_color_overrides_light["keyword"] == "#112233"
+
+
+def test_settings_dialog_invalid_syntax_color_disables_ok() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    keyword_input = dialog._syntax_color_inputs["keyword"]
+    keyword_input.setText("bad-color")
+    dialog._handle_syntax_color_text_edited("keyword")
+
+    assert dialog._ok_button is not None
+    assert dialog._ok_button.isEnabled() is False

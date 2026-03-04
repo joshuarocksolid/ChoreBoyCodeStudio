@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Mapping
 
 from PySide2.QtGui import QColor, QPalette
 
@@ -191,3 +192,44 @@ def tokens_from_palette(
 
 def to_qcolor(hex_color: str) -> QColor:
     return QColor(hex_color)
+
+
+_SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
+    "keyword": "syntax_keyword",
+    "builtin": "syntax_builtin",
+    "string": "syntax_string",
+    "comment": "syntax_comment",
+    "number": "syntax_number",
+    "function": "syntax_function",
+    "class": "syntax_class",
+    "decorator": "syntax_decorator",
+    "operator": "syntax_operator",
+    "punctuation": "syntax_punctuation",
+    "parameter": "syntax_parameter",
+    "json_key": "syntax_json_key",
+    "json_literal": "syntax_json_literal",
+    "markdown_heading": "syntax_markdown_heading",
+    "markdown_emphasis": "syntax_markdown_emphasis",
+    "markdown_code": "syntax_markdown_code",
+    "semantic_function": "syntax_semantic_function",
+    "semantic_method": "syntax_semantic_method",
+    "semantic_class": "syntax_semantic_class",
+    "semantic_parameter": "syntax_semantic_parameter",
+    "semantic_import": "syntax_semantic_import",
+    "semantic_variable": "syntax_semantic_variable",
+    "semantic_property": "syntax_semantic_property",
+    "semantic_constant": "syntax_semantic_constant",
+}
+
+
+def apply_syntax_token_overrides(tokens: ShellThemeTokens, overrides: Mapping[str, str]) -> ShellThemeTokens:
+    """Return tokens with syntax color overrides applied."""
+    updates: dict[str, str] = {}
+    for token_key, color_value in overrides.items():
+        field_name = _SYNTAX_OVERRIDE_FIELD_MAP.get(token_key)
+        if field_name is None:
+            continue
+        updates[field_name] = color_value
+    if not updates:
+        return tokens
+    return replace(tokens, **updates)

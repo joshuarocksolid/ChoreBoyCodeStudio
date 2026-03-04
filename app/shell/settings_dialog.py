@@ -15,6 +15,7 @@ from PySide2.QtWidgets import (
     QLineEdit,
     QFontComboBox,
     QFormLayout,
+    QColorDialog,
     QPushButton,
     QTabWidget,
     QTableWidget,
@@ -24,7 +25,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from PySide2.QtGui import QFont
+from PySide2.QtGui import QColor, QFont
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
 
@@ -36,6 +37,13 @@ from app.shell.shortcut_preferences import (
     find_shortcut_conflicts,
     normalize_shortcut,
 )
+from app.shell.syntax_color_preferences import (
+    SYNTAX_COLOR_TOKENS,
+    THEME_DARK,
+    THEME_LIGHT,
+    normalize_hex_color,
+)
+from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
 
 
 class SettingsDialog(QDialog):
@@ -48,6 +56,15 @@ class SettingsDialog(QDialog):
         self.resize(860, 640)
         self._shortcut_editors: dict[str, QKeySequenceEdit] = {}
         self._shortcut_rows: dict[str, int] = {}
+        self._syntax_color_inputs: dict[str, QLineEdit] = {}
+        self._syntax_color_row_by_token: dict[str, int] = {}
+        self._syntax_color_overrides_by_theme: dict[str, dict[str, str]] = {
+            THEME_LIGHT: dict(snapshot.syntax_color_overrides_light),
+            THEME_DARK: dict(snapshot.syntax_color_overrides_dark),
+        }
+        self._active_syntax_theme_key = THEME_LIGHT
+        self._has_shortcut_conflicts = False
+        self._has_invalid_syntax_colors = False
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget(self)
@@ -196,12 +213,44 @@ class SettingsDialog(QDialog):
         keybindings_layout.addWidget(self._shortcut_table, 1)
         self._populate_shortcut_table(snapshot)
 
+        syntax_tab = QWidget(tabs)
+        syntax_layout = QVBoxLayout(syntax_tab)
+        tabs.addTab(syntax_tab, "Syntax Colors")
+
+        self._syntax_theme_input = QComboBox(syntax_tab)
+        self._syntax_theme_input.addItem("Light Theme", THEME_LIGHT)
+        self._syntax_theme_input.addItem("Dark Theme", THEME_DARK)
+        self._syntax_theme_input.currentIndexChanged.connect(self._handle_syntax_theme_changed)
+        syntax_layout.addWidget(self._syntax_theme_input)
+
+        self._syntax_validation_label = QLabel(syntax_tab)
+        self._syntax_validation_label.setStyleSheet("color: #C92A2A;")
+        self._syntax_validation_label.setWordWrap(True)
+        self._syntax_validation_label.setVisible(False)
+        syntax_layout.addWidget(self._syntax_validation_label)
+
+        self._syntax_color_table = QTableWidget(0, 4, syntax_tab)
+        self._syntax_color_table.setHorizontalHeaderLabels(["Token", "Color", "Pick", "Reset"])
+        self._syntax_color_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._syntax_color_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._syntax_color_table.setFocusPolicy(Qt.NoFocus)
+        self._syntax_color_table.verticalHeader().setVisible(False)
+        syntax_header = self._syntax_color_table.horizontalHeader()
+        syntax_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        syntax_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        syntax_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        syntax_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        syntax_layout.addWidget(self._syntax_color_table, 1)
+        self._populate_syntax_color_table(self._active_syntax_theme_key)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._ok_button = buttons.button(QDialogButtonBox.Ok)
         self._refresh_shortcut_conflicts()
+        self._refresh_syntax_validation()
+        self._refresh_validation_state()
 
     def snapshot(self) -> EditorSettingsSnapshot:
         """Return settings snapshot from current dialog values."""
@@ -230,6 +279,8 @@ class SettingsDialog(QDialog):
             auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
             auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
             shortcut_overrides=self._shortcut_overrides_snapshot(),
+            syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
+            syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
         )
 
     def _populate_shortcut_table(self, snapshot: EditorSettingsSnapshot) -> None:
@@ -294,13 +345,12 @@ class SettingsDialog(QDialog):
             details = [f"{shortcut}: {', '.join(action_ids)}" for shortcut, action_ids in sorted(conflicts.items())]
             self._shortcut_conflict_label.setText("Conflicting shortcuts:\n" + "\n".join(details[:4]))
             self._shortcut_conflict_label.setVisible(True)
-            if self._ok_button is not None:
-                self._ok_button.setEnabled(False)
-            return
-        self._shortcut_conflict_label.clear()
-        self._shortcut_conflict_label.setVisible(False)
-        if self._ok_button is not None:
-            self._ok_button.setEnabled(True)
+            self._has_shortcut_conflicts = True
+        else:
+            self._shortcut_conflict_label.clear()
+            self._shortcut_conflict_label.setVisible(False)
+            self._has_shortcut_conflicts = False
+        self._refresh_validation_state()
 
     def _shortcut_overrides_snapshot(self) -> dict[str, str]:
         overrides: dict[str, str] = {}
@@ -311,3 +361,125 @@ class SettingsDialog(QDialog):
                 continue
             overrides[action_id] = current_shortcut if current_shortcut else ""
         return overrides
+
+    def _syntax_defaults_for_theme(self, theme_key: str) -> dict[str, str]:
+        return dict(DEFAULT_DARK_PALETTE if theme_key == THEME_DARK else DEFAULT_LIGHT_PALETTE)
+
+    def _populate_syntax_color_table(self, theme_key: str) -> None:
+        self._active_syntax_theme_key = theme_key
+        self._syntax_color_inputs.clear()
+        self._syntax_color_row_by_token.clear()
+        defaults = self._syntax_defaults_for_theme(theme_key)
+        overrides = self._syntax_color_overrides_by_theme.setdefault(theme_key, {})
+        self._syntax_color_table.setRowCount(len(SYNTAX_COLOR_TOKENS))
+        for row_index, token in enumerate(SYNTAX_COLOR_TOKENS):
+            self._syntax_color_row_by_token[token.key] = row_index
+            label_item = QTableWidgetItem(f"{token.category} / {token.label}")
+            self._syntax_color_table.setItem(row_index, 0, label_item)
+
+            color_input = QLineEdit(self._syntax_color_table)
+            color_input.setPlaceholderText(defaults.get(token.key, ""))
+            effective_color = overrides.get(token.key, defaults.get(token.key, ""))
+            color_input.setText(effective_color)
+            color_input.textEdited.connect(
+                lambda _text, key=token.key: self._handle_syntax_color_text_edited(key)
+            )
+            self._syntax_color_inputs[token.key] = color_input
+            self._syntax_color_table.setCellWidget(row_index, 1, color_input)
+
+            pick_button = QPushButton("Pick", self._syntax_color_table)
+            pick_button.clicked.connect(
+                lambda _checked=False, key=token.key: self._handle_pick_syntax_color(key)
+            )
+            self._syntax_color_table.setCellWidget(row_index, 2, pick_button)
+
+            reset_button = QPushButton("Reset", self._syntax_color_table)
+            reset_button.clicked.connect(
+                lambda _checked=False, key=token.key: self._handle_reset_syntax_color(key)
+            )
+            self._syntax_color_table.setCellWidget(row_index, 3, reset_button)
+
+        self._refresh_syntax_validation()
+
+    def _handle_syntax_theme_changed(self, _index: int) -> None:
+        theme_key = str(self._syntax_theme_input.currentData())
+        if theme_key not in {THEME_LIGHT, THEME_DARK}:
+            theme_key = THEME_LIGHT
+        self._populate_syntax_color_table(theme_key)
+
+    def _handle_pick_syntax_color(self, token_key: str) -> None:
+        input_widget = self._syntax_color_inputs.get(token_key)
+        if input_widget is None:
+            return
+        current = normalize_hex_color(input_widget.text()) or input_widget.placeholderText()
+        chosen = QColorDialog.getColor(
+            initial=QColor(current if current else "#FFFFFF"),
+            parent=self,
+            title="Choose syntax color",
+        )
+        if not chosen.isValid():
+            return
+        input_widget.setText(chosen.name().upper())
+        self._handle_syntax_color_text_edited(token_key)
+
+    def _handle_reset_syntax_color(self, token_key: str) -> None:
+        defaults = self._syntax_defaults_for_theme(self._active_syntax_theme_key)
+        overrides = self._syntax_color_overrides_by_theme.setdefault(self._active_syntax_theme_key, {})
+        overrides.pop(token_key, None)
+        input_widget = self._syntax_color_inputs.get(token_key)
+        if input_widget is not None:
+            input_widget.setText(defaults.get(token_key, ""))
+        self._refresh_syntax_validation()
+
+    def _handle_syntax_color_text_edited(self, token_key: str) -> None:
+        input_widget = self._syntax_color_inputs.get(token_key)
+        if input_widget is None:
+            return
+        overrides = self._syntax_color_overrides_by_theme.setdefault(self._active_syntax_theme_key, {})
+        defaults = self._syntax_defaults_for_theme(self._active_syntax_theme_key)
+        raw_text = input_widget.text().strip()
+        if not raw_text:
+            overrides.pop(token_key, None)
+            input_widget.setText(defaults.get(token_key, ""))
+            self._refresh_syntax_validation()
+            return
+        normalized = normalize_hex_color(input_widget.text())
+        if normalized is None:
+            self._refresh_syntax_validation()
+            return
+        if normalized == defaults.get(token_key):
+            overrides.pop(token_key, None)
+        else:
+            overrides[token_key] = normalized
+        input_widget.setText(normalized)
+        self._refresh_syntax_validation()
+
+    def _refresh_syntax_validation(self) -> None:
+        invalid_entries: list[str] = []
+        for token_key, input_widget in self._syntax_color_inputs.items():
+            if not input_widget.text().strip():
+                input_widget.setStyleSheet("")
+                continue
+            normalized = normalize_hex_color(input_widget.text())
+            if normalized is None:
+                input_widget.setStyleSheet("border: 1px solid #C92A2A;")
+                invalid_entries.append(token_key)
+            else:
+                input_widget.setStyleSheet("")
+        if invalid_entries:
+            preview = ", ".join(invalid_entries[:5])
+            self._syntax_validation_label.setText(
+                f"Invalid syntax colors for: {preview}. Use #RRGGBB format."
+            )
+            self._syntax_validation_label.setVisible(True)
+            self._has_invalid_syntax_colors = True
+        else:
+            self._syntax_validation_label.clear()
+            self._syntax_validation_label.setVisible(False)
+            self._has_invalid_syntax_colors = False
+        self._refresh_validation_state()
+
+    def _refresh_validation_state(self) -> None:
+        if self._ok_button is None:
+            return
+        self._ok_button.setEnabled(not (self._has_shortcut_conflicts or self._has_invalid_syntax_colors))
