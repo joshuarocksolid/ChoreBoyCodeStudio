@@ -112,3 +112,22 @@ def test_session_ended_callback_invoked() -> None:
     from app.run.process_supervisor import ProcessEvent
     mgr._handle_event(ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False))
     assert ended == [(0, False)]
+
+
+def test_build_command_for_apprun_bootstraps_runner_parent_path(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    runner_boot = tmp_path / "run_runner.py"
+    runner_boot.write_text("print('stub')\n", encoding="utf-8")
+    mgr = ReplSessionManager(
+        runtime_executable="/opt/freecad/AppRun",
+        runner_boot_path=str(runner_boot),
+        state_root=str(tmp_path / "state"),
+    )
+
+    command = mgr._build_command("/tmp/run_manifest.json")
+
+    assert command[0] == "/opt/freecad/AppRun"
+    assert command[1] == "-c"
+    payload = command[2]
+    assert "sys.path.insert(0" in payload
+    assert str(tmp_path.resolve()) in payload
+    assert "runpy.run_path" in payload

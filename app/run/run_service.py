@@ -23,6 +23,7 @@ from app.core.errors import RunLifecycleError
 from app.core.models import LoadedProject
 from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.runner_command_builder import build_runner_command
 from app.run.run_manifest import RunManifest, save_run_manifest
 
 
@@ -171,17 +172,11 @@ class RunService:
 
     def _build_runner_command(self, manifest_path: str) -> list[str]:
         runtime_executable = resolve_runtime_executable(self._runtime_executable)
-        runtime_path = Path(runtime_executable)
-        if runtime_path.name == "AppRun" or runtime_path.suffix == ".AppImage":
-            runner_parent = str(Path(self._runner_boot_path).resolve().parent)
-            payload = (
-                "import runpy, sys;"
-                f"sys.path.insert(0, {runner_parent!r});"
-                f"sys.argv={[self._runner_boot_path, '--manifest', manifest_path]!r};"
-                f"runpy.run_path({self._runner_boot_path!r}, run_name='__main__')"
-            )
-            return [runtime_executable, "-c", payload]
-        return [runtime_executable, self._runner_boot_path, "--manifest", manifest_path]
+        return build_runner_command(
+            runtime_executable=runtime_executable,
+            runner_boot_path=self._runner_boot_path,
+            manifest_path=manifest_path,
+        )
 
     def _forward_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:
