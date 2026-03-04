@@ -405,3 +405,40 @@ def test_analyze_still_flags_unknown_module_with_stdlib_fallback(tmp_path: Path)
 
     assert len(py200) == 1
     assert "totally_fake" in py200[0].message
+
+
+def test_analyze_flags_tomllib_when_runtime_modules_are_unavailable(tmp_path: Path) -> None:
+    """Fallback should reflect Python 3.9 target runtime and flag tomllib."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("import tomllib\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        known_runtime_modules=None,
+        allow_runtime_import_probe=False,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "tomllib" in py200[0].message
+
+
+def test_analyze_accepts_tomllib_when_runtime_probe_provides_module_set(tmp_path: Path) -> None:
+    """Known runtime module list should remain authoritative when provided."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("import tomllib\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        known_runtime_modules=frozenset({"tomllib"}),
+        allow_runtime_import_probe=False,
+    )
+    py200 = [d for d in diagnostics if d.code == "PY200"]
+
+    assert py200 == []
