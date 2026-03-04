@@ -8,6 +8,7 @@ from app.shell.settings_models import (
     EditorSettingsSnapshot,
     merge_editor_settings_snapshot,
     parse_editor_settings_snapshot,
+    parse_main_window_settings,
 )
 
 pytestmark = pytest.mark.unit
@@ -255,3 +256,54 @@ def test_effective_font_size_clamping(base_size: int, delta: int, expected: int)
     """Verify the effective size formula: max(8, min(72, base + delta))."""
     effective = max(8, min(72, base_size + delta))
     assert effective == expected
+
+
+def test_parse_main_window_settings_builds_grouped_preferences() -> None:
+    grouped = parse_main_window_settings(
+        {
+            "editor": {
+                "tab_width": 6,
+                "font_size": 13,
+                "font_family": "Fira Code",
+                "indent_style": "tabs",
+                "indent_size": 2,
+                "detect_indentation_from_file": False,
+                "format_on_save": True,
+                "trim_trailing_whitespace_on_save": False,
+                "insert_final_newline_on_save": False,
+            },
+            "intelligence": {
+                "enable_completion": False,
+                "auto_trigger_completion": False,
+                "completion_min_chars": 4,
+                "enable_diagnostics": False,
+                "diagnostics_realtime": False,
+                "enable_quick_fixes": False,
+                "quick_fix_require_preview_for_multifile": False,
+                "cache_enabled": False,
+                "incremental_indexing": False,
+                "metrics_logging_enabled": False,
+                "force_full_reindex_on_open": True,
+                "highlighting_adaptive_mode": "reduced",
+                "highlighting_reduced_threshold_chars": 200000,
+                "highlighting_lexical_only_threshold_chars": 400000,
+            },
+            "output": {
+                "auto_open_console_on_run_output": False,
+                "auto_open_problems_on_run_failure": False,
+            },
+        }
+    )
+
+    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False)
+    assert grouped.completion_preferences == (False, False, 4)
+    assert grouped.diagnostics_preferences == (False, False, False, False)
+    assert grouped.output_preferences == (False, False)
+    runtime = grouped.intelligence_runtime_settings
+    assert runtime.cache_enabled is False
+    assert runtime.incremental_indexing is False
+    assert runtime.metrics_logging_enabled is False
+    assert runtime.force_full_reindex_on_open is True
+    assert runtime.highlighting_adaptive_mode == "reduced"
+    assert runtime.highlighting_reduced_threshold_chars == 200000
+    assert runtime.highlighting_lexical_only_threshold_chars == 400000

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from app.core import constants
+from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,17 @@ class EditorSettingsSnapshot:
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
 
 
+@dataclass(frozen=True)
+class MainWindowSettingsSnapshot:
+    """Facade snapshot for MainWindow runtime preference loading."""
+
+    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool]
+    completion_preferences: tuple[bool, bool, int]
+    diagnostics_preferences: tuple[bool, bool, bool, bool]
+    output_preferences: tuple[bool, bool]
+    intelligence_runtime_settings: IntelligenceRuntimeSettings
+
+
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
     """Parse persisted settings payload into editable snapshot."""
     editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
@@ -52,6 +64,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
     if not isinstance(intelligence_settings, dict):
         intelligence_settings = {}
+    runtime_settings = parse_intelligence_runtime_settings(settings_payload)
     theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
     if not isinstance(theme_settings, dict):
         theme_settings = {}
@@ -61,32 +74,6 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
-    _valid_highlighting_modes = {
-        constants.HIGHLIGHTING_MODE_NORMAL,
-        constants.HIGHLIGHTING_MODE_REDUCED,
-        constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
-    }
-    highlighting_mode_raw = intelligence_settings.get(
-        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_KEY,
-        constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT,
-    )
-    highlighting_mode = (
-        str(highlighting_mode_raw)
-        if str(highlighting_mode_raw) in _valid_highlighting_modes
-        else constants.UI_INTELLIGENCE_HIGHLIGHTING_ADAPTIVE_MODE_DEFAULT
-    )
-    highlighting_reduced_threshold_chars = _coerce_int(
-        intelligence_settings.get(constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_KEY),
-        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT,
-        minimum=1,
-    )
-    highlighting_lexical_only_threshold_chars = _coerce_int(
-        intelligence_settings.get(constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_KEY),
-        default=constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT,
-        minimum=1,
-    )
-    if highlighting_lexical_only_threshold_chars < highlighting_reduced_threshold_chars:
-        highlighting_lexical_only_threshold_chars = highlighting_reduced_threshold_chars
 
     tab_width = _coerce_int(
         editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY),
@@ -165,25 +152,13 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             intelligence_settings.get(constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY),
             default=constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
         ),
-        cache_enabled=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_CACHE_ENABLED_KEY),
-            default=constants.UI_INTELLIGENCE_CACHE_ENABLED_DEFAULT,
-        ),
-        incremental_indexing=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY),
-            default=constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_DEFAULT,
-        ),
-        metrics_logging_enabled=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY),
-            default=constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_DEFAULT,
-        ),
-        force_full_reindex_on_open=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY),
-            default=constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_DEFAULT,
-        ),
-        highlighting_adaptive_mode=highlighting_mode,
-        highlighting_reduced_threshold_chars=highlighting_reduced_threshold_chars,
-        highlighting_lexical_only_threshold_chars=highlighting_lexical_only_threshold_chars,
+        cache_enabled=runtime_settings.cache_enabled,
+        incremental_indexing=runtime_settings.incremental_indexing,
+        metrics_logging_enabled=runtime_settings.metrics_logging_enabled,
+        force_full_reindex_on_open=runtime_settings.force_full_reindex_on_open,
+        highlighting_adaptive_mode=runtime_settings.highlighting_adaptive_mode,
+        highlighting_reduced_threshold_chars=runtime_settings.highlighting_reduced_threshold_chars,
+        highlighting_lexical_only_threshold_chars=runtime_settings.highlighting_lexical_only_threshold_chars,
         theme_mode=theme_mode,
         auto_open_console_on_run_output=_coerce_bool(
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY),
@@ -192,6 +167,48 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         auto_open_problems_on_run_failure=_coerce_bool(
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY),
             default=constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
+        ),
+    )
+
+
+def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindowSettingsSnapshot:
+    """Parse persisted settings into MainWindow-focused preference groups."""
+    snapshot = parse_editor_settings_snapshot(settings_payload)
+    return MainWindowSettingsSnapshot(
+        editor_preferences=(
+            snapshot.tab_width,
+            snapshot.font_size,
+            snapshot.font_family,
+            snapshot.indent_style,
+            snapshot.indent_size,
+            snapshot.detect_indentation_from_file,
+            snapshot.format_on_save,
+            snapshot.trim_trailing_whitespace_on_save,
+            snapshot.insert_final_newline_on_save,
+        ),
+        completion_preferences=(
+            snapshot.completion_enabled,
+            snapshot.completion_auto_trigger,
+            snapshot.completion_min_chars,
+        ),
+        diagnostics_preferences=(
+            snapshot.diagnostics_enabled,
+            snapshot.diagnostics_realtime,
+            snapshot.quick_fixes_enabled,
+            snapshot.quick_fix_require_preview_for_multifile,
+        ),
+        output_preferences=(
+            snapshot.auto_open_console_on_run_output,
+            snapshot.auto_open_problems_on_run_failure,
+        ),
+        intelligence_runtime_settings=IntelligenceRuntimeSettings(
+            cache_enabled=snapshot.cache_enabled,
+            incremental_indexing=snapshot.incremental_indexing,
+            metrics_logging_enabled=snapshot.metrics_logging_enabled,
+            force_full_reindex_on_open=snapshot.force_full_reindex_on_open,
+            highlighting_adaptive_mode=snapshot.highlighting_adaptive_mode,
+            highlighting_reduced_threshold_chars=snapshot.highlighting_reduced_threshold_chars,
+            highlighting_lexical_only_threshold_chars=snapshot.highlighting_lexical_only_threshold_chars,
         ),
     )
 

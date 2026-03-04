@@ -57,7 +57,6 @@ from app.debug.debug_session import DebugSession
 from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file
 from app.intelligence.cache_controls import (
     IntelligenceRuntimeSettings,
-    parse_intelligence_runtime_settings,
     rebuild_symbol_cache,
     should_refresh_index_after_save,
 )
@@ -112,7 +111,12 @@ from app.shell.layout_persistence import (
 )
 from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 from app.shell.settings_dialog import SettingsDialog
-from app.shell.settings_models import merge_editor_settings_snapshot, parse_editor_settings_snapshot
+from app.shell.settings_models import (
+    MainWindowSettingsSnapshot,
+    merge_editor_settings_snapshot,
+    parse_editor_settings_snapshot,
+    parse_main_window_settings,
+)
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
@@ -606,165 +610,24 @@ class MainWindow(QMainWindow):
         save_settings(settings_payload, state_root=self._state_root)
         self._import_update_policy = policy
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
+    def _load_main_window_settings(self) -> MainWindowSettingsSnapshot:
         settings_payload = load_settings(state_root=self._state_root)
-        editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
-        if not isinstance(editor_settings, dict):
-            return (
-                constants.UI_EDITOR_TAB_WIDTH_DEFAULT,
-                constants.UI_EDITOR_FONT_SIZE_DEFAULT,
-                constants.UI_EDITOR_FONT_FAMILY_DEFAULT,
-                constants.UI_EDITOR_INDENT_STYLE_DEFAULT,
-                constants.UI_EDITOR_INDENT_SIZE_DEFAULT,
-                constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
-                constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
-                constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
-                constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
-            )
+        return parse_main_window_settings(settings_payload)
 
-        tab_width = editor_settings.get(constants.UI_EDITOR_TAB_WIDTH_KEY, constants.UI_EDITOR_TAB_WIDTH_DEFAULT)
-        font_size = editor_settings.get(constants.UI_EDITOR_FONT_SIZE_KEY, constants.UI_EDITOR_FONT_SIZE_DEFAULT)
-        font_family = editor_settings.get(constants.UI_EDITOR_FONT_FAMILY_KEY, constants.UI_EDITOR_FONT_FAMILY_DEFAULT)
-        indent_style = editor_settings.get(constants.UI_EDITOR_INDENT_STYLE_KEY, constants.UI_EDITOR_INDENT_STYLE_DEFAULT)
-        indent_size = editor_settings.get(constants.UI_EDITOR_INDENT_SIZE_KEY, constants.UI_EDITOR_INDENT_SIZE_DEFAULT)
-        detect_indentation_from_file = editor_settings.get(
-            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY,
-            constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT,
-        )
-        format_on_save = editor_settings.get(
-            constants.UI_EDITOR_FORMAT_ON_SAVE_KEY,
-            constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
-        )
-        trim_trailing_whitespace_on_save = editor_settings.get(
-            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY,
-            constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
-        )
-        insert_final_newline_on_save = editor_settings.get(
-            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY,
-            constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
-        )
-        if not isinstance(tab_width, int):
-            tab_width = constants.UI_EDITOR_TAB_WIDTH_DEFAULT
-        if not isinstance(font_size, int):
-            font_size = constants.UI_EDITOR_FONT_SIZE_DEFAULT
-        if not isinstance(font_family, str) or not font_family.strip():
-            font_family = constants.UI_EDITOR_FONT_FAMILY_DEFAULT
-        if indent_style not in {"spaces", "tabs"}:
-            indent_style = constants.UI_EDITOR_INDENT_STYLE_DEFAULT
-        if not isinstance(indent_size, int):
-            indent_size = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
-        if not isinstance(detect_indentation_from_file, bool):
-            detect_indentation_from_file = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
-        if not isinstance(format_on_save, bool):
-            format_on_save = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
-        if not isinstance(trim_trailing_whitespace_on_save, bool):
-            trim_trailing_whitespace_on_save = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
-        if not isinstance(insert_final_newline_on_save, bool):
-            insert_final_newline_on_save = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
-        return (
-            max(2, tab_width),
-            max(8, font_size),
-            str(font_family).strip(),
-            str(indent_style),
-            max(1, indent_size),
-            detect_indentation_from_file,
-            format_on_save,
-            trim_trailing_whitespace_on_save,
-            insert_final_newline_on_save,
-        )
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
+        return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
-        settings_payload = load_settings(state_root=self._state_root)
-        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
-        if not isinstance(intelligence_settings, dict):
-            return (
-                constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
-                constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
-                constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
-            )
-
-        enabled = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
-            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
-        )
-        auto_trigger = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY,
-            constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
-        )
-        min_chars = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
-            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
-        )
-        if not isinstance(enabled, bool):
-            enabled = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
-        if not isinstance(auto_trigger, bool):
-            auto_trigger = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
-        if not isinstance(min_chars, int):
-            min_chars = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
-        return (enabled, auto_trigger, max(1, min_chars))
+        return self._load_main_window_settings().completion_preferences
 
     def _load_diagnostics_preferences(self) -> tuple[bool, bool, bool, bool]:
-        settings_payload = load_settings(state_root=self._state_root)
-        intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
-        if not isinstance(intelligence_settings, dict):
-            return (
-                constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
-                constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
-                constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
-                constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
-            )
-
-        diagnostics_enabled = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY,
-            constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
-        )
-        diagnostics_realtime = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY,
-            constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
-        )
-        quick_fixes_enabled = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_KEY,
-            constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT,
-        )
-        quick_fix_require_preview = intelligence_settings.get(
-            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_KEY,
-            constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT,
-        )
-        if not isinstance(diagnostics_enabled, bool):
-            diagnostics_enabled = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
-        if not isinstance(diagnostics_realtime, bool):
-            diagnostics_realtime = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
-        if not isinstance(quick_fixes_enabled, bool):
-            quick_fixes_enabled = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
-        if not isinstance(quick_fix_require_preview, bool):
-            quick_fix_require_preview = constants.UI_INTELLIGENCE_QUICK_FIX_REQUIRE_PREVIEW_FOR_MULTIFILE_DEFAULT
-        return diagnostics_enabled, diagnostics_realtime, quick_fixes_enabled, quick_fix_require_preview
+        return self._load_main_window_settings().diagnostics_preferences
 
     def _load_output_preferences(self) -> tuple[bool, bool]:
-        settings_payload = load_settings(state_root=self._state_root)
-        output_settings = settings_payload.get(constants.UI_OUTPUT_SETTINGS_KEY, {})
-        if not isinstance(output_settings, dict):
-            return (
-                constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT,
-                constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
-            )
-        auto_open_console = output_settings.get(
-            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY,
-            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT,
-        )
-        auto_open_problems = output_settings.get(
-            constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY,
-            constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
-        )
-        if not isinstance(auto_open_console, bool):
-            auto_open_console = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
-        if not isinstance(auto_open_problems, bool):
-            auto_open_problems = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
-        return auto_open_console, auto_open_problems
+        return self._load_main_window_settings().output_preferences
 
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
-        settings_payload = load_settings(state_root=self._state_root)
-        return parse_intelligence_runtime_settings(settings_payload)
+        return self._load_main_window_settings().intelligence_runtime_settings
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         if self._is_shutting_down:
