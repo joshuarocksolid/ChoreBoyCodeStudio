@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from app.intelligence.diagnostics_service import analyze_python_file, find_unresolved_imports
+from app.intelligence.diagnostics_service import (
+    DiagnosticSeverity,
+    analyze_python_file,
+    find_unresolved_imports,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -442,3 +446,46 @@ def test_analyze_accepts_tomllib_when_runtime_probe_provides_module_set(tmp_path
     py200 = [d for d in diagnostics if d.code == "PY200"]
 
     assert py200 == []
+
+
+def test_analyze_python_file_applies_lint_override_disable(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("import json\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        lint_rule_overrides={"PY220": {"enabled": False}},
+    )
+    assert all(d.code != "PY220" for d in diagnostics)
+
+
+def test_analyze_python_file_applies_lint_override_severity(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text(
+        "def run():\n"
+        "    return 1\n"
+        "    value = 2\n",
+        encoding="utf-8",
+    )
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        lint_rule_overrides={"PY230": {"severity": "warning"}},
+    )
+    py230 = [d for d in diagnostics if d.code == "PY230"]
+    assert len(py230) == 1
+    assert py230[0].severity == DiagnosticSeverity.WARNING
+
+
+def test_unresolved_import_respects_lint_profile_disable(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "run.py"
+    file_path.write_text("import nonexistent_package\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        lint_rule_overrides={"PY200": {"enabled": False}},
+    )
+    assert all(d.code != "PY200" for d in diagnostics)

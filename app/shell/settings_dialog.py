@@ -44,6 +44,12 @@ from app.shell.syntax_color_preferences import (
     normalize_hex_color,
 )
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
+from app.intelligence.lint_profile import (
+    LINT_RULE_DEFINITIONS,
+    LINT_SEVERITY_ERROR,
+    LINT_SEVERITY_INFO,
+    LINT_SEVERITY_WARNING,
+)
 
 
 class SettingsDialog(QDialog):
@@ -62,6 +68,11 @@ class SettingsDialog(QDialog):
             THEME_LIGHT: dict(snapshot.syntax_color_overrides_light),
             THEME_DARK: dict(snapshot.syntax_color_overrides_dark),
         }
+        self._lint_rule_overrides: dict[str, dict[str, object]] = {
+            code: dict(value) for code, value in snapshot.lint_rule_overrides.items()
+        }
+        self._lint_enabled_inputs: dict[str, QCheckBox] = {}
+        self._lint_severity_inputs: dict[str, QComboBox] = {}
         self._active_syntax_theme_key = THEME_LIGHT
         self._has_shortcut_conflicts = False
         self._has_invalid_syntax_colors = False
@@ -243,6 +254,25 @@ class SettingsDialog(QDialog):
         syntax_layout.addWidget(self._syntax_color_table, 1)
         self._populate_syntax_color_table(self._active_syntax_theme_key)
 
+        linter_tab = QWidget(tabs)
+        linter_layout = QVBoxLayout(linter_tab)
+        tabs.addTab(linter_tab, "Linter")
+
+        self._linter_table = QTableWidget(0, 5, linter_tab)
+        self._linter_table.setHorizontalHeaderLabels(["Code", "Rule", "Enabled", "Severity", "Reset"])
+        self._linter_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._linter_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._linter_table.setFocusPolicy(Qt.NoFocus)
+        self._linter_table.verticalHeader().setVisible(False)
+        linter_header = self._linter_table.horizontalHeader()
+        linter_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        linter_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        linter_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        linter_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        linter_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        linter_layout.addWidget(self._linter_table, 1)
+        self._populate_linter_table()
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -281,6 +311,7 @@ class SettingsDialog(QDialog):
             shortcut_overrides=self._shortcut_overrides_snapshot(),
             syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
             syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
+            lint_rule_overrides=self._lint_rule_overrides_snapshot(),
         )
 
     def _populate_shortcut_table(self, snapshot: EditorSettingsSnapshot) -> None:
@@ -478,6 +509,110 @@ class SettingsDialog(QDialog):
             self._syntax_validation_label.setVisible(False)
             self._has_invalid_syntax_colors = False
         self._refresh_validation_state()
+
+    def _populate_linter_table(self) -> None:
+        self._lint_enabled_inputs.clear()
+        self._lint_severity_inputs.clear()
+        self._linter_table.setRowCount(len(LINT_RULE_DEFINITIONS))
+        severity_values = [LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO]
+        for row_index, definition in enumerate(LINT_RULE_DEFINITIONS):
+            code_item = QTableWidgetItem(definition.code)
+            self._linter_table.setItem(row_index, 0, code_item)
+            rule_item = QTableWidgetItem(definition.title)
+            self._linter_table.setItem(row_index, 1, rule_item)
+
+            override_payload = self._lint_rule_overrides.get(definition.code, {})
+            enabled_value = bool(override_payload.get("enabled", definition.default_enabled))
+            enabled_input = QCheckBox(self._linter_table)
+            enabled_input.setChecked(enabled_value)
+            enabled_input.setEnabled(definition.allow_disable)
+            enabled_input.stateChanged.connect(
+                lambda _state, code=definition.code: self._handle_lint_enabled_changed(code)
+            )
+            self._linter_table.setCellWidget(row_index, 2, enabled_input)
+            self._lint_enabled_inputs[definition.code] = enabled_input
+
+            severity_input = QComboBox(self._linter_table)
+            for severity in severity_values:
+                severity_input.addItem(severity.upper(), severity)
+            severity_value = str(override_payload.get("severity", definition.default_severity))
+            selected_index = severity_input.findData(severity_value)
+            severity_input.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+            severity_input.setEnabled(definition.allow_severity_override)
+            severity_input.currentIndexChanged.connect(
+                lambda _idx, code=definition.code: self._handle_lint_severity_changed(code)
+            )
+            self._linter_table.setCellWidget(row_index, 3, severity_input)
+            self._lint_severity_inputs[definition.code] = severity_input
+
+            reset_button = QPushButton("Reset", self._linter_table)
+            reset_button.clicked.connect(
+                lambda _checked=False, code=definition.code: self._handle_reset_lint_rule(code)
+            )
+            self._linter_table.setCellWidget(row_index, 4, reset_button)
+
+    def _handle_lint_enabled_changed(self, code: str) -> None:
+        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
+        if definition is None:
+            return
+        enabled_input = self._lint_enabled_inputs.get(code)
+        if enabled_input is None:
+            return
+        override = self._lint_rule_overrides.setdefault(code, {})
+        if definition.allow_disable:
+            override["enabled"] = enabled_input.isChecked()
+        self._normalize_lint_rule_override(code)
+
+    def _handle_lint_severity_changed(self, code: str) -> None:
+        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
+        if definition is None:
+            return
+        severity_input = self._lint_severity_inputs.get(code)
+        if severity_input is None:
+            return
+        override = self._lint_rule_overrides.setdefault(code, {})
+        if definition.allow_severity_override:
+            override["severity"] = str(severity_input.currentData())
+        self._normalize_lint_rule_override(code)
+
+    def _handle_reset_lint_rule(self, code: str) -> None:
+        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
+        if definition is None:
+            return
+        self._lint_rule_overrides.pop(code, None)
+        enabled_input = self._lint_enabled_inputs.get(code)
+        if enabled_input is not None:
+            enabled_input.setChecked(definition.default_enabled)
+        severity_input = self._lint_severity_inputs.get(code)
+        if severity_input is not None:
+            index = severity_input.findData(definition.default_severity)
+            severity_input.setCurrentIndex(index if index >= 0 else 0)
+
+    def _normalize_lint_rule_override(self, code: str) -> None:
+        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
+        if definition is None:
+            self._lint_rule_overrides.pop(code, None)
+            return
+        override = self._lint_rule_overrides.get(code, {})
+        normalized: dict[str, object] = {}
+        enabled = override.get("enabled")
+        if definition.allow_disable and isinstance(enabled, bool) and enabled != definition.default_enabled:
+            normalized["enabled"] = enabled
+        severity = override.get("severity")
+        if (
+            definition.allow_severity_override
+            and isinstance(severity, str)
+            and severity in {LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO}
+            and severity != definition.default_severity
+        ):
+            normalized["severity"] = severity
+        if normalized:
+            self._lint_rule_overrides[code] = normalized
+        else:
+            self._lint_rule_overrides.pop(code, None)
+
+    def _lint_rule_overrides_snapshot(self) -> dict[str, dict[str, object]]:
+        return {code: dict(value) for code, value in self._lint_rule_overrides.items()}
 
     def _refresh_validation_state(self) -> None:
         if self._ok_button is None:

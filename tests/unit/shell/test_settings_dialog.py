@@ -62,3 +62,12 @@ def test_settings_dialog_invalid_syntax_color_disables_ok() -> None:
 
     assert dialog._ok_button is not None
     assert dialog._ok_button.isEnabled() is False
+
+
+def test_settings_dialog_snapshot_includes_lint_rule_overrides() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    py220_checkbox = dialog._lint_enabled_inputs["PY220"]
+    py220_checkbox.setChecked(False)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.lint_rule_overrides["PY220"]["enabled"] is False

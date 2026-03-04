@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any, Mapping
 
 from app.core import constants
+from app.intelligence.lint_profile import (
+    LINT_SEVERITY_ERROR,
+    LINT_SEVERITY_INFO,
+    resolve_lint_rule_settings,
+)
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
 
 # Defensive fallback: well-known Python 3.9 stdlib top-level module names.
@@ -95,6 +102,7 @@ def find_unresolved_imports(
     source_overrides: dict[str, str] | None = None,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[ImportDiagnostic]:
     """Find unresolved project-local imports in Python files.
 
@@ -120,6 +128,7 @@ def find_unresolved_imports(
                 source=override,
                 known_runtime_modules=known_runtime_modules,
                 allow_runtime_import_probe=allow_runtime_import_probe,
+                lint_rule_overrides=lint_rule_overrides,
             )
         )
     return diagnostics
@@ -132,6 +141,7 @@ def analyze_python_file(
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[CodeDiagnostic]:
     """Run focused diagnostics for one Python file.
 
@@ -175,8 +185,10 @@ def analyze_python_file(
                 Path(project_root).expanduser().resolve(), path, syntax_tree,
                 known_runtime_modules=known_runtime_modules,
                 allow_runtime_import_probe=allow_runtime_import_probe,
+                lint_rule_overrides=lint_rule_overrides,
             )
         )
+    diagnostics = _apply_lint_rule_profile(diagnostics, lint_rule_overrides)
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
     return diagnostics
 
@@ -188,6 +200,7 @@ def _diagnostics_for_file(
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[ImportDiagnostic]:
     if source is None:
         try:
@@ -206,6 +219,7 @@ def _diagnostics_for_file(
         tree,
         known_runtime_modules=known_runtime_modules,
         allow_runtime_import_probe=allow_runtime_import_probe,
+        lint_rule_overrides=lint_rule_overrides,
     ):
         diagnostics.append(
             ImportDiagnostic(
@@ -255,7 +269,12 @@ def _unresolved_import_diagnostics(
     *,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[CodeDiagnostic]:
+    is_enabled, severity = resolve_lint_rule_settings("PY200", lint_rule_overrides)
+    if not is_enabled:
+        return []
+    diagnostic_severity = _severity_from_profile_value(severity)
     diagnostics: list[CodeDiagnostic] = []
     for node in ast.walk(syntax_tree):
         if isinstance(node, ast.Import):
@@ -270,7 +289,7 @@ def _unresolved_import_diagnostics(
                 diagnostics.append(
                     CodeDiagnostic(
                         code="PY200",
-                        severity=DiagnosticSeverity.ERROR,
+                        severity=diagnostic_severity,
                         file_path=str(file_path),
                         line_number=int(node.lineno),
                         message=f"Unresolved import: {alias.name}",
@@ -291,7 +310,7 @@ def _unresolved_import_diagnostics(
             diagnostics.append(
                 CodeDiagnostic(
                     code="PY200",
-                    severity=DiagnosticSeverity.ERROR,
+                    severity=diagnostic_severity,
                     file_path=str(file_path),
                     line_number=int(node.lineno),
                     message=f"Unresolved import: {node.module}",
@@ -420,3 +439,30 @@ def _unreachable_statement_diagnostics(syntax_tree: ast.AST, file_path: Path) ->
                 )
             )
     return diagnostics
+
+
+def _apply_lint_rule_profile(
+    diagnostics: list[CodeDiagnostic],
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None,
+) -> list[CodeDiagnostic]:
+    if not diagnostics:
+        return diagnostics
+    profiled: list[CodeDiagnostic] = []
+    for diagnostic in diagnostics:
+        is_enabled, severity = resolve_lint_rule_settings(diagnostic.code, lint_rule_overrides)
+        if not is_enabled:
+            continue
+        target_severity = _severity_from_profile_value(severity)
+        if diagnostic.severity == target_severity:
+            profiled.append(diagnostic)
+            continue
+        profiled.append(replace(diagnostic, severity=target_severity))
+    return profiled
+
+
+def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
+    if value == LINT_SEVERITY_ERROR:
+        return DiagnosticSeverity.ERROR
+    if value == LINT_SEVERITY_INFO:
+        return DiagnosticSeverity.INFO
+    return DiagnosticSeverity.WARNING

@@ -60,6 +60,7 @@ from app.intelligence.cache_controls import (
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.hover_service import resolve_hover_info
+from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
@@ -257,6 +258,7 @@ class MainWindow(QMainWindow):
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = self._load_syntax_color_overrides()
+        self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
@@ -622,6 +624,11 @@ class MainWindow(QMainWindow):
             constants.UI_SYNTAX_COLORS_DARK_KEY: dict(snapshot.syntax_color_overrides_dark),
         }
 
+    def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
+        settings_payload = load_settings(state_root=self._state_root)
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
+
     def _configure_close_tab_shortcut(self) -> None:
         if self._close_tab_shortcut is None:
             self._close_tab_shortcut = QShortcut(QKeySequence(), self)
@@ -825,6 +832,7 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._syntax_color_overrides = self._load_syntax_color_overrides()
+        self._lint_rule_overrides = self._load_lint_rule_overrides()
         if not self._diagnostics_enabled or not self._diagnostics_realtime:
             self._realtime_lint_timer.stop()
             self._pending_realtime_lint_file_path = None
@@ -1233,15 +1241,23 @@ class MainWindow(QMainWindow):
                 source_overrides=source_overrides,
                 known_runtime_modules=known_modules,
                 allow_runtime_import_probe=True,
+                lint_rule_overrides=self._lint_rule_overrides,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
             if self._problems_panel is None:
                 return
+            _, unresolved_import_severity = resolve_lint_rule_settings("PY200", self._lint_rule_overrides)
+            if unresolved_import_severity == LINT_SEVERITY_ERROR:
+                diagnostic_severity = DiagnosticSeverity.ERROR
+            elif unresolved_import_severity == LINT_SEVERITY_INFO:
+                diagnostic_severity = DiagnosticSeverity.INFO
+            else:
+                diagnostic_severity = DiagnosticSeverity.WARNING
             import_diags = [
                 CodeDiagnostic(
                     code="PY200",
-                    severity=DiagnosticSeverity.ERROR,
+                    severity=diagnostic_severity,
                     file_path=d.file_path,
                     line_number=d.line_number,
                     message=d.message,
@@ -2106,6 +2122,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root, source=buffer_source,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            lint_rule_overrides=self._lint_rule_overrides,
         )
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -2143,6 +2160,7 @@ class MainWindow(QMainWindow):
                 file_path, project_root=project_root, source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
                 allow_runtime_import_probe=True,
+                lint_rule_overrides=self._lint_rule_overrides,
             )
             self._stored_lint_diagnostics[file_path] = diagnostics
             self._push_diagnostics_to_editor(file_path, diagnostics)
@@ -2219,6 +2237,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            lint_rule_overrides=self._lint_rule_overrides,
         )
         fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
         if not fixes:
