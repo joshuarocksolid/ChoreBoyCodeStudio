@@ -63,10 +63,10 @@ The repository is no longer “empty scaffolding.” Core foundation work is alr
 | Recent projects persistence | DONE | `app/project/recent_projects.py` |
 | Settings persistence foundation | DONE | `app/persistence/settings_store.py` |
 | Runner orchestration / execution | DONE | `app/run/*` + `app/runner/*` implemented with manifest-driven execution |
-| Templates / New Project | TODO | no template assets under `/templates` yet |
-| Acceptance coverage vs MVP gate | PARTIAL | foundational tests pass; MVP run path not implemented |
+| Templates / New Project | DONE | template assets + materialization service under `templates/` and `app/templates/` |
+| Acceptance coverage vs MVP gate | PARTIAL | broad automated coverage exists; manual acceptance lane remains required for release |
 
-> Baseline test signal at rewrite time: `81 passed`.
+> Baseline test signal at rewrite time: `539 passed` (cloud VM, Qt-dependent tests skipped when PySide2 shared libs unavailable).
 
 ---
 
