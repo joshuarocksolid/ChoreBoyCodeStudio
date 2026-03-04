@@ -349,13 +349,13 @@ When in doubt, preserve the architecture and reduce complexity.
 
 ## Cursor Cloud specific instructions
 
-### PySide2 / PySide6 shim
+### FreeCAD AppRun runtime
 
-PySide2 from PyPI (5.13.2, the only version supporting Python 3.12) segfaults on Ubuntu 24.04. The update script installs **PySide6** and creates a thin PySide2 shim in the venv's `site-packages/PySide2/` so the codebase's `import PySide2.*` statements resolve to PySide6 at runtime. Key shim detail: `PySide2/QtWidgets.py` re-exports `QAction` from `PySide6.QtGui` (PySide6 moved it out of QtWidgets). If new PySide2-to-PySide6 API gaps appear, extend the corresponding shim file rather than modifying application code.
+The update script downloads FreeCAD 0.21.2 AppImage and extracts it to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides the real PySide2 5.15.8, FreeCAD headless backend, and embedded Python 3.10 runtime. No PySide6 shim is needed.
 
 ### Running tests
 
-All tests (unit + integration) run via:
+Tests run in the `.venv` (Python 3.12 with pytest + stubs), not inside the FreeCAD runtime. All tests use mocking for PySide2:
 ```
 source .venv/bin/activate && python -m pytest -v
 ```
@@ -363,10 +363,11 @@ See `pyproject.toml` for marker definitions (`unit`, `integration`, `runtime_par
 
 ### Launching the editor GUI
 
+Use the dev launcher which boots `run_editor.py` through FreeCAD AppRun (ChoreBoy parity):
 ```
-source .venv/bin/activate && DISPLAY=:1 python run_editor.py
+DISPLAY=:1 python3 dev_launch_editor.py --foreground
 ```
-The status bar will show "Runtime issues (4/6 checks)" because `/opt/freecad/AppRun` and the `FreeCAD` module are not present in the cloud VM — this is expected and does not block editor development.
+Status bar should show **"Startup: Runtime ready (6/6 checks)"** with all capabilities passing. Use `--dry-run` to inspect the generated command without launching.
 
 ### Type checking
 
@@ -375,6 +376,6 @@ source .venv/bin/activate && python -m mypy app/ dev_launch_editor.py run_editor
 ```
 Pre-existing stub mismatches (4 errors from PySide2-stubs and dynamic importlib usage) are expected.
 
-### System dependency
+### FreeCAD AppRun caveat
 
-The `libxcb-cursor0` package is required for PySide6's xcb platform plugin. The update script installs it.
+The AppRun runtime emits a harmless `FileNotFoundError: .venv/bin/activate_this.py` warning when the workspace contains a `.venv` directory. This is cosmetic and does not affect execution.
