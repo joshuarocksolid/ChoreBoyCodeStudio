@@ -29,7 +29,6 @@ class RunOutputCoordinator:
         focus_run_log_tab: Callable[[], None],
         focus_problems_tab: Callable[[], None],
         set_debug_command_input_enabled: Callable[[bool], None],
-        clear_controller_active_session_mode: Callable[[], None],
         finalize_run_log: Callable[[int | None], None],
         update_problems_from_output: Callable[[], list[ProblemEntry]],
         auto_open_console_on_run_output_enabled: Callable[[], bool],
@@ -48,7 +47,6 @@ class RunOutputCoordinator:
         self._focus_run_log_tab = focus_run_log_tab
         self._focus_problems_tab = focus_problems_tab
         self._set_debug_command_input_enabled = set_debug_command_input_enabled
-        self._clear_controller_active_session_mode = clear_controller_active_session_mode
         self._finalize_run_log = finalize_run_log
         self._update_problems_from_output = update_problems_from_output
         self._auto_open_console_on_run_output_enabled = auto_open_console_on_run_output_enabled
@@ -102,7 +100,6 @@ class RunOutputCoordinator:
             self._set_debug_command_input_enabled(False)
 
             self._set_active_session_mode(None)
-            self._clear_controller_active_session_mode()
             self._refresh_run_action_states()
             self._finalize_run_log(return_code)
             problems = self._update_problems_from_output()

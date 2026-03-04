@@ -114,6 +114,9 @@ class RunSessionController:
     def clear_active_session_mode(self) -> None:
         self._active_session_mode = None
 
+    def set_active_session_mode(self, mode: str | None) -> None:
+        self._active_session_mode = mode
+
     def pause_session(
         self,
         *,

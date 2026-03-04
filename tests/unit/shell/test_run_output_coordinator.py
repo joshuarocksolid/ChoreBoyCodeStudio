@@ -31,7 +31,6 @@ class _CoordinatorHarness:
     debug_inspector_updates: int = 0
     refresh_calls: int = 0
     debug_input_enabled: list[bool] = field(default_factory=list)
-    cleared_active_mode: int = 0
     finalized_return_codes: list[int | None] = field(default_factory=list)
 
     def build(self) -> RunOutputCoordinator:
@@ -49,7 +48,6 @@ class _CoordinatorHarness:
             focus_run_log_tab=lambda: self.focused_tabs.append("run_log"),
             focus_problems_tab=lambda: self.focused_tabs.append("problems"),
             set_debug_command_input_enabled=self.debug_input_enabled.append,
-            clear_controller_active_session_mode=self._record_clear_active_mode,
             finalize_run_log=self.finalized_return_codes.append,
             update_problems_from_output=lambda: list(self.problems),
             auto_open_console_on_run_output_enabled=lambda: self.auto_open_console,
@@ -61,9 +59,6 @@ class _CoordinatorHarness:
 
     def _record_refresh_call(self) -> None:
         self.refresh_calls += 1
-
-    def _record_clear_active_mode(self) -> None:
-        self.cleared_active_mode += 1
 
 
 def test_apply_output_routes_run_log_and_debug_console_lines() -> None:
@@ -114,7 +109,6 @@ def test_apply_exit_clears_session_and_focuses_problems_for_failed_run() -> None
 
     assert harness.active_mode is None
     assert harness.debug_input_enabled == [False]
-    assert harness.cleared_active_mode == 1
     assert harness.finalized_return_codes == [1]
     assert harness.statuses == [("failed", 1)]
     assert harness.focused_tabs == ["problems"]

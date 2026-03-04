@@ -275,7 +275,6 @@ class MainWindow(QMainWindow):
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
         self._active_run_session_info: RunInfo | None = None
-        self._active_session_mode: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
@@ -1896,9 +1895,10 @@ class MainWindow(QMainWindow):
                 mode=result.session.mode,
                 entry_file=result.session.entry_file,
             )
-        self._active_session_mode = self._run_session_controller.active_session_mode
         if self._debug_panel is not None:
-            self._debug_panel.set_command_input_enabled(self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG)
+            self._debug_panel.set_command_input_enabled(
+                self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG
+            )
         self._set_run_status("running")
         if self._auto_open_console_on_run_output:
             self._focus_run_log_tab()
@@ -1913,7 +1913,7 @@ class MainWindow(QMainWindow):
     def _handle_restart_action(self) -> None:
         if self._run_service.supervisor.is_running():
             self._run_service.stop_run()
-        if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+        if self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
             self._handle_debug_action()
         else:
             self._handle_run_action()
@@ -2242,7 +2242,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Runner input failed", str(exc))
             return
-        if self._active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
+        if self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
             self._append_debug_output_line(f">>> {command_text.rstrip()}")
 
     def _handle_python_console_submit(self, command_text: str) -> None:
@@ -2339,7 +2339,7 @@ class MainWindow(QMainWindow):
     def _handle_debug_command_submit(self, command_text: str) -> None:
         if not command_text.strip():
             return
-        if self._active_session_mode != constants.RUN_MODE_PYTHON_DEBUG:
+        if self._run_session_controller.active_session_mode != constants.RUN_MODE_PYTHON_DEBUG:
             return
         if not self._run_service.supervisor.is_running():
             return
@@ -2552,8 +2552,8 @@ class MainWindow(QMainWindow):
             return coordinator
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._is_shutting_down,
-            get_active_session_mode=lambda: getattr(self, "_active_session_mode", None),
-            set_active_session_mode=lambda mode: setattr(self, "_active_session_mode", mode),
+            get_active_session_mode=lambda: self._run_session_controller.active_session_mode,
+            set_active_session_mode=self._run_session_controller.set_active_session_mode,
             get_debug_session=lambda: self._debug_session,
             append_output_tail=self._active_run_output_tail.append,
             append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
@@ -2568,7 +2568,6 @@ class MainWindow(QMainWindow):
                 if getattr(self, "_debug_panel", None) is not None
                 else None
             ),
-            clear_controller_active_session_mode=self._run_session_controller.clear_active_session_mode,
             finalize_run_log=self._finalize_run_log,
             update_problems_from_output=self._update_problems_from_output,
             auto_open_console_on_run_output_enabled=lambda: bool(
@@ -2776,7 +2775,6 @@ class MainWindow(QMainWindow):
 
         self._repl_manager.shutdown()
         self._run_session_controller.clear_active_session_mode()
-        self._active_session_mode = None
         self._set_run_status("idle")
         if self._python_console_widget is not None:
             self._python_console_widget.set_session_active(False)
