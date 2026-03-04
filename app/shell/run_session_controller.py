@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable
 
 from app.core import constants
@@ -12,11 +13,21 @@ from app.shell.actions import map_run_action_state
 from app.shell.menus import MenuStubRegistry
 
 
+class RunSessionStartFailureReason(str, Enum):
+    """Stable reason codes for rejected run/debug start attempts."""
+
+    NO_PROJECT = "no_project"
+    ALREADY_RUNNING = "already_running"
+    SAVE_FAILED = "save_failed"
+    START_EXCEPTION = "start_exception"
+
+
 @dataclass(frozen=True)
 class RunSessionStartResult:
     """Result payload for run/debug/repl session start attempts."""
 
     started: bool
+    failure_reason: RunSessionStartFailureReason | None = None
     error_message: str | None = None
     session: RunSession | None = None
 
@@ -49,12 +60,23 @@ class RunSessionController:
         append_python_console_line: Callable[[str], None],
     ) -> RunSessionStartResult:
         if loaded_project is None:
-            return RunSessionStartResult(started=False, error_message="Open a project before running code.")
+            return RunSessionStartResult(
+                started=False,
+                failure_reason=RunSessionStartFailureReason.NO_PROJECT,
+                error_message="Open a project before running code.",
+            )
         if self._run_service.supervisor.is_running():
-            return RunSessionStartResult(started=False)
+            return RunSessionStartResult(
+                started=False,
+                failure_reason=RunSessionStartFailureReason.ALREADY_RUNNING,
+            )
 
         if not skip_save and not save_all():
-            return RunSessionStartResult(started=False, error_message="Fix save errors before running.")
+            return RunSessionStartResult(
+                started=False,
+                failure_reason=RunSessionStartFailureReason.SAVE_FAILED,
+                error_message="Fix save errors before running.",
+            )
 
         before_start()
         append_console_line("────────────────────\n", "system")
@@ -72,7 +94,11 @@ class RunSessionController:
             )
         except Exception as exc:
             append_console_line(f"Run failed to start: {exc}\n", "stderr")
-            return RunSessionStartResult(started=False, error_message=str(exc))
+            return RunSessionStartResult(
+                started=False,
+                failure_reason=RunSessionStartFailureReason.START_EXCEPTION,
+                error_message=str(exc),
+            )
 
         self._active_session_mode = mode
         append_console_line(f"Run started ({session.run_id})\n", "system")

@@ -152,7 +152,7 @@ from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.repl_session_manager import ReplSessionManager
-from app.shell.run_session_controller import RunSessionController
+from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
@@ -1981,10 +1981,12 @@ class MainWindow(QMainWindow):
             append_python_console_line=self._append_python_console_line,
         )
         if not result.started:
-            if result.error_message and result.error_message == "Open a project before running code.":
+            if result.failure_reason == RunSessionStartFailureReason.NO_PROJECT:
                 QMessageBox.warning(self, "Run unavailable", result.error_message)
-            elif result.error_message and result.error_message == "Fix save errors before running.":
+            elif result.failure_reason == RunSessionStartFailureReason.SAVE_FAILED:
                 QMessageBox.warning(self, "Run cancelled", result.error_message)
+            elif result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING:
+                pass
             elif result.error_message:
                 QMessageBox.warning(self, "Run failed to start", result.error_message)
             self._set_run_status("idle")
