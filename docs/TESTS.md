@@ -12,7 +12,7 @@ It aligns with:
 
 ## 2) Framework and markers
 
-- Test runner: `pytest`
+- Test runner: `pytest` (shipped inside the FreeCAD AppRun runtime)
 - Markers (defined in `pyproject.toml`):
   - `unit`
   - `integration`
@@ -44,35 +44,19 @@ Implemented coverage includes:
 
 ## 5) Core commands
 
-Activate venv:
-
-```bash
-source .venv/bin/activate
-```
-
 Run full suite:
 
 ```bash
-python -m pytest -v
+python3 run_tests.py -v
 ```
 
 Run focused suites:
 
 ```bash
-python -m pytest -v tests/unit
-python -m pytest -v tests/integration
-python -m pytest -v tests/integration/performance
+python3 run_tests.py -v tests/unit
+python3 run_tests.py -v tests/integration
+python3 run_tests.py -v tests/integration/performance
 ```
-
-Type check:
-
-```bash
-python -m mypy app/ dev_launch_editor.py run_editor.py run_runner.py launcher.py
-```
-
-Expected mypy baseline in cloud VM remains 4 known pre-existing errors:
-- `app/shell/status_bar.py` (`setProperty` bytes typing mismatch)
-- `run_editor.py` dynamic Qt loader object typing (3 errors)
 
 ## 6) Manual acceptance validation
 
@@ -84,12 +68,11 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 7) Notes for cloud environment
 
-- `/opt/freecad/AppRun` and `FreeCAD` module are absent in cloud VM; related diagnostics correctly report those as unavailable.
-- PySide2 in cloud uses a compatibility shim to run against PySide6.
+- Tests run through `/opt/freecad/AppRun` using real PySide2 — the same Qt binding used in production.
+- `QT_QPA_PLATFORM=offscreen` is set by default in `run_tests.py` so tests do not require a display server.
 
 ## 8) Current baseline result
 
 At latest validation checkpoint:
 
-- `python -m pytest -q` -> **150 passed** (no known test warnings)
-- `mypy` -> **4 known pre-existing errors (expected baseline)**
+- `python3 run_tests.py -q` -> **150 passed** (no known test warnings)

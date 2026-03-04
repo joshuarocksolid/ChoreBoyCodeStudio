@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+_FREECAD_EXECUTABLE_NAMES = {"AppRun", "freecad", "FreeCAD"}
+
 
 def build_runner_command(*, runtime_executable: str, runner_boot_path: str, manifest_path: str) -> list[str]:
     """Build process command used to launch ``run_runner.py`` with a manifest."""
     resolved_runner_boot_path = str(Path(runner_boot_path).expanduser().resolve())
     runtime_path = Path(runtime_executable)
-    if runtime_path.name == "AppRun" or runtime_path.suffix == ".AppImage":
+    if runtime_path.name in _FREECAD_EXECUTABLE_NAMES or runtime_path.suffix == ".AppImage":
         runner_parent = str(Path(resolved_runner_boot_path).parent)
         payload = (
             "import runpy, sys;"

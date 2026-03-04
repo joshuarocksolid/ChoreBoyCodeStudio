@@ -9,7 +9,7 @@ This directory contains the executable pytest suites for ChoreBoy Code Studio.
 ## Running tests
 
 ```bash
-source .venv/bin/activate && python -m pytest -v
+python3 run_tests.py -v
 ```
 
 Use markers from `pyproject.toml` (`unit`, `integration`, `runtime_parity`, `manual_acceptance`) to target specific layers.

@@ -7,7 +7,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = [".git", ".cursor", ".pytest_cache", ".venv", "venv"]
-qt_api = "pyside6"
 markers = [
     "unit: fast isolated tests for pure business logic and contracts",
     "integration: multi-component tests with filesystem/subprocess boundaries",

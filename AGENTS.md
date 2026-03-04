@@ -352,15 +352,15 @@ When in doubt, preserve the architecture and reduce complexity.
 
 ### FreeCAD AppRun runtime
 
-The update script downloads FreeCAD 1.0.2 AppImage and extracts it to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides PySide2 5.15.15, FreeCAD 1.0.2 headless backend, and Python 3.11 runtime. The application runs through AppRun (via `dev_launch_editor.py`), while tests run in the `.venv` using PySide6 with a thin PySide2 shim for import compatibility.
+FreeCAD 1.0.2 is extracted to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides PySide2 5.15.15, FreeCAD 1.0.2 headless backend, pytest 9.0.2, and Python 3.11 runtime. Both the application and the test suite run through AppRun.
 
 ### Running tests
 
-Tests run in the `.venv` (Python 3.12 with pytest + stubs), not inside the FreeCAD runtime. All tests use mocking for PySide2:
+Tests run inside the FreeCAD AppRun Python with real PySide2 — no shims, no separate venv:
 ```
-source .venv/bin/activate && python -m pytest -v
+python3 run_tests.py -v
 ```
-See `pyproject.toml` for marker definitions (`unit`, `integration`, `runtime_parity`, `manual_acceptance`).
+`run_tests.py` invokes pytest through `/opt/freecad/AppRun` and sets `QT_QPA_PLATFORM=offscreen` by default. Override the AppRun path with `CBCS_APPRUN` if needed. See `pyproject.toml` for marker definitions (`unit`, `integration`, `runtime_parity`, `manual_acceptance`).
 
 ### Launching the editor GUI
 
@@ -369,21 +369,3 @@ Use the dev launcher which boots `run_editor.py` through FreeCAD AppRun (ChoreBo
 DISPLAY=:1 python3 dev_launch_editor.py --foreground
 ```
 Status bar should show **"Startup: Runtime ready (6/6 checks)"** with all capabilities passing. Use `--dry-run` to inspect the generated command without launching.
-
-### Type checking
-
-```
-source .venv/bin/activate && python -m mypy app/ dev_launch_editor.py run_editor.py run_runner.py launcher.py
-```
-Pre-existing stub mismatches (4 errors from PySide2-stubs and dynamic importlib usage) are expected.
-
-### PySide2 shim for the test venv
-
-Tests run in `.venv` (Python 3.12) which cannot use the real PySide2 (segfaults on Ubuntu 24.04). The update script installs PySide6 and creates a thin `PySide2` shim package in `site-packages/PySide2/` that re-exports PySide6 modules. Key shim detail: `QtWidgets.py` re-exports `QAction` and `QShortcut` from `PySide6.QtGui`. If new API gaps surface in tests, extend the relevant shim file. The shim also covers `QtSvg` and `QtUiTools`.
-
-### Pre-existing test failures from main
-
-4 tests fail due to test/source mismatches merged from main (not from the environment setup):
-- 2 integration tests reference `showMaximized` on a mock that lacks it
-- 1 integration test uses `QListView.count()` which doesn't exist in PySide6
-- 1 unit test creates an uninitialized `MainWindow` missing `_editor_manager`

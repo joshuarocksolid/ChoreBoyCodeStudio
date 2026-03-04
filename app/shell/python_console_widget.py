@@ -194,7 +194,6 @@ class PythonConsoleWidget(QTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
         key = event.key()
-        # Cast to int for reliable bitwise tests across PySide2/PySide6 enum types.
         mods = _enum_int(event.modifiers())
 
         _ctrl = _enum_int(Qt.ControlModifier)

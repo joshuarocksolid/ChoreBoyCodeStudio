@@ -643,7 +643,7 @@ class CodeEditorWidget(QPlainTextEdit):
                         QRect(icon_zone, top, self._line_number_area.width() - icon_zone - 4, font_height),  # type: ignore
                         int(Qt.AlignRight),
                         number_text,
-                    )  # type: ignore[call-overload]  # stubs require br; PySide6 shim does not
+                    )  # type: ignore[call-overload]
 
                 block = block.next()
                 block_number += 1

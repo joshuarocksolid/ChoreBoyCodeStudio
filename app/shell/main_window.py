@@ -166,7 +166,6 @@ from app.shell.status_bar import ShellStatusBarController, create_shell_status_b
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
 
-# Qt.UserRole is 0x0100 (256). Literal role IDs avoid enum typing mismatches across PySide shims.
 TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
