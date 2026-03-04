@@ -36,7 +36,7 @@ from PySide2.QtWidgets import (
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_app_log_path, global_cache_dir, global_logs_dir, project_logs_dir
-from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
+from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
 from app.core.models import CapabilityProbeReport
@@ -154,6 +154,7 @@ from app.shell.run_session_controller import RunSessionController, RunSessionSta
 from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
+from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
@@ -307,6 +308,34 @@ class MainWindow(QMainWindow):
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
         self._logger = get_subsystem_logger("shell")
+        self._diagnostics_orchestrator = DiagnosticsOrchestrator(
+            diagnostics_enabled=lambda: self._diagnostics_enabled,
+            diagnostics_realtime=lambda: self._diagnostics_realtime,
+            set_pending_realtime_file_path=lambda file_path: setattr(
+                self, "_pending_realtime_lint_file_path", file_path
+            ),
+            get_pending_realtime_file_path=lambda: self._pending_realtime_lint_file_path,
+            start_realtime_timer=self._realtime_lint_timer.start,
+            get_active_tab_file_path=lambda: None
+            if self._editor_manager.active_tab() is None
+            else self._editor_manager.active_tab().file_path,
+            render_lint_for_file=self._render_lint_diagnostics_for_file,
+            get_open_editor_paths=lambda: list(self._editor_widgets_by_path.keys()),
+            render_merged_problems_panel=self._render_merged_problems_panel,
+            set_known_runtime_modules=lambda modules: setattr(self, "_known_runtime_modules", modules),
+            run_background_task=self._background_tasks.run,
+            state_root=lambda: self._state_root,
+            logger=self._logger,
+            show_runtime_probe_warning=lambda message: QMessageBox.warning(
+                self,
+                "Refresh Runtime Modules",
+                message,
+            ),
+        )
+        self._search_results_coordinator = SearchResultsCoordinator(
+            set_search_results=self._set_search_results,
+            dispatch_to_main_thread=self._dispatch_to_main_thread,
+        )
         self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
         self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
         self._project_tree_action_coordinator = ProjectTreeActionCoordinator(
@@ -2197,60 +2226,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _start_runtime_module_probe(self, *, user_initiated: bool = False) -> None:
-        state_root = self._state_root
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return probe_and_cache_runtime_modules(state_root=state_root)
-
-        def on_success(modules: object) -> None:
-            if not isinstance(modules, frozenset):
-                self._logger.warning(
-                    "Runtime module probe returned unexpected payload type: %s",
-                    type(modules).__name__,
-                )
-                if user_initiated:
-                    QMessageBox.warning(
-                        self,
-                        "Refresh Runtime Modules",
-                        "Runtime module probe returned an unexpected result type."
-                        " See app logs for details.",
-                    )
-                return
-            if not modules:
-                self._logger.warning(
-                    "Runtime module probe returned an empty module set; unresolved-import diagnostics may be incomplete."
-                )
-                if user_initiated:
-                    QMessageBox.warning(
-                        self,
-                        "Refresh Runtime Modules",
-                        "Runtime module probe returned no modules."
-                        " FreeCAD/runtime imports may still show unresolved until probing succeeds.",
-                    )
-                return
-            self._known_runtime_modules = modules
-            self._logger.info("Runtime module probe completed: %d modules discovered", len(modules))
-            self._relint_open_python_files()
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Runtime module probe failed: %s", exc)
-            if user_initiated:
-                QMessageBox.warning(
-                    self,
-                    "Refresh Runtime Modules",
-                    f"Runtime module probe failed: {exc}",
-                )
-
-        self._background_tasks.run(
-            key="runtime_module_probe", task=task, on_success=on_success, on_error=on_error,
-        )
+        self._diagnostics_orchestrator.start_runtime_module_probe(user_initiated=user_initiated)
 
     def _relint_open_python_files(self) -> None:
         """Re-lint all currently open Python file tabs and refresh the problems panel."""
-        for file_path in list(self._editor_widgets_by_path):
-            if file_path.lower().endswith(".py"):
-                self._render_lint_diagnostics_for_file(file_path, trigger="tab_change")
-        self._render_merged_problems_panel()
+        self._diagnostics_orchestrator.relint_open_python_files()
 
     def _handle_refresh_runtime_modules_action(self) -> None:
         self._start_runtime_module_probe(user_initiated=True)
@@ -2665,7 +2645,7 @@ class MainWindow(QMainWindow):
         self._update_problems_tab_title(self._problems_panel.problem_count())
 
     def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
+        self._search_results_coordinator.schedule_results_update(matches, query)
 
     def _handle_search_worker_done(self, started_at: float, query: str) -> None:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -3952,22 +3932,10 @@ class MainWindow(QMainWindow):
         self._autosave_timer.start()
 
     def _schedule_realtime_lint(self, file_path: str) -> None:
-        if not self._diagnostics_enabled or not self._diagnostics_realtime:
-            return
-        if not file_path.lower().endswith(".py"):
-            return
-        self._pending_realtime_lint_file_path = file_path
-        self._realtime_lint_timer.start()
+        self._diagnostics_orchestrator.schedule_realtime_lint(file_path)
 
     def _run_scheduled_realtime_lint(self) -> None:
-        file_path = self._pending_realtime_lint_file_path
-        self._pending_realtime_lint_file_path = None
-        if file_path is None:
-            return
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None or active_tab.file_path != file_path:
-            return
-        self._render_lint_diagnostics_for_file(file_path, trigger="realtime")
+        self._diagnostics_orchestrator.run_scheduled_realtime_lint()
     @staticmethod
     def _semantic_task_key(file_path: str) -> str:
         return f"semantic_tokens:{file_path}"
