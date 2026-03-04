@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
+from app.intelligence.lint_profile import parse_lint_rule_overrides
+from app.shell.shortcut_preferences import parse_shortcut_overrides
+from app.shell.syntax_color_preferences import (
+    THEME_DARK,
+    THEME_LIGHT,
+    parse_syntax_color_overrides,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,10 @@ class EditorSettingsSnapshot:
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
     auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
+    shortcut_overrides: dict[str, str] = field(default_factory=dict)
+    syntax_color_overrides_light: dict[str, str] = field(default_factory=dict)
+    syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
+    lint_rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -65,6 +76,9 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     if not isinstance(intelligence_settings, dict):
         intelligence_settings = {}
     runtime_settings = parse_intelligence_runtime_settings(settings_payload)
+    shortcut_overrides = parse_shortcut_overrides(settings_payload)
+    syntax_color_overrides = parse_syntax_color_overrides(settings_payload)
+    lint_rule_overrides = parse_lint_rule_overrides(settings_payload)
     theme_settings = settings_payload.get(constants.UI_THEME_SETTINGS_KEY, {})
     if not isinstance(theme_settings, dict):
         theme_settings = {}
@@ -168,6 +182,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY),
             default=constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
         ),
+        shortcut_overrides=shortcut_overrides,
+        syntax_color_overrides_light=syntax_color_overrides.get(THEME_LIGHT, {}),
+        syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
+        lint_rule_overrides=lint_rule_overrides,
     )
 
 
@@ -300,6 +318,16 @@ def merge_editor_settings_snapshot(
         constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: bool(snapshot.auto_open_console_on_run_output),
         constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY: bool(snapshot.auto_open_problems_on_run_failure),
     }
+    merged[constants.UI_KEYBINDINGS_SETTINGS_KEY] = {
+        constants.UI_KEYBINDINGS_OVERRIDES_KEY: _normalize_string_map(snapshot.shortcut_overrides),
+    }
+    merged[constants.UI_SYNTAX_COLORS_SETTINGS_KEY] = {
+        constants.UI_SYNTAX_COLORS_LIGHT_KEY: _normalize_string_map(snapshot.syntax_color_overrides_light),
+        constants.UI_SYNTAX_COLORS_DARK_KEY: _normalize_string_map(snapshot.syntax_color_overrides_dark),
+    }
+    merged[constants.UI_LINTER_SETTINGS_KEY] = {
+        constants.UI_LINTER_RULE_OVERRIDES_KEY: _normalize_lint_rule_override_map(snapshot.lint_rule_overrides),
+    }
     return merged
 
 
@@ -311,3 +339,29 @@ def _coerce_int(value: Any, *, default: int, minimum: int) -> int:
     if not isinstance(value, int):
         return default
     return max(minimum, value)
+
+
+def _normalize_string_map(payload: Mapping[str, Any]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        normalized[key] = value
+    return normalized
+
+
+def _normalize_lint_rule_override_map(payload: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for code, override in payload.items():
+        if not isinstance(code, str) or not isinstance(override, Mapping):
+            continue
+        normalized_override: dict[str, Any] = {}
+        enabled = override.get("enabled")
+        if isinstance(enabled, bool):
+            normalized_override["enabled"] = enabled
+        severity = override.get("severity")
+        if isinstance(severity, str):
+            normalized_override["severity"] = severity
+        if normalized_override:
+            normalized[code] = normalized_override
+    return normalized
