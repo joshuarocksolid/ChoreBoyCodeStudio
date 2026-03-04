@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-import json
 import queue
 from pathlib import Path
 import subprocess
@@ -139,13 +137,7 @@ from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.project.project_tree import build_project_tree
 from app.project.run_configs import (
-    RunConfiguration,
     env_overrides_to_text,
-    parse_env_overrides_text,
-    parse_run_config,
-    parse_run_configs,
-    remove_run_config,
-    upsert_run_config,
 )
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
@@ -160,6 +152,7 @@ from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
 from app.shell.run_output_coordinator import RunOutputCoordinator
+from app.shell.run_config_controller import RunConfigController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
@@ -299,6 +292,7 @@ class MainWindow(QMainWindow):
         self._run_output_coordinator: RunOutputCoordinator | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
+        self._run_config_controller = RunConfigController()
         self._repl_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._repl_manager = ReplSessionManager(
             on_output=self._enqueue_repl_output,
@@ -1631,7 +1625,7 @@ class MainWindow(QMainWindow):
         if self._loaded_project is None:
             QMessageBox.warning(self, "Run With Configuration", "Open a project first.")
             return
-        configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        configs = self._run_config_controller.load_configs(self._loaded_project)
         if not configs:
             QMessageBox.information(
                 self,
@@ -1666,7 +1660,7 @@ class MainWindow(QMainWindow):
         if self._loaded_project is None:
             QMessageBox.warning(self, "Manage Run Configurations", "Open a project first.")
             return
-        existing_configs = parse_run_configs(self._loaded_project.metadata.run_configs)
+        existing_configs = self._run_config_controller.load_configs(self._loaded_project)
         choices = [config.name for config in existing_configs]
         create_label = "<Create new configuration>"
         choices.append(create_label)
@@ -1702,8 +1696,16 @@ class MainWindow(QMainWindow):
                 )
                 if confirm != QMessageBox.Yes:
                     return
-                remaining_configs = remove_run_config(existing_configs, selected_config.name)
-                self._persist_run_configurations(remaining_configs)
+                try:
+                    self._run_config_controller.delete_config(
+                        loaded_project=self._loaded_project,
+                        existing_configs=existing_configs,
+                        config_name=selected_config.name,
+                    )
+                except AppValidationError as exc:
+                    QMessageBox.warning(self, "Manage Run Configurations", str(exc))
+                    return
+                self._reload_current_project()
                 QMessageBox.information(
                     self,
                     "Manage Run Configurations",
@@ -1711,13 +1713,7 @@ class MainWindow(QMainWindow):
                 )
                 return
         if selected_name == create_label or selected_config is None:
-            selected_config = RunConfiguration(
-                name="Default",
-                entry_file=self._loaded_project.metadata.default_entry,
-                argv=list(self._loaded_project.metadata.default_argv),
-                working_directory=self._loaded_project.metadata.working_directory,
-                env_overrides=dict(self._loaded_project.metadata.env_overrides),
-            )
+            selected_config = self._run_config_controller.build_default_config(self._loaded_project)
 
         config_name, accepted_name = QInputDialog.getText(
             self,
@@ -1766,39 +1762,31 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            parsed_env_overrides = parse_env_overrides_text(env_overrides_text)
-            updated_config = parse_run_config(
-                {
-                    "name": config_name.strip(),
-                    "entry_file": entry_file.strip(),
-                    "argv": [token for token in argv_text.split(" ") if token.strip()],
-                    "working_directory": working_directory_text.strip() or None,
-                    "env_overrides": parsed_env_overrides,
-                }
+            updated_config = self._run_config_controller.parse_config_input(
+                name=config_name,
+                entry_file=entry_file,
+                argv_text=argv_text,
+                working_directory_text=working_directory_text,
+                env_overrides_text=env_overrides_text,
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Manage Run Configurations", str(exc))
             return
-        merged_configs = upsert_run_config(existing_configs, updated_config)
-        self._persist_run_configurations(merged_configs)
+        try:
+            self._run_config_controller.upsert_config(
+                loaded_project=self._loaded_project,
+                existing_configs=existing_configs,
+                updated_config=updated_config,
+            )
+        except AppValidationError as exc:
+            QMessageBox.warning(self, "Manage Run Configurations", str(exc))
+            return
+        self._reload_current_project()
         QMessageBox.information(
             self,
             "Manage Run Configurations",
             f"Saved configuration '{updated_config.name}'.",
         )
-
-    def _persist_run_configurations(self, run_configs: list[RunConfiguration]) -> None:
-        if self._loaded_project is None:
-            return
-        manifest_path = Path(self._loaded_project.manifest_path)
-        payload = self._loaded_project.metadata.to_dict()
-        payload["run_configs"] = [config.to_payload() for config in run_configs]
-        try:
-            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        except OSError as exc:
-            QMessageBox.warning(self, "Manage Run Configurations", f"Unable to save run configurations: {exc}")
-            return
-        self._reload_current_project()
 
     def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
         if result.stdout.strip():
