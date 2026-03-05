@@ -76,12 +76,17 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert surface is not None
     assert surface.current_mode == "signals_slots"
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Connections"  # type: ignore[attr-defined]
+    status_label = window.findChild(qt_widgets.QLabel, "shell.editorStatusLabel")
+    assert status_label is not None
+    assert "Mode Signals/Slots" in status_label.text()
     tab_mode_action.trigger()
     assert surface.current_mode == "tab_order"
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Tab Order"  # type: ignore[attr-defined]
+    assert "Mode Tab Order" in status_label.text()
     buddy_mode_action.trigger()
     assert surface.current_mode == "buddy"
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Buddies"  # type: ignore[attr-defined]
+    assert "Mode Buddy" in status_label.text()
     monkeypatch.setattr(qt_widgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: ("", ""))
     add_resource_action.trigger()
     assert [resource.location for resource in surface.model.resources] == []  # type: ignore[union-attr]

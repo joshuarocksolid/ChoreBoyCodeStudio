@@ -4042,7 +4042,12 @@ class MainWindow(QMainWindow):
                     is_dirty,
                 )
             )
-            designer_surface.mode_changed.connect(lambda _mode: self._refresh_designer_action_states())
+            designer_surface.mode_changed.connect(
+                lambda _mode, tab_file_path=opened_result.tab.file_path: (
+                    self._refresh_designer_action_states(),
+                    self._update_editor_status_for_path(tab_file_path),
+                )
+            )
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -4211,8 +4216,24 @@ class MainWindow(QMainWindow):
             return
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._editor_widgets_by_path.get(file_path)
+        designer_widget = self._designer_widgets_by_path.get(file_path)
         if tab_state is None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            return
+        if designer_widget is not None:
+            mode_labels = {
+                "widget": "Widget",
+                "signals_slots": "Signals/Slots",
+                "buddy": "Buddy",
+                "tab_order": "Tab Order",
+            }
+            self._status_controller.set_editor_status(
+                file_name=tab_state.display_name,
+                line=1,
+                column=1,
+                is_dirty=tab_state.is_dirty,
+                mode_label=mode_labels.get(designer_widget.current_mode, "Designer"),
+            )
             return
         if editor_widget is None:
             self._status_controller.set_editor_status(
