@@ -718,3 +718,115 @@ logging.getLogger("jasper_bridge").setLevel(logging.DEBUG)
 3. **Implement Phase 1 (v0.1.0).** Following the steps in section 11.
 
 4. **Ship to ChoreBoy for user testing.** Copy the library and a sample project to ChoreBoy, have a real user try it.
+
+## 20. Implementation tracker and artifact provenance
+
+### 20.1 Slice status tracker
+
+| Slice | Scope | Status | Evidence |
+|---|---|---|---|
+| Phase 0 | Readiness and artifact gates | DONE | `jasper_bridge/docs/PRD.md`, this section |
+| Slice 1 | Skeleton + errors | DONE | `jasper_bridge/__init__.py`, `jasper_bridge/_version.py`, `jasper_bridge/errors.py` |
+| Slice 2 | JVM lifecycle | DONE | `jasper_bridge/jvm.py` |
+| Slice 3 | Java entrypoint | DONE | `jasper_bridge/java/JasperBridge.java`, `jasper_bridge/java/JasperBridge.class` |
+| Slice 4 | Typed params | DONE | `jasper_bridge/params.py` |
+| Slice 5 | Compiler | DONE | `jasper_bridge/compiler.py` |
+| Slice 6 | Filler | DONE | `jasper_bridge/filler.py` |
+| Slice 7 | Exporter | DONE | `jasper_bridge/exporter.py` |
+| Slice 8 | Report facade | DONE | `jasper_bridge/report.py` |
+| Slice 9 | Qt preview | DONE | `jasper_bridge/preview.py` |
+| Slice 10 | Qt printing | DONE | `jasper_bridge/printing.py` |
+| Slice 11 | JARs + logging | DONE | `jasper_bridge/lib/*.jar`, logging integration in modules |
+| Slice 12 | Docs + v0.1 acceptance | DONE | `jasper_bridge/docs/USAGE.md`, `jasper_bridge/docs/CHANGELOG.md`, Section 20.5 evidence |
+| Slice 2.1 | HTML export | DONE | `JasperBridge.java` action `export_html`, `jasper_bridge/exporter.py`, `Report.export_html()` |
+| Slice 2.2 | CSV export | DONE | `JasperBridge.java` action `export_csv`, `jasper_bridge/exporter.py`, `Report.export_csv()` |
+| Slice 2.3 | XLS export | DONE | `JasperBridge.java` action `export_xls`, `jasper_bridge/exporter.py`, `Report.export_xls()` |
+| Slice 2.4 | Text export | DONE | `JasperBridge.java` action `export_text`, `jasper_bridge/exporter.py`, `Report.export_text()` |
+| Slice 2.5 | XML export | DONE | `JasperBridge.java` action `export_xml`, `jasper_bridge/exporter.py`, `Report.export_xml()` |
+| Slice 2.6 | JSON datasource fill | DONE | `JasperBridge.java` action `fill_json`, `jasper_bridge/filler.py`, `Report.fill(json_file=...)` |
+| Slice 2.7 | CSV datasource fill | DONE | `JasperBridge.java` action `fill_csv`, `jasper_bridge/filler.py`, `Report.fill(csv_file=...)` |
+| Slice 2.8 | Advanced printing | DONE | `jasper_bridge/printing.py` advanced options and `Report.print(**kwargs)` passthrough |
+| Slice 2.9 | Connection pool | DONE | `jasper_bridge/connections.py` |
+| Slice 2.10 | API + JRXML docs | DONE | `jasper_bridge/docs/API.md`, `jasper_bridge/docs/JRXML_GUIDE.md` |
+| Slice 3.1 | XLSX export | DONE | `JasperBridge.java` action `export_xlsx`, `jasper_bridge/exporter.py`, `Report.export_xlsx()` |
+| Slice 3.2 | Metadata API | DONE | enriched Java `info` payload and `Report.info()` |
+| Slice 3.3 | Subreport support | DONE | `subreport_dir` propagation in fill pipeline and JRXML guide coverage |
+| Slice 3.4 | Parameter validation | DONE | `Report.fill(... validate_params=True)` metadata-based validation |
+| Slice 3.5 | Batch export | DONE | Java `fill_and_export` + Python `filler.fill_and_export` + `Report.export_all()` |
+| Slice 3.6 | Performance profiling | DONE | `jasper_bridge/tools/profile_fill_export.py`, `jasper_bridge/docs/PERFORMANCE.md`, `jasper_bridge/docs/RELEASE_HARDENING.md` |
+
+### 20.2 Artifact provenance policy
+
+Runtime artifacts for `jasper_bridge` are tracked with explicit source and destination paths:
+
+| Artifact class | Source | Destination |
+|---|---|---|
+| Java source | `jasper_bridge/java/JasperBridge.java` | `jasper_bridge/java/JasperBridge.java` |
+| Java bytecode | Build output from `JasperBridge.java` compiled with Java 8 target | `jasper_bridge/java/JasperBridge.class` |
+| Jasper/JDBC jars | JasperReports runtime set validated in discovery/probe work | `jasper_bridge/lib/*.jar` |
+
+### 20.3 Manual validation input set
+
+Phase acceptance checks use this fixed input set:
+
+| Input | Purpose | Path |
+|---|---|---|
+| Static JRXML | Empty datasource and export baseline | `jasper_probe/test_reports/hello_static.jrxml` |
+| Query JRXML | JDBC data-bearing validation | `jasper_probe/test_reports/simple_query.jrxml` |
+| Probe output folder | Compare generated files against known-good baseline | `jasper_probe/results/static_export/` |
+
+### 20.4 Packaging policy lock
+
+`jasper_bridge` remains folder-copy distributable only. The implementation must not add pip packaging, wheel metadata, or setup tooling.
+
+### 20.5 v0.1 acceptance evidence log
+
+| Criterion | Evidence |
+|---|---|
+| Import API works | Implemented export surface in `jasper_bridge/__init__.py` |
+| Empty fill path implemented | `JasperBridge.java` action `fill_empty` + `jasper_bridge/filler.py` |
+| PDF export implemented | `JasperBridge.java` action `export_pdf` + `jasper_bridge/exporter.py` |
+| PNG export implemented | `JasperBridge.java` action `export_png` + `jasper_bridge/exporter.py` |
+| Preview flow implemented | `jasper_bridge/preview.py` + `Report.preview()` |
+| Print flow implemented | `jasper_bridge/printing.py` + `Report.print()` |
+| JDBC fill implemented | `JasperBridge.java` action `fill_jdbc` + `jasper_bridge/filler.py` |
+| Typed params implemented | `jasper_bridge/params.py` + Java `deserializeParams()` |
+| Error and stacktrace plumbing implemented | `jasper_bridge/errors.py` and Java error JSON contract |
+| Logging contract integrated | `logging.getLogger(__name__)` used in JVM/compiler/filler/exporter/preview/printing modules |
+
+Manual runtime verification is deferred in this implementation pass because execution of tests/acceptance runs was explicitly disabled for this session.
+
+### 20.8 v0.3 performance and hardening evidence log
+
+| Criterion | Evidence |
+|---|---|
+| Profiling workflow implemented | `jasper_bridge/tools/profile_fill_export.py` |
+| Profiling interpretation guidance documented | `jasper_bridge/docs/PERFORMANCE.md` |
+| Release hardening checklist documented | `jasper_bridge/docs/RELEASE_HARDENING.md` |
+| Full slice tracker updated through v0.3 | Section 20.1 status table |
+
+Runtime profiling and manual acceptance runs are deferred in this implementation pass because execution of tests/acceptance runs was explicitly disabled for this session.
+
+### 20.7 v0.3 advanced feature evidence log
+
+| Criterion | Evidence |
+|---|---|
+| XLSX export implemented | Java `export_xlsx` action + POI jars in `jasper_bridge/lib/` + Python exporter/report bindings |
+| Metadata API expanded | Java `info` now returns parameters/fields/query and `Report.info()` exposes it |
+| Subreport support documented and wired | `subreport_dir` argument in fill path and JRXML guide section |
+| Parameter validation implemented | `Report.fill(validate_params=True)` with required/type checks |
+| Batch export implemented | Java `fill_and_export` plus Python `fill_and_export`/`Report.export_all` |
+
+Manual runtime verification is deferred in this implementation pass because execution of tests/acceptance runs was explicitly disabled for this session.
+
+### 20.6 v0.2 acceptance evidence log
+
+| Criterion | Evidence |
+|---|---|
+| HTML/CSV/XLS/TEXT/XML export paths implemented | Java handlers and Python exporter/report methods added |
+| JSON and CSV datasource fill paths implemented | Java `fill_json`/`fill_csv` and Python filler/report argument routing |
+| Advanced printing options implemented | `print_report(... printer, copies, collate, duplex, show_dialog ...)` |
+| Connection pool helper implemented | `jasper_bridge/connections.py` with named credential storage |
+| API and JRXML docs published | `jasper_bridge/docs/API.md`, `jasper_bridge/docs/JRXML_GUIDE.md` |
+
+Manual runtime verification is deferred in this implementation pass because execution of tests/acceptance runs was explicitly disabled for this session.
