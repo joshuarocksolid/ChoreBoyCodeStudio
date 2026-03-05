@@ -33,6 +33,7 @@ def write_ui_string(model: UIModel) -> str:
     ui_element.append(_build_resources(model.resources))
     ui_element.append(_build_custom_widgets(model.custom_widgets))
     ui_element.append(_build_connections(model.connections))
+    _append_unknown_top_level_nodes(ui_element, model.unknown_top_level_xml)
     _indent_xml(ui_element)
     xml_body = ET.tostring(ui_element, encoding="unicode")
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + xml_body + "\n"
@@ -133,6 +134,14 @@ def _build_custom_widgets(custom_widgets: list[CustomWidgetModel]) -> ET.Element
         header_element = ET.SubElement(custom_widget_element, "header")
         header_element.text = custom_widget.header
     return custom_widgets_element
+
+
+def _append_unknown_top_level_nodes(ui_element: ET.Element, xml_snippets: list[str]) -> None:
+    for snippet in xml_snippets:
+        try:
+            ui_element.append(ET.fromstring(snippet))
+        except ET.ParseError:
+            continue
 
 
 def _indent_xml(element: ET.Element, level: int = 0) -> None:

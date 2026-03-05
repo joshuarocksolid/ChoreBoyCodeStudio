@@ -46,6 +46,7 @@ def read_ui_string(source: str) -> UIModel:
         resources=_parse_resources(root),
         tab_stops=_parse_tab_stops(root),
         custom_widgets=_parse_custom_widgets(root),
+        unknown_top_level_xml=_parse_unknown_top_level_nodes(root),
     )
     return model
 
@@ -202,4 +203,14 @@ def _parse_custom_widgets(root: ET.Element) -> list[CustomWidgetModel]:
             continue
         parsed.append(CustomWidgetModel(class_name=class_name, extends=extends, header=header))
     return parsed
+
+
+def _parse_unknown_top_level_nodes(root: ET.Element) -> list[str]:
+    known_tags = {"class", "widget", "tabstops", "resources", "customwidgets", "connections"}
+    unknown_nodes: list[str] = []
+    for child in list(root):
+        if child.tag in known_tags:
+            continue
+        unknown_nodes.append(ET.tostring(child, encoding="unicode"))
+    return unknown_nodes
 

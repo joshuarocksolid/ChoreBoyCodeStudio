@@ -215,3 +215,22 @@ def test_write_ui_string_serializes_custom_widget_metadata() -> None:
     xml = write_ui_string(model)
     assert "<customwidgets>" in xml
     assert "<class>MyFancyWidget</class>" in xml
+
+
+def test_read_write_round_trip_preserves_unknown_top_level_nodes() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>UnknownForm</class>"
+        "<widget class=\"QWidget\" name=\"UnknownForm\"/>"
+        "<designerdata><value>keep-me</value></designerdata>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+    model = read_ui_string(source_xml)
+    assert len(model.unknown_top_level_xml) == 1
+    assert "designerdata" in model.unknown_top_level_xml[0]
+
+    rewritten = write_ui_string(model)
+    assert "<designerdata>" in rewritten
+    assert "keep-me" in rewritten
