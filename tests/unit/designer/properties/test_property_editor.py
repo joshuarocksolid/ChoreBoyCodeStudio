@@ -36,3 +36,14 @@ def test_set_property_rejects_unknown_fields() -> None:
 
     with pytest.raises(ValueError, match="Unsupported property"):
         controller.set_property(widget, "placeholderText", "Nope")
+
+
+def test_reset_property_applies_schema_default() -> None:
+    widget = WidgetNode(class_name="QCheckBox", object_name="checkBox")
+    controller = PropertyEditorController()
+    controller.set_property(widget, "checked", True)
+    assert widget.properties["checked"].value is True
+
+    controller.reset_property(widget, "checked")
+
+    assert widget.properties["checked"].value is False

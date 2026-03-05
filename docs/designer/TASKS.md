@@ -264,7 +264,7 @@ Every task in this file contains:
 ### Story D2.S1 — Object inspector parity
 
 #### Task D2.S1.T1 — Tree view of widget/layout hierarchy
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Mirror form tree structure and support selection sync.
 - **Primary files:** `app/designer/inspector/object_inspector.py`
 - **Automated test layer:** unit, integration
@@ -274,7 +274,7 @@ Every task in this file contains:
 - **Done when:** inspector tree is stable and accurately reflects hierarchy/layers.
 
 #### Task D2.S1.T2 — Reparent via object inspector drag/drop (valid-only)
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Enable structural edits while enforcing hierarchy constraints.
 - **Primary files:** `app/designer/inspector/object_inspector.py`, `app/designer/canvas/drop_rules.py`
 - **Automated test layer:** integration
@@ -286,7 +286,7 @@ Every task in this file contains:
 ### Story D2.S2 — Advanced property editor
 
 #### Task D2.S2.T1 — Type-aware property editors (bool/enum/int/float/string)
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Move from hardcoded MVP properties to schema-driven property editing.
 - **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`
 - **Automated test layer:** unit
@@ -296,7 +296,7 @@ Every task in this file contains:
 - **Done when:** property panel auto-selects suitable editor controls by property type.
 
 #### Task D2.S2.T2 — Reset-to-default support
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Allow explicit reset of modified properties.
 - **Primary files:** `app/designer/properties/property_editor.py`
 - **Automated test layer:** unit, integration
@@ -340,7 +340,7 @@ Every task in this file contains:
 ### Story D2.S4 — Undo/Redo command stack
 
 #### Task D2.S4.T1 — Command stack infrastructure
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Back all structural/property edits with undoable commands.
 - **Primary files:** `app/designer/commands/command_stack.py`, `app/designer/commands/*.py`
 - **Automated test layer:** unit

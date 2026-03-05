@@ -22,6 +22,19 @@ class PropertyEditorController:
             return
         widget.properties[property_name] = PropertyValue(value_type=field.value_type, value=coerced_value)
 
+    def reset_property(self, widget: WidgetNode, property_name: str) -> None:
+        """Reset one property to schema default value."""
+        field = self._field_for_property(widget, property_name)
+        if field is None:
+            raise ValueError(f"Unsupported property for {widget.class_name}: {property_name}")
+        if property_name == "objectName":
+            return
+        if field.default_value is None:
+            widget.properties.pop(property_name, None)
+            return
+        coerced_value = _coerce_value(field.value_type, field.default_value)
+        widget.properties[property_name] = PropertyValue(value_type=field.value_type, value=coerced_value)
+
     def _field_for_property(self, widget: WidgetNode, property_name: str) -> PropertyFieldDefinition | None:
         for field in self.field_definitions_for_widget(widget):
             if field.name == property_name:
