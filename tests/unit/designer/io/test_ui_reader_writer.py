@@ -234,3 +234,39 @@ def test_read_write_round_trip_preserves_unknown_top_level_nodes() -> None:
     rewritten = write_ui_string(model)
     assert "<designerdata>" in rewritten
     assert "keep-me" in rewritten
+
+
+def test_read_write_round_trip_preserves_unknown_nested_widget_nodes() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>UnknownNestedForm</class>"
+        "<widget class=\"QWidget\" name=\"UnknownNestedForm\">"
+        "<widget class=\"QPushButton\" name=\"pushButton\">"
+        "<attribute name=\"customAttr\"><string>keep-this</string></attribute>"
+        "</widget>"
+        "</widget>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+    model = read_ui_string(source_xml)
+    rewritten = write_ui_string(model)
+    assert "<attribute name=\"customAttr\">" in rewritten
+    assert "keep-this" in rewritten
+
+
+def test_read_write_round_trip_preserves_unknown_property_payloads() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>UnknownPropertyForm</class>"
+        "<widget class=\"QWidget\" name=\"UnknownPropertyForm\">"
+        "<property name=\"fancyProperty\"><fancytype><value>123</value></fancytype></property>"
+        "</widget>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+    model = read_ui_string(source_xml)
+    rewritten = write_ui_string(model)
+    assert "<fancytype>" in rewritten
+    assert "<value>123</value>" in rewritten

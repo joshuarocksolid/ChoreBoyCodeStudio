@@ -19,6 +19,7 @@ class LayoutItem:
     widget: "WidgetNode | None" = None
     layout: "LayoutNode | None" = None
     spacer: SpacerItem | None = None
+    unknown_xml: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -28,6 +29,7 @@ class LayoutNode:
     class_name: str
     object_name: str
     items: list[LayoutItem] = field(default_factory=list)
+    unknown_children_xml: list[str] = field(default_factory=list)
 
 
 from app.designer.model.widget_node import WidgetNode  # noqa: E402

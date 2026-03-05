@@ -59,6 +59,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
     properties: dict[str, PropertyValue] = {}
     children: list[WidgetNode] = []
     layout: LayoutNode | None = None
+    unknown_children_xml: list[str] = []
 
     for child in element:
         if child.tag == "property":
@@ -71,6 +72,8 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
             continue
         if child.tag == "layout":
             layout = _parse_layout(child)
+            continue
+        unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
 
     return WidgetNode(
         class_name=class_name,
@@ -78,6 +81,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
         properties=properties,
         children=children,
         layout=layout,
+        unknown_children_xml=unknown_children_xml,
     )
 
 
@@ -87,13 +91,20 @@ def _parse_layout(element: ET.Element) -> LayoutNode:
     if not class_name or not object_name:
         raise ValueError("Invalid .ui XML: layout must include class and name attributes.")
     items: list[LayoutItem] = []
+    unknown_children_xml: list[str] = []
     for child in element:
-        if child.tag != "item":
+        if child.tag == "item":
+            item = _parse_layout_item(child)
+            if item is not None:
+                items.append(item)
             continue
-        item = _parse_layout_item(child)
-        if item is not None:
-            items.append(item)
-    return LayoutNode(class_name=class_name, object_name=object_name, items=items)
+        unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
+    return LayoutNode(
+        class_name=class_name,
+        object_name=object_name,
+        items=items,
+        unknown_children_xml=unknown_children_xml,
+    )
 
 
 def _parse_layout_item(element: ET.Element) -> LayoutItem | None:
@@ -107,6 +118,9 @@ def _parse_layout_item(element: ET.Element) -> LayoutItem | None:
     if spacer_element is not None:
         spacer_name = spacer_element.attrib.get("name", "").strip() or "spacerItem"
         return LayoutItem(spacer=SpacerItem(name=spacer_name))
+    unknown_xml = [ET.tostring(child, encoding="unicode") for child in list(element)]
+    if unknown_xml:
+        return LayoutItem(unknown_xml=unknown_xml)
     return None
 
 
@@ -131,7 +145,8 @@ def _parse_property(element: ET.Element) -> PropertyValue:
         if not icon_text:
             icon_text = (value_element.findtext("normaloff") or "").strip()
         return PropertyValue(value_type=value_type, value=icon_text)
-    return PropertyValue(value_type=value_type, value=value_element.text or "")
+    raw_xml = ET.tostring(value_element, encoding="unicode") if len(value_element) > 0 else None
+    return PropertyValue(value_type=value_type, value=value_element.text or "", raw_xml=raw_xml)
 
 
 def _parse_rect(rect_element: ET.Element) -> dict[str, int]:

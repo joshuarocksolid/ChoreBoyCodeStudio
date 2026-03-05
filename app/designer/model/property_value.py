@@ -12,4 +12,5 @@ class PropertyValue:
 
     value_type: str
     value: Any
+    raw_xml: str | None = None
 

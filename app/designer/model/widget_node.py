@@ -16,6 +16,7 @@ class WidgetNode:
     properties: dict[str, PropertyValue] = field(default_factory=dict)
     children: list["WidgetNode"] = field(default_factory=list)
     layout: "LayoutNode | None" = None
+    unknown_children_xml: list[str] = field(default_factory=list)
 
     def find_by_object_name(self, object_name: str) -> "WidgetNode | None":
         """Return first descendant (or self) matching object name."""

@@ -47,6 +47,7 @@ def _build_widget(widget: WidgetNode) -> ET.Element:
         element.append(_build_widget(child))
     if widget.layout is not None:
         element.append(_build_layout(widget.layout))
+    _append_unknown_children(element, widget.unknown_children_xml)
     return element
 
 
@@ -55,6 +56,7 @@ def _build_layout(layout: LayoutNode) -> ET.Element:
     for item in layout.items:
         item_element = ET.SubElement(element, "item")
         _append_layout_item(item_element, item)
+    _append_unknown_children(element, layout.unknown_children_xml)
     return element
 
 
@@ -67,6 +69,8 @@ def _append_layout_item(item_element: ET.Element, item: LayoutItem) -> None:
         return
     if item.spacer is not None:
         ET.SubElement(item_element, "spacer", attrib={"name": item.spacer.name})
+        return
+    _append_unknown_children(item_element, item.unknown_xml)
 
 
 def _build_property(property_name: str, property_value: PropertyValue) -> ET.Element:
@@ -84,6 +88,12 @@ def _build_property(property_name: str, property_value: PropertyValue) -> ET.Ele
         normal_off = ET.SubElement(icon_element, "normaloff")
         normal_off.text = str(value)
         return property_element
+    if property_value.raw_xml:
+        try:
+            property_element.append(ET.fromstring(property_value.raw_xml))
+            return property_element
+        except ET.ParseError:
+            pass
 
     value_element = ET.SubElement(property_element, value_type)
     if value_type == "bool":
@@ -137,9 +147,13 @@ def _build_custom_widgets(custom_widgets: list[CustomWidgetModel]) -> ET.Element
 
 
 def _append_unknown_top_level_nodes(ui_element: ET.Element, xml_snippets: list[str]) -> None:
+    _append_unknown_children(ui_element, xml_snippets)
+
+
+def _append_unknown_children(parent: ET.Element, xml_snippets: list[str]) -> None:
     for snippet in xml_snippets:
         try:
-            ui_element.append(ET.fromstring(snippet))
+            parent.append(ET.fromstring(snippet))
         except ET.ParseError:
             continue
 

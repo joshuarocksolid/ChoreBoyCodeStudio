@@ -482,7 +482,7 @@ Every task in this file contains:
 ### Story D5.S1 — Robust `.ui` round-trip preservation
 
 #### Task D5.S1.T1 — Unknown node/property preservation strategy
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Avoid destructive rewrites for unsupported but valid `.ui` content.
 - **Primary files:** `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`
 - **Automated test layer:** unit
@@ -490,7 +490,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-01
 - **Depends on:** D1.S5.T2
 - **Done when:** unsupported nodes remain intact (or explicitly reported) during round-trip.
-- **Implementation note:** top-level unknown node preservation is implemented via passthrough XML storage; nested unknown node/property preservation is still pending.
+- **Implementation note:** top-level and nested unknown node/property passthrough storage are implemented across widget/layout/property parsing and writing.
 
 #### Task D5.S1.T2 — Stable ordering/format strategy for diff-friendly `.ui`
 - **Status:** PARTIAL
