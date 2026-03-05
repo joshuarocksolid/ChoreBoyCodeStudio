@@ -8,8 +8,9 @@ from PySide2.QtCore import Signal
 from PySide2.QtWidgets import QLabel, QListWidget, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.designer.canvas import FormCanvas, SelectionController
+from app.designer.commands import CommandStack, SnapshotCommand
 from app.designer.inspector import ObjectInspector
-from app.designer.io import read_ui_file
+from app.designer.io import read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.model import UIModel, WidgetNode
@@ -31,6 +32,7 @@ class DesignerEditorSurface(QWidget):
         self._is_dirty = False
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
+        self._command_stack = CommandStack(self._apply_snapshot_xml)
         self._build_layout()
         self._selection_controller.selection_changed.connect(self._handle_selection_changed)
         self._load_file_into_model()
@@ -51,6 +53,14 @@ class DesignerEditorSurface(QWidget):
     def is_dirty(self) -> bool:
         return self._is_dirty
 
+    @property
+    def can_undo(self) -> bool:
+        return self._command_stack.can_undo
+
+    @property
+    def can_redo(self) -> bool:
+        return self._command_stack.can_redo
+
     def serialize_to_ui_string(self) -> str:
         """Serialize current model into deterministic `.ui` XML."""
         if self._model is None:
@@ -60,6 +70,20 @@ class DesignerEditorSurface(QWidget):
     def mark_saved(self) -> None:
         """Clear dirty flag after successful save."""
         self._set_dirty(False)
+
+    def undo(self) -> bool:
+        """Undo previous designer mutation."""
+        if not self._command_stack.undo():
+            return False
+        self._set_dirty(True)
+        return True
+
+    def redo(self) -> bool:
+        """Redo previously undone designer mutation."""
+        if not self._command_stack.redo():
+            return False
+        self._set_dirty(True)
+        return True
 
     def preview_current_form(self) -> bool:
         """Preview current form with QUiLoader-generated widget."""
@@ -160,6 +184,7 @@ class DesignerEditorSurface(QWidget):
     def _handle_palette_insert_request(self, class_name: str) -> None:
         if self._model is None:
             return
+        before_xml = self.serialize_to_ui_string()
         if not self._canvas.insert_widget_by_class_name(class_name):
             self._error_label.setText("Widget insertion is not allowed for the selected parent.")
             self._error_label.setVisible(True)
@@ -167,6 +192,14 @@ class DesignerEditorSurface(QWidget):
         self._error_label.setVisible(False)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        after_xml = self.serialize_to_ui_string()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"insert {class_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
         self._set_dirty(True)
 
     def apply_layout_to_selection(self, layout_class_name: str) -> bool:
@@ -182,6 +215,7 @@ class DesignerEditorSurface(QWidget):
             "QGridLayout": "gridLayout",
         }
         layout_object_name = layout_name_map.get(layout_class_name, "layout")
+        before_xml = self.serialize_to_ui_string()
         try:
             apply_layout_to_widget(target, layout_class_name, layout_object_name=layout_object_name)
         except ValueError as exc:
@@ -192,6 +226,13 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"layout {layout_class_name}",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
         self._set_dirty(True)
         return True
 
@@ -204,11 +245,19 @@ class DesignerEditorSurface(QWidget):
             return False
         if target.layout is None:
             return False
+        before_xml = self.serialize_to_ui_string()
         break_layout(target)
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._error_label.setVisible(False)
+        self._command_stack.push(
+            SnapshotCommand(
+                description="break layout",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
         self._set_dirty(True)
         return True
 
@@ -225,4 +274,11 @@ class DesignerEditorSurface(QWidget):
             return
         self._is_dirty = is_dirty
         self.dirty_state_changed.emit(is_dirty)
+
+    def _apply_snapshot_xml(self, snapshot_xml: str) -> None:
+        model = read_ui_string(snapshot_xml)
+        self._model = model
+        self._canvas.load_model(model)
+        self._object_inspector.bind_model(model)
+        self._refresh_validation_issues()
 

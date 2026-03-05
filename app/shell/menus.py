@@ -36,6 +36,8 @@ class MenuCallbacks:
     on_save_all: Callable[[], object] | None = None
     on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
+    on_undo: Callable[[], object] | None = None
+    on_redo: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -241,10 +243,24 @@ def build_menu_stubs(
     edit_menu = menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.undo",
+        "Undo",
+        "Ctrl+Z",
+        enabled=True,
+        callback=callback_registry.on_undo,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.redo",
+        "Redo",
+        "Ctrl+Shift+Z",
+        enabled=True,
+        callback=callback_registry.on_redo,
+        shortcut_overrides=shortcut_overrides,
     )
     if quick_open_action is not None:
         edit_menu.addAction(quick_open_action)

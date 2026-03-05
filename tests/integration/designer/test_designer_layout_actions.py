@@ -62,6 +62,14 @@ def test_designer_layout_actions_apply_and_break(monkeypatch: pytest.MonkeyPatch
     assert surface.model.root_widget.layout is not None
     assert surface.model.root_widget.layout.class_name == "QVBoxLayout"
 
+    undo_action = window.menu_registry.action("shell.action.edit.undo") if window.menu_registry else None
+    assert undo_action is not None and undo_action.isEnabled()
+    window._handle_undo_action()
+    assert surface.model.root_widget.layout is None
+
+    window._handle_redo_action()
+    assert surface.model.root_widget.layout is not None
+
     window._handle_designer_layout_break_action()
     assert surface.model.root_widget.layout is None
     window.close()

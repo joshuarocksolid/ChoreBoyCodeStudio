@@ -420,6 +420,8 @@ class MainWindow(QMainWindow):
                 on_new_project=self._handle_new_project_action,
                 on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
+                on_undo=self._handle_undo_action,
+                on_redo=self._handle_redo_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
@@ -1005,6 +1007,36 @@ class MainWindow(QMainWindow):
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
+
+    def _handle_undo_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.undo():
+                self._handle_designer_dirty_state_changed(
+                    designer_surface.file_path,
+                    designer_surface,
+                    True,
+                )
+                self._refresh_save_action_states()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.undo()
+
+    def _handle_redo_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.redo():
+                self._handle_designer_dirty_state_changed(
+                    designer_surface.file_path,
+                    designer_surface,
+                    True,
+                )
+                self._refresh_save_action_states()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.redo()
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -1867,13 +1899,27 @@ class MainWindow(QMainWindow):
 
         save_action = self._menu_registry.action("shell.action.file.save")
         save_all_action = self._menu_registry.action("shell.action.file.saveAll")
+        undo_action = self._menu_registry.action("shell.action.edit.undo")
+        redo_action = self._menu_registry.action("shell.action.edit.redo")
         active_tab = self._editor_manager.active_tab()
         has_dirty_tabs = any(tab.is_dirty for tab in self._editor_manager.all_tabs())
+        active_designer_surface = self._active_designer_surface()
+        active_editor_widget = self._active_editor_widget()
 
         if save_action is not None:
             save_action.setEnabled(active_tab is not None)
         if save_all_action is not None:
             save_all_action.setEnabled(has_dirty_tabs)
+        if undo_action is not None:
+            if active_designer_surface is not None:
+                undo_action.setEnabled(active_designer_surface.can_undo)
+            else:
+                undo_action.setEnabled(active_editor_widget is not None and active_editor_widget.document().isUndoAvailable())
+        if redo_action is not None:
+            if active_designer_surface is not None:
+                redo_action.setEnabled(active_designer_surface.can_redo)
+            else:
+                redo_action.setEnabled(active_editor_widget is not None and active_editor_widget.document().isRedoAvailable())
 
     def _handle_run_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)

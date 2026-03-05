@@ -89,3 +89,30 @@ def test_editor_surface_emits_dirty_state_on_mutation(tmp_path: Path) -> None:
 
     surface.mark_saved()
     assert states[-1] is False
+
+
+def test_editor_surface_undo_redo_replays_snapshot_mutations(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    assert surface.model.root_widget.find_by_object_name("pushButton") is None
+
+    surface._handle_palette_insert_request("QPushButton")  # type: ignore[attr-defined]
+    assert surface.can_undo is True
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+
+    assert surface.undo() is True
+    assert surface.model.root_widget.find_by_object_name("pushButton") is None
+
+    assert surface.redo() is True
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
