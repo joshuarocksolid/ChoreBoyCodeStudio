@@ -14,6 +14,7 @@ from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.model import UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
+from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
 from app.designer.properties import PropertyEditorController
 from app.designer.validation import build_validation_issues
 
@@ -59,6 +60,30 @@ class DesignerEditorSurface(QWidget):
     def mark_saved(self) -> None:
         """Clear dirty flag after successful save."""
         self._set_dirty(False)
+
+    def preview_current_form(self) -> bool:
+        """Preview current form with QUiLoader-generated widget."""
+        try:
+            ui_xml = self.serialize_to_ui_string()
+            preview_widget = load_widget_from_ui_xml(ui_xml)
+        except Exception as exc:
+            self._error_label.setText(f"Preview failed: {exc}")
+            self._error_label.setVisible(True)
+            return False
+        configure_preview_widget(preview_widget, window_title=f"Preview — {Path(self._file_path).name}")
+        preview_widget.show()
+        return True
+
+    def run_compatibility_check(self) -> str:
+        """Run QUiLoader compatibility check and return status message."""
+        try:
+            ui_xml = self.serialize_to_ui_string()
+        except ValueError as exc:
+            return f"Compatibility check failed: {exc}"
+        result = probe_ui_xml_compatibility(ui_xml)
+        if result.is_compatible:
+            return result.message
+        return result.message
 
     def _build_layout(self) -> None:
         root_layout = QVBoxLayout(self)

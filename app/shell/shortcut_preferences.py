@@ -46,6 +46,8 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("designer.layout.vertical", "Lay Out Vertically", "Ctrl+2", "Layout"),
     ShortcutCommand("designer.layout.grid", "Lay Out in a Grid", "Ctrl+3", "Layout"),
     ShortcutCommand("designer.layout.break", "Break Layout", "Ctrl+0", "Layout"),
+    ShortcutCommand("designer.form.preview", "Preview Form", "Ctrl+R", "Form"),
+    ShortcutCommand("designer.form.check_compat", "Run Compatibility Check", "Ctrl+Shift+R", "Form"),
     ShortcutCommand("shell.action.run.run", "Run", "F5", "Run"),
     ShortcutCommand("shell.action.run.debug", "Debug", "Ctrl+F5", "Run"),
     ShortcutCommand("shell.action.run.pytestProject", "Run Project Tests", "Ctrl+Shift+T", "Run"),

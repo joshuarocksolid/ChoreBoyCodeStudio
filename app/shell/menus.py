@@ -52,6 +52,8 @@ class MenuCallbacks:
     on_designer_layout_vertical: Callable[[], object] | None = None
     on_designer_layout_grid: Callable[[], object] | None = None
     on_designer_layout_break: Callable[[], object] | None = None
+    on_designer_preview: Callable[[], object] | None = None
+    on_designer_check_compat: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -365,6 +367,29 @@ def build_menu_stubs(
         "Ctrl+K",
         enabled=True,
         callback=callback_registry.on_hover_info,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    form_menu = menu_bar.addMenu("&Form")
+    form_menu.setObjectName("designer.menu.form")
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.preview",
+        "Preview Form",
+        "Ctrl+R",
+        enabled=True,
+        callback=callback_registry.on_designer_preview,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.check_compat",
+        "Run Compatibility Check",
+        "Ctrl+Shift+R",
+        enabled=True,
+        callback=callback_registry.on_designer_check_compat,
         shortcut_overrides=shortcut_overrides,
     )
 
@@ -785,7 +810,7 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
-    for m in (file_menu, open_recent_menu, edit_menu, layout_menu, run_menu,
+    for m in (file_menu, open_recent_menu, edit_menu, form_menu, layout_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 

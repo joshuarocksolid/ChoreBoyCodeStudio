@@ -55,6 +55,10 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert str(ui_file.resolve()) not in window._editor_widgets_by_path
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), DesignerEditorSurface)
+    preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
+    assert preview_action is not None and preview_action.isEnabled()
+    assert layout_action is not None and layout_action.isEnabled()
     window.close()
 
 
@@ -76,4 +80,8 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert str(py_file.resolve()) not in window._designer_widgets_by_path
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), CodeEditorWidget)
+    preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
+    assert preview_action is not None and not preview_action.isEnabled()
+    assert layout_action is not None and not layout_action.isEnabled()
     window.close()

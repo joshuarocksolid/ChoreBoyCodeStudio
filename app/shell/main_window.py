@@ -436,6 +436,8 @@ class MainWindow(QMainWindow):
                 on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
                 on_designer_layout_grid=self._handle_designer_layout_grid_action,
                 on_designer_layout_break=self._handle_designer_layout_break_action,
+                on_designer_preview=self._handle_designer_preview_action,
+                on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1378,6 +1380,24 @@ class MainWindow(QMainWindow):
                 "Designer Layout",
                 "Unable to apply layout to the selected widget.",
             )
+
+    def _handle_designer_preview_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.preview_current_form():
+            QMessageBox.warning(
+                self,
+                "Designer Preview",
+                "Preview failed. See the Designer error panel for details.",
+            )
+
+    def _handle_designer_compatibility_check_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        message = surface.run_compatibility_check()
+        QMessageBox.information(self, "Designer Compatibility", message)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -2836,6 +2856,8 @@ class MainWindow(QMainWindow):
             return
         has_active_designer = self._active_designer_surface() is not None
         for action_id in (
+            "designer.form.preview",
+            "designer.form.check_compat",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",
