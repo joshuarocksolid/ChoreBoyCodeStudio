@@ -517,7 +517,7 @@ Every task in this file contains:
 - **Implementation note:** component save service and menu action are implemented for selected widget subtrees; manifest metadata and richer conflict management are pending.
 
 #### Task D5.S2.T2 — Insert component from library
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Add component library browser and insert command.
 - **Primary files:** `app/designer/components/component_library_panel.py`, `app/designer/components/component_service.py`, `app/designer/editor_surface.py`
 - **Automated test layer:** integration
@@ -525,7 +525,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-04
 - **Depends on:** D5.S2.T1
 - **Done when:** component insertion behaves like palette insertion with predictable naming and ownership.
-- **Implementation note:** insert-component action/service and component-library panel UX are implemented with validation + undo; objectName conflict handling for inserted subtrees remains pending.
+- **Implementation note:** insert-component action/service and component-library panel UX are implemented with validation, undo, and deterministic objectName conflict handling.
 
 ### Story D5.S3 — Designer lint/format and team workflows
 

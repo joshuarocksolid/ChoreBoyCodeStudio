@@ -77,6 +77,7 @@ def insert_component_widget(
     ui_file_path: str,
     component_name: str,
     target_parent: WidgetNode,
+    existing_object_names: list[str] | None = None,
 ) -> WidgetNode:
     """Load component subtree and insert under target parent when valid."""
     descriptor_map = {component.name: component for component in list_components(ui_file_path)}
@@ -92,6 +93,8 @@ def insert_component_widget(
         parent_has_layout=target_parent.layout is not None,
     ):
         raise ValueError("Selected target cannot accept this component.")
+    names_in_use = set(existing_object_names or [])
+    _ensure_unique_object_names(widget, names_in_use)
     if target_parent.layout is not None:
         from app.designer.model import LayoutItem
 
@@ -99,3 +102,25 @@ def insert_component_widget(
     else:
         target_parent.children.append(widget)
     return widget
+
+
+def _ensure_unique_object_names(widget: WidgetNode, names_in_use: set[str]) -> None:
+    original_name = widget.object_name
+    if original_name in names_in_use:
+        widget.object_name = _next_available_name(original_name, names_in_use)
+    names_in_use.add(widget.object_name)
+    for child in widget.children:
+        _ensure_unique_object_names(child, names_in_use)
+    if widget.layout is not None:
+        for item in widget.layout.items:
+            if item.widget is not None:
+                _ensure_unique_object_names(item.widget, names_in_use)
+
+
+def _next_available_name(base_name: str, names_in_use: set[str]) -> str:
+    index = 1
+    while True:
+        candidate = f"{base_name}{index}"
+        if candidate not in names_in_use:
+            return candidate
+        index += 1

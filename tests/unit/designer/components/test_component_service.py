@@ -55,3 +55,30 @@ def test_insert_component_widget_appends_to_target_children(tmp_path: Path) -> N
     )
     assert inserted.class_name == "QPushButton"
     assert len(target_parent.children) == 1
+
+
+def test_insert_component_widget_renames_conflicting_object_names(tmp_path: Path) -> None:
+    ui_file = tmp_path / "form.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>Form</class><widget class=\"QWidget\" name=\"Form\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    save_component_from_widget(
+        str(ui_file.resolve()),
+        "ButtonPart",
+        WidgetNode(class_name="QPushButton", object_name="pushButton"),
+    )
+    target_parent = WidgetNode(class_name="QWidget", object_name="targetParent")
+    target_parent.children.append(WidgetNode(class_name="QPushButton", object_name="pushButton"))
+
+    inserted = insert_component_widget(
+        ui_file_path=str(ui_file.resolve()),
+        component_name="ButtonPart",
+        target_parent=target_parent,
+        existing_object_names=["targetParent", "pushButton"],
+    )
+    assert inserted.object_name == "pushButton1"

@@ -526,6 +526,7 @@ def test_editor_surface_save_and_insert_component(tmp_path: Path) -> None:
     target = surface.model.root_widget.find_by_object_name("targetGroup")
     assert target is not None
     assert any(child.class_name == "QPushButton" for child in target.children)
+    assert any(child.object_name == "pushButton1" for child in target.children)
 
 
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(

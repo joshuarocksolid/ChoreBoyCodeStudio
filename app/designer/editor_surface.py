@@ -302,6 +302,7 @@ class DesignerEditorSurface(QWidget):
                 ui_file_path=self._file_path,
                 component_name=component_name,
                 target_parent=target_parent,
+                existing_object_names=self._model.collect_object_names(),
             )
         except (OSError, ValueError) as exc:
             self._error_label.setText(str(exc))
