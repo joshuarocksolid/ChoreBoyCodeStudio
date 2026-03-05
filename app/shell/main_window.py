@@ -227,6 +227,7 @@ class MainWindow(QMainWindow):
         self._close_tab_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+        self._designer_last_mode: str = constants.UI_DESIGNER_LAST_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
@@ -264,6 +265,7 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._theme_mode = self._load_theme_mode()
+        self._designer_last_mode = self._load_designer_last_mode()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = self._load_syntax_color_overrides()
@@ -637,6 +639,17 @@ class MainWindow(QMainWindow):
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
 
+    def _load_designer_last_mode(self) -> str:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return constants.UI_DESIGNER_LAST_MODE_DEFAULT
+        mode = designer_payload.get(constants.UI_DESIGNER_LAST_MODE_KEY, constants.UI_DESIGNER_LAST_MODE_DEFAULT)
+        mode_text = str(mode)
+        if mode_text in {"widget", "signals_slots", "buddy", "tab_order"}:
+            return mode_text
+        return constants.UI_DESIGNER_LAST_MODE_DEFAULT
+
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
@@ -675,6 +688,20 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         merged = merge_theme_mode(settings_payload, mode)
         save_settings(merged, state_root=self._state_root)
+
+    def _persist_designer_last_mode(self, mode: str) -> None:
+        if mode not in {"widget", "signals_slots", "buddy", "tab_order"}:
+            return
+        settings_payload = load_settings(state_root=self._state_root)
+        merged = dict(settings_payload)
+        designer_payload = merged.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            designer_payload = {}
+        designer_payload = dict(designer_payload)
+        designer_payload[constants.UI_DESIGNER_LAST_MODE_KEY] = mode
+        merged[constants.UI_DESIGNER_SETTINGS_KEY] = designer_payload
+        save_settings(merged, state_root=self._state_root)
+        self._designer_last_mode = mode
 
     def _handle_set_theme(self, mode: str) -> None:
         if mode == self._theme_mode:
@@ -4048,6 +4075,8 @@ class MainWindow(QMainWindow):
                     self._update_editor_status_for_path(tab_file_path),
                 )
             )
+            designer_surface.mode_changed.connect(self._persist_designer_last_mode)
+            designer_surface.set_mode(self._designer_last_mode)
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
