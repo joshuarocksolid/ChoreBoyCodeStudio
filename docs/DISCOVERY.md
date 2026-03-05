@@ -198,6 +198,19 @@ These probes were run and verified on ChoreBoy:
 
 * `localhost:5432` TCP connectivity works (port reachable)
 
+### PostgreSQL Version
+
+* **Version: 9.3.5** (confirmed via `server_version` parameter status)
+* Released September 2013, **end-of-life November 2018**
+* Django 4.2 requires PostgreSQL 12+; Django 2.2 requires 9.4+
+* No Django version supports both Python 3.9 and PostgreSQL 9.3
+* Raw pg8000 connectivity works (probe 6 confirmed)
+* Django ORM over PostgreSQL is **blocked** until PG is upgraded
+
+**Implication:** PostgreSQL-backed Django projects cannot run on ChoreBoy
+with the current PG 9.3 installation. SQLite remains the only viable Django
+database backend. For direct PostgreSQL access, use raw pg8000.
+
 ### ❌ Postgres Python Drivers (Not Present)
 
 * `psycopg2` / `psycopg` not installed in FreeCAD runtime
@@ -276,10 +289,22 @@ Preferred launch style for ChoreBoy:
 ### What we know
 
 * Network connection to `localhost:5432` works
+* **PostgreSQL version is 9.3.5** (EOL November 2018)
 * No default Postgres Python drivers exist inside the FreeCAD AppRun runtime:
 
   * `psycopg2` / `psycopg` not installed
   * `psql` not available on PATH
+
+### Django + PostgreSQL limitation
+
+No Django version supports both Python 3.9 and PostgreSQL 9.3:
+
+* Django 2.0 was the last to support PG 9.3, but it only supports Python 3.4-3.7
+* Django 2.2+ supports Python 3.9 but requires PG 9.4+
+* Django 4.2 (our vendored version) requires PG 12+
+
+**Result:** Django ORM cannot be used with PostgreSQL on ChoreBoy until PG is
+upgraded. Django + SQLite remains fully functional (probes 1-5 confirmed).
 
 ### Decision: **Use vendored `pg8000` (pure Python) for Postgres**
 
