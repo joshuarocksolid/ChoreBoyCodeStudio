@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide2.QtCore import Signal
 from PySide2.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.palette.widget_registry import WidgetPaletteRegistry, default_widget_palette_registry
@@ -10,6 +11,8 @@ from app.designer.palette.widget_registry import WidgetPaletteRegistry, default_
 class PalettePanel(QWidget):
     """Simple categorized widget palette view."""
 
+    widget_insert_requested = Signal(str)
+
     def __init__(self, parent: QWidget | None = None, *, registry: WidgetPaletteRegistry | None = None) -> None:
         super().__init__(parent)
         self._registry = registry or default_widget_palette_registry()
@@ -17,6 +20,7 @@ class PalettePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self._tree = QTreeWidget(self)
         self._tree.setHeaderHidden(True)
+        self._tree.itemDoubleClicked.connect(self._handle_item_double_clicked)
         layout.addWidget(self._tree)
         self._rebuild_tree()
 
@@ -34,3 +38,9 @@ class PalettePanel(QWidget):
             category_item.addChild(child)
         for category_item in categories.values():
             category_item.setExpanded(True)
+
+    def _handle_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        class_name = str(item.data(0, 256) or "").strip()
+        if not class_name:
+            return
+        self.widget_insert_requested.emit(class_name)

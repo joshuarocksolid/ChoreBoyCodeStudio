@@ -45,3 +45,24 @@ def test_editor_surface_loads_model_and_panels(tmp_path: Path) -> None:
 
     surface._selection_controller.set_selected_object_name("SampleForm")  # type: ignore[attr-defined]
     assert "Editable properties" in surface._property_summary.text()  # type: ignore[attr-defined]
+
+
+def test_editor_surface_palette_insert_updates_model(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._handle_palette_insert_request("QPushButton")  # type: ignore[attr-defined]
+
+    inserted = surface.model.root_widget.find_by_object_name("pushButton")
+    assert inserted is not None
+    assert inserted.class_name == "QPushButton"
