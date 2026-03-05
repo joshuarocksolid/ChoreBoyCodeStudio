@@ -205,6 +205,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
         self._object_inspector.set_reparent_callback(self._handle_inspector_reparent_request)
+        self._object_inspector.reparent_rejected.connect(self._handle_inspector_reparent_rejected)
         self._property_panel = PropertyEditorPanel(self._inspector_tabs)
         self._property_panel.property_edited.connect(self._handle_property_edited)
         self._property_panel.property_reset_requested.connect(self._handle_property_reset_requested)
@@ -461,6 +462,7 @@ class DesignerEditorSurface(QWidget):
             return False
         before_xml = self.serialize_to_ui_string()
         if not self._object_inspector.reparent_widget(source_object_name, target_object_name):
+            self._handle_inspector_reparent_rejected(self._object_inspector.last_reparent_error)
             return False
         self._canvas.load_model(self._model)
         self._refresh_validation_issues()
@@ -479,6 +481,12 @@ class DesignerEditorSurface(QWidget):
         )
         self._set_dirty(True)
         return True
+
+    def _handle_inspector_reparent_rejected(self, message: str) -> None:
+        if not message:
+            return
+        self._error_label.setText(message)
+        self._error_label.setVisible(True)
 
     def apply_layout_to_selection(self, layout_class_name: str) -> bool:
         """Apply layout to selected widget (or root when none selected)."""

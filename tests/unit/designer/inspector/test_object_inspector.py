@@ -113,3 +113,25 @@ def test_object_inspector_reparent_rejects_non_container_targets() -> None:
     moved = inspector._handle_drop_reparent("sourceButton", "lineEdit")  # type: ignore[attr-defined]
 
     assert moved is False
+    assert inspector.last_reparent_error == "Selected target cannot accept child widgets."
+
+
+def test_object_inspector_reparent_rejection_emits_reason() -> None:
+    inspector = ObjectInspector()
+    model = UIModel(
+        form_class_name="Form",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[
+                WidgetNode(class_name="QPushButton", object_name="sourceButton"),
+                WidgetNode(class_name="QLineEdit", object_name="lineEdit"),
+            ],
+        ),
+    )
+    inspector.bind_model(model)
+    seen: list[str] = []
+    inspector.reparent_rejected.connect(seen.append)
+
+    assert inspector.reparent_widget("sourceButton", "lineEdit") is False
+    assert seen[-1] == "Selected target cannot accept child widgets."

@@ -54,6 +54,7 @@ class ObjectInspector(QWidget):
     """Tree view showing widget hierarchy with selection synchronization."""
 
     reparent_applied = Signal(str, str)
+    reparent_rejected = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -62,6 +63,7 @@ class ObjectInspector(QWidget):
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
         self._is_syncing_selection = False
         self._reparent_callback: Callable[[str, str], bool] | None = None
+        self._last_reparent_error = ""
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -73,6 +75,10 @@ class ObjectInspector(QWidget):
 
     def set_reparent_callback(self, callback: Callable[[str, str], bool] | None) -> None:
         self._reparent_callback = callback
+
+    @property
+    def last_reparent_error(self) -> str:
+        return self._last_reparent_error
 
     def bind_model(self, model: UIModel) -> None:
         self._model = model
@@ -139,19 +145,25 @@ class ObjectInspector(QWidget):
 
     def reparent_widget(self, source_object_name: str, target_object_name: str) -> bool:
         if self._model is None:
+            self._set_reparent_error("No model bound.")
             return False
         if source_object_name == target_object_name:
+            self._set_reparent_error("Cannot reparent onto the same widget.")
             return False
         source_widget = self._model.root_widget.find_by_object_name(source_object_name)
         target_widget = self._model.root_widget.find_by_object_name(target_object_name)
         if source_widget is None or target_widget is None:
+            self._set_reparent_error("Source or target widget was not found.")
             return False
         if self._is_descendant(source_widget, potential_ancestor=target_widget):
+            self._set_reparent_error("Cannot reparent a widget into one of its descendants.")
             return False
         if not is_parent_drop_target(target_widget.class_name):
+            self._set_reparent_error("Selected target cannot accept child widgets.")
             return False
 
         if not self._detach_widget(source_object_name):
+            self._set_reparent_error("Failed to detach source widget from current parent.")
             return False
         if target_widget.layout is not None:
             from app.designer.model import LayoutItem
@@ -159,6 +171,7 @@ class ObjectInspector(QWidget):
             target_widget.layout.items.append(LayoutItem(widget=source_widget))
         else:
             target_widget.children.append(source_widget)
+        self._set_reparent_error("")
         self.bind_model(self._model)
         if self._selection_controller is not None:
             self._selection_controller.set_selected_object_name(source_object_name)
@@ -204,3 +217,8 @@ class ObjectInspector(QWidget):
                 if self._is_descendant(item.widget, potential_ancestor=potential_ancestor):
                     return True
         return False
+
+    def _set_reparent_error(self, message: str) -> None:
+        self._last_reparent_error = message
+        if message:
+            self.reparent_rejected.emit(message)

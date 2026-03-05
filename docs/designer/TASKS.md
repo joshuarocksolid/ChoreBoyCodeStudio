@@ -274,7 +274,7 @@ Every task in this file contains:
 - **Done when:** inspector tree is stable and accurately reflects hierarchy/layers.
 
 #### Task D2.S1.T2 — Reparent via object inspector drag/drop (valid-only)
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Enable structural edits while enforcing hierarchy constraints.
 - **Primary files:** `app/designer/inspector/object_inspector.py`, `app/designer/canvas/drop_rules.py`
 - **Automated test layer:** integration
@@ -282,7 +282,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-02
 - **Depends on:** D2.S1.T1
 - **Done when:** valid reparent works; invalid targets produce clear feedback and no model corruption.
-- **Implementation note:** reparent mutation, validation, integration coverage, and undo/redo snapshots are complete; explicit in-canvas/user feedback messaging for invalid drops is still pending.
+- **Implementation note:** reparent mutation, validation, integration coverage, undo/redo snapshots, and invalid-target feedback messaging are implemented.
 
 ### Story D2.S2 — Advanced property editor
 
@@ -345,7 +345,7 @@ Every task in this file contains:
 - **Objective:** Back all structural/property edits with undoable commands.
 - **Primary files:** `app/designer/commands/command_stack.py`, `app/designer/commands/*.py`
 - **Automated test layer:** unit
-- **Validation method:** undo/redo state tests per command category (layout + insertion + property + reparent mutations complete; advanced modes pending).
+- **Validation method:** undo/redo state tests per command category (layout + insertion + property + reparent + connections + tab-order + buddy + resource mutations complete; remaining future feature categories pending).
 - **Acceptance linkage:** DPAR-08
 - **Depends on:** D1 core stories
 - **Done when:** all editor mutations flow through command stack with reliable undo/redo.

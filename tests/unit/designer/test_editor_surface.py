@@ -203,6 +203,28 @@ def test_editor_surface_reparent_mutation_pushes_undo_snapshot(tmp_path: Path) -
     assert target_after_undo.children == []
 
 
+def test_editor_surface_reparent_invalid_target_surfaces_error(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"sourceButton\"/>"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    moved = surface._handle_inspector_reparent_request("sourceButton", "lineEdit")  # type: ignore[attr-defined]
+    assert moved is False
+    assert surface._error_label.isHidden() is False  # type: ignore[attr-defined]
+    assert "cannot accept child widgets" in surface._error_label.text()  # type: ignore[attr-defined]
+
+
 def test_editor_surface_add_resource_include_pushes_undo_snapshot(tmp_path: Path) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(
