@@ -60,6 +60,7 @@ class MenuCallbacks:
     on_designer_mode_tab_order: Callable[[], object] | None = None
     on_designer_preview: Callable[[], object] | None = None
     on_designer_check_compat: Callable[[], object] | None = None
+    on_designer_add_resource: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -410,6 +411,15 @@ def build_menu_stubs(
         "Ctrl+Shift+R",
         enabled=True,
         callback=callback_registry.on_designer_check_compat,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.add_resource",
+        "Add Resource (.qrc)...",
+        enabled=True,
+        callback=callback_registry.on_designer_add_resource,
         shortcut_overrides=shortcut_overrides,
     )
 

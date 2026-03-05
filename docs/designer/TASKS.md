@@ -429,12 +429,13 @@ Every task in this file contains:
 #### Task D4.S1.T1 — Resource model + `.qrc` reference support
 - **Status:** PARTIAL
 - **Objective:** Support `<resources>` in `.ui` for icon/property references.
-- **Primary files:** `app/designer/model/resource_model.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
+- **Primary files:** `app/designer/model/resource_model.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`, `app/designer/editor_surface.py`, `app/shell/main_window.py`
 - **Automated test layer:** unit
 - **Validation method:** resource section round-trip tests.
 - **Acceptance linkage:** DRES-01
 - **Depends on:** D1.S5.T1
 - **Done when:** `.ui` contains deterministic resource references and loads with expected icon paths.
+- **Implementation note:** model + reader/writer support and add-resource workflow are in place; icon property binding remains pending in D4.S1.T2.
 
 #### Task D4.S1.T2 — Icon picker UX and property binding
 - **Status:** TODO

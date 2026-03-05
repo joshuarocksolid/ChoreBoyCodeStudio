@@ -444,6 +444,7 @@ class MainWindow(QMainWindow):
                 on_designer_mode_tab_order=self._handle_designer_mode_tab_order_action,
                 on_designer_preview=self._handle_designer_preview_action,
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
+                on_designer_add_resource=self._handle_designer_add_resource_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1453,6 +1454,30 @@ class MainWindow(QMainWindow):
             return
         message = surface.run_compatibility_check()
         QMessageBox.information(self, "Designer Compatibility", message)
+
+    def _handle_designer_add_resource_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        selected_file, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Select Qt Resource File",
+            str(Path(surface.file_path).parent),
+            "Qt Resource Files (*.qrc);;All Files (*)",
+        )
+        if not selected_file:
+            return
+        include_location = Path(selected_file).name
+        if not surface.add_resource_include(include_location):
+            QMessageBox.information(
+                self,
+                "Add Resource",
+                "Resource include already exists or could not be added.",
+            )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -2928,6 +2953,7 @@ class MainWindow(QMainWindow):
         for action_id in (
             "designer.form.preview",
             "designer.form.check_compat",
+            "designer.form.add_resource",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

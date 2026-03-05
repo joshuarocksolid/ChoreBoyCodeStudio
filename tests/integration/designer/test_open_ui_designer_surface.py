@@ -58,13 +58,18 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
+    add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
+    assert add_resource_action is not None and add_resource_action.isEnabled()
     mode_action.trigger()
     surface = window._active_designer_surface()
     assert surface is not None
     assert surface.current_mode == "signals_slots"
+    monkeypatch.setattr(qt_widgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: ("", ""))
+    add_resource_action.trigger()
+    assert [resource.location for resource in surface.model.resources] == []  # type: ignore[union-attr]
     window.close()
 
 
@@ -89,7 +94,9 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
+    add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
+    assert add_resource_action is not None and not add_resource_action.isEnabled()
     window.close()

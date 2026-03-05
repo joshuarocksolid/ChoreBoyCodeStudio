@@ -201,3 +201,26 @@ def test_editor_surface_reparent_mutation_pushes_undo_snapshot(tmp_path: Path) -
     target_after_undo = surface.model.root_widget.find_by_object_name("targetGroup")
     assert target_after_undo is not None
     assert target_after_undo.children == []
+
+
+def test_editor_surface_add_resource_include_pushes_undo_snapshot(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    assert surface.add_resource_include("icons.qrc") is True
+    assert [resource.location for resource in surface.model.resources] == ["icons.qrc"]
+    assert surface.add_resource_include("icons.qrc") is False
+    assert surface.can_undo is True
+
+    assert surface.undo() is True
+    assert surface.model.resources == []

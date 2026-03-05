@@ -141,6 +141,30 @@ class DesignerEditorSurface(QWidget):
             return result.message
         return result.message
 
+    def add_resource_include(self, resource_location: str) -> bool:
+        """Add `<resources><include .../></resources>` entry to model."""
+        normalized = resource_location.strip()
+        if not normalized or self._model is None:
+            return False
+        if any(resource.location == normalized for resource in self._model.resources):
+            return False
+        before_xml = self.serialize_to_ui_string()
+        from app.designer.model import ResourceModel
+
+        self._model.resources.append(ResourceModel(location=normalized))
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"add resource {normalized}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
     def _build_layout(self) -> None:
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
