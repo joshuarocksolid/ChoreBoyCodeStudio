@@ -27,6 +27,7 @@ class MenuStubRegistry:
 class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
+    on_new_form: Callable[[], object] | None = None
     on_new_project: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
@@ -133,6 +134,16 @@ def build_menu_stubs(
     file_menu.setObjectName("shell.menu.file")
     if callback_registry.on_file_menu_about_to_show is not None:
         file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
+    _register_menu_action(
+        file_menu,
+        actions,
+        "designer.file.new_form",
+        "New Form...",
+        "Ctrl+Shift+N",
+        enabled=True,
+        callback=callback_registry.on_new_form,
+        shortcut_overrides=shortcut_overrides,
+    )
     _register_menu_action(
         file_menu,
         actions,

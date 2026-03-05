@@ -81,6 +81,9 @@ from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.designer.editor_surface import DesignerEditorSurface
+from app.designer.io.ui_writer import write_ui_file
+from app.designer.model import PropertyValue, UIModel, WidgetNode
+from app.designer.new_form_dialog import NewFormRequest
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -376,6 +379,7 @@ class MainWindow(QMainWindow):
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
+                on_new_form=self._handle_new_form_action,
                 on_open_project=self._handle_open_project_action,
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
@@ -782,6 +786,89 @@ class MainWindow(QMainWindow):
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _handle_new_form_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "New Form", "Open a project first.")
+            return
+
+        destination_directory = self._selected_tree_directory() or self._loaded_project.project_root
+        form_name, accepted_name = QInputDialog.getText(self, "New Form", "Form class name:", QLineEdit.Normal, "MainForm")
+        normalized_form_name = form_name.strip()
+        if not accepted_name or not normalized_form_name:
+            return
+
+        file_name, accepted_file = QInputDialog.getText(
+            self,
+            "New Form",
+            "Form file name (.ui):",
+            QLineEdit.Normal,
+            "form.ui",
+        )
+        normalized_file_name = file_name.strip()
+        if not accepted_file or not normalized_file_name:
+            return
+        if not normalized_file_name.lower().endswith(".ui"):
+            normalized_file_name = f"{normalized_file_name}.ui"
+
+        root_widget_class, accepted_widget = QInputDialog.getItem(
+            self,
+            "New Form",
+            "Root widget:",
+            ["QWidget", "QDialog", "QMainWindow"],
+            0,
+            False,
+        )
+        if not accepted_widget or not root_widget_class:
+            return
+
+        root_object_name = normalized_form_name
+        if root_object_name and root_object_name[0].islower():
+            root_object_name = root_object_name[0].upper() + root_object_name[1:]
+        request = NewFormRequest(
+            form_class_name=normalized_form_name,
+            root_widget_class=root_widget_class,
+            root_object_name=root_object_name or "Form",
+        )
+
+        target_path = Path(destination_directory) / normalized_file_name
+        if target_path.exists():
+            overwrite = QMessageBox.question(
+                self,
+                "New Form",
+                f"'{target_path.name}' already exists. Overwrite?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if overwrite != QMessageBox.Yes:
+                return
+
+        model = self._build_default_form_model(request)
+        try:
+            write_ui_file(model, str(target_path.resolve()))
+        except OSError as exc:
+            QMessageBox.warning(self, "New Form", f"Failed to create form: {exc}")
+            return
+
+        self._reload_current_project()
+        self._open_file_in_editor(str(target_path.resolve()))
+
+    @staticmethod
+    def _build_default_form_model(request: NewFormRequest) -> UIModel:
+        return UIModel(
+            form_class_name=request.form_class_name,
+            root_widget=WidgetNode(
+                class_name=request.root_widget_class,
+                object_name=request.root_object_name,
+                properties={
+                    "geometry": PropertyValue(
+                        value_type="rect",
+                        value={"x": 0, "y": 0, "width": 640, "height": 480},
+                    ),
+                    "windowTitle": PropertyValue(value_type="string", value=request.form_class_name),
+                },
+            ),
+        )
 
     def _prompt_for_new_project_destination(self) -> tuple[str, Path] | None:
         project_name, accepted_name = QInputDialog.getText(self, "New Project", "Project name:", QLineEdit.Normal, "")

@@ -21,6 +21,7 @@ class ShortcutCommand:
 
 
 SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
+    ShortcutCommand("designer.file.new_form", "New Form", "Ctrl+Shift+N", "File"),
     ShortcutCommand("shell.action.file.newProject", "New Project", "Ctrl+N", "File"),
     ShortcutCommand("shell.action.file.openProject", "Open Project", "Ctrl+O", "File"),
     ShortcutCommand("shell.action.file.quickOpen", "Quick Open", "Ctrl+P", "File"),

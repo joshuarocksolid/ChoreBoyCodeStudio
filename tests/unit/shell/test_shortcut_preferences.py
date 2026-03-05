@@ -17,6 +17,7 @@ pytestmark = pytest.mark.unit
 
 def test_default_shortcut_map_contains_known_command_ids() -> None:
     defaults = default_shortcut_map()
+    assert defaults["designer.file.new_form"] == "Ctrl+Shift+N"
     assert defaults["shell.action.run.run"] == "F5"
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
