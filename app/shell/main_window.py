@@ -449,6 +449,8 @@ class MainWindow(QMainWindow):
                 on_designer_add_resource=self._handle_designer_add_resource_action,
                 on_designer_promote_widget=self._handle_designer_promote_widget_action,
                 on_designer_format_ui_xml=self._handle_designer_format_ui_xml_action,
+                on_designer_save_component=self._handle_designer_save_component_action,
+                on_designer_insert_component=self._handle_designer_insert_component_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1547,6 +1549,52 @@ class MainWindow(QMainWindow):
             return
         if not surface.format_ui_model():
             QMessageBox.information(self, "Format UI XML", "Form is already normalized.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_save_component_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        default_name = surface.selected_object_name or "component"
+        component_name, accepted = QInputDialog.getText(
+            self,
+            "Save Component",
+            "Component name:",
+            QLineEdit.Normal,
+            default_name,
+        )
+        if not accepted:
+            return
+        if not surface.save_selected_widget_as_component(component_name):
+            QMessageBox.warning(self, "Save Component", "Unable to save selected component.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_insert_component_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        components = surface.available_component_names()
+        if not components:
+            QMessageBox.information(self, "Insert Component", "No saved components are available for this project.")
+            return
+        selected_component, accepted = QInputDialog.getItem(
+            self,
+            "Insert Component",
+            "Component:",
+            components,
+            0,
+            editable=False,
+        )
+        if not accepted:
+            return
+        if not surface.insert_component(selected_component):
+            QMessageBox.warning(self, "Insert Component", "Unable to insert selected component.")
             return
         self._refresh_save_action_states()
         self._refresh_designer_action_states()
@@ -3029,6 +3077,8 @@ class MainWindow(QMainWindow):
             "designer.form.add_resource",
             "designer.form.promote_widget",
             "designer.form.format_ui_xml",
+            "designer.form.save_component",
+            "designer.form.insert_component",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

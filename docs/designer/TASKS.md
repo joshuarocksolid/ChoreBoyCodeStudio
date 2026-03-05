@@ -506,7 +506,7 @@ Every task in this file contains:
 ### Story D5.S2 — Reusable components and templates
 
 #### Task D5.S2.T1 — Save selection as reusable component
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Export widget subtrees for reuse.
 - **Primary files:** `app/designer/components/component_service.py`, `app/designer/components/component_manifest.py`
 - **Automated test layer:** unit, integration
@@ -514,9 +514,10 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-03
 - **Depends on:** D2.S1.T1
 - **Done when:** selected subtree can be inserted into other forms with valid hierarchy/property mapping.
+- **Implementation note:** component save service and menu action are implemented for selected widget subtrees; manifest metadata and richer conflict management are pending.
 
 #### Task D5.S2.T2 — Insert component from library
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Add component library browser and insert command.
 - **Primary files:** `app/designer/components/component_library_panel.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration
@@ -524,6 +525,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-04
 - **Depends on:** D5.S2.T1
 - **Done when:** component insertion behaves like palette insertion with predictable naming and ownership.
+- **Implementation note:** insert-component action and service are implemented with validation + undo, while dedicated component-library panel UX remains pending.
 
 ### Story D5.S3 — Designer lint/format and team workflows
 

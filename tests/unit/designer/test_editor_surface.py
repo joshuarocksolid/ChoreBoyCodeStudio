@@ -484,6 +484,33 @@ def test_editor_surface_format_ui_model_normalizes_disk_xml(tmp_path: Path) -> N
     assert surface.is_dirty is True
 
 
+def test_editor_surface_save_and_insert_component(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "<widget class=\"QGroupBox\" name=\"targetGroup\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    assert surface.save_selected_widget_as_component("ButtonPart") is True
+    assert "ButtonPart" in surface.available_component_names()
+
+    surface._selection_controller.set_selected_object_name("targetGroup")  # type: ignore[attr-defined]
+    assert surface.insert_component("ButtonPart") is True
+    target = surface.model.root_widget.find_by_object_name("targetGroup")
+    assert target is not None
+    assert any(child.class_name == "QPushButton" for child in target.children)
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

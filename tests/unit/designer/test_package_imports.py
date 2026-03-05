@@ -10,6 +10,7 @@ pytestmark = pytest.mark.unit
 def test_designer_packages_import_without_side_effects() -> None:
     import app.designer.canvas  # noqa: F401
     import app.designer.commands  # noqa: F401
+    import app.designer.components  # noqa: F401
     import app.designer.connections  # noqa: F401
     import app.designer.inspector  # noqa: F401
     import app.designer.io  # noqa: F401

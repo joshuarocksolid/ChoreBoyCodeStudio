@@ -63,6 +63,8 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
+    save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
+    insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
@@ -71,6 +73,8 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert add_resource_action is not None and add_resource_action.isEnabled()
     assert promote_action is not None and promote_action.isEnabled()
     assert format_action is not None and format_action.isEnabled()
+    assert save_component_action is not None and save_component_action.isEnabled()
+    assert insert_component_action is not None and insert_component_action.isEnabled()
     mode_action.trigger()
     surface = window._active_designer_surface()
     assert surface is not None
@@ -119,6 +123,8 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
+    save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
+    insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
@@ -127,4 +133,6 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert add_resource_action is not None and not add_resource_action.isEnabled()
     assert promote_action is not None and not promote_action.isEnabled()
     assert format_action is not None and not format_action.isEnabled()
+    assert save_component_action is not None and not save_component_action.isEnabled()
+    assert insert_component_action is not None and not insert_component_action.isEnabled()
     window.close()

@@ -63,6 +63,8 @@ class MenuCallbacks:
     on_designer_add_resource: Callable[[], object] | None = None
     on_designer_promote_widget: Callable[[], object] | None = None
     on_designer_format_ui_xml: Callable[[], object] | None = None
+    on_designer_save_component: Callable[[], object] | None = None
+    on_designer_insert_component: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -441,6 +443,26 @@ def build_menu_stubs(
         "Ctrl+Alt+Shift+F",
         enabled=True,
         callback=callback_registry.on_designer_format_ui_xml,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.save_component",
+        "Save Selection as Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_save_component,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.insert_component",
+        "Insert Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_insert_component,
         shortcut_overrides=shortcut_overrides,
     )
 

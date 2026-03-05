@@ -20,6 +20,7 @@ from PySide2.QtWidgets import (
 
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.commands import CommandStack, SnapshotCommand
+from app.designer.components import insert_component_widget, list_components, save_component_from_widget
 from app.designer.connections import ConnectionEditorPanel
 from app.designer.inspector import ObjectInspector
 from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
@@ -243,6 +244,69 @@ class DesignerEditorSurface(QWidget):
                 description="format ui xml",
                 before_xml=before_xml,
                 after_xml=normalized_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def save_selected_widget_as_component(self, component_name: str) -> bool:
+        """Persist selected widget subtree as reusable component."""
+        if self._model is None:
+            return False
+        target = self._resolve_selected_widget()
+        if target is None:
+            return False
+        try:
+            save_component_from_widget(
+                ui_file_path=self._file_path,
+                component_name=component_name,
+                widget=target,
+            )
+        except (OSError, ValueError) as exc:
+            self._error_label.setText(str(exc))
+            self._error_label.setVisible(True)
+            return False
+        self._error_label.setText(f"Component '{component_name}' saved.")
+        self._error_label.setVisible(True)
+        return True
+
+    def available_component_names(self) -> list[str]:
+        """Return available reusable component names for current project."""
+        return [component.name for component in list_components(self._file_path)]
+
+    def insert_component(self, component_name: str) -> bool:
+        """Insert reusable component under selected/active parent."""
+        if self._model is None:
+            return False
+        target_parent = self._resolve_selected_widget()
+        if target_parent is None:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        try:
+            inserted_widget = insert_component_widget(
+                ui_file_path=self._file_path,
+                component_name=component_name,
+                target_parent=target_parent,
+            )
+        except (OSError, ValueError) as exc:
+            self._error_label.setText(str(exc))
+            self._error_label.setVisible(True)
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._selection_controller.set_selected_object_name(inserted_widget.object_name)
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"insert component {component_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
             )
         )
         self._set_dirty(True)
