@@ -54,6 +54,10 @@ class MenuCallbacks:
     on_designer_layout_vertical: Callable[[], object] | None = None
     on_designer_layout_grid: Callable[[], object] | None = None
     on_designer_layout_break: Callable[[], object] | None = None
+    on_designer_mode_widget: Callable[[], object] | None = None
+    on_designer_mode_signals_slots: Callable[[], object] | None = None
+    on_designer_mode_buddy: Callable[[], object] | None = None
+    on_designer_mode_tab_order: Callable[[], object] | None = None
     on_designer_preview: Callable[[], object] | None = None
     on_designer_check_compat: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
@@ -452,6 +456,49 @@ def build_menu_stubs(
         shortcut_overrides=shortcut_overrides,
     )
 
+    mode_menu = menu_bar.addMenu("&Mode")
+    mode_menu.setObjectName("designer.menu.mode")
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.widget",
+        "Widget Editing Mode",
+        "F3",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_widget,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.signals_slots",
+        "Signals/Slots Mode",
+        "F4",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_signals_slots,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.buddy",
+        "Buddy Mode",
+        "F5",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_buddy,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.tab_order",
+        "Tab Order Mode",
+        "F6",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_tab_order,
+        shortcut_overrides=shortcut_overrides,
+    )
+
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
     _register_menu_action(
@@ -826,7 +873,7 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
-    for m in (file_menu, open_recent_menu, edit_menu, form_menu, layout_menu, run_menu,
+    for m in (file_menu, open_recent_menu, edit_menu, form_menu, layout_menu, mode_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 

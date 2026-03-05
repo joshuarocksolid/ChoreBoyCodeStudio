@@ -438,6 +438,10 @@ class MainWindow(QMainWindow):
                 on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
                 on_designer_layout_grid=self._handle_designer_layout_grid_action,
                 on_designer_layout_break=self._handle_designer_layout_break_action,
+                on_designer_mode_widget=self._handle_designer_mode_widget_action,
+                on_designer_mode_signals_slots=self._handle_designer_mode_signals_slots_action,
+                on_designer_mode_buddy=self._handle_designer_mode_buddy_action,
+                on_designer_mode_tab_order=self._handle_designer_mode_tab_order_action,
                 on_designer_preview=self._handle_designer_preview_action,
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
@@ -1412,6 +1416,25 @@ class MainWindow(QMainWindow):
                 "Designer Layout",
                 "Unable to apply layout to the selected widget.",
             )
+
+    def _handle_designer_mode_widget_action(self) -> None:
+        self._set_designer_mode("widget")
+
+    def _handle_designer_mode_signals_slots_action(self) -> None:
+        self._set_designer_mode("signals_slots")
+
+    def _handle_designer_mode_buddy_action(self) -> None:
+        self._set_designer_mode("buddy")
+
+    def _handle_designer_mode_tab_order_action(self) -> None:
+        self._set_designer_mode("tab_order")
+
+    def _set_designer_mode(self, mode_id: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        surface.set_mode(mode_id)
+        self._refresh_designer_action_states()
 
     def _handle_designer_preview_action(self) -> None:
         surface = self._active_designer_surface()
@@ -2900,7 +2923,8 @@ class MainWindow(QMainWindow):
     def _refresh_designer_action_states(self) -> None:
         if self._menu_registry is None:
             return
-        has_active_designer = self._active_designer_surface() is not None
+        active_surface = self._active_designer_surface()
+        has_active_designer = active_surface is not None
         for action_id in (
             "designer.form.preview",
             "designer.form.check_compat",
@@ -2908,10 +2932,28 @@ class MainWindow(QMainWindow):
             "designer.layout.vertical",
             "designer.layout.grid",
             "designer.layout.break",
+            "designer.mode.widget",
+            "designer.mode.signals_slots",
+            "designer.mode.buddy",
+            "designer.mode.tab_order",
         ):
             action = self._menu_registry.action(action_id)
             if action is not None:
                 action.setEnabled(has_active_designer)
+
+        mode_to_action_id = {
+            "widget": "designer.mode.widget",
+            "signals_slots": "designer.mode.signals_slots",
+            "buddy": "designer.mode.buddy",
+            "tab_order": "designer.mode.tab_order",
+        }
+        current_mode = None if active_surface is None else active_surface.current_mode
+        for mode_id, action_id in mode_to_action_id.items():
+            action = self._menu_registry.action(action_id)
+            if action is None:
+                continue
+            action.setCheckable(True)
+            action.setChecked(has_active_designer and current_mode == mode_id)
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._is_shutting_down:
@@ -3926,6 +3968,7 @@ class MainWindow(QMainWindow):
                     is_dirty,
                 )
             )
+            designer_surface.mode_changed.connect(lambda _mode: self._refresh_designer_action_states())
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)

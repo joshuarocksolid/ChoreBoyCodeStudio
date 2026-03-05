@@ -116,3 +116,26 @@ def test_editor_surface_undo_redo_replays_snapshot_mutations(tmp_path: Path) -> 
 
     assert surface.redo() is True
     assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+
+
+def test_editor_surface_mode_switch_updates_current_mode(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    seen: list[str] = []
+    surface.mode_changed.connect(seen.append)
+
+    assert surface.current_mode == "widget"
+    assert surface.set_mode("signals_slots") is True
+    assert surface.current_mode == "signals_slots"
+    assert seen[-1] == "signals_slots"
+    assert surface.set_mode("invalid_mode") is False

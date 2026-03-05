@@ -57,8 +57,14 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert isinstance(window._editor_tabs_widget.currentWidget(), DesignerEditorSurface)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
+    mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
+    assert mode_action is not None and mode_action.isEnabled()
+    mode_action.trigger()
+    surface = window._active_designer_surface()
+    assert surface is not None
+    assert surface.current_mode == "signals_slots"
     window.close()
 
 
@@ -82,6 +88,8 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert isinstance(window._editor_tabs_widget.currentWidget(), CodeEditorWidget)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
+    mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
+    assert mode_action is not None and not mode_action.isEnabled()
     window.close()

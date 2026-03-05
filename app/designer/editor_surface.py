@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QLabel, QListWidget, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PySide2.QtCore import Qt, Signal
+from PySide2.QtGui import QKeySequence
+from PySide2.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QShortcut,
+    QSplitter,
+    QTabWidget,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.commands import CommandStack, SnapshotCommand
@@ -13,6 +24,14 @@ from app.designer.inspector import ObjectInspector
 from app.designer.io import read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
+from app.designer.modes import (
+    DESIGNER_MODE_DEFINITIONS,
+    MODE_BUDDY,
+    MODE_SIGNALS_SLOTS,
+    MODE_TAB_ORDER,
+    MODE_WIDGET,
+    DesignerModeController,
+)
 from app.designer.model import UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
@@ -24,16 +43,21 @@ class DesignerEditorSurface(QWidget):
     """Host widget for visual `.ui` designer workflows."""
 
     dirty_state_changed = Signal(bool)
+    mode_changed = Signal(str)
 
     def __init__(self, file_path: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._file_path = str(Path(file_path).expanduser().resolve())
         self._model: UIModel | None = None
         self._is_dirty = False
+        self._mode_shortcuts: list[QShortcut] = []
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
+        self._mode_controller = DesignerModeController(self)
         self._build_layout()
+        self._install_mode_shortcuts()
+        self._mode_controller.mode_changed.connect(self._handle_mode_changed)
         self._selection_controller.selection_changed.connect(self._handle_selection_changed)
         self._load_file_into_model()
 
@@ -60,6 +84,14 @@ class DesignerEditorSurface(QWidget):
     @property
     def can_redo(self) -> bool:
         return self._command_stack.can_redo
+
+    @property
+    def current_mode(self) -> str:
+        return self._mode_controller.current_mode
+
+    def set_mode(self, mode_id: str) -> bool:
+        """Set active designer editing mode."""
+        return self._mode_controller.set_mode(mode_id)
 
     def serialize_to_ui_string(self) -> str:
         """Serialize current model into deterministic `.ui` XML."""
@@ -114,6 +146,24 @@ class DesignerEditorSurface(QWidget):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
+        self._mode_bar = QWidget(self)
+        self._mode_bar.setObjectName("designer.surface.modeBar")
+        mode_layout = QHBoxLayout(self._mode_bar)
+        mode_layout.setContentsMargins(8, 6, 8, 6)
+        mode_layout.setSpacing(4)
+        self._mode_buttons: dict[str, QToolButton] = {}
+        for mode_def in DESIGNER_MODE_DEFINITIONS:
+            button = QToolButton(self._mode_bar)
+            button.setCheckable(True)
+            button.setText(f"{mode_def.display_name} ({mode_def.shortcut})")
+            button.clicked.connect(lambda _checked=False, mode_id=mode_def.mode_id: self.set_mode(mode_id))
+            self._mode_buttons[mode_def.mode_id] = button
+            mode_layout.addWidget(button)
+        mode_layout.addStretch(1)
+        self._mode_status_label = QLabel("", self._mode_bar)
+        mode_layout.addWidget(self._mode_status_label, 0)
+        root_layout.addWidget(self._mode_bar, 0)
+
         self._splitter = QSplitter(self)
         self._splitter.setChildrenCollapsible(False)
         root_layout.addWidget(self._splitter, 1)
@@ -143,6 +193,7 @@ class DesignerEditorSurface(QWidget):
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         root_layout.addWidget(self._error_label, 0)
+        self._refresh_mode_bar()
 
     def _load_file_into_model(self) -> None:
         try:
@@ -281,4 +332,33 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
         self._refresh_validation_issues()
+
+    def _install_mode_shortcuts(self) -> None:
+        shortcut_map = {
+            MODE_WIDGET: "F3",
+            MODE_SIGNALS_SLOTS: "F4",
+            MODE_BUDDY: "F5",
+            MODE_TAB_ORDER: "F6",
+        }
+        for mode_id, shortcut_text in shortcut_map.items():
+            shortcut = QShortcut(QKeySequence(shortcut_text), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda mode=mode_id: self.set_mode(mode))
+            self._mode_shortcuts.append(shortcut)
+
+    def _handle_mode_changed(self, mode_id: str) -> None:
+        self._refresh_mode_bar()
+        self.mode_changed.emit(mode_id)
+
+    def _refresh_mode_bar(self) -> None:
+        current_mode = self._mode_controller.current_mode
+        for mode_id, button in self._mode_buttons.items():
+            button.setChecked(mode_id == current_mode)
+        mode_names = {
+            MODE_WIDGET: "Widget Editing Mode",
+            MODE_SIGNALS_SLOTS: "Signals/Slots Mode",
+            MODE_BUDDY: "Buddy Mode",
+            MODE_TAB_ORDER: "Tab Order Mode",
+        }
+        self._mode_status_label.setText(mode_names.get(current_mode, "Mode"))
 
