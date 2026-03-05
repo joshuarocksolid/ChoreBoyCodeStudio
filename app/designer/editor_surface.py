@@ -10,7 +10,6 @@ from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.inspector import ObjectInspector
 from app.designer.io import read_ui_file
 from app.designer.model import UIModel, WidgetNode
-from app.designer.palette import default_widget_palette_registry
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.properties import PropertyEditorController
 from app.designer.validation import build_validation_issues
@@ -25,7 +24,6 @@ class DesignerEditorSurface(QWidget):
         self._model: UIModel | None = None
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
-        self._palette_registry = default_widget_palette_registry()
         self._build_layout()
         self._selection_controller.selection_changed.connect(self._handle_selection_changed)
         self._load_file_into_model()
@@ -47,9 +45,10 @@ class DesignerEditorSurface(QWidget):
         self._splitter.setChildrenCollapsible(False)
         root_layout.addWidget(self._splitter, 1)
 
-        self._palette_panel = PalettePanel(self._splitter, registry=self._palette_registry)
+        self._palette_panel = PalettePanel(self._splitter)
         self._palette_panel.widget_insert_requested.connect(self._handle_palette_insert_request)
         self._canvas = FormCanvas(self._splitter)
+        self._canvas.set_selection_controller(self._selection_controller)
         self._inspector_tabs = QTabWidget(self._splitter)
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
@@ -111,23 +110,11 @@ class DesignerEditorSurface(QWidget):
     def _handle_palette_insert_request(self, class_name: str) -> None:
         if self._model is None:
             return
-        definition = self._palette_registry.lookup(class_name)
-        if definition is None:
-            return
-        parent_name = self._selection_controller.selected_object_name or self._model.root_widget.object_name
-        try:
-            inserted = self._canvas.insert_palette_widget(
-                parent_object_name=parent_name,
-                definition=definition,
-            )
-        except ValueError as exc:
-            self._error_label.setText(str(exc))
+        if not self._canvas.insert_widget_by_class_name(class_name):
+            self._error_label.setText("Widget insertion is not allowed for the selected parent.")
             self._error_label.setVisible(True)
             return
         self._error_label.setVisible(False)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
-        inserted_name = getattr(inserted, "object_name", "")
-        if inserted_name:
-            self._selection_controller.set_selected_object_name(inserted_name)
 

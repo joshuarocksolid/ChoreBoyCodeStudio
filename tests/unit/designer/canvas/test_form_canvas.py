@@ -6,11 +6,14 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from PySide2.QtCore import QMimeData
 from PySide2.QtWidgets import QApplication
 
+from app.designer.canvas import SelectionController
 from app.designer.canvas.form_canvas import FormCanvas
 from app.designer.model import LayoutNode, UIModel, WidgetNode
 from app.designer.palette import default_widget_palette_registry
+from app.designer.palette.palette_panel import PALETTE_WIDGET_MIME
 
 pytestmark = pytest.mark.unit
 
@@ -77,3 +80,56 @@ def test_insert_palette_widget_rejects_invalid_parent_class() -> None:
 
     with pytest.raises(ValueError, match="not allowed"):
         canvas.insert_palette_widget(parent_object_name="lineEdit", definition=button_definition)
+
+
+class _FakeDropEvent:
+    def __init__(self, class_name: str) -> None:
+        self._mime_data = QMimeData()
+        self._mime_data.setData(PALETTE_WIDGET_MIME, class_name.encode("utf-8"))
+        self.accepted = False
+        self.ignored = False
+
+    def mimeData(self) -> QMimeData:  # noqa: N802 - Qt-style
+        return self._mime_data
+
+    def acceptProposedAction(self) -> None:
+        self.accepted = True
+
+    def ignore(self) -> None:
+        self.ignored = True
+
+
+def test_drop_event_inserts_widget_from_palette_mime() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(class_name="QWidget", object_name="rootWidget"),
+    )
+    canvas.load_model(model)
+    event = _FakeDropEvent("QPushButton")
+
+    canvas.dropEvent(event)
+
+    assert event.accepted is True
+    assert model.root_widget.find_by_object_name("pushButton") is not None
+
+
+def test_canvas_tree_selection_syncs_with_selection_controller() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[WidgetNode(class_name="QLabel", object_name="statusLabel")],
+        ),
+    )
+    controller = SelectionController()
+    canvas.set_selection_controller(controller)
+    canvas.load_model(model)
+
+    controller.set_selected_object_name("statusLabel")
+
+    current_item = canvas._canvas_tree.currentItem()  # type: ignore[attr-defined]
+    assert current_item is not None
+    assert "statusLabel" in current_item.text(0)
