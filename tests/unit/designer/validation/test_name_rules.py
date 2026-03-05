@@ -37,3 +37,16 @@ def test_build_validation_issues_includes_no_layout_warning() -> None:
     issues = build_validation_issues(model)
 
     assert any(issue.code == "DLAYOUT001" for issue in issues)
+
+
+def test_build_validation_issues_can_disable_naming_lint() -> None:
+    model = UIModel(
+        form_class_name="WarnForm",
+        root_widget=WidgetNode(class_name="QWidget", object_name="RootWidget"),
+    )
+
+    issues_with_lint = build_validation_issues(model)
+    issues_without_lint = build_validation_issues(model, enable_naming_lint=False)
+
+    assert any(issue.code == "DLINT001" for issue in issues_with_lint)
+    assert not any(issue.code == "DLINT001" for issue in issues_without_lint)
