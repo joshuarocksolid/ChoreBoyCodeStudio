@@ -9,6 +9,7 @@ from PySide2.QtWidgets import QLabel, QListWidget, QSplitter, QTabWidget, QVBoxL
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.inspector import ObjectInspector
 from app.designer.io import read_ui_file
+from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.model import UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.properties import PropertyEditorController
@@ -35,6 +36,10 @@ class DesignerEditorSurface(QWidget):
     @property
     def model(self) -> UIModel | None:
         return self._model
+
+    @property
+    def selected_object_name(self) -> str | None:
+        return self._selection_controller.selected_object_name
 
     def _build_layout(self) -> None:
         root_layout = QVBoxLayout(self)
@@ -117,4 +122,53 @@ class DesignerEditorSurface(QWidget):
         self._error_label.setVisible(False)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+
+    def apply_layout_to_selection(self, layout_class_name: str) -> bool:
+        """Apply layout to selected widget (or root when none selected)."""
+        if self._model is None:
+            return False
+        target = self._resolve_selected_widget()
+        if target is None:
+            return False
+        layout_name_map = {
+            "QVBoxLayout": "verticalLayout",
+            "QHBoxLayout": "horizontalLayout",
+            "QGridLayout": "gridLayout",
+        }
+        layout_object_name = layout_name_map.get(layout_class_name, "layout")
+        try:
+            apply_layout_to_widget(target, layout_class_name, layout_object_name=layout_object_name)
+        except ValueError as exc:
+            self._error_label.setText(str(exc))
+            self._error_label.setVisible(True)
+            return False
+        self._error_label.setVisible(False)
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        return True
+
+    def break_layout_for_selection(self) -> bool:
+        """Break layout for selected widget (or root when none selected)."""
+        if self._model is None:
+            return False
+        target = self._resolve_selected_widget()
+        if target is None:
+            return False
+        if target.layout is None:
+            return False
+        break_layout(target)
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        return True
+
+    def _resolve_selected_widget(self) -> WidgetNode | None:
+        if self._model is None:
+            return None
+        selected_name = self._selection_controller.selected_object_name
+        if not selected_name:
+            return self._model.root_widget
+        return self._model.root_widget.find_by_object_name(selected_name)
 

@@ -48,6 +48,10 @@ class MenuCallbacks:
     on_go_to_definition: Callable[[], object] | None = None
     on_signature_help: Callable[[], object] | None = None
     on_hover_info: Callable[[], object] | None = None
+    on_designer_layout_horizontal: Callable[[], object] | None = None
+    on_designer_layout_vertical: Callable[[], object] | None = None
+    on_designer_layout_grid: Callable[[], object] | None = None
+    on_designer_layout_break: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -361,6 +365,49 @@ def build_menu_stubs(
         "Ctrl+K",
         enabled=True,
         callback=callback_registry.on_hover_info,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    layout_menu = menu_bar.addMenu("&Layout")
+    layout_menu.setObjectName("designer.menu.layout")
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.horizontal",
+        "Lay Out Horizontally",
+        "Ctrl+1",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_horizontal,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.vertical",
+        "Lay Out Vertically",
+        "Ctrl+2",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_vertical,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.grid",
+        "Lay Out in a Grid",
+        "Ctrl+3",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_grid,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.break",
+        "Break Layout",
+        "Ctrl+0",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_break,
         shortcut_overrides=shortcut_overrides,
     )
 
@@ -738,7 +785,7 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
-    for m in (file_menu, open_recent_menu, edit_menu, run_menu,
+    for m in (file_menu, open_recent_menu, edit_menu, layout_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 

@@ -432,6 +432,10 @@ class MainWindow(QMainWindow):
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_signature_help=self._handle_signature_help_action,
                 on_hover_info=self._handle_hover_info_action,
+                on_designer_layout_horizontal=self._handle_designer_layout_horizontal_action,
+                on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
+                on_designer_layout_grid=self._handle_designer_layout_grid_action,
+                on_designer_layout_break=self._handle_designer_layout_break_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -459,6 +463,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_designer_action_states()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
@@ -1346,6 +1351,33 @@ class MainWindow(QMainWindow):
             details.append(f"Doc: {hover_info.doc_summary}")
         details.append(f"Source: {hover_info.source}")
         QMessageBox.information(self, "Hover Info", "\n".join(details))
+
+    def _handle_designer_layout_horizontal_action(self) -> None:
+        self._apply_designer_layout_command("QHBoxLayout")
+
+    def _handle_designer_layout_vertical_action(self) -> None:
+        self._apply_designer_layout_command("QVBoxLayout")
+
+    def _handle_designer_layout_grid_action(self) -> None:
+        self._apply_designer_layout_command("QGridLayout")
+
+    def _handle_designer_layout_break_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.break_layout_for_selection():
+            QMessageBox.information(self, "Break Layout", "No layout available on selected widget.")
+
+    def _apply_designer_layout_command(self, layout_class_name: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.apply_layout_to_selection(layout_class_name):
+            QMessageBox.warning(
+                self,
+                "Designer Layout",
+                "Unable to apply layout to the selected widget.",
+            )
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -2775,6 +2807,20 @@ class MainWindow(QMainWindow):
             has_breakpoints=bool(self._breakpoints_by_file),
         )
 
+    def _refresh_designer_action_states(self) -> None:
+        if self._menu_registry is None:
+            return
+        has_active_designer = self._active_designer_surface() is not None
+        for action_id in (
+            "designer.layout.horizontal",
+            "designer.layout.vertical",
+            "designer.layout.grid",
+            "designer.layout.break",
+        ):
+            action = self._menu_registry.action(action_id)
+            if action is not None:
+                action.setEnabled(has_active_designer)
+
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._is_shutting_down:
             return
@@ -3951,6 +3997,14 @@ class MainWindow(QMainWindow):
             return None
         return self._editor_widgets_by_path.get(active_tab.file_path)
 
+    def _active_designer_surface(self) -> DesignerEditorSurface | None:
+        if self._editor_tabs_widget is None:
+            return None
+        current_widget = self._editor_tabs_widget.currentWidget()
+        if isinstance(current_widget, DesignerEditorSurface):
+            return current_widget
+        return None
+
     def _request_editor_completions(
         self,
         *,
@@ -3990,13 +4044,16 @@ class MainWindow(QMainWindow):
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:
+            self._refresh_designer_action_states()
             return
 
         tab_path = self._editor_tabs_widget.tabToolTip(tab_index)
         if not tab_path:
+            self._refresh_designer_action_states()
             return
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
@@ -4041,6 +4098,7 @@ class MainWindow(QMainWindow):
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
 
     def _close_active_tab(self) -> None:
         if self._editor_tabs_widget is None:
@@ -4069,6 +4127,7 @@ class MainWindow(QMainWindow):
         self._designer_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
 
