@@ -357,7 +357,7 @@ Every task in this file contains:
 ### Story D3.S1 — Signals/slots editing mode
 
 #### Task D3.S1.T1 — Mode switch + connection gesture on canvas
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Add dedicated mode for connection creation (source signal -> target slot).
 - **Primary files:** `app/designer/modes/signals_slots_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -365,9 +365,10 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-01
 - **Depends on:** D2.S4.T1
 - **Done when:** users can create/edit connections in a dedicated mode without affecting widget-edit mode.
+- **Implementation note:** mode switching and a dedicated connections panel (add/remove) are implemented; direct canvas gesture authoring remains pending.
 
 #### Task D3.S1.T2 — Serialize `<connections>` block in `.ui`
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Persist signal/slot mapping in standard Qt `.ui` shape.
 - **Primary files:** `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit

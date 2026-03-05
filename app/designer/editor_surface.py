@@ -20,6 +20,7 @@ from PySide2.QtWidgets import (
 
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.commands import CommandStack, SnapshotCommand
+from app.designer.connections import ConnectionEditorPanel
 from app.designer.inspector import ObjectInspector
 from app.designer.io import read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
@@ -32,7 +33,7 @@ from app.designer.modes import (
     MODE_WIDGET,
     DesignerModeController,
 )
-from app.designer.model import UIModel, WidgetNode
+from app.designer.model import ConnectionModel, UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
 from app.designer.properties import PropertyEditorController, PropertyEditorPanel
@@ -203,8 +204,12 @@ class DesignerEditorSurface(QWidget):
         self._property_panel = PropertyEditorPanel(self._inspector_tabs)
         self._property_panel.property_edited.connect(self._handle_property_edited)
         self._property_panel.property_reset_requested.connect(self._handle_property_reset_requested)
+        self._connection_panel = ConnectionEditorPanel(self._inspector_tabs)
+        self._connection_panel.add_requested.connect(self._handle_add_connection_request)
+        self._connection_panel.remove_requested.connect(self._handle_remove_connection_request)
         self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Property Editor")
+        self._inspector_tabs.addTab(self._connection_panel, "Connections")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -231,6 +236,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._connection_panel.bind_connections(model.connections)
         self._refresh_validation_issues()
         self._set_dirty(False)
 
@@ -314,6 +320,51 @@ class DesignerEditorSurface(QWidget):
                 description=f"{description_prefix} {property_name}",
                 before_xml=before_xml,
                 after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+
+    def _handle_add_connection_request(self) -> None:
+        if self._model is None:
+            return
+        selected_name = self.selected_object_name or self._model.root_widget.object_name
+        sender_widget = self._model.root_widget.find_by_object_name(selected_name) or self._model.root_widget
+        signal_name = "clicked()" if sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"} else "customSignal()"
+        connection = ConnectionModel(
+            sender=sender_widget.object_name,
+            signal=signal_name,
+            receiver=self._model.root_widget.object_name,
+            slot="update()",
+        )
+        before_xml = self.serialize_to_ui_string()
+        self._model.connections.append(connection)
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        self._command_stack.push(
+            SnapshotCommand(
+                description="add connection",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+
+    def _handle_remove_connection_request(self, index: int) -> None:
+        if self._model is None:
+            return
+        if index < 0 or index >= len(self._model.connections):
+            return
+        before_xml = self.serialize_to_ui_string()
+        self._model.connections.pop(index)
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        self._command_stack.push(
+            SnapshotCommand(
+                description="remove connection",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
             )
         )
         self._set_dirty(True)
@@ -439,6 +490,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._connection_panel.bind_connections(model.connections)
         self._refresh_validation_issues()
 
     def _install_mode_shortcuts(self) -> None:
@@ -455,6 +507,8 @@ class DesignerEditorSurface(QWidget):
             self._mode_shortcuts.append(shortcut)
 
     def _handle_mode_changed(self, mode_id: str) -> None:
+        if mode_id == MODE_SIGNALS_SLOTS:
+            self._inspector_tabs.setCurrentWidget(self._connection_panel)
         self._refresh_mode_bar()
         self.mode_changed.emit(mode_id)
 

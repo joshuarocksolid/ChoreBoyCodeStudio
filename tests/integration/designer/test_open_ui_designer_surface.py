@@ -67,6 +67,7 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     surface = window._active_designer_surface()
     assert surface is not None
     assert surface.current_mode == "signals_slots"
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Connections"  # type: ignore[attr-defined]
     monkeypatch.setattr(qt_widgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: ("", ""))
     add_resource_action.trigger()
     assert [resource.location for resource in surface.model.resources] == []  # type: ignore[union-attr]
