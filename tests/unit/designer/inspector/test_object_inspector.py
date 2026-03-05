@@ -70,3 +70,46 @@ def test_object_inspector_pushes_tree_selection_to_controller() -> None:
     inspector._handle_tree_selection_changed()  # type: ignore[attr-defined]
 
     assert controller.selected_object_name == "statusLabel"
+
+
+def test_object_inspector_reparent_moves_widget_under_target_container() -> None:
+    inspector = ObjectInspector()
+    model = UIModel(
+        form_class_name="Form",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[
+                WidgetNode(class_name="QPushButton", object_name="sourceButton"),
+                WidgetNode(class_name="QGroupBox", object_name="targetGroup"),
+            ],
+        ),
+    )
+    inspector.bind_model(model)
+
+    moved = inspector._handle_drop_reparent("sourceButton", "targetGroup")  # type: ignore[attr-defined]
+
+    assert moved is True
+    target = model.root_widget.find_by_object_name("targetGroup")
+    assert target is not None
+    assert [child.object_name for child in target.children] == ["sourceButton"]
+
+
+def test_object_inspector_reparent_rejects_non_container_targets() -> None:
+    inspector = ObjectInspector()
+    model = UIModel(
+        form_class_name="Form",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[
+                WidgetNode(class_name="QPushButton", object_name="sourceButton"),
+                WidgetNode(class_name="QLineEdit", object_name="lineEdit"),
+            ],
+        ),
+    )
+    inspector.bind_model(model)
+
+    moved = inspector._handle_drop_reparent("sourceButton", "lineEdit")  # type: ignore[attr-defined]
+
+    assert moved is False

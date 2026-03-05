@@ -72,7 +72,7 @@ Every task in this file contains:
 ### Story D0.S1 — Runtime capability and schema probes
 
 #### Task D0.S1.T1 — Add QtUiTools/QUiLoader probe to startup diagnostics
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Extend startup capability probe so Designer prerequisites are explicit.
 - **Primary files:** `app/bootstrap/capability_probe.py`, `app/core/models.py`, `tests/unit/bootstrap/test_capability_probe.py`
 - **Automated test layer:** unit, integration
@@ -82,7 +82,7 @@ Every task in this file contains:
 - **Done when:** probe report contains a stable check for QtUiTools/QUiLoader availability and messaging is actionable.
 
 #### Task D0.S1.T2 — Add `.ui` compatibility smoke harness (read/load/tree check)
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Verify generated and fixture `.ui` payloads can be loaded through `QUiLoader`.
 - **Primary files:** `tests/integration/designer/test_ui_loader_smoke.py` (new), `tests/fixtures/designer/*.ui` (new)
 - **Automated test layer:** integration, runtime_parity
@@ -94,7 +94,7 @@ Every task in this file contains:
 ### Story D0.S2 — Designer subsystem scaffolding
 
 #### Task D0.S2.T1 — Create designer package layout
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Introduce explicit module boundaries for the Designer subsystem.
 - **Primary files:** `app/designer/__init__.py` + package scaffolding under `app/designer/*`
 - **Automated test layer:** unit (import/smoke)
@@ -104,7 +104,7 @@ Every task in this file contains:
 - **Done when:** package structure exists with stable ownership boundaries and import-safe modules.
 
 #### Task D0.S2.T2 — Define model-first `UIModel` contracts
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Provide canonical in-memory form representation before canvas/IO work.
 - **Primary files:** `app/designer/model/*.py` (new), `tests/unit/designer/model/test_ui_model.py` (new)
 - **Automated test layer:** unit
@@ -114,7 +114,7 @@ Every task in this file contains:
 - **Done when:** model can represent top-level widget, child hierarchy, layout nodes, and base property types.
 
 #### Task D0.S2.T3 — Add `.ui` reader/writer skeleton aligned to Qt schema
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Add explicit IO seam for UI XML import/export.
 - **Primary files:** `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, `tests/unit/designer/io/test_ui_reader_writer.py`
 - **Automated test layer:** unit
@@ -130,7 +130,7 @@ Every task in this file contains:
 ### Story D1.S1 — Open `.ui` in visual designer surface
 
 #### Task D1.S1.T1 — Route `.ui` files to Designer editor surface
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Open `.ui` in visual mode instead of text editor by default.
 - **Primary files:** `app/shell/main_window.py`, `app/shell/menus.py`, `app/designer/editor_surface.py` (new)
 - **Automated test layer:** integration
@@ -140,7 +140,7 @@ Every task in this file contains:
 - **Done when:** `.ui` tabs instantiate designer surface with no regression to existing text-tab flows.
 
 #### Task D1.S1.T2 — Add New Form workflow (class/name/base widget)
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Create a valid initial `.ui` form from UI dialog flow.
 - **Primary files:** `app/designer/new_form_dialog.py` (new), `app/shell/menus.py`, `app/designer/io/ui_writer.py`
 - **Automated test layer:** unit, integration
@@ -152,7 +152,7 @@ Every task in this file contains:
 ### Story D1.S2 — MVP canvas, palette, and selection
 
 #### Task D1.S2.T1 — Implement widget palette registry (MVP set)
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Provide deterministic palette entries for initial widget subset.
 - **Primary files:** `app/designer/palette/widget_registry.py`, `app/designer/palette/palette_panel.py`, tests under `tests/unit/designer/palette/`
 - **Automated test layer:** unit
@@ -162,7 +162,7 @@ Every task in this file contains:
 - **Done when:** MVP widgets from PRD appear in organized palette groups.
 
 #### Task D1.S2.T2 — Drag/drop placement onto form canvas
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Add Qt Designer-like drag from palette to canvas with valid parent constraints.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/canvas/drop_rules.py`, integration tests
 - **Automated test layer:** integration, manual_acceptance
@@ -172,7 +172,7 @@ Every task in this file contains:
 - **Done when:** widget instances are inserted into `UIModel` and rendered on canvas at intended target.
 
 #### Task D1.S2.T3 — Single-widget selection + selection outline
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Allow selecting one widget from canvas/object tree and show unambiguous selection chrome.
 - **Primary files:** `app/designer/canvas/selection_controller.py`, `app/designer/inspector/object_inspector.py`
 - **Automated test layer:** unit, integration
@@ -184,7 +184,7 @@ Every task in this file contains:
 ### Story D1.S3 — MVP property editor and object naming
 
 #### Task D1.S3.T1 — Property editor scaffold for core properties
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Edit `objectName`, text/title, enabled, checked, tooltip, placeholder, geometry (where applicable).
 - **Primary files:** `app/designer/properties/property_editor.py`, `app/designer/properties/property_schema.py`
 - **Automated test layer:** unit, integration
@@ -194,7 +194,7 @@ Every task in this file contains:
 - **Done when:** edited values persist in model and update immediately in canvas preview.
 
 #### Task D1.S3.T2 — Duplicate objectName validation
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Prevent silent duplicate object names.
 - **Primary files:** `app/designer/validation/name_rules.py`, `app/designer/validation/validation_panel.py`
 - **Automated test layer:** unit
@@ -206,7 +206,7 @@ Every task in this file contains:
 ### Story D1.S4 — MVP layout operations
 
 #### Task D1.S4.T1 — Apply VBox/HBox/Grid layout to selected container
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Implement core layout actions matching Qt Designer mental model.
 - **Primary files:** `app/designer/layout/layout_commands.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** unit, integration
@@ -216,7 +216,7 @@ Every task in this file contains:
 - **Done when:** layout nodes are emitted correctly in model and reflected in rendered canvas.
 
 #### Task D1.S4.T2 — Break layout action
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Allow reverting selected container from managed layout back to absolute/child-managed arrangement.
 - **Primary files:** `app/designer/layout/layout_commands.py`, `tests/unit/designer/layout/test_layout_commands.py`
 - **Automated test layer:** unit
@@ -228,7 +228,7 @@ Every task in this file contains:
 ### Story D1.S5 — Save/Open/Preview and MVP round-trip
 
 #### Task D1.S5.T1 — Save `.ui` from `UIModel`
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Persist supported subset as standard `.ui` XML.
 - **Primary files:** `app/designer/io/ui_writer.py`, `app/shell/main_window.py`
 - **Automated test layer:** unit, integration
@@ -238,7 +238,7 @@ Every task in this file contains:
 - **Done when:** saved file loads in Designer and through `QUiLoader` for MVP widgets/layouts.
 
 #### Task D1.S5.T2 — Open `.ui` into `UIModel`
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Parse supported `.ui` subset and populate canvas/editor state.
 - **Primary files:** `app/designer/io/ui_reader.py`, `app/designer/editor_surface.py`
 - **Automated test layer:** unit, integration
@@ -248,7 +248,7 @@ Every task in this file contains:
 - **Done when:** existing `.ui` files in supported subset are editable without data loss in supported fields.
 
 #### Task D1.S5.T3 — Preview current form via `QUiLoader`
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Add preview action that loads current saved/in-memory `.ui` through `QUiLoader`.
 - **Primary files:** `app/designer/preview/preview_service.py`, `app/designer/preview/preview_window.py`
 - **Automated test layer:** integration, runtime_parity, manual_acceptance
