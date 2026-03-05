@@ -441,7 +441,7 @@ Every task in this file contains:
 - **Implementation note:** model + reader/writer support and add-resource workflow are in place; icon property binding remains pending in D4.S1.T2.
 
 #### Task D4.S1.T2 — Icon picker UX and property binding
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Allow selecting icon resources in property editor.
 - **Primary files:** `app/designer/properties/icon_picker.py`, `app/designer/properties/property_editor.py`
 - **Automated test layer:** integration
@@ -449,6 +449,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-02
 - **Depends on:** D4.S1.T1
 - **Done when:** icons can be selected, previewed, and serialized through supported property paths.
+- **Implementation note:** icon property schema + picker control + iconset read/write support are implemented for push/tool buttons; full preview-focused icon workflows and broader widget coverage remain.
 
 ### Story D4.S2 — Promote-to workflow
 

@@ -150,3 +150,26 @@ def test_read_write_round_trip_preserves_buddy_property() -> None:
     assert label is not None
     assert label.properties["buddy"].value_type == "cstring"
     assert label.properties["buddy"].value == "lineEdit"
+
+
+def test_read_write_round_trip_preserves_iconset_property() -> None:
+    model = read_ui_string(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\">"
+            "<class>IconForm</class>"
+            "<widget class=\"QWidget\" name=\"IconForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\">"
+            "<property name=\"icon\"><iconset><normaloff>icons/run.png</normaloff></iconset></property>"
+            "</widget>"
+            "</widget>"
+            "<resources/><connections/>"
+            "</ui>\n"
+        )
+    )
+    serialized = write_ui_string(model)
+    reparsed = read_ui_string(serialized)
+    button = reparsed.root_widget.find_by_object_name("pushButton")
+    assert button is not None
+    assert button.properties["icon"].value_type == "iconset"
+    assert button.properties["icon"].value == "icons/run.png"

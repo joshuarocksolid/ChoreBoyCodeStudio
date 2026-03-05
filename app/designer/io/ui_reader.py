@@ -123,6 +123,11 @@ def _parse_property(element: ET.Element) -> PropertyValue:
         return PropertyValue(value_type=value_type, value=float((value_element.text or "0").strip() or "0"))
     if value_type == "rect":
         return PropertyValue(value_type=value_type, value=_parse_rect(value_element))
+    if value_type == "iconset":
+        icon_text = (value_element.text or "").strip()
+        if not icon_text:
+            icon_text = (value_element.findtext("normaloff") or "").strip()
+        return PropertyValue(value_type=value_type, value=icon_text)
     return PropertyValue(value_type=value_type, value=value_element.text or "")
 
 

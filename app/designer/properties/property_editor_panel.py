@@ -20,6 +20,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.designer.model import PropertyValue, WidgetNode
+from app.designer.properties.icon_picker import IconPickerField
 from app.designer.properties.property_schema import PropertyFieldDefinition
 
 
@@ -123,6 +124,11 @@ class PropertyEditorPanel(QWidget):
             double_box.setValue(float(value if value is not None else 0.0))
             double_box.valueChanged.connect(lambda v, name=field.name: self._emit_edit(name, v))
             return double_box
+        if field.value_type == "iconset":
+            picker = IconPickerField(self._form_host)
+            picker.set_path("" if value is None else str(value))
+            picker.path_changed.connect(lambda path, name=field.name: self._emit_edit(name, path))
+            return picker
         line_edit = QLineEdit(self._form_host)
         line_edit.setText("" if value is None else str(value))
         line_edit.editingFinished.connect(

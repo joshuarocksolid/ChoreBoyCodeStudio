@@ -68,6 +68,11 @@ def _build_property(property_name: str, property_value: PropertyValue) -> ET.Ele
             field_element = ET.SubElement(rect_element, field)
             field_element.text = str(int(value.get(field, 0)))
         return property_element
+    if value_type == "iconset":
+        icon_element = ET.SubElement(property_element, "iconset")
+        normal_off = ET.SubElement(icon_element, "normaloff")
+        normal_off.text = str(value)
+        return property_element
 
     value_element = ET.SubElement(property_element, value_type)
     if value_type == "bool":

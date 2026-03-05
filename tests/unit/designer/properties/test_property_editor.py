@@ -47,3 +47,13 @@ def test_reset_property_applies_schema_default() -> None:
     controller.reset_property(widget, "checked")
 
     assert widget.properties["checked"].value is False
+
+
+def test_set_property_supports_iconset_field() -> None:
+    widget = WidgetNode(class_name="QPushButton", object_name="pushButton")
+    controller = PropertyEditorController()
+
+    controller.set_property(widget, "icon", "icons/run.png")
+
+    assert widget.properties["icon"].value_type == "iconset"
+    assert widget.properties["icon"].value == "icons/run.png"

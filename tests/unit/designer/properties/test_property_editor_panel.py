@@ -9,7 +9,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton
 
 from app.designer.model import WidgetNode
-from app.designer.properties import PropertyEditorController
+from app.designer.properties import IconPickerField, PropertyEditorController
 from app.designer.properties.property_editor_panel import PropertyEditorPanel
 
 pytestmark = pytest.mark.unit
@@ -62,3 +62,20 @@ def test_property_panel_disables_reset_for_object_name() -> None:
     assert text_reset is not None
     text_reset.click()
     assert resets == [("pushButton", "text")]
+
+
+def test_property_panel_uses_icon_picker_for_iconset_fields() -> None:
+    panel = PropertyEditorPanel()
+    controller = PropertyEditorController()
+    widget = WidgetNode(class_name="QPushButton", object_name="pushButton")
+    panel.bind_widget(widget, controller.field_definitions_for_widget(widget))
+
+    edits: list[tuple[str, str, object]] = []
+    panel.property_edited.connect(lambda obj, prop, value: edits.append((obj, prop, value)))
+
+    picker = panel.findChild(IconPickerField)
+    assert picker is not None
+    picker.set_path("icons/run.png")
+    picker.path_changed.emit("icons/run.png")
+
+    assert ("pushButton", "icon", "icons/run.png") in edits

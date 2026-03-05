@@ -36,6 +36,8 @@ def default_property_schema_for_class(class_name: str) -> list[PropertyFieldDefi
         common.append(PropertyFieldDefinition("text", "string", "Appearance", "Text", default_value=""))
     if class_name == "QLabel":
         common.append(PropertyFieldDefinition("buddy", "cstring", "Behavior", "Buddy", default_value=""))
+    if class_name in {"QPushButton", "QToolButton"}:
+        common.append(PropertyFieldDefinition("icon", "iconset", "Appearance", "Icon", default_value=""))
     if class_name == "QGroupBox":
         common.append(PropertyFieldDefinition("title", "string", "Appearance", "Title", default_value=""))
     if class_name == "QLineEdit":
