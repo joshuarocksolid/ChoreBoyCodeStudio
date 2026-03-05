@@ -506,7 +506,7 @@ Every task in this file contains:
 ### Story D5.S2 — Reusable components and templates
 
 #### Task D5.S2.T1 — Save selection as reusable component
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Export widget subtrees for reuse.
 - **Primary files:** `app/designer/components/component_service.py`, `app/designer/components/component_manifest.py`
 - **Automated test layer:** unit, integration
@@ -514,7 +514,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-03
 - **Depends on:** D2.S1.T1
 - **Done when:** selected subtree can be inserted into other forms with valid hierarchy/property mapping.
-- **Implementation note:** component save service and menu action are implemented for selected widget subtrees; manifest metadata and richer conflict management are pending.
+- **Implementation note:** component save service, manifest metadata persistence, and menu action are implemented for selected widget subtrees.
 
 #### Task D5.S2.T2 — Insert component from library
 - **Status:** DONE

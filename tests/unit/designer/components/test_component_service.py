@@ -25,6 +25,8 @@ def test_save_and_list_components_round_trip(tmp_path: Path) -> None:
     source_widget = WidgetNode(class_name="QPushButton", object_name="pushButton")
     descriptor = save_component_from_widget(str(ui_file.resolve()), "ButtonPart", source_widget)
     assert descriptor.name == "ButtonPart"
+    manifest_path = ui_file.parent / "cbcs" / "components" / "manifest.json"
+    assert manifest_path.is_file()
 
     listed = list_components(str(ui_file.resolve()))
     assert len(listed) == 1

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core import constants
+from app.designer.components.component_manifest import ComponentManifestEntry, load_component_manifest, save_component_manifest
 from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.io import read_ui_file, write_ui_file
 from app.designer.model import UIModel, WidgetNode
@@ -42,12 +43,21 @@ def save_component_from_widget(ui_file_path: str, component_name: str, widget: W
         root_widget=copy.deepcopy(widget),
     )
     write_ui_file(model, str(output_file))
-    return ComponentDescriptor(
+    descriptor = ComponentDescriptor(
         name=normalized_name,
         file_path=str(output_file),
         root_class_name=model.root_widget.class_name,
         root_object_name=model.root_widget.object_name,
     )
+    manifest_entries = load_component_manifest(components_dir)
+    manifest_entries[descriptor.name] = ComponentManifestEntry(
+        name=descriptor.name,
+        file_name=output_file.name,
+        root_class_name=descriptor.root_class_name,
+        root_object_name=descriptor.root_object_name,
+    )
+    save_component_manifest(components_dir, manifest_entries)
+    return descriptor
 
 
 def list_components(ui_file_path: str) -> list[ComponentDescriptor]:
@@ -55,6 +65,24 @@ def list_components(ui_file_path: str) -> list[ComponentDescriptor]:
     components_dir = _components_dir_for_ui_file(ui_file_path)
     if not components_dir.is_dir():
         return []
+    manifest_entries = load_component_manifest(components_dir)
+    if manifest_entries:
+        descriptors: list[ComponentDescriptor] = []
+        for name in sorted(manifest_entries):
+            entry = manifest_entries[name]
+            file_path = components_dir / entry.file_name
+            if not file_path.is_file():
+                continue
+            descriptors.append(
+                ComponentDescriptor(
+                    name=entry.name,
+                    file_path=str(file_path),
+                    root_class_name=entry.root_class_name,
+                    root_object_name=entry.root_object_name,
+                )
+            )
+        if descriptors:
+            return descriptors
     descriptors: list[ComponentDescriptor] = []
     for file_path in sorted(components_dir.glob("*.ui")):
         try:
