@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide2.QtCore import Signal
 from PySide2.QtWidgets import QLabel, QListWidget, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.inspector import ObjectInspector
 from app.designer.io import read_ui_file
+from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.model import UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
@@ -19,10 +21,13 @@ from app.designer.validation import build_validation_issues
 class DesignerEditorSurface(QWidget):
     """Host widget for visual `.ui` designer workflows."""
 
+    dirty_state_changed = Signal(bool)
+
     def __init__(self, file_path: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._file_path = str(Path(file_path).expanduser().resolve())
         self._model: UIModel | None = None
+        self._is_dirty = False
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._build_layout()
@@ -40,6 +45,20 @@ class DesignerEditorSurface(QWidget):
     @property
     def selected_object_name(self) -> str | None:
         return self._selection_controller.selected_object_name
+
+    @property
+    def is_dirty(self) -> bool:
+        return self._is_dirty
+
+    def serialize_to_ui_string(self) -> str:
+        """Serialize current model into deterministic `.ui` XML."""
+        if self._model is None:
+            raise ValueError("No model loaded for designer surface.")
+        return write_ui_string(self._model)
+
+    def mark_saved(self) -> None:
+        """Clear dirty flag after successful save."""
+        self._set_dirty(False)
 
     def _build_layout(self) -> None:
         root_layout = QVBoxLayout(self)
@@ -87,6 +106,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
         self._refresh_validation_issues()
+        self._set_dirty(False)
 
     def _handle_selection_changed(self, object_name: str) -> None:
         if self._model is None or not object_name:
@@ -122,6 +142,7 @@ class DesignerEditorSurface(QWidget):
         self._error_label.setVisible(False)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._set_dirty(True)
 
     def apply_layout_to_selection(self, layout_class_name: str) -> bool:
         """Apply layout to selected widget (or root when none selected)."""
@@ -146,6 +167,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._set_dirty(True)
         return True
 
     def break_layout_for_selection(self) -> bool:
@@ -162,6 +184,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._error_label.setVisible(False)
+        self._set_dirty(True)
         return True
 
     def _resolve_selected_widget(self) -> WidgetNode | None:
@@ -171,4 +194,10 @@ class DesignerEditorSurface(QWidget):
         if not selected_name:
             return self._model.root_widget
         return self._model.root_widget.find_by_object_name(selected_name)
+
+    def _set_dirty(self, is_dirty: bool) -> None:
+        if self._is_dirty == is_dirty:
+            return
+        self._is_dirty = is_dirty
+        self.dirty_state_changed.emit(is_dirty)
 

@@ -1763,6 +1763,10 @@ class MainWindow(QMainWindow):
         return not any_failure
 
     def _save_tab(self, file_path: str) -> bool:
+        designer_surface = self._designer_widgets_by_path.get(file_path)
+        if designer_surface is not None:
+            return self._save_designer_tab(file_path, designer_surface)
+
         self._apply_format_on_save_if_enabled(file_path)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
@@ -1787,6 +1791,26 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
             self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
+        self._logger.info("Saved file: %s", saved_tab.file_path)
+        return True
+
+    def _save_designer_tab(self, file_path: str, designer_surface: DesignerEditorSurface) -> bool:
+        try:
+            serialized = designer_surface.serialize_to_ui_string()
+            self._editor_manager.update_tab_content(file_path, serialized)
+            saved_tab = self._editor_manager.save_tab(file_path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Save failed", str(exc))
+            self._logger.warning("Save failed for %s: %s", file_path, exc)
+            return False
+
+        designer_surface.mark_saved()
+        if self._editor_tabs_widget is not None:
+            tab_index = self._tab_index_for_path(saved_tab.file_path)
+            if tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
+        self._refresh_save_action_states()
+        self._update_editor_status_for_path(saved_tab.file_path)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -3827,6 +3851,13 @@ class MainWindow(QMainWindow):
         if Path(opened_result.tab.file_path).suffix.lower() == ".ui":
             designer_surface = DesignerEditorSurface(opened_result.tab.file_path, self._editor_tabs_widget)
             designer_surface.setObjectName("shell.editorTabs.designerSurface")
+            designer_surface.dirty_state_changed.connect(
+                lambda is_dirty, tab_file_path=opened_result.tab.file_path, surface=designer_surface: self._handle_designer_dirty_state_changed(
+                    tab_file_path,
+                    surface,
+                    is_dirty,
+                )
+            )
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -3957,6 +3988,27 @@ class MainWindow(QMainWindow):
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
         self._schedule_semantic_token_refresh(tab_state.file_path, editor_widget)
+
+    def _handle_designer_dirty_state_changed(
+        self,
+        file_path: str,
+        designer_surface: DesignerEditorSurface,
+        is_dirty: bool,
+    ) -> None:
+        if self._editor_manager.get_tab(file_path) is None:
+            return
+        try:
+            serialized = designer_surface.serialize_to_ui_string()
+        except ValueError:
+            return
+        tab_state = self._editor_manager.update_tab_content(file_path, serialized)
+        if self._editor_tabs_widget is not None:
+            tab_index = self._tab_index_for_path(tab_state.file_path)
+            if tab_index >= 0:
+                suffix = " *" if is_dirty else ""
+                self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+        self._refresh_save_action_states()
+        self._update_editor_status_for_path(tab_state.file_path)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)

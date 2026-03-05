@@ -66,3 +66,26 @@ def test_editor_surface_palette_insert_updates_model(tmp_path: Path) -> None:
     inserted = surface.model.root_widget.find_by_object_name("pushButton")
     assert inserted is not None
     assert inserted.class_name == "QPushButton"
+
+
+def test_editor_surface_emits_dirty_state_on_mutation(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    states: list[bool] = []
+    surface.dirty_state_changed.connect(states.append)
+
+    surface._handle_palette_insert_request("QPushButton")  # type: ignore[attr-defined]
+    assert states[-1] is True
+
+    surface.mark_saved()
+    assert states[-1] is False
