@@ -135,6 +135,39 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 ---
 
+### 11. "Run" option in file tree right-click context menu
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Add a "Run" option to the existing right-click context menu on the project file tree. When a file is right-clicked, the context menu (which already has New File, Rename, Delete, Duplicate, Copy, Cut, Paste, Copy Path, etc.) should also include a "Run" action that executes the selected file through the runner. |
+| **Affected code** | `app/shell/main_window.py` — `_show_single_item_context_menu()` (line 3374) builds the existing `QMenu`. Add a "Run" action to this menu (for non-directory files, ideally `.py` only). When chosen, call `self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=absolute_path)` which already accepts an `entry_file` parameter (line 1991). |
+| **Notes** | The context menu and run infrastructure both already exist. The wiring is straightforward: add the menu action, gate it to files (not directories), and invoke the existing `_start_session` with the file path. Could optionally restrict to `.py` files only and disable/hide the action when a run is already in progress. |
+
+---
+
+### 12. Run/Debug active file and explicit project entry point management
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Three related changes: **(A)** Run (F5) and Debug (Ctrl+F5) should execute the file currently open and focused in the editor, not the project's `default_entry`. Currently `default_entry` is inferred at project-open time (often the alphabetically first `.py` file), so editing `probe6` and clicking Debug runs `probe1`. **(B)** Add separate "Run Project" (Shift+F5) and "Debug Project" (Ctrl+Shift+F5) actions that always run from the project entry point. **(C)** Let users explicitly set the project entry point via a "Set as Entry Point" right-click option in the file tree. The entry point file should be visually distinguished with bold text and a play-icon badge. |
+| **Affected code** | `app/shell/main_window.py` — `_handle_run_action`, `_handle_debug_action`, `_build_tree_item`, `_show_single_item_context_menu`. `app/shell/menus.py` — new Run Project / Debug Project menu actions. `app/shell/toolbar.py` — new toolbar buttons. `app/shell/toolbar_icons.py` — new icons. `app/shell/actions.py` — new enabled-state fields. `app/shell/icon_provider.py` — entry-point file icon. `app/run/run_service.py` — entry resolution (no changes needed, already supports `entry_file` override). |
+| **Notes** | Packaging (`app/packaging/packager.py`) already uses `metadata.default_entry` for the `.desktop` Exec line, so the explicit entry point set by the user carries through to packaging automatically. |
+
+---
+
+### 13. Auto-indent on Enter (FreeCAD-style)
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
+| **Request** | When pressing Enter to create a new line, the cursor should land at the correct indentation level instead of column 0. FreeCAD's macro editor does this — the new line inherits the indentation of the previous line, and ideally increases indent after block-opening statements (`if …:`, `def …:`, `for …:`, `class …:`, etc.). |
+| **Affected code** | `app/editors/code_editor_widget.py` — `keyPressEvent()` (lines 531–565) currently does not intercept Enter/Return (except when the completion popup is open); Enter falls through to `QPlainTextEdit`'s default plain-newline behavior. A new auto-indent handler would go here. `app/editors/text_editing.py` — may need a new helper to compute the correct indentation for the new line. Existing helpers (`indent_lines`, `outdent_lines`, `smart_backspace_columns`) cover related indent operations but nothing for newline auto-indent. |
+
+---
+
 ## Cross-cutting
 
 - UI changes must validate in both light and dark themes (see `.cursor/rules/ui_light_dark_mode.mdc`).
