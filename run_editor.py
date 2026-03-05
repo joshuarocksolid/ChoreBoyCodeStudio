@@ -1,5 +1,6 @@
 """Editor entrypoint with logging-aware startup handling."""
 
+import faulthandler
 import logging
 import importlib
 import sys
@@ -56,12 +57,37 @@ def _log_capability_probe_results(logger: logging.Logger, report: CapabilityProb
         logger.warning("Capability check failed [%s]: %s", check.check_id, check.message)
 
 
+def _install_unhandled_exception_hook(logger: logging.Logger) -> None:
+    previous_hook = sys.excepthook
+
+    def _hook(exc_type, exc_value, exc_traceback) -> None:
+        logger.critical(
+            "Unhandled exception in editor process.",
+            exc_info=(exc_type, exc_value, exc_traceback),
+        )
+        try:
+            previous_hook(exc_type, exc_value, exc_traceback)
+        except Exception:
+            pass
+
+    sys.excepthook = _hook
+
+
+def _enable_fault_handler(logger: logging.Logger) -> None:
+    try:
+        faulthandler.enable()
+    except Exception:
+        logger.warning("Failed to enable faulthandler.", exc_info=True)
+
+
 def main() -> int:
     """Initialize logging first, then run editor startup safely."""
     global _LAST_STARTUP_CAPABILITY_REPORT
     logging_result = configure_app_logging()
 
     logger = get_subsystem_logger("editor")
+    _enable_fault_handler(logger)
+    _install_unhandled_exception_hook(logger)
 
     for warning in logging_result.warnings:
         logger.warning(warning)

@@ -649,7 +649,15 @@ This architecture strongly prefers a manifest file over complex shell quoting be
 * easier for AI agents to generate and inspect
 * less fragile in unusual launcher environments
 
-## 13.3 Runner output protocol
+## 13.3 Runner launch isolation
+
+Runner subprocesses must be launched in a separate session:
+
+* use `subprocess.Popen(..., start_new_session=True)` for run, debug, and Python console modes
+* on stop, signal the runner process group so child processes are cleaned up with the session leader
+* treat negative return codes as signal termination and surface signal details in shell status output
+
+## 13.4 Runner output protocol
 
 For baseline run mode, standard stdout/stderr is sufficient.
 
@@ -668,7 +676,7 @@ Current debug-capable builds may also emit explicit debug lifecycle markers (for
 
 Human output and structured output may coexist, but the protocol must stay simple.
 
-## 13.4 Exit codes
+## 13.5 Exit codes
 
 Define clear meanings:
 

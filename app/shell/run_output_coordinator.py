@@ -6,6 +6,7 @@ from typing import Callable
 
 from app.core import constants
 from app.debug.debug_session import DebugSession
+from app.run.exit_status import describe_exit_code
 from app.run.problem_parser import ProblemEntry
 from app.run.process_supervisor import ProcessEvent
 
@@ -81,20 +82,29 @@ class RunOutputCoordinator:
 
         if event.event_type == "exit":
             return_code = event.return_code
+            exit_detail = describe_exit_code(return_code)
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._get_debug_session().mark_exited()
                 self._apply_debug_inspector_event()
             if event.terminated_by_user:
-                self._append_console_line(f"Run terminated by user (code={return_code}).\n", "system")
-                session_line = f"[system] Session terminated (code={return_code})."
+                self._append_console_line(f"Run terminated by user ({exit_detail}).\n", "system")
+                session_line = f"[system] Session terminated ({exit_detail})."
                 self._set_run_status("terminated", return_code)
             else:
-                self._append_console_line(f"Run finished (code={return_code}).\n", "system")
-                session_line = f"[system] Session finished (code={return_code})."
-                if return_code == constants.RUN_EXIT_SUCCESS:
-                    self._set_run_status("success", return_code)
-                else:
+                if return_code is not None and return_code < 0:
+                    self._append_console_line(
+                        f"Run terminated by {exit_detail} -- possible crash in native code.\n",
+                        "stderr",
+                    )
+                    session_line = f"[system] Session terminated by {exit_detail}."
                     self._set_run_status("failed", return_code)
+                else:
+                    self._append_console_line(f"Run finished ({exit_detail}).\n", "system")
+                    session_line = f"[system] Session finished ({exit_detail})."
+                    if return_code == constants.RUN_EXIT_SUCCESS:
+                        self._set_run_status("success", return_code)
+                    else:
+                        self._set_run_status("failed", return_code)
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._append_debug_output_line(session_line)
             self._set_debug_command_input_enabled(False)

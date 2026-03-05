@@ -1,0 +1,103 @@
+[Runtime]
+  Python: 3.9.2
+  Executable: /opt/freecad/usr/bin/FreeCAD
+  Kernel: 6.1.12
+
+[Workaround A: statvfs scan for exec-enabled writable paths]
+    /dev/shm: exec-ok | writable
+    /run: NOEXEC | read-only
+    /run/user/1000: exec-ok | writable
+    /var/tmp: exec-ok | writable
+    /var/run: NOEXEC | read-only
+    /opt: exec-ok | read-only
+    /opt/freecad/usr/lib/python3.9: exec-ok | read-only
+    /opt/freecad/usr/lib/python3.9/lib-dynload: exec-ok | read-only
+    /home/default/choreboy_code_studio_state/repl: NOEXEC | writable
+    /home/default/choreboy_code_studio: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/GearsWB/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/GearsWB: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/FreeCAD-render/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/FreeCAD-render: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/FastenersWB/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/FastenersWB: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/Assembly4Workbench/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/Assembly4Workbench: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/A2plusWorkbench/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/A2plusWorkbench: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/FreeCAD-CuraEngine-Plugin: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/SheetMetalWorkbench/./: NOEXEC | writable
+    /home/default/.local/share/FreeCAD/Mod/SheetMetalWorkbench: NOEXEC | writable
+    /opt/freecad/usr/Mod/Plot: exec-ok | read-only
+    /opt/freecad/usr/Mod/CAM: exec-ok | read-only
+    /opt/freecad/usr/Mod/Fem: exec-ok | read-only
+    /opt/freecad/usr/Mod/Start: exec-ok | read-only
+    /opt/freecad/usr/Mod/Sketcher: exec-ok | read-only
+    /opt/freecad/usr/Mod/Test: exec-ok | read-only
+    /opt/freecad/usr/Mod/ReverseEngineering: exec-ok | read-only
+    /opt/freecad/usr/Mod/BIM: exec-ok | read-only
+    /opt/freecad/usr/Mod/Idf: exec-ok | read-only
+    /opt/freecad/usr/Mod/Show: exec-ok | read-only
+    /opt/freecad/usr/Mod/Web: exec-ok | read-only
+    /opt/freecad/usr/Mod/Measure: exec-ok | read-only
+    /opt/freecad/usr/Mod/Draft: exec-ok | read-only
+    /opt/freecad/usr/Mod/OpenSCAD: exec-ok | read-only
+    /opt/freecad/usr/Mod/MeshPart: exec-ok | read-only
+    /opt/freecad/usr/Mod/Assembly: exec-ok | read-only
+    /opt/freecad/usr/Mod/Help: exec-ok | read-only
+    /opt/freecad/usr/Mod/Points: exec-ok | read-only
+    /opt/freecad/usr/Mod/Spreadsheet: exec-ok | read-only
+    /opt/freecad/usr/Mod/Surface: exec-ok | read-only
+    /opt/freecad/usr/Mod/Robot: exec-ok | read-only
+    /opt/freecad/usr/Mod/Import: exec-ok | read-only
+    /opt/freecad/usr/Mod/AddonManager: exec-ok | read-only
+    /opt/freecad/usr/Mod/Tux: exec-ok | read-only
+    /opt/freecad/usr/Mod/TechDraw: exec-ok | read-only
+    /opt/freecad/usr/Mod/Part: exec-ok | read-only
+    /opt/freecad/usr/Mod/Mesh: exec-ok | read-only
+    /opt/freecad/usr/Mod/PartDesign: exec-ok | read-only
+    /opt/freecad/usr/Mod/Material: exec-ok | read-only
+    /opt/freecad/usr/Mod/Inspection: exec-ok | read-only
+    /opt/freecad/usr/Mod: exec-ok | read-only
+    /opt/freecad/usr/lib: exec-ok | read-only
+    /opt/freecad/usr/lib/x86_64-linux-gnu: exec-ok | read-only
+    /opt/freecad/usr/Ext: exec-ok | read-only
+    /opt/freecad/usr/bin: exec-ok | read-only
+    /opt/freecad/usr/lib/python3/dist-packages: exec-ok | read-only
+    /home/default/.local/share/FreeCAD/Macro/: NOEXEC | writable
+    /home/default/testing_PuLP: NOEXEC | writable
+  Viable paths found: YES (/dev/shm, /run/user/1000, /var/tmp)
+
+[Workaround A (cont): CDLL load from viable paths]
+    CDLL from /dev/shm: FAILED: [Errno 13] Permission denied: '/dev/shm/ts_7q2phfcg'
+    CDLL from /run/user/1000: FAILED: [Errno 13] Permission denied: '/run/user/1000/ts_yl8yqpz9'
+    CDLL from /var/tmp: FAILED: [Errno 13] Permission denied: '/var/tmp/ts_jrcqtj0w'
+
+[Workaround B: memfd_create + /proc/self/fd/]
+  os.memfd_create: available
+  .so file size: 1,537,248 bytes
+  memfd_create(): YES (fd=4)
+  write to memfd: YES (1,537,248 bytes written)
+  memfd path: /proc/self/fd/4
+  /proc/self/fd/ accessible: True
+  CDLL from memfd: YES (handle=<CDLL '/proc/self/fd/4', handle 5624d7029310 at 0x7f694c0b90a0>)
+
+[Workaround B (cont): full tree-sitter import via memfd]
+    memfd for tree_sitter._binding: fd=5, path=/proc/self/fd/5
+    memfd for tree_sitter_languages.core: fd=6, path=/proc/self/fd/6
+    memfd for languages.so: fd=7, path=/proc/self/fd/7
+  All memfds created: YES
+  tree_sitter._binding: spec_from_file_location returned None
+
+[Proof of life: parse Python code]
+  SKIP: No working workaround to test parsing
+
+[=== VERDICT ===]
+  : 
+  RESULT: tree-sitter is NOT VIABLE on ChoreBoy
+  : 
+  REASON: All writable paths have noexec; memfd_create also blocked or unavailable
+  : 
+  RECOMMENDATION: Use Pygments (pure Python) for syntax highlighting
+    -: 500+ languages, zero C extensions, zero noexec risk
+    -: Already designed as Phase 1-3 of the highlighting plan
+    -: Reclassify tree-sitter from 'optional Phase 4' to 'not viable'

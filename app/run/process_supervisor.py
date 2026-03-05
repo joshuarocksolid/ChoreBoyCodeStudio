@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import signal
 import subprocess
 import threading
@@ -70,6 +71,7 @@ class ProcessSupervisor:
                     stderr=subprocess.PIPE,
                     text=True,
                     bufsize=1,
+                    start_new_session=True,
                 )
             except OSError as exc:
                 raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
@@ -106,11 +108,40 @@ class ProcessSupervisor:
 
         self._emit_event(state_event)
 
-        process.terminate()
+        try:
+            pgid = os.getpgid(process.pid)
+        except OSError:
+            pgid = None
+
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except OSError:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+        else:
+            try:
+                process.terminate()
+            except OSError:
+                pass
         try:
             process.wait(timeout=terminate_timeout_seconds)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if pgid is not None:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except OSError:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+            else:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
             process.wait()
         self._cleanup_process_resources(process)
         self._join_waiter_thread()

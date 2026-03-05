@@ -90,6 +90,7 @@ from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_store import load_settings, save_settings
 from app.run.console_model import ConsoleModel
+from app.run.exit_status import describe_exit_code
 from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
@@ -169,6 +170,7 @@ from app.shell.welcome_widget import WelcomeWidget
 TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
+EVENT_QUEUE_BATCH_LIMIT = 200
 
 
 class _MiddleClickTabBar(QTabBar):
@@ -2711,25 +2713,40 @@ class MainWindow(QMainWindow):
     def _process_queued_repl_events(self) -> None:
         if self._is_shutting_down:
             return
-        while True:
+        processed = 0
+        while processed < EVENT_QUEUE_BATCH_LIMIT:
             try:
                 item = self._repl_event_queue.get_nowait()
             except queue.Empty:
                 break
-            kind, arg1, arg2 = item
-            if kind == "output":
-                text: str = arg1  # type: ignore[assignment]
-                stream: str = arg2  # type: ignore[assignment]
-                # Contract: REPL output is isolated to the Python Console tab.
-                for line in text.rstrip().splitlines():
-                    self._append_python_console_line(line, stream=stream)
-            elif kind == "started":
-                if self._python_console_widget is not None:
-                    self._python_console_widget.set_session_active(True)
-            elif kind == "ended":
-                terminated_by_user: bool = arg2  # type: ignore[assignment]
-                if not terminated_by_user:
-                    self._append_python_console_line("[system] Python console session ended.", stream="system")
+            try:
+                kind, arg1, arg2 = item
+                if kind == "output":
+                    text: str = arg1  # type: ignore[assignment]
+                    stream: str = arg2  # type: ignore[assignment]
+                    for line in text.rstrip().splitlines():
+                        self._append_python_console_line(line, stream=stream)
+                elif kind == "started":
+                    if self._python_console_widget is not None:
+                        self._python_console_widget.set_session_active(True)
+                elif kind == "ended":
+                    return_code: int | None = arg1  # type: ignore[assignment]
+                    terminated_by_user: bool = arg2  # type: ignore[assignment]
+                    if not terminated_by_user:
+                        exit_detail = describe_exit_code(return_code)
+                        if return_code is not None and return_code < 0:
+                            self._append_python_console_line(
+                                f"[system] Python console process was terminated by {exit_detail}. The script may have crashed in native code.",
+                                stream="system",
+                            )
+                        else:
+                            self._append_python_console_line(
+                                f"[system] Python console session ended ({exit_detail}).",
+                                stream="system",
+                            )
+            except Exception:
+                self._logger.exception("Failed to process Python Console event")
+            processed += 1
 
     def _auto_start_repl(self) -> None:
         self._repl_manager.start()
@@ -2783,12 +2800,17 @@ class MainWindow(QMainWindow):
         if self._is_shutting_down:
             self._drain_run_event_queue()
             return
-        while True:
+        processed = 0
+        while processed < EVENT_QUEUE_BATCH_LIMIT:
             try:
                 event = self._run_event_queue.get_nowait()
             except queue.Empty:
                 break
-            self._apply_run_event(event)
+            try:
+                self._apply_run_event(event)
+            except Exception:
+                self._logger.exception("Failed to process run event")
+            processed += 1
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
         self._get_run_output_coordinator().apply(event)
