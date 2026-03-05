@@ -54,6 +54,7 @@ class DesignerEditorSurface(QWidget):
         self._model: UIModel | None = None
         self._is_dirty = False
         self._mode_shortcuts: list[QShortcut] = []
+        self._pending_connection_source: str | None = None
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -257,12 +258,15 @@ class DesignerEditorSurface(QWidget):
     def _handle_selection_changed(self, object_name: str) -> None:
         if self._model is None or not object_name:
             self._property_panel.bind_widget(None, [])
+            self._handle_signals_mode_selection(object_name)
             return
         widget = self._model.root_widget.find_by_object_name(object_name)
         if widget is None:
             self._property_panel.bind_widget(None, [])
+            self._handle_signals_mode_selection(object_name)
             return
         self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
+        self._handle_signals_mode_selection(object_name)
 
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
@@ -345,15 +349,16 @@ class DesignerEditorSurface(QWidget):
             return
         selected_name = self.selected_object_name or self._model.root_widget.object_name
         sender_widget = self._model.root_widget.find_by_object_name(selected_name) or self._model.root_widget
-        signal_name = "clicked()" if sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"} else "customSignal()"
-        connection = ConnectionModel(
-            sender=sender_widget.object_name,
-            signal=signal_name,
-            receiver=self._model.root_widget.object_name,
-            slot="update()",
-        )
         before_xml = self.serialize_to_ui_string()
-        self._model.connections.append(connection)
+        self._append_connection(
+            sender_object_name=sender_widget.object_name,
+            receiver_object_name=self._model.root_widget.object_name,
+        )
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            self._error_label.setText("Connection already exists.")
+            self._error_label.setVisible(True)
+            return
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._error_label.setVisible(False)
@@ -361,10 +366,27 @@ class DesignerEditorSurface(QWidget):
             SnapshotCommand(
                 description="add connection",
                 before_xml=before_xml,
-                after_xml=self.serialize_to_ui_string(),
+                after_xml=after_xml,
             )
         )
         self._set_dirty(True)
+
+    def _append_connection(self, sender_object_name: str, receiver_object_name: str) -> None:
+        if self._model is None:
+            return
+        sender_widget = self._model.root_widget.find_by_object_name(sender_object_name)
+        signal_name = "customSignal()"
+        if sender_widget is not None and sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"}:
+            signal_name = "clicked()"
+        candidate = ConnectionModel(
+            sender=sender_object_name,
+            signal=signal_name,
+            receiver=receiver_object_name,
+            slot="setFocus()",
+        )
+        if candidate in self._model.connections:
+            return
+        self._model.connections.append(candidate)
 
     def _handle_remove_connection_request(self, index: int) -> None:
         if self._model is None:
@@ -621,6 +643,7 @@ class DesignerEditorSurface(QWidget):
             self._mode_shortcuts.append(shortcut)
 
     def _handle_mode_changed(self, mode_id: str) -> None:
+        self._pending_connection_source = None
         if mode_id == MODE_SIGNALS_SLOTS:
             self._inspector_tabs.setCurrentWidget(self._connection_panel)
         if mode_id == MODE_TAB_ORDER:
@@ -629,6 +652,42 @@ class DesignerEditorSurface(QWidget):
             self._inspector_tabs.setCurrentWidget(self._buddy_panel)
         self._refresh_mode_bar()
         self.mode_changed.emit(mode_id)
+
+    def _handle_signals_mode_selection(self, object_name: str) -> None:
+        if self._mode_controller.current_mode != MODE_SIGNALS_SLOTS:
+            return
+        if self._model is None or not object_name:
+            return
+        if self._pending_connection_source is None:
+            self._pending_connection_source = object_name
+            self._error_label.setText(f"Signals mode: source selected ({object_name}). Select a target widget.")
+            self._error_label.setVisible(True)
+            return
+        if self._pending_connection_source == object_name:
+            return
+        before_xml = self.serialize_to_ui_string()
+        self._append_connection(
+            sender_object_name=self._pending_connection_source,
+            receiver_object_name=object_name,
+        )
+        after_xml = self.serialize_to_ui_string()
+        self._pending_connection_source = None
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        if before_xml == after_xml:
+            self._error_label.setText("Signals mode: identical connection already exists.")
+            self._error_label.setVisible(True)
+            return
+        self._error_label.setText("Signals mode: connection created.")
+        self._error_label.setVisible(True)
+        self._command_stack.push(
+            SnapshotCommand(
+                description="connect widgets",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
 
     def _refresh_tab_order_panel(self) -> None:
         if self._model is None:

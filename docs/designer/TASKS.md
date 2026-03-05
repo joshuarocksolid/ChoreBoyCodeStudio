@@ -365,7 +365,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-01
 - **Depends on:** D2.S4.T1
 - **Done when:** users can create/edit connections in a dedicated mode without affecting widget-edit mode.
-- **Implementation note:** mode switching and a dedicated connections panel (add/edit/remove) are implemented with undo support; direct canvas gesture authoring remains pending.
+- **Implementation note:** mode switching, dedicated connections panel (add/edit/remove), and a selection-driven connect gesture are implemented with undo support; direct line-drawing gesture authoring remains pending.
 
 #### Task D3.S1.T2 — Serialize `<connections>` block in `.ui`
 - **Status:** DONE
