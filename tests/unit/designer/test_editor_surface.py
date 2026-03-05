@@ -40,3 +40,8 @@ def test_editor_surface_loads_model_and_panels(tmp_path: Path) -> None:
     assert surface.model is not None
     assert surface.model.form_class_name == "SampleForm"
     assert surface.file_path == str(ui_file.resolve())
+    assert surface._validation_list.count() == 1  # type: ignore[attr-defined]
+    assert "DLAYOUT001" in surface._validation_list.item(0).text()  # type: ignore[attr-defined]
+
+    surface._selection_controller.set_selected_object_name("SampleForm")  # type: ignore[attr-defined]
+    assert "Editable properties" in surface._property_summary.text()  # type: ignore[attr-defined]
