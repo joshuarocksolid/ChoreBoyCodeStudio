@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from app.designer.model import LayoutItem, LayoutNode, PropertyValue, UIModel, WidgetNode
+from app.designer.model import ConnectionModel, LayoutItem, LayoutNode, PropertyValue, ResourceModel, UIModel, WidgetNode
 
 
 def write_ui_file(model: UIModel, file_path: str) -> None:
@@ -20,8 +20,8 @@ def write_ui_string(model: UIModel) -> str:
     class_element.text = model.form_class_name
 
     ui_element.append(_build_widget(model.root_widget))
-    ET.SubElement(ui_element, "resources")
-    ET.SubElement(ui_element, "connections")
+    ui_element.append(_build_resources(model.resources))
+    ui_element.append(_build_connections(model.connections))
     _indent_xml(ui_element)
     xml_body = ET.tostring(ui_element, encoding="unicode")
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + xml_body + "\n"
@@ -74,6 +74,28 @@ def _build_property(property_name: str, property_value: PropertyValue) -> ET.Ele
     else:
         value_element.text = str(value)
     return property_element
+
+
+def _build_resources(resources: list[ResourceModel]) -> ET.Element:
+    resources_element = ET.Element("resources")
+    for resource in resources:
+        ET.SubElement(resources_element, "include", attrib={"location": resource.location})
+    return resources_element
+
+
+def _build_connections(connections: list[ConnectionModel]) -> ET.Element:
+    connections_element = ET.Element("connections")
+    for connection in connections:
+        connection_element = ET.SubElement(connections_element, "connection")
+        sender = ET.SubElement(connection_element, "sender")
+        sender.text = connection.sender
+        signal = ET.SubElement(connection_element, "signal")
+        signal.text = connection.signal
+        receiver = ET.SubElement(connection_element, "receiver")
+        receiver.text = connection.receiver
+        slot = ET.SubElement(connection_element, "slot")
+        slot.text = connection.slot
+    return connections_element
 
 
 def _indent_xml(element: ET.Element, level: int = 0) -> None:

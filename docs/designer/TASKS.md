@@ -366,7 +366,7 @@ Every task in this file contains:
 - **Done when:** users can create/edit connections in a dedicated mode without affecting widget-edit mode.
 
 #### Task D3.S1.T2 — Serialize `<connections>` block in `.ui`
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Persist signal/slot mapping in standard Qt `.ui` shape.
 - **Primary files:** `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit
@@ -426,7 +426,7 @@ Every task in this file contains:
 ### Story D4.S1 — Resource references and icon picking
 
 #### Task D4.S1.T1 — Resource model + `.qrc` reference support
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Support `<resources>` in `.ui` for icon/property references.
 - **Primary files:** `app/designer/model/resource_model.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit

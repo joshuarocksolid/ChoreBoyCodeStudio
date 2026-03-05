@@ -5,7 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from app.designer.model import LayoutItem, LayoutNode, PropertyValue, SpacerItem, UIModel, WidgetNode
+from app.designer.model import (
+    ConnectionModel,
+    LayoutItem,
+    LayoutNode,
+    PropertyValue,
+    ResourceModel,
+    SpacerItem,
+    UIModel,
+    WidgetNode,
+)
 
 
 def read_ui_file(file_path: str) -> UIModel:
@@ -32,6 +41,8 @@ def read_ui_string(source: str) -> UIModel:
         form_class_name=form_class_name,
         root_widget=_parse_widget(widget_element),
         ui_version=root.attrib.get("version", "4.0"),
+        connections=_parse_connections(root),
+        resources=_parse_resources(root),
     )
     return model
 
@@ -119,5 +130,41 @@ def _parse_rect(rect_element: ET.Element) -> dict[str, int]:
     for field in ("x", "y", "width", "height"):
         field_value = rect_element.findtext(field)
         parsed[field] = int((field_value or "0").strip() or "0")
+    return parsed
+
+
+def _parse_connections(root: ET.Element) -> list[ConnectionModel]:
+    container = root.find("connections")
+    if container is None:
+        return []
+    parsed: list[ConnectionModel] = []
+    for connection in container.findall("connection"):
+        sender = (connection.findtext("sender") or "").strip()
+        signal = (connection.findtext("signal") or "").strip()
+        receiver = (connection.findtext("receiver") or "").strip()
+        slot = (connection.findtext("slot") or "").strip()
+        if not sender or not signal or not receiver or not slot:
+            continue
+        parsed.append(
+            ConnectionModel(
+                sender=sender,
+                signal=signal,
+                receiver=receiver,
+                slot=slot,
+            )
+        )
+    return parsed
+
+
+def _parse_resources(root: ET.Element) -> list[ResourceModel]:
+    container = root.find("resources")
+    if container is None:
+        return []
+    parsed: list[ResourceModel] = []
+    for include in container.findall("include"):
+        location = (include.attrib.get("location") or "").strip()
+        if not location:
+            continue
+        parsed.append(ResourceModel(location=location))
     return parsed
 
