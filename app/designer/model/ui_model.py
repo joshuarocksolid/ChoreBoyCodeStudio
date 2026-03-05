@@ -19,6 +19,7 @@ class UIModel:
     ui_version: str = "4.0"
     connections: list[ConnectionModel] = field(default_factory=list)
     resources: list[ResourceModel] = field(default_factory=list)
+    tab_stops: list[str] = field(default_factory=list)
 
     def collect_object_names(self) -> list[str]:
         """Collect all object names in model traversal order."""

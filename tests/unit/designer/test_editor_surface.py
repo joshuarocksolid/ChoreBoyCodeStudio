@@ -270,3 +270,46 @@ def test_editor_surface_signals_mode_switches_to_connections_tab(tmp_path: Path)
     surface = DesignerEditorSurface(str(ui_file.resolve()))
     assert surface.set_mode("signals_slots") is True
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Connections"  # type: ignore[attr-defined]
+
+
+def test_editor_surface_tab_order_mode_switches_to_tab_order_tab(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "<widget class=\"QPushButton\" name=\"okButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.set_mode("tab_order") is True
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Tab Order"  # type: ignore[attr-defined]
+
+
+def test_editor_surface_tab_order_changes_are_undoable(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "<widget class=\"QPushButton\" name=\"okButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._handle_tab_order_changed(["okButton", "lineEdit"])  # type: ignore[attr-defined]
+    assert surface.model.tab_stops == ["okButton", "lineEdit"]
+    assert surface.can_undo is True
+    assert surface.undo() is True
+    assert surface.model.tab_stops == []

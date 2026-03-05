@@ -32,6 +32,7 @@ from app.designer.modes import (
     MODE_TAB_ORDER,
     MODE_WIDGET,
     DesignerModeController,
+    TabOrderEditorPanel,
 )
 from app.designer.model import ConnectionModel, UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
@@ -154,6 +155,7 @@ class DesignerEditorSurface(QWidget):
 
         self._model.resources.append(ResourceModel(location=normalized))
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
@@ -207,9 +209,12 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel = ConnectionEditorPanel(self._inspector_tabs)
         self._connection_panel.add_requested.connect(self._handle_add_connection_request)
         self._connection_panel.remove_requested.connect(self._handle_remove_connection_request)
+        self._tab_order_panel = TabOrderEditorPanel(self._inspector_tabs)
+        self._tab_order_panel.tab_order_changed.connect(self._handle_tab_order_changed)
         self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Property Editor")
         self._inspector_tabs.addTab(self._connection_panel, "Connections")
+        self._inspector_tabs.addTab(self._tab_order_panel, "Tab Order")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -237,6 +242,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
         self._connection_panel.bind_connections(model.connections)
+        self._refresh_tab_order_panel()
         self._refresh_validation_issues()
         self._set_dirty(False)
 
@@ -307,6 +313,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         if property_name == "objectName":
             self._selection_controller.set_selected_object_name(widget.object_name)
         else:
@@ -369,6 +376,30 @@ class DesignerEditorSurface(QWidget):
         )
         self._set_dirty(True)
 
+    def _handle_tab_order_changed(self, ordered_object_names: list[str]) -> None:
+        if self._model is None:
+            return
+        candidates = self._default_tab_order_candidates()
+        filtered: list[str] = [name for name in ordered_object_names if name in candidates]
+        for candidate in candidates:
+            if candidate not in filtered:
+                filtered.append(candidate)
+        before_xml = self.serialize_to_ui_string()
+        self._model.tab_stops = filtered
+        self._refresh_tab_order_panel()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        self._command_stack.push(
+            SnapshotCommand(
+                description="edit tab order",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+
     def _handle_palette_insert_request(self, class_name: str) -> None:
         if self._model is None:
             return
@@ -380,6 +411,7 @@ class DesignerEditorSurface(QWidget):
         self._error_label.setVisible(False)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(
@@ -398,6 +430,7 @@ class DesignerEditorSurface(QWidget):
             return False
         self._canvas.load_model(self._model)
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
@@ -436,6 +469,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         self._command_stack.push(
             SnapshotCommand(
                 description=f"layout {layout_class_name}",
@@ -460,6 +494,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
         self._error_label.setVisible(False)
         self._command_stack.push(
             SnapshotCommand(
@@ -491,6 +526,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
         self._connection_panel.bind_connections(model.connections)
+        self._refresh_tab_order_panel()
         self._refresh_validation_issues()
 
     def _install_mode_shortcuts(self) -> None:
@@ -509,8 +545,40 @@ class DesignerEditorSurface(QWidget):
     def _handle_mode_changed(self, mode_id: str) -> None:
         if mode_id == MODE_SIGNALS_SLOTS:
             self._inspector_tabs.setCurrentWidget(self._connection_panel)
+        if mode_id == MODE_TAB_ORDER:
+            self._inspector_tabs.setCurrentWidget(self._tab_order_panel)
         self._refresh_mode_bar()
         self.mode_changed.emit(mode_id)
+
+    def _refresh_tab_order_panel(self) -> None:
+        if self._model is None:
+            self._tab_order_panel.bind_tab_order([])
+            return
+        candidates = self._default_tab_order_candidates()
+        ordered: list[str] = [name for name in self._model.tab_stops if name in candidates]
+        for candidate in candidates:
+            if candidate not in ordered:
+                ordered.append(candidate)
+        self._tab_order_panel.bind_tab_order(ordered)
+
+    def _default_tab_order_candidates(self) -> list[str]:
+        if self._model is None:
+            return []
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for object_name in self._model.collect_object_names():
+            if object_name == self._model.root_widget.object_name:
+                continue
+            widget = self._model.root_widget.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            if widget.class_name in {"QLabel"}:
+                continue
+            if object_name in seen:
+                continue
+            seen.add(object_name)
+            candidates.append(object_name)
+        return candidates
 
     def _refresh_mode_bar(self) -> None:
         current_mode = self._mode_controller.current_mode

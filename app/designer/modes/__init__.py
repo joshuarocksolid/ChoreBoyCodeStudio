@@ -9,6 +9,7 @@ from app.designer.modes.mode_controller import (
     DesignerModeController,
     DesignerModeDefinition,
 )
+from app.designer.modes.tab_order_editor_panel import TabOrderEditorPanel
 
 __all__ = [
     "DESIGNER_MODE_DEFINITIONS",
@@ -18,5 +19,6 @@ __all__ = [
     "MODE_WIDGET",
     "DesignerModeController",
     "DesignerModeDefinition",
+    "TabOrderEditorPanel",
 ]
 

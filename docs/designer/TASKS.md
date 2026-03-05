@@ -380,7 +380,7 @@ Every task in this file contains:
 ### Story D3.S2 — Tab order editing mode
 
 #### Task D3.S2.T1 — Tab-order mode UI and ordering actions
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Let users set focus chain order visually.
 - **Primary files:** `app/designer/modes/tab_order_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -388,9 +388,10 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-03
 - **Depends on:** D2.S1.T1
 - **Done when:** tab order can be authored and edited predictably.
+- **Implementation note:** dedicated tab-order panel with reorder actions is implemented and undo-backed; direct canvas gesture authoring is still pending.
 
 #### Task D3.S2.T2 — Serialize `<tabstops>` in `.ui`
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Persist authored focus order.
 - **Primary files:** `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit

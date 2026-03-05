@@ -95,3 +95,33 @@ def test_write_ui_string_serializes_connections_and_resources() -> None:
     assert reparsed.resources[0].location == "icons.qrc"
     assert len(reparsed.connections) == 1
     assert reparsed.connections[0].sender == "okButton"
+
+
+def test_read_ui_string_parses_tab_stops() -> None:
+    model = read_ui_string(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\">"
+            "<class>TabStopForm</class>"
+            "<widget class=\"QWidget\" name=\"TabStopForm\"/>"
+            "<tabstops><tabstop>lineEdit</tabstop><tabstop>okButton</tabstop></tabstops>"
+            "<resources/><connections/>"
+            "</ui>\n"
+        )
+    )
+    assert model.tab_stops == ["lineEdit", "okButton"]
+
+
+def test_write_ui_string_serializes_tab_stops() -> None:
+    model = UIModel(
+        form_class_name="WriterForm",
+        root_widget=WidgetNode(class_name="QWidget", object_name="WriterForm"),
+        tab_stops=["lineEdit", "okButton"],
+    )
+
+    xml = write_ui_string(model)
+    reparsed = read_ui_string(xml)
+
+    assert "<tabstops>" in xml
+    assert "<tabstop>lineEdit</tabstop>" in xml
+    assert reparsed.tab_stops == ["lineEdit", "okButton"]

@@ -20,6 +20,7 @@ def write_ui_string(model: UIModel) -> str:
     class_element.text = model.form_class_name
 
     ui_element.append(_build_widget(model.root_widget))
+    ui_element.append(_build_tab_stops(model.tab_stops))
     ui_element.append(_build_resources(model.resources))
     ui_element.append(_build_connections(model.connections))
     _indent_xml(ui_element)
@@ -96,6 +97,14 @@ def _build_connections(connections: list[ConnectionModel]) -> ET.Element:
         slot = ET.SubElement(connection_element, "slot")
         slot.text = connection.slot
     return connections_element
+
+
+def _build_tab_stops(tab_stops: list[str]) -> ET.Element:
+    tab_stops_element = ET.Element("tabstops")
+    for tab_stop in tab_stops:
+        tab_stop_element = ET.SubElement(tab_stops_element, "tabstop")
+        tab_stop_element.text = tab_stop
+    return tab_stops_element
 
 
 def _indent_xml(element: ET.Element, level: int = 0) -> None:

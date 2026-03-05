@@ -43,6 +43,7 @@ def read_ui_string(source: str) -> UIModel:
         ui_version=root.attrib.get("version", "4.0"),
         connections=_parse_connections(root),
         resources=_parse_resources(root),
+        tab_stops=_parse_tab_stops(root),
     )
     return model
 
@@ -167,4 +168,16 @@ def _parse_resources(root: ET.Element) -> list[ResourceModel]:
             continue
         parsed.append(ResourceModel(location=location))
     return parsed
+
+
+def _parse_tab_stops(root: ET.Element) -> list[str]:
+    container = root.find("tabstops")
+    if container is None:
+        return []
+    tab_stops: list[str] = []
+    for tabstop in container.findall("tabstop"):
+        name = (tabstop.text or "").strip()
+        if name:
+            tab_stops.append(name)
+    return tab_stops
 
