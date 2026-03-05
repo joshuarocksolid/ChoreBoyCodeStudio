@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 from app.designer.model import (
     ConnectionModel,
+    CustomWidgetModel,
     LayoutItem,
     LayoutNode,
     PropertyValue,
@@ -44,6 +45,7 @@ def read_ui_string(source: str) -> UIModel:
         connections=_parse_connections(root),
         resources=_parse_resources(root),
         tab_stops=_parse_tab_stops(root),
+        custom_widgets=_parse_custom_widgets(root),
     )
     return model
 
@@ -185,4 +187,19 @@ def _parse_tab_stops(root: ET.Element) -> list[str]:
         if name:
             tab_stops.append(name)
     return tab_stops
+
+
+def _parse_custom_widgets(root: ET.Element) -> list[CustomWidgetModel]:
+    container = root.find("customwidgets")
+    if container is None:
+        return []
+    parsed: list[CustomWidgetModel] = []
+    for element in container.findall("customwidget"):
+        class_name = (element.findtext("class") or "").strip()
+        extends = (element.findtext("extends") or "").strip()
+        header = (element.findtext("header") or "").strip()
+        if not class_name or not extends:
+            continue
+        parsed.append(CustomWidgetModel(class_name=class_name, extends=extends, header=header))
+    return parsed
 

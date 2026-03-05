@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.designer.io import read_ui_file, read_ui_string, write_ui_file, write_ui_string
-from app.designer.model import ConnectionModel, ResourceModel, UIModel, WidgetNode
+from app.designer.model import ConnectionModel, CustomWidgetModel, ResourceModel, UIModel, WidgetNode
 
 pytestmark = pytest.mark.unit
 
@@ -173,3 +173,45 @@ def test_read_write_round_trip_preserves_iconset_property() -> None:
     assert button is not None
     assert button.properties["icon"].value_type == "iconset"
     assert button.properties["icon"].value == "icons/run.png"
+
+
+def test_read_write_round_trip_preserves_custom_widget_metadata() -> None:
+    model = read_ui_string(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\">"
+            "<class>PromoteForm</class>"
+            "<widget class=\"QWidget\" name=\"PromoteForm\">"
+            "<widget class=\"MyFancyWidget\" name=\"fancyWidget\"/>"
+            "</widget>"
+            "<customwidgets><customwidget><class>MyFancyWidget</class><extends>QWidget</extends>"
+            "<header>my_fancy_widget</header></customwidget></customwidgets>"
+            "<resources/><connections/>"
+            "</ui>\n"
+        )
+    )
+    assert len(model.custom_widgets) == 1
+    assert model.custom_widgets[0].class_name == "MyFancyWidget"
+
+    serialized = write_ui_string(model)
+    reparsed = read_ui_string(serialized)
+    assert len(reparsed.custom_widgets) == 1
+    assert reparsed.custom_widgets[0].header == "my_fancy_widget"
+
+
+def test_write_ui_string_serializes_custom_widget_metadata() -> None:
+    model = UIModel(
+        form_class_name="WriterForm",
+        root_widget=WidgetNode(class_name="MyFancyWidget", object_name="fancyWidget"),
+        custom_widgets=[
+            CustomWidgetModel(
+                class_name="MyFancyWidget",
+                extends="QWidget",
+                header="my_fancy_widget",
+            )
+        ],
+    )
+
+    xml = write_ui_string(model)
+    assert "<customwidgets>" in xml
+    assert "<class>MyFancyWidget</class>" in xml

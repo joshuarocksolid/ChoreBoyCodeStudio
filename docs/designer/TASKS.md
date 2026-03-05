@@ -454,7 +454,7 @@ Every task in this file contains:
 ### Story D4.S2 — Promote-to workflow
 
 #### Task D4.S2.T1 — Promote metadata editor and storage in `.ui`
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Add designer-side promote flow for custom class placeholders.
 - **Primary files:** `app/designer/properties/promote_dialog.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit, integration
@@ -462,6 +462,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-03
 - **Depends on:** D1.S3.T1, D1.S5.T1
 - **Done when:** promote metadata is editable and preserved across round-trip.
+- **Implementation note:** promote action for selected widget and `<customwidgets>` round-trip metadata storage are implemented; richer promote management UX remains.
 
 #### Task D4.S2.T2 — Python custom widget registry for preview loading
 - **Status:** TODO

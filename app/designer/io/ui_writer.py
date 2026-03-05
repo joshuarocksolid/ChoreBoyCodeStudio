@@ -5,7 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from app.designer.model import ConnectionModel, LayoutItem, LayoutNode, PropertyValue, ResourceModel, UIModel, WidgetNode
+from app.designer.model import (
+    ConnectionModel,
+    CustomWidgetModel,
+    LayoutItem,
+    LayoutNode,
+    PropertyValue,
+    ResourceModel,
+    UIModel,
+    WidgetNode,
+)
 
 
 def write_ui_file(model: UIModel, file_path: str) -> None:
@@ -22,6 +31,7 @@ def write_ui_string(model: UIModel) -> str:
     ui_element.append(_build_widget(model.root_widget))
     ui_element.append(_build_tab_stops(model.tab_stops))
     ui_element.append(_build_resources(model.resources))
+    ui_element.append(_build_custom_widgets(model.custom_widgets))
     ui_element.append(_build_connections(model.connections))
     _indent_xml(ui_element)
     xml_body = ET.tostring(ui_element, encoding="unicode")
@@ -110,6 +120,19 @@ def _build_tab_stops(tab_stops: list[str]) -> ET.Element:
         tab_stop_element = ET.SubElement(tab_stops_element, "tabstop")
         tab_stop_element.text = tab_stop
     return tab_stops_element
+
+
+def _build_custom_widgets(custom_widgets: list[CustomWidgetModel]) -> ET.Element:
+    custom_widgets_element = ET.Element("customwidgets")
+    for custom_widget in custom_widgets:
+        custom_widget_element = ET.SubElement(custom_widgets_element, "customwidget")
+        class_element = ET.SubElement(custom_widget_element, "class")
+        class_element.text = custom_widget.class_name
+        extends_element = ET.SubElement(custom_widget_element, "extends")
+        extends_element.text = custom_widget.extends
+        header_element = ET.SubElement(custom_widget_element, "header")
+        header_element.text = custom_widget.header
+    return custom_widgets_element
 
 
 def _indent_xml(element: ET.Element, level: int = 0) -> None:

@@ -61,6 +61,7 @@ class MenuCallbacks:
     on_designer_preview: Callable[[], object] | None = None
     on_designer_check_compat: Callable[[], object] | None = None
     on_designer_add_resource: Callable[[], object] | None = None
+    on_designer_promote_widget: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -420,6 +421,15 @@ def build_menu_stubs(
         "Add Resource (.qrc)...",
         enabled=True,
         callback=callback_registry.on_designer_add_resource,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.promote_widget",
+        "Promote Selected Widget...",
+        enabled=True,
+        callback=callback_registry.on_designer_promote_widget,
         shortcut_overrides=shortcut_overrides,
     )
 

@@ -435,3 +435,33 @@ def test_editor_surface_buddy_assignment_is_undoable(tmp_path: Path) -> None:
     label_after_undo = surface.model.root_widget.find_by_object_name("nameLabel")
     assert label_after_undo is not None
     assert "buddy" not in label_after_undo.properties
+
+
+def test_editor_surface_promote_selected_widget_updates_custom_widget_metadata(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+
+    assert surface.promote_selected_widget("FancyButton", "fancy_button") is True
+    promoted_widget = surface.model.root_widget.find_by_object_name("pushButton")
+    assert promoted_widget is not None
+    assert promoted_widget.class_name == "FancyButton"
+    assert len(surface.model.custom_widgets) == 1
+    assert surface.model.custom_widgets[0].class_name == "FancyButton"
+    assert surface.can_undo is True
+    assert surface.undo() is True
+    restored_widget = surface.model.root_widget.find_by_object_name("pushButton")
+    assert restored_widget is not None
+    assert restored_widget.class_name == "QPushButton"

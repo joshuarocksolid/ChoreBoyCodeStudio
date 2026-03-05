@@ -49,6 +49,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("designer.form.preview", "Preview Form", "Ctrl+R", "Form"),
     ShortcutCommand("designer.form.check_compat", "Run Compatibility Check", "Ctrl+Shift+R", "Form"),
     ShortcutCommand("designer.form.add_resource", "Add Resource (.qrc)", "", "Form"),
+    ShortcutCommand("designer.form.promote_widget", "Promote Selected Widget", "", "Form"),
     ShortcutCommand("designer.mode.widget", "Widget Editing Mode", "F3", "Mode"),
     ShortcutCommand("designer.mode.signals_slots", "Signals/Slots Mode", "F4", "Mode"),
     ShortcutCommand("designer.mode.buddy", "Buddy Mode", "F5", "Mode"),

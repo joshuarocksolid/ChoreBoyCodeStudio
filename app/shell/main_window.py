@@ -445,6 +445,7 @@ class MainWindow(QMainWindow):
                 on_designer_preview=self._handle_designer_preview_action,
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_designer_add_resource=self._handle_designer_add_resource_action,
+                on_designer_promote_widget=self._handle_designer_promote_widget_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1473,6 +1474,39 @@ class MainWindow(QMainWindow):
                 self,
                 "Add Resource",
                 "Resource include already exists or could not be added.",
+            )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_promote_widget_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        class_name, accepted_class = QInputDialog.getText(
+            self,
+            "Promote Widget",
+            "Promoted class name:",
+            QLineEdit.Normal,
+            "",
+        )
+        if not accepted_class:
+            return
+        header, accepted_header = QInputDialog.getText(
+            self,
+            "Promote Widget",
+            "Header/module path (optional):",
+            QLineEdit.Normal,
+            "",
+        )
+        if not accepted_header:
+            return
+        if not surface.promote_selected_widget(class_name, header):
+            QMessageBox.warning(
+                self,
+                "Promote Widget",
+                "Unable to promote selected widget. Ensure a non-root widget is selected and class name is valid.",
             )
             return
         self._refresh_save_action_states()
@@ -2954,6 +2988,7 @@ class MainWindow(QMainWindow):
             "designer.form.preview",
             "designer.form.check_compat",
             "designer.form.add_resource",
+            "designer.form.promote_widget",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

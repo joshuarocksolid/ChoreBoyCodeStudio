@@ -35,7 +35,7 @@ from app.designer.modes import (
     DesignerModeController,
     TabOrderEditorPanel,
 )
-from app.designer.model import ConnectionModel, PropertyValue, UIModel, WidgetNode
+from app.designer.model import ConnectionModel, CustomWidgetModel, PropertyValue, UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
 from app.designer.properties import PropertyEditorController, PropertyEditorPanel
@@ -164,6 +164,50 @@ class DesignerEditorSurface(QWidget):
         self._command_stack.push(
             SnapshotCommand(
                 description=f"add resource {normalized}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def promote_selected_widget(self, promoted_class_name: str, header: str) -> bool:
+        """Promote selected widget class and persist custom-widget metadata."""
+        if self._model is None:
+            return False
+        target = self._resolve_selected_widget()
+        if target is None:
+            return False
+        class_name = promoted_class_name.strip()
+        header_value = header.strip()
+        if not class_name:
+            return False
+        if class_name == target.class_name:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        extends_class = target.class_name
+        target.class_name = class_name
+        existing = next((item for item in self._model.custom_widgets if item.class_name == class_name), None)
+        if existing is None:
+            self._model.custom_widgets.append(
+                CustomWidgetModel(
+                    class_name=class_name,
+                    extends=extends_class,
+                    header=header_value,
+                )
+            )
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"promote {target.object_name}",
                 before_xml=before_xml,
                 after_xml=after_xml,
             )

@@ -25,6 +25,7 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["designer.form.preview"] == "Ctrl+R"
     assert defaults["designer.form.check_compat"] == "Ctrl+Shift+R"
     assert defaults["designer.form.add_resource"] == ""
+    assert defaults["designer.form.promote_widget"] == ""
     assert defaults["designer.mode.widget"] == "F3"
     assert defaults["designer.mode.signals_slots"] == "F4"
     assert defaults["designer.mode.buddy"] == "F5"

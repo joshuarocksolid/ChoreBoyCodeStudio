@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from app.designer.model.connection_model import ConnectionModel
+from app.designer.model.custom_widget_model import CustomWidgetModel
 from app.designer.model.resource_model import ResourceModel
 from app.designer.model.widget_node import WidgetNode
 
@@ -20,6 +21,7 @@ class UIModel:
     connections: list[ConnectionModel] = field(default_factory=list)
     resources: list[ResourceModel] = field(default_factory=list)
     tab_stops: list[str] = field(default_factory=list)
+    custom_widgets: list[CustomWidgetModel] = field(default_factory=list)
 
     def collect_object_names(self) -> list[str]:
         """Collect all object names in model traversal order."""
