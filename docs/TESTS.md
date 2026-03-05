@@ -41,6 +41,13 @@ Implemented coverage includes:
 - diagnostics and support bundle generation
 - built-in template discovery/materialization and generated-project execution
 - responsiveness threshold checks (integration timing assertions)
+- Designer subsystem end-to-end:
+  - `.ui` routing to Designer surface
+  - palette insertion, selection synchronization, typed properties
+  - layout commands, reparenting, command-stack undo/redo
+  - signals/slots, tab order, buddy interactions + serialization
+  - resources/iconset/promote/custom-widget isolated preview checks
+  - deterministic formatter, unknown-node preservation, component library flows
 
 ## 5) Core commands
 
@@ -56,6 +63,16 @@ Run focused suites:
 python3 run_tests.py -v tests/unit
 python3 run_tests.py -v tests/integration
 python3 run_tests.py -v tests/integration/performance
+```
+
+Run Designer-focused suites directly (fast signal while iterating on Designer):
+
+```bash
+.venv/bin/python -m pytest -q tests/unit/designer tests/integration/designer \
+  tests/unit/shell/test_menus_designer_form.py \
+  tests/unit/shell/test_menus_designer_mode.py \
+  tests/unit/shell/test_shortcut_preferences.py \
+  tests/unit/shell/test_status_bar.py
 ```
 
 ## 6) Manual acceptance validation
@@ -76,3 +93,4 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 At latest validation checkpoint:
 
 - `python3 run_tests.py -q` -> **150 passed** (no known test warnings)
+- `.venv/bin/python -m pytest -q tests/unit/designer tests/integration/designer tests/unit/shell/test_menus_designer_form.py tests/unit/shell/test_menus_designer_mode.py tests/unit/shell/test_shortcut_preferences.py tests/unit/shell/test_status_bar.py` -> **142 passed** (Designer + shell command surface validation)
