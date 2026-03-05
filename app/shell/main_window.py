@@ -3779,7 +3779,7 @@ class MainWindow(QMainWindow):
             return True
 
         if Path(opened_result.tab.file_path).suffix.lower() == ".ui":
-            designer_surface = DesignerEditorSurface(self._editor_tabs_widget)
+            designer_surface = DesignerEditorSurface(opened_result.tab.file_path, self._editor_tabs_widget)
             designer_surface.setObjectName("shell.editorTabs.designerSurface")
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
