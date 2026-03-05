@@ -44,7 +44,7 @@ def test_editor_surface_loads_model_and_panels(tmp_path: Path) -> None:
     assert "DLAYOUT001" in surface._validation_list.item(0).text()  # type: ignore[attr-defined]
 
     surface._selection_controller.set_selected_object_name("SampleForm")  # type: ignore[attr-defined]
-    assert "Editable properties" in surface._property_summary.text()  # type: ignore[attr-defined]
+    assert "SampleForm" in surface._property_panel._header_label.text()  # type: ignore[attr-defined]
 
 
 def test_editor_surface_palette_insert_updates_model(tmp_path: Path) -> None:
@@ -139,3 +139,34 @@ def test_editor_surface_mode_switch_updates_current_mode(tmp_path: Path) -> None
     assert surface.current_mode == "signals_slots"
     assert seen[-1] == "signals_slots"
     assert surface.set_mode("invalid_mode") is False
+
+
+def test_editor_surface_property_mutation_pushes_undo_snapshot(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\">"
+            "<property name=\"text\"><string>Click me</string></property>"
+            "</widget>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._apply_property_mutation("pushButton", "text", "set", "Run")  # type: ignore[attr-defined]
+
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    assert push_button is not None
+    assert push_button.properties["text"].value == "Run"
+    assert surface.can_undo is True
+
+    assert surface.undo() is True
+    push_button_after_undo = surface.model.root_widget.find_by_object_name("pushButton")
+    assert push_button_after_undo is not None
+    assert push_button_after_undo.properties["text"].value == "Click me"

@@ -286,9 +286,9 @@ Every task in this file contains:
 ### Story D2.S2 — Advanced property editor
 
 #### Task D2.S2.T1 — Type-aware property editors (bool/enum/int/float/string)
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Move from hardcoded MVP properties to schema-driven property editing.
-- **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`
+- **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`, `app/designer/properties/property_editor_panel.py`, `app/designer/editor_surface.py`
 - **Automated test layer:** unit
 - **Validation method:** schema coverage tests for editor-control mapping and value coercion.
 - **Acceptance linkage:** DPAR-03
@@ -296,9 +296,9 @@ Every task in this file contains:
 - **Done when:** property panel auto-selects suitable editor controls by property type.
 
 #### Task D2.S2.T2 — Reset-to-default support
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Allow explicit reset of modified properties.
-- **Primary files:** `app/designer/properties/property_editor.py`
+- **Primary files:** `app/designer/properties/property_editor.py`, `app/designer/properties/property_editor_panel.py`, `app/designer/editor_surface.py`
 - **Automated test layer:** unit, integration
 - **Validation method:** property reset transition tests.
 - **Acceptance linkage:** DPAR-04
@@ -344,7 +344,7 @@ Every task in this file contains:
 - **Objective:** Back all structural/property edits with undoable commands.
 - **Primary files:** `app/designer/commands/command_stack.py`, `app/designer/commands/*.py`
 - **Automated test layer:** unit
-- **Validation method:** undo/redo state tests per command category.
+- **Validation method:** undo/redo state tests per command category (layout + insertion + property mutations complete; reparent and advanced modes pending).
 - **Acceptance linkage:** DPAR-08
 - **Depends on:** D1 core stories
 - **Done when:** all editor mutations flow through command stack with reliable undo/redo.

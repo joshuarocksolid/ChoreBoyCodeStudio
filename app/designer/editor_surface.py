@@ -35,7 +35,7 @@ from app.designer.modes import (
 from app.designer.model import UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
-from app.designer.properties import PropertyEditorController
+from app.designer.properties import PropertyEditorController, PropertyEditorPanel
 from app.designer.validation import build_validation_issues
 
 
@@ -175,10 +175,11 @@ class DesignerEditorSurface(QWidget):
         self._inspector_tabs = QTabWidget(self._splitter)
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
-        self._property_summary = QLabel("Select a widget to view editable properties.", self._inspector_tabs)
-        self._property_summary.setWordWrap(True)
+        self._property_panel = PropertyEditorPanel(self._inspector_tabs)
+        self._property_panel.property_edited.connect(self._handle_property_edited)
+        self._property_panel.property_reset_requested.connect(self._handle_property_reset_requested)
         self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
-        self._inspector_tabs.addTab(self._property_summary, "Property Editor")
+        self._inspector_tabs.addTab(self._property_panel, "Property Editor")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -210,20 +211,13 @@ class DesignerEditorSurface(QWidget):
 
     def _handle_selection_changed(self, object_name: str) -> None:
         if self._model is None or not object_name:
-            self._property_summary.setText("Select a widget to view editable properties.")
+            self._property_panel.bind_widget(None, [])
             return
         widget = self._model.root_widget.find_by_object_name(object_name)
         if widget is None:
-            self._property_summary.setText("Select a widget to view editable properties.")
+            self._property_panel.bind_widget(None, [])
             return
-        self._property_summary.setText(self._build_property_summary(widget))
-
-    def _build_property_summary(self, widget: WidgetNode) -> str:
-        fields = self._property_editor.field_definitions_for_widget(widget)
-        lines = [f"{widget.object_name} : {widget.class_name}", "", "Editable properties:"]
-        for field in fields:
-            lines.append(f"• {field.display_label} ({field.name})")
-        return "\n".join(lines)
+        self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
 
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
@@ -231,6 +225,73 @@ class DesignerEditorSurface(QWidget):
             return
         for issue in build_validation_issues(self._model):
             self._validation_list.addItem(f"[{issue.severity}] {issue.code} — {issue.message}")
+
+    def _handle_property_edited(self, object_name: str, property_name: str, value: object) -> None:
+        self._apply_property_mutation(
+            object_name=object_name,
+            property_name=property_name,
+            operation="set",
+            value=value,
+        )
+
+    def _handle_property_reset_requested(self, object_name: str, property_name: str) -> None:
+        self._apply_property_mutation(
+            object_name=object_name,
+            property_name=property_name,
+            operation="reset",
+            value=None,
+        )
+
+    def _apply_property_mutation(
+        self,
+        object_name: str,
+        property_name: str,
+        operation: str,
+        value: object | None,
+    ) -> None:
+        if self._model is None:
+            return
+        widget = self._model.root_widget.find_by_object_name(object_name)
+        if widget is None:
+            return
+        if property_name == "objectName" and operation == "set" and isinstance(value, str):
+            duplicate = self._model.root_widget.find_by_object_name(value)
+            if duplicate is not None and duplicate is not widget:
+                self._error_label.setText("Object name must be unique.")
+                self._error_label.setVisible(True)
+                self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
+                return
+        before_xml = self.serialize_to_ui_string()
+        try:
+            if operation == "set":
+                self._property_editor.set_property(widget, property_name, value)
+            else:
+                self._property_editor.reset_property(widget, property_name)
+        except (ValueError, TypeError) as exc:
+            self._error_label.setText(str(exc))
+            self._error_label.setVisible(True)
+            self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
+            return
+        self._error_label.setVisible(False)
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        if property_name == "objectName":
+            self._selection_controller.set_selected_object_name(widget.object_name)
+        else:
+            self._selection_controller.set_selected_object_name(widget.object_name)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        description_prefix = "set" if operation == "set" else "reset"
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"{description_prefix} {property_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
 
     def _handle_palette_insert_request(self, class_name: str) -> None:
         if self._model is None:
