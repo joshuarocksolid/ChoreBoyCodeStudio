@@ -383,7 +383,7 @@ Every task in this file contains:
 ### Story D3.S2 — Tab order editing mode
 
 #### Task D3.S2.T1 — Tab-order mode UI and ordering actions
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Let users set focus chain order visually.
 - **Primary files:** `app/designer/modes/tab_order_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -391,7 +391,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-03
 - **Depends on:** D2.S1.T1
 - **Done when:** tab order can be authored and edited predictably.
-- **Implementation note:** dedicated tab-order panel with reorder actions is implemented and undo-backed; direct canvas gesture authoring is still pending.
+- **Implementation note:** dedicated tab-order panel reorder actions and selection-driven tab-order gesture authoring are implemented with undo support.
 
 #### Task D3.S2.T2 — Serialize `<tabstops>` in `.ui`
 - **Status:** DONE
@@ -406,7 +406,7 @@ Every task in this file contains:
 ### Story D3.S3 — Buddy editing mode
 
 #### Task D3.S3.T1 — Buddy assignment interactions
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Associate labels with buddy controls through dedicated mode.
 - **Primary files:** `app/designer/modes/buddy_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -414,7 +414,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-05
 - **Depends on:** D2.S1.T1
 - **Done when:** label buddy links are created/edited/removed safely.
-- **Implementation note:** dedicated buddy panel and mode wiring are implemented with undo-backed assignments; direct canvas gesture authoring is still pending.
+- **Implementation note:** dedicated buddy panel plus selection-driven buddy assignment gestures are implemented with undo-backed updates.
 
 #### Task D3.S3.T2 — Serialize buddy property mappings
 - **Status:** DONE

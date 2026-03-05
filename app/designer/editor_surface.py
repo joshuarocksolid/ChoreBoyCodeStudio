@@ -77,6 +77,7 @@ class DesignerEditorSurface(QWidget):
         self._is_dirty = False
         self._mode_shortcuts: list[QShortcut] = []
         self._pending_connection_source: str | None = None
+        self._pending_buddy_source_label: str | None = None
         self._enable_naming_lint = enable_naming_lint
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
@@ -515,14 +516,20 @@ class DesignerEditorSurface(QWidget):
         if self._model is None or not object_name:
             self._property_panel.bind_widget(None, [])
             self._handle_signals_mode_selection(object_name)
+            self._handle_tab_order_mode_selection(object_name)
+            self._handle_buddy_mode_selection(object_name)
             return
         widget = self._model.root_widget.find_by_object_name(object_name)
         if widget is None:
             self._property_panel.bind_widget(None, [])
             self._handle_signals_mode_selection(object_name)
+            self._handle_tab_order_mode_selection(object_name)
+            self._handle_buddy_mode_selection(object_name)
             return
         self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
         self._handle_signals_mode_selection(object_name)
+        self._handle_tab_order_mode_selection(object_name)
+        self._handle_buddy_mode_selection(object_name)
 
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
@@ -945,6 +952,7 @@ class DesignerEditorSurface(QWidget):
 
     def _handle_mode_changed(self, mode_id: str) -> None:
         self._pending_connection_source = None
+        self._pending_buddy_source_label = None
         if mode_id == MODE_SIGNALS_SLOTS:
             self._inspector_tabs.setCurrentWidget(self._connection_panel)
         if mode_id == MODE_TAB_ORDER:
@@ -984,6 +992,74 @@ class DesignerEditorSurface(QWidget):
         self._command_stack.push(
             SnapshotCommand(
                 description="connect widgets",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+
+    def _handle_tab_order_mode_selection(self, object_name: str) -> None:
+        if self._mode_controller.current_mode != MODE_TAB_ORDER:
+            return
+        if self._model is None or not object_name:
+            return
+        candidates = self._default_tab_order_candidates()
+        if object_name not in candidates:
+            return
+        before_xml = self.serialize_to_ui_string()
+        current_order = list(self._model.tab_stops) if self._model.tab_stops else list(candidates)
+        if object_name in current_order:
+            current_order.remove(object_name)
+        current_order.append(object_name)
+        if current_order == self._model.tab_stops:
+            return
+        self._model.tab_stops = current_order
+        self._refresh_tab_order_panel()
+        self._refresh_validation_issues()
+        self._error_label.setText(f"Tab Order mode: '{object_name}' moved to end of focus chain.")
+        self._error_label.setVisible(True)
+        after_xml = self.serialize_to_ui_string()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="tab order gesture",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+
+    def _handle_buddy_mode_selection(self, object_name: str) -> None:
+        if self._mode_controller.current_mode != MODE_BUDDY:
+            return
+        if self._model is None or not object_name:
+            return
+        selected = self._model.root_widget.find_by_object_name(object_name)
+        if selected is None:
+            return
+        if selected.class_name == "QLabel":
+            self._pending_buddy_source_label = object_name
+            self._error_label.setText(f"Buddy mode: label selected ({object_name}). Select buddy control.")
+            self._error_label.setVisible(True)
+            return
+        pending_label = self._pending_buddy_source_label
+        if not pending_label or pending_label == object_name:
+            return
+        label_widget = self._model.root_widget.find_by_object_name(pending_label)
+        if label_widget is None:
+            self._pending_buddy_source_label = None
+            return
+        before_xml = self.serialize_to_ui_string()
+        label_widget.properties["buddy"] = PropertyValue(value_type="cstring", value=object_name)
+        self._pending_buddy_source_label = None
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._refresh_validation_issues()
+        self._error_label.setText(f"Buddy mode: assigned '{pending_label}' → '{object_name}'.")
+        self._error_label.setVisible(True)
+        after_xml = self.serialize_to_ui_string()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="buddy gesture",
                 before_xml=before_xml,
                 after_xml=after_xml,
             )

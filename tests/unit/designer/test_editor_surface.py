@@ -409,6 +409,31 @@ def test_editor_surface_tab_order_changes_are_undoable(tmp_path: Path) -> None:
     assert surface.model.tab_stops == []
 
 
+def test_editor_surface_tab_order_mode_selection_gesture_reorders_chain(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "<widget class=\"QPushButton\" name=\"okButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    assert surface.set_mode("tab_order") is True
+
+    surface._selection_controller.set_selected_object_name("lineEdit")  # type: ignore[attr-defined]
+    surface._selection_controller.set_selected_object_name("okButton")  # type: ignore[attr-defined]
+
+    assert surface.model.tab_stops[-1] == "okButton"
+    assert surface.can_undo is True
+
+
 def test_editor_surface_buddy_mode_switches_to_buddy_tab(tmp_path: Path) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(
@@ -454,6 +479,30 @@ def test_editor_surface_buddy_assignment_is_undoable(tmp_path: Path) -> None:
     label_after_undo = surface.model.root_widget.find_by_object_name("nameLabel")
     assert label_after_undo is not None
     assert "buddy" not in label_after_undo.properties
+
+
+def test_editor_surface_buddy_mode_selection_gesture_assigns_buddy(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QLabel\" name=\"nameLabel\"/>"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    assert surface.set_mode("buddy") is True
+    surface._selection_controller.set_selected_object_name("nameLabel")  # type: ignore[attr-defined]
+    surface._selection_controller.set_selected_object_name("lineEdit")  # type: ignore[attr-defined]
+    label = surface.model.root_widget.find_by_object_name("nameLabel")
+    assert label is not None
+    assert label.properties["buddy"].value == "lineEdit"
 
 
 def test_editor_surface_promote_selected_widget_updates_custom_widget_metadata(tmp_path: Path) -> None:
