@@ -58,13 +58,20 @@ class DesignerEditorSurface(QWidget):
     dirty_state_changed = Signal(bool)
     mode_changed = Signal(str)
 
-    def __init__(self, file_path: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        file_path: str,
+        parent: QWidget | None = None,
+        *,
+        enable_naming_lint: bool = True,
+    ) -> None:
         super().__init__(parent)
         self._file_path = str(Path(file_path).expanduser().resolve())
         self._model: UIModel | None = None
         self._is_dirty = False
         self._mode_shortcuts: list[QShortcut] = []
         self._pending_connection_source: str | None = None
+        self._enable_naming_lint = enable_naming_lint
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -457,7 +464,7 @@ class DesignerEditorSurface(QWidget):
         self._validation_list.clear()
         if self._model is None:
             return
-        for issue in build_validation_issues(self._model):
+        for issue in build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint):
             self._validation_list.addItem(f"[{issue.severity}] {issue.code} — {issue.message}")
 
     def _handle_property_edited(self, object_name: str, property_name: str, value: object) -> None:

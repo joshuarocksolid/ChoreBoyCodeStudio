@@ -530,7 +530,7 @@ Every task in this file contains:
 ### Story D5.S3 — Designer lint/format and team workflows
 
 #### Task D5.S3.T1 — UI naming convention lint rules
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Add optional lint checks for object naming consistency.
 - **Primary files:** `app/designer/validation/lint_rules.py`, `app/designer/validation/validation_panel.py`
 - **Automated test layer:** unit
@@ -538,7 +538,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-05
 - **Depends on:** D1.S3.T2
 - **Done when:** naming lint diagnostics are generated deterministically and are configurable.
-- **Implementation note:** deterministic objectName naming lint diagnostics are implemented; settings-driven configurability and rule profile controls remain pending.
+- **Implementation note:** deterministic objectName naming lint diagnostics are implemented with settings-driven enable/disable control.
 
 #### Task D5.S3.T2 — Format `.ui` command
 - **Status:** DONE

@@ -228,6 +228,7 @@ class MainWindow(QMainWindow):
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._designer_last_mode: str = constants.UI_DESIGNER_LAST_MODE_DEFAULT
+        self._designer_enable_naming_lint: bool = constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
@@ -266,6 +267,7 @@ class MainWindow(QMainWindow):
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._theme_mode = self._load_theme_mode()
         self._designer_last_mode = self._load_designer_last_mode()
+        self._designer_enable_naming_lint = self._load_designer_enable_naming_lint()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = self._load_syntax_color_overrides()
@@ -651,6 +653,19 @@ class MainWindow(QMainWindow):
         if mode_text in {"widget", "signals_slots", "buddy", "tab_order"}:
             return mode_text
         return constants.UI_DESIGNER_LAST_MODE_DEFAULT
+
+    def _load_designer_enable_naming_lint(self) -> bool:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+        value = designer_payload.get(
+            constants.UI_DESIGNER_ENABLE_NAMING_LINT_KEY,
+            constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT,
+        )
+        if isinstance(value, bool):
+            return value
+        return constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = load_settings(state_root=self._state_root)
@@ -4110,7 +4125,11 @@ class MainWindow(QMainWindow):
             return True
 
         if Path(opened_result.tab.file_path).suffix.lower() == ".ui":
-            designer_surface = DesignerEditorSurface(opened_result.tab.file_path, self._editor_tabs_widget)
+            designer_surface = DesignerEditorSurface(
+                opened_result.tab.file_path,
+                self._editor_tabs_widget,
+                enable_naming_lint=self._designer_enable_naming_lint,
+            )
             designer_surface.setObjectName("shell.editorTabs.designerSurface")
             designer_surface.dirty_state_changed.connect(
                 lambda is_dirty, tab_file_path=opened_result.tab.file_path, surface=designer_surface: self._handle_designer_dirty_state_changed(

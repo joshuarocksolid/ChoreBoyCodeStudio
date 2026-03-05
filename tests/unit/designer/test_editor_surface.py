@@ -49,6 +49,23 @@ def test_editor_surface_loads_model_and_panels(tmp_path: Path) -> None:
     assert "SampleForm" in surface._property_panel._header_label.text()  # type: ignore[attr-defined]
 
 
+def test_editor_surface_can_disable_naming_lint(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()), enable_naming_lint=False)
+    validation_rows = [surface._validation_list.item(index).text() for index in range(surface._validation_list.count())]  # type: ignore[attr-defined]
+    assert any("DLAYOUT001" in row for row in validation_rows)
+    assert not any("DLINT001" in row for row in validation_rows)
+
+
 def test_editor_surface_palette_insert_updates_model(tmp_path: Path) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(
