@@ -529,6 +529,28 @@ def test_editor_surface_save_and_insert_component(tmp_path: Path) -> None:
     assert any(child.object_name == "pushButton1" for child in target.children)
 
 
+def test_editor_surface_duplicate_selection_creates_renamed_copy(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    assert surface.duplicate_selection() is True
+    duplicated = surface.model.root_widget.find_by_object_name("pushButton1")
+    assert duplicated is not None
+    assert duplicated.class_name == "QPushButton"
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

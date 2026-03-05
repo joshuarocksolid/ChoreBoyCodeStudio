@@ -453,6 +453,7 @@ class MainWindow(QMainWindow):
                 on_designer_format_ui_xml=self._handle_designer_format_ui_xml_action,
                 on_designer_save_component=self._handle_designer_save_component_action,
                 on_designer_insert_component=self._handle_designer_insert_component_action,
+                on_designer_duplicate_selection=self._handle_designer_duplicate_selection_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1610,6 +1611,21 @@ class MainWindow(QMainWindow):
             return
         if not surface.insert_component(selected_component):
             QMessageBox.warning(self, "Insert Component", "Unable to insert selected component.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_duplicate_selection_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.duplicate_selection():
+            QMessageBox.information(
+                self,
+                "Duplicate Selection",
+                "Unable to duplicate selection. Select a non-root widget first.",
+            )
             return
         self._refresh_save_action_states()
         self._refresh_designer_action_states()
@@ -3094,6 +3110,7 @@ class MainWindow(QMainWindow):
             "designer.form.format_ui_xml",
             "designer.form.save_component",
             "designer.form.insert_component",
+            "designer.form.duplicate_selection",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

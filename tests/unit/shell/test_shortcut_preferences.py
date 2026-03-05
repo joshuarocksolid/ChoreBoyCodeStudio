@@ -29,6 +29,7 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["designer.form.format_ui_xml"] == "Ctrl+Alt+Shift+F"
     assert defaults["designer.form.save_component"] == ""
     assert defaults["designer.form.insert_component"] == ""
+    assert defaults["designer.form.duplicate_selection"] == "Ctrl+D"
     assert defaults["designer.mode.widget"] == "F3"
     assert defaults["designer.mode.signals_slots"] == "F4"
     assert defaults["designer.mode.buddy"] == "F5"

@@ -320,7 +320,7 @@ Every task in this file contains:
 - **Implementation note:** selection controller now tracks selection sets and canvas/inspector trees are configured for extended selection; full rubber-band visual interaction remains pending.
 
 #### Task D2.S3.T2 — Ctrl-drag clone behavior
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Match Qt Designer clone affordance for rapid iteration.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/commands/clone_command.py`
 - **Automated test layer:** integration
@@ -328,6 +328,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-06
 - **Depends on:** D2.S3.T1
 - **Done when:** clone action duplicates widget subtree/properties with deterministic unique names.
+- **Implementation note:** duplicate-selection command is implemented with deterministic unique-name cloning and undo; direct Ctrl-drag gesture parity remains pending.
 
 #### Task D2.S3.T3 — Snap-to-grid and alignment guides
 - **Status:** TODO

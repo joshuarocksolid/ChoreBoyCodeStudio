@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from PySide2.QtCore import Qt, Signal
@@ -322,6 +323,53 @@ class DesignerEditorSurface(QWidget):
         self._command_stack.push(
             SnapshotCommand(
                 description=f"insert component {component_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def duplicate_selection(self) -> bool:
+        """Duplicate selected widget subtree under its current parent."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        selected_widget = self._model.root_widget.find_by_object_name(selected_name)
+        if selected_widget is None:
+            return False
+        parent_widget, in_layout = self._find_parent_for_widget(self._model.root_widget, selected_name)
+        if parent_widget is None:
+            return False
+
+        before_xml = self.serialize_to_ui_string()
+        duplicate = copy.deepcopy(selected_widget)
+        self._ensure_unique_subtree_names(duplicate, set(self._model.collect_object_names()))
+        if in_layout:
+            from app.designer.model import LayoutItem
+
+            if parent_widget.layout is None:
+                return False
+            parent_widget.layout.items.append(LayoutItem(widget=duplicate))
+        else:
+            parent_widget.children.append(duplicate)
+
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._selection_controller.set_selected_object_name(duplicate.object_name)
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="duplicate selection",
                 before_xml=before_xml,
                 after_xml=after_xml,
             )
@@ -826,6 +874,44 @@ class DesignerEditorSurface(QWidget):
         if not selected_name:
             return self._model.root_widget
         return self._model.root_widget.find_by_object_name(selected_name)
+
+    def _find_parent_for_widget(self, root: WidgetNode, object_name: str) -> tuple[WidgetNode | None, bool]:
+        for child in root.children:
+            if child.object_name == object_name:
+                return root, False
+            parent, in_layout = self._find_parent_for_widget(child, object_name)
+            if parent is not None:
+                return parent, in_layout
+        if root.layout is not None:
+            for item in root.layout.items:
+                child_widget = item.widget
+                if child_widget is None:
+                    continue
+                if child_widget.object_name == object_name:
+                    return root, True
+                parent, in_layout = self._find_parent_for_widget(child_widget, object_name)
+                if parent is not None:
+                    return parent, in_layout
+        return None, False
+
+    def _ensure_unique_subtree_names(self, widget: WidgetNode, names_in_use: set[str]) -> None:
+        if widget.object_name in names_in_use:
+            widget.object_name = self._next_available_name(widget.object_name, names_in_use)
+        names_in_use.add(widget.object_name)
+        for child in widget.children:
+            self._ensure_unique_subtree_names(child, names_in_use)
+        if widget.layout is not None:
+            for item in widget.layout.items:
+                if item.widget is not None:
+                    self._ensure_unique_subtree_names(item.widget, names_in_use)
+
+    def _next_available_name(self, base_name: str, names_in_use: set[str]) -> str:
+        index = 1
+        while True:
+            candidate = f"{base_name}{index}"
+            if candidate not in names_in_use:
+                return candidate
+            index += 1
 
     def _set_dirty(self, is_dirty: bool) -> None:
         if self._is_dirty == is_dirty:

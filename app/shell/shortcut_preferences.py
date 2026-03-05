@@ -53,6 +53,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("designer.form.format_ui_xml", "Format UI XML", "Ctrl+Alt+Shift+F", "Form"),
     ShortcutCommand("designer.form.save_component", "Save Selection as Component", "", "Form"),
     ShortcutCommand("designer.form.insert_component", "Insert Component", "", "Form"),
+    ShortcutCommand("designer.form.duplicate_selection", "Duplicate Selection", "Ctrl+D", "Form"),
     ShortcutCommand("designer.mode.widget", "Widget Editing Mode", "F3", "Mode"),
     ShortcutCommand("designer.mode.signals_slots", "Signals/Slots Mode", "F4", "Mode"),
     ShortcutCommand("designer.mode.buddy", "Buddy Mode", "F5", "Mode"),

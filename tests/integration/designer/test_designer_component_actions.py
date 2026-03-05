@@ -70,4 +70,8 @@ def test_designer_save_and_insert_component_actions(monkeypatch: pytest.MonkeyPa
     target = surface.model.root_widget.find_by_object_name("targetGroup")  # type: ignore[union-attr]
     assert target is not None
     assert any(child.class_name == "QPushButton" for child in target.children)
+
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    window._handle_designer_duplicate_selection_action()
+    assert surface.model.root_widget.find_by_object_name("pushButton1") is not None  # type: ignore[union-attr]
     window.close()
