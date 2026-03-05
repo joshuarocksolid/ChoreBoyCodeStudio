@@ -538,7 +538,7 @@ Every task in this file contains:
 - **Done when:** naming lint diagnostics are generated deterministically and are configurable.
 
 #### Task D5.S3.T2 — Format `.ui` command
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Provide explicit formatting command separate from save.
 - **Primary files:** `app/designer/io/ui_formatter.py`, `app/shell/menus.py`
 - **Automated test layer:** unit, integration

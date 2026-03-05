@@ -22,7 +22,7 @@ from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.commands import CommandStack, SnapshotCommand
 from app.designer.connections import ConnectionEditorPanel
 from app.designer.inspector import ObjectInspector
-from app.designer.io import read_ui_file, read_ui_string
+from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.modes import (
@@ -226,8 +226,8 @@ class DesignerEditorSurface(QWidget):
                 before_xml = Path(self._file_path).read_text(encoding="utf-8")
             except OSError:
                 before_xml = self.serialize_to_ui_string()
-        normalized_model = read_ui_string(before_xml)
-        normalized_xml = write_ui_string(normalized_model)
+        normalized_xml = format_ui_xml(before_xml)
+        normalized_model = read_ui_string(normalized_xml)
         if before_xml == normalized_xml:
             return False
         self._model = normalized_model
