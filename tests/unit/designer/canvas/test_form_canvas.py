@@ -142,3 +142,5 @@ def test_canvas_tree_selection_syncs_with_selection_controller() -> None:
     assert "statusLabel" in current_item.text(0)
 
 
+
+

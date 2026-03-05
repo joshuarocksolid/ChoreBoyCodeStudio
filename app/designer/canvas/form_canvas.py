@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
+from PySide2.QtCore import QItemSelectionModel, Qt
 from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import can_insert_widget
@@ -55,11 +55,13 @@ class FormCanvas(QWidget):
         if self._selection_controller is not None:
             try:
                 self._selection_controller.selection_changed.disconnect(self._handle_controller_selection_changed)
+                self._selection_controller.selection_set_changed.disconnect(self._handle_controller_selection_set_changed)
             except (RuntimeError, TypeError):
                 pass
         self._selection_controller = selection_controller
         if self._selection_controller is not None:
             self._selection_controller.selection_changed.connect(self._handle_controller_selection_changed)
+            self._selection_controller.selection_set_changed.connect(self._handle_controller_selection_set_changed)
 
     def configure_snap_to_grid(self, *, enabled: bool, grid_size: int) -> None:
         self._snap_to_grid_enabled = bool(enabled)
@@ -193,6 +195,8 @@ class FormCanvas(QWidget):
         self._selection_controller.set_selected_object_names(selected_names)
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
+        if self._selection_controller is not None and len(self._selection_controller.selected_object_names) > 1:
+            return
         if not object_name:
             self._canvas_tree.clearSelection()
             return
@@ -203,5 +207,29 @@ class FormCanvas(QWidget):
         try:
             self._canvas_tree.setCurrentItem(target)
             target.setSelected(True)
+        finally:
+            self._is_syncing_selection = False
+
+    def _handle_controller_selection_set_changed(self, object_names: list[str]) -> None:
+        if self._is_syncing_selection:
+            return
+        self._is_syncing_selection = True
+        try:
+            self._canvas_tree.clearSelection()
+            if not object_names:
+                return
+            first_item = None
+            for object_name in object_names:
+                target = self._item_by_object_name.get(object_name)
+                if target is None:
+                    continue
+                self._canvas_tree.selectionModel().select(
+                    self._canvas_tree.indexFromItem(target),
+                    QItemSelectionModel.Select | QItemSelectionModel.Rows,
+                )
+                if first_item is None:
+                    first_item = target
+            if first_item is not None:
+                self._canvas_tree.setCurrentItem(first_item)
         finally:
             self._is_syncing_selection = False

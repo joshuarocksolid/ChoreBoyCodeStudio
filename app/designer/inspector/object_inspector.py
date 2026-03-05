@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from PySide2.QtCore import Qt, Signal
+from PySide2.QtCore import QItemSelectionModel, Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import is_parent_drop_target
@@ -95,11 +95,13 @@ class ObjectInspector(QWidget):
         if self._selection_controller is not None:
             try:
                 self._selection_controller.selection_changed.disconnect(self._handle_controller_selection_changed)
+                self._selection_controller.selection_set_changed.disconnect(self._handle_controller_selection_set_changed)
             except (RuntimeError, TypeError):
                 pass
         self._selection_controller = selection_controller
         if self._selection_controller is not None:
             self._selection_controller.selection_changed.connect(self._handle_controller_selection_changed)
+            self._selection_controller.selection_set_changed.connect(self._handle_controller_selection_set_changed)
 
     def _build_item(self, widget: WidgetNode) -> QTreeWidgetItem:
         label = f"{widget.object_name} : {widget.class_name}"
@@ -124,6 +126,8 @@ class ObjectInspector(QWidget):
             self._selection_controller.set_selected_object_names(selected_object_names)
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
+        if self._selection_controller is not None and len(self._selection_controller.selected_object_names) > 1:
+            return
         if not object_name:
             self._tree.clearSelection()
             return
@@ -134,6 +138,30 @@ class ObjectInspector(QWidget):
         try:
             self._tree.setCurrentItem(target)
             target.setSelected(True)
+        finally:
+            self._is_syncing_selection = False
+
+    def _handle_controller_selection_set_changed(self, object_names: list[str]) -> None:
+        if self._is_syncing_selection:
+            return
+        self._is_syncing_selection = True
+        try:
+            self._tree.clearSelection()
+            if not object_names:
+                return
+            first_item = None
+            for object_name in object_names:
+                target = self._item_by_object_name.get(object_name)
+                if target is None:
+                    continue
+                self._tree.selectionModel().select(
+                    self._tree.indexFromItem(target),
+                    QItemSelectionModel.Select | QItemSelectionModel.Rows,
+                )
+                if first_item is None:
+                    first_item = target
+            if first_item is not None:
+                self._tree.setCurrentItem(first_item)
         finally:
             self._is_syncing_selection = False
 

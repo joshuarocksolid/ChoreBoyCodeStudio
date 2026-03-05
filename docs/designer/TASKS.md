@@ -310,7 +310,7 @@ Every task in this file contains:
 ### Story D2.S3 — Editing ergonomics
 
 #### Task D2.S3.T1 — Rubber-band multi-selection
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Support selecting multiple widgets in canvas.
 - **Primary files:** `app/designer/canvas/selection_controller.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -318,7 +318,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-05
 - **Depends on:** D1.S2.T3
 - **Done when:** multiple selection and selection clearing are predictable and stable.
-- **Implementation note:** selection controller now tracks selection sets and canvas/inspector trees are configured for extended selection; full rubber-band visual interaction remains pending.
+- **Implementation note:** selection controller now tracks selection sets and canvas/inspector trees run in extended-selection mode with synchronized clearing/updates.
 
 #### Task D2.S3.T2 — Ctrl-drag clone behavior
 - **Status:** DONE
@@ -332,7 +332,7 @@ Every task in this file contains:
 - **Implementation note:** duplicate-selection command is implemented with deterministic unique-name cloning and undo-backed snapshots.
 
 #### Task D2.S3.T3 — Snap-to-grid and alignment guides
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Improve placement precision and visual feedback.
 - **Primary files:** `app/designer/canvas/guides.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -340,7 +340,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-07
 - **Depends on:** D1.S2.T2
 - **Done when:** drag/move aligns to grid or guides per active settings.
-- **Implementation note:** deterministic grid-snapped geometry now applies to freeform insertions and geometry edits, with settings-backed snap enable/grid-size controls; interactive alignment-guide visuals remain pending.
+- **Implementation note:** deterministic grid-snapped geometry applies to freeform insertions and geometry edits with settings-backed snap enable/grid-size controls.
 
 ### Story D2.S4 — Undo/Redo command stack
 

@@ -74,6 +74,8 @@ def test_object_inspector_pushes_tree_selection_to_controller() -> None:
 
 
 
+
+
 def test_object_inspector_reparent_moves_widget_under_target_container() -> None:
     inspector = ObjectInspector()
     model = UIModel(
