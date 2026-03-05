@@ -20,7 +20,12 @@ from PySide2.QtWidgets import (
 
 from app.designer.canvas import FormCanvas, SelectionController
 from app.designer.commands import CommandStack, SnapshotCommand
-from app.designer.components import insert_component_widget, list_components, save_component_from_widget
+from app.designer.components import (
+    ComponentLibraryPanel,
+    insert_component_widget,
+    list_components,
+    save_component_from_widget,
+)
 from app.designer.connections import ConnectionEditorPanel
 from app.designer.inspector import ObjectInspector
 from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
@@ -211,6 +216,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
@@ -244,6 +250,7 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._refresh_validation_issues()
         self._error_label.setVisible(False)
         self._command_stack.push(
@@ -273,6 +280,7 @@ class DesignerEditorSurface(QWidget):
             self._error_label.setText(str(exc))
             self._error_label.setVisible(True)
             return False
+        self._refresh_component_panel()
         self._error_label.setText(f"Component '{component_name}' saved.")
         self._error_label.setVisible(True)
         return True
@@ -304,6 +312,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._selection_controller.set_selected_object_name(inserted_widget.object_name)
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
@@ -349,6 +358,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
@@ -410,11 +420,15 @@ class DesignerEditorSurface(QWidget):
         self._tab_order_panel.tab_order_changed.connect(self._handle_tab_order_changed)
         self._buddy_panel = BuddyEditorPanel(self._inspector_tabs)
         self._buddy_panel.buddy_assignment_changed.connect(self._handle_buddy_assignment_changed)
+        self._component_library_panel = ComponentLibraryPanel(self._inspector_tabs)
+        self._component_library_panel.insert_requested.connect(self.insert_component)
+        self._component_library_panel.refresh_requested.connect(self._refresh_component_panel)
         self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Property Editor")
         self._inspector_tabs.addTab(self._connection_panel, "Connections")
         self._inspector_tabs.addTab(self._tab_order_panel, "Tab Order")
         self._inspector_tabs.addTab(self._buddy_panel, "Buddies")
+        self._inspector_tabs.addTab(self._component_library_panel, "Components")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -444,6 +458,7 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._refresh_validation_issues()
         self._set_dirty(False)
 
@@ -519,6 +534,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         if property_name == "objectName":
             self._selection_controller.set_selected_object_name(widget.object_name)
         else:
@@ -666,6 +682,7 @@ class DesignerEditorSurface(QWidget):
         else:
             label_widget.properties.pop("buddy", None)
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._refresh_validation_issues()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
@@ -693,6 +710,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(
@@ -714,6 +732,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
@@ -760,6 +779,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._command_stack.push(
             SnapshotCommand(
                 description=f"layout {layout_class_name}",
@@ -786,6 +806,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._error_label.setVisible(False)
         self._command_stack.push(
             SnapshotCommand(
@@ -819,6 +840,7 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
+        self._refresh_component_panel()
         self._refresh_validation_issues()
 
     def _install_mode_shortcuts(self) -> None:
@@ -927,6 +949,9 @@ class DesignerEditorSurface(QWidget):
                 current_buddy = str(buddy_property.value)
             rows.append((widget.object_name, current_buddy))
         self._buddy_panel.bind_buddy_rows(rows, candidates)
+
+    def _refresh_component_panel(self) -> None:
+        self._component_library_panel.bind_components(self.available_component_names())
 
     def _buddy_candidates(self) -> list[str]:
         if self._model is None:

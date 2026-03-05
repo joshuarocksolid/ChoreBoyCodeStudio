@@ -78,6 +78,8 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     mode_action.trigger()
     surface = window._active_designer_surface()
     assert surface is not None
+    tab_titles = [surface._inspector_tabs.tabText(index) for index in range(surface._inspector_tabs.count())]  # type: ignore[attr-defined]
+    assert "Components" in tab_titles
     assert surface.current_mode == "signals_slots"
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Connections"  # type: ignore[attr-defined]
     status_label = window.findChild(qt_widgets.QLabel, "shell.editorStatusLabel")

@@ -519,13 +519,13 @@ Every task in this file contains:
 #### Task D5.S2.T2 — Insert component from library
 - **Status:** PARTIAL
 - **Objective:** Add component library browser and insert command.
-- **Primary files:** `app/designer/components/component_library_panel.py`, `app/designer/canvas/form_canvas.py`
+- **Primary files:** `app/designer/components/component_library_panel.py`, `app/designer/components/component_service.py`, `app/designer/editor_surface.py`
 - **Automated test layer:** integration
 - **Validation method:** integration tests for component insertion and serialization.
 - **Acceptance linkage:** DADV2-04
 - **Depends on:** D5.S2.T1
 - **Done when:** component insertion behaves like palette insertion with predictable naming and ownership.
-- **Implementation note:** insert-component action and service are implemented with validation + undo, while dedicated component-library panel UX remains pending.
+- **Implementation note:** insert-component action/service and component-library panel UX are implemented with validation + undo; objectName conflict handling for inserted subtrees remains pending.
 
 ### Story D5.S3 — Designer lint/format and team workflows
 

@@ -6,8 +6,10 @@ from app.designer.components.component_service import (
     list_components,
     save_component_from_widget,
 )
+from app.designer.components.component_library_panel import ComponentLibraryPanel
 
 __all__ = [
+    "ComponentLibraryPanel",
     "ComponentDescriptor",
     "insert_component_widget",
     "list_components",
