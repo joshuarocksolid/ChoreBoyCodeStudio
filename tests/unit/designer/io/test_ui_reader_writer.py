@@ -125,3 +125,28 @@ def test_write_ui_string_serializes_tab_stops() -> None:
     assert "<tabstops>" in xml
     assert "<tabstop>lineEdit</tabstop>" in xml
     assert reparsed.tab_stops == ["lineEdit", "okButton"]
+
+
+def test_read_write_round_trip_preserves_buddy_property() -> None:
+    model = read_ui_string(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\">"
+            "<class>BuddyForm</class>"
+            "<widget class=\"QWidget\" name=\"BuddyForm\">"
+            "<widget class=\"QLabel\" name=\"nameLabel\">"
+            "<property name=\"buddy\"><cstring>lineEdit</cstring></property>"
+            "</widget>"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "</widget>"
+            "<resources/><connections/>"
+            "</ui>\n"
+        )
+    )
+
+    serialized = write_ui_string(model)
+    reparsed = read_ui_string(serialized)
+    label = reparsed.root_widget.find_by_object_name("nameLabel")
+    assert label is not None
+    assert label.properties["buddy"].value_type == "cstring"
+    assert label.properties["buddy"].value == "lineEdit"

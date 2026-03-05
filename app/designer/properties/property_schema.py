@@ -34,6 +34,8 @@ def default_property_schema_for_class(class_name: str) -> list[PropertyFieldDefi
     text_like = {"QLabel", "QPushButton", "QCheckBox", "QRadioButton", "QGroupBox"}
     if class_name in text_like:
         common.append(PropertyFieldDefinition("text", "string", "Appearance", "Text", default_value=""))
+    if class_name == "QLabel":
+        common.append(PropertyFieldDefinition("buddy", "cstring", "Behavior", "Buddy", default_value=""))
     if class_name == "QGroupBox":
         common.append(PropertyFieldDefinition("title", "string", "Appearance", "Title", default_value=""))
     if class_name == "QLineEdit":

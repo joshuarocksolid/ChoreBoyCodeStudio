@@ -59,11 +59,13 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
+    buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
     assert tab_mode_action is not None and tab_mode_action.isEnabled()
+    assert buddy_mode_action is not None and buddy_mode_action.isEnabled()
     assert add_resource_action is not None and add_resource_action.isEnabled()
     mode_action.trigger()
     surface = window._active_designer_surface()
@@ -73,6 +75,9 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     tab_mode_action.trigger()
     assert surface.current_mode == "tab_order"
     assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Tab Order"  # type: ignore[attr-defined]
+    buddy_mode_action.trigger()
+    assert surface.current_mode == "buddy"
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Buddies"  # type: ignore[attr-defined]
     monkeypatch.setattr(qt_widgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: ("", ""))
     add_resource_action.trigger()
     assert [resource.location for resource in surface.model.resources] == []  # type: ignore[union-attr]
@@ -101,10 +106,12 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
+    buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
     assert tab_mode_action is not None and not tab_mode_action.isEnabled()
+    assert buddy_mode_action is not None and not buddy_mode_action.isEnabled()
     assert add_resource_action is not None and not add_resource_action.isEnabled()
     window.close()

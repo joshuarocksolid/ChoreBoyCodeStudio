@@ -403,7 +403,7 @@ Every task in this file contains:
 ### Story D3.S3 — Buddy editing mode
 
 #### Task D3.S3.T1 — Buddy assignment interactions
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Associate labels with buddy controls through dedicated mode.
 - **Primary files:** `app/designer/modes/buddy_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -411,9 +411,10 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-05
 - **Depends on:** D2.S1.T1
 - **Done when:** label buddy links are created/edited/removed safely.
+- **Implementation note:** dedicated buddy panel and mode wiring are implemented with undo-backed assignments; direct canvas gesture authoring is still pending.
 
 #### Task D3.S3.T2 — Serialize buddy property mappings
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Store buddy links in `.ui` properties compatible with Qt loading.
 - **Primary files:** `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit

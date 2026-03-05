@@ -26,6 +26,7 @@ from app.designer.io import read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
 from app.designer.modes import (
+    BuddyEditorPanel,
     DESIGNER_MODE_DEFINITIONS,
     MODE_BUDDY,
     MODE_SIGNALS_SLOTS,
@@ -34,7 +35,7 @@ from app.designer.modes import (
     DesignerModeController,
     TabOrderEditorPanel,
 )
-from app.designer.model import ConnectionModel, UIModel, WidgetNode
+from app.designer.model import ConnectionModel, PropertyValue, UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import configure_preview_widget, load_widget_from_ui_xml, probe_ui_xml_compatibility
 from app.designer.properties import PropertyEditorController, PropertyEditorPanel
@@ -156,6 +157,7 @@ class DesignerEditorSurface(QWidget):
         self._model.resources.append(ResourceModel(location=normalized))
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
@@ -211,10 +213,13 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel.remove_requested.connect(self._handle_remove_connection_request)
         self._tab_order_panel = TabOrderEditorPanel(self._inspector_tabs)
         self._tab_order_panel.tab_order_changed.connect(self._handle_tab_order_changed)
+        self._buddy_panel = BuddyEditorPanel(self._inspector_tabs)
+        self._buddy_panel.buddy_assignment_changed.connect(self._handle_buddy_assignment_changed)
         self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Property Editor")
         self._inspector_tabs.addTab(self._connection_panel, "Connections")
         self._inspector_tabs.addTab(self._tab_order_panel, "Tab Order")
+        self._inspector_tabs.addTab(self._buddy_panel, "Buddies")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -243,6 +248,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(model)
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._refresh_validation_issues()
         self._set_dirty(False)
 
@@ -314,6 +320,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         if property_name == "objectName":
             self._selection_controller.set_selected_object_name(widget.object_name)
         else:
@@ -400,6 +407,32 @@ class DesignerEditorSurface(QWidget):
         )
         self._set_dirty(True)
 
+    def _handle_buddy_assignment_changed(self, label_object_name: str, buddy_object_name: str) -> None:
+        if self._model is None:
+            return
+        label_widget = self._model.root_widget.find_by_object_name(label_object_name)
+        if label_widget is None or label_widget.class_name != "QLabel":
+            return
+        before_xml = self.serialize_to_ui_string()
+        if buddy_object_name:
+            label_widget.properties["buddy"] = PropertyValue(value_type="cstring", value=buddy_object_name)
+        else:
+            label_widget.properties.pop("buddy", None)
+        self._refresh_buddy_panel()
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"set buddy {label_object_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+
     def _handle_palette_insert_request(self, class_name: str) -> None:
         if self._model is None:
             return
@@ -412,6 +445,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(
@@ -431,6 +465,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas.load_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._error_label.setVisible(False)
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
@@ -470,6 +505,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._command_stack.push(
             SnapshotCommand(
                 description=f"layout {layout_class_name}",
@@ -495,6 +531,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._error_label.setVisible(False)
         self._command_stack.push(
             SnapshotCommand(
@@ -527,6 +564,7 @@ class DesignerEditorSurface(QWidget):
         self._object_inspector.bind_model(model)
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
         self._refresh_validation_issues()
 
     def _install_mode_shortcuts(self) -> None:
@@ -547,6 +585,8 @@ class DesignerEditorSurface(QWidget):
             self._inspector_tabs.setCurrentWidget(self._connection_panel)
         if mode_id == MODE_TAB_ORDER:
             self._inspector_tabs.setCurrentWidget(self._tab_order_panel)
+        if mode_id == MODE_BUDDY:
+            self._inspector_tabs.setCurrentWidget(self._buddy_panel)
         self._refresh_mode_bar()
         self.mode_changed.emit(mode_id)
 
@@ -573,6 +613,42 @@ class DesignerEditorSurface(QWidget):
             if widget is None:
                 continue
             if widget.class_name in {"QLabel"}:
+                continue
+            if object_name in seen:
+                continue
+            seen.add(object_name)
+            candidates.append(object_name)
+        return candidates
+
+    def _refresh_buddy_panel(self) -> None:
+        if self._model is None:
+            self._buddy_panel.bind_buddy_rows([], [])
+            return
+        candidates = self._buddy_candidates()
+        rows: list[tuple[str, str]] = []
+        for object_name in self._model.collect_object_names():
+            widget = self._model.root_widget.find_by_object_name(object_name)
+            if widget is None or widget.class_name != "QLabel":
+                continue
+            buddy_property = widget.properties.get("buddy")
+            current_buddy = ""
+            if isinstance(buddy_property, PropertyValue):
+                current_buddy = str(buddy_property.value)
+            rows.append((widget.object_name, current_buddy))
+        self._buddy_panel.bind_buddy_rows(rows, candidates)
+
+    def _buddy_candidates(self) -> list[str]:
+        if self._model is None:
+            return []
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for object_name in self._model.collect_object_names():
+            if object_name == self._model.root_widget.object_name:
+                continue
+            widget = self._model.root_widget.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            if widget.class_name == "QLabel":
                 continue
             if object_name in seen:
                 continue
