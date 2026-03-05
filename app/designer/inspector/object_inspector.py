@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from PySide2.QtCore import Qt
+from PySide2.QtCore import Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import is_parent_drop_target
@@ -53,12 +53,15 @@ class _ObjectTreeWidget(QTreeWidget):
 class ObjectInspector(QWidget):
     """Tree view showing widget hierarchy with selection synchronization."""
 
+    reparent_applied = Signal(str, str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._model: UIModel | None = None
         self._selection_controller: SelectionController | None = None
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
         self._is_syncing_selection = False
+        self._reparent_callback: Callable[[str, str], bool] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -67,6 +70,9 @@ class ObjectInspector(QWidget):
         self._tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
         self._tree.set_drop_callback(self._handle_drop_reparent)
         layout.addWidget(self._tree)
+
+    def set_reparent_callback(self, callback: Callable[[str, str], bool] | None) -> None:
+        self._reparent_callback = callback
 
     def bind_model(self, model: UIModel) -> None:
         self._model = model
@@ -127,6 +133,11 @@ class ObjectInspector(QWidget):
             self._is_syncing_selection = False
 
     def _handle_drop_reparent(self, source_object_name: str, target_object_name: str) -> bool:
+        if self._reparent_callback is not None:
+            return self._reparent_callback(source_object_name, target_object_name)
+        return self.reparent_widget(source_object_name, target_object_name)
+
+    def reparent_widget(self, source_object_name: str, target_object_name: str) -> bool:
         if self._model is None:
             return False
         if source_object_name == target_object_name:
@@ -151,6 +162,7 @@ class ObjectInspector(QWidget):
         self.bind_model(self._model)
         if self._selection_controller is not None:
             self._selection_controller.set_selected_object_name(source_object_name)
+        self.reparent_applied.emit(source_object_name, target_object_name)
         return True
 
     def _detach_widget(self, source_object_name: str) -> bool:

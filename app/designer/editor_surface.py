@@ -175,6 +175,7 @@ class DesignerEditorSurface(QWidget):
         self._inspector_tabs = QTabWidget(self._splitter)
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
+        self._object_inspector.set_reparent_callback(self._handle_inspector_reparent_request)
         self._property_panel = PropertyEditorPanel(self._inspector_tabs)
         self._property_panel.property_edited.connect(self._handle_property_edited)
         self._property_panel.property_reset_requested.connect(self._handle_property_reset_requested)
@@ -313,6 +314,28 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+
+    def _handle_inspector_reparent_request(self, source_object_name: str, target_object_name: str) -> bool:
+        if self._model is None:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not self._object_inspector.reparent_widget(source_object_name, target_object_name):
+            return False
+        self._canvas.load_model(self._model)
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return True
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"reparent {source_object_name} -> {target_object_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
 
     def apply_layout_to_selection(self, layout_class_name: str) -> bool:
         """Apply layout to selected widget (or root when none selected)."""

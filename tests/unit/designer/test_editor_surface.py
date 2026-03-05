@@ -170,3 +170,34 @@ def test_editor_surface_property_mutation_pushes_undo_snapshot(tmp_path: Path) -
     push_button_after_undo = surface.model.root_widget.find_by_object_name("pushButton")
     assert push_button_after_undo is not None
     assert push_button_after_undo.properties["text"].value == "Click me"
+
+
+def test_editor_surface_reparent_mutation_pushes_undo_snapshot(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"sourceButton\"/>"
+            "<widget class=\"QGroupBox\" name=\"targetGroup\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    moved = surface._handle_inspector_reparent_request("sourceButton", "targetGroup")  # type: ignore[attr-defined]
+    assert moved is True
+
+    target = surface.model.root_widget.find_by_object_name("targetGroup")
+    assert target is not None
+    assert [child.object_name for child in target.children] == ["sourceButton"]
+    assert surface.can_undo is True
+
+    assert surface.undo() is True
+    target_after_undo = surface.model.root_widget.find_by_object_name("targetGroup")
+    assert target_after_undo is not None
+    assert target_after_undo.children == []
