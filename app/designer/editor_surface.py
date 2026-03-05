@@ -215,6 +215,39 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
         return True
 
+    def format_ui_model(self) -> bool:
+        """Normalize current model via deterministic reader/writer round-trip."""
+        if self._model is None:
+            return False
+        if self._is_dirty:
+            before_xml = self.serialize_to_ui_string()
+        else:
+            try:
+                before_xml = Path(self._file_path).read_text(encoding="utf-8")
+            except OSError:
+                before_xml = self.serialize_to_ui_string()
+        normalized_model = read_ui_string(before_xml)
+        normalized_xml = write_ui_string(normalized_model)
+        if before_xml == normalized_xml:
+            return False
+        self._model = normalized_model
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        self._command_stack.push(
+            SnapshotCommand(
+                description="format ui xml",
+                before_xml=before_xml,
+                after_xml=normalized_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
     def promote_selected_widget(self, promoted_class_name: str, header: str) -> bool:
         """Promote selected widget class and persist custom-widget metadata."""
         if self._model is None:

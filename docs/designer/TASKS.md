@@ -493,7 +493,7 @@ Every task in this file contains:
 - **Implementation note:** top-level unknown node preservation is implemented via passthrough XML storage; nested unknown node/property preservation is still pending.
 
 #### Task D5.S1.T2 — Stable ordering/format strategy for diff-friendly `.ui`
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Emit deterministic XML ordering for cleaner reviews/versioning.
 - **Primary files:** `app/designer/io/ui_writer.py`, tests under `tests/unit/designer/io/`
 - **Automated test layer:** unit
@@ -501,6 +501,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-02
 - **Depends on:** D5.S1.T1
 - **Done when:** repeated saves of unchanged model produce byte-stable (or predictably normalized) XML.
+- **Implementation note:** deterministic writer ordering is in place and a dedicated “Format UI XML” action now normalizes non-canonical `.ui` files; golden-file breadth and nested unknown-node interactions are still pending.
 
 ### Story D5.S2 — Reusable components and templates
 

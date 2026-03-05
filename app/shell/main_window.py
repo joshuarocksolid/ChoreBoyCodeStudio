@@ -446,6 +446,7 @@ class MainWindow(QMainWindow):
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_designer_add_resource=self._handle_designer_add_resource_action,
                 on_designer_promote_widget=self._handle_designer_promote_widget_action,
+                on_designer_format_ui_xml=self._handle_designer_format_ui_xml_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -1508,6 +1509,17 @@ class MainWindow(QMainWindow):
                 "Promote Widget",
                 "Unable to promote selected widget. Ensure a non-root widget is selected and class name is valid.",
             )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_format_ui_xml_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.format_ui_model():
+            QMessageBox.information(self, "Format UI XML", "Form is already normalized.")
             return
         self._refresh_save_action_states()
         self._refresh_designer_action_states()
@@ -2989,6 +3001,7 @@ class MainWindow(QMainWindow):
             "designer.form.check_compat",
             "designer.form.add_resource",
             "designer.form.promote_widget",
+            "designer.form.format_ui_xml",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

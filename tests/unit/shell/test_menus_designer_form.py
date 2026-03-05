@@ -36,23 +36,28 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
             on_designer_check_compat=lambda: calls.append("compat"),
             on_designer_add_resource=lambda: calls.append("resource"),
             on_designer_promote_widget=lambda: calls.append("promote"),
+            on_designer_format_ui_xml=lambda: calls.append("format"),
         ),
     )
     preview = registry.action("designer.form.preview")
     compat = registry.action("designer.form.check_compat")
     resource = registry.action("designer.form.add_resource")
     promote = registry.action("designer.form.promote_widget")
+    format_ui = registry.action("designer.form.format_ui_xml")
     assert preview is not None
     assert compat is not None
     assert resource is not None
     assert promote is not None
+    assert format_ui is not None
     assert preview.shortcut().toString() == "Ctrl+R"
     assert compat.shortcut().toString() == "Ctrl+Shift+R"
     assert resource.shortcut().toString() == ""
     assert promote.shortcut().toString() == ""
+    assert format_ui.shortcut().toString() == "Ctrl+Alt+Shift+F"
 
     preview.trigger()
     compat.trigger()
     resource.trigger()
     promote.trigger()
-    assert calls == ["preview", "compat", "resource", "promote"]
+    format_ui.trigger()
+    assert calls == ["preview", "compat", "resource", "promote", "format"]

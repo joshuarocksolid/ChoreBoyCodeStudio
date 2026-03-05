@@ -468,6 +468,21 @@ def test_editor_surface_promote_selected_widget_updates_custom_widget_metadata(t
     assert restored_widget.class_name == "QPushButton"
 
 
+def test_editor_surface_format_ui_model_normalizes_disk_xml(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class><widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.format_ui_model() is True
+    assert surface.is_dirty is True
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
