@@ -1,0 +1,69 @@
+[Runtime]
+  Python: 3.12.12 (main, Jan 31 2026, 12:47:47) [GCC 12.2.0]
+  Executable: /home/joshua/.pyenv/versions/3.12.12/bin/python
+  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/django_probe
+
+[Step 0: Raw pg8000 connectivity]
+  import pg8000: OK (1.31.5)
+  import pg8000.native: OK
+  import pg8000.dbapi: OK
+  import scramp: OK (1.4.5)
+  import dateutil: OK (2.9.0.post0)
+  connect: OK (postgres@localhost:5432/postgres)
+  SELECT version(): OK (PostgreSQL 18.3 (Debian 18.3-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc)
+  current_database/user: OK (db=postgres, user=postgres)
+
+[Step 1: Create databases]
+  django_probe DB: OK (created)
+  django_probe_ascii DB: OK (created with SQL_ASCII encoding)
+  close bootstrap connection: OK
+
+[Step 2: Encoding edge-case test (SQL_ASCII)]
+  connect to django_probe_ascii: OK
+  raw client_encoding from server: 'SQL_ASCII'
+  Info.encoding with SQL_ASCII: OK (resolved to 'ascii')
+  manual PG_PY_ENCODINGS lookup: OK ('SQL_ASCII' -> 'ascii' -> codec='ascii')
+  Info.encoding with None client_encoding: OK (returned 'utf-8')
+
+[Step 3: Django setup with django_pg8000]
+  django.setup(): OK (Django (4, 2, 29, 'final', 0))
+  Engine: django_pg8000
+  Database: django_probe@localhost:5432
+
+[Step 4: Migrate]
+  migrate: OK
+      Applying auth.0009_alter_user_last_name_max_length... OK
+      Applying auth.0010_alter_group_name_max_length... OK
+      Applying auth.0011_update_proxy_permissions... OK
+      Applying auth.0012_alter_user_first_name_max_length... OK
+      Applying testapp.0001_initial... OK
+
+[Step 5: CRUD operations]
+  CREATE: OK (id=1, title='Local debug probe task')
+  READ: OK (title='Local debug probe task', done=False)
+  UPDATE: OK (done=True)
+  DELETE: OK (1 -> 0)
+
+[Step 6: QuerySet operations]
+  bulk insert: OK (5 tasks created)
+  filter(done=True): OK (3 results)
+  exclude(done=True): OK (2 results)
+  order_by('-title'): OK (['Task E', 'Task D', 'Task C', 'Task B', 'Task A'])
+  count(): OK (5)
+  aggregate: OK (total=5, done=3)
+  exists(): OK (True)
+  first/last: OK (first='Task A', last='Task E')
+
+[Step 7: Built-in auth model]
+  create user: OK (1 user(s))
+  delete user: OK
+
+[Step 8: Cleanup]
+  delete all tasks: OK (5 removed)
+
+[Step 9: System check]
+  check: OK (System check identified no issues (0 silenced).)
+
+[Summary]
+  Passed: 33
+  Failed: 0

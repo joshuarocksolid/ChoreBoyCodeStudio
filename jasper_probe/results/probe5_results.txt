@@ -1,0 +1,17 @@
+[Runtime]
+  Probe root: /home/default/jasper_probe
+  Input: /home/default/jasper_probe/test_reports/hello_static.jrxml
+  Output: /home/default/jasper_probe/results/hello_static.jasper
+
+[1. Boot JVM via jni_helper]
+  JVM ready: YES
+
+[2. Compile hello_static.jrxml]
+  COMPILE_START|/home/default/jasper_probe/test_reports/hello_static.jrxml
+  COMPILE_OK: YES (/home/default/jasper_probe/results/hello_static.jasper)
+  Output file: YES (/home/default/jasper_probe/results/hello_static.jasper (22439 bytes))
+
+[SUMMARY]
+  JRXML compilation succeeded.
+  Output: /home/default/jasper_probe/results/hello_static.jasper (22439 bytes)
+  Ready for probe 6 (fill and export).

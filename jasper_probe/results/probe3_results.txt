@@ -1,0 +1,16 @@
+[Runtime]
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/jasper_probe
+
+[1. Boot JVM via jni_helper]
+  JVM ready: YES (jvm=0x7efcd9cba860, env=0x55aba6e3f310)
+
+[2. Call HelloJava.main()]
+  Java stdout: HELLO_JAVA_OK|14.0.1|Oracle Corporation|Linux|amd64
+  HelloJava execution: YES (version=14.0.1, vendor=Oracle Corporation)
+
+[SUMMARY]
+  jni_helper module works correctly.
+  JVM boots (or reuses existing) and Java classes execute via JNI.
+  Ready for probes 4-6.

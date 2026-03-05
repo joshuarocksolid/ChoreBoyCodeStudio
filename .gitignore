@@ -42,6 +42,3 @@ choreboy_code_studio_state/
 **/cbcs/logs/
 **/cbcs/cache/
 
-django_probe/
-jasper_probe/
-tree_sitter_probe/

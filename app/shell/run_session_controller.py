@@ -190,3 +190,14 @@ class RunSessionController:
             remove_all_bp_action.setEnabled(state.remove_all_breakpoints_enabled)
         if package_action is not None:
             package_action.setEnabled(state.package_enabled)
+
+        project_gated_action_ids = (
+            "shell.action.run.pytestProject",
+            "shell.action.run.pytestCurrentFile",
+            "shell.action.run.runWithConfig",
+            "shell.action.run.manageRunConfigs",
+        )
+        for action_id in project_gated_action_ids:
+            action = menu_registry.action(action_id)
+            if action is not None:
+                action.setEnabled(has_project and not state.stop_enabled)

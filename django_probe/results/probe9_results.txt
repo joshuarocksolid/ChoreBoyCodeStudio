@@ -1,0 +1,38 @@
+[Runtime]
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Executable: /opt/freecad/usr/bin/FreeCAD
+  Probe root: /home/default/django_probe
+
+[DRF import]
+  rest_framework: YES (3.16.1)
+
+[Django setup with DRF settings]
+  django.setup(): SUCCESS
+  Active settings module: testsite.settings_postgres
+  WARNING: Django was already initialized with 'testsite.settings_postgres'
+  DB-dependent tests will use that config, not settings_drf.
+  Run this probe in a fresh AppRun process to avoid contamination.
+
+[DRF core imports]
+  serializers module: YES (ok)
+  viewsets module: YES (ok)
+  routers module: YES (ok)
+  renderers module: YES (ok)
+  parsers module: YES (ok)
+  status module: YES (ok)
+
+[Serializer round-trip: dict input]
+  is_valid(): True
+  validated_data: {'title': 'Probe 9 task', 'done': False}
+
+[Serializer round-trip: model instance]
+  SKIPPED: Django initialized with wrong settings (see warning above)
+  Re-run in a fresh AppRun process for this test.
+
+[Router URL generation]
+  Generated 6 URL patterns
+  Named patterns: ['task-list', 'task-list', 'task-detail', 'task-detail', 'api-root', 'api-root']
+
+[ViewSet inspection]
+  Available actions: ['list', 'create', 'retrieve', 'update', 'partial_update', 'destroy']

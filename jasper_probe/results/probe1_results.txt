@@ -1,0 +1,23 @@
+[Runtime]
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Executable: /opt/freecad/usr/bin/FreeCAD
+  Probe root: /home/default/jasper_probe
+
+[Java binary search]
+  which java: /usr/bin/java
+  java binary: YES (/usr/bin/java)
+
+[Java version]
+  [Errno 13] Permission denied: '/usr/bin/java'
+
+[javac (optional)]
+  javac: YES (/usr/bin/javac)
+
+[subprocess execution test]
+  subprocess.run(java): FAILED (code=-3)
+  stdout: 
+  stderr: [Errno 13] Permission denied: '/usr/bin/java'
+
+[Discovery file written]
+  /home/default/jasper_probe/_discovered.json

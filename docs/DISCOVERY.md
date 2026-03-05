@@ -256,7 +256,37 @@ in `app/core/constants.py`, so new project metadata and app state paths are visi
 
 ---
 
-## 4B. Additional Launch/Runtime Findings (2026-03-03)
+## 4B. No Direct Terminal Access on ChoreBoy
+
+**Date discovered:** 2026-03-05
+
+### Finding
+
+ChoreBoy does **not** provide users with a terminal emulator, shell prompt, or any direct command-line access. There is no way to open a bash/sh session, run ad-hoc commands, or invoke scripts from a terminal.
+
+### What users *can* do
+
+- **ChoreBoy Code Studio runner** — hit Run (F5) to execute the project's configured entry file through the FreeCAD AppRun runtime. Output appears in the Run Log panel.
+- **ChoreBoy Code Studio Python Console** — an interactive Python REPL inside the editor, also running through the FreeCAD AppRun runtime. Arbitrary Python expressions and statements can be entered here.
+- **LibrePy Console** — the Python console inside LibreOffice, which can spawn subprocesses (including FreeCAD AppRun).
+
+### Implications
+
+- Scripts that require terminal interaction (stdin prompts, interactive debuggers, curses UIs) will not work.
+- All script execution must go through one of the three channels above.
+- To run an arbitrary `.py` file that is not the project's configured entry, users must either:
+  1. Change the project's `default_entry` in `cbcs/project.json` to point at the desired file.
+  2. Use Run > Run With Configuration (when available) to select a different entry file.
+  3. Use Run > Run Current File Tests for pytest targets.
+  4. Execute the file from the Python Console REPL, e.g.:
+     ```python
+     import runpy; runpy.run_path("/home/default/myapp/script.py", run_name="__main__")
+     ```
+- Any feature that assumes shell access (e.g., "run this terminal command") must be redesigned to work through the runner or REPL.
+
+---
+
+## 4C. Additional Launch/Runtime Findings (2026-03-03)
 
 ### Confirmed blockers
 
@@ -281,6 +311,93 @@ Preferred launch style for ChoreBoy:
 - avoid `exec(open(...).read())` boot patterns;
 - use explicit bootstrap (`sys.path`, `cwd`) + `runpy.run_path`;
 - route failures to known log path and/or stderr-visible channel.
+
+---
+
+## 4D. Java and JasperReports on ChoreBoy: Full Pipeline Validated (2026-03-05)
+
+**Date discovered:** 2026-03-05 (probes 1B through 7)
+
+### Installed JDKs
+
+- **JDK 14.0.1** (Oracle) at `/usr/lib/jvm/jdk-14.0.1/` — primary target
+- **OpenJDK 8** at `/usr/lib/jvm/java-8-openjdk-amd64/` — also present
+
+### Binary execution is blocked
+
+All Java binaries (`java`, `javac`, `jlink`, etc.) fail with `PermissionError` (errno 13) when called via `subprocess.run()` or `os.execve()`. This is true even for copies made to `/tmp`. Traditional file permissions show `rwxr-xr-x`, so this is enforced by mandatory access control (AppArmor/SELinux profile) rather than Unix permissions.
+
+```
+/usr/lib/jvm/jdk-14.0.1/bin/java  →  PermissionError (code -13)
+/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java  →  PermissionError (code -13)
+cp to /tmp + execute  →  PermissionError (code -13)
+```
+
+### JNI in-process loading works
+
+`libjvm.so` at `/usr/lib/jvm/jdk-14.0.1/lib/server/libjvm.so` loads successfully via `ctypes.CDLL()`. This bypasses the binary execution block entirely because the JVM runs as a shared library within the Python process — no `execve()` call is made.
+
+### Full pipeline probe results
+
+Every step of the JasperReports pipeline has been validated on ChoreBoy:
+
+| Probe | Capability | Status | Detail |
+|---|---|---|---|
+| 1B | `ctypes.CDLL(libjvm.so)` | PASS | Library loads cleanly |
+| 2 | `JNI_CreateJavaVM` | PASS | Returns 0, JNI version 10.0 |
+| 2 | Stdlib class loading | PASS | `java/lang/String`, `java/lang/System` |
+| 2 | User class loading | PASS | `HelloJava` loaded from classpath |
+| 2 | Method execution + stdout capture | PASS | `HelloJava.main()` output captured via fd pipe |
+| 3 | Shared JNI helper (`jni_helper.py`) | PASS | JVM reuse across probes via `JNI_GetCreatedJavaVMs` |
+| 4 | JDBC PostgreSQL connectivity | PASS | Driver loaded, connected, 78 tables in `classicaccounting` |
+| 5 | JasperReports JRXML compile | PASS | `hello_static.jrxml` → 22,439-byte `.jasper` |
+| 6 | Report fill (empty datasource) | PASS | 1 page filled |
+| 6 | PDF export | PASS | 1,646 bytes |
+| 6 | PNG export (2x zoom) | PASS | 52,661 bytes (1224x1584 pixels) |
+| 6 | Report fill (JDBC datasource) | PASS | Connected, 0 pages (expected: static report has no query) |
+| 7 | PySide2 QPrintPreviewDialog | PASS | Displayed probe 6 PNG, user closed dialog |
+
+### JVM details
+
+- JNI version: 10.0 (JNI_VERSION_10 = 0x000a0000)
+- Java version: 14.0.1
+- Vendor: Oracle Corporation
+- Platform: Linux amd64
+
+### PostgreSQL details
+
+- Server: PostgreSQL 9.3.6
+- JDBC driver: `org.postgresql.Driver` (postgresql-42.2.2.jar)
+- Database: `classicaccounting` (78 public tables)
+- Authentication: `postgres` / password
+
+### JasperReports details
+
+- JasperReports 6.7.0 (from JasperReportManager-1.2.oxt)
+- Groovy 2.4.12 (expression evaluator)
+- ECJ 4.4.2 (Eclipse Compiler for Java, used by JasperReports internally)
+- iText 2.1.7.js6 (PDF export)
+- Java 14 reflective-access warnings are emitted but do not affect functionality
+
+### JVM signal handler caveat
+
+The JVM installs its own `SIGSEGV` handler (used internally for safepoint polling). If the host process crashes (e.g., Qt segfault), the JVM's handler intercepts the signal first, producing a JVM-style backtrace. This is cosmetic — the JVM did not cause the crash. Any code that uses both the in-process JVM and Qt must ensure `QApplication` is initialized before using `QFont` or other font-dependent APIs.
+
+### Implications
+
+- The full JRXML → compile → fill → PDF/PNG → Qt print preview pipeline works on ChoreBoy
+- Any Java library can be called from Python via ctypes + JNI, bypassing the binary execution block
+- This matches how LibreOffice calls Java internally (loads JVM as shared library)
+- One JVM per process: once created, the JVM lives until process exit; reuse via `JNI_GetCreatedJavaVMs` + `AttachCurrentThread`
+- `LD_LIBRARY_PATH` must be set before loading `libjvm.so` so that its native dependencies are found
+
+### Required `LD_LIBRARY_PATH` entries
+
+```
+/usr/lib/jvm/jdk-14.0.1/lib/server
+/usr/lib/jvm/jdk-14.0.1/lib
+/usr/lib/jvm/jdk-14.0.1/lib/jli
+```
 
 ---
 

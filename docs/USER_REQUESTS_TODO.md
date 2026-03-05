@@ -63,13 +63,21 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 ---
 
-### 5. VS Code-style JSON configuration files
+### 5. Global + per-project JSON settings
 
 | Field | Value |
 |-------|-------|
 | **Status** | TODO |
-| **Request** | Add JSON configuration files (similar to VS Code's `settings.json` / `keybindings.json`) to allow user-configurable keyboard shortcuts and other settings. Consider using the same file format as VS Code to enable importing/exporting settings between the two editors. |
-| **Notes** | Partial progress: a `settings.json` file exists at `~/choreboy_code_studio_state/settings.json` with a custom nested schema covering editor, theme, keybindings, syntax colors, linter, and more. However, the format is **not** VS Code-compatible — keybindings use `action_id -> shortcut` objects rather than VS Code's `[{ "key", "command", "when" }]` array, and there is no separate `keybindings.json`. The remaining work is VS Code format compatibility for import/export. |
+| **Request** | Add a two-layer settings model: a **global** `settings.json` (user-wide defaults) and a **per-project** `settings.json` (project-specific overrides that travel with the project folder). The Settings dialog should clearly show which scope the user is editing. The per-project file enables sharing editor conventions between users by copying or versioning the project folder. |
+| **File locations** | Global: `~/choreboy_code_studio_state/settings.json` (already exists). Project: `<project>/cbcs/settings.json` (new). Both use the same JSON schema. |
+| **Layering** | `hardcoded defaults → global settings.json → project cbcs/settings.json → effective settings`. Merge is per-key within each section (not whole-section replacement), so a project file with `{"editor": {"tab_width": 2}}` overrides only `tab_width` while all other editor keys inherit from global. |
+| **Project-overridable settings** | `editor.*` (tab_width, indent_style, indent_size, font_size, font_family, format_on_save, detect_indentation_from_file, trim_trailing_whitespace_on_save, insert_final_newline_on_save), `intelligence.*` (completion, diagnostics, highlighting thresholds), `linter.*` (rule_overrides), `file_excludes.*` (patterns), `output.*` (auto_open_console_on_run_output, auto_open_problems_on_run_failure). |
+| **Global-only settings** | `theme.*` (mode), `syntax_colors.*`, `keybindings.*`, `ui_layout.*`, `last_project_path`, `python_import_update_policy` — these are personal/machine-specific and not shareable per-project. |
+| **Settings dialog UX** | Scope selector (Global / Project) at the top. Global scope edits the global file (current behavior). Project scope shows only project-overridable settings; inherited values shown as placeholder/dimmed; each override gets a "Reset to Global" action. Banner explaining: "Project settings override global settings for this project. Other users who open this project will inherit these settings." Project scope disabled when no project is open. |
+| **Project tree visibility** | The `cbcs/` directory should be visible in the project tree so users can browse and hand-edit `cbcs/settings.json`, `cbcs/project.json`, etc. directly. Currently `cbcs/` is excluded from the tree — that exclusion will be removed. |
+| **Status bar** | When project settings are active, the status bar shows an indicator to make it clear the effective settings differ from global defaults. |
+| **Affected code** | `app/core/constants.py` (new constant + overridable key set), `app/bootstrap/paths.py` (new path helper), `app/persistence/settings_store.py` (load/save/merge for project settings), `app/shell/settings_models.py` (scope-aware merge helpers), `app/shell/settings_dialog.py` (scope selector, inheritance indicators, reset-to-global), `app/shell/main_window.py` (load project settings on open, recompute effective settings), `app/project/project_service.py` (stop excluding `cbcs/` from tree). |
+| **Notes** | Partial progress: global `settings.json` already exists with the full schema. `file_excludes` already has a merge pattern (`compute_effective_excludes()` in `app/project/file_excludes.py`) that combines global + project patterns — this validates the layering approach. The remaining work is the per-project file, the merge layer, and the Settings dialog scope UI. |
 
 ---
 
@@ -165,6 +173,62 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | When pressing Enter to create a new line, the cursor should land at the correct indentation level instead of column 0. FreeCAD's macro editor does this — the new line inherits the indentation of the previous line, and ideally increases indent after block-opening statements (`if …:`, `def …:`, `for …:`, `class …:`, etc.). |
 | **Affected code** | `app/editors/code_editor_widget.py` — `keyPressEvent()` (lines 531–565) currently does not intercept Enter/Return (except when the completion popup is open); Enter falls through to `QPlainTextEdit`'s default plain-newline behavior. A new auto-indent handler would go here. `app/editors/text_editing.py` — may need a new helper to compute the correct indentation for the new line. Existing helpers (`indent_lines`, `outdent_lines`, `smart_backspace_columns`) cover related indent operations but nothing for newline auto-indent. |
+
+---
+
+### 14. Gracefully handle deleted entry file
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | When the configured entry file (e.g. `default_entry` in `cbcs/project.json`) is deleted or missing from disk, the editor should detect this gracefully and prompt the user to select a new entry file rather than failing silently or crashing. |
+| **Affected code** | `app/shell/main_window.py` (entry file resolution and run invocation), `app/run/run_service.py` / `app/run/execution_context.py` (entry path existence check), `app/project/project_service.py` (project metadata loading). |
+| **Notes** | Related to request #12 (explicit entry point management). The detection could happen at run time (when the user clicks Run/Debug) and/or proactively via filesystem watching. A dialog or inline prompt should let the user pick a replacement `.py` file from the project tree. |
+
+---
+
+### 15. "New Window" action in File menu
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Add a "New Window" action to the File menu (like VS Code's `Ctrl+Shift+N`) that launches a fresh, independent editor instance so the user can quickly open a separate project in a new window. |
+| **Affected code** | `app/shell/menus.py` — add a `shell.action.file.newWindow` action to the File menu (between "New Project from Template" and "Open Project", or after "Open Recent" — matching VS Code's placement). Add an `on_new_window` callback to `MenuCallbacks`. `app/shell/main_window.py` — implement the callback that spawns a new editor process. The mechanism should mirror `dev_launch_editor.py`'s `build_apprun_command()` + `subprocess.Popen(..., start_new_session=True)` pattern, launching a detached AppRun child running `run_editor.py`. `app/shell/shortcut_preferences.py` — register a default shortcut (e.g. `Ctrl+Shift+N`). |
+| **Notes** | No shared state between windows — each is a fully independent process, consistent with the filesystem-first, separate-process architecture. |
+
+---
+
+### 16. Preview tabs (VS Code-style single-click preview mode)
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Implement VS Code-style "preview mode" for editor tabs. **Single-clicking** a file in the project tree opens it in a **preview tab** whose title renders in *italics*. Only one preview tab exists at a time — single-clicking a different file replaces the preview tab's content instead of opening a new tab. **Double-clicking** a file in the tree opens it as a **permanent tab** (non-italic title, must be explicitly closed). A preview tab **promotes to permanent** when the user: (a) double-clicks the tab header, (b) edits the file (any content-modifying keystroke), or (c) uses an explicit "keep open" shortcut (VS Code uses `Ctrl+K Enter`). An optional setting (`editor.enable_preview`) should allow disabling preview mode entirely, in which case all opens behave as permanent. |
+| **Affected code** | `app/shell/main_window.py` — `itemClicked` and `itemActivated` signals (lines 3104–3105) both connect to `_handle_project_tree_item_activation` with no single/double-click distinction; this handler needs to differentiate click type and route to preview-open vs permanent-open. `_open_file_in_editor` (line 3666) creates all tabs identically and needs a `preview` parameter to control tab style and replacement logic. `_MiddleClickTabBar` (line 174) needs a `mouseDoubleClickEvent` override to promote preview tabs on double-click. `app/editors/editor_manager.py` — `EditorManager` tracks tabs in `_tabs_by_path`; needs preview-tab tracking (at most one preview tab, replacement on next preview-open). `app/editors/editor_tab.py` — `EditorTabState` needs an `is_preview` flag and a `promote()` method. Other open-file entry points (Quick Open dialog, Search sidebar, Problems panel, Debug panel, Run log panel) each need a decision on whether they open as preview or permanent (VS Code opens Quick Open results as preview by default, but navigation from errors/search opens permanent). |
+| **Notes** | Italic rendering: `QTabBar` does not natively support per-tab font styles — likely requires a custom `paintEvent` or `tabButton` overlay that applies `QFont.setItalic(True)` for preview tabs. The italic indicator must coexist with the existing dirty-tab `" *"` suffix. The `editor.enable_preview` setting should integrate with the existing settings model (`app/persistence/settings_store.py`, `app/shell/settings_models.py`). |
+
+---
+
+### 17. Automatic file tree refresh on filesystem changes
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | The project file tree should update automatically when files or directories are added, removed, or renamed outside the editor (e.g. from a terminal, file manager, or the runner creating output files). Currently the tree only refreshes when the user manually clicks the "Refresh Explorer" button or after an internal operation (rename, delete, new file, etc.). External changes should be detected and reflected without user intervention. |
+| **Affected code** | `app/shell/main_window.py` — `_reload_current_project()` (line 3656) already re-enumerates and rebuilds the tree; the watcher would call this (debounced) when changes are detected. The "Refresh Explorer" button (line 3085) and its `clicked` signal (line 3088) remain as a manual fallback. The existing 1-second `QTimer` poll (`_external_change_poll_timer`, line 464) only checks open editor tabs for content staleness via `stale_open_paths()` — it does not monitor the project directory for structural changes. `app/project/project_service.py` — `enumerate_project_entries()` (line 236) walks the project folder; no watcher is set up after enumeration. `app/project/project_tree_widget.py` — display-only; no change needed unless tree-diff (incremental update) is preferred over full rebuild. |
+| **Implementation options** | **(A) `QFileSystemWatcher`** — Qt's built-in watcher; add the project root and all subdirectories. Pros: no extra dependency, integrates with Qt event loop. Cons: does not recursively watch by default (must manually add subdirs), has a per-directory file-descriptor cost, and `QFileSystemWatcher` on Linux can silently stop watching after certain inode changes. **(B) Debounced periodic poll** — extend the existing `QTimer` poll to also compare the project entry list (or a hash of directory mtimes) against the last-known state and trigger `_reload_current_project()` on diff. Pros: simple, no platform edge cases. Cons: up to one polling interval of latency. **(C) Hybrid** — use `QFileSystemWatcher` for immediate notification with a periodic poll as a safety net. |
+| **Notes** | Whichever approach is chosen, the refresh must be debounced (e.g. 300–500 ms) to avoid thrashing when many files change in quick succession (bulk copy, git checkout, runner output). The refresh should preserve the tree's expansion state and current selection. If the currently-open file is deleted externally, the existing external-change poll already handles tab staleness — but the tree refresh should also remove the deleted entry visually. |
+
+---
+
+### 18. JRXML editor support (syntax highlighting and validation)
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Add syntax highlighting and validation for `.jrxml` (JasperReports XML) files opened in ChoreBoy Code Studio. JRXML files are XML-based report definitions used by the `jasper_bridge` library (see `docs/JASPER_BRIDGE_PLAN.md`). Syntax highlighting should treat them as XML with awareness of JasperReports-specific elements and attributes. Validation could check well-formedness and flag common JRXML authoring mistakes. |
+| **Affected code** | `app/editors/syntax_registry.py` (register JRXML file extension with an XML-based highlighter), `app/editors/` (new or extended highlighter for XML/JRXML), `app/intelligence/` (optional: JRXML-specific diagnostics). |
+| **Notes** | Originated from the `jasper_bridge` planning process. Kept separate from the library itself — `jasper_bridge` is a standalone importable library with no IDE dependency. |
 
 ---
 
