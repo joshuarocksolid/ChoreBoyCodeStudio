@@ -191,6 +191,62 @@ def test_editor_surface_property_mutation_pushes_undo_snapshot(tmp_path: Path) -
     assert push_button_after_undo.properties["text"].value == "Click me"
 
 
+def test_editor_surface_geometry_property_mutation_snaps_to_grid(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._apply_property_mutation(  # type: ignore[attr-defined]
+        "pushButton",
+        "geometry",
+        "set",
+        {"x": 23, "y": 17, "width": 100, "height": 40},
+    )
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    assert push_button is not None
+    geometry = push_button.properties["geometry"].value
+    assert geometry["x"] == 16
+    assert geometry["y"] == 16
+
+
+def test_editor_surface_geometry_snap_can_be_disabled(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()), snap_to_grid=False)
+    assert surface.model is not None
+    surface._apply_property_mutation(  # type: ignore[attr-defined]
+        "pushButton",
+        "geometry",
+        "set",
+        {"x": 23, "y": 17, "width": 100, "height": 40},
+    )
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    assert push_button is not None
+    geometry = push_button.properties["geometry"].value
+    assert geometry["x"] == 23
+    assert geometry["y"] == 17
+
+
 def test_editor_surface_reparent_mutation_pushes_undo_snapshot(tmp_path: Path) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(

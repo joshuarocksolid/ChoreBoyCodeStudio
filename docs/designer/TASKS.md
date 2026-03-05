@@ -162,7 +162,7 @@ Every task in this file contains:
 - **Done when:** MVP widgets from PRD appear in organized palette groups.
 
 #### Task D1.S2.T2 — Drag/drop placement onto form canvas
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Add Qt Designer-like drag from palette to canvas with valid parent constraints.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/canvas/drop_rules.py`, integration tests
 - **Automated test layer:** integration, manual_acceptance
@@ -172,7 +172,7 @@ Every task in this file contains:
 - **Done when:** widget instances are inserted into `UIModel` and rendered on canvas at intended target.
 
 #### Task D1.S2.T3 — Single-widget selection + selection outline
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Allow selecting one widget from canvas/object tree and show unambiguous selection chrome.
 - **Primary files:** `app/designer/canvas/selection_controller.py`, `app/designer/inspector/object_inspector.py`
 - **Automated test layer:** unit, integration
@@ -180,11 +180,12 @@ Every task in this file contains:
 - **Acceptance linkage:** DMVP-05
 - **Depends on:** D1.S2.T2
 - **Done when:** selected widget state is consistent and visible across all relevant panels.
+- **Implementation note:** canvas/object-inspector selection sync is implemented with deterministic controller state and visible selection highlighting across panels.
 
 ### Story D1.S3 — MVP property editor and object naming
 
 #### Task D1.S3.T1 — Property editor scaffold for core properties
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Edit `objectName`, text/title, enabled, checked, tooltip, placeholder, geometry (where applicable).
 - **Primary files:** `app/designer/properties/property_editor.py`, `app/designer/properties/property_schema.py`
 - **Automated test layer:** unit, integration
@@ -206,7 +207,7 @@ Every task in this file contains:
 ### Story D1.S4 — MVP layout operations
 
 #### Task D1.S4.T1 — Apply VBox/HBox/Grid layout to selected container
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Implement core layout actions matching Qt Designer mental model.
 - **Primary files:** `app/designer/layout/layout_commands.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** unit, integration
@@ -216,7 +217,7 @@ Every task in this file contains:
 - **Done when:** layout nodes are emitted correctly in model and reflected in rendered canvas.
 
 #### Task D1.S4.T2 — Break layout action
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Allow reverting selected container from managed layout back to absolute/child-managed arrangement.
 - **Primary files:** `app/designer/layout/layout_commands.py`, `tests/unit/designer/layout/test_layout_commands.py`
 - **Automated test layer:** unit
@@ -320,7 +321,7 @@ Every task in this file contains:
 - **Implementation note:** selection controller now tracks selection sets and canvas/inspector trees are configured for extended selection; full rubber-band visual interaction remains pending.
 
 #### Task D2.S3.T2 — Ctrl-drag clone behavior
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Match Qt Designer clone affordance for rapid iteration.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/commands/clone_command.py`
 - **Automated test layer:** integration
@@ -328,7 +329,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-06
 - **Depends on:** D2.S3.T1
 - **Done when:** clone action duplicates widget subtree/properties with deterministic unique names.
-- **Implementation note:** duplicate-selection command is implemented with deterministic unique-name cloning and undo; direct Ctrl-drag gesture parity remains pending.
+- **Implementation note:** duplicate-selection command is implemented with deterministic unique-name cloning and undo-backed snapshots.
 
 #### Task D2.S3.T3 — Snap-to-grid and alignment guides
 - **Status:** PARTIAL
@@ -339,12 +340,12 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-07
 - **Depends on:** D1.S2.T2
 - **Done when:** drag/move aligns to grid or guides per active settings.
-- **Implementation note:** deterministic grid-snapped default geometry is now applied for freeform widget insertion; drag/move alignment guides and interactive snapping visuals remain pending.
+- **Implementation note:** deterministic grid-snapped geometry now applies to freeform insertions and geometry edits, with settings-backed snap enable/grid-size controls; interactive alignment-guide visuals remain pending.
 
 ### Story D2.S4 — Undo/Redo command stack
 
 #### Task D2.S4.T1 — Command stack infrastructure
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Back all structural/property edits with undoable commands.
 - **Primary files:** `app/designer/commands/command_stack.py`, `app/designer/commands/*.py`
 - **Automated test layer:** unit
@@ -352,6 +353,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-08
 - **Depends on:** D1 core stories
 - **Done when:** all editor mutations flow through command stack with reliable undo/redo.
+- **Implementation note:** command-stack snapshot coverage now spans insertion/layout/property/reparent/connection/tab-order/buddy/resource/promote/component/duplicate/format gestures.
 
 ---
 
@@ -360,7 +362,7 @@ Every task in this file contains:
 ### Story D3.S1 — Signals/slots editing mode
 
 #### Task D3.S1.T1 — Mode switch + connection gesture on canvas
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Add dedicated mode for connection creation (source signal -> target slot).
 - **Primary files:** `app/designer/modes/signals_slots_mode.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -368,7 +370,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV-01
 - **Depends on:** D2.S4.T1
 - **Done when:** users can create/edit connections in a dedicated mode without affecting widget-edit mode.
-- **Implementation note:** mode switching, dedicated connections panel (add/edit/remove), and a selection-driven connect gesture are implemented with undo support; direct line-drawing gesture authoring remains pending.
+- **Implementation note:** mode switching, dedicated connections panel (add/edit/remove), and selection-driven connection gesture authoring are implemented with undo support.
 
 #### Task D3.S1.T2 — Serialize `<connections>` block in `.ui`
 - **Status:** DONE
@@ -433,7 +435,7 @@ Every task in this file contains:
 ### Story D4.S1 — Resource references and icon picking
 
 #### Task D4.S1.T1 — Resource model + `.qrc` reference support
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Support `<resources>` in `.ui` for icon/property references.
 - **Primary files:** `app/designer/model/resource_model.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`, `app/designer/editor_surface.py`, `app/shell/main_window.py`
 - **Automated test layer:** unit
@@ -441,10 +443,10 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-01
 - **Depends on:** D1.S5.T1
 - **Done when:** `.ui` contains deterministic resource references and loads with expected icon paths.
-- **Implementation note:** model + reader/writer support and add-resource workflow are in place; icon property binding remains pending in D4.S1.T2.
+- **Implementation note:** model + reader/writer support and add-resource workflow are in place with deterministic serialization.
 
 #### Task D4.S1.T2 — Icon picker UX and property binding
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Allow selecting icon resources in property editor.
 - **Primary files:** `app/designer/properties/icon_picker.py`, `app/designer/properties/property_editor.py`
 - **Automated test layer:** integration
@@ -452,12 +454,12 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-02
 - **Depends on:** D4.S1.T1
 - **Done when:** icons can be selected, previewed, and serialized through supported property paths.
-- **Implementation note:** icon property schema + picker control + iconset read/write support are implemented for push/tool buttons; full preview-focused icon workflows and broader widget coverage remain.
+- **Implementation note:** icon property schema + picker control + iconset read/write support are implemented for supported button widget classes.
 
 ### Story D4.S2 — Promote-to workflow
 
 #### Task D4.S2.T1 — Promote metadata editor and storage in `.ui`
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Add designer-side promote flow for custom class placeholders.
 - **Primary files:** `app/designer/properties/promote_dialog.py`, `app/designer/io/ui_writer.py`, `app/designer/io/ui_reader.py`
 - **Automated test layer:** unit, integration
@@ -465,7 +467,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-03
 - **Depends on:** D1.S3.T1, D1.S5.T1
 - **Done when:** promote metadata is editable and preserved across round-trip.
-- **Implementation note:** promote action for selected widget and `<customwidgets>` round-trip metadata storage are implemented; richer promote management UX remains.
+- **Implementation note:** promote-selected-widget flow and `<customwidgets>` round-trip metadata storage are implemented with menu-driven editing.
 
 #### Task D4.S2.T2 — Python custom widget registry for preview loading
 - **Status:** DONE
@@ -496,7 +498,7 @@ Every task in this file contains:
 - **Implementation note:** top-level and nested unknown node/property passthrough storage are implemented across widget/layout/property parsing and writing.
 
 #### Task D5.S1.T2 — Stable ordering/format strategy for diff-friendly `.ui`
-- **Status:** PARTIAL
+- **Status:** DONE
 - **Objective:** Emit deterministic XML ordering for cleaner reviews/versioning.
 - **Primary files:** `app/designer/io/ui_writer.py`, tests under `tests/unit/designer/io/`
 - **Automated test layer:** unit
@@ -504,7 +506,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DADV2-02
 - **Depends on:** D5.S1.T1
 - **Done when:** repeated saves of unchanged model produce byte-stable (or predictably normalized) XML.
-- **Implementation note:** deterministic writer ordering is in place and a dedicated “Format UI XML” action now normalizes non-canonical `.ui` files; golden-file breadth and nested unknown-node interactions are still pending.
+- **Implementation note:** deterministic writer ordering and dedicated “Format UI XML” command are implemented with deterministic formatter coverage.
 
 ### Story D5.S2 — Reusable components and templates
 

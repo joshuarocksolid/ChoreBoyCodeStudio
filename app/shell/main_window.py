@@ -229,6 +229,8 @@ class MainWindow(QMainWindow):
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._designer_last_mode: str = constants.UI_DESIGNER_LAST_MODE_DEFAULT
         self._designer_enable_naming_lint: bool = constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+        self._designer_snap_to_grid: bool = constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT
+        self._designer_grid_size: int = constants.UI_DESIGNER_GRID_SIZE_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
@@ -268,6 +270,7 @@ class MainWindow(QMainWindow):
         self._theme_mode = self._load_theme_mode()
         self._designer_last_mode = self._load_designer_last_mode()
         self._designer_enable_naming_lint = self._load_designer_enable_naming_lint()
+        self._designer_snap_to_grid, self._designer_grid_size = self._load_designer_grid_settings()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = self._load_syntax_color_overrides()
@@ -667,6 +670,26 @@ class MainWindow(QMainWindow):
         if isinstance(value, bool):
             return value
         return constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+
+    def _load_designer_grid_settings(self) -> tuple[bool, int]:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return (
+                constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT,
+                constants.UI_DESIGNER_GRID_SIZE_DEFAULT,
+            )
+        snap_value = designer_payload.get(
+            constants.UI_DESIGNER_SNAP_TO_GRID_KEY,
+            constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT,
+        )
+        grid_value = designer_payload.get(
+            constants.UI_DESIGNER_GRID_SIZE_KEY,
+            constants.UI_DESIGNER_GRID_SIZE_DEFAULT,
+        )
+        snap_enabled = snap_value if isinstance(snap_value, bool) else constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT
+        grid_size = grid_value if isinstance(grid_value, int) and grid_value > 0 else constants.UI_DESIGNER_GRID_SIZE_DEFAULT
+        return snap_enabled, grid_size
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = load_settings(state_root=self._state_root)
@@ -4146,6 +4169,8 @@ class MainWindow(QMainWindow):
                 opened_result.tab.file_path,
                 self._editor_tabs_widget,
                 enable_naming_lint=self._designer_enable_naming_lint,
+                snap_to_grid=self._designer_snap_to_grid,
+                grid_size=self._designer_grid_size,
             )
             designer_surface.setObjectName("shell.editorTabs.designerSurface")
             designer_surface.dirty_state_changed.connect(

@@ -19,7 +19,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from app.designer.canvas import FormCanvas, SelectionController
+from app.designer.canvas import FormCanvas, SelectionController, snap_to_grid
 from app.designer.commands import CommandStack, SnapshotCommand
 from app.designer.components import (
     ComponentLibraryPanel,
@@ -70,6 +70,8 @@ class DesignerEditorSurface(QWidget):
         parent: QWidget | None = None,
         *,
         enable_naming_lint: bool = True,
+        snap_to_grid: bool = True,
+        grid_size: int = 8,
     ) -> None:
         super().__init__(parent)
         self._file_path = str(Path(file_path).expanduser().resolve())
@@ -79,6 +81,8 @@ class DesignerEditorSurface(QWidget):
         self._pending_connection_source: str | None = None
         self._pending_buddy_source_label: str | None = None
         self._enable_naming_lint = enable_naming_lint
+        self._snap_to_grid = snap_to_grid
+        self._snap_grid_size = max(1, int(grid_size))
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -87,6 +91,7 @@ class DesignerEditorSurface(QWidget):
         self._install_mode_shortcuts()
         self._mode_controller.mode_changed.connect(self._handle_mode_changed)
         self._selection_controller.selection_changed.connect(self._handle_selection_changed)
+        self._canvas.configure_snap_to_grid(enabled=self._snap_to_grid, grid_size=self._snap_grid_size)
         self._load_file_into_model()
 
     @property
@@ -576,6 +581,8 @@ class DesignerEditorSurface(QWidget):
         before_xml = self.serialize_to_ui_string()
         try:
             if operation == "set":
+                if property_name == "geometry" and isinstance(value, dict):
+                    value = self._snap_geometry_property(value)
                 self._property_editor.set_property(widget, property_name, value)
             else:
                 self._property_editor.reset_property(widget, property_name)
@@ -919,6 +926,16 @@ class DesignerEditorSurface(QWidget):
             if candidate not in names_in_use:
                 return candidate
             index += 1
+
+    def _snap_geometry_property(self, value: dict) -> dict:
+        snapped = dict(value)
+        x_value = snapped.get("x", 0)
+        y_value = snapped.get("y", 0)
+        if isinstance(x_value, int):
+            snapped["x"] = snap_to_grid(x_value, self._snap_grid_size) if self._snap_to_grid else x_value
+        if isinstance(y_value, int):
+            snapped["y"] = snap_to_grid(y_value, self._snap_grid_size) if self._snap_to_grid else y_value
+        return snapped
 
     def _set_dirty(self, is_dirty: bool) -> None:
         if self._is_dirty == is_dirty:

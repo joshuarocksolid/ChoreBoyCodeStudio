@@ -26,6 +26,7 @@ class FormCanvas(QWidget):
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
         self._is_syncing_selection = False
         self._palette_registry = default_widget_palette_registry()
+        self._snap_to_grid_enabled = True
         self._snap_grid_size = 8
 
         self.setAcceptDrops(True)
@@ -59,6 +60,10 @@ class FormCanvas(QWidget):
         self._selection_controller = selection_controller
         if self._selection_controller is not None:
             self._selection_controller.selection_changed.connect(self._handle_controller_selection_changed)
+
+    def configure_snap_to_grid(self, *, enabled: bool, grid_size: int) -> None:
+        self._snap_to_grid_enabled = bool(enabled)
+        self._snap_grid_size = max(1, int(grid_size))
 
     def insert_palette_widget(
         self,
@@ -99,7 +104,7 @@ class FormCanvas(QWidget):
         else:
             geometry = default_snapped_geometry(
                 insert_index=len(parent_widget.children),
-                grid_size=self._snap_grid_size,
+                grid_size=self._snap_grid_size if self._snap_to_grid_enabled else 1,
                 class_name=widget.class_name,
             )
             widget.properties["geometry"] = PropertyValue(value_type="rect", value=geometry)
