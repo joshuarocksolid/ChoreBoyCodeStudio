@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from app.designer.model import CustomWidgetModel, UIModel, WidgetNode
-from app.designer.preview import preview_registry_from_model, promoted_class_names, requires_isolated_preview
+from app.designer.preview import (
+    build_preview_safety_decision,
+    preview_registry_from_model,
+    promoted_class_names,
+    requires_isolated_preview,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -32,3 +37,4 @@ def test_requires_isolated_preview_flags_promoted_widget_forms() -> None:
     assert requires_isolated_preview(plain_model) is False
     assert requires_isolated_preview(promoted_model) is True
     assert promoted_class_names(promoted_model) == ("FancyWidget",)
+    assert build_preview_safety_decision(promoted_model).requires_isolation is True

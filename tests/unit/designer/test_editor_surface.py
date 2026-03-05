@@ -11,6 +11,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication
 
 from app.designer.editor_surface import DesignerEditorSurface
+from app.designer.preview import PreviewCompatibilityResult
 
 pytestmark = pytest.mark.unit
 
@@ -467,7 +468,10 @@ def test_editor_surface_promote_selected_widget_updates_custom_widget_metadata(t
     assert restored_widget.class_name == "QPushButton"
 
 
-def test_editor_surface_preview_blocks_promoted_custom_widgets(tmp_path: Path) -> None:
+def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(
         (
@@ -483,6 +487,13 @@ def test_editor_surface_preview_blocks_promoted_custom_widgets(tmp_path: Path) -
         encoding="utf-8",
     )
     surface = DesignerEditorSurface(str(ui_file.resolve()))
-    assert surface.preview_current_form() is False
-    assert "Use isolated runner-assisted preview mode" in surface._error_label.text()  # type: ignore[attr-defined]
-    assert "requires isolated preview" in surface.run_compatibility_check()
+    monkeypatch.setattr(
+        "app.designer.editor_surface.probe_ui_xml_compatibility_isolated",
+        lambda *args, **kwargs: PreviewCompatibilityResult(
+            is_compatible=True,
+            message="isolated ok",
+        ),
+    )
+    assert surface.preview_current_form() is True
+    assert "isolated runner preview mode" in surface._error_label.text().lower()  # type: ignore[attr-defined]
+    assert "passed in isolated preview mode" in surface.run_compatibility_check().lower()

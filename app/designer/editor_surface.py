@@ -38,9 +38,12 @@ from app.designer.modes import (
 from app.designer.model import ConnectionModel, CustomWidgetModel, PropertyValue, UIModel, WidgetNode
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import (
+    build_preview_safety_decision,
     configure_preview_widget,
     load_widget_from_ui_xml,
+    preview_registry_from_model,
     probe_ui_xml_compatibility,
+    probe_ui_xml_compatibility_isolated,
     promoted_class_names,
     requires_isolated_preview,
 )
@@ -129,16 +132,27 @@ class DesignerEditorSurface(QWidget):
 
     def preview_current_form(self) -> bool:
         """Preview current form with QUiLoader-generated widget."""
-        if self._model is not None and requires_isolated_preview(self._model):
-            class_names = ", ".join(promoted_class_names(self._model))
-            self._error_label.setText(
-                f"Preview blocked for promoted/custom widgets ({class_names}). "
-                "Use isolated runner-assisted preview mode."
-            )
-            self._error_label.setVisible(True)
-            return False
         try:
             ui_xml = self.serialize_to_ui_string()
+        except Exception as exc:
+            self._error_label.setText(f"Preview failed: {exc}")
+            self._error_label.setVisible(True)
+            return False
+        if self._model is not None and requires_isolated_preview(self._model):
+            decision = build_preview_safety_decision(self._model)
+            result = probe_ui_xml_compatibility_isolated(
+                ui_xml,
+                project_root=str(Path(self._file_path).parent),
+                custom_widgets=preview_registry_from_model(self._model),
+            )
+            if not result.is_compatible:
+                self._error_label.setText(f"{decision.message} {result.message}")
+                self._error_label.setVisible(True)
+                return False
+            self._error_label.setText(f"{decision.message} Isolated preview probe passed.")
+            self._error_label.setVisible(True)
+            return True
+        try:
             preview_widget = load_widget_from_ui_xml(ui_xml)
         except Exception as exc:
             self._error_label.setText(f"Preview failed: {exc}")
@@ -150,16 +164,26 @@ class DesignerEditorSurface(QWidget):
 
     def run_compatibility_check(self) -> str:
         """Run QUiLoader compatibility check and return status message."""
-        if self._model is not None and requires_isolated_preview(self._model):
-            class_names = ", ".join(promoted_class_names(self._model))
-            return (
-                "Compatibility check requires isolated preview for promoted/custom widgets: "
-                f"{class_names}"
-            )
         try:
             ui_xml = self.serialize_to_ui_string()
         except ValueError as exc:
             return f"Compatibility check failed: {exc}"
+        if self._model is not None and requires_isolated_preview(self._model):
+            class_names = ", ".join(promoted_class_names(self._model))
+            result = probe_ui_xml_compatibility_isolated(
+                ui_xml,
+                project_root=str(Path(self._file_path).parent),
+                custom_widgets=preview_registry_from_model(self._model),
+            )
+            if result.is_compatible:
+                return (
+                    "Compatibility check passed in isolated preview mode for promoted/custom widgets: "
+                    f"{class_names}"
+                )
+            return (
+                "Compatibility check failed in isolated preview mode for promoted/custom widgets: "
+                f"{class_names}. {result.message}"
+            )
         result = probe_ui_xml_compatibility(ui_xml)
         if result.is_compatible:
             return result.message

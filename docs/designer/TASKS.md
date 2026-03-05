@@ -473,7 +473,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-04
 - **Depends on:** D4.S2.T1
 - **Done when:** preview can resolve promoted widget mappings without requiring native Qt Designer plugins.
-- **Implementation note:** custom-widget preview registry and safety gating are implemented; promoted/custom widgets now hard-require isolated preview mode and are blocked from editor-process preview until runner-assisted execution is wired.
+- **Implementation note:** custom-widget preview registry, safety gating, and runner-assisted isolated compatibility probe are implemented; full isolated visual preview window lifecycle remains pending.
 
 ---
 

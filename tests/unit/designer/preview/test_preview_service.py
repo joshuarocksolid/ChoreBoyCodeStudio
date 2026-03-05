@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
@@ -9,7 +11,12 @@ pytest.importorskip("PySide2.QtUiTools", exc_type=ImportError)
 
 from PySide2.QtWidgets import QApplication
 
-from app.designer.preview import load_widget_from_ui_xml, probe_ui_xml_compatibility
+from app.designer.preview import (
+    CustomWidgetPreviewEntry,
+    load_widget_from_ui_xml,
+    probe_ui_xml_compatibility,
+    probe_ui_xml_compatibility_isolated,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -43,3 +50,31 @@ def test_load_widget_from_ui_xml_returns_qwidget_instance() -> None:
     widget = load_widget_from_ui_xml(_VALID_UI)
     assert widget.objectName() == "PreviewForm"
     widget.deleteLater()
+
+
+def test_probe_ui_xml_compatibility_isolated_reports_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ISOLATED_PREVIEW_OK", stderr="")
+
+    monkeypatch.setattr("app.designer.preview.preview_service.subprocess.run", _fake_run)
+    result = probe_ui_xml_compatibility_isolated(
+        _VALID_UI,
+        project_root="/tmp/project",
+        custom_widgets=[CustomWidgetPreviewEntry(class_name="FancyWidget", header="fancy_widget", extends="QWidget")],
+        python_executable="python3",
+    )
+    assert result.is_compatible is True
+
+
+def test_probe_ui_xml_compatibility_isolated_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="import failure")
+
+    monkeypatch.setattr("app.designer.preview.preview_service.subprocess.run", _fake_run)
+    result = probe_ui_xml_compatibility_isolated(
+        _VALID_UI,
+        project_root="/tmp/project",
+        custom_widgets=[CustomWidgetPreviewEntry(class_name="FancyWidget", header="fancy_widget", extends="QWidget")],
+    )
+    assert result.is_compatible is False
+    assert "import failure" in result.message
