@@ -1058,25 +1058,7 @@ Everything else should build on top of this slice.
 
 ---
 
-## 26. Out of Scope for v1
-
-The architecture explicitly does **not** require v1 support for:
-
-* advanced debugger parity beyond baseline line breakpoints/stepping/inspection
-* LSP and language servers
-* Git integration
-* package management
-* marketplace/plugins
-* collaborative editing
-* background code intelligence daemons
-* generalized sandboxing
-* GUI-dependent FreeCAD export workflows
-
-These may come later, but they must not distort v1.
-
----
-
-## 27. Architecture Decisions
+## 26. Architecture Decisions
 
 ## AD-001: Separate editor and runner processes
 
@@ -1110,7 +1092,7 @@ These may come later, but they must not distort v1.
 
 ---
 
-## 28. Suggested Implementation Order
+## 27. Suggested Implementation Order
 
 1. bootstrap + logging
 2. project open/save model
@@ -1127,7 +1109,7 @@ These may come later, but they must not distort v1.
 
 ---
 
-## 29. Canonical File Ownership
+## 28. Canonical File Ownership
 
 To reduce ambiguity for humans and AI agents:
 
@@ -1143,7 +1125,7 @@ If a change affects system structure, update `ARCHITECTURE.md`.
 
 ---
 
-## 30. Bottom Line
+## 29. Bottom Line
 
 The optimal architecture for ChoreBoy Code Studio is:
 
