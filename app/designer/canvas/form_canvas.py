@@ -6,8 +6,9 @@ from PySide2.QtCore import Qt
 from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import can_insert_widget
+from app.designer.canvas.guides import default_snapped_geometry
 from app.designer.canvas.selection_controller import SelectionController
-from app.designer.model import LayoutItem, SpacerItem, UIModel, WidgetNode
+from app.designer.model import LayoutItem, PropertyValue, SpacerItem, UIModel, WidgetNode
 from app.designer.palette import default_widget_palette_registry
 from app.designer.palette.palette_panel import PALETTE_WIDGET_MIME
 from app.designer.palette.widget_registry import PaletteWidgetDefinition
@@ -25,6 +26,7 @@ class FormCanvas(QWidget):
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
         self._is_syncing_selection = False
         self._palette_registry = default_widget_palette_registry()
+        self._snap_grid_size = 8
 
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
@@ -95,6 +97,12 @@ class FormCanvas(QWidget):
         if parent_widget.layout is not None:
             parent_widget.layout.items.append(LayoutItem(widget=widget))
         else:
+            geometry = default_snapped_geometry(
+                insert_index=len(parent_widget.children),
+                grid_size=self._snap_grid_size,
+                class_name=widget.class_name,
+            )
+            widget.properties["geometry"] = PropertyValue(value_type="rect", value=geometry)
             parent_widget.children.append(widget)
         self._rebuild_canvas_tree()
         return widget

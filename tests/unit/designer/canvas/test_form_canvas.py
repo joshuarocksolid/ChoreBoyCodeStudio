@@ -40,6 +40,13 @@ def test_insert_palette_widget_into_children_list() -> None:
     inserted = canvas.insert_palette_widget(parent_object_name="rootWidget", definition=button_definition)
     assert getattr(inserted, "class_name", None) == "QPushButton"
     assert model.root_widget.find_by_object_name("pushButton") is not None
+    inserted_widget = model.root_widget.find_by_object_name("pushButton")
+    assert inserted_widget is not None
+    geometry = inserted_widget.properties.get("geometry")
+    assert geometry is not None
+    assert geometry.value_type == "rect"
+    assert geometry.value["x"] % 8 == 0
+    assert geometry.value["y"] % 8 == 0
 
 
 def test_insert_layout_item_requires_parent_layout() -> None:

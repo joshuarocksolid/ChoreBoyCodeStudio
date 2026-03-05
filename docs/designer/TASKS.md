@@ -331,7 +331,7 @@ Every task in this file contains:
 - **Implementation note:** duplicate-selection command is implemented with deterministic unique-name cloning and undo; direct Ctrl-drag gesture parity remains pending.
 
 #### Task D2.S3.T3 — Snap-to-grid and alignment guides
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Improve placement precision and visual feedback.
 - **Primary files:** `app/designer/canvas/guides.py`, `app/designer/canvas/form_canvas.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -339,6 +339,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-07
 - **Depends on:** D1.S2.T2
 - **Done when:** drag/move aligns to grid or guides per active settings.
+- **Implementation note:** deterministic grid-snapped default geometry is now applied for freeform widget insertion; drag/move alignment guides and interactive snapping visuals remain pending.
 
 ### Story D2.S4 — Undo/Redo command stack
 
