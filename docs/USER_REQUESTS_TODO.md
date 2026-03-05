@@ -256,6 +256,18 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 ---
 
+### 21. Refresh Explorer resets folder expansion state
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | Clicking the "Refresh Explorer" button (or any action that triggers a project tree reload) expands all top-level folders, discarding the user's current collapse/expand state. The user has to manually re-collapse folders every time. |
+| **Root cause** | `_populate_project_tree()` in `app/shell/main_window.py` (line 3309) calls `self._project_tree_widget.clear()` then rebuilds every node from scratch. Line 3320 unconditionally calls `root_item.setExpanded(True)` on all top-level directory items. No expansion state is captured before the clear or restored afterward. |
+| **Affected code** | `app/shell/main_window.py` — `_populate_project_tree()` (lines 3309–3321), called by `_reload_current_project()` (line 3656), the Refresh Explorer button (line 3088), and `project_tree_action_coordinator.py` (all tree-mutating operations). |
+| **Potential fix** | Before clearing the tree, walk all `QTreeWidgetItem` nodes and record which relative paths are expanded. After rebuilding, walk the new tree and restore expansion state from the saved set. Only expand top-level directories by default on the initial project open (not on refresh). |
+
+---
+
 ## Cross-cutting
 
 - UI changes must validate in both light and dark themes (see `.cursor/rules/ui_light_dark_mode.mdc`).
