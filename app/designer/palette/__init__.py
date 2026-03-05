@@ -1,0 +1,2 @@
+"""Designer widget palette package."""
+

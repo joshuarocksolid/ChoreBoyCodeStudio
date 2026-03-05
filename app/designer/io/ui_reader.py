@@ -1,0 +1,123 @@
+"""Read Qt Designer `.ui` XML into `UIModel`."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+from app.designer.model import LayoutItem, LayoutNode, PropertyValue, SpacerItem, UIModel, WidgetNode
+
+
+def read_ui_file(file_path: str) -> UIModel:
+    """Load `.ui` model from file path."""
+    source = Path(file_path).read_text(encoding="utf-8")
+    return read_ui_string(source)
+
+
+def read_ui_string(source: str) -> UIModel:
+    """Load `.ui` model from XML string payload."""
+    root = ET.fromstring(source)
+    if root.tag != "ui":
+        raise ValueError("Invalid .ui XML: root <ui> element is required.")
+
+    form_class_name = (root.findtext("class") or "").strip()
+    if not form_class_name:
+        raise ValueError("Invalid .ui XML: <class> value is required.")
+
+    widget_element = root.find("widget")
+    if widget_element is None:
+        raise ValueError("Invalid .ui XML: top-level <widget> element is required.")
+
+    model = UIModel(
+        form_class_name=form_class_name,
+        root_widget=_parse_widget(widget_element),
+        ui_version=root.attrib.get("version", "4.0"),
+    )
+    return model
+
+
+def _parse_widget(element: ET.Element) -> WidgetNode:
+    class_name = element.attrib.get("class", "").strip()
+    object_name = element.attrib.get("name", "").strip()
+    if not class_name or not object_name:
+        raise ValueError("Invalid .ui XML: widget must include class and name attributes.")
+    properties: dict[str, PropertyValue] = {}
+    children: list[WidgetNode] = []
+    layout: LayoutNode | None = None
+
+    for child in element:
+        if child.tag == "property":
+            prop_name = child.attrib.get("name", "").strip()
+            if prop_name:
+                properties[prop_name] = _parse_property(child)
+            continue
+        if child.tag == "widget":
+            children.append(_parse_widget(child))
+            continue
+        if child.tag == "layout":
+            layout = _parse_layout(child)
+
+    return WidgetNode(
+        class_name=class_name,
+        object_name=object_name,
+        properties=properties,
+        children=children,
+        layout=layout,
+    )
+
+
+def _parse_layout(element: ET.Element) -> LayoutNode:
+    class_name = element.attrib.get("class", "").strip()
+    object_name = element.attrib.get("name", "").strip()
+    if not class_name or not object_name:
+        raise ValueError("Invalid .ui XML: layout must include class and name attributes.")
+    items: list[LayoutItem] = []
+    for child in element:
+        if child.tag != "item":
+            continue
+        item = _parse_layout_item(child)
+        if item is not None:
+            items.append(item)
+    return LayoutNode(class_name=class_name, object_name=object_name, items=items)
+
+
+def _parse_layout_item(element: ET.Element) -> LayoutItem | None:
+    widget_element = element.find("widget")
+    if widget_element is not None:
+        return LayoutItem(widget=_parse_widget(widget_element))
+    layout_element = element.find("layout")
+    if layout_element is not None:
+        return LayoutItem(layout=_parse_layout(layout_element))
+    spacer_element = element.find("spacer")
+    if spacer_element is not None:
+        spacer_name = spacer_element.attrib.get("name", "").strip() or "spacerItem"
+        return LayoutItem(spacer=SpacerItem(name=spacer_name))
+    return None
+
+
+def _parse_property(element: ET.Element) -> PropertyValue:
+    if len(element) == 0:
+        return PropertyValue(value_type="string", value=(element.text or ""))
+
+    value_element = element[0]
+    value_type = value_element.tag
+    if value_type == "string":
+        return PropertyValue(value_type=value_type, value=value_element.text or "")
+    if value_type == "bool":
+        return PropertyValue(value_type=value_type, value=(value_element.text or "").strip().lower() == "true")
+    if value_type in {"number", "int"}:
+        return PropertyValue(value_type=value_type, value=int((value_element.text or "0").strip() or "0"))
+    if value_type in {"double", "float"}:
+        return PropertyValue(value_type=value_type, value=float((value_element.text or "0").strip() or "0"))
+    if value_type == "rect":
+        return PropertyValue(value_type=value_type, value=_parse_rect(value_element))
+    return PropertyValue(value_type=value_type, value=value_element.text or "")
+
+
+def _parse_rect(rect_element: ET.Element) -> dict[str, int]:
+    parsed: dict[str, int] = {}
+    for field in ("x", "y", "width", "height"):
+        field_value = rect_element.findtext(field)
+        parsed[field] = int((field_value or "0").strip() or "0")
+    return parsed
+

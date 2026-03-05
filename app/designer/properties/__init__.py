@@ -1,0 +1,2 @@
+"""Designer properties package."""
+
