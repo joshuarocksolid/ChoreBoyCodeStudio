@@ -48,3 +48,25 @@ def test_connection_panel_binds_connections_and_emits_actions() -> None:
 
     assert seen_add == [True]
     assert seen_remove == [0]
+
+
+def test_connection_panel_emits_field_edits() -> None:
+    panel = ConnectionEditorPanel()
+    panel.bind_connections(
+        [
+            ConnectionModel(
+                sender="pushButton",
+                signal="clicked()",
+                receiver="Form",
+                slot="accept()",
+            )
+        ]
+    )
+    seen: list[tuple[int, str, str]] = []
+    panel.connection_edited.connect(lambda idx, field, value: seen.append((idx, field, value)))
+
+    item = panel._table.item(0, 3)  # type: ignore[attr-defined]
+    assert item is not None
+    item.setText("reject()")
+
+    assert seen[-1] == (0, "slot", "reject()")

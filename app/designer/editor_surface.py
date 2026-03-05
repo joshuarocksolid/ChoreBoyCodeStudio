@@ -212,6 +212,7 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel = ConnectionEditorPanel(self._inspector_tabs)
         self._connection_panel.add_requested.connect(self._handle_add_connection_request)
         self._connection_panel.remove_requested.connect(self._handle_remove_connection_request)
+        self._connection_panel.connection_edited.connect(self._handle_connection_edited)
         self._tab_order_panel = TabOrderEditorPanel(self._inspector_tabs)
         self._tab_order_panel.tab_order_changed.connect(self._handle_tab_order_changed)
         self._buddy_panel = BuddyEditorPanel(self._inspector_tabs)
@@ -380,6 +381,37 @@ class DesignerEditorSurface(QWidget):
                 description="remove connection",
                 before_xml=before_xml,
                 after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+
+    def _handle_connection_edited(self, index: int, field_name: str, value: str) -> None:
+        if self._model is None:
+            return
+        if index < 0 or index >= len(self._model.connections):
+            return
+        if not value.strip():
+            self._error_label.setText("Connection fields cannot be empty.")
+            self._error_label.setVisible(True)
+            self._connection_panel.bind_connections(self._model.connections)
+            return
+        from dataclasses import replace
+
+        connection = self._model.connections[index]
+        before_xml = self.serialize_to_ui_string()
+        updated_connection = replace(connection, **{field_name: value.strip()})
+        self._model.connections[index] = updated_connection
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._error_label.setVisible(False)
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"edit connection {field_name}",
+                before_xml=before_xml,
+                after_xml=after_xml,
             )
         )
         self._set_dirty(True)
