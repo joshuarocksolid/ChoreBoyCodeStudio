@@ -465,3 +465,24 @@ def test_editor_surface_promote_selected_widget_updates_custom_widget_metadata(t
     restored_widget = surface.model.root_widget.find_by_object_name("pushButton")
     assert restored_widget is not None
     assert restored_widget.class_name == "QPushButton"
+
+
+def test_editor_surface_preview_blocks_promoted_custom_widgets(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"FancyWidget\" name=\"fancyWidget\"/>"
+            "</widget>"
+            "<customwidgets><customwidget><class>FancyWidget</class><extends>QWidget</extends>"
+            "<header>fancy_widget</header></customwidget></customwidgets>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.preview_current_form() is False
+    assert "Use isolated runner-assisted preview mode" in surface._error_label.text()  # type: ignore[attr-defined]
+    assert "requires isolated preview" in surface.run_compatibility_check()

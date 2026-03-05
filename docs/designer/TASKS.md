@@ -465,7 +465,7 @@ Every task in this file contains:
 - **Implementation note:** promote action for selected widget and `<customwidgets>` round-trip metadata storage are implemented; richer promote management UX remains.
 
 #### Task D4.S2.T2 — Python custom widget registry for preview loading
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Provide runtime registry mapping placeholder classes to Python widget classes.
 - **Primary files:** `app/designer/preview/custom_widget_registry.py`, `app/designer/preview/preview_service.py`
 - **Automated test layer:** unit, runtime_parity
@@ -473,6 +473,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DRES-04
 - **Depends on:** D4.S2.T1
 - **Done when:** preview can resolve promoted widget mappings without requiring native Qt Designer plugins.
+- **Implementation note:** custom-widget preview registry and safety gating are implemented; promoted/custom widgets now hard-require isolated preview mode and are blocked from editor-process preview until runner-assisted execution is wired.
 
 ---
 
