@@ -232,6 +232,30 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 ---
 
+### 19. Bottom tab auto-switching on Run is disruptive
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | When the user clicks Run, the active bottom-panel tab is force-switched to Run Log (on start and on every output chunk) and potentially to Problems (on failure). If the user is watching content on another tab (e.g. Python Console or Debug), this is disruptive — the tab they were monitoring gets yanked away. The per-chunk tab stealing is the most aggressive behavior: switching on every output event means the tab keeps jumping back even if the user manually navigates away mid-run. |
+| **Existing settings** | `auto_open_console_on_run_output` (default True) switches to Run Log at run start and on each output event. `auto_open_problems_on_run_failure` (default True) switches to Problems on non-zero exit with parsed problems. These provide an off-switch but are all-or-nothing. |
+| **Affected code** | `app/shell/main_window.py` — `_start_session()` (line ~2037) switches to Run Log on run start; `_handle_pytest_run_result()` (line ~1960) switches on pytest completion. `app/shell/run_output_coordinator.py` — `apply()` switches to Run Log on every `output` event (line ~75) and to Problems on `exit` failure (line ~110). |
+| **Notes** | A possible refinement: only auto-switch once at run start, not on every output chunk. A third setting value like "only on first output" would let users keep the initial convenience without repeated tab stealing. Alternatively, make the existing settings more discoverable in the UI. |
+
+---
+
+### 20. Python console command history persistence across sessions
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | The Python Console's command history is purely in-memory and lost when the app closes. History should persist across sessions so users can recall previous commands after restarting. Additionally, provide an easy way to browse, search, and re-run previous commands beyond sequential Up/Down arrow recall. |
+| **Current state** | History stored in `app/shell/python_console_widget.py` line 60 as `list[str]` (max 200 entries), navigated via Up/Down arrows (lines 228–234, 335–349). No persistence — not saved in `session_persistence.py`, `layout_persistence.py`, or `settings_store.py`. No history search or popup — only sequential Up/Down recall. |
+| **Affected code** | `app/shell/python_console_widget.py` — needs save/load methods for the history list. `app/shell/session_persistence.py` or `app/persistence/settings_store.py` — needs a storage location for console history (e.g. a JSON file in the global state directory). `app/shell/main_window.py` — needs to call save on shutdown and load on startup. |
+| **Notes** | Two sub-features: (A) persist history to disk and reload on next launch, (B) add an easy way to browse/search/run previous commands (e.g. Ctrl+R incremental search, or a history popup/dropdown). |
+
+---
+
 ## Cross-cutting
 
 - UI changes must validate in both light and dark themes (see `.cursor/rules/ui_light_dark_mode.mdc`).
