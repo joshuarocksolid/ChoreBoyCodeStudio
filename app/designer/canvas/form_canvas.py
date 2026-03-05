@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.canvas.selection_controller import SelectionController
@@ -33,6 +33,7 @@ class FormCanvas(QWidget):
         self._hint_label = QLabel("Drag widgets from the palette onto this canvas.", self)
         self._canvas_tree = QTreeWidget(self)
         self._canvas_tree.setHeaderHidden(True)
+        self._canvas_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._canvas_tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
         layout.addWidget(self._hint_label)
         layout.addWidget(self._canvas_tree, 1)
@@ -175,8 +176,8 @@ class FormCanvas(QWidget):
         if self._selection_controller is None:
             return
         selected_items = self._canvas_tree.selectedItems()
-        selected_name = None if not selected_items else selected_items[0].data(0, TREE_ROLE_OBJECT_NAME)
-        self._selection_controller.set_selected_object_name(selected_name)
+        selected_names = [item.data(0, TREE_ROLE_OBJECT_NAME) for item in selected_items if item.data(0, TREE_ROLE_OBJECT_NAME)]
+        self._selection_controller.set_selected_object_names(selected_names)
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
         if not object_name:

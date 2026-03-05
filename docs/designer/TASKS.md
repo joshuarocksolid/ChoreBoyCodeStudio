@@ -309,7 +309,7 @@ Every task in this file contains:
 ### Story D2.S3 — Editing ergonomics
 
 #### Task D2.S3.T1 — Rubber-band multi-selection
-- **Status:** TODO
+- **Status:** PARTIAL
 - **Objective:** Support selecting multiple widgets in canvas.
 - **Primary files:** `app/designer/canvas/selection_controller.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -317,6 +317,7 @@ Every task in this file contains:
 - **Acceptance linkage:** DPAR-05
 - **Depends on:** D1.S2.T3
 - **Done when:** multiple selection and selection clearing are predictable and stable.
+- **Implementation note:** selection controller now tracks selection sets and canvas/inspector trees are configured for extended selection; full rubber-band visual interaction remains pending.
 
 #### Task D2.S3.T2 — Ctrl-drag clone behavior
 - **Status:** TODO

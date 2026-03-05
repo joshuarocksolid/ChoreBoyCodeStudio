@@ -69,6 +69,7 @@ class ObjectInspector(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self._tree = _ObjectTreeWidget(self)
         self._tree.setHeaderHidden(True)
+        self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
         self._tree.set_drop_callback(self._handle_drop_reparent)
         layout.addWidget(self._tree)
@@ -118,11 +119,9 @@ class ObjectInspector(QWidget):
         if self._is_syncing_selection:
             return
         selected_items = self._tree.selectedItems()
-        selected_object_name = None
-        if selected_items:
-            selected_object_name = selected_items[0].data(0, TREE_ROLE_OBJECT_NAME)
+        selected_object_names = [item.data(0, TREE_ROLE_OBJECT_NAME) for item in selected_items if item.data(0, TREE_ROLE_OBJECT_NAME)]
         if self._selection_controller is not None:
-            self._selection_controller.set_selected_object_name(selected_object_name)
+            self._selection_controller.set_selected_object_names(selected_object_names)
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
         if not object_name:
