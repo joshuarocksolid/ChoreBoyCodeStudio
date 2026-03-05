@@ -80,6 +80,7 @@ from app.intelligence.completion_service import CompletionRequest, CompletionSer
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.designer.editor_surface import DesignerEditorSurface
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -226,6 +227,7 @@ class MainWindow(QMainWindow):
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
+        self._designer_widgets_by_path: dict[str, DesignerEditorSurface] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
         self._tree_clipboard_paths: list[str] = []
         self._tree_clipboard_cut: bool = False
@@ -3555,8 +3557,8 @@ class MainWindow(QMainWindow):
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
-    def _release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        if self._debug_execution_editor is widget:
+    def _release_editor_widget(self, widget: QWidget) -> None:
+        if isinstance(widget, CodeEditorWidget) and self._debug_execution_editor is widget:
             self._clear_debug_execution_indicator()
         widget.deleteLater()
 
@@ -3687,6 +3689,23 @@ class MainWindow(QMainWindow):
                     )
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
+            return True
+
+        if Path(opened_result.tab.file_path).suffix.lower() == ".ui":
+            designer_surface = DesignerEditorSurface(self._editor_tabs_widget)
+            designer_surface.setObjectName("shell.editorTabs.designerSurface")
+            self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
+            tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
+            self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+            self._editor_tabs_widget.setCurrentIndex(tab_index)
+            self._handle_editor_tab_changed(tab_index)
+            self._refresh_save_action_states()
+            self._update_editor_status_for_path(opened_result.tab.file_path)
+            self._logger.info(
+                "File open telemetry: file=%s elapsed_ms=%.2f",
+                opened_result.tab.file_path,
+                (time.perf_counter() - started_at) * 1000.0,
+            )
             return True
 
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
@@ -3822,8 +3841,16 @@ class MainWindow(QMainWindow):
             return
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._editor_widgets_by_path.get(file_path)
-        if tab_state is None or editor_widget is None:
+        if tab_state is None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            return
+        if editor_widget is None:
+            self._status_controller.set_editor_status(
+                file_name=tab_state.display_name,
+                line=1,
+                column=1,
+                is_dirty=tab_state.is_dirty,
+            )
             return
         self._status_controller.set_editor_status(
             file_name=tab_state.display_name,
@@ -3911,6 +3938,8 @@ class MainWindow(QMainWindow):
 
         self._editor_tabs_widget.removeTab(tab_index)
         widget = self._editor_widgets_by_path.pop(file_path, None)
+        if widget is None:
+            widget = self._designer_widgets_by_path.pop(file_path, None)
         if widget is not None:
             self._release_editor_widget(widget)
         self._pending_semantic_refreshes.pop(file_path, None)
@@ -3950,6 +3979,7 @@ class MainWindow(QMainWindow):
         self._semantic_last_good_spans_by_file.clear()
         self._semantic_last_applied_signature_by_file.clear()
         self._editor_widgets_by_path.clear()
+        self._designer_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
         if self._status_controller is not None:
