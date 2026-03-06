@@ -148,6 +148,8 @@ from app.project.project_service import create_blank_project, open_project
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
+from app.shell.action_registry import ShellActionRegistry
+from app.shell.command_broker import CommandBroker
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
@@ -213,6 +215,8 @@ class MainWindow(QMainWindow):
             state_root=self._state_root,
         )
         self._menu_registry: MenuStubRegistry | None = None
+        self._command_broker = CommandBroker()
+        self._action_registry: ShellActionRegistry | None = None
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
@@ -422,6 +426,11 @@ class MainWindow(QMainWindow):
             ),
             shortcut_overrides=self._effective_shortcuts,
         )
+        if self._menu_registry is not None:
+            self._action_registry = ShellActionRegistry(
+                menu_registry=self._menu_registry,
+                command_broker=self._command_broker,
+            )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -725,6 +734,49 @@ class MainWindow(QMainWindow):
     def loaded_project(self) -> LoadedProject | None:
         """Return the currently loaded project, if any."""
         return self._loaded_project
+
+    def register_runtime_command(
+        self,
+        *,
+        command_id: str,
+        handler: Callable[[], object],
+        replace: bool = False,
+    ) -> None:
+        if self._action_registry is None:
+            raise RuntimeError("Action registry is not ready.")
+        self._action_registry.register_command(command_id, handler, replace=replace)
+
+    def register_runtime_menu_command(
+        self,
+        *,
+        command_id: str,
+        menu_id: str,
+        label: str,
+        handler: Callable[[], object],
+        shortcut: str | None = None,
+        enabled: bool = True,
+        status_tip: str | None = None,
+        tool_tip: str | None = None,
+        replace: bool = False,
+    ) -> None:
+        if self._action_registry is None:
+            raise RuntimeError("Action registry is not ready.")
+        self._action_registry.register_command(command_id, handler, replace=replace)
+        self._action_registry.register_menu_action(
+            action_id=command_id,
+            menu_id=menu_id,
+            label=label,
+            shortcut=shortcut,
+            enabled=enabled,
+            status_tip=status_tip,
+            tool_tip=tool_tip,
+        )
+
+    def unregister_runtime_menu_command(self, command_id: str) -> None:
+        if self._action_registry is None:
+            return
+        self._action_registry.unregister_menu_action(command_id)
+        self._action_registry.unregister_command(command_id)
 
     def _handle_open_project_action(self) -> None:
         selected_path = QFileDialog.getExistingDirectory(self, "Open Project", str(Path.home()))
