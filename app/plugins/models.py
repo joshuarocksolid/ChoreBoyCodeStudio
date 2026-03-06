@@ -65,3 +65,37 @@ class DiscoveredPlugin:
     manifest: PluginManifest | None = None
     compatibility: PluginCompatibility | None = None
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PluginRegistryEntry:
+    plugin_id: str
+    version: str
+    install_path: str
+    enabled: bool = True
+    installed_at: str = ""
+    last_error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id": self.plugin_id,
+            "version": self.version,
+            "install_path": self.install_path,
+            "enabled": self.enabled,
+            "installed_at": self.installed_at,
+        }
+        if self.last_error:
+            payload["last_error"] = self.last_error
+        return payload
+
+
+@dataclass(frozen=True)
+class PluginRegistry:
+    schema_version: int
+    entries: list[PluginRegistryEntry] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "entries": [entry.to_dict() for entry in self.entries],
+        }
