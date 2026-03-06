@@ -227,6 +227,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
 
         old_tree = self._tree
         changed_ranges: list[Any] = []
+        full_rebuild = old_tree is None
         if self._dirty:
             if old_tree is not None and self._pending_edits:
                 for edit in self._pending_edits:
@@ -238,21 +239,34 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                         edit.old_end_point,
                         edit.new_end_point,
                     )
-            new_tree = self._parser.parse(self._source_text.encode("utf-8"), old_tree)
+            new_tree, used_old_tree = self._parse_with_optional_tree(old_tree)
             self._pending_edits.clear()
             self._dirty = False
             if new_tree is None:
                 return
             self._tree = new_tree
-            if old_tree is not None:
+            full_rebuild = not used_old_tree
+            if used_old_tree and old_tree is not None:
                 changed_ranges = old_tree.changed_ranges(new_tree)
         elif self._tree is None:
-            self._tree = self._parser.parse(self._source_text.encode("utf-8"), None)
+            self._tree, _ = self._parse_with_optional_tree(None)
             if self._tree is None:
                 return
+            full_rebuild = True
 
-        self._update_capture_cache(changed_ranges=changed_ranges, full_rebuild=old_tree is None)
+        self._update_capture_cache(changed_ranges=changed_ranges, full_rebuild=full_rebuild)
         self._viewport_dirty = False
+
+    def _parse_with_optional_tree(self, old_tree: Any | None) -> tuple[Any | None, bool]:
+        source_bytes = self._source_text.encode("utf-8")
+        if old_tree is None:
+            return self._parser.parse(source_bytes), False
+        try:
+            return self._parser.parse(source_bytes, old_tree), True
+        except TypeError as exc:
+            if "Second argument to parse must be a Tree" not in str(exc):
+                raise
+            return self._parser.parse(source_bytes), False
 
     def _update_capture_cache(self, *, changed_ranges: list[Any], full_rebuild: bool) -> None:
         if self._tree is None or self._query is None:
