@@ -58,3 +58,5 @@ From the repository root:
 
 This project is licensed under the MIT License.
 See `LICENSE` in this directory.
+
+Third-party dependency notices are listed in `THIRD_PARTY_NOTICES.md`.

@@ -121,3 +121,5 @@ logging.getLogger("jasper_bridge").setLevel(logging.DEBUG)
 
 `jasper_bridge` is licensed under the MIT License.
 See `../LICENSE`.
+
+Third-party dependency notices are listed in `../THIRD_PARTY_NOTICES.md`.
