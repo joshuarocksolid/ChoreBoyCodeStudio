@@ -116,3 +116,10 @@ logging.getLogger("jasper_bridge").setLevel(logging.DEBUG)
   - verify PostgreSQL server reachability
 - `ExportError` before export:
   - call `fill()` first so Java-side `lastPrint` state is populated
+
+## License
+
+`jasper_bridge` is licensed under the MIT License.
+See `../LICENSE`.
+
+Third-party dependency notices are listed in `../THIRD_PARTY_NOTICES.md`.

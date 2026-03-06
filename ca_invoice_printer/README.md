@@ -53,3 +53,10 @@ From the repository root:
 - `reports/CustomerInvoice.jrxml` - classic invoice template
 - `reports/demo_params.jrxml` - standalone typed-parameter demo template
 - `reports/sample_data.json` and `reports/sample_data.csv` - sample data source files
+
+## License
+
+This project is licensed under the MIT License.
+See `LICENSE` in this directory.
+
+Third-party dependency notices are listed in `THIRD_PARTY_NOTICES.md`.
