@@ -81,7 +81,7 @@ from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
-from app.persistence.settings_store import load_settings, save_settings
+from app.persistence.settings_service import SettingsService
 from app.run.console_model import ConsoleModel
 from app.run.exit_status import describe_exit_code
 from app.run.output_tail_buffer import OutputTailBuffer
@@ -206,6 +206,7 @@ class MainWindow(QMainWindow):
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
+        self._settings_service = SettingsService(state_root=self._state_root)
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
@@ -455,7 +456,7 @@ class MainWindow(QMainWindow):
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
         try:
-            settings = load_settings(state_root=self._state_root)
+            settings = self._settings_service.load()
         except Exception:
             return
         last_path = settings.get(constants.LAST_PROJECT_PATH_KEY)
@@ -480,7 +481,7 @@ class MainWindow(QMainWindow):
             self._status_controller.set_project_state_text(f"Project: {project_text}")
 
     def _restore_layout_from_settings(self) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         layout_state = parse_shell_layout_state(settings_payload)
         self.resize(layout_state.width, layout_state.height)
         if self._top_splitter is not None:
@@ -506,9 +507,9 @@ class MainWindow(QMainWindow):
             top_splitter_sizes=(int(top_sizes[0]), int(top_sizes[1])),
             vertical_splitter_sizes=(int(vertical_sizes[0]), int(vertical_sizes[1])),
         )
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_layout_into_settings(settings_payload, layout_state)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_layout_into_settings(settings_payload, layout_state)
+        )
 
     def _handle_reset_layout_action(self) -> None:
         self.resize(ShellLayoutState().width, ShellLayoutState().height)
@@ -519,7 +520,7 @@ class MainWindow(QMainWindow):
         self._persist_layout_to_settings()
 
     def _load_import_update_policy(self) -> ImportUpdatePolicy:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         raw_value = settings_payload.get(constants.UI_IMPORT_UPDATE_POLICY_KEY, constants.UI_IMPORT_UPDATE_POLICY_DEFAULT)
         try:
             return ImportUpdatePolicy(str(raw_value))
@@ -602,17 +603,17 @@ class MainWindow(QMainWindow):
         return "prefer-dark" in result.stdout
 
     def _load_theme_mode(self) -> str:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return dict(snapshot.shortcut_overrides)
 
     def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {
             constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
@@ -620,7 +621,7 @@ class MainWindow(QMainWindow):
         }
 
     def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
 
@@ -641,9 +642,9 @@ class MainWindow(QMainWindow):
         self._configure_close_tab_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_theme_mode(settings_payload, mode)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_theme_mode(settings_payload, mode)
+        )
 
     def _handle_set_theme(self, mode: str) -> None:
         if mode == self._theme_mode:
@@ -687,13 +688,13 @@ class MainWindow(QMainWindow):
             self._apply_editor_preferences_to_open_editors()
 
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_import_update_policy(settings_payload, policy.value)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_import_update_policy(settings_payload, policy.value)
+        )
         self._import_update_policy = policy
 
     def _load_main_window_settings(self) -> MainWindowSettingsSnapshot:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         return parse_main_window_settings(settings_payload)
 
     def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
@@ -785,7 +786,7 @@ class MainWindow(QMainWindow):
         return normalized_name, Path(destination_parent) / normalized_name
 
     def _handle_open_settings_action(self) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         previous_theme_mode = snapshot.theme_mode
         previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
@@ -797,7 +798,7 @@ class MainWindow(QMainWindow):
 
         updated_snapshot = dialog.snapshot()
         merged_settings = merge_editor_settings_snapshot(settings_payload, updated_snapshot)
-        save_settings(merged_settings, state_root=self._state_root)
+        self._settings_service.save(merged_settings)
 
         if updated_snapshot.theme_mode != previous_theme_mode:
             self._handle_set_theme(updated_snapshot.theme_mode)
@@ -1427,7 +1428,7 @@ class MainWindow(QMainWindow):
         )
 
     def _load_global_exclude_patterns(self) -> list[str]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         return parse_global_exclude_patterns(settings_payload)
 
     def _refresh_open_recent_menu(self) -> None:
@@ -1505,9 +1506,9 @@ class MainWindow(QMainWindow):
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
-            settings = load_settings(state_root=self._state_root)
-            merged = merge_last_project_path(settings, project_root)
-            save_settings(merged, state_root=self._state_root)
+            self._settings_service.update(
+                lambda settings: merge_last_project_path(settings, project_root)
+            )
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
 
