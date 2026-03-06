@@ -6,4 +6,4 @@ Comment=Launch CA Invoice Printer Demo (Qt via FreeCAD AppRun)
 Terminal=false
 Categories=Utility;Office;
 
-Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/choreboy_code_studio';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path('/home/default/choreboy_code_studio/ca_invoice_printer/main.py', run_name='__main__')"
+Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/ca_invoice_printer';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path('/home/default/ca_invoice_printer/main.py', run_name='__main__')"
