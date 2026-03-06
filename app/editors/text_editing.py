@@ -25,32 +25,33 @@ def outdent_lines(text: str, *, indent_text: str = "    ") -> str:
     return "\n".join(outdented)
 
 
-def toggle_comment_lines(text: str, *, comment_prefix: str = "# ") -> str:
+def toggle_comment_lines(text: str, *, comment_prefix: str = "#") -> str:
     """Toggle Python line comments for multi-line selection."""
     lines = text.splitlines()
     non_empty = [line for line in lines if line.strip()]
     if not non_empty:
         return text
-    should_uncomment = all(line.lstrip().startswith("#") for line in non_empty)
+    should_uncomment = all(line.startswith("#") for line in non_empty)
 
     transformed: list[str] = []
     for line in lines:
         if not line.strip():
             transformed.append(line)
             continue
-        leading = len(line) - len(line.lstrip(" "))
-        indent = line[:leading]
-        body = line[leading:]
         if should_uncomment:
-            if body.startswith("# "):
-                transformed.append(f"{indent}{body[2:]}")
-            elif body.startswith("#"):
-                transformed.append(f"{indent}{body[1:]}")
-            else:
-                transformed.append(line)
+            transformed.append(line[1:] if line.startswith("#") else line)
         else:
-            transformed.append(f"{indent}{comment_prefix}{body}")
+            transformed.append(f"{comment_prefix}{line}")
     return "\n".join(transformed)
+
+
+def next_line_indentation(line_prefix: str, *, indent_text: str = "    ") -> str:
+    """Compute indentation for a newline after ``line_prefix``."""
+    leading = line_prefix[: len(line_prefix) - len(line_prefix.lstrip(" \t"))]
+    stripped = line_prefix.rstrip()
+    if stripped.endswith(":"):
+        return f"{leading}{indent_text}"
+    return leading
 
 
 def smart_backspace_columns(line_text: str, cursor_column: int, *, indent_text: str = "    ") -> int:
