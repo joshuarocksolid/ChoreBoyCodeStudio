@@ -40,42 +40,47 @@ class TestSanitizeProjectName:
 
 class TestBuildDesktopEntry:
     def test_contains_desktop_entry_header(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("myapp", "main.py", "app_files")
         assert "[Desktop Entry]" in content
 
     def test_type_is_application(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("myapp", "main.py", "app_files")
         assert "Type=Application" in content
 
     def test_name_matches_project(self) -> None:
-        content = build_desktop_entry("My App", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("My App", "main.py", "app_files")
         assert "Name=My App" in content
 
     def test_terminal_false(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("myapp", "main.py", "app_files")
         assert "Terminal=false" in content
 
     def test_exec_uses_apprun(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("myapp", "main.py", "app_files")
         assert "/opt/freecad/AppRun" in content
 
     def test_exec_contains_entry_file_path(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
-        assert "/home/default/myapp/app_files/main.py" in content
+        content = build_desktop_entry("myapp", "main.py", "app_files")
+        assert "os.path.join(root, 'app_files/main.py')" in content
 
     def test_exec_bootstraps_runpy_and_sys_path(self) -> None:
-        content = build_desktop_entry("myapp", "main.py", "/home/default/myapp/app_files")
+        content = build_desktop_entry("myapp", "main.py", "app_files")
         assert "runpy.run_path" in content
         assert "sys.path.insert(0,root)" in content
         assert "os.chdir(root)" in content
 
     def test_custom_entry_file(self) -> None:
-        content = build_desktop_entry("myapp", "app/run.py", "/home/default/myapp/app_files")
-        assert "/home/default/myapp/app_files/app/run.py" in content
+        content = build_desktop_entry("myapp", "app/run.py", "app_files")
+        assert "os.path.join(root, 'app_files/app/run.py')" in content
 
     def test_comment_mentions_project(self) -> None:
-        content = build_desktop_entry("Cool Tool", "main.py", "/home/default/cool_tool/app_files")
+        content = build_desktop_entry("Cool Tool", "main.py", "app_files")
         assert "Cool Tool" in content
+
+    def test_exec_uses_desktop_file_location_for_relocation(self) -> None:
+        content = build_desktop_entry("Cool Tool", "main.py", "app_files")
+        assert "%k" in content
+        assert "/home/default" not in content
 
 
 class TestPackageProject:
@@ -259,7 +264,7 @@ class TestPackageProject:
         assert "[Desktop Entry]" in content
         assert "Name=Cool Tool" in content
         assert "/opt/freecad/AppRun" in content
-        assert "/home/default/cool_tool/app_files/main.py" in content
+        assert "os.path.join(root, 'app_files/main.py')" in content
 
     def test_result_metadata_fields(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"

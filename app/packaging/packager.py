@@ -48,17 +48,22 @@ def build_desktop_entry(
 
     *project_name* is the human-readable name shown in the launcher.
     *entry_file* is the Python entry point relative to *install_dir*.
-    *install_dir* is the absolute path where packaged project files will live
-    (e.g. ``/home/default/myapp/app_files``).
+    *install_dir* is the packaged project subdirectory containing source files
+    (typically ``app_files``).
     """
-    entry_path = f"{install_dir}/{entry_file}"
+    install_dir_normalized = install_dir.strip().strip("/")
+    entry_path = f"{install_dir_normalized}/{entry_file}".strip("/")
     exec_line = (
+        "/bin/sh -c "
+        f"'desktop=\"%k\";"
+        "root=\"$(cd \"$(dirname \"$desktop\")\" && pwd)\";"
+        "export CBCS_PROJECT_ROOT=\"$root\";"
         f"{_APPRUN_PATH} -c "
-        f"\"import os,runpy,sys;"
-        f"root='{install_dir}';"
-        f"sys.path.insert(0,root) if root not in sys.path else None;"
-        f"os.chdir(root);"
-        f"runpy.run_path('{entry_path}', run_name='__main__')\""
+        "\"import os,runpy,sys;"
+        "root=os.environ.get('CBCS_PROJECT_ROOT', os.getcwd());"
+        "sys.path.insert(0,root) if root not in sys.path else None;"
+        "os.chdir(root);"
+        f"runpy.run_path(os.path.join(root, {entry_path!r}), run_name='__main__')\"'"
     )
     return (
         "[Desktop Entry]\n"
@@ -135,7 +140,7 @@ def package_project(
     out = Path(output_dir)
     package_dir = out / sanitized
     project_dest = package_dir / project_files_folder
-    install_dir = f"/home/default/{sanitized}/{project_files_folder}"
+    install_dir = project_files_folder
 
     if _paths_overlap(package_dir, root):
         return PackageResult(
