@@ -216,6 +216,22 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
     assert window_any._bottom_tabs_widget.current_index == 3
 
 
+def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._active_run_session_info = None
+    window_any._active_transient_entry_file_path = "/tmp/transient.py"
+    deleted: list[str] = []
+    window_any._delete_transient_entry_file = deleted.append
+    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
+    window_any._get_run_output_coordinator = lambda: SimpleNamespace(apply=lambda _event: None)
+
+    MainWindow._apply_run_event(window, ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False))
+
+    assert deleted == ["/tmp/transient.py"]
+    assert window_any._active_transient_entry_file_path is None
+
+
 def test_start_session_in_debug_enables_debug_input() -> None:
     """REPL is managed independently; starting a debug session should only enable the debug panel."""
     window = MainWindow.__new__(MainWindow)

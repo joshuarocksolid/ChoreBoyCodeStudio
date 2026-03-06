@@ -6,6 +6,7 @@ import queue
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 from typing import Callable, Optional, TypeVar
 
@@ -336,6 +337,7 @@ class MainWindow(QMainWindow):
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
         self._active_run_session_info: RunInfo | None = None
+        self._active_transient_entry_file_path: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
@@ -1819,11 +1821,47 @@ class MainWindow(QMainWindow):
             for file_path, line_numbers in self._breakpoints_by_file.items():
                 for line_number in sorted(line_numbers):
                     breakpoints.append({"file_path": file_path, "line_number": line_number})
-        return self._start_session(
+        transient_entry_file: str | None = None
+        entry_file = str(entry_path)
+        skip_save = False
+        if active_tab.is_dirty:
+            transient_entry_file = self._write_transient_entry_file(
+                source_file_path=active_tab.file_path,
+                source_content=active_tab.current_content,
+            )
+            entry_file = transient_entry_file
+            skip_save = True
+        started = self._start_session(
             mode=mode,
-            entry_file=str(entry_path),
+            entry_file=entry_file,
             breakpoints=breakpoints,
+            skip_save=skip_save,
         )
+        if transient_entry_file is not None:
+            if started:
+                self._active_transient_entry_file_path = transient_entry_file
+            else:
+                self._delete_transient_entry_file(transient_entry_file)
+        return started
+
+    def _write_transient_entry_file(self, *, source_file_path: str, source_content: str) -> str:
+        source_name = Path(source_file_path).name
+        safe_stem = Path(source_name).stem or "buffer"
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".py",
+            prefix=f"cbcs_{safe_stem}_",
+            delete=False,
+        ) as handle:
+            handle.write(source_content)
+            return str(Path(handle.name).resolve())
+
+    def _delete_transient_entry_file(self, path: str) -> None:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            self._logger.warning("Failed to delete transient run file: %s", path)
 
     def _resolve_project_entry_for_project_run(self) -> str | None:
         loaded_project = self._loaded_project
@@ -2948,8 +2986,15 @@ class MainWindow(QMainWindow):
         self._run_session_controller.refresh_action_states(
             self._menu_registry,
             has_project=self._loaded_project is not None,
+            has_active_file=self._has_active_python_file(),
             has_breakpoints=bool(self._breakpoints_by_file),
         )
+
+    def _has_active_python_file(self) -> bool:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return False
+        return Path(active_tab.file_path).suffix.lower() == ".py"
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._is_shutting_down:
@@ -3107,6 +3152,10 @@ class MainWindow(QMainWindow):
                     terminated_by_user=event.terminated_by_user,
                 )
             )
+            transient_entry_file = getattr(self, "_active_transient_entry_file_path", None)
+            if transient_entry_file:
+                self._delete_transient_entry_file(transient_entry_file)
+                self._active_transient_entry_file_path = None
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._console_model.append(stream, text)
@@ -4197,6 +4246,7 @@ class MainWindow(QMainWindow):
             return
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
@@ -4233,6 +4283,7 @@ class MainWindow(QMainWindow):
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
 
     def _close_active_tab(self) -> None:
         if self._editor_tabs_widget is None:
@@ -4252,6 +4303,7 @@ class MainWindow(QMainWindow):
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
 

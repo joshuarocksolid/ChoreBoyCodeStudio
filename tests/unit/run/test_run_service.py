@@ -150,6 +150,35 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     assert "/repl/logs/" in session.log_file_path
 
 
+def test_start_run_supports_projectless_script_with_explicit_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_root = tmp_path / "state"
+    script_path = tmp_path / "snippet.py"
+    script_path.write_text("print('snippet')\n", encoding="utf-8")
+    service = RunService(
+        runtime_executable=sys.executable,
+        runner_boot_path=str(tmp_path / "run_runner.py"),
+        state_root=str(state_root.resolve()),
+    )
+    launch_context: dict[str, str] = {}
+
+    def _capture_start(_command: list[str], *, cwd: str, env) -> None:  # type: ignore[no-untyped-def]
+        launch_context["cwd"] = cwd
+
+    monkeypatch.setattr(service.supervisor, "start", _capture_start)
+
+    session = service.start_run(None, mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=str(script_path))
+    manifest = load_run_manifest(session.manifest_path)
+
+    assert manifest.mode == constants.RUN_MODE_PYTHON_SCRIPT
+    assert manifest.entry_file == str(script_path.resolve())
+    assert manifest.project_root == str(script_path.parent.resolve())
+    assert manifest.working_directory == str(script_path.parent.resolve())
+    assert launch_context["cwd"] == str(script_path.parent.resolve())
+
+
 def test_forward_event_tracks_debug_pause_and_resume_markers(tmp_path: Path) -> None:
     """Debug protocol output markers should update pause state deterministically."""
     captured_events: list[ProcessEvent] = []

@@ -54,6 +54,15 @@ def test_map_run_action_state_idle_project_enables_run_only() -> None:
     assert state.python_console_enabled is True
 
 
+def test_map_run_action_state_without_project_enables_active_file_run_commands() -> None:
+    state = map_run_action_state(has_project=False, has_active_file=True, is_running=False)
+    assert state.run_enabled is True
+    assert state.debug_enabled is True
+    assert state.run_project_enabled is False
+    assert state.debug_project_enabled is False
+    assert state.package_enabled is False
+
+
 def test_map_run_action_state_paused_debug_enables_step_controls() -> None:
     """Paused debug sessions should enable continue and step commands."""
     state = map_run_action_state(has_project=True, is_running=True, is_debug_mode=True, is_debug_paused=True)

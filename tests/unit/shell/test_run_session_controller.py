@@ -145,6 +145,27 @@ def test_start_session_rejects_repl_without_loaded_project() -> None:
     assert result.error_message == "Open a project before running code."
 
 
+def test_start_session_allows_projectless_script_with_explicit_entry() -> None:
+    controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
+    result = controller.start_session(
+        loaded_project=None,
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file="/tmp/snippet.py",
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        skip_save=True,
+        save_all=lambda: False,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+    assert result.started is True
+    assert result.failure_reason is None
+    assert result.session is not None
+
+
 def test_start_session_success_updates_active_mode_and_returns_session() -> None:
     controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
     lines: list[str] = []
