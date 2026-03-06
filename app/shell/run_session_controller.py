@@ -144,6 +144,8 @@ class RunSessionController:
 
         run_action = menu_registry.action("shell.action.run.run")
         debug_action = menu_registry.action("shell.action.run.debug")
+        run_project_action = menu_registry.action("shell.action.run.runProject")
+        debug_project_action = menu_registry.action("shell.action.run.debugProject")
         stop_action = menu_registry.action("shell.action.run.stop")
         restart_action = menu_registry.action("shell.action.run.restart")
         continue_action = menu_registry.action("shell.action.run.continue")
@@ -168,6 +170,10 @@ class RunSessionController:
             run_action.setEnabled(state.run_enabled)
         if debug_action is not None:
             debug_action.setEnabled(state.debug_enabled)
+        if run_project_action is not None:
+            run_project_action.setEnabled(state.run_project_enabled)
+        if debug_project_action is not None:
+            debug_project_action.setEnabled(state.debug_project_enabled)
         if stop_action is not None:
             stop_action.setEnabled(state.stop_enabled)
         if restart_action is not None:

@@ -86,6 +86,8 @@ def _menu_registry() -> MenuStubRegistry:
     actions = {
         "shell.action.run.run": _FakeAction(),
         "shell.action.run.debug": _FakeAction(),
+        "shell.action.run.runProject": _FakeAction(),
+        "shell.action.run.debugProject": _FakeAction(),
         "shell.action.run.stop": _FakeAction(),
         "shell.action.run.restart": _FakeAction(),
         "shell.action.run.continue": _FakeAction(),
@@ -253,13 +255,16 @@ def test_refresh_action_states_updates_run_action_enablement() -> None:
 
     controller.refresh_action_states(registry, has_project=False)
     assert registry.action("shell.action.run.run").enabled is False
+    assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.pythonConsole").enabled is True
 
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is True
+    assert registry.action("shell.action.run.debugProject").enabled is True
     assert registry.action("shell.action.run.stop").enabled is False
 
     run_service.supervisor._running = True
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is False
+    assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.stop").enabled is True

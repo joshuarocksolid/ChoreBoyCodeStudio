@@ -29,6 +29,8 @@ def _make_registry_with_actions() -> tuple[MenuStubRegistry, dict[str, object]]:
     for aid in (
         "shell.action.run.run",
         "shell.action.run.debug",
+        "shell.action.run.runProject",
+        "shell.action.run.debugProject",
         "shell.action.run.stop",
         "shell.action.run.restart",
         "shell.action.run.pythonConsole",
@@ -63,7 +65,7 @@ def test_disabled_actions_produce_hidden_buttons() -> None:
     from PySide2.QtWidgets import QToolButton
 
     buttons = widget.findChildren(QToolButton)
-    assert len(buttons) == 10
+    assert len(buttons) == 12
     assert all(btn.isHidden() for btn in buttons)
 
 

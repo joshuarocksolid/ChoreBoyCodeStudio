@@ -18,6 +18,12 @@ pytestmark = pytest.mark.unit
 def test_default_shortcut_map_contains_known_command_ids() -> None:
     defaults = default_shortcut_map()
     assert defaults["shell.action.run.run"] == "F5"
+    assert defaults["shell.action.run.debug"] == "Ctrl+F5"
+    assert defaults["shell.action.run.runProject"] == "Shift+F5"
+    assert defaults["shell.action.run.debugProject"] == "Ctrl+Shift+F5"
+    assert defaults["shell.action.run.stop"] == "Ctrl+F2"
+    assert defaults["shell.action.run.restart"] == "Ctrl+Shift+F2"
+    assert defaults["shell.action.edit.hoverInfo"] == "Ctrl+Shift+I"
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
 

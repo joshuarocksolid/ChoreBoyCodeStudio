@@ -254,6 +254,8 @@ def icon_remove_all_breakpoints(color: str = "#DC2626") -> QIcon:
 _ICON_BUILDERS: dict[str, tuple[str, bool]] = {
     "shell.action.run.run": ("run", False),
     "shell.action.run.debug": ("debug", False),
+    "shell.action.run.runProject": ("run", False),
+    "shell.action.run.debugProject": ("debug", False),
     "shell.action.run.stop": ("stop", False),
     "shell.action.run.restart": ("restart", True),
     "shell.action.run.continue": ("continue", True),

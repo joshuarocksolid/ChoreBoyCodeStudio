@@ -420,6 +420,8 @@ class MainWindow(QMainWindow):
                 on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
+                on_run_project=self._handle_run_project_action,
+                on_debug_project=self._handle_debug_project_action,
                 on_run_pytest_project=self._handle_run_pytest_project_action,
                 on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
                 on_run_with_config=self._handle_run_with_configuration_action,
@@ -1773,14 +1775,41 @@ class MainWindow(QMainWindow):
             save_all_action.setEnabled(has_dirty_tabs)
 
     def _handle_run_action(self) -> bool:
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
+        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     def _handle_debug_action(self) -> bool:
+        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
+
+    def _handle_run_project_action(self) -> bool:
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
+
+    def _handle_debug_project_action(self) -> bool:
         breakpoint_entries: list[dict[str, int | str]] = []
         for file_path, line_numbers in self._breakpoints_by_file.items():
             for line_number in sorted(line_numbers):
                 breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
         return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
+
+    def _start_active_file_session(self, *, mode: str) -> bool:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a file tab before running.")
+            return False
+        entry_path = Path(active_tab.file_path).expanduser().resolve()
+        if entry_path.suffix.lower() != ".py":
+            QMessageBox.warning(self, "Run unavailable", "Active file must be a Python file.")
+            return False
+        breakpoints: list[dict[str, int | str]] | None = None
+        if mode == constants.RUN_MODE_PYTHON_DEBUG:
+            breakpoints = []
+            for file_path, line_numbers in self._breakpoints_by_file.items():
+                for line_number in sorted(line_numbers):
+                    breakpoints.append({"file_path": file_path, "line_number": line_number})
+        return self._start_session(
+            mode=mode,
+            entry_file=str(entry_path),
+            breakpoints=breakpoints,
+        )
 
     def _handle_run_pytest_project_action(self) -> None:
         if self._loaded_project is None:
