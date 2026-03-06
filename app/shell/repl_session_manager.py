@@ -8,23 +8,21 @@ app launch and auto-restart when the REPL process exits unexpectedly.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from app.bootstrap.paths import PathInput, ensure_directory, resolve_app_root
+from app.bootstrap.paths import PathInput, ensure_directory
 from app.core import constants
-from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.host_process_manager import HostProcessManager
+from app.run.process_supervisor import ProcessEvent
 from app.run.run_manifest import RunManifest, save_run_manifest
-from app.run.runner_command_builder import build_runner_command
 from app.run.run_service import (
     build_repl_context_root,
     build_repl_log_path,
     build_repl_manifest_path,
     generate_run_id,
-    resolve_runtime_executable,
 )
 
 _logger = logging.getLogger(__name__)
@@ -50,25 +48,23 @@ class ReplSessionManager:
         self._on_output = on_output
         self._on_session_ended = on_session_ended
         self._on_session_started = on_session_started
-        self._runtime_executable = runtime_executable
-        self._runner_boot_path = str(
-            Path(runner_boot_path).expanduser().resolve()
-            if runner_boot_path
-            else resolve_app_root() / "run_runner.py"
+        self._host_manager = HostProcessManager(
+            on_event=self._handle_event,
+            runtime_executable=runtime_executable,
+            runner_boot_path=runner_boot_path,
         )
         self._state_root = state_root
-        self._supervisor = ProcessSupervisor(on_event=self._handle_event)
         self._auto_restart = True
         self._shutting_down = False
         self._recent_exit_times: list[float] = []
 
     @property
     def is_running(self) -> bool:
-        return self._supervisor.is_running()
+        return self._host_manager.is_running()
 
     def start(self) -> None:
         """Launch the REPL subprocess (no-op if already running)."""
-        if self._supervisor.is_running():
+        if self._host_manager.is_running():
             return
         self._shutting_down = False
         self._auto_restart = True
@@ -84,8 +80,8 @@ class ReplSessionManager:
         """Stop the REPL subprocess and suppress auto-restart."""
         self._auto_restart = False
         self._shutting_down = True
-        if self._supervisor.is_running():
-            self._supervisor.stop()
+        if self._host_manager.is_running():
+            self._host_manager.stop()
 
     def restart(self) -> None:
         """Stop then re-launch the REPL subprocess."""
@@ -105,14 +101,14 @@ class ReplSessionManager:
         """Send *text* to the REPL subprocess stdin."""
         if not text.endswith("\n"):
             text += "\n"
-        self._supervisor.send_input(text)
+        self._host_manager.send_input(text)
 
     def shutdown(self) -> None:
         """Permanent shutdown (call during app close)."""
         self._auto_restart = False
         self._shutting_down = True
-        if self._supervisor.is_running():
-            self._supervisor.stop()
+        if self._host_manager.is_running():
+            self._host_manager.stop()
 
     # ------------------------------------------------------------------
     # Internal
@@ -143,15 +139,9 @@ class ReplSessionManager:
         )
         save_run_manifest(str(manifest_path), manifest)
 
-        command = self._build_command(str(manifest_path))
-        self._supervisor.start(command, cwd=str(home_dir), env=os.environ.copy())
-
-    def _build_command(self, manifest_path: str) -> list[str]:
-        runtime_executable = resolve_runtime_executable(self._runtime_executable)
-        return build_runner_command(
-            runtime_executable=runtime_executable,
-            runner_boot_path=self._runner_boot_path,
+        self._host_manager.start_manifest(
             manifest_path=manifest_path,
+            cwd=str(home_dir),
         )
 
     def _handle_event(self, event: ProcessEvent) -> None:
@@ -188,7 +178,7 @@ class ReplSessionManager:
     def _do_auto_restart(self) -> None:
         if self._shutting_down or not self._auto_restart:
             return
-        if self._supervisor.is_running():
+        if self._host_manager.is_running():
             return
         _logger.info("Auto-restarting REPL session")
         try:

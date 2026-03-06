@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import os
 from pathlib import Path
-import sys
 import uuid
 from typing import Callable
 
@@ -15,15 +13,14 @@ from app.bootstrap.paths import (
     ensure_directory,
     project_logs_dir,
     project_runs_dir,
-    resolve_app_root,
     resolve_global_state_root,
 )
 from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.core.models import LoadedProject
 from app.debug.debug_event_protocol import parse_debug_output_line
+from app.run.host_process_manager import HostProcessManager
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
-from app.run.runner_command_builder import build_runner_command
 from app.run.run_manifest import RunManifest, save_run_manifest
 
 
@@ -52,17 +49,19 @@ class RunService:
         state_root: PathInput | None = None,
     ) -> None:
         self._on_event = on_event
-        self._runtime_executable = runtime_executable
-        self._runner_boot_path = str((Path(runner_boot_path).expanduser().resolve()) if runner_boot_path else resolve_app_root() / "run_runner.py")
         self._now_factory = now_factory or datetime.now
         self._state_root = state_root
-        self._supervisor = ProcessSupervisor(on_event=self._forward_event)
+        self._host_manager = HostProcessManager(
+            on_event=self._forward_event,
+            runtime_executable=runtime_executable,
+            runner_boot_path=runner_boot_path,
+        )
         self._current_session: RunSession | None = None
         self._is_debug_paused = False
 
     @property
     def supervisor(self) -> ProcessSupervisor:
-        return self._supervisor
+        return self._host_manager.supervisor
 
     @property
     def current_session(self) -> RunSession | None:
@@ -145,8 +144,10 @@ class RunService:
         )
         save_run_manifest(manifest_path, manifest)
 
-        command = self._build_runner_command(str(manifest_path))
-        self._supervisor.start(command, cwd=launch_cwd, env=os.environ.copy())
+        self._host_manager.start_manifest(
+            manifest_path=str(manifest_path),
+            cwd=launch_cwd,
+        )
         self._current_session = RunSession(
             run_id=run_id,
             manifest_path=str(manifest_path),
@@ -160,23 +161,15 @@ class RunService:
 
     def stop_run(self) -> int | None:
         """Stop active run process if running."""
-        return self._supervisor.stop()
+        return self._host_manager.stop()
 
     def pause_run(self) -> bool:
         """Interrupt active run process to enter paused/debug interaction."""
-        return self._supervisor.pause()
+        return self._host_manager.pause()
 
     def send_input(self, text: str) -> None:
         """Send stdin input to active runner process."""
-        self._supervisor.send_input(text)
-
-    def _build_runner_command(self, manifest_path: str) -> list[str]:
-        runtime_executable = resolve_runtime_executable(self._runtime_executable)
-        return build_runner_command(
-            runtime_executable=runtime_executable,
-            runner_boot_path=self._runner_boot_path,
-            manifest_path=manifest_path,
-        )
+        self._host_manager.send_input(text)
 
     def _forward_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:
@@ -228,14 +221,3 @@ def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> 
     """Build projectless REPL log path under global state."""
     logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
     return logs_directory / f"run_{run_id}.log"
-
-
-def resolve_runtime_executable(configured_runtime: str | None) -> str:
-    """Resolve runtime executable path used to spawn runner process."""
-    if configured_runtime:
-        return str(Path(configured_runtime).expanduser().resolve())
-
-    default_runtime = Path(constants.APP_RUN_PATH)
-    if default_runtime.exists():
-        return str(default_runtime.resolve())
-    return sys.executable
