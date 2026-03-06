@@ -28,6 +28,7 @@ class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
     on_new_project: Callable[[], object] | None = None
+    on_new_window: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
@@ -144,6 +145,16 @@ def build_menu_stubs(
         "Ctrl+N",
         enabled=True,
         callback=callback_registry.on_new_project,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.newWindow",
+        "New Window",
+        "Ctrl+Shift+N",
+        enabled=True,
+        callback=callback_registry.on_new_window,
         shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(

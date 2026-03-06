@@ -90,6 +90,11 @@ from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
+from app.run.runtime_launch import (
+    build_runpy_bootstrap_payload,
+    is_freecad_runtime_executable,
+    resolve_runtime_executable,
+)
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
@@ -420,6 +425,7 @@ class MainWindow(QMainWindow):
             self,
             callbacks=MenuCallbacks(
                 on_open_project=self._handle_open_project_action,
+                on_new_window=self._handle_new_window_action,
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
@@ -864,6 +870,35 @@ class MainWindow(QMainWindow):
         if not selected_path:
             return
         self._open_project_by_path(selected_path)
+
+    def _handle_new_window_action(self) -> None:
+        repo_root = self._resolve_repo_root_for_launch()
+        editor_boot = (repo_root / "run_editor.py").resolve()
+        if not editor_boot.exists():
+            QMessageBox.warning(
+                self,
+                "New Window unavailable",
+                f"Editor boot script not found: {editor_boot}",
+            )
+            return
+        command = self._build_new_window_command(repo_root=repo_root, editor_boot=editor_boot)
+        try:
+            subprocess.Popen(command, cwd=str(repo_root), start_new_session=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "New Window unavailable", f"Unable to launch new window: {exc}")
+
+    def _resolve_repo_root_for_launch(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _build_new_window_command(self, *, repo_root: Path, editor_boot: Path) -> list[str]:
+        runtime_executable = resolve_runtime_executable(None)
+        if is_freecad_runtime_executable(runtime_executable):
+            payload = build_runpy_bootstrap_payload(
+                script_path=str(editor_boot),
+                path_entry=str(repo_root),
+            )
+            return [runtime_executable, "-c", payload]
+        return [runtime_executable, str(editor_boot)]
 
     def _handle_new_project_action(self) -> None:
         project_details = self._prompt_for_new_project_destination()

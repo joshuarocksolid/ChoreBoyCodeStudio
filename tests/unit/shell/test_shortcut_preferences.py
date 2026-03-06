@@ -24,6 +24,7 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["shell.action.run.stop"] == "Ctrl+F2"
     assert defaults["shell.action.run.restart"] == "Ctrl+Shift+F2"
     assert defaults["shell.action.edit.hoverInfo"] == "Ctrl+Shift+I"
+    assert defaults["shell.action.file.newWindow"] == "Ctrl+Shift+N"
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
 
