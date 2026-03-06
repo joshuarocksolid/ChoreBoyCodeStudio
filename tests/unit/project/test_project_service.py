@@ -51,6 +51,8 @@ def test_open_project_returns_loaded_project_for_valid_minimal_layout(tmp_path: 
     assert [entry.relative_path for entry in loaded_project.entries] == [
         "app",
         "app/main.py",
+        "cbcs",
+        "cbcs/project.json",
         "readme.md",
         "run.py",
     ]
@@ -304,8 +306,8 @@ def test_open_project_propagates_manifest_validation_error_with_path_context(tmp
     assert "Invalid JSON" in str(exc_info.value)
 
 
-def test_enumerate_project_entries_is_deterministic_and_excludes_cbcs(tmp_path: Path) -> None:
-    """Enumeration should be stable across calls and skip internal metadata noise."""
+def test_enumerate_project_entries_is_deterministic_and_includes_cbcs(tmp_path: Path) -> None:
+    """Enumeration should be stable across calls and include canonical cbcs metadata."""
     project_root = tmp_path / "project_tree"
     _write_valid_manifest(project_root, name="Project Tree")
     (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
@@ -324,10 +326,11 @@ def test_enumerate_project_entries_is_deterministic_and_excludes_cbcs(tmp_path: 
         "app/main.py",
         "app/utils",
         "app/utils/helpers.py",
+        "cbcs",
+        "cbcs/project.json",
         "notes.txt",
         "run.py",
     ]
-    assert all(not entry.relative_path.startswith("cbcs") for entry in first)
 
 
 def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:

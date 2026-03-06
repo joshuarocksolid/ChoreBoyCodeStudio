@@ -15,11 +15,12 @@ from PySide2.QtWidgets import QApplication  # noqa: E402
 from app.core import constants  # noqa: E402
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
-from app.editors.syntax_python import PythonSyntaxHighlighter  # noqa: E402
-from app.intelligence.semantic_tokens import SemanticTokenSpan, build_python_semantic_spans  # noqa: E402
+from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
+from app.treesitter.loader import initialize_tree_sitter_runtime  # noqa: E402
 
 pytestmark = pytest.mark.integration
+_TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -52,10 +53,24 @@ def _p95(samples: list[float]) -> float:
     return ordered[rank]
 
 
+def _create_python_highlighter(document: QTextDocument) -> object:
+    if not _TREE_SITTER_AVAILABLE:
+        pytest.skip("Tree-sitter runtime unavailable in this environment.")
+    registry = default_syntax_highlighter_registry()
+    highlighter = registry.create_for_path(
+        file_path="/tmp/main.py",
+        document=document,
+        is_dark=False,
+        sample_text="def run():\n    return 1\n",
+    )
+    assert highlighter is not None
+    return highlighter
+
+
 def test_python_rehighlight_2000_loc_under_250ms() -> None:
     source = _large_python_source(2000)
     document = QTextDocument()
-    highlighter = PythonSyntaxHighlighter(document, is_dark=False)
+    highlighter = _create_python_highlighter(document)
     document.setPlainText(source)
 
     start = time.perf_counter()
@@ -70,7 +85,7 @@ def test_python_rehighlight_2000_loc_p95_under_300ms() -> None:
     samples: list[float] = []
     for _ in range(10):
         document = QTextDocument()
-        highlighter = PythonSyntaxHighlighter(document, is_dark=False)
+        highlighter = _create_python_highlighter(document)
         document.setPlainText(source)
         start = time.perf_counter()
         highlighter.rehighlight()
@@ -78,26 +93,21 @@ def test_python_rehighlight_2000_loc_p95_under_300ms() -> None:
     assert _p95(samples) <= 300.0
 
 
-def test_semantic_span_extraction_2000_loc_p95_under_120ms() -> None:
+def test_tree_sitter_rehighlight_typing_burst_p95_under_140ms() -> None:
     source = _large_python_source(2000)
-    samples: list[float] = []
-    for _ in range(12):
-        start = time.perf_counter()
-        spans = build_python_semantic_spans(source)
-        samples.append((time.perf_counter() - start) * 1000.0)
-        assert spans
-    assert _p95(samples) <= 120.0
+    document = QTextDocument()
+    highlighter = _create_python_highlighter(document)
+    document.setPlainText(source)
+    highlighter.rehighlight()
 
-
-def test_semantic_refresh_typing_burst_p95_under_140ms() -> None:
-    base_source = _large_python_source(2000)
     samples: list[float] = []
     for iteration in range(18):
-        source = base_source + f"# edit {iteration}\n"
+        cursor = QTextCursor(document)
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText(f"# edit {iteration}\n")
         start = time.perf_counter()
-        spans = build_python_semantic_spans(source)
+        highlighter.rehighlight()
         samples.append((time.perf_counter() - start) * 1000.0)
-        assert spans
     assert _p95(samples) <= 140.0
 
 
@@ -145,8 +155,6 @@ def test_large_file_adaptive_mode_limits_overlay_volume() -> None:
         constants.HIGHLIGHTING_MODE_REDUCED,
         constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
     }
-    editor.set_semantic_token_spans([SemanticTokenSpan(start=0, end=5, token_type="function")])
-    assert editor._semantic_selections == []
     diagnostics = [
         CodeDiagnostic(
             code="W001",

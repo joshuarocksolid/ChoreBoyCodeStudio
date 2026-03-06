@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from typing import Callable, Mapping
 
 from app.bootstrap.paths import PathInput, resolve_app_root
-from app.core import constants
+from app.run.runtime_launch import (
+    build_runpy_bootstrap_payload,
+    is_freecad_runtime_executable,
+    resolve_runtime_executable,
+)
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 
 
@@ -50,16 +53,14 @@ class PluginHostSupervisor:
     def _build_command(self) -> list[str]:
         runtime_executable = self._resolve_runtime_executable()
         state_root = None if self._state_root is None else str(Path(self._state_root).expanduser().resolve())
-        if Path(runtime_executable).name in {"AppRun", "freecad", "FreeCAD"}:
-            bootstrap_parent = str(Path(self._host_boot_path).parent)
+        if is_freecad_runtime_executable(runtime_executable):
             argv = [self._host_boot_path]
             if state_root is not None:
                 argv.extend(["--state-root", state_root])
-            payload = (
-                "import runpy, sys;"
-                f"sys.path.insert(0, {bootstrap_parent!r});"
-                f"sys.argv={argv!r};"
-                f"runpy.run_path({self._host_boot_path!r}, run_name='__main__')"
+            payload = build_runpy_bootstrap_payload(
+                script_path=self._host_boot_path,
+                path_entry=str(Path(self._host_boot_path).parent),
+                argv=argv,
             )
             return [runtime_executable, "-c", payload]
         command = [runtime_executable, self._host_boot_path]
@@ -68,9 +69,4 @@ class PluginHostSupervisor:
         return command
 
     def _resolve_runtime_executable(self) -> str:
-        if self._runtime_executable:
-            return str(Path(self._runtime_executable).expanduser().resolve())
-        default_runtime = Path(constants.APP_RUN_PATH)
-        if default_runtime.exists():
-            return str(default_runtime.resolve())
-        return sys.executable
+        return resolve_runtime_executable(self._runtime_executable)

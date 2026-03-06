@@ -10,6 +10,8 @@ from pathlib import Path
 import threading
 from typing import Callable
 
+from app.project.file_excludes import should_exclude_relative_path
+
 
 @dataclass(frozen=True)
 class SearchMatch:
@@ -106,19 +108,8 @@ def find_in_files(
         if any(part in _STRUCTURAL_SKIP_DIRS for part in file_path.parts):
             continue
         rel_path = file_path.relative_to(root).as_posix()
-        if _active_excludes:
-            _skip = False
-            for ep in _active_excludes:
-                if "/" in ep:
-                    if fnmatch.fnmatch(rel_path, ep):
-                        _skip = True
-                        break
-                else:
-                    if any(fnmatch.fnmatch(part, ep) for part in file_path.relative_to(root).parts):
-                        _skip = True
-                        break
-            if _skip:
-                continue
+        if _active_excludes and should_exclude_relative_path(rel_path, _active_excludes, is_directory=False):
+            continue
         if not _should_include_file(rel_path, opts):
             continue
 

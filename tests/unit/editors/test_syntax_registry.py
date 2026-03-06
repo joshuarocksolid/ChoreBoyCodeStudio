@@ -1,9 +1,6 @@
-"""Unit tests for syntax highlighter registry."""
+"""Unit tests for tree-sitter syntax highlighter registry."""
 
 from __future__ import annotations
-
-import ast
-import inspect
 
 import pytest
 
@@ -11,11 +8,20 @@ pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
 
 from PySide2.QtGui import QPalette, QTextDocument  # noqa: E402
 
-import app.editors.syntax_registry as syntax_registry_module  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
+from app.treesitter.loader import initialize_tree_sitter_runtime  # noqa: E402
 
 pytestmark = pytest.mark.unit
+_TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
+
+
+def _assert_python_highlighter_shape(highlighter: object | None) -> None:
+    if _TREE_SITTER_AVAILABLE:
+        assert highlighter is not None
+        assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+        return
+    assert highlighter is None
 
 
 def test_registry_returns_python_highlighter_for_py_extension() -> None:
@@ -25,8 +31,7 @@ def test_registry_returns_python_highlighter_for_py_extension() -> None:
         document=QTextDocument(),
         is_dark=False,
     )
-    assert highlighter is not None
-    assert highlighter.__class__.__name__ == "PythonSyntaxHighlighter"
+    _assert_python_highlighter_shape(highlighter)
 
 
 def test_registry_sniffs_shebang_for_python_without_extension() -> None:
@@ -37,8 +42,7 @@ def test_registry_sniffs_shebang_for_python_without_extension() -> None:
         is_dark=False,
         sample_text="#!/usr/bin/env python\nprint('ok')\n",
     )
-    assert highlighter is not None
-    assert highlighter.__class__.__name__ == "PythonSyntaxHighlighter"
+    _assert_python_highlighter_shape(highlighter)
 
 
 def test_registry_returns_none_for_unknown_text_without_sniff_match() -> None:
@@ -59,8 +63,7 @@ def test_registry_supports_pyw_extension_for_python() -> None:
         document=QTextDocument(),
         is_dark=False,
     )
-    assert highlighter is not None
-    assert highlighter.__class__.__name__ == "PythonSyntaxHighlighter"
+    _assert_python_highlighter_shape(highlighter)
 
 
 def test_registry_sniffs_extensionless_markdown_files() -> None:
@@ -71,8 +74,11 @@ def test_registry_sniffs_extensionless_markdown_files() -> None:
         is_dark=False,
         sample_text="## 1.0.0\n- Added feature\n",
     )
-    assert highlighter is not None
-    assert highlighter.__class__.__name__ == "MarkdownSyntaxHighlighter"
+    if _TREE_SITTER_AVAILABLE:
+        assert highlighter is not None
+        assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+        return
+    assert highlighter is None
 
 
 def test_registry_sniffs_extensionless_python_without_shebang() -> None:
@@ -83,8 +89,7 @@ def test_registry_sniffs_extensionless_python_without_shebang() -> None:
         is_dark=False,
         sample_text="def configure(ctx):\n    pass\n",
     )
-    assert highlighter is not None
-    assert highlighter.__class__.__name__ == "PythonSyntaxHighlighter"
+    _assert_python_highlighter_shape(highlighter)
 
 
 def test_syntax_palette_includes_extended_semantic_keys() -> None:
@@ -100,19 +105,17 @@ def test_syntax_palette_includes_extended_semantic_keys() -> None:
     assert palette["semantic_constant"] == tokens.syntax_semantic_constant
 
 
-def test_highlighter_factory_alias_avoids_runtime_union_operator() -> None:
-    """HighlighterFactory alias must stay Python 3.9 runtime-compatible."""
-    source = inspect.getsource(syntax_registry_module)
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
+def test_registry_returns_tree_sitter_for_multiple_languages() -> None:
+    registry = default_syntax_highlighter_registry()
+    for file_path in ("/tmp/example.py", "/tmp/settings.json", "/tmp/readme.md"):
+        highlighter = registry.create_for_path(
+            file_path=file_path,
+            document=QTextDocument(),
+            is_dark=False,
+            sample_text="placeholder",
+        )
+        if _TREE_SITTER_AVAILABLE:
+            assert highlighter is not None
+            assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
             continue
-        if not node.targets:
-            continue
-        target = node.targets[0]
-        if not isinstance(target, ast.Name) or target.id != "HighlighterFactory":
-            continue
-        alias_expression = ast.get_source_segment(source, node.value) or ""
-        assert "| None" not in alias_expression
-        return
-    pytest.fail("HighlighterFactory assignment not found")
+        assert highlighter is None

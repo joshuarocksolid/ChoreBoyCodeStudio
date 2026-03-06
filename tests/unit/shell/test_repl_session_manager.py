@@ -14,30 +14,33 @@ pytestmark = pytest.mark.unit
 class _FakeSupervisor:
     def __init__(self) -> None:
         self._running = False
-        self.start_calls: list[tuple[list[str], str]] = []
+        self.start_calls: list[tuple[str, str]] = []
         self.stop_calls: int = 0
+        self.inputs: list[str] = []
 
     def is_running(self) -> bool:
         return self._running
 
-    def start(self, command: list[str], *, cwd: str, env=None) -> int:
-        self.start_calls.append((command, cwd))
+    def start_manifest(self, *, manifest_path: str, cwd: str, env=None) -> int:
+        self.start_calls.append((manifest_path, cwd))
         self._running = True
         return 12345
 
-    def stop(self, *, terminate_timeout_seconds: float = 2.0) -> int | None:
+    def stop(self) -> int | None:
         self.stop_calls += 1
         self._running = False
         return 0
 
     def send_input(self, text: str) -> None:
-        pass
+        self.inputs.append(text)
 
 
 def _make_manager(**kwargs) -> tuple[ReplSessionManager, _FakeSupervisor]:
-    mgr = ReplSessionManager(state_root="/tmp/test-repl-state", **kwargs)
+    if "state_root" not in kwargs:
+        kwargs["state_root"] = "/tmp/test-repl-state"
+    mgr = ReplSessionManager(**kwargs)
     fake_sup = _FakeSupervisor()
-    mgr._supervisor = fake_sup  # type: ignore[assignment]
+    mgr._host_manager = fake_sup  # type: ignore[assignment]
     return mgr, fake_sup
 
 
@@ -70,20 +73,14 @@ def test_restart_stops_then_starts() -> None:
 
 def test_send_input_appends_newline() -> None:
     mgr, sup = _make_manager()
-    sup._running = True
-    sent: list[str] = []
-    sup.send_input = lambda text: sent.append(text)  # type: ignore[assignment]
     mgr.send_input("print(1)")
-    assert sent == ["print(1)\n"]
+    assert sup.inputs == ["print(1)\n"]
 
 
 def test_send_input_preserves_existing_newline() -> None:
     mgr, sup = _make_manager()
-    sup._running = True
-    sent: list[str] = []
-    sup.send_input = lambda text: sent.append(text)  # type: ignore[assignment]
     mgr.send_input("print(1)\n")
-    assert sent == ["print(1)\n"]
+    assert sup.inputs == ["print(1)\n"]
 
 
 def test_shutdown_prevents_restart() -> None:
@@ -114,20 +111,12 @@ def test_session_ended_callback_invoked() -> None:
     assert ended == [(0, False)]
 
 
-def test_build_command_for_apprun_bootstraps_runner_parent_path(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    runner_boot = tmp_path / "run_runner.py"
-    runner_boot.write_text("print('stub')\n", encoding="utf-8")
-    mgr = ReplSessionManager(
-        runtime_executable="/opt/freecad/AppRun",
-        runner_boot_path=str(runner_boot),
-        state_root=str(tmp_path / "state"),
-    )
+def test_launch_delegates_manifest_start_to_host_manager(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    mgr, sup = _make_manager(state_root=str(tmp_path))
 
-    command = mgr._build_command("/tmp/run_manifest.json")
+    mgr._launch()
 
-    assert command[0] == "/opt/freecad/AppRun"
-    assert command[1] == "-c"
-    payload = command[2]
-    assert "sys.path.insert(0" in payload
-    assert str(tmp_path.resolve()) in payload
-    assert "runpy.run_path" in payload
+    assert len(sup.start_calls) == 1
+    manifest_path, cwd = sup.start_calls[0]
+    assert str(manifest_path).endswith(".json")
+    assert cwd
