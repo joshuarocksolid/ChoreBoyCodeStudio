@@ -1,0 +1,20 @@
+{
+  "connection": {
+    "database": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres"
+  },
+  "elapsed_seconds": 0.525280237197876,
+  "file_size_bytes": 7792332,
+  "insert_statement_count": 50000,
+  "row_count": 50000,
+  "row_limit": null,
+  "syntax_check": {
+    "error": "",
+    "ok": true,
+    "performed": true,
+    "rows_checked": 5
+  },
+  "table": "public.resultset_test"
+}

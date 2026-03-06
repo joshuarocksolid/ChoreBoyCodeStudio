@@ -1,0 +1,135 @@
+{
+  "columns": [
+    {
+      "default": "nextval('job_manager.addresses_id_seq'::regclass)",
+      "name": "id",
+      "not_null": true,
+      "type": "integer"
+    },
+    {
+      "default": null,
+      "name": "address_line",
+      "not_null": true,
+      "type": "character varying(255)"
+    },
+    {
+      "default": null,
+      "name": "city",
+      "not_null": true,
+      "type": "character varying(100)"
+    },
+    {
+      "default": null,
+      "name": "state",
+      "not_null": true,
+      "type": "character varying(100)"
+    },
+    {
+      "default": null,
+      "name": "zip_code",
+      "not_null": true,
+      "type": "character varying(20)"
+    }
+  ],
+  "connection": {
+    "database": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres"
+  },
+  "constraints": {
+    "foreign_keys": [],
+    "primary_or_unique": [
+      {
+        "column_list": "id",
+        "constraint_name": "addresses_pkey",
+        "constraint_type": "PRIMARY KEY"
+      }
+    ]
+  },
+  "functions_sample": [],
+  "indexes": [
+    {
+      "definition": "CREATE UNIQUE INDEX addresses_pkey ON job_manager.addresses USING btree (id)",
+      "name": "addresses_pkey"
+    }
+  ],
+  "sequence_defaults": [
+    {
+      "column_default": "nextval('job_manager.addresses_id_seq'::regclass)",
+      "column_name": "id"
+    }
+  ],
+  "sequences": [
+    {
+      "name": "addresses_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "audit_logs_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "crews_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "customers_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "document_addresses_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "documents_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "events_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "hours_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "items_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "permissions_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "role_permissions_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "roles_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "settings_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "steps_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "user_roles_id_seq",
+      "schema": "job_manager"
+    },
+    {
+      "name": "users_id_seq",
+      "schema": "job_manager"
+    }
+  ],
+  "table": {
+    "name": "addresses",
+    "qualified_name": "job_manager.addresses",
+    "schema": "job_manager"
+  },
+  "views_sample": []
+}

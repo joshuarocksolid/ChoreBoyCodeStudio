@@ -1,0 +1,30 @@
+[Runtime]
+  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
+  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Target database: postgres
+  Sample table: public.acct_trans
+
+[pg8000 import]
+  pg8000: YES (1.31.5)
+
+[Connection]
+  connect: YES (postgres@localhost:5432/postgres)
+
+[COPY smoke test with temp table]
+  copy temp table: YES (bytes=149, elapsed=0.000973s)
+  temp copy file (/home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_temp_table_copy.csv)
+
+[Sample table row count]
+  sample table fallback (requested=public.acct_trans, using=public.resultset_test)
+  sample table exists: YES (public.resultset_test)
+  sample table row_count (50000)
+
+[Sample table COPY throughput]
+  sample table copy: YES (rows=50000, bytes=1766812, rows_per_sec=451735.84, bytes_per_sec=15962645.94)
+  sample copy preview file (/home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_sample_copy_preview.csv)
+
+[Connection close]
+  close connection: YES
+
+[Metrics file written]
+  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_metrics.json

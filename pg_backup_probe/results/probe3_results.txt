@@ -1,0 +1,55 @@
+[Runtime]
+  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
+  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Target database: postgres
+  Sample table: public.acct_trans
+
+[pg8000 import]
+  pg8000: YES (1.31.5)
+
+[Connection]
+  connect: YES (postgres@localhost:5432/postgres)
+
+[Table existence]
+  sample table fallback (requested=public.acct_trans, using=job_manager.addresses)
+  table exists: YES (job_manager.addresses)
+
+[Columns]
+  id: type=integer not_null=True default=nextval('job_manager.addresses_id_seq'::regclass)
+  address_line: type=character varying(255) not_null=True default=None
+  city: type=character varying(100) not_null=True default=None
+  state: type=character varying(100) not_null=True default=None
+  zip_code: type=character varying(20) not_null=True default=None
+  column_count: YES (5)
+
+[Primary key and unique constraints]
+  addresses_pkey: type=PRIMARY KEY columns=id
+  primary_or_unique_count (1)
+
+[Foreign keys]
+  foreign_key_count (0)
+
+[Indexes]
+  addresses_pkey: CREATE UNIQUE INDEX addresses_pkey ON job_manager.addresses USING btree (id)
+  index_count (1)
+
+[Sequences]
+  sequence_count_in_schema (16)
+  id: nextval('job_manager.addresses_id_seq'::regclass)
+  sequence_defaults_on_table (1)
+
+[Views sample]
+  views_sample_count (0)
+
+[Functions sample]
+  functions_sample_count (0)
+
+[Connection close]
+  close connection: YES
+
+[Generated SQL]
+  generated_statement_count=3
+
+[Generated files]
+  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe3_extracted_ddl.sql
+  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe3_metadata.json

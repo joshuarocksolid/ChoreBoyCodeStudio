@@ -4,7 +4,7 @@ import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
 VENDOR_DIR = os.path.join(BASE_DIR, "vendor")
-for candidate in (REPO_ROOT, VENDOR_DIR):
+for candidate in (REPO_ROOT, BASE_DIR, VENDOR_DIR):
     if os.path.isdir(candidate) and candidate not in sys.path:
         sys.path.insert(0, candidate)
 
@@ -27,6 +27,9 @@ class MainWindow(QMainWindow):
         self.show_status("Ready", 2000)
 
     def _build_ui(self):
+        self.jvm_state_label = QLabel(self)
+        self.statusBar().addPermanentWidget(self.jvm_state_label)
+
         self.tabs = QTabWidget(self)
         self.setCentralWidget(self.tabs)
 
@@ -50,9 +53,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.standalone_tab, "Standalone Reports")
         self.tabs.addTab(self.system_tab, "System")
         self.tabs.currentChanged.connect(self._refresh_runtime_state)
-
-        self.jvm_state_label = QLabel(self)
-        self.statusBar().addPermanentWidget(self.jvm_state_label)
 
     def show_status(self, message, timeout_ms=5000):
         self.statusBar().showMessage(str(message), int(timeout_ms))

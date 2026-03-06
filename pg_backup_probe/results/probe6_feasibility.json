@@ -1,0 +1,281 @@
+{
+  "aggregate_bytes_per_second": 43287208.38254327,
+  "aggregate_rows_per_second": 374396.07364001195,
+  "connection": {
+    "admin_database": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres"
+  },
+  "database_estimates": [
+    {
+      "database": "sgr_dev",
+      "estimated_backup_seconds": 0.9710294003840404,
+      "table_total_bytes": 42033152
+    },
+    {
+      "database": "ca_2024",
+      "estimated_backup_seconds": 0.3497295521164893,
+      "table_total_bytes": 15138816
+    },
+    {
+      "database": "gts_rental_ca_backup",
+      "estimated_backup_seconds": 0.31225852867543685,
+      "table_total_bytes": 13516800
+    },
+    {
+      "database": "ca_2023",
+      "estimated_backup_seconds": 0.28311439933239607,
+      "table_total_bytes": 12255232
+    },
+    {
+      "database": "ca_2024_rec_inv",
+      "estimated_backup_seconds": 0.2812219234010298,
+      "table_total_bytes": 12173312
+    },
+    {
+      "database": "carlisle_2025",
+      "estimated_backup_seconds": 0.24129068124920122,
+      "table_total_bytes": 10444800
+    },
+    {
+      "database": "sunrisedairy_backup",
+      "estimated_backup_seconds": 0.16805186270532602,
+      "table_total_bytes": 7274496
+    },
+    {
+      "database": "sunrisedairy_backup2",
+      "estimated_backup_seconds": 0.16710562473964288,
+      "table_total_bytes": 7233536
+    },
+    {
+      "database": "postgres",
+      "estimated_backup_seconds": 0.16104970175927077,
+      "table_total_bytes": 6971392
+    },
+    {
+      "database": "sunrisedairy",
+      "estimated_backup_seconds": 0.14420666597011084,
+      "table_total_bytes": 6242304
+    },
+    {
+      "database": "test_sgr_dev",
+      "estimated_backup_seconds": 0.06831838112232286,
+      "table_total_bytes": 2957312
+    },
+    {
+      "database": "gts_rental_scheduler_app_backup",
+      "estimated_backup_seconds": 0.06093772498999435,
+      "table_total_bytes": 2637824
+    },
+    {
+      "database": "unique-suite-jake-beiler",
+      "estimated_backup_seconds": 0.055638792382168754,
+      "table_total_bytes": 2408448
+    },
+    {
+      "database": "post_frame",
+      "estimated_backup_seconds": 0.03671403306850591,
+      "table_total_bytes": 1589248
+    },
+    {
+      "database": "unique-suite-jake-beiler_prod_backup",
+      "estimated_backup_seconds": 0.03520005232341288,
+      "table_total_bytes": 1523712
+    },
+    {
+      "database": "test_db",
+      "estimated_backup_seconds": 0.028008643784221004,
+      "table_total_bytes": 1212416
+    },
+    {
+      "database": "fertilizer_cmd_test",
+      "estimated_backup_seconds": 0.025737672666581463,
+      "table_total_bytes": 1114112
+    },
+    {
+      "database": "gts_scheduler_shop",
+      "estimated_backup_seconds": 0.02479143470089832,
+      "table_total_bytes": 1073152
+    },
+    {
+      "database": "qualitysips",
+      "estimated_backup_seconds": 0.017410778568569815,
+      "table_total_bytes": 753664
+    },
+    {
+      "database": "fertdebtest",
+      "estimated_backup_seconds": 0.014950559857793644,
+      "table_total_bytes": 647168
+    },
+    {
+      "database": "fertilizer_cmd_ctr",
+      "estimated_backup_seconds": 0.014004321892110502,
+      "table_total_bytes": 606208
+    },
+    {
+      "database": "django_probe",
+      "estimated_backup_seconds": 0.007948398911738394,
+      "table_total_bytes": 344064
+    },
+    {
+      "database": "kah_2025",
+      "estimated_backup_seconds": 0.004352694642142454,
+      "table_total_bytes": 188416
+    },
+    {
+      "database": "kahtest",
+      "estimated_backup_seconds": 0.003217209083322683,
+      "table_total_bytes": 139264
+    },
+    {
+      "database": "scheduling_josiah",
+      "estimated_backup_seconds": 0.0015139807450930273,
+      "table_total_bytes": 65536
+    },
+    {
+      "database": "contacts",
+      "estimated_backup_seconds": 0.0007569903725465136,
+      "table_total_bytes": 32768
+    },
+    {
+      "database": "test_gts_rental_ca_backup",
+      "estimated_backup_seconds": 0.0007569903725465136,
+      "table_total_bytes": 32768
+    },
+    {
+      "database": "django_probe_ascii",
+      "estimated_backup_seconds": 0.0,
+      "table_total_bytes": 0
+    },
+    {
+      "database": "gts_scheduler",
+      "estimated_backup_seconds": 0.0,
+      "table_total_bytes": 0
+    },
+    {
+      "database": "highline_db",
+      "estimated_backup_seconds": 0.0,
+      "table_total_bytes": 0
+    }
+  ],
+  "estimated_total_backup_seconds": 3.479316999816913,
+  "inventory_source": "probe2_inventory.json",
+  "recommendation": "Full all-database backup in one run is feasible as a manual user action.",
+  "sample_table_count": 8,
+  "timed_samples": [
+    {
+      "bytes_exported": 20302102,
+      "bytes_per_second": 106478219.51949422,
+      "database": "sgr_dev",
+      "elapsed_seconds": 0.19066905975341797,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.imports_importrow",
+      "row_count": 18000,
+      "rows_per_second": 94404.40952128485,
+      "schema": "public",
+      "table": "imports_importrow",
+      "table_size_bytes": 30752768
+    },
+    {
+      "bytes_exported": 2556806,
+      "bytes_per_second": 26551837.46323009,
+      "database": "ca_2024_rec_inv",
+      "elapsed_seconds": 0.09629487991333008,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.core_postal_code_record",
+      "row_count": 43628,
+      "rows_per_second": 453066.6639728639,
+      "schema": "public",
+      "table": "core_postal_code_record",
+      "table_size_bytes": 8658944
+    },
+    {
+      "bytes_exported": 2556806,
+      "bytes_per_second": 26962933.917874347,
+      "database": "ca_2023",
+      "elapsed_seconds": 0.09482669830322266,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.core_postal_code_record",
+      "row_count": 43628,
+      "rows_per_second": 460081.39881125983,
+      "schema": "public",
+      "table": "core_postal_code_record",
+      "table_size_bytes": 7602176
+    },
+    {
+      "bytes_exported": 2556806,
+      "bytes_per_second": 26765823.55912854,
+      "database": "ca_2024",
+      "elapsed_seconds": 0.09552502632141113,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.core_postal_code_record",
+      "row_count": 43628,
+      "rows_per_second": 456718.0107672072,
+      "schema": "public",
+      "table": "core_postal_code_record",
+      "table_size_bytes": 7602176
+    },
+    {
+      "bytes_exported": 2556806,
+      "bytes_per_second": 27334883.85252855,
+      "database": "carlisle_2025",
+      "elapsed_seconds": 0.093536376953125,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.core_postal_code_record",
+      "row_count": 43628,
+      "rows_per_second": 466428.15791190864,
+      "schema": "public",
+      "table": "core_postal_code_record",
+      "table_size_bytes": 7602176
+    },
+    {
+      "bytes_exported": 2556806,
+      "bytes_per_second": 27125249.481535442,
+      "database": "gts_rental_ca_backup",
+      "elapsed_seconds": 0.09425926208496094,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.core_postal_code_record",
+      "row_count": 43628,
+      "rows_per_second": 462851.0666747607,
+      "schema": "public",
+      "table": "core_postal_code_record",
+      "table_size_bytes": 7602176
+    },
+    {
+      "bytes_exported": 1766812,
+      "bytes_per_second": 16526790.245336711,
+      "database": "postgres",
+      "elapsed_seconds": 0.10690593719482422,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.resultset_test",
+      "row_count": 50000,
+      "rows_per_second": 467700.8715510397,
+      "schema": "public",
+      "table": "resultset_test",
+      "table_size_bytes": 4513792
+    },
+    {
+      "bytes_exported": 936842,
+      "bytes_per_second": 17101598.777758434,
+      "database": "sunrisedairy_backup2",
+      "elapsed_seconds": 0.05478096008300781,
+      "error": "",
+      "method": "COPY TO STDOUT WITH CSV",
+      "qualified_name": "public.deliveries_deliveryproduct",
+      "row_count": 23410,
+      "rows_per_second": 427338.2570244769,
+      "schema": "public",
+      "table": "deliveries_deliveryproduct",
+      "table_size_bytes": 4366336
+    }
+  ],
+  "total_non_system_table_bytes": 150609920
+}

@@ -1,0 +1,5 @@
+id,txt,amount,created_at,is_active
+1,plain text,10.25,2026-03-01 10:11:12,t
+2,"line1
+line2",,2026-03-01 10:11:13,f
+3,"comma,quote ""value""",99.99,,
