@@ -33,6 +33,8 @@ class DeclarativeContributionManager:
         unsubscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         emit_message: Callable[[str], None],
         execute_plugin_runtime_command: Callable[[str, dict[str, Any]], Any],
+        on_runtime_command_success: Callable[[str, str], None],
+        on_runtime_command_failure: Callable[[str, str, str], None],
     ) -> None:
         self._register_runtime_command = register_runtime_command
         self._register_runtime_menu_command = register_runtime_menu_command
@@ -42,6 +44,8 @@ class DeclarativeContributionManager:
         self._unsubscribe_shell_event = unsubscribe_shell_event
         self._emit_message = emit_message
         self._execute_plugin_runtime_command = execute_plugin_runtime_command
+        self._on_runtime_command_success = on_runtime_command_success
+        self._on_runtime_command_failure = on_runtime_command_failure
         self._registered_command_ids: set[str] = set()
         self._event_subscriptions: list[tuple[type[object], Callable[[object], None]]] = []
 
@@ -65,12 +69,12 @@ class DeclarativeContributionManager:
             contributes = discovered.manifest.contributes
             commands_payload = contributes.get("commands", [])
             if isinstance(commands_payload, list):
-                self._apply_commands(discovered.plugin_id, commands_payload)
+                self._apply_commands(discovered.plugin_id, discovered.version, commands_payload)
             hooks_payload = contributes.get("event_hooks", [])
             if isinstance(hooks_payload, list):
                 self._apply_event_hooks(hooks_payload)
 
-    def _apply_commands(self, plugin_id: str, commands_payload: list[Any]) -> None:
+    def _apply_commands(self, plugin_id: str, version: str, commands_payload: list[Any]) -> None:
         for command_payload in commands_payload:
             if not isinstance(command_payload, dict):
                 continue
@@ -104,9 +108,11 @@ class DeclarativeContributionManager:
             if runtime_flag:
                 self._register_runtime_command(
                     normalized_command_id,
-                    lambda cid=normalized_command_id, payload=dict(runtime_payload): self._execute_plugin_runtime_command(
-                        cid,
-                        payload,
+                    lambda cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
+                        plugin_id=pid,
+                        version=ver,
+                        command_id=cid,
+                        payload=payload,
                     ),
                     True,
                 )
@@ -129,6 +135,22 @@ class DeclarativeContributionManager:
                 replace=True,
             )
             self._registered_command_ids.add(normalized_command_id)
+
+    def _execute_runtime_command_with_quarantine(
+        self,
+        *,
+        plugin_id: str,
+        version: str,
+        command_id: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        try:
+            result = self._execute_plugin_runtime_command(command_id, payload)
+        except Exception as exc:
+            self._on_runtime_command_failure(plugin_id, version, str(exc))
+            raise
+        self._on_runtime_command_success(plugin_id, version)
+        return result
 
     def _apply_event_hooks(self, hooks_payload: list[Any]) -> None:
         for hook_payload in hooks_payload:

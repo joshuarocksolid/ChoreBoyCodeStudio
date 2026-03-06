@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -27,11 +28,14 @@ class PluginManagerDialog(QDialog):
         *,
         state_root: PathInput | None = None,
         on_plugins_changed=None,
+        safe_mode_enabled: bool = False,
+        on_safe_mode_changed=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._state_root = state_root
         self._on_plugins_changed = on_plugins_changed
+        self._on_safe_mode_changed = on_safe_mode_changed
         self._plugins_tree = QTreeWidget(self)
         self._plugins_tree.setColumnCount(5)
         self._plugins_tree.setHeaderLabels(["Plugin", "Version", "Enabled", "Compatibility", "Path"])
@@ -49,13 +53,16 @@ class PluginManagerDialog(QDialog):
         self._disable_button = QPushButton("Disable", self)
         self._refresh_button = QPushButton("Refresh", self)
         self._close_button = QPushButton("Close", self)
+        self._safe_mode_checkbox = QCheckBox("Safe mode (disable all plugins)", self)
+        self._safe_mode_checkbox.setChecked(bool(safe_mode_enabled))
 
         controls_row = QHBoxLayout()
+        controls_row.addWidget(self._safe_mode_checkbox)
+        controls_row.addStretch(1)
         controls_row.addWidget(self._install_button)
         controls_row.addWidget(self._uninstall_button)
         controls_row.addWidget(self._enable_button)
         controls_row.addWidget(self._disable_button)
-        controls_row.addStretch(1)
         controls_row.addWidget(self._refresh_button)
         controls_row.addWidget(self._close_button)
 
@@ -72,6 +79,7 @@ class PluginManagerDialog(QDialog):
         self._disable_button.clicked.connect(self._handle_disable)
         self._refresh_button.clicked.connect(self.refresh_plugins)
         self._close_button.clicked.connect(self.accept)
+        self._safe_mode_checkbox.toggled.connect(self._handle_safe_mode_toggled)
         self._plugins_tree.itemSelectionChanged.connect(self._update_button_states)
 
         self.refresh_plugins()
@@ -108,6 +116,9 @@ class PluginManagerDialog(QDialog):
             item.setData(2, Qt.UserRole, enabled)
             self._plugins_tree.addTopLevelItem(item)
         self._update_button_states()
+
+    def set_safe_mode_enabled(self, enabled: bool) -> None:
+        self._safe_mode_checkbox.setChecked(bool(enabled))
 
     def _update_button_states(self) -> None:
         selected = self._selected_plugin_key()
@@ -220,3 +231,7 @@ class PluginManagerDialog(QDialog):
         self.refresh_plugins()
         if self._on_plugins_changed is not None:
             self._on_plugins_changed()
+
+    def _handle_safe_mode_toggled(self, checked: bool) -> None:
+        if self._on_safe_mode_changed is not None:
+            self._on_safe_mode_changed(bool(checked))

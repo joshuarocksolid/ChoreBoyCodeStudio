@@ -75,6 +75,7 @@ class PluginRegistryEntry:
     enabled: bool = True
     installed_at: str = ""
     last_error: str | None = None
+    failure_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -86,6 +87,7 @@ class PluginRegistryEntry:
         }
         if self.last_error:
             payload["last_error"] = self.last_error
+        payload["failure_count"] = self.failure_count
         return payload
 
 

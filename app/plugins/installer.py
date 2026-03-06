@@ -49,6 +49,7 @@ def install_plugin(
             enabled=True,
             installed_at=datetime.now().isoformat(timespec="seconds"),
             last_error=None,
+            failure_count=0,
         )
         upsert_registry_entry(registry_entry, state_root=state_root)
         return PluginInstallResult(

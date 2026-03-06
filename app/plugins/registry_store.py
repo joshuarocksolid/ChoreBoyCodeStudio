@@ -86,7 +86,8 @@ def set_registry_entry_enabled(
                     install_path=entry.install_path,
                     enabled=enabled,
                     installed_at=entry.installed_at,
-                    last_error=entry.last_error,
+                    last_error=None if enabled else entry.last_error,
+                    failure_count=0 if enabled else entry.failure_count,
                 )
             )
         else:
@@ -118,6 +119,7 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
         enabled = item.get("enabled", True)
         installed_at = item.get("installed_at", "")
         last_error = item.get("last_error")
+        failure_count = item.get("failure_count", 0)
         if not isinstance(plugin_id, str) or not plugin_id.strip():
             continue
         if not isinstance(version, str) or not version.strip():
@@ -130,6 +132,8 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
             installed_at = ""
         if last_error is not None and not isinstance(last_error, str):
             last_error = None
+        if not isinstance(failure_count, int) or failure_count < 0:
+            failure_count = 0
         entries.append(
             PluginRegistryEntry(
                 plugin_id=plugin_id.strip(),
@@ -138,6 +142,7 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
                 enabled=enabled,
                 installed_at=installed_at,
                 last_error=last_error,
+                failure_count=failure_count,
             )
         )
 
@@ -145,3 +150,69 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
         schema_version=schema_version,
         entries=sorted(entries, key=lambda item: (item.plugin_id, item.version)),
     )
+
+
+def record_registry_entry_failure(
+    plugin_id: str,
+    version: str,
+    *,
+    error_message: str,
+    disable_after_failures: int,
+    state_root: PathInput | None = None,
+) -> PluginRegistry:
+    registry = load_plugin_registry(state_root)
+    updated_entries: list[PluginRegistryEntry] = []
+    for entry in registry.entries:
+        if entry.plugin_id == plugin_id and entry.version == version:
+            next_failure_count = entry.failure_count + 1
+            should_disable = next_failure_count >= disable_after_failures
+            updated_entries.append(
+                PluginRegistryEntry(
+                    plugin_id=entry.plugin_id,
+                    version=entry.version,
+                    install_path=entry.install_path,
+                    enabled=False if should_disable else entry.enabled,
+                    installed_at=entry.installed_at,
+                    last_error=error_message,
+                    failure_count=next_failure_count,
+                )
+            )
+        else:
+            updated_entries.append(entry)
+    updated_registry = PluginRegistry(
+        schema_version=registry.schema_version,
+        entries=updated_entries,
+    )
+    save_plugin_registry(updated_registry, state_root)
+    return updated_registry
+
+
+def clear_registry_entry_failures(
+    plugin_id: str,
+    version: str,
+    *,
+    state_root: PathInput | None = None,
+) -> PluginRegistry:
+    registry = load_plugin_registry(state_root)
+    updated_entries: list[PluginRegistryEntry] = []
+    for entry in registry.entries:
+        if entry.plugin_id == plugin_id and entry.version == version:
+            updated_entries.append(
+                PluginRegistryEntry(
+                    plugin_id=entry.plugin_id,
+                    version=entry.version,
+                    install_path=entry.install_path,
+                    enabled=entry.enabled,
+                    installed_at=entry.installed_at,
+                    last_error=None,
+                    failure_count=0,
+                )
+            )
+        else:
+            updated_entries.append(entry)
+    updated_registry = PluginRegistry(
+        schema_version=registry.schema_version,
+        entries=updated_entries,
+    )
+    save_plugin_registry(updated_registry, state_root)
+    return updated_registry

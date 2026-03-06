@@ -19,6 +19,7 @@ PLUGIN_REGISTRY_SCHEMA_VERSION = 1
 PLUGIN_MANIFEST_FILENAME = "plugin.json"
 PLUGIN_PACKAGE_EXTENSION = ".cbcs-plugin.zip"
 PLUGIN_API_VERSION = 1
+PLUGIN_DISABLE_AFTER_FAILURES_DEFAULT = 3
 APP_LOG_FILENAME = "app.log"
 APP_LOGGER_NAMESPACE = "choreboy_code_studio"
 APP_LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

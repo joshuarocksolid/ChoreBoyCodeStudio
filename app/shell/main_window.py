@@ -93,7 +93,11 @@ from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
 from app.plugins.contributions import DeclarativeContributionManager
 from app.plugins.discovery import discover_installed_plugins
-from app.plugins.registry_store import load_plugin_registry
+from app.plugins.registry_store import (
+    clear_registry_entry_failures,
+    load_plugin_registry,
+    record_registry_entry_failure,
+)
 from app.plugins.runtime_manager import PluginRuntimeManager
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
@@ -235,6 +239,7 @@ class MainWindow(QMainWindow):
         self._action_registry: ShellActionRegistry | None = None
         self._event_bus = ShellEventBus()
         self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
+        self._plugin_safe_mode = self._load_plugin_safe_mode()
         self._declarative_contribution_manager = DeclarativeContributionManager(
             register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
                 command_id=command_id,
@@ -248,6 +253,8 @@ class MainWindow(QMainWindow):
             unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
             emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
             execute_plugin_runtime_command=self._execute_plugin_runtime_command,
+            on_runtime_command_success=self._clear_plugin_runtime_failure,
+            on_runtime_command_failure=self._record_plugin_runtime_failure,
         )
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
@@ -754,6 +761,28 @@ class MainWindow(QMainWindow):
 
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
         return self._load_main_window_settings().intelligence_runtime_settings
+
+    def _load_plugin_safe_mode(self) -> bool:
+        settings_payload = self._settings_service.load()
+        plugins_payload = settings_payload.get(constants.UI_PLUGINS_SETTINGS_KEY, {})
+        if not isinstance(plugins_payload, dict):
+            return constants.UI_PLUGINS_SAFE_MODE_DEFAULT
+        safe_mode = plugins_payload.get(constants.UI_PLUGINS_SAFE_MODE_KEY, constants.UI_PLUGINS_SAFE_MODE_DEFAULT)
+        return bool(safe_mode) if isinstance(safe_mode, bool) else constants.UI_PLUGINS_SAFE_MODE_DEFAULT
+
+    def _set_plugin_safe_mode(self, enabled: bool) -> None:
+        def _merge(payload: dict[str, object]) -> dict[str, object]:
+            merged = dict(payload)
+            plugins_payload = merged.get(constants.UI_PLUGINS_SETTINGS_KEY, {})
+            if not isinstance(plugins_payload, dict):
+                plugins_payload = {}
+            plugins_payload = dict(plugins_payload)
+            plugins_payload[constants.UI_PLUGINS_SAFE_MODE_KEY] = bool(enabled)
+            merged[constants.UI_PLUGINS_SETTINGS_KEY] = plugins_payload
+            return merged
+
+        self._settings_service.update(_merge)
+        self._plugin_safe_mode = bool(enabled)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         if self._is_shutting_down:
@@ -2272,17 +2301,28 @@ class MainWindow(QMainWindow):
             self._plugin_manager_dialog = PluginManagerDialog(
                 state_root=self._state_root,
                 on_plugins_changed=self._reload_plugin_contributions,
+                safe_mode_enabled=self._plugin_safe_mode,
+                on_safe_mode_changed=self._handle_plugin_safe_mode_changed,
                 parent=self,
             )
             self._plugin_manager_dialog.finished.connect(
                 lambda _result: setattr(self, "_plugin_manager_dialog", None)
             )
+        self._plugin_manager_dialog.set_safe_mode_enabled(self._plugin_safe_mode)
         self._plugin_manager_dialog.refresh_plugins()
         self._plugin_manager_dialog.show()
         self._plugin_manager_dialog.raise_()
         self._plugin_manager_dialog.activateWindow()
 
+    def _handle_plugin_safe_mode_changed(self, enabled: bool) -> None:
+        self._set_plugin_safe_mode(enabled)
+        self._reload_plugin_contributions()
+
     def _reload_plugin_contributions(self) -> None:
+        if self._plugin_safe_mode:
+            self._declarative_contribution_manager.clear()
+            self._plugin_runtime_manager.stop()
+            return
         registry = load_plugin_registry(self._state_root)
         enabled_map = {
             (entry.plugin_id, entry.version): entry.enabled
@@ -2302,6 +2342,34 @@ class MainWindow(QMainWindow):
         if isinstance(result, (dict, list)):
             return result
         return {"result": result}
+
+    def _record_plugin_runtime_failure(self, plugin_id: str, version: str, error_message: str) -> None:
+        updated_registry = record_registry_entry_failure(
+            plugin_id,
+            version,
+            error_message=error_message,
+            disable_after_failures=constants.PLUGIN_DISABLE_AFTER_FAILURES_DEFAULT,
+            state_root=self._state_root,
+        )
+        updated_entry = None
+        for entry in updated_registry.entries:
+            if entry.plugin_id == plugin_id and entry.version == version:
+                updated_entry = entry
+                break
+        if updated_entry is not None and not updated_entry.enabled:
+            QMessageBox.warning(
+                self,
+                "Plugin Disabled",
+                f"{plugin_id}@{version} was disabled after repeated runtime failures.",
+            )
+            self._reload_plugin_contributions()
+
+    def _clear_plugin_runtime_failure(self, plugin_id: str, version: str) -> None:
+        clear_registry_entry_failures(
+            plugin_id,
+            version,
+            state_root=self._state_root,
+        )
 
     def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         """Run diagnostics for *file_path* and update the editor + problems panel.
