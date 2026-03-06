@@ -89,3 +89,30 @@ def test_start_active_file_session_rejects_non_python_file(monkeypatch: pytest.M
 
     assert started is False
     assert warnings == [("Run unavailable", "Active file must be a Python file.")]
+
+
+def test_handle_tree_run_file_routes_selected_python_entry() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    calls: list[dict[str, object]] = []
+    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+
+    started = MainWindow._handle_tree_run_file(window, "/tmp/project/folder/run.py")
+
+    assert started is True
+    assert calls == [
+        {
+            "mode": constants.RUN_MODE_PYTHON_SCRIPT,
+            "entry_file": str(Path("/tmp/project/folder/run.py").expanduser().resolve()),
+        }
+    ]
+
+
+def test_handle_tree_run_file_ignores_non_python_target() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._start_session = lambda **_kwargs: True
+
+    started = MainWindow._handle_tree_run_file(window, "/tmp/project/readme.md")
+
+    assert started is False

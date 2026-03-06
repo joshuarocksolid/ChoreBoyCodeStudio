@@ -3716,6 +3716,7 @@ class MainWindow(QMainWindow):
         copy_path_action = menu.addAction("Copy Path")
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
+        run_file_action = None
         set_entry_point_action = None
         if (
             not is_directory
@@ -3723,6 +3724,8 @@ class MainWindow(QMainWindow):
             and Path(absolute_path).suffix.lower() == ".py"
         ):
             menu.addSeparator()
+            run_file_action = menu.addAction("Run")
+            run_file_action.setEnabled(not self._run_service.supervisor.is_running())
             set_entry_point_action = menu.addAction("Set as Entry Point")
             if relative_path == self._loaded_project.metadata.default_entry:
                 set_entry_point_action.setEnabled(False)
@@ -3756,8 +3759,19 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(relative_path)
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
+        elif run_file_action is not None and chosen == run_file_action:
+            self._handle_tree_run_file(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
             self._set_project_entry_point(relative_path)
+
+    def _handle_tree_run_file(self, absolute_path: str) -> bool:
+        entry_path = Path(absolute_path).expanduser().resolve()
+        if entry_path.suffix.lower() != ".py":
+            return False
+        return self._start_session(
+            mode=constants.RUN_MODE_PYTHON_SCRIPT,
+            entry_file=str(entry_path),
+        )
 
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
