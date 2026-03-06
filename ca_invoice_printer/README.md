@@ -21,7 +21,7 @@ The demo exercises most `jasper_bridge` capabilities:
 - print options (copies, collate, duplex)
 - export formats (PDF, HTML, CSV, XLS, XLSX, text, XML, PNG in batch export)
 - data sources (JDBC, JSON, CSV, empty)
-- typed params (`ImageParam`, `DateParam`, `TimeParam`, `DateTimeParam`)
+- typed params (`ImageParam`, `IntegerParam`, `DateParam`, `TimeParam`, `DateTimeParam`)
 - `validate_params=True` flows
 - batch export with `export_all`
 - report metadata via `info()`

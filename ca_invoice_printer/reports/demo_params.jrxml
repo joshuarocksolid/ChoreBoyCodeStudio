@@ -10,8 +10,8 @@
     <parameter name="TITLE" class="java.lang.String">
         <defaultValueExpression><![CDATA["Standalone Demo Report"]]></defaultValueExpression>
     </parameter>
-    <parameter name="QUANTITY" class="java.lang.Integer">
-        <defaultValueExpression><![CDATA[Integer.valueOf(1)]]></defaultValueExpression>
+    <parameter name="QUANTITY" class="java.lang.Long">
+        <defaultValueExpression><![CDATA[Long.valueOf(1L)]]></defaultValueExpression>
     </parameter>
     <parameter name="PRICE" class="java.lang.Double">
         <defaultValueExpression><![CDATA[Double.valueOf(10.0)]]></defaultValueExpression>

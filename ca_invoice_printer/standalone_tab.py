@@ -23,7 +23,16 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from jasper_bridge import DateParam, DateTimeParam, ImageParam, Report, TimeParam, compile_jrxml, quick_pdf
+from jasper_bridge import (
+    DateParam,
+    DateTimeParam,
+    ImageParam,
+    IntegerParam,
+    Report,
+    TimeParam,
+    compile_jrxml,
+    quick_pdf,
+)
 from ca_invoice_printer.error_handling import show_error_dialog
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -196,7 +205,7 @@ class StandaloneTab(QWidget):
         now = datetime.datetime.now()
         defaults = [
             ("TITLE", "String", "Standalone Demo"),
-            ("QUANTITY", "Integer", "3"),
+            ("QUANTITY", "Long", "3"),
             ("PRICE", "Float", "42.50"),
             ("PAID", "Boolean", "true"),
             ("INVOICE_DATE", "Date", now.strftime("%Y-%m-%d")),
@@ -213,7 +222,7 @@ class StandaloneTab(QWidget):
         self.params_table.insertRow(row)
         self.params_table.setItem(row, 0, QTableWidgetItem(name))
         type_combo = QComboBox(self.params_table)
-        type_combo.addItems(["String", "Integer", "Float", "Boolean", "Date", "Time", "DateTime", "Image"])
+        type_combo.addItems(["String", "Long", "Integer", "Float", "Boolean", "Date", "Time", "DateTime", "Image"])
         index = type_combo.findText(param_type)
         if index >= 0:
             type_combo.setCurrentIndex(index)
@@ -349,8 +358,10 @@ class StandaloneTab(QWidget):
         try:
             if param_type == "String":
                 return raw_value
-            if param_type == "Integer":
+            if param_type == "Long":
                 return int(raw_value)
+            if param_type == "Integer":
+                return IntegerParam(int(raw_value))
             if param_type == "Float":
                 return float(raw_value)
             if param_type == "Boolean":

@@ -11,7 +11,7 @@ from .errors import (
     ParameterError,
     PrintError,
 )
-from .params import DateParam, DateTimeParam, ImageParam, TimeParam
+from .params import DateParam, DateTimeParam, ImageParam, IntegerParam, TimeParam
 from .connections import ConnectionPool
 from .report import Report, compile_jrxml, preview_pdf, quick_pdf
 from . import jvm
@@ -30,6 +30,7 @@ __all__ = [
     "DateParam",
     "TimeParam",
     "DateTimeParam",
+    "IntegerParam",
     "Report",
     "compile_jrxml",
     "quick_pdf",

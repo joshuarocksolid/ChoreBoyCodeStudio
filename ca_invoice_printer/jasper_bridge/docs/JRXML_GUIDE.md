@@ -30,6 +30,7 @@ Python values are mapped as:
 
 - `str` -> `java.lang.String`
 - `int` -> `java.lang.Long`
+- `IntegerParam(...)` -> `java.lang.Integer`
 - `float` -> `java.lang.Double`
 - `bool` -> `java.lang.Boolean`
 - `bytes` -> `byte[]`
@@ -120,6 +121,8 @@ Use `validate_params=True` to validate required report parameters and declared J
 ```python
 report.fill(params={"TITLE": "Invoice"}, validate_params=True)
 ```
+
+If a report parameter is declared as `java.lang.Integer`, pass `IntegerParam(...)` explicitly. Plain Python `int` values are serialized as `java.lang.Long`.
 
 Use `report.info()` to inspect metadata returned from Jasper, including parameters, fields, and query text.
 

@@ -25,6 +25,15 @@ class ImageParam:
             self.data = bytes(data)
 
 
+class IntegerParam:
+    def __init__(self, value: int) -> None:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ParameterError("IntegerParam value must be an int")
+        if value < -2147483648 or value > 2147483647:
+            raise ParameterError("IntegerParam value out of 32-bit range: {}".format(value))
+        self.value = int(value)
+
+
 class DateParam:
     def __init__(self, year: int, month: int, day: int) -> None:
         self._value = datetime.date(year, month, day)
@@ -67,6 +76,9 @@ def serialize_params(params: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         if isinstance(value, bool):
             serialized.append({"name": name, "type": "boolean", "value": value})
+            continue
+        if isinstance(value, IntegerParam):
+            serialized.append({"name": name, "type": "integer", "value": value.value})
             continue
         if isinstance(value, int):
             serialized.append({"name": name, "type": "long", "value": value})
