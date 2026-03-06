@@ -401,6 +401,131 @@ The JVM installs its own `SIGSEGV` handler (used internally for safepoint pollin
 
 ---
 
+## 4E. C Extensions Loadable via `memfd_create` — `noexec` Bypass (2026-03-04)
+
+**Date discovered:** 2026-03-04 (probes 2b through 2d)
+
+### The problem: `noexec` blocks all compiled Python extensions on writable paths
+
+ChoreBoy mounts every writable filesystem with the `noexec` flag:
+
+| Path | `noexec`? |
+|---|---|
+| `/home/default/` | YES |
+| `/tmp/` | YES |
+| `/opt/freecad/` | no (read-only, but executable) |
+
+Any attempt to `import` a Python C extension (`.so` file) from `/home/default/` or `/tmp/` fails:
+
+```
+ImportError: .../module.cpython-39-x86_64-linux-gnu.so: failed to map segment from shared object
+```
+
+This means vendoring pre-compiled wheels (e.g., `tree-sitter`, `numpy`, any package with C code) and importing them normally **does not work**.
+
+### The solution: `os.memfd_create()` + `/proc/self/fd/`
+
+Linux's `memfd_create` system call creates an anonymous file backed entirely by RAM. The resulting file descriptor lives at `/proc/self/fd/N` and is **not subject to filesystem mount flags** — including `noexec`.
+
+```python
+import os, ctypes
+
+so_bytes = open("vendor/module.cpython-39-x86_64-linux-gnu.so", "rb").read()
+fd = os.memfd_create("module", 0)
+os.write(fd, so_bytes)
+
+lib = ctypes.CDLL(f"/proc/self/fd/{fd}")   # works
+```
+
+`ctypes.CDLL` loads the shared object from the memfd path successfully, bypassing the `noexec` restriction entirely.
+
+### Loading as a Python extension module (not just ctypes)
+
+`ctypes.CDLL` gives raw C function access, but Python C extension modules (like `tree_sitter._binding`) need to be loaded as proper Python modules so their classes and functions appear in `sys.modules`.
+
+**What fails:** `importlib.util.spec_from_file_location` returns `None` for `/proc/self/fd/N` paths because the path lacks a `.so` file extension.
+
+**What works:** Explicitly constructing an `ExtensionFileLoader` and `spec_from_loader`:
+
+```python
+import importlib.machinery, importlib.util, sys
+
+loader = importlib.machinery.ExtensionFileLoader(
+    "package._binding",
+    f"/proc/self/fd/{fd}"
+)
+spec = importlib.util.spec_from_loader("package._binding", loader)
+mod = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = mod
+spec.loader.exec_module(mod)
+```
+
+After this, `import package` (the pure-Python wrapper) finds `_binding` already in `sys.modules` and works normally.
+
+### Validated: tree-sitter on ChoreBoy
+
+tree-sitter is a C parsing library that provides incremental, fault-tolerant syntax parsing. It requires two compiled components: a Python C extension (`_binding.so`) and a grammar library (`languages.so`). Both were loaded successfully via memfd.
+
+**Versions tested:**
+- tree-sitter 0.21.3 (`cp39-cp39-manylinux_2_17_x86_64`)
+- tree-sitter-languages 1.10.2 (`cp39-cp39-manylinux_2_17_x86_64`)
+
+**Probe results (probe2d):**
+
+| Step | What | Result |
+|---|---|---|
+| 1 | `ctypes.CDLL` from memfd baseline | PASS |
+| 2 | `_binding.so` loaded as Python module via `ExtensionFileLoader` | PASS |
+| 3 | `import tree_sitter` (pure Python, finds `_binding` in `sys.modules`) | PASS |
+| 4 | `languages.so` (84.6 MB grammar blob) loaded via memfd `ctypes.CDLL` | PASS |
+| 5 | `Language` object constructed from ctypes function pointer | PASS |
+| 6 | Full parse of Python source code (40-node AST) | PASS |
+| 7 | Highlight query captures (12 captures with correct positions) | PASS |
+| 8 | `tree_sitter_languages` convenience API | FAIL (not needed) |
+| 9 | Additional languages: JS, C, C++, Rust, JSON, HTML, CSS, Bash | PASS (8/8) |
+
+**Memory cost:** ~82 MB in memfds (one-time at startup, dominated by `languages.so`).
+
+### Working integration pattern (Strategy A)
+
+```
+Startup sequence:
+  1. Read _binding.so from vendored files
+  2. Write to os.memfd_create()
+  3. Load via ExtensionFileLoader + spec_from_loader into sys.modules
+  4. import tree_sitter (pure Python finds _binding already loaded)
+  5. Read languages.so from vendored files
+  6. Write to os.memfd_create()
+  7. Load via ctypes.CDLL from /proc/self/fd/
+  8. Construct Language objects via ctypes function pointers
+  9. Create Parser, call set_language(), ready to parse
+```
+
+The `tree_sitter_languages` convenience wrapper (`get_language()`, `get_parser()`) does not work because its Cython core internally calls `Language(path, name)` using a relative path derived from its own `__file__`, which resolves wrong under `/proc/self/fd/`. This is harmless — Strategy A constructs `Language` objects directly from function pointers and does not need the convenience API.
+
+### Broader implication
+
+This technique is **not specific to tree-sitter**. Any pre-compiled C extension that ships as a `manylinux` wheel for `cp39-x86_64` can be loaded on ChoreBoy using the same memfd pattern, as long as:
+
+1. Its compiled `.so` files are compatible with ChoreBoy's glibc (2.17+ for `manylinux2014`)
+2. All `.so` files are loaded via memfd before any Python `import` that depends on them
+3. Python C extensions use `ExtensionFileLoader` (not `spec_from_file_location`)
+4. Plain shared libraries use `ctypes.CDLL` directly
+
+This opens the door to vendoring other compiled Python packages that were previously assumed to be blocked by the `noexec` restriction.
+
+### Parallel with JNI discovery (section 4D)
+
+The memfd technique for C extensions mirrors the JNI in-process loading discovery for Java: both bypass the binary execution block by loading compiled code as a shared library within the Python process rather than trying to execute a binary via the filesystem.
+
+| Approach | Java (section 4D) | C extensions (this section) |
+|---|---|---|
+| Blocked path | `subprocess.run(["java", ...])` | `import module` from `/home/default/` |
+| Bypass | `ctypes.CDLL("libjvm.so")` + JNI | `os.memfd_create()` + `ctypes.CDLL` / `ExtensionFileLoader` |
+| Runs inside | Python process (shared library) | Python process (shared library in RAM) |
+
+---
+
 ## 5. Postgres Strategy (Deep Dive)
 
 ### What we know

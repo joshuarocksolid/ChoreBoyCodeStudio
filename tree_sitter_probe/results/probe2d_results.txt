@@ -1,0 +1,86 @@
+[Runtime]
+  Python: 3.9.2
+  Executable: /opt/freecad/usr/bin/FreeCAD
+  Kernel: 6.1.12
+
+[Step 1: memfd + CDLL re-verify]
+    memfd ts_binding_verify: fd=4, size=1,537,248
+  CDLL from memfd: YES (handle=<CDLL '/proc/self/fd/4', handle 565198007200 at 0x7fd3a34edaf0>)
+
+[Step 2: Load _binding via ExtensionFileLoader + spec_from_loader]
+    memfd ts_binding_import: fd=5, size=1,537,248
+  tree_sitter._binding loaded via ExtensionFileLoader: YES
+
+[Step 3: Import tree_sitter package from vendor]
+  import tree_sitter: YES (path=/home/default/tree_sitter_probe/vendor/tree_sitter/__init__.py)
+  Parser() created: YES
+
+[Step 4: Load languages.so via memfd + ctypes.CDLL]
+    memfd ts_languages: fd=6, size=84,652,088
+  languages.so loaded via memfd CDLL: YES (handle=<CDLL '/proc/self/fd/6', handle 565197e08230 at 0x7fd3a34ed3d0>)
+
+[Step 5: Strategy A -- direct Language construction via pointer]
+  tree_sitter_python() pointer: YES (ptr=0x7fd3a2e900a0)
+  Language(ptr, 'python') created: YES (version=14)
+
+[Step 6: Parse Python code (proof of life)]
+  parser.set_language(python): YES
+  parse: YES (root='module', children=1)
+  AST walk: YES (40 nodes, types=['(', ')', '->', ':', '=', 'argument_list', 'assignment', 'block', 'call', 'def', 'expression_statement', 'function_definition', 'identifier', 'interpolation', 'module'])
+
+[Step 7: Highlight query captures]
+  query.captures(): YES (12 captures)
+      @function.def: 'greet' [(0, 4)-(0, 9)]
+      @variable: 'greet' [(0, 4)-(0, 9)]
+      @variable: 'name' [(0, 10)-(0, 14)]
+      @variable: 'str' [(0, 16)-(0, 19)]
+      @variable: 'str' [(0, 24)-(0, 27)]
+      @variable: 'message' [(1, 4)-(1, 11)]
+      @string: 'f'Hello {name}!'' [(1, 14)-(1, 30)]
+      @variable: 'name' [(1, 23)-(1, 27)]
+      @function.call: 'print' [(2, 4)-(2, 9)]
+      @variable: 'print' [(2, 4)-(2, 9)]
+
+[Step 8: Strategy B -- tree_sitter_languages.core via memfd (bonus)]
+    memfd ts_core: fd=7, size=296,648
+  tree_sitter_languages.core loaded via ExtensionFileLoader: YES
+  import tree_sitter_languages: YES
+  tree_sitter_languages convenience API: FAILED
+Traceback (most recent call last):
+  File "/home/default/tree_sitter_probe/probe2d_memfd_import.py", line 337, in <module>
+    tsl_lang = tree_sitter_languages.get_language("python")
+  File "tree_sitter_languages/core.pyx", line 14, in tree_sitter_languages.core.get_language
+  File "/home/default/tree_sitter_probe/vendor/tree_sitter/__init__.py", line 132, in __init__
+    self.lib = cdll.LoadLibrary(fspath(path_or_ptr))
+  File "/opt/freecad/usr/lib/python3.9/ctypes/__init__.py", line 452, in LoadLibrary
+    return self._dlltype(name)
+  File "/opt/freecad/usr/lib/python3.9/ctypes/__init__.py", line 374, in __init__
+    self._handle = _dlopen(self._name, mode)
+OSError: /proc/self/fd/languages.so: cannot open shared object file: No such file or directory
+
+
+[Step 9: Additional languages (via Strategy A)]
+  extra languages loaded: 8/8
+
+[=== VERDICT ===]
+  : 
+  RESULT: tree-sitter is VIABLE on ChoreBoy via memfd
+  : 
+  WORKING METHOD: Strategy A (memfd + direct Language pointer)
+    _binding loader: ExtensionFileLoader + spec_from_loader
+    languages.so: ctypes.CDLL from memfd
+    Language(): constructed from ctypes function pointer
+  : 
+  Strategy B (tree_sitter_languages): NO (but not needed)
+  : 
+  INTEGRATION PATH: At CBCS startup:
+    1: Read _binding .so and languages.so from vendored files
+    2: Write each to os.memfd_create()
+    3: Load _binding via ExtensionFileLoader from /proc/self/fd/
+    4: import tree_sitter (pure Python, finds _binding in sys.modules)
+    5: Load languages.so via ctypes.CDLL from /proc/self/fd/
+    6: Construct Language objects via ctypes function pointers
+    7: Create Parser, call set_language(), ready to parse
+  : 
+  MEMORY COST: ~82.2 MB in memfds (one-time at startup)
+  EXTRA LANGUAGES: 8 of 8 tested
