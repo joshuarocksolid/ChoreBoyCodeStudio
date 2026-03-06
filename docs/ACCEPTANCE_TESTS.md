@@ -868,18 +868,27 @@ Verify syntax token colors can be customized per theme and remain readable.
 ## AT-36 — Linter profile customization changes diagnostics behavior
 
 **Purpose:**  
-Verify rule-level lint settings (enable + severity) affect diagnostics output.
+Verify linter runtime controls (enable/disable + provider selection) and rule-level settings affect diagnostics output.
 
 **Preconditions:**  
 - project with Python file producing at least one `PY220` and one `PY230` diagnostic
+- project with Python file that triggers at least one Pyflakes-only diagnostic (for example undefined name)
 
 **Steps:**  
 1. Open **File > Settings... > Linter**.
-2. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
-3. Save settings and re-run linting for affected file.
-4. Reopen settings and verify changes persisted.
+2. Turn **Enable Python linting** off and verify provider + rule controls become disabled.
+3. Turn linting back on, set provider to **Pyflakes**, save settings, and lint an affected file.
+4. Confirm a Pyflakes-only diagnostic appears.
+5. Reopen settings and verify provider persisted as **Pyflakes**.
+6. Change provider back to **Default (built-in)**.
+7. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
+8. Save settings and re-run linting for affected file.
+9. Reopen settings and verify rule/profile changes persisted.
 
 **Expected Result:**  
+- linter enable toggle suppresses diagnostics when off and re-enables them when on
+- provider selection switches active lint backend between `default` and `pyflakes`
+- selected provider persists across settings reopen and app restart
 - disabled rule diagnostics are suppressed
 - severity override is reflected in problems/editor indicators
 - lint profile persists across settings reopen and app restart

@@ -7,6 +7,7 @@ from dataclasses import replace
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import sys
 from typing import Any, Mapping
 
 from app.core import constants
@@ -141,6 +142,7 @@ def analyze_python_file(
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    selected_linter: str = constants.LINTER_PROVIDER_DEFAULT,
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[CodeDiagnostic]:
     """Run focused diagnostics for one Python file.
@@ -175,19 +177,23 @@ def analyze_python_file(
         )
         return diagnostics
 
-    diagnostics.extend(_duplicate_definition_diagnostics(syntax_tree, path))
-    diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
-    diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
-    diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
-    if project_root:
-        diagnostics.extend(
-            _unresolved_import_diagnostics(
-                Path(project_root).expanduser().resolve(), path, syntax_tree,
-                known_runtime_modules=known_runtime_modules,
-                allow_runtime_import_probe=allow_runtime_import_probe,
-                lint_rule_overrides=lint_rule_overrides,
+    provider = _normalize_linter_provider(selected_linter)
+    if provider == constants.LINTER_PROVIDER_PYFLAKES:
+        diagnostics.extend(_pyflakes_diagnostics(source, path))
+    else:
+        diagnostics.extend(_duplicate_definition_diagnostics(syntax_tree, path))
+        diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
+        diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
+        diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
+        if project_root:
+            diagnostics.extend(
+                _unresolved_import_diagnostics(
+                    Path(project_root).expanduser().resolve(), path, syntax_tree,
+                    known_runtime_modules=known_runtime_modules,
+                    allow_runtime_import_probe=allow_runtime_import_probe,
+                    lint_rule_overrides=lint_rule_overrides,
+                )
             )
-        )
     diagnostics = _apply_lint_rule_profile(diagnostics, lint_rule_overrides)
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
     return diagnostics
@@ -466,3 +472,79 @@ def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
     if value == LINT_SEVERITY_INFO:
         return DiagnosticSeverity.INFO
     return DiagnosticSeverity.WARNING
+
+
+def _normalize_linter_provider(selected_linter: str) -> str:
+    if selected_linter == constants.LINTER_PROVIDER_PYFLAKES:
+        return constants.LINTER_PROVIDER_PYFLAKES
+    return constants.LINTER_PROVIDER_DEFAULT
+
+
+def _pyflakes_diagnostics(source: str, file_path: Path) -> list[CodeDiagnostic]:
+    checker = _create_pyflakes_checker(source, file_path)
+    if checker is None:
+        return []
+    diagnostics: list[CodeDiagnostic] = []
+    for message in getattr(checker, "messages", []):
+        diagnostic = _diagnostic_from_pyflakes_message(message, file_path)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    return diagnostics
+
+
+def _create_pyflakes_checker(source: str, file_path: Path) -> Any | None:
+    _ensure_vendor_path_on_sys_path()
+    try:
+        from pyflakes import checker as pyflakes_checker  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        syntax_tree = ast.parse(source, filename=str(file_path))
+    except SyntaxError:
+        return None
+    return pyflakes_checker.Checker(syntax_tree, str(file_path))
+
+
+def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiagnostic | None:
+    message_type = type(message).__name__
+    code = "PY399"
+    severity = DiagnosticSeverity.WARNING
+    if message_type == "UndefinedName":
+        code = "PY301"
+        severity = DiagnosticSeverity.ERROR
+    elif message_type == "UndefinedLocal":
+        code = "PY302"
+        severity = DiagnosticSeverity.ERROR
+    elif message_type == "RedefinedWhileUnused":
+        code = "PY303"
+    elif message_type == "ImportShadowedByLoopVar":
+        code = "PY304"
+    elif message_type == "ImportStarUsed":
+        code = "PY305"
+    elif message_type == "UnusedImport":
+        code = "PY220"
+
+    line_number = int(getattr(message, "lineno", 1))
+    col_start_value = getattr(message, "col", None)
+    col_start = int(col_start_value) if col_start_value is not None else None
+    col_end = None if col_start is None else col_start + 1
+    raw_text = str(message)
+    text = raw_text.strip()
+    if not text:
+        return None
+    return CodeDiagnostic(
+        code=code,
+        severity=severity,
+        file_path=str(file_path),
+        line_number=max(1, line_number),
+        message=text,
+        col_start=col_start,
+        col_end=col_end,
+    )
+
+
+def _ensure_vendor_path_on_sys_path() -> None:
+    vendor_dir = Path(__file__).resolve().parents[2] / "vendor"
+    vendor_text = str(vendor_dir)
+    if vendor_text not in sys.path:
+        sys.path.insert(0, vendor_text)

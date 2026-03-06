@@ -73,6 +73,22 @@ def test_settings_dialog_snapshot_includes_lint_rule_overrides() -> None:
     assert snapshot.lint_rule_overrides["PY220"]["enabled"] is False
 
 
+def test_settings_dialog_snapshot_includes_selected_linter() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    dialog._linter_provider_input.setCurrentIndex(1)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.selected_linter == "pyflakes"
+
+
+def test_settings_dialog_linter_toggle_controls_provider_and_rules() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    dialog._linter_enabled_input.setChecked(False)
+
+    assert dialog._linter_provider_input.isEnabled() is False
+    assert dialog._linter_table.isEnabled() is False
+
+
 def test_settings_dialog_reset_all_keybindings_restores_defaults() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
     run_editor = dialog._shortcut_editors["shell.action.run.run"]

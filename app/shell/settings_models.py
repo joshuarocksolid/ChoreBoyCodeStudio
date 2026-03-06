@@ -51,6 +51,7 @@ class EditorSettingsSnapshot:
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
     auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
+    selected_linter: str = constants.LINTER_PROVIDER_DEFAULT
     shortcut_overrides: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_light: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
@@ -77,6 +78,9 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
     if not isinstance(intelligence_settings, dict):
         intelligence_settings = {}
+    linter_settings = settings_payload.get(constants.UI_LINTER_SETTINGS_KEY, {})
+    if not isinstance(linter_settings, dict):
+        linter_settings = {}
     runtime_settings = parse_intelligence_runtime_settings(settings_payload)
     shortcut_overrides = parse_shortcut_overrides(settings_payload)
     syntax_color_overrides = parse_syntax_color_overrides(settings_payload)
@@ -130,6 +134,24 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         default=constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
     )
 
+    diagnostics_enabled = _coerce_bool(
+        intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
+        default=constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+    )
+    linter_enabled_override = linter_settings.get(constants.UI_LINTER_ENABLED_KEY)
+    if isinstance(linter_enabled_override, bool):
+        diagnostics_enabled = linter_enabled_override
+
+    selected_linter_raw = linter_settings.get(
+        constants.UI_LINTER_SELECTED_LINTER_KEY,
+        constants.LINTER_PROVIDER_DEFAULT,
+    )
+    selected_linter = (
+        str(selected_linter_raw)
+        if str(selected_linter_raw) in constants.LINTER_PROVIDERS
+        else constants.LINTER_PROVIDER_DEFAULT
+    )
+
     return EditorSettingsSnapshot(
         tab_width=tab_width,
         font_size=font_size,
@@ -153,10 +175,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             default=constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
             minimum=1,
         ),
-        diagnostics_enabled=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
-            default=constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
-        ),
+        diagnostics_enabled=diagnostics_enabled,
         diagnostics_realtime=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY),
             default=constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
@@ -185,6 +204,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY),
             default=constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
         ),
+        selected_linter=selected_linter,
         shortcut_overrides=shortcut_overrides,
         syntax_color_overrides_light=syntax_color_overrides.get(THEME_LIGHT, {}),
         syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
@@ -330,6 +350,12 @@ def merge_editor_settings_snapshot(
         constants.UI_SYNTAX_COLORS_DARK_KEY: _normalize_string_map(snapshot.syntax_color_overrides_dark),
     }
     merged[constants.UI_LINTER_SETTINGS_KEY] = {
+        constants.UI_LINTER_ENABLED_KEY: bool(snapshot.diagnostics_enabled),
+        constants.UI_LINTER_SELECTED_LINTER_KEY: (
+            snapshot.selected_linter
+            if snapshot.selected_linter in constants.LINTER_PROVIDERS
+            else constants.LINTER_PROVIDER_DEFAULT
+        ),
         constants.UI_LINTER_RULE_OVERRIDES_KEY: _normalize_lint_rule_override_map(snapshot.lint_rule_overrides),
     }
     merged[constants.UI_FILE_EXCLUDES_SETTINGS_KEY] = {
