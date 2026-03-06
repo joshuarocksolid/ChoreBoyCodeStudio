@@ -22,9 +22,16 @@ from app.plugins.registry_store import load_plugin_registry
 
 
 class PluginManagerDialog(QDialog):
-    def __init__(self, *, state_root: PathInput | None = None, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        state_root: PathInput | None = None,
+        on_plugins_changed=None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._state_root = state_root
+        self._on_plugins_changed = on_plugins_changed
         self._plugins_tree = QTreeWidget(self)
         self._plugins_tree.setColumnCount(5)
         self._plugins_tree.setHeaderLabels(["Plugin", "Version", "Enabled", "Compatibility", "Path"])
@@ -137,6 +144,8 @@ class PluginManagerDialog(QDialog):
             QMessageBox.warning(self, "Plugin Install Failed", str(exc))
             return
         self.refresh_plugins()
+        if self._on_plugins_changed is not None:
+            self._on_plugins_changed()
         QMessageBox.information(
             self,
             "Plugin Installed",
@@ -181,6 +190,8 @@ class PluginManagerDialog(QDialog):
             QMessageBox.warning(self, "Plugin Uninstall Failed", str(exc))
             return
         self.refresh_plugins()
+        if self._on_plugins_changed is not None:
+            self._on_plugins_changed()
 
     def _handle_enable(self) -> None:
         selected = self._selected_plugin_key()
@@ -193,6 +204,8 @@ class PluginManagerDialog(QDialog):
             QMessageBox.warning(self, "Plugin Enable Failed", str(exc))
             return
         self.refresh_plugins()
+        if self._on_plugins_changed is not None:
+            self._on_plugins_changed()
 
     def _handle_disable(self) -> None:
         selected = self._selected_plugin_key()
@@ -205,3 +218,5 @@ class PluginManagerDialog(QDialog):
             QMessageBox.warning(self, "Plugin Disable Failed", str(exc))
             return
         self.refresh_plugins()
+        if self._on_plugins_changed is not None:
+            self._on_plugins_changed()

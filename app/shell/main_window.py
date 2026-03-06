@@ -91,6 +91,9 @@ from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
+from app.plugins.contributions import DeclarativeContributionManager
+from app.plugins.discovery import discover_installed_plugins
+from app.plugins.registry_store import load_plugin_registry
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -230,6 +233,19 @@ class MainWindow(QMainWindow):
         self._command_broker = CommandBroker()
         self._action_registry: ShellActionRegistry | None = None
         self._event_bus = ShellEventBus()
+        self._declarative_contribution_manager = DeclarativeContributionManager(
+            register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
+                command_id=command_id,
+                handler=handler,
+                replace=replace,
+            ),
+            register_runtime_menu_command=lambda **kwargs: self.register_runtime_menu_command(**kwargs),
+            unregister_runtime_menu_command=self.unregister_runtime_menu_command,
+            execute_runtime_command=self.execute_runtime_command,
+            subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
+            unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
+            emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
+        )
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
@@ -460,6 +476,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._reload_plugin_contributions()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
@@ -791,6 +808,9 @@ class MainWindow(QMainWindow):
             return
         self._action_registry.unregister_menu_action(command_id)
         self._action_registry.unregister_command(command_id)
+
+    def execute_runtime_command(self, command_id: str) -> object:
+        return self._command_broker.invoke(command_id)
 
     def subscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
         self._event_bus.subscribe(event_type, handler)
@@ -2248,6 +2268,7 @@ class MainWindow(QMainWindow):
         if self._plugin_manager_dialog is None:
             self._plugin_manager_dialog = PluginManagerDialog(
                 state_root=self._state_root,
+                on_plugins_changed=self._reload_plugin_contributions,
                 parent=self,
             )
             self._plugin_manager_dialog.finished.connect(
@@ -2257,6 +2278,18 @@ class MainWindow(QMainWindow):
         self._plugin_manager_dialog.show()
         self._plugin_manager_dialog.raise_()
         self._plugin_manager_dialog.activateWindow()
+
+    def _reload_plugin_contributions(self) -> None:
+        registry = load_plugin_registry(self._state_root)
+        enabled_map = {
+            (entry.plugin_id, entry.version): entry.enabled
+            for entry in registry.entries
+        }
+        discovered_plugins = discover_installed_plugins(state_root=self._state_root)
+        self._declarative_contribution_manager.apply(
+            discovered_plugins,
+            enabled_map=enabled_map,
+        )
 
     def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         """Run diagnostics for *file_path* and update the editor + problems panel.
