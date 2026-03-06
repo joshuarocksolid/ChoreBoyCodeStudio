@@ -19,6 +19,7 @@ The suite is designed to answer:
 | `probe4_copy_protocol.py` | Tests `COPY ... TO STDOUT` via `pg8000` and measures export throughput with fallback scan path. |
 | `probe5_mini_backup.py` | Builds a restorable `.sql` mini-backup for one table (DDL + data inserts) and performs SQL syntax execution checks on sampled rows. |
 | `probe6_full_feasibility.py` | Uses inventory + timed samples to estimate full backup duration and recommends default backup strategy. |
+| `probe7_pgdump_hunt.py` | Locates `pg_dump` via `/proc`, pgAdmin3 config, and broad filesystem search; tests execution and backup from AppRun. |
 | `results/` | Probe outputs (`probeN_results.txt`, JSON artifacts, and generated sample backup files). |
 
 ## Run order
@@ -31,6 +32,7 @@ Run probes in this sequence:
 4. `probe4_copy_protocol.py`
 5. `probe5_mini_backup.py`
 6. `probe6_full_feasibility.py`
+7. `probe7_pgdump_hunt.py`
 
 ## How to run on ChoreBoy
 
@@ -90,13 +92,15 @@ Typical files:
 - `probe5_<schema>_<table>_mini_backup.sql`
 - `probe6_results.txt`
 - `probe6_feasibility.json`
+- `probe7_results.txt`
+- `probe7_pgdump_status.json`
 
 ## Decision interpretation
 
 Use these outcomes to choose backup implementation:
 
-- If `pg_dump` is executable in probe 1, prefer `pg_dump` for production backup/export.
-- If `pg_dump` is unavailable or blocked, use pure-Python backup path validated by probes 3-5.
+- If `pg_dump` is executable in probe 7, prefer `pg_dump` for production backup/export.
+- If `pg_dump` is unavailable or blocked (probe 7), use pure-Python backup path validated by probes 3-5.
 - Use probe 6 estimates to decide default UX:
   - fast total duration: allow one-click full backup
   - moderate/slow total duration: default to per-database backup and keep full backup optional
