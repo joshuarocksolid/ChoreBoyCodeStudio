@@ -131,6 +131,7 @@ from app.shell.activity_bar import ActivityBar
 from app.shell.icons import explorer_icon, search_icon
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
+from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
@@ -210,6 +211,7 @@ class MainWindow(QMainWindow):
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
         self._quick_open_dialog: QuickOpenDialog | None = None
+        self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._run_log_panel: RunLogPanel | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
@@ -405,6 +407,7 @@ class MainWindow(QMainWindow):
                 on_format_current_file=self._handle_format_current_file_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
+                on_open_plugin_manager=self._handle_open_plugin_manager_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_refresh_runtime_modules=self._handle_refresh_runtime_modules_action,
                 on_project_health_check=self._handle_project_health_check_action,
@@ -2240,6 +2243,20 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
             return
         self._apply_safe_fixes_for_file(active_tab.file_path)
+
+    def _handle_open_plugin_manager_action(self) -> None:
+        if self._plugin_manager_dialog is None:
+            self._plugin_manager_dialog = PluginManagerDialog(
+                state_root=self._state_root,
+                parent=self,
+            )
+            self._plugin_manager_dialog.finished.connect(
+                lambda _result: setattr(self, "_plugin_manager_dialog", None)
+            )
+        self._plugin_manager_dialog.refresh_plugins()
+        self._plugin_manager_dialog.show()
+        self._plugin_manager_dialog.raise_()
+        self._plugin_manager_dialog.activateWindow()
 
     def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         """Run diagnostics for *file_path* and update the editor + problems panel.
