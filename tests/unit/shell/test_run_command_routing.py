@@ -62,13 +62,14 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
 def test_handle_run_project_action_uses_project_entry_resolution() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
+    window_any._resolve_project_entry_for_project_run = lambda: "app.py"
     calls: list[dict[str, object]] = []
     window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
 
     started = MainWindow._handle_run_project_action(window)
 
     assert started is True
-    assert calls == [{"mode": constants.RUN_MODE_PYTHON_SCRIPT}]
+    assert calls == [{"mode": constants.RUN_MODE_PYTHON_SCRIPT, "entry_file": "app.py"}]
 
 
 def test_start_active_file_session_rejects_non_python_file(monkeypatch: pytest.MonkeyPatch) -> None:

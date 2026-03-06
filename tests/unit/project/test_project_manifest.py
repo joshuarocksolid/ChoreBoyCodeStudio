@@ -14,6 +14,7 @@ from app.project.project_manifest import (
     build_default_project_manifest_payload,
     load_project_manifest,
     parse_project_manifest,
+    set_project_default_entry,
 )
 
 pytestmark = pytest.mark.unit
@@ -146,3 +147,24 @@ def test_load_project_manifest_rejects_malformed_json_with_manifest_path(tmp_pat
 
     assert exc_info.value.manifest_path == manifest_path.resolve()
     assert "Invalid JSON" in str(exc_info.value)
+
+
+def test_set_project_default_entry_updates_manifest_file(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "cbcs" / "project.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": PROJECT_METADATA_SCHEMA_VERSION,
+                "name": "Entry Test",
+                "default_entry": "main.py",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    updated = set_project_default_entry(manifest_path, default_entry="scripts/tool.py")
+
+    assert updated.default_entry == "scripts/tool.py"
+    reloaded = load_project_manifest(manifest_path)
+    assert reloaded.default_entry == "scripts/tool.py"

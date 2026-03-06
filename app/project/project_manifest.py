@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -98,6 +99,27 @@ def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
         )
 
     return parse_project_manifest(payload, manifest_path=path)
+
+
+def save_project_manifest(manifest_path: PathInput, metadata: ProjectMetadata) -> None:
+    """Persist canonical project metadata payload to disk."""
+    path = Path(manifest_path).expanduser().resolve()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(metadata.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:
+        _raise_validation_error(f"Unable to write manifest file: {exc}", manifest_path=path)
+
+
+def set_project_default_entry(manifest_path: PathInput, *, default_entry: str) -> ProjectMetadata:
+    """Update `default_entry` and persist the updated manifest metadata."""
+    normalized_entry = default_entry.strip()
+    if not normalized_entry:
+        raise ValueError("default_entry must be a non-empty string.")
+    metadata = load_project_manifest(manifest_path)
+    updated_metadata = replace(metadata, default_entry=normalized_entry)
+    save_project_manifest(manifest_path, updated_metadata)
+    return updated_metadata
 
 
 def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[PathInput] = None) -> ProjectMetadata:

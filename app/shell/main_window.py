@@ -39,7 +39,7 @@ from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
-from app.core.errors import AppValidationError
+from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
 from app.debug.debug_command_service import (
@@ -155,6 +155,7 @@ from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_pro
 from app.project.file_excludes import parse_global_exclude_patterns
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import create_blank_project, open_project
+from app.project.project_manifest import set_project_default_entry
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
@@ -181,6 +182,7 @@ from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, Se
 from app.shell.help_controller import ShellHelpController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
+from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
 
 TREE_ROLE_ABSOLUTE_PATH = 256
@@ -216,6 +218,7 @@ class MainWindow(QMainWindow):
         self._tree_file_icon_map = file_type_icon_map("#495057")
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
+        self._tree_entrypoint_icon = icon_run("#16A34A")
         self._editor_tabs_widget: QTabWidget | None = None
         self._activity_bar: ActivityBar | None = None
         self._sidebar_stack: QStackedWidget | None = None
@@ -643,6 +646,7 @@ class MainWindow(QMainWindow):
         self._tree_file_icon_map = file_type_icon_map(tokens.icon_primary)
         self._tree_folder_icon = folder_icon(tokens.icon_muted)
         self._tree_folder_open_icon = folder_open_icon(tokens.icon_muted)
+        self._tree_entrypoint_icon = icon_run(tokens.debug_running_color)
         if self._explorer_new_file_btn is not None:
             self._explorer_new_file_btn.setIcon(new_file_icon(tokens.icon_primary, tokens.icon_muted))
         if self._explorer_new_folder_btn is not None:
@@ -1781,14 +1785,24 @@ class MainWindow(QMainWindow):
         return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
 
     def _handle_run_project_action(self) -> bool:
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
+        entry_file = self._resolve_project_entry_for_project_run()
+        if entry_file is None:
+            return False
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=entry_file)
 
     def _handle_debug_project_action(self) -> bool:
+        entry_file = self._resolve_project_entry_for_project_run()
+        if entry_file is None:
+            return False
         breakpoint_entries: list[dict[str, int | str]] = []
         for file_path, line_numbers in self._breakpoints_by_file.items():
             for line_number in sorted(line_numbers):
                 breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
+        return self._start_session(
+            mode=constants.RUN_MODE_PYTHON_DEBUG,
+            entry_file=entry_file,
+            breakpoints=breakpoint_entries,
+        )
 
     def _start_active_file_session(self, *, mode: str) -> bool:
         active_tab = self._editor_manager.active_tab()
@@ -1810,6 +1824,87 @@ class MainWindow(QMainWindow):
             entry_file=str(entry_path),
             breakpoints=breakpoints,
         )
+
+    def _resolve_project_entry_for_project_run(self) -> str | None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
+            return None
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        default_entry = loaded_project.metadata.default_entry
+        default_entry_path = (project_root / default_entry).resolve()
+        if default_entry_path.exists() and default_entry_path.is_file():
+            return default_entry
+        replacement_entry = self._prompt_for_project_entry_replacement(default_entry)
+        if replacement_entry is None:
+            return None
+        if not self._set_project_entry_point(replacement_entry):
+            return None
+        return replacement_entry
+
+    def _prompt_for_project_entry_replacement(self, missing_entry: str) -> str | None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return None
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        candidates: list[str] = []
+        for candidate in sorted(project_root.rglob("*.py")):
+            if constants.PROJECT_META_DIRNAME in candidate.parts:
+                continue
+            if candidate.is_file():
+                candidates.append(candidate.relative_to(project_root).as_posix())
+        if not candidates:
+            QMessageBox.warning(
+                self,
+                "Entry point missing",
+                f"'{missing_entry}' no longer exists and no Python files are available.",
+            )
+            return None
+
+        selected, accepted = QInputDialog.getItem(
+            self,
+            "Entry point missing",
+            f"'{missing_entry}' no longer exists.\nSelect a replacement entry file:",
+            candidates,
+            0,
+            False,
+        )
+        if not accepted or not selected:
+            return None
+        return str(selected)
+
+    def _set_project_entry_point(self, relative_path: str) -> bool:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return False
+        normalized_relative = relative_path.strip()
+        if not normalized_relative:
+            return False
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        entry_path = (project_root / normalized_relative).resolve()
+        if not entry_path.exists() or not entry_path.is_file():
+            QMessageBox.warning(self, "Entry point", "Selected entry file does not exist.")
+            return False
+        if entry_path.suffix.lower() != ".py":
+            QMessageBox.warning(self, "Entry point", "Entry point must reference a Python file.")
+            return False
+        try:
+            entry_path.relative_to(project_root)
+        except ValueError:
+            QMessageBox.warning(self, "Entry point", "Entry point must be inside the opened project.")
+            return False
+
+        try:
+            updated_metadata = set_project_default_entry(
+                loaded_project.manifest_path,
+                default_entry=normalized_relative,
+            )
+        except (ProjectManifestValidationError, ValueError) as exc:
+            QMessageBox.warning(self, "Entry point", str(exc))
+            return False
+        self._loaded_project = replace(loaded_project, metadata=updated_metadata)
+        self._populate_project_tree(self._loaded_project)
+        return True
 
     def _handle_run_pytest_project_action(self) -> None:
         if self._loaded_project is None:
@@ -3551,6 +3646,14 @@ class MainWindow(QMainWindow):
         else:
             ext = Path(node.absolute_path).suffix.lower()
             item.setIcon(0, self._tree_file_icon_map.get(ext, self._tree_file_icon))
+            if (
+                self._loaded_project is not None
+                and node.relative_path == self._loaded_project.metadata.default_entry
+            ):
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+                item.setIcon(0, self._tree_entrypoint_icon)
 
         for child_node in node.children:
             item.addChild(self._build_tree_item(child_node))
@@ -3613,6 +3716,16 @@ class MainWindow(QMainWindow):
         copy_path_action = menu.addAction("Copy Path")
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
+        set_entry_point_action = None
+        if (
+            not is_directory
+            and self._loaded_project is not None
+            and Path(absolute_path).suffix.lower() == ".py"
+        ):
+            menu.addSeparator()
+            set_entry_point_action = menu.addAction("Set as Entry Point")
+            if relative_path == self._loaded_project.metadata.default_entry:
+                set_entry_point_action.setEnabled(False)
 
         paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
         chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
@@ -3643,6 +3756,8 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(relative_path)
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
+        elif set_entry_point_action is not None and chosen == set_entry_point_action:
+            self._set_project_entry_point(relative_path)
 
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
