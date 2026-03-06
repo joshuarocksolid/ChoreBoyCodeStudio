@@ -36,7 +36,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_app_log_path, global_cache_dir, global_logs_dir, project_logs_dir
+from app.bootstrap.paths import global_cache_dir, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError
@@ -124,7 +124,6 @@ from app.shell.settings_models import (
     parse_main_window_settings,
 )
 from app.shell.shortcut_preferences import (
-    SHORTCUT_COMMANDS,
     build_effective_shortcut_map,
     close_tab_shortcut_id,
 )
@@ -179,6 +178,7 @@ from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
+from app.shell.help_controller import ShellHelpController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.welcome_widget import WelcomeWidget
@@ -307,6 +307,12 @@ class MainWindow(QMainWindow):
         self._theme_mode = self._load_theme_mode()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
+        self._help_controller = ShellHelpController(
+            state_root=self._state_root,
+            resolve_theme_tokens=self._resolve_theme_tokens,
+            reveal_path_in_file_manager=self._reveal_path_in_file_manager,
+            get_effective_shortcuts=lambda: self._effective_shortcuts,
+        )
         self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
@@ -1455,85 +1461,22 @@ class MainWindow(QMainWindow):
         self._open_project_by_path(str(created_path))
 
     def _handle_open_app_log_action(self) -> None:
-        from PySide2.QtCore import QUrl
-        from PySide2.QtGui import QDesktopServices
-
-        log_path = global_app_log_path(self._state_root)
-        if not log_path.exists():
-            QMessageBox.information(
-                self, "Application Log",
-                f"No log file found at:\n{log_path}",
-            )
-            return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
+        self._help_controller.open_app_log(parent=self)
 
     def _handle_open_log_folder_action(self) -> None:
-        log_dir = global_logs_dir(self._state_root)
-        if not log_dir.exists():
-            QMessageBox.information(
-                self, "Log Folder",
-                f"Log folder does not exist yet:\n{log_dir}",
-            )
-            return
-        self._reveal_path_in_file_manager(str(log_dir))
+        self._help_controller.open_log_folder(parent=self)
 
     def _handle_getting_started_action(self) -> None:
-        self._show_help_file("Getting Started", "getting_started.md")
+        self._help_controller.show_getting_started(parent=self)
 
     def _handle_shortcuts_action(self) -> None:
-        self._show_help_markdown("Keyboard Shortcuts", self._build_shortcuts_help_markdown())
+        self._help_controller.show_shortcuts(parent=self)
 
     def _handle_headless_notes_action(self) -> None:
-        self._show_help_file("FreeCAD Headless Notes", "headless_notes.md")
+        self._help_controller.show_headless_notes(parent=self)
 
     def _handle_about_action(self) -> None:
-        QMessageBox.information(
-            self,
-            "About",
-            (
-                f"ChoreBoy Code Studio v{constants.APP_VERSION}\n"
-                "Project-first editor + runner for constrained systems.\n"
-                "\n"
-                "Licensed under the MIT License.\n"
-                "\n"
-                "Developed by Joshua Aguilar\n"
-                "RockSolid Data Solutions\n"
-                "620-888-7050\n"
-                "sales@rocksoliddata.solutions"
-            ),
-        )
-
-    def _show_help_file(self, title: str, file_name: str) -> None:
-        from app.ui.help.help_dialog import show_help_file
-
-        show_help_file(title, file_name, self._resolve_theme_tokens(), parent=self)
-
-    def _show_help_markdown(self, title: str, markdown_text: str) -> None:
-        from app.ui.help.help_dialog import show_help_markdown
-
-        show_help_markdown(title, markdown_text, self._resolve_theme_tokens(), parent=self)
-
-    def _build_shortcuts_help_markdown(self) -> str:
-        lines: list[str] = ["# Keyboard Shortcuts", ""]
-        grouped: dict[str, list[tuple[str, str]]] = {}
-        for command in SHORTCUT_COMMANDS:
-            shortcut = self._effective_shortcuts.get(command.action_id, "")
-            if not shortcut:
-                continue
-            grouped.setdefault(command.category, []).append((command.label, shortcut))
-        for category in sorted(grouped.keys()):
-            lines.append(f"## {category}")
-            lines.append("")
-            for label, shortcut in sorted(grouped[category], key=lambda item: item[0].lower()):
-                lines.append(f"- **{shortcut}**: {label}")
-            lines.append("")
-        if len(lines) <= 2:
-            lines.extend(["No shortcuts are currently assigned.", ""])
-        lines.extend([
-            "_Customize shortcuts in **File > Settings > Keybindings**._",
-            "",
-        ])
-        return "\n".join(lines)
+        self._help_controller.show_about(parent=self)
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
