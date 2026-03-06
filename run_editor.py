@@ -9,6 +9,7 @@ from typing import Any, Optional
 from app.bootstrap.capability_probe import run_startup_capability_probe
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.core.models import CapabilityProbeReport
+from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
 
@@ -102,6 +103,14 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
+        tree_sitter_status = initialize_tree_sitter_runtime()
+        if tree_sitter_status.is_available:
+            logger.info("Tree-sitter runtime initialized: %s", tree_sitter_status.message)
+        else:
+            logger.warning("Tree-sitter runtime unavailable: %s", tree_sitter_status.message)
+            failure_traceback = runtime_traceback()
+            if failure_traceback:
+                logger.debug("Tree-sitter initialization traceback:\n%s", failure_traceback)
 
         logger.info("Editor startup initialized.")
         return _start_editor()

@@ -1131,3 +1131,28 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `docs/ACCEPTANCE_TESTS.md`
   - `docs/TASKS.md`
 
+### G22 — Tree-sitter syntax-highlighting hard cutover
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: replace regex-based lexical highlighters and ast-based semantic overlays with a single tree-sitter highlighting engine loaded through the memfd runtime path.
+- Scope:
+  - add startup tree-sitter runtime boot (`ExtensionFileLoader` for `_binding`, memfd `ctypes.CDLL` for `languages.so`)
+  - add tree-sitter language/query registry for 10 prioritized languages
+  - add tree-sitter `QSyntaxHighlighter` with incremental parse state (`tree.edit` + changed-range capture refresh)
+  - route all syntax highlighting through tree-sitter only (no regex fallback path)
+  - remove semantic token `ExtraSelection` overlay pipeline from editor shell flow
+  - delete legacy modules `syntax_python.py`, `syntax_json.py`, `syntax_markdown.py`, `semantic_tokens.py`
+  - update architecture/tasks docs for the new highlighting contract
+- Primary files:
+  - `run_editor.py`
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/syntax_registry.py`
+  - `app/treesitter/loader.py`
+  - `app/treesitter/language_registry.py`
+  - `app/treesitter/highlighter.py`
+  - `app/treesitter/queries/*.scm`
+  - `vendor/tree_sitter/*`
+  - `vendor/tree_sitter_languages/*`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+
