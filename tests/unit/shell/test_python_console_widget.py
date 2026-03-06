@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
@@ -268,6 +270,40 @@ class TestOutputAppending:
         text = _get_plain_text(active_widget)
         assert "[system] Session finished" in text
         assert text.endswith(_PROMPT)
+
+
+class TestDragAndDropExecution:
+    def test_console_accepts_drops(self, widget: PythonConsoleWidget) -> None:
+        assert widget.acceptDrops() is True
+
+    def test_drop_python_file_emits_execution_command(
+        self,
+        active_widget: PythonConsoleWidget,
+        tmp_path: Path,
+    ) -> None:
+        script_path = tmp_path / "drop_target.py"
+        script_path.write_text("print('ok')\n", encoding="utf-8")
+        submitted: list[str] = []
+        active_widget.input_submitted.connect(submitted.append)
+
+        handled = active_widget._handle_dropped_local_path(str(script_path))
+
+        assert handled is True
+        assert submitted == [f"import runpy; runpy.run_path({repr(str(script_path.resolve()))}, run_name='__main__')"]
+        assert "Executing dropped file" in _get_plain_text(active_widget)
+
+    def test_drop_non_python_file_appends_actionable_warning(
+        self,
+        active_widget: PythonConsoleWidget,
+        tmp_path: Path,
+    ) -> None:
+        txt_path = tmp_path / "notes.txt"
+        txt_path.write_text("hello", encoding="utf-8")
+
+        handled = active_widget._handle_dropped_local_path(str(txt_path))
+
+        assert handled is False
+        assert "is not a Python file" in _get_plain_text(active_widget)
 
 
 # ---------------------------------------------------------------------------
