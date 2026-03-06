@@ -6,6 +6,7 @@
 from jasper_bridge import (
     Report,
     ImageParam,
+    IntegerParam,
     DateParam,
     TimeParam,
     DateTimeParam,
@@ -33,6 +34,7 @@ Java-originated failures can include `java_stacktrace`.
 ## Parameter wrappers
 
 - `ImageParam(path=None, *, data=None)`
+- `IntegerParam(value)`
 - `DateParam(year, month, day)`
 - `TimeParam(hour, minute, second)`
 - `DateTimeParam(year, month, day, hour, minute, second)`

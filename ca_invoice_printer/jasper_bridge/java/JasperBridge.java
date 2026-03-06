@@ -787,6 +787,8 @@ public class JasperBridge {
             Object mappedValue;
             if ("string".equals(type)) {
                 mappedValue = valueNode.asText();
+            } else if ("integer".equals(type)) {
+                mappedValue = Integer.valueOf(valueNode.intValue());
             } else if ("long".equals(type)) {
                 mappedValue = valueNode.longValue();
             } else if ("double".equals(type)) {

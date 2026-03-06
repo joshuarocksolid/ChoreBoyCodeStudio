@@ -169,6 +169,7 @@ class DateTimeParam:
 |---|---|---|---|
 | `str` | `"string"` | `"..."` | `String` |
 | `int` | `"long"` | `N` | `Long` |
+| `IntegerParam(...)` | `"integer"` | `N` | `Integer` |
 | `float` | `"double"` | `N.N` | `Double` |
 | `bool` | `"boolean"` | `true`/`false` | `Boolean` |
 | `bytes` | `"bytes"` | `"<base64>"` | `byte[]` |
@@ -592,6 +593,7 @@ Type inference rules:
 
 - `serialize_params({"TITLE": "Test"})` returns `[{"name": "TITLE", "type": "string", "value": "Test"}]`
 - `serialize_params({"COUNT": 42})` returns `[{"name": "COUNT", "type": "long", "value": 42}]`
+- `serialize_params({"COUNT": IntegerParam(42)})` returns `[{"name": "COUNT", "type": "integer", "value": 42}]`
 - `serialize_params({"RATE": 0.075})` returns `[{"name": "RATE", "type": "double", "value": 0.075}]`
 - `serialize_params({"FLAG": True})` returns with `"type": "boolean"` (not `"long"`)
 - `serialize_params({"LOGO": ImageParam("/path/to/logo.png")})` returns with `"type": "image_path"`

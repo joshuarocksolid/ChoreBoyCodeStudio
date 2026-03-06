@@ -11,7 +11,7 @@ from . import exporter as exporter_module
 from . import filler as filler_module
 from . import jvm
 from .errors import ExportError, FillError, ParameterError
-from .params import DateParam, DateTimeParam, ImageParam, TimeParam
+from .params import DateParam, DateTimeParam, ImageParam, IntegerParam, TimeParam
 
 
 class Report:
@@ -229,8 +229,10 @@ class Report:
             if name not in effective_params:
                 continue
             expected = parameter.get("value_class_name") or parameter.get("type")
-            if expected and not _matches_java_type(expected, effective_params[name]):
-                mismatched.append("{} expected {}".format(name, expected))
+            if expected:
+                issue = _parameter_type_issue(expected, effective_params[name])
+                if issue is not None:
+                    mismatched.append("{} {}".format(name, issue))
 
         if missing or mismatched:
             details = []
@@ -241,40 +243,83 @@ class Report:
             raise ParameterError("Parameter validation failed ({})".format("; ".join(details)))
 
 
-def _matches_java_type(java_type: str, value: Any) -> bool:
-    numeric_int_types = {
-        "java.lang.Long",
+def _parameter_type_issue(expected_type: str, value: Any) -> Optional[str]:
+    expected = _normalize_java_type_name(expected_type)
+    actual = _serialized_java_type_name(value)
+    if actual is None:
+        return "has unsupported value type {}".format(type(value).__name__)
+    if _java_type_compatible(expected, actual):
+        return None
+    if expected == "java.lang.Integer" and actual == "java.lang.Long":
+        return (
+            "expected java.lang.Integer but bridge will send java.lang.Long for Python int; "
+            "use IntegerParam(...) or change JRXML parameter type to java.lang.Long"
+        )
+    return "expected {} but bridge will send {}".format(expected, actual)
+
+
+def _normalize_java_type_name(java_type: str) -> str:
+    mapping = {
+        "String": "java.lang.String",
+        "string": "java.lang.String",
+        "boolean": "java.lang.Boolean",
+        "long": "java.lang.Long",
+        "int": "java.lang.Integer",
+        "integer": "java.lang.Integer",
+        "double": "java.lang.Double",
+        "float": "java.lang.Float",
+        "byte[]": "[B",
+    }
+    return mapping.get(java_type, java_type)
+
+
+def _serialized_java_type_name(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return "java.lang.String"
+    if isinstance(value, bool):
+        return "java.lang.Boolean"
+    if isinstance(value, IntegerParam):
+        return "java.lang.Integer"
+    if isinstance(value, int):
+        return "java.lang.Long"
+    if isinstance(value, float):
+        return "java.lang.Double"
+    if isinstance(value, (bytes, bytearray)):
+        return "[B"
+    if isinstance(value, ImageParam):
+        return "java.awt.image.BufferedImage"
+    if isinstance(value, DateParam):
+        return "java.sql.Date"
+    if isinstance(value, TimeParam):
+        return "java.sql.Time"
+    if isinstance(value, DateTimeParam):
+        return "java.sql.Timestamp"
+    if isinstance(value, datetime.datetime):
+        return "java.sql.Timestamp"
+    if isinstance(value, datetime.date):
+        return "java.sql.Date"
+    if isinstance(value, datetime.time):
+        return "java.sql.Time"
+    return None
+
+
+def _java_type_compatible(expected: str, actual: str) -> bool:
+    if expected in ("java.lang.Object", "java.io.Serializable"):
+        return True
+    if expected == actual:
+        return True
+    if expected == "java.awt.Image" and actual == "java.awt.image.BufferedImage":
+        return True
+    if expected == "java.util.Date" and actual in ("java.sql.Date", "java.sql.Time", "java.sql.Timestamp"):
+        return True
+    if expected == "java.lang.Number" and actual in (
         "java.lang.Integer",
-        "java.lang.Short",
-        "java.lang.Byte",
-        "java.math.BigInteger",
-    }
-    numeric_float_types = {
-        "java.lang.Double",
+        "java.lang.Long",
         "java.lang.Float",
-        "java.math.BigDecimal",
-        "double",
-        "float",
-    }
-    if java_type in ("java.lang.String", "String"):
-        return isinstance(value, str)
-    if java_type in numeric_int_types:
-        return isinstance(value, int) and not isinstance(value, bool)
-    if java_type in numeric_float_types:
-        return (isinstance(value, int) or isinstance(value, float)) and not isinstance(value, bool)
-    if java_type in ("java.lang.Boolean", "boolean"):
-        return isinstance(value, bool)
-    if java_type in ("java.sql.Date",):
-        return isinstance(value, DateParam) or isinstance(value, datetime.date)
-    if java_type in ("java.sql.Time",):
-        return isinstance(value, TimeParam) or isinstance(value, datetime.time)
-    if java_type in ("java.sql.Timestamp", "java.util.Date"):
-        return isinstance(value, DateTimeParam) or isinstance(value, datetime.datetime)
-    if java_type in ("java.awt.Image", "java.awt.image.BufferedImage"):
-        return isinstance(value, ImageParam) or isinstance(value, (bytes, bytearray))
-    if java_type == "[B":
-        return isinstance(value, (bytes, bytearray))
-    return True
+        "java.lang.Double",
+    ):
+        return True
+    return False
 
 
 def compile_jrxml(jrxml_path: str, output_path: str = None) -> str:
