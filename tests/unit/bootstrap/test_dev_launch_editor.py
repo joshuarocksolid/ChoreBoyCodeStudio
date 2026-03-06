@@ -20,8 +20,7 @@ def test_build_apprun_command_bootstraps_repo_root_and_executes_editor_boot(tmp_
     assert command[0] == str(app_run)
     assert command[1] == "-c"
     assert "import runpy, sys;" in payload
-    assert f"repo_root={str(editor_boot.parent)!r};" in payload
-    assert "sys.path.insert(0, repo_root) if repo_root not in sys.path else None;" in payload
+    assert f"sys.path.insert(0, {str(editor_boot.parent)!r})" in payload
     assert "runpy.run_path(" in payload
     assert str(editor_boot) in payload
     assert "run_name='__main__'" in payload

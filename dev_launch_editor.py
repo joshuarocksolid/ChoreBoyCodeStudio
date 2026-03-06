@@ -15,6 +15,8 @@ import subprocess
 import sys
 from typing import Mapping, Sequence
 
+from app.run.runtime_launch import build_runpy_bootstrap_payload
+
 DEFAULT_DEV_APPRUN_PATH = Path("/opt/freecad/AppRun")
 DEFAULT_EDITOR_BOOT_FILENAME = "run_editor.py"
 APP_RUN_ENV_VAR = "CBCS_APPRUN"
@@ -75,11 +77,9 @@ def build_apprun_command(app_run_path: Path, editor_boot_path: Path) -> list[str
 
 def _build_bootstrap_payload(repo_root: Path, editor_boot_path: Path) -> str:
     """Build inline bootstrap payload for FreeCAD `-c` execution."""
-    return (
-        "import runpy, sys;"
-        f"repo_root={str(repo_root)!r};"
-        "sys.path.insert(0, repo_root) if repo_root not in sys.path else None;"
-        f"runpy.run_path({str(editor_boot_path)!r}, run_name='__main__')"
+    return build_runpy_bootstrap_payload(
+        script_path=str(editor_boot_path),
+        path_entry=str(repo_root),
     )
 
 

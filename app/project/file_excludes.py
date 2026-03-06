@@ -69,3 +69,25 @@ def should_exclude_name(name: str, patterns: Sequence[str]) -> bool:
         if "/" not in pattern and fnmatch.fnmatch(name, pattern):
             return True
     return False
+
+
+def should_exclude_relative_path(
+    relative_path: str,
+    patterns: Sequence[str],
+    *,
+    is_directory: bool,
+) -> bool:
+    normalized = relative_path.strip("/")
+    if not normalized:
+        return False
+    parts = [part for part in normalized.split("/") if part]
+    if not parts:
+        return False
+    entry_name = parts[-1]
+    if should_exclude_entry(entry_name, normalized, is_directory, patterns):
+        return True
+    parts_to_check = parts if is_directory else parts[:-1]
+    for part in parts_to_check:
+        if should_exclude_name(part, patterns):
+            return True
+    return False

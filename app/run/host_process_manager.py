@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import sys
 from typing import Callable, Mapping
 
 from app.bootstrap.paths import resolve_app_root
-from app.core import constants
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.runtime_launch import resolve_runtime_executable
 from app.run.runner_command_builder import build_runner_command
 
 
@@ -59,9 +58,4 @@ class HostProcessManager:
         self._supervisor.send_input(text)
 
     def _resolve_runtime_executable(self) -> str:
-        if self._runtime_executable:
-            return str(Path(self._runtime_executable).expanduser().resolve())
-        default_runtime = Path(constants.APP_RUN_PATH)
-        if default_runtime.exists():
-            return str(default_runtime.resolve())
-        return sys.executable
+        return resolve_runtime_executable(self._runtime_executable)
