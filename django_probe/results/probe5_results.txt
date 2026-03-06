@@ -1,8 +1,0 @@
-[Runtime]
-  Python: 3.9.2
-
-[Port binding tests]
-  127.0.0.1:8000 -> SUCCESS (bound to :8000)
-  127.0.0.1:8080 -> SUCCESS (bound to :8080)
-  127.0.0.1:9000 -> SUCCESS (bound to :9000)
-  127.0.0.1:0 (OS-assigned) -> SUCCESS (bound to :55937)

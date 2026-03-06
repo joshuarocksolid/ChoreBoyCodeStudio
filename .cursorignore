@@ -1,0 +1,77 @@
+# Dependency / package trees
+node_modules/
+vendor/
+.bun/
+.pnpm-store/
+
+# Python
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Build outputs
+dist/
+build/
+out/
+site/
+.next/
+coverage/
+htmlcov/
+
+# App/runtime junk
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Git / editor / OS
+.git/
+.idea/
+.vscode/
+.DS_Store
+
+# Databases / heavy artifacts
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+
+# Media / large binaries
+*.mp4
+*.zip
+*.tar
+*.gz
+*.bin
+*.iso
+
+
+.venv-editor/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.git/
+vendor/
+tree_sitter_probe/
+django_probe/
+jasper_probe/
+ca_invoice_printer/
+jasper_bridge/
+*.zip
+*.so
+*.jar
+*.pack
+*.sqlite
+*.sqlite3
+*.db
+dist/
+build/
+out/
+coverage/
+htmlcov/
