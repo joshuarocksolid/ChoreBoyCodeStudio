@@ -886,6 +886,126 @@ Verify rule-level lint settings (enable + severity) affect diagnostics output.
 
 ---
 
+## AT-37 — Plugin install from local package
+
+**Purpose:**  
+Verify offline plugin installation flow using local filesystem artifacts.
+
+**Preconditions:**  
+- editor is running
+- a valid local plugin package exists
+
+**Steps:**  
+1. Open Plugin Manager.
+2. Choose install from local package/folder.
+3. Select the plugin package.
+
+**Expected Result:**  
+- plugin manifest is validated before install
+- plugin appears in installed list with version and compatibility status
+- install errors are actionable when validation fails
+
+---
+
+## AT-38 — Runtime plugin host isolation
+
+**Purpose:**  
+Verify runtime plugin code executes outside the editor process.
+
+**Preconditions:**  
+- a runtime plugin is installed and enabled
+
+**Steps:**  
+1. Trigger a plugin command backed by runtime code.
+2. Observe command result in UI.
+3. Force plugin runtime failure (controlled exception/crash path).
+
+**Expected Result:**  
+- plugin command executes successfully through plugin host process
+- editor remains responsive when plugin runtime fails
+- failure is surfaced in plugin status/log diagnostics
+
+---
+
+## AT-39 — Plugin enable/disable lifecycle
+
+**Purpose:**  
+Verify plugin lifecycle controls are deterministic and persistent.
+
+**Preconditions:**  
+- at least one installed plugin exists
+
+**Steps:**  
+1. Disable plugin in Plugin Manager.
+2. Confirm plugin contributions are removed.
+3. Re-enable plugin.
+4. Restart editor and verify state persistence.
+
+**Expected Result:**  
+- disable removes contributions without restart when supported
+- enable restores contributions
+- enabled/disabled state persists across restart
+
+---
+
+## AT-40 — Safe mode and failure quarantine
+
+**Purpose:**  
+Verify recovery path for bad plugins.
+
+**Preconditions:**  
+- at least one plugin capable of repeated startup/runtime failure
+
+**Steps:**  
+1. Start editor in safe mode.
+2. Verify plugins are not activated.
+3. Start normal mode and trigger repeated plugin failure threshold.
+
+**Expected Result:**  
+- safe mode launches editor with plugins disabled
+- repeated plugin failures auto-disable/quarantine offending plugin
+- user can re-enable explicitly after diagnosis
+
+---
+
+## AT-41 — Declarative plugin contribution points
+
+**Purpose:**  
+Verify declarative plugin contributions are validated and wired.
+
+**Preconditions:**  
+- plugin with declarative contributions (command/menu/keybinding) is installed
+
+**Steps:**  
+1. Enable declarative plugin.
+2. Verify contributed menu item appears.
+3. Execute contributed command via menu and keybinding.
+
+**Expected Result:**  
+- declarative contributions are visible and functional
+- invalid contribution payloads are rejected with clear diagnostics
+
+---
+
+## AT-42 — Plugin compatibility enforcement
+
+**Purpose:**  
+Verify manifest compatibility guards prevent invalid activation.
+
+**Preconditions:**  
+- plugin package with incompatible app/api version constraints
+
+**Steps:**  
+1. Attempt install/enable incompatible plugin.
+2. Review compatibility details in Plugin Manager.
+
+**Expected Result:**  
+- incompatible plugin does not activate
+- compatibility reason is clearly displayed
+- compatible plugins remain unaffected
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

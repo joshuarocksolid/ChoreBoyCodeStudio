@@ -27,6 +27,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
 * Lightweight “IDE” features: search, go-to line, basic linting, format-on-save (optional).
 * Easy backup/export to USB (fits how ChoreBoy users already manage data).  
+* Modular plugin model so advanced users can extend behavior without bloating core workflows.
 
 ---
 
@@ -35,6 +36,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 * Full VSCode/IntelliJ parity (LSP, refactors, debugging breakpoints, git integrations).
 * Installing packages system-wide, or depending on OS packages not shipped with FreeCAD.
 * Internet-based workflows (ChoreBoy is LAN-only; no general internet). 
+* Internet marketplace and publisher-signing dependency for plugin installation.
 
 ---
 
@@ -90,6 +92,14 @@ Why this is optimal on ChoreBoy:
   * run mode (normal / headless FreeCAD / Qt app)
 * Runner streams stdout/stderr back to Code Studio (pipe or file tail).
 * Runner streams stdout/stderr back to Code Studio via pipes.
+
+### Plugin execution pipeline (v1)
+
+* Plugins are discovered from local filesystem packages.
+* Declarative plugin contributions are validated before activation.
+* Runtime plugin code executes in a dedicated plugin host process.
+* The editor communicates with runtime plugins through explicit IPC contracts.
+* Plugin host failures do not terminate the editor process.
 
 ---
 
@@ -312,6 +322,15 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 * Export project to USB / Zip project
 * “Support bundle” generator
 * Help pages tailored to headless FreeCAD constraints 
+
+## Milestone 4 — Plugin Platform (v1 + phase 2)
+
+* Plugin manifest schema and compatibility validation
+* Plugin manager UI (install/enable/disable/remove)
+* Runtime plugin host process with crash isolation
+* Declarative contribution points (commands/menus/keybindings/hooks)
+* Safe-mode startup and plugin failure quarantine
+* Phase 2: per-project plugin overrides and pinning
 
 ---
 

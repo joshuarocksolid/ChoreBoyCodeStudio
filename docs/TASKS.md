@@ -1156,3 +1156,99 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `docs/ARCHITECTURE.md`
   - `docs/TASKS.md`
 
+---
+
+## 16) Phase H — Plugin Platform Delivery
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+### H00 — Pre-plugin stabilization seams
+- Status: `DONE`
+- Objective: reduce plugin integration risk by tightening shell/runtime contracts before plugin features.
+- Scope completed:
+  - project tree now includes `cbcs/` metadata entries
+  - centralized settings IO through `SettingsService`
+  - runtime command/action registration seam via `CommandBroker` + `ShellActionRegistry`
+  - shared host process orchestration via `HostProcessManager`
+  - typed shell event contracts for run/project lifecycle via `ShellEventBus`
+- Primary files:
+  - `app/project/project_service.py`
+  - `app/persistence/settings_service.py`
+  - `app/shell/main_window.py`
+  - `app/shell/command_broker.py`
+  - `app/shell/action_registry.py`
+  - `app/run/host_process_manager.py`
+  - `app/shell/repl_session_manager.py`
+  - `app/shell/events.py`
+
+### H01 — Plugin manifest + discovery/index
+- Status: `TODO`
+- Objective: define plugin manifest schema and deterministic discovery/compatibility indexing.
+- Primary files:
+  - `app/plugins/manifest.py`
+  - `app/plugins/discovery.py`
+  - `app/plugins/models.py`
+  - `app/core/constants.py`
+  - `app/bootstrap/paths.py`
+- Acceptance linkage: `AT-37`, `AT-42`
+
+### H02 — Offline install/uninstall/update registry
+- Status: `TODO`
+- Objective: support local plugin package/folder install and lifecycle persistence.
+- Primary files:
+  - `app/plugins/installer.py`
+  - `app/plugins/registry_store.py`
+  - `app/plugins/package_format.py`
+  - `app/persistence/settings_store.py`
+- Acceptance linkage: `AT-37`, `AT-39`, `AT-42`
+
+### H03 — Plugin Manager UX
+- Status: `TODO`
+- Objective: add first-class UI for plugin lifecycle management.
+- Primary files:
+  - `app/shell/plugins_panel.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `app/shell/settings_dialog.py`
+- Acceptance linkage: `AT-37`, `AT-39`, `AT-42`
+
+### H04 — Declarative contribution runtime
+- Status: `TODO`
+- Objective: wire validated plugin contributions into commands/menus/keybindings/hook events.
+- Primary files:
+  - `app/plugins/contributions.py`
+  - `app/shell/action_registry.py`
+  - `app/shell/shortcut_preferences.py`
+  - `app/shell/events.py`
+- Acceptance linkage: `AT-41`
+
+### H05 — Runtime plugin host + IPC
+- Status: `TODO`
+- Objective: execute runtime plugin code in isolated host process with explicit protocol.
+- Primary files:
+  - `app/plugins/host_supervisor.py`
+  - `app/plugins/rpc_protocol.py`
+  - `app/plugins/runtime_manager.py`
+  - `run_plugin_host.py`
+- Acceptance linkage: `AT-38`, `AT-40`
+
+### H06 — Safety controls (safe mode + quarantine)
+- Status: `TODO`
+- Objective: provide recovery UX and automatic containment of failing plugins.
+- Primary files:
+  - `app/plugins/security_policy.py`
+  - `app/plugins/trust_store.py`
+  - `app/shell/main_window.py`
+  - `app/shell/plugins_panel.py`
+- Acceptance linkage: `AT-40`
+
+### H07 — Plugin documentation and authoring contracts
+- Status: `TODO`
+- Objective: publish plugin author contract and compatibility lifecycle policy.
+- Primary files:
+  - `docs/plugins/PRD.md`
+  - `docs/plugins/AUTHORING_GUIDE.md`
+  - `docs/plugins/API_REFERENCE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+
