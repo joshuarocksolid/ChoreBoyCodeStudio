@@ -151,6 +151,10 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input = QCheckBox(editor_group)
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
         editor_form.addRow("Insert final newline on save", self._insert_final_newline_on_save_input)
+
+        self._enable_preview_input = QCheckBox(editor_group)
+        self._enable_preview_input.setChecked(snapshot.enable_preview)
+        editor_form.addRow("Enable preview tabs", self._enable_preview_input)
         general_layout.addWidget(editor_group)
 
         intelligence_group = QGroupBox("Intelligence")
@@ -359,6 +363,7 @@ class SettingsDialog(QDialog):
             format_on_save=self._format_on_save_input.isChecked(),
             trim_trailing_whitespace_on_save=self._trim_trailing_whitespace_on_save_input.isChecked(),
             insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
+            enable_preview=self._enable_preview_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),

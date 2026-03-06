@@ -9,6 +9,7 @@ from app.shell.shortcut_preferences import (
     close_tab_shortcut_id,
     default_shortcut_map,
     find_shortcut_conflicts,
+    keep_preview_open_shortcut_id,
     parse_shortcut_overrides,
 )
 
@@ -27,6 +28,7 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["shell.action.file.newWindow"] == "Ctrl+Shift+N"
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
+    assert defaults[keep_preview_open_shortcut_id()] == "Ctrl+K, Enter"
 
 
 def test_parse_shortcut_overrides_accepts_known_ids_and_discards_unknowns() -> None:

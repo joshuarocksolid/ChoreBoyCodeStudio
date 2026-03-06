@@ -180,6 +180,22 @@ def test_item_activated_signal_emits_file_and_line(_ensure_qapp) -> None:  # typ
     assert received[0] == ("/project/mod.py", 42)
 
 
+def test_item_preview_signal_emits_file_and_line_on_click(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    panel = ProblemsPanel()
+    diagnostics = [_make_diagnostic(file_path="/project/mod.py", line_number=7)]
+    panel.set_diagnostics(diagnostics)
+
+    received: list[tuple[str, int]] = []
+    panel.item_preview_requested.connect(lambda fp, ln: received.append((fp, ln)))
+
+    tree = panel.tree_widget()
+    group = tree.topLevelItem(0)
+    child = group.child(0)
+    tree.itemClicked.emit(child, 0)
+
+    assert received == [("/project/mod.py", 7)]
+
+
 def test_problem_count_reflects_total_across_severities(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     panel = ProblemsPanel()
     diagnostics = [

@@ -32,6 +32,9 @@ from PySide2.QtWidgets import (
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
+    QStyle,
+    QStyleOptionTab,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -132,6 +135,7 @@ from app.shell.settings_models import (
 from app.shell.shortcut_preferences import (
     build_effective_shortcut_map,
     close_tab_shortcut_id,
+    keep_preview_open_shortcut_id,
 )
 from app.shell.icon_provider import (
     file_icon,
@@ -200,6 +204,13 @@ ShellEventT = TypeVar("ShellEventT")
 
 
 class _MiddleClickTabBar(QTabBar):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._tab_double_click_callback: Callable[[int], None] | None = None
+
+    def set_tab_double_click_callback(self, callback: Callable[[int], None] | None) -> None:
+        self._tab_double_click_callback = callback
+
     def mousePressEvent(self, arg__1: QMouseEvent) -> None:
         if arg__1.button() == Qt.MiddleButton:
             tab_index = self.tabAt(arg__1.pos())
@@ -207,6 +218,28 @@ class _MiddleClickTabBar(QTabBar):
                 self.tabCloseRequested.emit(tab_index)
         else:
             super().mousePressEvent(arg__1)
+
+    def mouseDoubleClickEvent(self, arg__1: QMouseEvent) -> None:  # noqa: N802 - Qt signature
+        tab_index = self.tabAt(arg__1.pos())
+        if tab_index >= 0 and self._tab_double_click_callback is not None:
+            self._tab_double_click_callback(tab_index)
+            arg__1.accept()
+            return
+        super().mouseDoubleClickEvent(arg__1)
+
+    def paintEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt signature
+        painter = QStylePainter(self)
+        option = QStyleOptionTab()
+        for index in range(self.count()):
+            self.initStyleOption(option, index)
+            data = self.tabData(index)
+            if isinstance(data, dict) and bool(data.get("is_preview")):
+                preview_font = option.font
+                preview_font.setItalic(True)
+                option.font = preview_font
+            painter.drawControl(QStyle.CE_TabBarTabShape, option)
+            painter.drawControl(QStyle.CE_TabBarTabLabel, option)
+        event.accept()
 
 
 class MainWindow(QMainWindow):
@@ -278,6 +311,7 @@ class MainWindow(QMainWindow):
         self._top_splitter: QSplitter | None = None
         self._vertical_splitter: QSplitter | None = None
         self._close_tab_shortcut: QShortcut | None = None
+        self._keep_preview_open_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
@@ -298,7 +332,13 @@ class MainWindow(QMainWindow):
             self._editor_format_on_save,
             self._editor_trim_trailing_whitespace_on_save,
             self._editor_insert_final_newline_on_save,
+            self._editor_enable_preview,
         ) = self._load_editor_preferences()
+        self._pending_project_tree_preview_path: str | None = None
+        self._project_tree_preview_click_timer = QTimer(self)
+        self._project_tree_preview_click_timer.setSingleShot(True)
+        self._project_tree_preview_click_timer.setInterval(175)
+        self._project_tree_preview_click_timer.timeout.connect(self._open_pending_project_tree_preview)
         self._zoom_delta: int = 0
         (
             self._completion_enabled,
@@ -424,6 +464,7 @@ class MainWindow(QMainWindow):
         self._configure_window_frame()
         self._build_layout_shell()
         self._configure_close_tab_shortcut()
+        self._configure_keep_preview_open_shortcut()
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
@@ -717,6 +758,13 @@ class MainWindow(QMainWindow):
         close_tab_sequence = self._effective_shortcuts.get(close_tab_shortcut_id(), "")
         self._close_tab_shortcut.setKey(QKeySequence(close_tab_sequence))
 
+    def _configure_keep_preview_open_shortcut(self) -> None:
+        if self._keep_preview_open_shortcut is None:
+            self._keep_preview_open_shortcut = QShortcut(QKeySequence(), self)
+            self._keep_preview_open_shortcut.activated.connect(self._handle_keep_preview_open_shortcut)
+        keep_open_sequence = self._effective_shortcuts.get(keep_preview_open_shortcut_id(), "")
+        self._keep_preview_open_shortcut.setKey(QKeySequence(keep_open_sequence))
+
     def _apply_shortcut_overrides_runtime(self) -> None:
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         if self._menu_registry is not None:
@@ -725,6 +773,7 @@ class MainWindow(QMainWindow):
                     continue
                 action.setShortcut(QKeySequence(self._effective_shortcuts.get(action_id, "")))
         self._configure_close_tab_shortcut()
+        self._configure_keep_preview_open_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
         self._settings_service.update(
@@ -782,7 +831,7 @@ class MainWindow(QMainWindow):
         settings_payload = self._settings_service.load()
         return parse_main_window_settings(settings_payload)
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool]:
         return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
@@ -969,6 +1018,7 @@ class MainWindow(QMainWindow):
         previous_diagnostics_enabled = snapshot.diagnostics_enabled
         previous_selected_linter = snapshot.selected_linter
         previous_file_exclude_patterns = list(snapshot.file_exclude_patterns)
+        previous_enable_preview = snapshot.enable_preview
         dialog = SettingsDialog(snapshot, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -990,6 +1040,7 @@ class MainWindow(QMainWindow):
             self._editor_format_on_save,
             self._editor_trim_trailing_whitespace_on_save,
             self._editor_insert_final_newline_on_save,
+            self._editor_enable_preview,
         ) = self._load_editor_preferences()
         (
             self._completion_enabled,
@@ -1023,6 +1074,9 @@ class MainWindow(QMainWindow):
         self._apply_runtime_intelligence_preferences_to_open_editors()
         self._apply_shortcut_overrides_runtime()
         self._apply_theme_styles()
+        if previous_enable_preview and not self._editor_enable_preview:
+            self._cancel_pending_project_tree_preview()
+            self._promote_existing_preview_tab()
         lint_profile_changed = self._lint_rule_overrides != previous_lint_rule_overrides
         diagnostics_enabled_changed = self._diagnostics_enabled != previous_diagnostics_enabled
         selected_linter_changed = self._selected_linter != previous_selected_linter
@@ -1076,8 +1130,26 @@ class MainWindow(QMainWindow):
                 tokens=tokens,
                 icon_map=self._tree_file_icon_map,
             )
-            self._quick_open_dialog.file_selected.connect(self._open_file_in_editor)
-            self._quick_open_dialog.file_selected_at_line.connect(self._open_file_at_line)
+            self._quick_open_dialog.file_preview_requested.connect(
+                lambda file_path: self._open_file_in_editor(file_path, preview=True)
+            )
+            self._quick_open_dialog.file_selected.connect(
+                lambda file_path: self._open_file_in_editor(file_path, preview=False)
+            )
+            self._quick_open_dialog.file_preview_at_line_requested.connect(
+                lambda file_path, line_number: self._open_file_at_line(
+                    file_path,
+                    line_number,
+                    preview=True,
+                )
+            )
+            self._quick_open_dialog.file_selected_at_line.connect(
+                lambda file_path, line_number: self._open_file_at_line(
+                    file_path,
+                    line_number,
+                    preview=False,
+                )
+            )
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
@@ -1586,6 +1658,7 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
+        self._cancel_pending_project_tree_preview()
         previous_project_root = self._loaded_project.project_root if self._loaded_project is not None else None
         if previous_project_root is not None:
             self._persist_session_state(project_root=previous_project_root)
@@ -1771,7 +1844,7 @@ class MainWindow(QMainWindow):
         if self._editor_tabs_widget is not None:
             tab_index = self._tab_index_for_path(saved_tab.file_path)
             if tab_index >= 0:
-                self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
+                self._refresh_tab_presentation(saved_tab.file_path)
 
         self._pending_autosave_payloads.pop(saved_tab.file_path, None)
         self._autosave_store.delete_draft(saved_tab.file_path)
@@ -2878,10 +2951,15 @@ class MainWindow(QMainWindow):
             return
         self._send_runner_input(locals_command())
 
-    def _handle_debug_navigate(self, file_path: str, line_number: int) -> None:
+    def _handle_debug_navigate_preview(self, file_path: str, line_number: int) -> None:
         if not self._is_debug_navigation_target_allowed(file_path):
             return
-        self._open_file_at_line(file_path, line_number)
+        self._open_file_at_line(file_path, line_number, preview=True)
+
+    def _handle_debug_navigate_permanent(self, file_path: str, line_number: int) -> None:
+        if not self._is_debug_navigation_target_allowed(file_path):
+            return
+        self._open_file_at_line(file_path, line_number, preview=False)
 
     def _is_debug_navigation_target_allowed(self, file_path: str) -> bool:
         if self._loaded_project is None:
@@ -3362,7 +3440,12 @@ class MainWindow(QMainWindow):
     def _handle_problem_item_activation(self, file_path: str, line_number: int) -> None:
         if not file_path:
             return
-        self._open_file_at_line(file_path, line_number)
+        self._open_file_at_line(file_path, line_number, preview=False)
+
+    def _handle_problem_item_preview(self, file_path: str, line_number: int) -> None:
+        if not file_path:
+            return
+        self._open_file_at_line(file_path, line_number, preview=True)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         if self._confirm_proceed_with_unsaved_changes("exiting"):
@@ -3382,6 +3465,8 @@ class MainWindow(QMainWindow):
     def _begin_shutdown_teardown(self) -> None:
         self._autosave_timer.stop()
         self._realtime_lint_timer.stop()
+        self._project_tree_preview_click_timer.stop()
+        self._pending_project_tree_preview_path = None
         self._pending_realtime_lint_file_path = None
         if hasattr(self, "_run_event_timer"):
             self._run_event_timer.stop()
@@ -3483,6 +3568,7 @@ class MainWindow(QMainWindow):
         self._sidebar_stack.addWidget(explorer_page)
 
         self._search_sidebar = SearchSidebarWidget(panel)
+        self._search_sidebar.preview_file_at_line.connect(self._handle_search_preview_file_at_line)
         self._search_sidebar.open_file_at_line.connect(self._handle_search_open_file_at_line)
         self._sidebar_stack.addWidget(self._search_sidebar)
 
@@ -3540,7 +3626,7 @@ class MainWindow(QMainWindow):
         self._project_tree_widget.setIndentation(16)
         self._project_tree_widget.setIconSize(QSize(16, 16))
         self._project_tree_widget.itemActivated.connect(self._handle_project_tree_item_activation)
-        self._project_tree_widget.itemClicked.connect(self._handle_project_tree_item_activation)
+        self._project_tree_widget.itemClicked.connect(self._handle_project_tree_item_click)
         self._project_tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self._project_tree_widget.customContextMenuRequested.connect(self._show_project_tree_context_menu)
         self._project_tree_widget.set_drop_callback(self._handle_project_tree_drop)
@@ -3561,7 +3647,10 @@ class MainWindow(QMainWindow):
                 self._search_sidebar.focus_search()
 
     def _handle_search_open_file_at_line(self, file_path: str, line_number: int) -> None:
-        self._open_file_at_line(file_path, line_number)
+        self._open_file_at_line(file_path, line_number, preview=False)
+
+    def _handle_search_preview_file_at_line(self, file_path: str, line_number: int) -> None:
+        self._open_file_at_line(file_path, line_number, preview=True)
 
     @staticmethod
     def _make_explorer_button(parent: QWidget, tooltip: str, icon: QIcon) -> QToolButton:
@@ -3649,7 +3738,9 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self._find_replace_bar, 0)
 
         self._editor_tabs_widget = QTabWidget(editor_page)
-        self._editor_tabs_widget.setTabBar(_MiddleClickTabBar(self._editor_tabs_widget))
+        tab_bar = _MiddleClickTabBar(self._editor_tabs_widget)
+        tab_bar.set_tab_double_click_callback(self._handle_editor_tab_header_double_click)
+        self._editor_tabs_widget.setTabBar(tab_bar)
         self._editor_tabs_widget.setObjectName("shell.editorTabs")
         self._editor_tabs_widget.currentChanged.connect(self._handle_editor_tab_changed)
         self._editor_tabs_widget.setTabsClosable(True)
@@ -3702,7 +3793,8 @@ class MainWindow(QMainWindow):
         tabs.setTabToolTip(repl_index, "Interactive REPL session output appears here.")
 
         self._debug_panel = DebugPanelWidget(tabs)
-        self._debug_panel.navigate_requested.connect(self._handle_debug_navigate)
+        self._debug_panel.navigate_requested.connect(self._handle_debug_navigate_preview)
+        self._debug_panel.navigate_permanent_requested.connect(self._handle_debug_navigate_permanent)
         self._debug_panel.watch_evaluate_requested.connect(self._handle_debug_watch_evaluate)
         self._debug_panel.breakpoint_remove_requested.connect(self._handle_debug_breakpoint_remove)
         self._debug_panel.refresh_stack_requested.connect(self._handle_debug_refresh_stack)
@@ -3711,6 +3803,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._debug_panel, "Debug")
 
         self._problems_panel = ProblemsPanel(tabs)
+        self._problems_panel.item_preview_requested.connect(self._handle_problem_item_preview)
         self._problems_panel.item_activated.connect(self._handle_problem_item_activation)
         self._problems_panel.context_menu_requested.connect(
             lambda fp, _code: self._apply_safe_fixes_for_file(fp)
@@ -3720,7 +3813,12 @@ class MainWindow(QMainWindow):
         tabs.setTabToolTip(problems_index, "Tracebacks and diagnostics for quick navigation.")
 
         self._run_log_panel = RunLogPanel(tabs)
-        self._run_log_panel.open_log_requested.connect(self._open_file_in_editor)
+        self._run_log_panel.open_log_requested.connect(
+            lambda file_path: self._open_file_in_editor(
+                file_path,
+                preview=self._editor_enable_preview,
+            )
+        )
         run_log_index = tabs.addTab(self._run_log_panel, "Run Log")
         tabs.setTabToolTip(run_log_index, "Run/Debug output (stdout/stderr) and per-run log.")
         return tabs
@@ -3835,12 +3933,38 @@ class MainWindow(QMainWindow):
             item.addChild(self._build_tree_item(child_node))
         return item
 
+    def _handle_project_tree_item_click(self, item: QTreeWidgetItem, _column: int) -> None:
+        if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
+            return
+        absolute_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
+        if not absolute_path:
+            return
+        if not self._editor_enable_preview:
+            self._cancel_pending_project_tree_preview()
+            self._open_file_in_editor(absolute_path, preview=False)
+            return
+        self._pending_project_tree_preview_path = absolute_path
+        self._project_tree_preview_click_timer.start()
+
+    def _open_pending_project_tree_preview(self) -> None:
+        preview_path = self._pending_project_tree_preview_path
+        self._pending_project_tree_preview_path = None
+        if not preview_path:
+            return
+        self._open_file_in_editor(preview_path, preview=True)
+
+    def _cancel_pending_project_tree_preview(self) -> None:
+        self._pending_project_tree_preview_path = None
+        if self._project_tree_preview_click_timer.isActive():
+            self._project_tree_preview_click_timer.stop()
+
     def _handle_project_tree_item_activation(self, item: QTreeWidgetItem, _column: int) -> None:
+        self._cancel_pending_project_tree_preview()
         is_directory = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
         absolute_path = item.data(0, TREE_ROLE_ABSOLUTE_PATH)
         if is_directory or not absolute_path:
             return
-        self._open_file_in_editor(str(absolute_path))
+        self._open_file_in_editor(str(absolute_path), preview=False)
 
     def _get_selected_tree_paths(self) -> list[tuple[str, str, bool]]:
         """Return (absolute_path, relative_path, is_directory) for each selected tree item."""
@@ -4099,7 +4223,7 @@ class MainWindow(QMainWindow):
         if self._editor_tabs_widget is None:
             return
         self._editor_tabs_widget.setTabToolTip(tab_index, new_path)
-        self._editor_tabs_widget.setTabText(tab_index, Path(new_path).name)
+        self._refresh_tab_presentation(new_path)
 
     def _maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:
         self._project_tree_controller.maybe_rewrite_imports_for_move(
@@ -4167,21 +4291,26 @@ class MainWindow(QMainWindow):
         self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
 
-    def _open_file_in_editor(self, file_path: str) -> bool:
+    def _open_file_in_editor(self, file_path: str, *, preview: bool = False) -> bool:
         if self._editor_tabs_widget is None:
             return False
 
         started_at = time.perf_counter()
         try:
-            opened_result = self._editor_manager.open_file(file_path)
+            use_preview = preview and self._editor_enable_preview
+            opened_result = self._editor_manager.open_file(file_path, preview=use_preview)
         except ValueError as exc:
             QMessageBox.warning(self, "Unable to open file", str(exc))
             return False
+
+        if opened_result.closed_preview_path:
+            self._remove_tab_widget_for_path(opened_result.closed_preview_path)
 
         if opened_result.was_already_open:
             existing_index = self._tab_index_for_path(opened_result.tab.file_path)
             if existing_index >= 0:
                 self._editor_tabs_widget.setCurrentIndex(existing_index)
+                self._refresh_tab_presentation(opened_result.tab.file_path)
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -4242,6 +4371,7 @@ class MainWindow(QMainWindow):
         tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         self._editor_tabs_widget.setCurrentIndex(tab_index)
+        self._refresh_tab_presentation(opened_result.tab.file_path)
         self._maybe_restore_draft(opened_result.tab, editor_widget)
         self._apply_detected_indentation_for_widget(
             opened_result.tab.file_path,
@@ -4258,8 +4388,8 @@ class MainWindow(QMainWindow):
         )
         return True
 
-    def _open_file_at_line(self, file_path: str, line_number: int | None) -> None:
-        if not self._open_file_in_editor(file_path):
+    def _open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
+        if not self._open_file_in_editor(file_path, preview=preview):
             return
         editor_widget = self._editor_widgets_by_path.get(str(Path(file_path).expanduser().resolve()))
         if editor_widget is None or line_number is None:
@@ -4276,18 +4406,68 @@ class MainWindow(QMainWindow):
                 return index
         return -1
 
+    def _remove_tab_widget_for_path(self, file_path: str) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        tab_index = self._tab_index_for_path(file_path)
+        if tab_index < 0:
+            return
+        self._editor_tabs_widget.removeTab(tab_index)
+        widget = self._editor_widgets_by_path.pop(file_path, None)
+        if widget is not None:
+            self._release_editor_widget(widget)
+        self._refresh_save_action_states()
+        self._refresh_run_action_states()
+
+    def _refresh_tab_presentation(self, file_path: str) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return
+        tab_index = self._tab_index_for_path(file_path)
+        if tab_index < 0:
+            return
+        suffix = " *" if tab_state.is_dirty else ""
+        self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+        tab_bar = self._editor_tabs_widget.tabBar()
+        if isinstance(tab_bar, QTabBar):
+            tab_bar.setTabData(
+                tab_index,
+                {"is_preview": tab_state.is_preview, "file_path": tab_state.file_path},
+            )
+            tab_bar.update()
+
+    def _promote_preview_tab(self, file_path: str) -> bool:
+        promoted_tab = self._editor_manager.promote_tab(file_path)
+        if promoted_tab is None:
+            return False
+        if not promoted_tab.is_preview:
+            self._refresh_tab_presentation(promoted_tab.file_path)
+        return True
+
+    def _promote_existing_preview_tab(self) -> bool:
+        preview_tab = self._editor_manager.preview_tab()
+        if preview_tab is None:
+            return False
+        return self._promote_preview_tab(preview_tab.file_path)
+
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         if self._editor_manager.get_tab(file_path) is None:
             return
         tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
+        if tab_state.is_preview:
+            self._promote_preview_tab(file_path)
+            refreshed_state = self._editor_manager.get_tab(file_path)
+            if refreshed_state is not None:
+                tab_state = refreshed_state
         if self._editor_tabs_widget is None:
             return
 
         tab_index = self._tab_index_for_path(tab_state.file_path)
         if tab_index < 0:
             return
-        suffix = " *" if tab_state.is_dirty else ""
-        self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+        self._refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
             self._schedule_autosave(tab_state.file_path, tab_state.current_content)
         else:
@@ -4378,6 +4558,22 @@ class MainWindow(QMainWindow):
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
+
+    def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        file_path = self._editor_tabs_widget.tabToolTip(tab_index)
+        if not file_path:
+            return
+        self._promote_preview_tab(file_path)
+
+    def _handle_keep_preview_open_shortcut(self) -> None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return
+        if not active_tab.is_preview:
+            return
+        self._promote_preview_tab(active_tab.file_path)
 
     def _handle_tab_close_requested(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:
@@ -4518,7 +4714,7 @@ class MainWindow(QMainWindow):
             updated_tab.mark_saved(last_known_mtime=self._editor_manager.current_disk_mtime(file_path))
             tab_index = self._tab_index_for_path(file_path)
             if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._editor_tabs_widget.setTabText(tab_index, updated_tab.display_name)
+                self._refresh_tab_presentation(file_path)
         self._refresh_save_action_states()
 
     def _check_for_external_file_change(self, file_path: str) -> None:
@@ -4567,7 +4763,7 @@ class MainWindow(QMainWindow):
             refreshed_tab.mark_saved(last_known_mtime=current_mtime)
             tab_index = self._tab_index_for_path(file_path)
             if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._editor_tabs_widget.setTabText(tab_index, refreshed_tab.display_name)
+                self._refresh_tab_presentation(file_path)
             self._pending_autosave_payloads.pop(file_path, None)
             self._autosave_store.delete_draft(file_path)
             self._refresh_save_action_states()
@@ -4632,7 +4828,7 @@ class MainWindow(QMainWindow):
         updated_tab = self._editor_manager.update_tab_content(tab_state.file_path, draft_entry.content)
         tab_index = self._tab_index_for_path(tab_state.file_path)
         if self._editor_tabs_widget is not None and tab_index >= 0:
-            self._editor_tabs_widget.setTabText(tab_index, f"{updated_tab.display_name} *")
+            self._refresh_tab_presentation(updated_tab.file_path)
         self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
 
     def _schedule_autosave(self, file_path: str, content: str) -> None:

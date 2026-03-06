@@ -97,3 +97,11 @@ def test_settings_dialog_reset_all_keybindings_restores_defaults() -> None:
     dialog._handle_reset_all_shortcuts()
     snapshot = dialog.snapshot()
     assert snapshot.shortcut_overrides == {}
+
+
+def test_settings_dialog_snapshot_includes_enable_preview_toggle() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot(enable_preview=True))
+    dialog._enable_preview_input.setChecked(False)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.enable_preview is False

@@ -164,6 +164,17 @@ class TestSignals:
         assert len(signals) == 1
         assert signals[0] == ("/home/user/project/run.py", 3)
 
+    def test_navigate_permanent_requested_on_stack_double_click(self, panel: DebugPanelWidget) -> None:
+        state = _make_paused_state()
+        panel.update_from_state(state)
+
+        signals: list[tuple[str, int]] = []
+        panel.navigate_permanent_requested.connect(lambda fp, ln: signals.append((fp, ln)))
+
+        item = panel._stack_tree.topLevelItem(0)
+        panel._on_stack_item_double_clicked(item, 0)
+        assert signals == [("/home/user/project/run.py", 3)]
+
     def test_navigate_requested_on_bp_click(self, panel: DebugPanelWidget) -> None:
         panel.set_breakpoints({"/home/user/project/main.py": {5}})
 
@@ -174,6 +185,16 @@ class TestSignals:
         panel._on_bp_item_clicked(item, 0)
         assert len(signals) == 1
         assert signals[0] == ("/home/user/project/main.py", 5)
+
+    def test_navigate_permanent_requested_on_bp_double_click(self, panel: DebugPanelWidget) -> None:
+        panel.set_breakpoints({"/home/user/project/main.py": {5}})
+
+        signals: list[tuple[str, int]] = []
+        panel.navigate_permanent_requested.connect(lambda fp, ln: signals.append((fp, ln)))
+
+        item = panel._bp_tree.topLevelItem(0)
+        panel._on_bp_item_double_clicked(item, 0)
+        assert signals == [("/home/user/project/main.py", 5)]
 
     def test_watch_evaluate_requested(self, panel: DebugPanelWidget) -> None:
         panel._watch_input.setText("x + 1")
