@@ -536,6 +536,7 @@ Recommended contents:
 * editor preferences (global defaults)
 * global shortcuts/preferences
 * syntax-color customization overrides (light/dark token maps)
+* linter runtime settings (global enable/disable + selected provider)
 * linter rule profile overrides (enablement + severity)
 * last-opened window layout
 * compatibility probe results cache
@@ -646,6 +647,7 @@ Stores:
 * settings
   * keybinding overrides
   * syntax-color overrides (theme-aware)
+  * linter provider selection + global lint enable state
   * linter rule overrides
 * autosave drafts
 * optional indexes

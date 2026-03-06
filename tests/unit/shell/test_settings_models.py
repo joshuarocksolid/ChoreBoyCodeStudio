@@ -48,6 +48,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.theme_mode == "system"
     assert snapshot.auto_open_console_on_run_output is True
     assert snapshot.auto_open_problems_on_run_failure is True
+    assert snapshot.selected_linter == "default"
     assert snapshot.shortcut_overrides == {}
     assert snapshot.syntax_color_overrides_light == {}
     assert snapshot.syntax_color_overrides_dark == {}
@@ -98,6 +99,8 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "dark": {"keyword": "#654321"},
             },
             "linter": {
+                "enabled": False,
+                "selected_linter": "pyflakes",
                 "rule_overrides": {
                     "PY220": {"enabled": False, "severity": "info"},
                 }
@@ -130,6 +133,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.highlighting_lexical_only_threshold_chars == 480000
     assert snapshot.auto_open_console_on_run_output is False
     assert snapshot.auto_open_problems_on_run_failure is False
+    assert snapshot.selected_linter == "pyflakes"
     assert snapshot.shortcut_overrides == {"shell.action.run.run": "Ctrl+R"}
     assert snapshot.syntax_color_overrides_light == {"keyword": "#123456"}
     assert snapshot.syntax_color_overrides_dark == {"keyword": "#654321"}
@@ -163,6 +167,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         highlighting_lexical_only_threshold_chars=500000,
         auto_open_console_on_run_output=False,
         auto_open_problems_on_run_failure=False,
+        selected_linter="pyflakes",
         shortcut_overrides={"shell.action.run.run": "Ctrl+R"},
         syntax_color_overrides_light={"keyword": "#123456"},
         syntax_color_overrides_dark={"keyword": "#654321"},
@@ -193,7 +198,14 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["keybindings"]["overrides"] == {"shell.action.run.run": "Ctrl+R"}
     assert merged["syntax_colors"]["light"] == {"keyword": "#123456"}
     assert merged["syntax_colors"]["dark"] == {"keyword": "#654321"}
+    assert merged["linter"]["enabled"] is False
+    assert merged["linter"]["selected_linter"] == "pyflakes"
     assert merged["linter"]["rule_overrides"] == {"PY220": {"enabled": False, "severity": "info"}}
+
+
+def test_parse_editor_settings_snapshot_invalid_selected_linter_defaults_to_default() -> None:
+    snapshot = parse_editor_settings_snapshot({"linter": {"selected_linter": "unknown"}})
+    assert snapshot.selected_linter == "default"
 
 
 def test_parse_theme_mode_reads_explicit_dark() -> None:

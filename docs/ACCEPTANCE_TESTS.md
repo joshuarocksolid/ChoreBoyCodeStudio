@@ -870,21 +870,30 @@ Verify syntax token colors can be customized per theme and remain readable.
 ## AT-36 — Linter profile customization changes diagnostics behavior
 
 **Purpose:**  
-Verify rule-level lint settings (enable + severity) affect diagnostics output.
+Verify linter runtime controls (enable/disable + provider selection) and rule-level settings affect diagnostics output.
 
 **Preconditions:**  
 - project with Python file producing at least one `PY220` and one `PY230` diagnostic
+- project with Python file that triggers at least one Pyflakes-only diagnostic (for example undefined name)
 
 **Steps:**  
 1. Open **File > Settings...**.
 2. Set scope to **Project**.
 3. Open **Linter** tab.
-4. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
-5. Save settings and re-run linting for affected file.
-6. Reopen settings and verify changes persisted in project scope.
-7. Use "Reset ... to Global" and verify baseline values are restored.
+4. Turn **Enable Python linting** off and verify provider + rule controls become disabled.
+5. Turn linting back on, set provider to **Pyflakes**, save settings, and lint an affected file.
+6. Confirm a Pyflakes-only diagnostic appears.
+7. Reopen settings and verify provider persisted as **Pyflakes**.
+8. Change provider back to **Default (built-in)**.
+9. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
+10. Save settings and re-run linting for affected file.
+11. Reopen settings and verify changes persisted in project scope.
+12. Use "Reset ... to Global" and verify baseline values are restored.
 
 **Expected Result:**  
+- linter enable toggle suppresses diagnostics when off and re-enables them when on
+- provider selection switches active lint backend between `default` and `pyflakes`
+- selected provider persists across settings reopen and app restart
 - disabled rule diagnostics are suppressed
 - severity override is reflected in problems/editor indicators
 - lint profile persists across settings reopen and app restart
