@@ -1,0 +1,7 @@
+{
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv-editor",
+  "include": ["app", "tests"],
+  "exclude": [".venv-editor", ".venv", "squashfs-root", "__pycache__"]
+}

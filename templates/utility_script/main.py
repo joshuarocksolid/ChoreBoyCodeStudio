@@ -1,0 +1,1 @@
+print("Utility template ready.")
