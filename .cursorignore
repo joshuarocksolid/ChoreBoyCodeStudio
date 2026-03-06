@@ -1,19 +1,19 @@
-# Dependency / package trees
-node_modules/
-vendor/
-.bun/
-.pnpm-store/
-
-# Python
+# Python envs / caches
 .venv/
 venv/
+.venv-editor/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .tox/
 
-# Build outputs
+# JS / package caches
+node_modules/
+.bun/
+.pnpm-store/
+
+# Build / coverage
 dist/
 build/
 out/
@@ -22,56 +22,37 @@ site/
 coverage/
 htmlcov/
 
-# App/runtime junk
+# Workspace junk
 *.log
 logs/
 tmp/
 temp/
 .cache/
 
-# Git / editor / OS
+# VCS / editor
 .git/
 .idea/
 .vscode/
 .DS_Store
 
-# Databases / heavy artifacts
+# Heavy artifacts
 *.sqlite
 *.sqlite3
 *.db
 *.parquet
-
-# Media / large binaries
-*.mp4
 *.zip
 *.tar
 *.gz
 *.bin
 *.iso
+*.so
+*.jar
+*.pack
 
-
-.venv-editor/
-.venv/
-venv/
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.git/
+# Project-specific heavy dirs
 vendor/
 tree_sitter_probe/
 django_probe/
 jasper_probe/
 ca_invoice_printer/
 jasper_bridge/
-*.zip
-*.so
-*.jar
-*.pack
-*.sqlite
-*.sqlite3
-*.db
-dist/
-build/
-out/
-coverage/
-htmlcov/
