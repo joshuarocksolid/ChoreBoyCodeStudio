@@ -163,6 +163,7 @@ class DebugPanelWidget(QWidget):
     """Self-contained debug panel with splitter layout and tree views."""
 
     navigate_requested = Signal(str, int)
+    navigate_permanent_requested = Signal(str, int)
     watch_evaluate_requested = Signal(str)
     breakpoint_remove_requested = Signal(str, int)
     refresh_stack_requested = Signal()
@@ -251,6 +252,7 @@ class DebugPanelWidget(QWidget):
         tree.header().resizeSection(0, 140)
         tree.setIndentation(0)
         tree.itemClicked.connect(self._on_stack_item_clicked)
+        tree.itemDoubleClicked.connect(self._on_stack_item_double_clicked)
         return tree
 
     def _build_variables_tree(self) -> QTreeWidget:
@@ -280,6 +282,7 @@ class DebugPanelWidget(QWidget):
         tree.setContextMenuPolicy(Qt.CustomContextMenu)
         tree.customContextMenuRequested.connect(self._on_bp_context_menu)
         tree.itemClicked.connect(self._on_bp_item_clicked)
+        tree.itemDoubleClicked.connect(self._on_bp_item_double_clicked)
         return tree
 
     def _build_watch_section(self) -> tuple[QTreeWidget, QLineEdit, QWidget]:
@@ -539,11 +542,23 @@ class DebugPanelWidget(QWidget):
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
 
+    def _on_stack_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        file_path = item.data(0, _ROLE_FILE_PATH)
+        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        if file_path and line_number is not None:
+            self.navigate_permanent_requested.emit(file_path, int(line_number))
+
     def _on_bp_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         file_path = item.data(0, _ROLE_FILE_PATH)
         line_number = item.data(0, _ROLE_LINE_NUMBER)
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
+
+    def _on_bp_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        file_path = item.data(0, _ROLE_FILE_PATH)
+        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        if file_path and line_number is not None:
+            self.navigate_permanent_requested.emit(file_path, int(line_number))
 
     def _on_bp_context_menu(self, pos) -> None:  # type: ignore[no-untyped-def]
         item = self._bp_tree.itemAt(pos)

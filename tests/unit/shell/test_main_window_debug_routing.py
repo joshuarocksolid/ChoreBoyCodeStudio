@@ -347,16 +347,44 @@ def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation
     assert open_calls == []
 
 
-def test_handle_debug_navigate_ignores_non_project_file() -> None:
+def test_handle_debug_navigate_preview_ignores_non_project_file() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
     open_calls: list[tuple[str, int | None]] = []
     window_any._open_file_at_line = lambda file_path, line_number: open_calls.append((file_path, line_number))
 
-    MainWindow._handle_debug_navigate(window, "/tmp/ide/app/shell/main_window.py", 99)
+    MainWindow._handle_debug_navigate_preview(window, "/tmp/ide/app/shell/main_window.py", 99)
 
     assert open_calls == []
+
+
+def test_handle_debug_navigate_preview_opens_project_file_as_preview() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
+    open_calls: list[tuple[str, int | None, bool]] = []
+    window_any._open_file_at_line = (
+        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
+    )
+
+    MainWindow._handle_debug_navigate_preview(window, "/tmp/project/app/main.py", 17)
+
+    assert open_calls == [("/tmp/project/app/main.py", 17, True)]
+
+
+def test_handle_debug_navigate_permanent_opens_project_file_as_permanent() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
+    open_calls: list[tuple[str, int | None, bool]] = []
+    window_any._open_file_at_line = (
+        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
+    )
+
+    MainWindow._handle_debug_navigate_permanent(window, "/tmp/project/app/main.py", 18)
+
+    assert open_calls == [("/tmp/project/app/main.py", 18, False)]
 
 
 def test_enqueue_run_event_ignored_while_shutting_down() -> None:

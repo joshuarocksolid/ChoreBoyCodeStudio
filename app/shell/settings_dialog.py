@@ -206,6 +206,9 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input = QCheckBox(editor_group)
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
         editor_form.addRow("Insert final newline on save", self._insert_final_newline_on_save_input)
+        self._enable_preview_input = QCheckBox(editor_group)
+        self._enable_preview_input.setChecked(snapshot.enable_preview)
+        editor_form.addRow("Enable preview tabs", self._enable_preview_input)
         self._editor_reset_to_global_btn = QPushButton("Reset Editor Overrides to Global", editor_group)
         self._editor_reset_to_global_btn.clicked.connect(self._handle_reset_editor_group_to_global)
         editor_form.addRow("", self._editor_reset_to_global_btn)
@@ -449,6 +452,7 @@ class SettingsDialog(QDialog):
             format_on_save=self._format_on_save_input.isChecked(),
             trim_trailing_whitespace_on_save=self._trim_trailing_whitespace_on_save_input.isChecked(),
             insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
+            enable_preview=self._enable_preview_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),
@@ -484,6 +488,7 @@ class SettingsDialog(QDialog):
         self._format_on_save_input.setChecked(snapshot.format_on_save)
         self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
+        self._enable_preview_input.setChecked(snapshot.enable_preview)
 
         self._completion_enabled_input.setChecked(snapshot.completion_enabled)
         self._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
@@ -582,6 +587,7 @@ class SettingsDialog(QDialog):
                 )
         if self._appearance_group is not None:
             self._appearance_group.setVisible(not is_project_scope)
+        self._enable_preview_input.setEnabled(not is_project_scope)
         if self._output_reset_to_global_btn is not None:
             self._output_reset_to_global_btn.setVisible(is_project_scope)
         if self._editor_reset_to_global_btn is not None:
@@ -626,6 +632,7 @@ class SettingsDialog(QDialog):
         self._format_on_save_input.setChecked(baseline.format_on_save)
         self._trim_trailing_whitespace_on_save_input.setChecked(baseline.trim_trailing_whitespace_on_save)
         self._insert_final_newline_on_save_input.setChecked(baseline.insert_final_newline_on_save)
+        self._enable_preview_input.setChecked(baseline.enable_preview)
 
     def _handle_reset_intelligence_group_to_global(self) -> None:
         baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]

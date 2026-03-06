@@ -138,3 +138,11 @@ def test_settings_dialog_project_scope_hides_global_only_controls() -> None:
         snapshot.auto_open_console_on_run_output
         == global_snapshot.auto_open_console_on_run_output
     )
+
+
+def test_settings_dialog_snapshot_includes_enable_preview_toggle() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot(enable_preview=True))
+    dialog._enable_preview_input.setChecked(False)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.enable_preview is False

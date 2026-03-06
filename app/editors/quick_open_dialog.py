@@ -215,7 +215,9 @@ class QuickOpenDelegate(QStyledItemDelegate):
 class QuickOpenDialog(QDialog):
     """Floating overlay for fuzzy file-by-name search (Ctrl+P)."""
 
+    file_preview_requested = Signal(str)
     file_selected = Signal(str)
+    file_preview_at_line_requested = Signal(str, int)
     file_selected_at_line = Signal(str, int)
 
     def __init__(
@@ -288,6 +290,7 @@ class QuickOpenDialog(QDialog):
         )
         self._delegate.set_item_model(self._item_data)
         self._results_list.setItemDelegate(self._delegate)
+        self._results_list.clicked.connect(self._on_item_preview)
         self._results_list.doubleClicked.connect(self._on_item_activated)
 
         self._empty_label = QLabel("No matching files")
@@ -403,6 +406,16 @@ class QuickOpenDialog(QDialog):
             else:
                 self.file_selected.emit(path)
             self.hide()
+
+    def _on_item_preview(self, index: QModelIndex) -> None:
+        row = index.row()
+        if 0 <= row < len(self._item_data.items):
+            path = self._item_data.items[row].candidate.absolute_path
+            _, line = self._parse_query_and_line()
+            if line is not None:
+                self.file_preview_at_line_requested.emit(path, line)
+            else:
+                self.file_preview_requested.emit(path)
 
     def _accept_current(self) -> None:
         idx = self._results_list.currentIndex()

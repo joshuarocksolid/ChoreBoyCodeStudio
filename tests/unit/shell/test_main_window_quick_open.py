@@ -29,16 +29,18 @@ class _FakeSignal:
     def connect(self, callback) -> None:  # type: ignore[no-untyped-def]
         self._callbacks.append(callback)
 
-    def emit(self, value: str) -> None:
+    def emit(self, *args: object) -> None:
         for callback in list(self._callbacks):
-            callback(value)
+            callback(*args)
 
 
 class _FakeQuickOpenDialog:
     instances: list["_FakeQuickOpenDialog"] = []
 
     def __init__(self, _parent, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
+        self.file_preview_requested = _FakeSignal()
         self.file_selected = _FakeSignal()
+        self.file_preview_at_line_requested = _FakeSignal()
         self.file_selected_at_line = _FakeSignal()
         self.set_candidates_calls: list[list[Any]] = []
         self.open_calls = 0
@@ -93,8 +95,12 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
     window_any._editor_manager = None
     window_any._tree_file_icon_map = {}
     opened_paths: list[str] = []
-    window_any._open_file_in_editor = lambda path: opened_paths.append(path)
-    window_any._open_file_at_line = lambda path, line: None
+    opened_with_preview: list[tuple[str, bool]] = []
+    opened_at_line_with_preview: list[tuple[str, int, bool]] = []
+    window_any._open_file_in_editor = lambda path, preview=False: opened_with_preview.append((path, preview)) or True
+    window_any._open_file_at_line = (
+        lambda path, line, preview=False: opened_at_line_with_preview.append((path, line, preview))
+    )
     monkeypatch.setattr(MainWindow, "_resolve_theme_tokens", lambda _self: _DUMMY_TOKENS)
 
     MainWindow._handle_quick_open_action(window)
@@ -108,8 +114,18 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
         "README.md",
     ]
 
-    dialog.file_selected.emit("/tmp/project/README.md")
-    assert opened_paths == ["/tmp/project/README.md"]
+    dialog.file_preview_requested.emit("/tmp/project/README.md")
+    dialog.file_selected.emit("/tmp/project/src/main.py")
+    dialog.file_preview_at_line_requested.emit("/tmp/project/src/main.py", 27)
+    dialog.file_selected_at_line.emit("/tmp/project/src/main.py", 9)
+    assert opened_with_preview == [
+        ("/tmp/project/README.md", True),
+        ("/tmp/project/src/main.py", False),
+    ]
+    assert opened_at_line_with_preview == [
+        ("/tmp/project/src/main.py", 27, True),
+        ("/tmp/project/src/main.py", 9, False),
+    ]
 
     window_any._loaded_project = SimpleNamespace(entries=[_file_entry("pkg/new_file.py", "/tmp/project/pkg/new_file.py")])
     MainWindow._handle_quick_open_action(window)

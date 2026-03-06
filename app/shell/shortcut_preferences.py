@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from app.core import constants
 
 _SHORTCUT_ID_CLOSE_TAB = "shell.shortcut.closeTab"
+_SHORTCUT_ID_KEEP_PREVIEW_OPEN = "shell.shortcut.keepPreviewOpen"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.view.zoomOut", "Zoom Out", "Ctrl+-", "View"),
     ShortcutCommand("shell.action.view.zoomReset", "Reset Zoom", "Ctrl+0", "View"),
     ShortcutCommand(_SHORTCUT_ID_CLOSE_TAB, "Close Tab", "Ctrl+W", "Editor"),
+    ShortcutCommand(_SHORTCUT_ID_KEEP_PREVIEW_OPEN, "Keep Preview Tab Open", "Ctrl+K, Enter", "Editor"),
 )
 
 _KNOWN_SHORTCUT_IDS: frozenset[str] = frozenset(command.action_id for command in SHORTCUT_COMMANDS)
@@ -69,6 +71,11 @@ _KNOWN_SHORTCUT_IDS: frozenset[str] = frozenset(command.action_id for command in
 def close_tab_shortcut_id() -> str:
     """Return synthetic action id for close-tab shortcut."""
     return _SHORTCUT_ID_CLOSE_TAB
+
+
+def keep_preview_open_shortcut_id() -> str:
+    """Return synthetic action id for keep-preview-open shortcut."""
+    return _SHORTCUT_ID_KEEP_PREVIEW_OPEN
 
 
 def default_shortcut_map() -> dict[str, str]:

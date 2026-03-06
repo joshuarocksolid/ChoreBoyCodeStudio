@@ -14,6 +14,8 @@ class OpenedTabResult:
 
     tab: EditorTabState
     was_already_open: bool
+    closed_preview_path: str | None = None
+    promoted_from_preview: bool = False
 
 
 class EditorManager:
@@ -23,26 +25,47 @@ class EditorManager:
         self._tabs_by_path: dict[str, EditorTabState] = {}
         self._open_order: list[str] = []
         self._active_file_path: str | None = None
+        self._preview_file_path: str | None = None
 
-    def open_file(self, file_path: str) -> OpenedTabResult:
+    def open_file(self, file_path: str, *, preview: bool = False) -> OpenedTabResult:
         """Open a file or activate existing tab when already open."""
         normalized_path = str(Path(file_path).expanduser().resolve())
 
         existing_tab = self._tabs_by_path.get(normalized_path)
         if existing_tab is not None:
+            promoted_from_preview = False
+            if not preview and existing_tab.is_preview:
+                existing_tab.promote()
+                promoted_from_preview = True
+                if self._preview_file_path == normalized_path:
+                    self._preview_file_path = None
             self._active_file_path = normalized_path
-            return OpenedTabResult(tab=existing_tab, was_already_open=True)
+            return OpenedTabResult(
+                tab=existing_tab,
+                was_already_open=True,
+                promoted_from_preview=promoted_from_preview,
+            )
 
+        closed_preview_path: str | None = None
+        if preview:
+            closed_preview_path = self._close_existing_preview_tab()
         content = self._read_file_contents(normalized_path)
         tab = EditorTabState.from_file(
             normalized_path,
             content,
             last_known_mtime=self._read_file_mtime(normalized_path),
+            is_preview=preview,
         )
         self._tabs_by_path[normalized_path] = tab
         self._open_order.append(normalized_path)
         self._active_file_path = normalized_path
-        return OpenedTabResult(tab=tab, was_already_open=False)
+        if preview:
+            self._preview_file_path = normalized_path
+        return OpenedTabResult(
+            tab=tab,
+            was_already_open=False,
+            closed_preview_path=closed_preview_path,
+        )
 
     def open_paths(self) -> list[str]:
         """Return open file paths in deterministic tab order."""
@@ -88,6 +111,24 @@ class EditorManager:
         normalized_path = str(Path(file_path).expanduser().resolve())
         return self._read_file_mtime(normalized_path)
 
+    def preview_tab(self) -> EditorTabState | None:
+        """Return current preview tab, if one exists."""
+        if self._preview_file_path is None:
+            return None
+        return self._tabs_by_path.get(self._preview_file_path)
+
+    def promote_tab(self, file_path: str) -> EditorTabState | None:
+        """Promote a preview tab to permanent, if open."""
+        normalized_path = str(Path(file_path).expanduser().resolve())
+        tab = self._tabs_by_path.get(normalized_path)
+        if tab is None:
+            return None
+        if tab.is_preview:
+            tab.promote()
+            if self._preview_file_path == normalized_path:
+                self._preview_file_path = None
+        return tab
+
     def acknowledge_disk_mtime(self, file_path: str, mtime: float | None) -> EditorTabState:
         """Record observed disk mtime for an open tab."""
         tab = self._require_tab(file_path)
@@ -127,6 +168,8 @@ class EditorManager:
             return
         self._tabs_by_path.pop(normalized_path, None)
         self._open_order = [path for path in self._open_order if path != normalized_path]
+        if self._preview_file_path == normalized_path:
+            self._preview_file_path = None
         if self._active_file_path == normalized_path:
             self._active_file_path = self._open_order[-1] if self._open_order else None
 
@@ -149,7 +192,23 @@ class EditorManager:
             self._open_order = [new_path if path == old_path else path for path in self._open_order]
             if self._active_file_path == old_path:
                 self._active_file_path = new_path
+            if self._preview_file_path == old_path:
+                self._preview_file_path = new_path
         return remapped
+
+    def _close_existing_preview_tab(self) -> str | None:
+        if self._preview_file_path is None:
+            return None
+        preview_path = self._preview_file_path
+        if preview_path not in self._tabs_by_path:
+            self._preview_file_path = None
+            return None
+        self._tabs_by_path.pop(preview_path, None)
+        self._open_order = [path for path in self._open_order if path != preview_path]
+        if self._active_file_path == preview_path:
+            self._active_file_path = self._open_order[-1] if self._open_order else None
+        self._preview_file_path = None
+        return preview_path
 
     def _require_tab(self, file_path: str) -> EditorTabState:
         normalized_path = str(Path(file_path).expanduser().resolve())

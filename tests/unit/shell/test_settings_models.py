@@ -35,6 +35,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.format_on_save is False
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
+    assert snapshot.enable_preview is True
     assert snapshot.completion_enabled is True
     assert snapshot.completion_auto_trigger is False
     assert snapshot.diagnostics_enabled is True
@@ -68,6 +69,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "format_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
+                "enable_preview": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -117,6 +119,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.format_on_save is True
     assert snapshot.trim_trailing_whitespace_on_save is False
     assert snapshot.insert_final_newline_on_save is False
+    assert snapshot.enable_preview is False
     assert snapshot.completion_enabled is False
     assert snapshot.completion_auto_trigger is False
     assert snapshot.completion_min_chars == 3
@@ -151,6 +154,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         format_on_save=True,
         trim_trailing_whitespace_on_save=False,
         insert_final_newline_on_save=False,
+        enable_preview=False,
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
@@ -182,6 +186,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["format_on_save"] is True
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
+    assert merged["editor"]["enable_preview"] is False
     assert merged["intelligence"]["enable_completion"] is False
     assert merged["intelligence"]["enable_diagnostics"] is False
     assert merged["intelligence"]["diagnostics_realtime"] is False
@@ -323,6 +328,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
                 "format_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
+                "enable_preview": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -347,7 +353,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         }
     )
 
-    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False)
+    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False, False)
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
     assert grouped.output_preferences == (False, False)

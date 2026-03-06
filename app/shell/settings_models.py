@@ -31,6 +31,7 @@ class EditorSettingsSnapshot:
     format_on_save: bool = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
     trim_trailing_whitespace_on_save: bool = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
     insert_final_newline_on_save: bool = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
+    enable_preview: bool = constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
     completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
@@ -64,7 +65,7 @@ class EditorSettingsSnapshot:
 class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
-    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool]
+    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool]
     completion_preferences: tuple[bool, bool, int]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
@@ -139,6 +140,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         editor_settings.get(constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY),
         default=constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
     )
+    enable_preview = _coerce_bool(
+        editor_settings.get(constants.UI_EDITOR_ENABLE_PREVIEW_KEY),
+        default=constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT,
+    )
 
     diagnostics_enabled = _coerce_bool(
         intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
@@ -168,6 +173,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         format_on_save=format_on_save,
         trim_trailing_whitespace_on_save=trim_trailing_whitespace_on_save,
         insert_final_newline_on_save=insert_final_newline_on_save,
+        enable_preview=enable_preview,
         completion_enabled=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY),
             default=constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
@@ -233,6 +239,7 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.format_on_save,
             snapshot.trim_trailing_whitespace_on_save,
             snapshot.insert_final_newline_on_save,
+            snapshot.enable_preview,
         ),
         completion_preferences=(
             snapshot.completion_enabled,
@@ -330,6 +337,7 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_FORMAT_ON_SAVE_KEY: bool(snapshot.format_on_save),
         constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY: bool(snapshot.trim_trailing_whitespace_on_save),
         constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: bool(snapshot.insert_final_newline_on_save),
+        constants.UI_EDITOR_ENABLE_PREVIEW_KEY: bool(snapshot.enable_preview),
     }
     merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = {
         constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),

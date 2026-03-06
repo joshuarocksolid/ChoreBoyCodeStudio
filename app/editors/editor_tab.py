@@ -15,6 +15,7 @@ class EditorTabState:
     original_content: str
     current_content: str
     last_known_mtime: float | None = None
+    is_preview: bool = False
 
     @classmethod
     def from_file(
@@ -23,6 +24,7 @@ class EditorTabState:
         content: str,
         *,
         last_known_mtime: float | None = None,
+        is_preview: bool = False,
     ) -> "EditorTabState":
         """Create a new tab state from file content."""
         return cls(
@@ -31,6 +33,7 @@ class EditorTabState:
             original_content=content,
             current_content=content,
             last_known_mtime=last_known_mtime,
+            is_preview=is_preview,
         )
 
     @property
@@ -50,3 +53,7 @@ class EditorTabState:
     def set_last_known_mtime(self, mtime: float | None) -> None:
         """Record most recently observed on-disk mtime."""
         self.last_known_mtime = mtime
+
+    def promote(self) -> None:
+        """Mark a preview tab as permanent."""
+        self.is_preview = False
