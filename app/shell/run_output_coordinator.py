@@ -73,8 +73,6 @@ class RunOutputCoordinator:
 
             self._append_output_tail(text)
             self._append_console_line(text, stream)
-            if self._auto_open_console_on_run_output_enabled():
-                self._focus_run_log_tab()
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 for line in text.rstrip().splitlines():
                     self._append_debug_output_line(line)
