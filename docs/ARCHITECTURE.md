@@ -292,6 +292,7 @@ Recommended internal app layout:
 choreboy_code_studio/
   run_editor.py
   run_runner.py
+  run_plugin_host.py
   launcher.py
   docs/
     PRD.md
@@ -352,9 +353,23 @@ choreboy_code_studio/
       __init__.py
       run_service.py
       run_manifest.py
+      host_process_manager.py
       process_supervisor.py
       console_model.py
       problem_parser.py
+    plugins/
+      __init__.py
+      manifest.py
+      models.py
+      discovery.py
+      package_format.py
+      registry_store.py
+      installer.py
+      contributions.py
+      rpc_protocol.py
+      host_supervisor.py
+      runtime_manager.py
+      host_runtime.py
     runner/
       __init__.py
       runner_main.py
@@ -404,6 +419,7 @@ Recommended project shape:
 my_project/
   cbcs/
     project.json
+    plugins.json
     runs/
     logs/
     cache/
@@ -477,6 +493,10 @@ Recommended contents:
   recent_projects.json
   logs/
   cache/
+  plugins/
+    registry.json
+    installed/
+    logs/
   state.sqlite3
   crash_reports/
 ```
@@ -492,6 +512,7 @@ Recommended contents:
 * compatibility probe results cache
 * optional global search/index cache
 * editor crash logs
+* global plugin registry, installs, and plugin host logs
 
 ## 11.2 What does not belong here
 
@@ -608,6 +629,17 @@ Creates new projects from curated starter templates.
 ## 12.10 `support`
 
 Diagnostics, health checks, report bundles, and other support workflows.
+
+## 12.11 `plugins`
+
+Owns plugin lifecycle and contracts:
+
+* manifest validation
+* discovery and compatibility checks
+* install/uninstall registry persistence
+* declarative contribution registration
+* runtime plugin host IPC and command dispatch
+* safe mode and failure quarantine controls
 
 ---
 

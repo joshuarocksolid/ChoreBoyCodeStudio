@@ -1182,7 +1182,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
   - `app/shell/events.py`
 
 ### H01 — Plugin manifest + discovery/index
-- Status: `TODO`
+- Status: `DONE`
 - Objective: define plugin manifest schema and deterministic discovery/compatibility indexing.
 - Primary files:
   - `app/plugins/manifest.py`
@@ -1193,7 +1193,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-37`, `AT-42`
 
 ### H02 — Offline install/uninstall/update registry
-- Status: `TODO`
+- Status: `DONE`
 - Objective: support local plugin package/folder install and lifecycle persistence.
 - Primary files:
   - `app/plugins/installer.py`
@@ -1203,7 +1203,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-37`, `AT-39`, `AT-42`
 
 ### H03 — Plugin Manager UX
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add first-class UI for plugin lifecycle management.
 - Primary files:
   - `app/shell/plugins_panel.py`
@@ -1213,7 +1213,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-37`, `AT-39`, `AT-42`
 
 ### H04 — Declarative contribution runtime
-- Status: `TODO`
+- Status: `DONE`
 - Objective: wire validated plugin contributions into commands/menus/keybindings/hook events.
 - Primary files:
   - `app/plugins/contributions.py`
@@ -1223,7 +1223,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-41`
 
 ### H05 — Runtime plugin host + IPC
-- Status: `TODO`
+- Status: `DONE`
 - Objective: execute runtime plugin code in isolated host process with explicit protocol.
 - Primary files:
   - `app/plugins/host_supervisor.py`
@@ -1233,7 +1233,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-38`, `AT-40`
 
 ### H06 — Safety controls (safe mode + quarantine)
-- Status: `TODO`
+- Status: `DONE`
 - Objective: provide recovery UX and automatic containment of failing plugins.
 - Primary files:
   - `app/plugins/security_policy.py`
@@ -1243,7 +1243,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Acceptance linkage: `AT-40`
 
 ### H07 — Plugin documentation and authoring contracts
-- Status: `TODO`
+- Status: `DONE`
 - Objective: publish plugin author contract and compatibility lifecycle policy.
 - Primary files:
   - `docs/plugins/PRD.md`
