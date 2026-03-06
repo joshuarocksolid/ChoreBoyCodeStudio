@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 
 from app.core import constants
-from app.persistence.settings_store import load_json_object, save_json_object
+from app.persistence.settings_store import (
+    compute_effective_settings_payload,
+    filter_project_settings_payload,
+    load_json_object,
+    load_project_settings,
+    project_settings_has_overrides,
+    save_json_object,
+    save_project_settings,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -133,3 +141,103 @@ def test_settings_payload_can_store_intelligence_cache_preferences(tmp_path: Pat
     assert intelligence_settings[constants.UI_INTELLIGENCE_INCREMENTAL_INDEXING_KEY] is True
     assert intelligence_settings[constants.UI_INTELLIGENCE_METRICS_LOGGING_ENABLED_KEY] is False
     assert intelligence_settings[constants.UI_INTELLIGENCE_FORCE_FULL_REINDEX_ON_OPEN_KEY] is True
+
+
+def test_load_project_settings_returns_default_copy_when_missing(tmp_path: Path) -> None:
+    payload = load_project_settings(tmp_path / "project")
+
+    assert payload == {"schema_version": 1}
+
+
+def test_save_project_settings_filters_non_overridable_root_keys(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    payload = {
+        "schema_version": 7,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: constants.UI_THEME_MODE_DARK,
+        },
+        constants.UI_KEYBINDINGS_SETTINGS_KEY: {
+            constants.UI_KEYBINDINGS_OVERRIDES_KEY: {"shell.action.file.save": "Ctrl+Shift+S"},
+        },
+    }
+
+    saved_path = save_project_settings(project_root, payload)
+    loaded = json.loads(saved_path.read_text(encoding="utf-8"))
+
+    assert loaded == {
+        "schema_version": 7,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+    }
+
+
+def test_compute_effective_settings_payload_layers_defaults_global_and_project() -> None:
+    global_payload = {
+        "schema_version": 3,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
+            constants.UI_EDITOR_FONT_SIZE_KEY: 12,
+        },
+        constants.UI_OUTPUT_SETTINGS_KEY: {
+            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: True,
+        },
+    }
+    project_payload = {
+        "schema_version": 9,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+        constants.UI_OUTPUT_SETTINGS_KEY: {
+            constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY: False,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: constants.UI_THEME_MODE_DARK,
+        },
+    }
+
+    effective = compute_effective_settings_payload(global_payload, project_payload)
+
+    assert effective["schema_version"] == 9
+    assert effective[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 2
+    assert effective[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_FONT_SIZE_KEY] == 12
+    assert effective[constants.UI_OUTPUT_SETTINGS_KEY][constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY] is True
+    assert (
+        effective[constants.UI_OUTPUT_SETTINGS_KEY][constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY]
+        is False
+    )
+    assert constants.UI_THEME_SETTINGS_KEY not in effective
+
+
+def test_filter_project_settings_payload_keeps_overridable_nested_maps_only() -> None:
+    filtered = filter_project_settings_payload(
+        {
+            "schema_version": 2,
+            constants.UI_LINTER_SETTINGS_KEY: {
+                constants.UI_LINTER_RULE_OVERRIDES_KEY: {"PY220": {"enabled": False}},
+            },
+            constants.UI_LAYOUT_SETTINGS_KEY: {"width": 1111},
+        }
+    )
+
+    assert filtered == {
+        "schema_version": 2,
+        constants.UI_LINTER_SETTINGS_KEY: {
+            constants.UI_LINTER_RULE_OVERRIDES_KEY: {"PY220": {"enabled": False}},
+        },
+    }
+
+
+def test_project_settings_has_overrides_true_only_for_overridable_sections() -> None:
+    assert project_settings_has_overrides({"schema_version": 1}) is False
+    assert project_settings_has_overrides({constants.UI_THEME_SETTINGS_KEY: {"mode": "dark"}}) is False
+    assert project_settings_has_overrides(
+        {
+            constants.UI_OUTPUT_SETTINGS_KEY: {
+                constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: False,
+            }
+        }
+    ) is True

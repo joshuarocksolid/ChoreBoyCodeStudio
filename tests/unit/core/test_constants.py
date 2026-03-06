@@ -27,8 +27,16 @@ def test_project_structure_constant_values() -> None:
     """Project-local path names must match architecture docs."""
     assert constants.PROJECT_META_DIRNAME == "cbcs"
     assert constants.PROJECT_MANIFEST_FILENAME == "project.json"
+    assert constants.PROJECT_SETTINGS_FILENAME == "settings.json"
     assert constants.PROJECT_RUNS_DIRNAME == "runs"
     assert constants.PROJECT_CACHE_DIRNAME == "cache"
+    assert constants.PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS == (
+        constants.UI_EDITOR_SETTINGS_KEY,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY,
+        constants.UI_LINTER_SETTINGS_KEY,
+        constants.UI_FILE_EXCLUDES_SETTINGS_KEY,
+        constants.UI_OUTPUT_SETTINGS_KEY,
+    )
     assert constants.RUN_MANIFEST_FILENAME_PREFIX == "run_manifest_"
     assert constants.RUN_ID_TIMESTAMP_FORMAT == "%Y%m%d_%H%M%S"
     assert constants.RUN_MANIFEST_VERSION == 1

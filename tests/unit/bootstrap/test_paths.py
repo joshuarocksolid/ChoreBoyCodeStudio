@@ -50,6 +50,7 @@ def test_project_helpers_compose_expected_paths(tmp_path: Path) -> None:
     project_root = tmp_path / "project_alpha"
     assert paths.project_cbcs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME
     assert paths.project_manifest_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
+    assert paths.project_settings_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_SETTINGS_FILENAME
     assert paths.project_runs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_RUNS_DIRNAME
     assert paths.project_cache_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME
 
