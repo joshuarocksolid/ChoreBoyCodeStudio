@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, TypeVar
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
@@ -81,7 +81,7 @@ from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
-from app.persistence.settings_store import load_settings, save_settings
+from app.persistence.settings_service import SettingsService
 from app.run.console_model import ConsoleModel
 from app.run.exit_status import describe_exit_code
 from app.run.output_tail_buffer import OutputTailBuffer
@@ -91,6 +91,16 @@ from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
+from app.plugins.api_broker import PluginApiBroker
+from app.plugins.contributions import DeclarativeContributionManager
+from app.plugins.discovery import discover_installed_plugins
+from app.plugins.registry_store import (
+    clear_registry_entry_failures,
+    load_plugin_registry,
+    record_registry_entry_failure,
+)
+from app.plugins.runtime_manager import PluginRuntimeManager
+from app.plugins.security_policy import merge_plugin_safe_mode, plugin_safe_mode_enabled
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -131,6 +141,7 @@ from app.shell.activity_bar import ActivityBar
 from app.shell.icons import explorer_icon, search_icon
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
+from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
@@ -148,6 +159,17 @@ from app.project.project_service import create_blank_project, open_project
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
+from app.shell.action_registry import ShellActionRegistry
+from app.shell.command_broker import CommandBroker
+from app.shell.events import (
+    ProjectOpenFailedEvent,
+    ProjectOpenedEvent,
+    RunProcessExitEvent,
+    RunProcessOutputEvent,
+    RunProcessStateEvent,
+    RunSessionStartedEvent,
+    ShellEventBus,
+)
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
@@ -165,6 +187,7 @@ TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
 EVENT_QUEUE_BATCH_LIMIT = 200
+ShellEventT = TypeVar("ShellEventT")
 
 
 class _MiddleClickTabBar(QTabBar):
@@ -198,6 +221,7 @@ class MainWindow(QMainWindow):
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
         self._quick_open_dialog: QuickOpenDialog | None = None
+        self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._run_log_panel: RunLogPanel | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
@@ -206,12 +230,38 @@ class MainWindow(QMainWindow):
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
+        self._settings_service = SettingsService(state_root=self._state_root)
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
             state_root=self._state_root,
         )
         self._menu_registry: MenuStubRegistry | None = None
+        self._command_broker = CommandBroker()
+        self._action_registry: ShellActionRegistry | None = None
+        self._event_bus = ShellEventBus()
+        self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
+        self._plugin_api_broker = PluginApiBroker(self._plugin_runtime_manager)
+        self._plugin_safe_mode = self._load_plugin_safe_mode()
+        self._declarative_contribution_manager = DeclarativeContributionManager(
+            register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
+                command_id=command_id,
+                handler=handler,
+                replace=replace,
+            ),
+            register_runtime_menu_command=lambda **kwargs: self.register_runtime_menu_command(**kwargs),
+            unregister_runtime_menu_command=self.unregister_runtime_menu_command,
+            execute_runtime_command=self.execute_runtime_command,
+            subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
+            unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
+            emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
+            execute_plugin_runtime_command=lambda command_id, payload: self._plugin_api_broker.invoke_runtime_command(
+                command_id,
+                payload,
+            ),
+            on_runtime_command_success=self._clear_plugin_runtime_failure,
+            on_runtime_command_failure=self._record_plugin_runtime_failure,
+        )
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
@@ -389,6 +439,7 @@ class MainWindow(QMainWindow):
                 on_format_current_file=self._handle_format_current_file_action,
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
+                on_open_plugin_manager=self._handle_open_plugin_manager_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_refresh_runtime_modules=self._handle_refresh_runtime_modules_action,
                 on_project_health_check=self._handle_project_health_check_action,
@@ -421,6 +472,11 @@ class MainWindow(QMainWindow):
             ),
             shortcut_overrides=self._effective_shortcuts,
         )
+        if self._menu_registry is not None:
+            self._action_registry = ShellActionRegistry(
+                menu_registry=self._menu_registry,
+                command_broker=self._command_broker,
+            )
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -436,6 +492,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._reload_plugin_contributions()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
@@ -455,7 +512,7 @@ class MainWindow(QMainWindow):
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
         try:
-            settings = load_settings(state_root=self._state_root)
+            settings = self._settings_service.load()
         except Exception:
             return
         last_path = settings.get(constants.LAST_PROJECT_PATH_KEY)
@@ -480,7 +537,7 @@ class MainWindow(QMainWindow):
             self._status_controller.set_project_state_text(f"Project: {project_text}")
 
     def _restore_layout_from_settings(self) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         layout_state = parse_shell_layout_state(settings_payload)
         self.resize(layout_state.width, layout_state.height)
         if self._top_splitter is not None:
@@ -506,9 +563,9 @@ class MainWindow(QMainWindow):
             top_splitter_sizes=(int(top_sizes[0]), int(top_sizes[1])),
             vertical_splitter_sizes=(int(vertical_sizes[0]), int(vertical_sizes[1])),
         )
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_layout_into_settings(settings_payload, layout_state)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_layout_into_settings(settings_payload, layout_state)
+        )
 
     def _handle_reset_layout_action(self) -> None:
         self.resize(ShellLayoutState().width, ShellLayoutState().height)
@@ -519,7 +576,7 @@ class MainWindow(QMainWindow):
         self._persist_layout_to_settings()
 
     def _load_import_update_policy(self) -> ImportUpdatePolicy:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         raw_value = settings_payload.get(constants.UI_IMPORT_UPDATE_POLICY_KEY, constants.UI_IMPORT_UPDATE_POLICY_DEFAULT)
         try:
             return ImportUpdatePolicy(str(raw_value))
@@ -602,17 +659,17 @@ class MainWindow(QMainWindow):
         return "prefer-dark" in result.stdout
 
     def _load_theme_mode(self) -> str:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return dict(snapshot.shortcut_overrides)
 
     def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {
             constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
@@ -620,7 +677,7 @@ class MainWindow(QMainWindow):
         }
 
     def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
 
@@ -641,9 +698,9 @@ class MainWindow(QMainWindow):
         self._configure_close_tab_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_theme_mode(settings_payload, mode)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_theme_mode(settings_payload, mode)
+        )
 
     def _handle_set_theme(self, mode: str) -> None:
         if mode == self._theme_mode:
@@ -687,13 +744,13 @@ class MainWindow(QMainWindow):
             self._apply_editor_preferences_to_open_editors()
 
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
-        merged = merge_import_update_policy(settings_payload, policy.value)
-        save_settings(merged, state_root=self._state_root)
+        self._settings_service.update(
+            lambda settings_payload: merge_import_update_policy(settings_payload, policy.value)
+        )
         self._import_update_policy = policy
 
     def _load_main_window_settings(self) -> MainWindowSettingsSnapshot:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         return parse_main_window_settings(settings_payload)
 
     def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
@@ -711,6 +768,16 @@ class MainWindow(QMainWindow):
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
         return self._load_main_window_settings().intelligence_runtime_settings
 
+    def _load_plugin_safe_mode(self) -> bool:
+        settings_payload = self._settings_service.load()
+        return plugin_safe_mode_enabled(settings_payload)
+
+    def _set_plugin_safe_mode(self, enabled: bool) -> None:
+        self._settings_service.update(
+            lambda payload: merge_plugin_safe_mode(payload, enabled=enabled)
+        )
+        self._plugin_safe_mode = bool(enabled)
+
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
         if self._is_shutting_down:
             return
@@ -724,6 +791,58 @@ class MainWindow(QMainWindow):
     def loaded_project(self) -> LoadedProject | None:
         """Return the currently loaded project, if any."""
         return self._loaded_project
+
+    def register_runtime_command(
+        self,
+        *,
+        command_id: str,
+        handler: Callable[[], object],
+        replace: bool = False,
+    ) -> None:
+        if self._action_registry is None:
+            raise RuntimeError("Action registry is not ready.")
+        self._action_registry.register_command(command_id, handler, replace=replace)
+
+    def register_runtime_menu_command(
+        self,
+        *,
+        command_id: str,
+        menu_id: str,
+        label: str,
+        handler: Callable[[], object],
+        shortcut: str | None = None,
+        enabled: bool = True,
+        status_tip: str | None = None,
+        tool_tip: str | None = None,
+        replace: bool = False,
+    ) -> None:
+        if self._action_registry is None:
+            raise RuntimeError("Action registry is not ready.")
+        self._action_registry.register_command(command_id, handler, replace=replace)
+        self._action_registry.register_menu_action(
+            action_id=command_id,
+            menu_id=menu_id,
+            label=label,
+            shortcut=shortcut,
+            enabled=enabled,
+            status_tip=status_tip,
+            tool_tip=tool_tip,
+        )
+
+    def unregister_runtime_menu_command(self, command_id: str) -> None:
+        if self._action_registry is None:
+            return
+        self._action_registry.unregister_menu_action(command_id)
+        self._action_registry.unregister_command(command_id)
+
+    def execute_runtime_command(self, command_id: str) -> object:
+        return self._command_broker.invoke(command_id)
+
+    def subscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
+        self._event_bus.subscribe(event_type, handler)
+
+    def unsubscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
+        self._event_bus.unsubscribe(event_type, handler)
 
     def _handle_open_project_action(self) -> None:
         selected_path = QFileDialog.getExistingDirectory(self, "Open Project", str(Path.home()))
@@ -785,7 +904,7 @@ class MainWindow(QMainWindow):
         return normalized_name, Path(destination_parent) / normalized_name
 
     def _handle_open_settings_action(self) -> None:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         previous_theme_mode = snapshot.theme_mode
         previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
@@ -797,7 +916,7 @@ class MainWindow(QMainWindow):
 
         updated_snapshot = dialog.snapshot()
         merged_settings = merge_editor_settings_snapshot(settings_payload, updated_snapshot)
-        save_settings(merged_settings, state_root=self._state_root)
+        self._settings_service.save(merged_settings)
 
         if updated_snapshot.theme_mode != previous_theme_mode:
             self._handle_set_theme(updated_snapshot.theme_mode)
@@ -1427,7 +1546,7 @@ class MainWindow(QMainWindow):
         )
 
     def _load_global_exclude_patterns(self) -> list[str]:
-        settings_payload = load_settings(state_root=self._state_root)
+        settings_payload = self._settings_service.load()
         return parse_global_exclude_patterns(settings_payload)
 
     def _refresh_open_recent_menu(self) -> None:
@@ -1458,6 +1577,9 @@ class MainWindow(QMainWindow):
 
     def _show_open_project_error(self, project_root: str, details: str) -> None:
         self._logger.warning("Project open failed for %s: %s", project_root, details)
+        self._event_bus.publish(
+            ProjectOpenFailedEvent(project_root=project_root, error_message=details)
+        )
         QMessageBox.critical(
             self,
             "Unable to open project",
@@ -1501,13 +1623,19 @@ class MainWindow(QMainWindow):
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
         )
+        self._event_bus.publish(
+            ProjectOpenedEvent(
+                project_root=loaded_project.project_root,
+                project_name=loaded_project.metadata.name,
+            )
+        )
         self._persist_last_project_path(loaded_project.project_root)
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
-            settings = load_settings(state_root=self._state_root)
-            merged = merge_last_project_path(settings, project_root)
-            save_settings(merged, state_root=self._state_root)
+            self._settings_service.update(
+                lambda settings: merge_last_project_path(settings, project_root)
+            )
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
 
@@ -2020,6 +2148,14 @@ class MainWindow(QMainWindow):
                 mode=result.session.mode,
                 entry_file=result.session.entry_file,
             )
+            self._event_bus.publish(
+                RunSessionStartedEvent(
+                    run_id=result.session.run_id,
+                    mode=result.session.mode,
+                    entry_file=result.session.entry_file,
+                    project_root=result.session.project_root,
+                )
+            )
         if self._debug_panel is not None:
             self._debug_panel.set_command_input_enabled(
                 self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG
@@ -2153,6 +2289,77 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Apply Safe Fixes", "Open a file tab first.")
             return
         self._apply_safe_fixes_for_file(active_tab.file_path)
+
+    def _handle_open_plugin_manager_action(self) -> None:
+        if self._plugin_manager_dialog is None:
+            self._plugin_manager_dialog = PluginManagerDialog(
+                state_root=self._state_root,
+                on_plugins_changed=self._reload_plugin_contributions,
+                safe_mode_enabled=self._plugin_safe_mode,
+                on_safe_mode_changed=self._handle_plugin_safe_mode_changed,
+                parent=self,
+            )
+            self._plugin_manager_dialog.finished.connect(
+                lambda _result: setattr(self, "_plugin_manager_dialog", None)
+            )
+        self._plugin_manager_dialog.set_safe_mode_enabled(self._plugin_safe_mode)
+        self._plugin_manager_dialog.refresh_plugins()
+        self._plugin_manager_dialog.show()
+        self._plugin_manager_dialog.raise_()
+        self._plugin_manager_dialog.activateWindow()
+
+    def _handle_plugin_safe_mode_changed(self, enabled: bool) -> None:
+        self._set_plugin_safe_mode(enabled)
+        self._reload_plugin_contributions()
+
+    def _reload_plugin_contributions(self) -> None:
+        if self._plugin_safe_mode:
+            self._declarative_contribution_manager.clear()
+            self._plugin_runtime_manager.stop()
+            return
+        registry = load_plugin_registry(self._state_root)
+        enabled_map = {
+            (entry.plugin_id, entry.version): entry.enabled
+            for entry in registry.entries
+        }
+        discovered_plugins = discover_installed_plugins(state_root=self._state_root)
+        self._declarative_contribution_manager.apply(
+            discovered_plugins,
+            enabled_map=enabled_map,
+        )
+        self._plugin_api_broker.reload_runtime_plugins()
+
+    def _execute_plugin_runtime_command(self, command_id: str, payload: dict[str, object]) -> object:
+        result = self._plugin_api_broker.invoke_runtime_command(command_id, payload)
+        return self._plugin_api_broker.coerce_result_payload(result)
+
+    def _record_plugin_runtime_failure(self, plugin_id: str, version: str, error_message: str) -> None:
+        updated_registry = record_registry_entry_failure(
+            plugin_id,
+            version,
+            error_message=error_message,
+            disable_after_failures=constants.PLUGIN_DISABLE_AFTER_FAILURES_DEFAULT,
+            state_root=self._state_root,
+        )
+        updated_entry = None
+        for entry in updated_registry.entries:
+            if entry.plugin_id == plugin_id and entry.version == version:
+                updated_entry = entry
+                break
+        if updated_entry is not None and not updated_entry.enabled:
+            QMessageBox.warning(
+                self,
+                "Plugin Disabled",
+                f"{plugin_id}@{version} was disabled after repeated runtime failures.",
+            )
+            self._reload_plugin_contributions()
+
+    def _clear_plugin_runtime_failure(self, plugin_id: str, version: str) -> None:
+        clear_registry_entry_failures(
+            plugin_id,
+            version,
+            state_root=self._state_root,
+        )
 
     def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         """Run diagnostics for *file_path* and update the editor + problems panel.
@@ -2802,7 +3009,37 @@ class MainWindow(QMainWindow):
             processed += 1
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
+        active_session = self._active_run_session_info
+        run_id = active_session.run_id if active_session is not None else None
+        mode = active_session.mode if active_session is not None else None
         self._get_run_output_coordinator().apply(event)
+        if event.event_type == "output":
+            self._event_bus.publish(
+                RunProcessOutputEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    stream=event.stream or "stdout",
+                    text=event.text or "",
+                )
+            )
+        elif event.event_type == "state":
+            self._event_bus.publish(
+                RunProcessStateEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    state=event.state,
+                    terminated_by_user=event.terminated_by_user,
+                )
+            )
+        elif event.event_type == "exit":
+            self._event_bus.publish(
+                RunProcessExitEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    return_code=event.return_code,
+                    terminated_by_user=event.terminated_by_user,
+                )
+            )
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._console_model.append(stream, text)
@@ -2988,6 +3225,7 @@ class MainWindow(QMainWindow):
                 self._logger.warning("Failed to stop active run during window close: %s", exc)
 
         self._repl_manager.shutdown()
+        self._plugin_runtime_manager.stop()
         self._run_session_controller.clear_active_session_mode()
         self._set_run_status("idle")
         if self._python_console_widget is not None:

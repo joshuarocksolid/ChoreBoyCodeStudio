@@ -54,7 +54,7 @@ The codebase should be easy for Cursor and other AI agents to understand:
 
 ### 2.5 Progressive enhancement
 
-MVP should deliver real value without requiring advanced services like LSP, heavy indexing, or complex plugin frameworks.
+MVP should deliver real value without requiring advanced services like LSP or heavy indexing.
 
 ---
 
@@ -292,6 +292,7 @@ Recommended internal app layout:
 choreboy_code_studio/
   run_editor.py
   run_runner.py
+  run_plugin_host.py
   launcher.py
   docs/
     PRD.md
@@ -352,9 +353,27 @@ choreboy_code_studio/
       __init__.py
       run_service.py
       run_manifest.py
+      host_process_manager.py
       process_supervisor.py
       console_model.py
       problem_parser.py
+    plugins/
+      __init__.py
+      api_broker.py
+      manifest.py
+      models.py
+      discovery.py
+      package_format.py
+      registry_store.py
+      installer.py
+      exporter.py
+      contributions.py
+      security_policy.py
+      trust_store.py
+      rpc_protocol.py
+      host_supervisor.py
+      runtime_manager.py
+      host_runtime.py
     runner/
       __init__.py
       runner_main.py
@@ -404,6 +423,7 @@ Recommended project shape:
 my_project/
   cbcs/
     project.json
+    plugins.json
     runs/
     logs/
     cache/
@@ -477,6 +497,10 @@ Recommended contents:
   recent_projects.json
   logs/
   cache/
+  plugins/
+    registry.json
+    installed/
+    logs/
   state.sqlite3
   crash_reports/
 ```
@@ -492,6 +516,7 @@ Recommended contents:
 * compatibility probe results cache
 * optional global search/index cache
 * editor crash logs
+* global plugin registry, installs, and plugin host logs
 
 ## 11.2 What does not belong here
 
@@ -608,6 +633,17 @@ Creates new projects from curated starter templates.
 ## 12.10 `support`
 
 Diagnostics, health checks, report bundles, and other support workflows.
+
+## 12.11 `plugins`
+
+Owns plugin lifecycle and contracts:
+
+* manifest validation
+* discovery and compatibility checks
+* install/uninstall registry persistence
+* declarative contribution registration
+* runtime plugin host IPC and command dispatch
+* safe mode and failure quarantine controls
 
 ---
 
@@ -1039,24 +1075,27 @@ The architecture should tolerate partial feature degradation better than hard re
 
 ## 24. Extensibility Strategy
 
-## 24.1 What we will not do in v1
+## 24.1 Plugin platform in v1
 
-No general plugin framework.
+v1 includes a first-class plugin platform with two extension types:
 
-A plugin system adds discovery, isolation, versioning, UI extension APIs, and support burden. That is not the right first move.
+* declarative contributions
+* runtime code plugins
 
-## 24.2 What we will do instead
+Runtime code plugins execute in an isolated plugin host process using explicit IPC contracts. The editor process does not import plugin code directly.
 
-Use **internal extension seams**:
+## 24.2 Plugin boundaries and contracts
 
-* new template types
-* new run modes
-* new problem parsers
-* new diagnostics
-* optional vendored tool integrations
+Plugin contracts are explicit and versioned:
 
-This gives future flexibility without premature architecture complexity.
-Vendored tooling (when used) should remain pure-Python, live behind internal interfaces, and pass explicit quality/performance gates before cutover.
+* plugin manifest schema (`plugin.json`)
+* plugin API version compatibility
+* declared capabilities and activation events
+* deterministic lifecycle (discover → validate → enable → activate → disable)
+
+v1 distribution is offline-first through local folder or zip installation.
+Publisher signing is not required in v1.
+Per-project plugin overrides and pinning ship in phase 2.
 
 ---
 
@@ -1102,10 +1141,10 @@ Everything else should build on top of this slice.
 **Decision:** `project.json` is canonical.
 **Why:** transparency and portability.
 
-## AD-005: No plugin system in v1
+## AD-005: Plugin platform with isolated host in v1
 
-**Decision:** internal seams only.
-**Why:** complexity budget must stay focused on core stability.
+**Decision:** ship plugin support in v1 with process-isolated runtime plugins and declarative contributions.
+**Why:** users need modular extensibility without core product bloat.
 
 ## AD-006: Capability probe on startup
 
@@ -1142,6 +1181,7 @@ To reduce ambiguity for humans and AI agents:
 * `TASKS.md` defines **implementation slices**
 * `AGENTS.md` defines **how AI agents should work in this repo**
 * `docs/designer/ARCHITECTURE_PLAN.md` defines the **Designer subsystem plan** (`.ui` builder module boundaries, contracts, and rollout), with companion wireframe/backlog docs in `docs/designer/`
+* `docs/plugins/PRD.md` defines the **Plugin subsystem plan** (manifest, lifecycle, host process, and rollout)
 
 If a change affects system structure, update `ARCHITECTURE.md`.
 

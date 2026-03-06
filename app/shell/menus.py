@@ -77,6 +77,7 @@ class MenuCallbacks:
     on_format_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
+    on_open_plugin_manager: Callable[[], object] | None = None
     on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_refresh_runtime_modules: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
@@ -590,6 +591,15 @@ def build_menu_stubs(
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.pluginManager",
+        "Plugin Manager...",
+        enabled=True,
+        callback=callback_registry.on_open_plugin_manager,
+    )
+    tools_menu.addSeparator()
     _register_menu_action(
         tools_menu,
         actions,

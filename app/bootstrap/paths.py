@@ -46,6 +46,36 @@ def global_crash_reports_dir(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_CRASH_REPORTS_DIRNAME, state_root)
 
 
+def global_plugins_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global plugins state directory path."""
+    return _global_state_child(constants.PLUGINS_STATE_DIRNAME, state_root)
+
+
+def global_plugins_installed_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global installed-plugins directory path."""
+    return global_plugins_dir(state_root) / constants.PLUGINS_INSTALLED_DIRNAME
+
+
+def global_plugins_logs_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global plugin logs directory path."""
+    return global_plugins_dir(state_root) / constants.PLUGINS_LOGS_DIRNAME
+
+
+def global_plugins_registry_path(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global plugin registry file path."""
+    return global_plugins_dir(state_root) / constants.PLUGINS_REGISTRY_FILENAME
+
+
+def global_plugins_trust_path(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global plugin trust-state file path."""
+    return global_plugins_dir(state_root) / constants.PLUGINS_TRUST_FILENAME
+
+
+def plugin_install_dir(plugin_id: str, version: str, state_root: Optional[PathInput] = None) -> Path:
+    """Return install directory for one plugin version."""
+    return global_plugins_installed_dir(state_root) / plugin_id / version
+
+
 def global_state_db_path(state_root: Optional[PathInput] = None) -> Path:
     """Return the optional global SQLite state path."""
     return _global_state_child(constants.GLOBAL_STATE_DB_FILENAME, state_root)

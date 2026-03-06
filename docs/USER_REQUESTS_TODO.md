@@ -54,12 +54,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Marcus Zimmerman |
 | **Request** | Build the IDE with a modular plugin system so technically-inclined users can create and share their own extensions, rather than merging niche features into the core product. |
 | **Rationale** | Keeps the core product focused on what benefits the majority (≥ 50%) of users. Minority-interest features ship as optional plugins instead of cluttering the mainline. User cites Classic Accounting as an example where a plugin model from the start would have let businesses build custom flows without bloating the base product. |
 | **Trade-offs noted by requester** | Requires exposing stable internal APIs/hooks for plugin authors; maintaining backward compatibility with those APIs is ongoing work. |
-| **Notes** | Large architectural decision — would need a formal design pass (plugin lifecycle, hook points, sandboxing, distribution mechanism) before implementation. Worth revisiting once the core MVP feature set is solid. |
+| **Notes** | Implemented plugin platform with runtime code plugins in isolated host process, offline installer/uninstaller/registry, declarative command/menu/event-hook contributions, Plugin Manager UI (install/enable/disable/export), safe mode toggle, runtime trust prompt, and failure quarantine auto-disable. Per-project plugin pinning remains intentionally deferred to phase 2. |
 
 ---
 

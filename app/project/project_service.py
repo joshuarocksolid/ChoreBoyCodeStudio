@@ -242,7 +242,6 @@ def enumerate_project_entries(
 
     Policy for T07:
     - include both files and directories
-    - exclude `cbcs` metadata subtree from UI-facing project entries
     - keep stable lexical ordering by relative path
     """
     try:
@@ -280,8 +279,7 @@ def enumerate_project_entries(
             _active_excludes = exclude_patterns or []
             dir_names[:] = sorted(
                 name for name in dir_names
-                if name != constants.PROJECT_META_DIRNAME
-                and not should_exclude_name(name, _active_excludes)
+                if not should_exclude_name(name, _active_excludes)
             )
             file_names = sorted(
                 name for name in file_names
