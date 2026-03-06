@@ -48,6 +48,52 @@ def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.M
     assert result.is_available is True
 
 
+def test_check_qtuitools_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should succeed when module and QUiLoader exist."""
+
+    class _QtUiToolsModule:
+        QUiLoader = object()
+
+    def fake_import(module_name: str) -> object:
+        assert module_name == "PySide2.QtUiTools"
+        return _QtUiToolsModule()
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is True
+    assert result.details["class"] == "QUiLoader"
+
+
+def test_check_qtuitools_availability_reports_missing_quiloader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should fail when QUiLoader attribute is missing."""
+
+    class _QtUiToolsModule:
+        pass
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", lambda _module_name: _QtUiToolsModule())
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is False
+    assert "QUiLoader is unavailable" in result.message
+
+
+def test_check_qtuitools_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should fail clearly when import raises."""
+
+    def fake_import(_module_name: str) -> object:
+        raise ImportError("QtUiTools missing")
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is False
+    assert "QtUiTools missing" in result.message
+
+
 def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """FreeCAD check should return a failed result when isolated probe errors."""
     command_calls: list[list[str]] = []
@@ -188,6 +234,11 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
         capability_probe,
         "check_pyside2_availability",
         lambda: CapabilityCheckResult("pyside2_import", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_qtuitools_availability",
+        lambda: CapabilityCheckResult("qtuitools_import", True, "ok"),
     )
     monkeypatch.setattr(
         capability_probe,

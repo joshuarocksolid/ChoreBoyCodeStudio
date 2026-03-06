@@ -59,6 +59,11 @@ def test_map_editor_status_view_formats_active_file_coordinates() -> None:
     assert view.text == "Editor: main.py | Ln 12, Col 4 | modified"
 
 
+def test_map_editor_status_view_includes_mode_label_when_present() -> None:
+    view = map_editor_status_view("form.ui", 1, 1, is_dirty=False, mode_label="Signals/Slots")
+    assert view.text == "Editor: form.ui | Ln 1, Col 1 | Mode Signals/Slots | saved"
+
+
 def test_map_editor_status_view_handles_missing_file() -> None:
     """No active file should map to explicit placeholder copy."""
     view = map_editor_status_view(None, None, None, is_dirty=False)

@@ -23,6 +23,7 @@ from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 
 APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
 PYSIDE2_IMPORT_CHECK_ID = "pyside2_import"
+QTUITOOLS_IMPORT_CHECK_ID = "qtuitools_import"
 FREECAD_IMPORT_CHECK_ID = "freecad_import"
 STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
 GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
@@ -39,6 +40,7 @@ def run_startup_capability_probe(
     check_runners: list[tuple[str, Callable[[], CapabilityCheckResult]]] = [
         (APP_RUN_PRESENCE_CHECK_ID, lambda: check_apprun_presence(app_run_path=app_run_path)),
         (PYSIDE2_IMPORT_CHECK_ID, check_pyside2_availability),
+        (QTUITOOLS_IMPORT_CHECK_ID, check_qtuitools_availability),
         (FREECAD_IMPORT_CHECK_ID, check_freecad_availability),
         (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
         (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
@@ -87,6 +89,33 @@ def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> Capabilit
 def check_pyside2_availability() -> CapabilityCheckResult:
     """Check that PySide2 is importable in the active runtime."""
     return _check_module_import("PySide2", PYSIDE2_IMPORT_CHECK_ID)
+
+
+def check_qtuitools_availability() -> CapabilityCheckResult:
+    """Check that QtUiTools with QUiLoader is importable in active runtime."""
+    try:
+        module = importlib.import_module("PySide2.QtUiTools")
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=QTUITOOLS_IMPORT_CHECK_ID,
+            is_available=False,
+            message=f"Failed to import PySide2.QtUiTools: {exc}",
+            details={"module": "PySide2.QtUiTools"},
+        )
+    if not hasattr(module, "QUiLoader"):
+        return CapabilityCheckResult(
+            check_id=QTUITOOLS_IMPORT_CHECK_ID,
+            is_available=False,
+            message="PySide2.QtUiTools import succeeded, but QUiLoader is unavailable.",
+            details={"module": "PySide2.QtUiTools"},
+        )
+
+    return CapabilityCheckResult(
+        check_id=QTUITOOLS_IMPORT_CHECK_ID,
+        is_available=True,
+        message="PySide2.QtUiTools import succeeded and QUiLoader is available.",
+        details={"module": "PySide2.QtUiTools", "class": "QUiLoader"},
+    )
 
 
 def check_freecad_availability() -> CapabilityCheckResult:

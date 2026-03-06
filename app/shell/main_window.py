@@ -73,6 +73,10 @@ from app.intelligence.completion_service import CompletionRequest, CompletionSer
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.designer.editor_surface import DesignerEditorSurface
+from app.designer.io.ui_writer import write_ui_file
+from app.designer.model import PropertyValue, UIModel, WidgetNode
+from app.designer.new_form_dialog import NewFormRequest
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -219,9 +223,14 @@ class MainWindow(QMainWindow):
         self._close_tab_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+        self._designer_last_mode: str = constants.UI_DESIGNER_LAST_MODE_DEFAULT
+        self._designer_enable_naming_lint: bool = constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+        self._designer_snap_to_grid: bool = constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT
+        self._designer_grid_size: int = constants.UI_DESIGNER_GRID_SIZE_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
+        self._designer_widgets_by_path: dict[str, DesignerEditorSurface] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
         self._tree_clipboard_paths: list[str] = []
         self._tree_clipboard_cut: bool = False
@@ -255,6 +264,9 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._theme_mode = self._load_theme_mode()
+        self._designer_last_mode = self._load_designer_last_mode()
+        self._designer_enable_naming_lint = self._load_designer_enable_naming_lint()
+        self._designer_snap_to_grid, self._designer_grid_size = self._load_designer_grid_settings()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = self._load_syntax_color_overrides()
@@ -357,6 +369,7 @@ class MainWindow(QMainWindow):
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
+                on_new_form=self._handle_new_form_action,
                 on_open_project=self._handle_open_project_action,
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
@@ -397,6 +410,8 @@ class MainWindow(QMainWindow):
                 on_new_project=self._handle_new_project_action,
                 on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
+                on_undo=self._handle_undo_action,
+                on_redo=self._handle_redo_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
@@ -409,6 +424,22 @@ class MainWindow(QMainWindow):
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_signature_help=self._handle_signature_help_action,
                 on_hover_info=self._handle_hover_info_action,
+                on_designer_layout_horizontal=self._handle_designer_layout_horizontal_action,
+                on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
+                on_designer_layout_grid=self._handle_designer_layout_grid_action,
+                on_designer_layout_break=self._handle_designer_layout_break_action,
+                on_designer_mode_widget=self._handle_designer_mode_widget_action,
+                on_designer_mode_signals_slots=self._handle_designer_mode_signals_slots_action,
+                on_designer_mode_buddy=self._handle_designer_mode_buddy_action,
+                on_designer_mode_tab_order=self._handle_designer_mode_tab_order_action,
+                on_designer_preview=self._handle_designer_preview_action,
+                on_designer_check_compat=self._handle_designer_compatibility_check_action,
+                on_designer_add_resource=self._handle_designer_add_resource_action,
+                on_designer_promote_widget=self._handle_designer_promote_widget_action,
+                on_designer_format_ui_xml=self._handle_designer_format_ui_xml_action,
+                on_designer_save_component=self._handle_designer_save_component_action,
+                on_designer_insert_component=self._handle_designer_insert_component_action,
+                on_designer_duplicate_selection=self._handle_designer_duplicate_selection_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
                 on_headless_notes=self._handle_headless_notes_action,
@@ -436,6 +467,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_designer_action_states()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
@@ -606,6 +638,50 @@ class MainWindow(QMainWindow):
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
 
+    def _load_designer_last_mode(self) -> str:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return constants.UI_DESIGNER_LAST_MODE_DEFAULT
+        mode = designer_payload.get(constants.UI_DESIGNER_LAST_MODE_KEY, constants.UI_DESIGNER_LAST_MODE_DEFAULT)
+        mode_text = str(mode)
+        if mode_text in {"widget", "signals_slots", "buddy", "tab_order"}:
+            return mode_text
+        return constants.UI_DESIGNER_LAST_MODE_DEFAULT
+
+    def _load_designer_enable_naming_lint(self) -> bool:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+        value = designer_payload.get(
+            constants.UI_DESIGNER_ENABLE_NAMING_LINT_KEY,
+            constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT,
+        )
+        if isinstance(value, bool):
+            return value
+        return constants.UI_DESIGNER_ENABLE_NAMING_LINT_DEFAULT
+
+    def _load_designer_grid_settings(self) -> tuple[bool, int]:
+        settings_payload = load_settings(state_root=self._state_root)
+        designer_payload = settings_payload.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            return (
+                constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT,
+                constants.UI_DESIGNER_GRID_SIZE_DEFAULT,
+            )
+        snap_value = designer_payload.get(
+            constants.UI_DESIGNER_SNAP_TO_GRID_KEY,
+            constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT,
+        )
+        grid_value = designer_payload.get(
+            constants.UI_DESIGNER_GRID_SIZE_KEY,
+            constants.UI_DESIGNER_GRID_SIZE_DEFAULT,
+        )
+        snap_enabled = snap_value if isinstance(snap_value, bool) else constants.UI_DESIGNER_SNAP_TO_GRID_DEFAULT
+        grid_size = grid_value if isinstance(grid_value, int) and grid_value > 0 else constants.UI_DESIGNER_GRID_SIZE_DEFAULT
+        return snap_enabled, grid_size
+
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = load_settings(state_root=self._state_root)
         snapshot = parse_editor_settings_snapshot(settings_payload)
@@ -644,6 +720,20 @@ class MainWindow(QMainWindow):
         settings_payload = load_settings(state_root=self._state_root)
         merged = merge_theme_mode(settings_payload, mode)
         save_settings(merged, state_root=self._state_root)
+
+    def _persist_designer_last_mode(self, mode: str) -> None:
+        if mode not in {"widget", "signals_slots", "buddy", "tab_order"}:
+            return
+        settings_payload = load_settings(state_root=self._state_root)
+        merged = dict(settings_payload)
+        designer_payload = merged.get(constants.UI_DESIGNER_SETTINGS_KEY, {})
+        if not isinstance(designer_payload, dict):
+            designer_payload = {}
+        designer_payload = dict(designer_payload)
+        designer_payload[constants.UI_DESIGNER_LAST_MODE_KEY] = mode
+        merged[constants.UI_DESIGNER_SETTINGS_KEY] = designer_payload
+        save_settings(merged, state_root=self._state_root)
+        self._designer_last_mode = mode
 
     def _handle_set_theme(self, mode: str) -> None:
         if mode == self._theme_mode:
@@ -771,6 +861,89 @@ class MainWindow(QMainWindow):
             return
 
         self._open_project_by_path(str(created_path))
+
+    def _handle_new_form_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "New Form", "Open a project first.")
+            return
+
+        destination_directory = self._selected_tree_directory() or self._loaded_project.project_root
+        form_name, accepted_name = QInputDialog.getText(self, "New Form", "Form class name:", QLineEdit.Normal, "MainForm")
+        normalized_form_name = form_name.strip()
+        if not accepted_name or not normalized_form_name:
+            return
+
+        file_name, accepted_file = QInputDialog.getText(
+            self,
+            "New Form",
+            "Form file name (.ui):",
+            QLineEdit.Normal,
+            "form.ui",
+        )
+        normalized_file_name = file_name.strip()
+        if not accepted_file or not normalized_file_name:
+            return
+        if not normalized_file_name.lower().endswith(".ui"):
+            normalized_file_name = f"{normalized_file_name}.ui"
+
+        root_widget_class, accepted_widget = QInputDialog.getItem(
+            self,
+            "New Form",
+            "Root widget:",
+            ["QWidget", "QDialog", "QMainWindow"],
+            0,
+            False,
+        )
+        if not accepted_widget or not root_widget_class:
+            return
+
+        root_object_name = normalized_form_name
+        if root_object_name and root_object_name[0].islower():
+            root_object_name = root_object_name[0].upper() + root_object_name[1:]
+        request = NewFormRequest(
+            form_class_name=normalized_form_name,
+            root_widget_class=root_widget_class,
+            root_object_name=root_object_name or "Form",
+        )
+
+        target_path = Path(destination_directory) / normalized_file_name
+        if target_path.exists():
+            overwrite = QMessageBox.question(
+                self,
+                "New Form",
+                f"'{target_path.name}' already exists. Overwrite?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if overwrite != QMessageBox.Yes:
+                return
+
+        model = self._build_default_form_model(request)
+        try:
+            write_ui_file(model, str(target_path.resolve()))
+        except OSError as exc:
+            QMessageBox.warning(self, "New Form", f"Failed to create form: {exc}")
+            return
+
+        self._reload_current_project()
+        self._open_file_in_editor(str(target_path.resolve()))
+
+    @staticmethod
+    def _build_default_form_model(request: NewFormRequest) -> UIModel:
+        return UIModel(
+            form_class_name=request.form_class_name,
+            root_widget=WidgetNode(
+                class_name=request.root_widget_class,
+                object_name=request.root_object_name,
+                properties={
+                    "geometry": PropertyValue(
+                        value_type="rect",
+                        value={"x": 0, "y": 0, "width": 640, "height": 480},
+                    ),
+                    "windowTitle": PropertyValue(value_type="string", value=request.form_class_name),
+                },
+            ),
+        )
 
     def _prompt_for_new_project_destination(self) -> tuple[str, Path] | None:
         project_name, accepted_name = QInputDialog.getText(self, "New Project", "Project name:", QLineEdit.Normal, "")
@@ -900,6 +1073,36 @@ class MainWindow(QMainWindow):
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
+
+    def _handle_undo_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.undo():
+                self._handle_designer_dirty_state_changed(
+                    designer_surface.file_path,
+                    designer_surface,
+                    True,
+                )
+                self._refresh_save_action_states()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.undo()
+
+    def _handle_redo_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.redo():
+                self._handle_designer_dirty_state_changed(
+                    designer_surface.file_path,
+                    designer_surface,
+                    True,
+                )
+                self._refresh_save_action_states()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.redo()
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -1248,6 +1451,199 @@ class MainWindow(QMainWindow):
             details.append(f"Doc: {hover_info.doc_summary}")
         details.append(f"Source: {hover_info.source}")
         QMessageBox.information(self, "Hover Info", "\n".join(details))
+
+    def _handle_designer_layout_horizontal_action(self) -> None:
+        self._apply_designer_layout_command("QHBoxLayout")
+
+    def _handle_designer_layout_vertical_action(self) -> None:
+        self._apply_designer_layout_command("QVBoxLayout")
+
+    def _handle_designer_layout_grid_action(self) -> None:
+        self._apply_designer_layout_command("QGridLayout")
+
+    def _handle_designer_layout_break_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.break_layout_for_selection():
+            QMessageBox.information(self, "Break Layout", "No layout available on selected widget.")
+
+    def _apply_designer_layout_command(self, layout_class_name: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.apply_layout_to_selection(layout_class_name):
+            QMessageBox.warning(
+                self,
+                "Designer Layout",
+                "Unable to apply layout to the selected widget.",
+            )
+
+    def _handle_designer_mode_widget_action(self) -> None:
+        self._set_designer_mode("widget")
+
+    def _handle_designer_mode_signals_slots_action(self) -> None:
+        self._set_designer_mode("signals_slots")
+
+    def _handle_designer_mode_buddy_action(self) -> None:
+        self._set_designer_mode("buddy")
+
+    def _handle_designer_mode_tab_order_action(self) -> None:
+        self._set_designer_mode("tab_order")
+
+    def _set_designer_mode(self, mode_id: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        surface.set_mode(mode_id)
+        self._refresh_designer_action_states()
+
+    def _handle_designer_preview_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.preview_current_form():
+            QMessageBox.warning(
+                self,
+                "Designer Preview",
+                "Preview failed. See the Designer error panel for details.",
+            )
+
+    def _handle_designer_compatibility_check_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        message = surface.run_compatibility_check()
+        QMessageBox.information(self, "Designer Compatibility", message)
+
+    def _handle_designer_add_resource_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        selected_file, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Select Qt Resource File",
+            str(Path(surface.file_path).parent),
+            "Qt Resource Files (*.qrc);;All Files (*)",
+        )
+        if not selected_file:
+            return
+        include_location = Path(selected_file).name
+        if not surface.add_resource_include(include_location):
+            QMessageBox.information(
+                self,
+                "Add Resource",
+                "Resource include already exists or could not be added.",
+            )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_promote_widget_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        class_name, accepted_class = QInputDialog.getText(
+            self,
+            "Promote Widget",
+            "Promoted class name:",
+            QLineEdit.Normal,
+            "",
+        )
+        if not accepted_class:
+            return
+        header, accepted_header = QInputDialog.getText(
+            self,
+            "Promote Widget",
+            "Header/module path (optional):",
+            QLineEdit.Normal,
+            "",
+        )
+        if not accepted_header:
+            return
+        if not surface.promote_selected_widget(class_name, header):
+            QMessageBox.warning(
+                self,
+                "Promote Widget",
+                "Unable to promote selected widget. Ensure a non-root widget is selected and class name is valid.",
+            )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_format_ui_xml_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.format_ui_model():
+            QMessageBox.information(self, "Format UI XML", "Form is already normalized.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_save_component_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        default_name = surface.selected_object_name or "component"
+        component_name, accepted = QInputDialog.getText(
+            self,
+            "Save Component",
+            "Component name:",
+            QLineEdit.Normal,
+            default_name,
+        )
+        if not accepted:
+            return
+        if not surface.save_selected_widget_as_component(component_name):
+            QMessageBox.warning(self, "Save Component", "Unable to save selected component.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_insert_component_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        components = surface.available_component_names()
+        if not components:
+            QMessageBox.information(self, "Insert Component", "No saved components are available for this project.")
+            return
+        selected_component, accepted = QInputDialog.getItem(
+            self,
+            "Insert Component",
+            "Component:",
+            components,
+            0,
+            editable=False,
+        )
+        if not accepted:
+            return
+        if not surface.insert_component(selected_component):
+            QMessageBox.warning(self, "Insert Component", "Unable to insert selected component.")
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
+
+    def _handle_designer_duplicate_selection_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.duplicate_selection():
+            QMessageBox.information(
+                self,
+                "Duplicate Selection",
+                "Unable to duplicate selection. Select a non-root widget first.",
+            )
+            return
+        self._refresh_save_action_states()
+        self._refresh_designer_action_states()
+        self._update_editor_status_for_path(surface.file_path)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -1633,6 +2029,10 @@ class MainWindow(QMainWindow):
         return not any_failure
 
     def _save_tab(self, file_path: str) -> bool:
+        designer_surface = self._designer_widgets_by_path.get(file_path)
+        if designer_surface is not None:
+            return self._save_designer_tab(file_path, designer_surface)
+
         self._apply_format_on_save_if_enabled(file_path)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
@@ -1657,6 +2057,26 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
             self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
+        self._logger.info("Saved file: %s", saved_tab.file_path)
+        return True
+
+    def _save_designer_tab(self, file_path: str, designer_surface: DesignerEditorSurface) -> bool:
+        try:
+            serialized = designer_surface.serialize_to_ui_string()
+            self._editor_manager.update_tab_content(file_path, serialized)
+            saved_tab = self._editor_manager.save_tab(file_path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Save failed", str(exc))
+            self._logger.warning("Save failed for %s: %s", file_path, exc)
+            return False
+
+        designer_surface.mark_saved()
+        if self._editor_tabs_widget is not None:
+            tab_index = self._tab_index_for_path(saved_tab.file_path)
+            if tab_index >= 0:
+                self._editor_tabs_widget.setTabText(tab_index, saved_tab.display_name)
+        self._refresh_save_action_states()
+        self._update_editor_status_for_path(saved_tab.file_path)
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -1693,13 +2113,27 @@ class MainWindow(QMainWindow):
 
         save_action = self._menu_registry.action("shell.action.file.save")
         save_all_action = self._menu_registry.action("shell.action.file.saveAll")
+        undo_action = self._menu_registry.action("shell.action.edit.undo")
+        redo_action = self._menu_registry.action("shell.action.edit.redo")
         active_tab = self._editor_manager.active_tab()
         has_dirty_tabs = any(tab.is_dirty for tab in self._editor_manager.all_tabs())
+        active_designer_surface = self._active_designer_surface()
+        active_editor_widget = self._active_editor_widget()
 
         if save_action is not None:
             save_action.setEnabled(active_tab is not None)
         if save_all_action is not None:
             save_all_action.setEnabled(has_dirty_tabs)
+        if undo_action is not None:
+            if active_designer_surface is not None:
+                undo_action.setEnabled(active_designer_surface.can_undo)
+            else:
+                undo_action.setEnabled(active_editor_widget is not None and active_editor_widget.document().isUndoAvailable())
+        if redo_action is not None:
+            if active_designer_surface is not None:
+                redo_action.setEnabled(active_designer_surface.can_redo)
+            else:
+                redo_action.setEnabled(active_editor_widget is not None and active_editor_widget.document().isRedoAvailable())
 
     def _handle_run_action(self) -> bool:
         return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
@@ -2677,6 +3111,47 @@ class MainWindow(QMainWindow):
             has_breakpoints=bool(self._breakpoints_by_file),
         )
 
+    def _refresh_designer_action_states(self) -> None:
+        if self._menu_registry is None:
+            return
+        active_surface = self._active_designer_surface()
+        has_active_designer = active_surface is not None
+        for action_id in (
+            "designer.form.preview",
+            "designer.form.check_compat",
+            "designer.form.add_resource",
+            "designer.form.promote_widget",
+            "designer.form.format_ui_xml",
+            "designer.form.save_component",
+            "designer.form.insert_component",
+            "designer.form.duplicate_selection",
+            "designer.layout.horizontal",
+            "designer.layout.vertical",
+            "designer.layout.grid",
+            "designer.layout.break",
+            "designer.mode.widget",
+            "designer.mode.signals_slots",
+            "designer.mode.buddy",
+            "designer.mode.tab_order",
+        ):
+            action = self._menu_registry.action(action_id)
+            if action is not None:
+                action.setEnabled(has_active_designer)
+
+        mode_to_action_id = {
+            "widget": "designer.mode.widget",
+            "signals_slots": "designer.mode.signals_slots",
+            "buddy": "designer.mode.buddy",
+            "tab_order": "designer.mode.tab_order",
+        }
+        current_mode = None if active_surface is None else active_surface.current_mode
+        for mode_id, action_id in mode_to_action_id.items():
+            action = self._menu_registry.action(action_id)
+            if action is None:
+                continue
+            action.setCheckable(True)
+            action.setChecked(has_active_designer and current_mode == mode_id)
+
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._is_shutting_down:
             return
@@ -3566,8 +4041,8 @@ class MainWindow(QMainWindow):
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
-    def _release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        if self._debug_execution_editor is widget:
+    def _release_editor_widget(self, widget: QWidget) -> None:
+        if isinstance(widget, CodeEditorWidget) and self._debug_execution_editor is widget:
             self._clear_debug_execution_indicator()
         widget.deleteLater()
 
@@ -3668,6 +4143,44 @@ class MainWindow(QMainWindow):
                 self._editor_tabs_widget.setCurrentIndex(existing_index)
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
+            return True
+
+        if Path(opened_result.tab.file_path).suffix.lower() == ".ui":
+            designer_surface = DesignerEditorSurface(
+                opened_result.tab.file_path,
+                self._editor_tabs_widget,
+                enable_naming_lint=self._designer_enable_naming_lint,
+                snap_to_grid=self._designer_snap_to_grid,
+                grid_size=self._designer_grid_size,
+            )
+            designer_surface.setObjectName("shell.editorTabs.designerSurface")
+            designer_surface.dirty_state_changed.connect(
+                lambda is_dirty, tab_file_path=opened_result.tab.file_path, surface=designer_surface: self._handle_designer_dirty_state_changed(
+                    tab_file_path,
+                    surface,
+                    is_dirty,
+                )
+            )
+            designer_surface.mode_changed.connect(
+                lambda _mode, tab_file_path=opened_result.tab.file_path: (
+                    self._refresh_designer_action_states(),
+                    self._update_editor_status_for_path(tab_file_path),
+                )
+            )
+            designer_surface.mode_changed.connect(self._persist_designer_last_mode)
+            designer_surface.set_mode(self._designer_last_mode)
+            self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
+            tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
+            self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+            self._editor_tabs_widget.setCurrentIndex(tab_index)
+            self._handle_editor_tab_changed(tab_index)
+            self._refresh_save_action_states()
+            self._update_editor_status_for_path(opened_result.tab.file_path)
+            self._logger.info(
+                "File open telemetry: file=%s elapsed_ms=%.2f",
+                opened_result.tab.file_path,
+                (time.perf_counter() - started_at) * 1000.0,
+            )
             return True
 
         editor_widget = CodeEditorWidget(self._editor_tabs_widget)
@@ -3781,6 +4294,27 @@ class MainWindow(QMainWindow):
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
 
+    def _handle_designer_dirty_state_changed(
+        self,
+        file_path: str,
+        designer_surface: DesignerEditorSurface,
+        is_dirty: bool,
+    ) -> None:
+        if self._editor_manager.get_tab(file_path) is None:
+            return
+        try:
+            serialized = designer_surface.serialize_to_ui_string()
+        except ValueError:
+            return
+        tab_state = self._editor_manager.update_tab_content(file_path, serialized)
+        if self._editor_tabs_widget is not None:
+            tab_index = self._tab_index_for_path(tab_state.file_path)
+            if tab_index >= 0:
+                suffix = " *" if is_dirty else ""
+                self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
+        self._refresh_save_action_states()
+        self._update_editor_status_for_path(tab_state.file_path)
+
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None or self._status_controller is None:
@@ -3797,8 +4331,32 @@ class MainWindow(QMainWindow):
             return
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._editor_widgets_by_path.get(file_path)
-        if tab_state is None or editor_widget is None:
+        designer_widget = self._designer_widgets_by_path.get(file_path)
+        if tab_state is None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            return
+        if designer_widget is not None:
+            mode_labels = {
+                "widget": "Widget",
+                "signals_slots": "Signals/Slots",
+                "buddy": "Buddy",
+                "tab_order": "Tab Order",
+            }
+            self._status_controller.set_editor_status(
+                file_name=tab_state.display_name,
+                line=1,
+                column=1,
+                is_dirty=tab_state.is_dirty,
+                mode_label=mode_labels.get(designer_widget.current_mode, "Designer"),
+            )
+            return
+        if editor_widget is None:
+            self._status_controller.set_editor_status(
+                file_name=tab_state.display_name,
+                line=1,
+                column=1,
+                is_dirty=tab_state.is_dirty,
+            )
             return
         self._status_controller.set_editor_status(
             file_name=tab_state.display_name,
@@ -3811,6 +4369,14 @@ class MainWindow(QMainWindow):
         if active_tab is None:
             return None
         return self._editor_widgets_by_path.get(active_tab.file_path)
+
+    def _active_designer_surface(self) -> DesignerEditorSurface | None:
+        if self._editor_tabs_widget is None:
+            return None
+        current_widget = self._editor_tabs_widget.currentWidget()
+        if isinstance(current_widget, DesignerEditorSurface):
+            return current_widget
+        return None
 
     def _request_editor_completions(
         self,
@@ -3851,13 +4417,16 @@ class MainWindow(QMainWindow):
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:
+            self._refresh_designer_action_states()
             return
 
         tab_path = self._editor_tabs_widget.tabToolTip(tab_index)
         if not tab_path:
+            self._refresh_designer_action_states()
             return
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
@@ -3886,6 +4455,8 @@ class MainWindow(QMainWindow):
 
         self._editor_tabs_widget.removeTab(tab_index)
         widget = self._editor_widgets_by_path.pop(file_path, None)
+        if widget is None:
+            widget = self._designer_widgets_by_path.pop(file_path, None)
         if widget is not None:
             self._release_editor_widget(widget)
         self._editor_manager.close_file(file_path)
@@ -3894,6 +4465,7 @@ class MainWindow(QMainWindow):
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
 
     def _close_active_tab(self) -> None:
         if self._editor_tabs_widget is None:
@@ -3911,8 +4483,10 @@ class MainWindow(QMainWindow):
         self._pending_realtime_lint_file_path = None
         self._clear_debug_execution_indicator()
         self._editor_widgets_by_path.clear()
+        self._designer_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
+        self._refresh_designer_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
 

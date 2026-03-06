@@ -66,7 +66,14 @@ def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> Sta
     )
 
 
-def map_editor_status_view(file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> EditorStatusView:
+def map_editor_status_view(
+    file_name: str | None,
+    line: int | None,
+    column: int | None,
+    is_dirty: bool,
+    *,
+    mode_label: str | None = None,
+) -> EditorStatusView:
     """Format editor telemetry into deterministic status copy."""
     if not file_name:
         return EditorStatusView(text="Editor: no file")
@@ -74,7 +81,12 @@ def map_editor_status_view(file_name: str | None, line: int | None, column: int 
     safe_line = max(1, line or 1)
     safe_column = max(1, column or 1)
     dirty_text = "modified" if is_dirty else "saved"
-    return EditorStatusView(text=f"Editor: {file_name} | Ln {safe_line}, Col {safe_column} | {dirty_text}")
+    mode_text = ""
+    if mode_label:
+        mode_text = f" | Mode {mode_label}"
+    return EditorStatusView(
+        text=f"Editor: {file_name} | Ln {safe_line}, Col {safe_column}{mode_text} | {dirty_text}"
+    )
 
 
 def format_diagnostics_counts(errors: int, warnings: int) -> str:
@@ -163,9 +175,23 @@ class ShellStatusBarController:
         """Update lightweight project-status copy."""
         self._project_label.setText(text)
 
-    def set_editor_status(self, file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> None:
+    def set_editor_status(
+        self,
+        file_name: str | None,
+        line: int | None,
+        column: int | None,
+        is_dirty: bool,
+        *,
+        mode_label: str | None = None,
+    ) -> None:
         """Update current editor telemetry in the status bar."""
-        view = map_editor_status_view(file_name=file_name, line=line, column=column, is_dirty=is_dirty)
+        view = map_editor_status_view(
+            file_name=file_name,
+            line=line,
+            column=column,
+            is_dirty=is_dirty,
+            mode_label=mode_label,
+        )
         self._editor_label.setText(view.text)
 
     def set_diagnostics_counts(self, errors: int, warnings: int) -> None:

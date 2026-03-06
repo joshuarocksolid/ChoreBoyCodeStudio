@@ -886,6 +886,30 @@ Verify rule-level lint settings (enable + severity) affect diagnostics output.
 
 ---
 
+## 10A. Designer acceptance program (implemented)
+
+Designer implementation is validated through the Designer-specific suites documented in `docs/designer/TASKS.md` and mapped by acceptance linkage IDs:
+
+- **DF-xx**: foundation/runtime checks (`QUiLoader` capability probe + loader smoke/runtime parity)
+- **DMVP-xx**: MVP `.ui` workflow (open/new form/palette insert/selection/properties/layout/save/open/preview)
+- **DPAR-xx**: productivity parity (reparenting, typed properties, undo/redo, multi-select/clone/snap groundwork)
+- **DADV-xx**: advanced modes (signals/slots, tab order, buddy interactions + serialization)
+- **DRES-xx**: resources/icons/promote/custom-widget preview isolation
+- **DADV2-xx**: deterministic formatting, unknown-node preservation, reusable components, naming lint
+
+Current acceptance evidence is provided by automated integration + runtime parity suites under:
+
+- `tests/integration/designer/`
+- `tests/runtime_parity/test_designer_quiloader_runtime.py`
+
+and by Designer unit coverage under:
+
+- `tests/unit/designer/`
+
+The Designer backlog now reports all linked tasks as `DONE` in `docs/designer/TASKS.md`.
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

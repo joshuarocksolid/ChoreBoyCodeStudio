@@ -1149,6 +1149,26 @@ If a change affects system structure, update `ARCHITECTURE.md`.
 
 ## 29. Bottom Line
 
+## 31. Implemented Designer Subsystem (Qt `.ui` Builder)
+
+The Designer subsystem is now implemented as a first-class editor surface for `.ui` files under `app/designer/` with these boundaries:
+
+- **Model-first contracts**: `UIModel` + widget/layout/property/resource/connection/custom-widget models are canonical.
+- **Schema-aware `.ui` IO**: reader/writer + formatter modules own deterministic serialization and unknown-node/property passthrough preservation.
+- **Editor surface orchestration**: `DesignerEditorSurface` coordinates canvas, inspector, properties, validation, command stack, and designer modes.
+- **Mode tools**: Widget / Signals-Slots / Tab Order / Buddy behaviors are isolated by mode controller and dedicated panels.
+- **Preview safety contract**:
+  - normal `.ui` preview uses `QUiLoader` in-process for non-custom forms.
+  - promoted/custom-widget forms require runner-assisted isolated compatibility probing, never direct editor-process project import.
+- **Filesystem-first reusable components**: saved components live in project-visible `cbcs/components/` with manifest metadata; insertion preserves deterministic naming.
+
+Shell integration is explicit:
+
+- `.ui` files route to Designer tabs in `MainWindow`.
+- Designer actions are menu/shortcut managed with context-scoped behavior.
+- Designer mode and state telemetry are surfaced in the status bar.
+- Designer settings persist under the global settings payload (`designer` section), including mode and grid/lint preferences.
+
 The optimal architecture for ChoreBoy Code Studio is:
 
 * a **Qt editor shell**

@@ -27,6 +27,7 @@ class MenuStubRegistry:
 class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
+    on_new_form: Callable[[], object] | None = None
     on_new_project: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
@@ -35,6 +36,8 @@ class MenuCallbacks:
     on_save_all: Callable[[], object] | None = None
     on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
+    on_undo: Callable[[], object] | None = None
+    on_redo: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -47,6 +50,22 @@ class MenuCallbacks:
     on_go_to_definition: Callable[[], object] | None = None
     on_signature_help: Callable[[], object] | None = None
     on_hover_info: Callable[[], object] | None = None
+    on_designer_layout_horizontal: Callable[[], object] | None = None
+    on_designer_layout_vertical: Callable[[], object] | None = None
+    on_designer_layout_grid: Callable[[], object] | None = None
+    on_designer_layout_break: Callable[[], object] | None = None
+    on_designer_mode_widget: Callable[[], object] | None = None
+    on_designer_mode_signals_slots: Callable[[], object] | None = None
+    on_designer_mode_buddy: Callable[[], object] | None = None
+    on_designer_mode_tab_order: Callable[[], object] | None = None
+    on_designer_preview: Callable[[], object] | None = None
+    on_designer_check_compat: Callable[[], object] | None = None
+    on_designer_add_resource: Callable[[], object] | None = None
+    on_designer_promote_widget: Callable[[], object] | None = None
+    on_designer_format_ui_xml: Callable[[], object] | None = None
+    on_designer_save_component: Callable[[], object] | None = None
+    on_designer_insert_component: Callable[[], object] | None = None
+    on_designer_duplicate_selection: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
@@ -133,6 +152,16 @@ def build_menu_stubs(
     file_menu.setObjectName("shell.menu.file")
     if callback_registry.on_file_menu_about_to_show is not None:
         file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
+    _register_menu_action(
+        file_menu,
+        actions,
+        "designer.file.new_form",
+        "New Form...",
+        "Ctrl+Shift+N",
+        enabled=True,
+        callback=callback_registry.on_new_form,
+        shortcut_overrides=shortcut_overrides,
+    )
     _register_menu_action(
         file_menu,
         actions,
@@ -224,10 +253,24 @@ def build_menu_stubs(
     edit_menu = menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.undo",
+        "Undo",
+        "Ctrl+Z",
+        enabled=True,
+        callback=callback_registry.on_undo,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.redo",
+        "Redo",
+        "Ctrl+Shift+Z",
+        enabled=True,
+        callback=callback_registry.on_redo,
+        shortcut_overrides=shortcut_overrides,
     )
     if quick_open_action is not None:
         edit_menu.addAction(quick_open_action)
@@ -350,6 +393,173 @@ def build_menu_stubs(
         "Ctrl+K",
         enabled=True,
         callback=callback_registry.on_hover_info,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    form_menu = menu_bar.addMenu("&Form")
+    form_menu.setObjectName("designer.menu.form")
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.preview",
+        "Preview Form",
+        "Ctrl+R",
+        enabled=True,
+        callback=callback_registry.on_designer_preview,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.check_compat",
+        "Run Compatibility Check",
+        "Ctrl+Shift+R",
+        enabled=True,
+        callback=callback_registry.on_designer_check_compat,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.add_resource",
+        "Add Resource (.qrc)...",
+        enabled=True,
+        callback=callback_registry.on_designer_add_resource,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.promote_widget",
+        "Promote Selected Widget...",
+        enabled=True,
+        callback=callback_registry.on_designer_promote_widget,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.format_ui_xml",
+        "Format UI XML",
+        "Ctrl+Alt+Shift+F",
+        enabled=True,
+        callback=callback_registry.on_designer_format_ui_xml,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.save_component",
+        "Save Selection as Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_save_component,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.insert_component",
+        "Insert Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_insert_component,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.duplicate_selection",
+        "Duplicate Selection",
+        "Ctrl+D",
+        enabled=True,
+        callback=callback_registry.on_designer_duplicate_selection,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    layout_menu = menu_bar.addMenu("&Layout")
+    layout_menu.setObjectName("designer.menu.layout")
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.horizontal",
+        "Lay Out Horizontally",
+        "Ctrl+1",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_horizontal,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.vertical",
+        "Lay Out Vertically",
+        "Ctrl+2",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_vertical,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.grid",
+        "Lay Out in a Grid",
+        "Ctrl+3",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_grid,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.break",
+        "Break Layout",
+        "Ctrl+0",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_break,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    mode_menu = menu_bar.addMenu("&Mode")
+    mode_menu.setObjectName("designer.menu.mode")
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.widget",
+        "Widget Editing Mode",
+        "F3",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_widget,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.signals_slots",
+        "Signals/Slots Mode",
+        "F4",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_signals_slots,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.buddy",
+        "Buddy Mode",
+        "F5",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_buddy,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.tab_order",
+        "Tab Order Mode",
+        "F6",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_tab_order,
         shortcut_overrides=shortcut_overrides,
     )
 
@@ -727,7 +937,7 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
-    for m in (file_menu, open_recent_menu, edit_menu, run_menu,
+    for m in (file_menu, open_recent_menu, edit_menu, form_menu, layout_menu, mode_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 
