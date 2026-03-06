@@ -1,6 +1,7 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/pg_backup_probe
   Target database: postgres
   Sample table: public.acct_trans
 
@@ -11,21 +12,21 @@
   connect: YES (postgres@localhost:5432/postgres)
 
 [Metadata extraction]
-  sample table fallback (requested=public.acct_trans, using=public.resultset_test)
-  table exists: YES (public.resultset_test)
-  column_count: YES (5)
+  sample table fallback (requested=public.acct_trans, using=job_manager.user_roles)
+  table exists: YES (job_manager.user_roles)
+  column_count: YES (3)
   primary_or_unique_count (1)
-  foreign_key_count (0)
-  index_count (1)
+  foreign_key_count (2)
+  index_count (4)
 
 [Backup SQL generation]
-  backup generated: YES (rows=50000, file_size=7792332, elapsed=0.525280s)
-  syntax check: YES (rows_checked=5)
-  backup file (/home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe5_public_resultset_test_mini_backup.sql)
+  backup generated: YES (rows=1, file_size=1191, elapsed=0.000612s)
+  syntax check: YES (rows_checked=1)
+  backup file (/home/default/pg_backup_probe/results/probe5_job_manager_user_roles_mini_backup.sql)
 
 [Connection close]
   close connection: YES
 
 [Generated files]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe5_public_resultset_test_mini_backup.sql
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe5_summary.json
+  /home/default/pg_backup_probe/results/probe5_job_manager_user_roles_mini_backup.sql
+  /home/default/pg_backup_probe/results/probe5_summary.json

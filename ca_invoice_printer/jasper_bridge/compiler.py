@@ -28,7 +28,7 @@ def compile_jrxml(jrxml_path: str, output_path: str = None) -> str:
 
     if output_path is None:
         if jrxml_abs.endswith(".jrxml"):
-            output_abs = jrxml_abs[:-6] + "jasper"
+            output_abs = jrxml_abs[:-6] + ".jasper"
         else:
             output_abs = jrxml_abs + ".jasper"
     else:

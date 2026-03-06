@@ -537,6 +537,15 @@ QTabBar::tab:selected {{
     color: {tokens.text_primary};
     border-top: 2px solid {tokens.accent};
 }}
+QTabBar::close-button {{
+    image: url({tokens.tab_close_icon_path});
+    padding: 2px;
+}}
+QTabBar::close-button:hover {{
+    image: url({tokens.tab_close_icon_hover_path});
+    background: {"rgba(255, 255, 255, 0.1)" if tokens.is_dark else "rgba(0, 0, 0, 0.08)"};
+    border-radius: 3px;
+}}
 /* -- Welcome screen ------------------------------------------------------ */
 QWidget#shell\\.welcome {{
     background: {tokens.editor_bg};

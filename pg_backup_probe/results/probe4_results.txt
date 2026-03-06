@@ -1,6 +1,7 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/pg_backup_probe
   Target database: postgres
   Sample table: public.acct_trans
 
@@ -11,20 +12,20 @@
   connect: YES (postgres@localhost:5432/postgres)
 
 [COPY smoke test with temp table]
-  copy temp table: YES (bytes=149, elapsed=0.000973s)
-  temp copy file (/home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_temp_table_copy.csv)
+  copy temp table: YES (bytes=149, elapsed=0.002326s)
+  temp copy file (/home/default/pg_backup_probe/results/probe4_temp_table_copy.csv)
 
 [Sample table row count]
-  sample table fallback (requested=public.acct_trans, using=public.resultset_test)
-  sample table exists: YES (public.resultset_test)
-  sample table row_count (50000)
+  sample table fallback (requested=public.acct_trans, using=job_manager.user_roles)
+  sample table exists: YES (job_manager.user_roles)
+  sample table row_count (1)
 
 [Sample table COPY throughput]
-  sample table copy: YES (rows=50000, bytes=1766812, rows_per_sec=451735.84, bytes_per_sec=15962645.94)
-  sample copy preview file (/home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_sample_copy_preview.csv)
+  sample table copy: YES (rows=1, bytes=6, rows_per_sec=1571.49, bytes_per_sec=9428.93)
+  sample copy preview file (/home/default/pg_backup_probe/results/probe4_sample_copy_preview.csv)
 
 [Connection close]
   close connection: YES
 
 [Metrics file written]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe4_metrics.json
+  /home/default/pg_backup_probe/results/probe4_metrics.json

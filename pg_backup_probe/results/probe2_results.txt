@@ -1,85 +1,44 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
-  Results dir: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/pg_backup_probe
+  Results dir: /home/default/pg_backup_probe/results
 
 [pg8000 import]
   pg8000: YES (1.31.5)
 
 [Database list]
   connect admin: YES (postgres@localhost:5432/postgres)
-  pg_database query: YES (32 database(s))
-  ca_2023: owner=postgres, template=False, allow_conn=True, size_bytes=23044623
-  ca_2023 top tables (public.core_postal_code_record=7602176, public.acct_trans=311296, public.org=245760, public.itm_items=229376, public.acct_entry=212992)
-  ca_2024: owner=postgres, template=False, allow_conn=True, size_bytes=28628671
-  ca_2024 top tables (public.core_postal_code_record=7602176, public.acct_entry=385024, public.acct_trans=376832, public.org=262144, public.itm_items=229376)
-  ca_2024_rec_inv: owner=postgres, template=False, allow_conn=True, size_bytes=21938703
-  ca_2024_rec_inv top tables (public.core_postal_code_record=8658944, public.acct_trans=311296, public.itm_items=229376, public.acct_entry=212992, public.org=212992)
-  carlisle_2025: owner=postgres, template=False, allow_conn=True, size_bytes=20354751
-  carlisle_2025 top tables (public.core_postal_code_record=7602176, public.org=262144, public.itm_items=229376, public.acct_trans=155648, public.org_address=131072)
-  contacts: owner=postgres, template=False, allow_conn=True, size_bytes=7913999
-  contacts top tables (public.contact=32768)
-  django_probe: owner=postgres, template=False, allow_conn=True, size_bytes=8533695
-  django_probe top tables (public.auth_user=65536, public.auth_permission=57344, public.django_content_type=40960, public.auth_group_permissions=32768, public.auth_user_groups=32768)
-  django_probe_ascii: owner=postgres, template=False, allow_conn=True, size_bytes=7845567
-  django_probe_ascii top tables (none)
-  fertdebtest: owner=postgres, template=False, allow_conn=True, size_bytes=8929807
-  fertdebtest top tables (public.measurement_units=65536, public.fertilizer_cmd_ctr_settings=49152, public.fields=49152, public.license_agreement_acceptance=49152, public.schema_migrations=49152)
-  fertilizer_cmd_ctr: owner=postgres, template=False, allow_conn=True, size_bytes=8864271
-  fertilizer_cmd_ctr top tables (public.measurement_units=65536, public.license_agreement_acceptance=49152, public.schema_migrations=49152, public.categories=40960, public.job_fields=40960)
-  fertilizer_cmd_test: owner=postgres, template=False, allow_conn=True, size_bytes=9576975
-  fertilizer_cmd_test top tables (public.job_batch_products=122880, public.job_batches=90112, public.job_fields=81920, public.job_products=73728, public.fertilizer_cmd_ctr_settings=65536)
-  gts_rental_ca_backup: owner=postgres, template=False, allow_conn=True, size_bytes=24786623
-  gts_rental_ca_backup top tables (public.core_postal_code_record=7602176, public.acct_entry=679936, public.org=450560, public.acct_trans=385024, public.itm_items=270336)
-  gts_rental_scheduler_app_backup: owner=postgres, template=False, allow_conn=True, size_bytes=10961423
-  gts_rental_scheduler_app_backup top tables (public.rental_scheduler_contract=1032192, public.rental_scheduler_customer=892928, public.rental_scheduler_trailer=188416, public.rental_scheduler_trailerservice=122880, public.auth_permission=57344)
-  gts_scheduler: owner=postgres, template=False, allow_conn=True, size_bytes=7815695
-  gts_scheduler top tables (none)
-  gts_scheduler_shop: owner=postgres, template=False, allow_conn=True, size_bytes=10166799
-  gts_scheduler_shop top tables (public.rental_scheduler_job=278528, public.rental_scheduler_callreminder=139264, public.auth_permission=90112, public.rental_scheduler_workorderv2=81920, public.rental_scheduler_calendar=57344)
-  highline_db: owner=highline, template=False, allow_conn=True, size_bytes=7815695
-  highline_db top tables (none)
-  kah_2025: owner=postgres, template=False, allow_conn=True, size_bytes=8192527
-  kah_2025 top tables (public.customers=65536, public.subscriptions=49152, kah_manager.last_issue=24576, kah_manager.subscriptions=24576, public.last_issue=24576)
-  kahtest: owner=postgres, template=False, allow_conn=True, size_bytes=8110607
-  kahtest top tables (public.customers=65536, public.subscriptions=49152, public.last_issue=24576)
-  post_frame: owner=postgres, template=False, allow_conn=True, size_bytes=10863119
-  post_frame top tables (public.usages=172032, public.fr_framing_material_options=65536, public.colors=49152, public.foundations=32768, public.fr_building_colors=32768)
-  postgres: owner=postgres, template=False, allow_conn=True, size_bytes=16045759
-  postgres top tables (public.resultset_test=4513792, public.benchmark_test=1179648, job_manager.user_roles=73728, job_manager.documents=49152, job_manager.settings=49152)
-  qualitysips: owner=postgres, template=False, allow_conn=True, size_bytes=9314831
-  qualitysips top tables (public.orders_buildinginfo=81920, public.auth_permission=57344, public.orders_order=57344, public.orders_invoice=49152, public.django_content_type=40960)
-  scheduling_josiah: owner=postgres, template=False, allow_conn=True, size_bytes=7954959
-  scheduling_josiah top tables (scheduling.categories=32768, scheduling.entry=32768)
-  sgr_dev: owner=postgres, template=False, allow_conn=True, size_bytes=52584975
-  sgr_dev top tables (public.imports_importrow=30752768, public.inventory_part=2383872, public.inventory_partvendor=1884160, public.inventory_machinepart=1531904, public.inventory_enginepart=1490944)
-  sunrisedairy: owner=postgres, template=False, allow_conn=True, size_bytes=14787087
-  sunrisedairy top tables (public.deliveries_deliveryproduct=4096000, public.deliveries_delivery=532480, public.ordering_storeorder=237568, public.invoicing_quickbooksdocumentjob=180224, public.ordering_orderconfirmationjob=131072)
-  sunrisedairy_backup: owner=postgres, template=False, allow_conn=True, size_bytes=16015887
-  sunrisedairy_backup top tables (public.deliveries_deliveryproduct=4227072, public.deliveries_delivery=540672, public.invoicing_quickbooksinvoiceconflict=286720, public.invoicing_quickbooksinvoicesyncattempt=278528, public.ordering_storeorder=262144)
-  sunrisedairy_backup2: owner=postgres, template=False, allow_conn=True, size_bytes=15958543
-  sunrisedairy_backup2 top tables (public.deliveries_deliveryproduct=4366336, public.deliveries_delivery=614400, public.invoicing_quickbooksdocumentjob=253952, public.invoicing_quickbooksinvoicesyncattempt=245760, public.ordering_storeorder=245760)
-  template0: owner=postgres, template=True, allow_conn=False, size_bytes=7845567
-  template1: owner=postgres, template=True, allow_conn=True, size_bytes=7976639
-  test_db: owner=postgres, template=False, allow_conn=True, size_bytes=10011151
-  test_db top tables (public.measurement_units=65536, public.rental_scheduler_contract=65536, public.auth_permission=57344, public.fertilizercmdctrsettings=49152, public.fields=49152)
-  test_gts_rental_ca_backup: owner=postgres, template=False, allow_conn=True, size_bytes=7881231
-  test_gts_rental_ca_backup top tables (public.django_migrations=32768)
-  test_sgr_dev: owner=sgr_user, template=False, allow_conn=True, size_bytes=14459407
-  test_sgr_dev top tables (public.auth_permission=122880, public.inventory_engine=106496, public.inventory_part=98304, public.inventory_partattributevalue=90112, public.django_content_type=73728)
-  unique-suite-jake-beiler: owner=postgres, template=False, allow_conn=True, size_bytes=11174415
-  unique-suite-jake-beiler top tables (public.job_departments=712704, public.jobs=352256, public.job_schedule=229376, public.django_session=98304, public.auth_permission=90112)
-  unique-suite-jake-beiler_prod_backup: owner=postgres, template=False, allow_conn=True, size_bytes=10174991
-  unique-suite-jake-beiler_prod_backup top tables (public.job_departments=147456, public.jobs=147456, public.job_schedule=131072, public.django_session=98304, public.auth_permission=90112)
+  pg_database query: YES (11 database(s))
+  classcheduler: owner=postgres, template=False, allow_conn=True, size_bytes=6752440
+  classcheduler top tables (class_scheduler.schema_migrations=49152, class_scheduler.sessionattendee=32768, class_scheduler.employeecontract=16384, class_scheduler.trainingsession=16384, class_scheduler.employee=8192)
+  classicaccounting: owner=postgres, template=False, allow_conn=True, size_bytes=24684728
+  classicaccounting top tables (public.core_postal_code_record=7593984, public.acct_entry=745472, public.acct_trans=368640, public.org=262144, public.itm_items=229376)
+  default_db: owner=postgres, template=False, allow_conn=True, size_bytes=28721668
+  default_db top tables (public.core_postal_code_record=16187392, public.itm_items=262144, public.org=245760, public.acct_trans=155648, public.org_address=122880)
+  django_probe: owner=postgres, template=False, allow_conn=True, size_bytes=6449336
+  django_probe top tables (none)
+  fertilizer: owner=postgres, template=False, allow_conn=True, size_bytes=7760056
+  fertilizer top tables (public.job_batch_products=106496, public.job_fields=73728, public.job_products=73728, public.products=65536, public.fertilizer_cmd_ctr_settings=57344)
+  fertilizer1: owner=postgres, template=False, allow_conn=True, size_bytes=7784632
+  fertilizer1 top tables (public.job_fields=81920, public.fertilizer_cmd_ctr_settings=73728, public.job_batch_products=73728, public.job_products=73728, public.products=65536)
+  fertilizer_cmd_ctr: owner=postgres, template=False, allow_conn=True, size_bytes=7760056
+  fertilizer_cmd_ctr top tables (public.job_fields=81920, public.job_batch_products=73728, public.job_products=73728, public.products=65536, public.job_batches=57344)
+  postgres: owner=postgres, template=False, allow_conn=True, size_bytes=7776440
+  postgres top tables (job_manager.user_roles=73728, job_manager.items=57344, job_manager.steps=57344, job_manager.documents=49152, job_manager.settings=49152)
+  puppy: owner=postgres, template=False, allow_conn=True, size_bytes=7194808
+  puppy top tables (public.schema_migrations=49152, public.puppies=40960, public.puppy_shots=40960, public.status=40960, public.animal_breeds=32768)
+  template0: owner=postgres, template=True, allow_conn=False, size_bytes=6332932
+  template1: owner=postgres, template=True, allow_conn=True, size_bytes=6332932
   close admin connection: YES
 
 [Summary]
-  database_count=32
-  connectable_database_count=30
-  total_database_bytes=436528992
-  total_non_system_tables=1048
-  total_non_system_table_bytes=150609920
-  largest_table=sgr_dev:public.imports_importrow:30752768
+  database_count=11
+  connectable_database_count=9
+  total_database_bytes=117550028
+  total_non_system_tables=286
+  total_non_system_table_bytes=38215680
+  largest_table=default_db:public.core_postal_code_record:16187392
 
 [Inventory JSON written]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe2_inventory.json
+  /home/default/pg_backup_probe/results/probe2_inventory.json

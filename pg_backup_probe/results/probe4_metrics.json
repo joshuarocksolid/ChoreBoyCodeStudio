@@ -10,18 +10,18 @@
     "supported": true
   },
   "fallback_select_scan": {},
-  "sample_table": "public.resultset_test",
+  "sample_table": "job_manager.user_roles",
   "sample_table_copy": {
-    "bytes": 1766812,
-    "bytes_per_second": 15962645.939406734,
-    "elapsed_seconds": 0.11068415641784668,
+    "bytes": 6,
+    "bytes_per_second": 9428.933683027351,
+    "elapsed_seconds": 0.0006363391876220703,
     "method": "COPY TO STDOUT WITH CSV",
-    "row_count": 50000,
-    "rows_per_second": 451735.83662004594
+    "row_count": 1,
+    "rows_per_second": 1571.4889471712252
   },
   "temp_table_copy": {
     "bytes": 149,
-    "elapsed_seconds": 0.0009732246398925781,
+    "elapsed_seconds": 0.0023260116577148438,
     "line_count": 5,
     "preview": [
       "id,txt,amount,created_at,is_active",

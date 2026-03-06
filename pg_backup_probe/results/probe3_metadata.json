@@ -1,34 +1,22 @@
 {
   "columns": [
     {
-      "default": "nextval('job_manager.addresses_id_seq'::regclass)",
+      "default": "nextval('job_manager.user_roles_id_seq'::regclass)",
       "name": "id",
       "not_null": true,
       "type": "integer"
     },
     {
       "default": null,
-      "name": "address_line",
+      "name": "user_id",
       "not_null": true,
-      "type": "character varying(255)"
+      "type": "integer"
     },
     {
       "default": null,
-      "name": "city",
+      "name": "role_id",
       "not_null": true,
-      "type": "character varying(100)"
-    },
-    {
-      "default": null,
-      "name": "state",
-      "not_null": true,
-      "type": "character varying(100)"
-    },
-    {
-      "default": null,
-      "name": "zip_code",
-      "not_null": true,
-      "type": "character varying(20)"
+      "type": "integer"
     }
   ],
   "connection": {
@@ -38,11 +26,30 @@
     "user": "postgres"
   },
   "constraints": {
-    "foreign_keys": [],
+    "foreign_keys": [
+      {
+        "constraint_name": "user_roles_role_id_fkey",
+        "delete_rule": "CASCADE",
+        "foreign_columns": "id",
+        "foreign_table_name": "roles",
+        "foreign_table_schema": "job_manager",
+        "local_columns": "role_id",
+        "update_rule": "NO ACTION"
+      },
+      {
+        "constraint_name": "user_roles_user_id_fkey",
+        "delete_rule": "CASCADE",
+        "foreign_columns": "id",
+        "foreign_table_name": "users",
+        "foreign_table_schema": "job_manager",
+        "local_columns": "user_id",
+        "update_rule": "NO ACTION"
+      }
+    ],
     "primary_or_unique": [
       {
         "column_list": "id",
-        "constraint_name": "addresses_pkey",
+        "constraint_name": "user_roles_pkey",
         "constraint_type": "PRIMARY KEY"
       }
     ]
@@ -50,13 +57,25 @@
   "functions_sample": [],
   "indexes": [
     {
-      "definition": "CREATE UNIQUE INDEX addresses_pkey ON job_manager.addresses USING btree (id)",
-      "name": "addresses_pkey"
+      "definition": "CREATE UNIQUE INDEX user_roles_pkey ON job_manager.user_roles USING btree (id)",
+      "name": "user_roles_pkey"
+    },
+    {
+      "definition": "CREATE INDEX userrole_role_id ON job_manager.user_roles USING btree (role_id)",
+      "name": "userrole_role_id"
+    },
+    {
+      "definition": "CREATE INDEX userrole_user_id ON job_manager.user_roles USING btree (user_id)",
+      "name": "userrole_user_id"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX userrole_user_id_role_id ON job_manager.user_roles USING btree (user_id, role_id)",
+      "name": "userrole_user_id_role_id"
     }
   ],
   "sequence_defaults": [
     {
-      "column_default": "nextval('job_manager.addresses_id_seq'::regclass)",
+      "column_default": "nextval('job_manager.user_roles_id_seq'::regclass)",
       "column_name": "id"
     }
   ],
@@ -127,8 +146,8 @@
     }
   ],
   "table": {
-    "name": "addresses",
-    "qualified_name": "job_manager.addresses",
+    "name": "user_roles",
+    "qualified_name": "job_manager.user_roles",
     "schema": "job_manager"
   },
   "views_sample": []

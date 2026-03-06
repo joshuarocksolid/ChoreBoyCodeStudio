@@ -1,6 +1,7 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/pg_backup_probe
   Table sample count: 8
 
 [pg8000 import]
@@ -10,67 +11,46 @@
   inventory: YES (loaded from probe2_inventory.json)
 
 [Representative table sample]
-  sgr_dev:public.imports_importrow size_bytes=30752768
-  ca_2024_rec_inv:public.core_postal_code_record size_bytes=8658944
-  ca_2023:public.core_postal_code_record size_bytes=7602176
-  ca_2024:public.core_postal_code_record size_bytes=7602176
-  carlisle_2025:public.core_postal_code_record size_bytes=7602176
-  gts_rental_ca_backup:public.core_postal_code_record size_bytes=7602176
-  postgres:public.resultset_test size_bytes=4513792
-  sunrisedairy_backup2:public.deliveries_deliveryproduct size_bytes=4366336
+  default_db:public.core_postal_code_record size_bytes=16187392
+  classicaccounting:public.core_postal_code_record size_bytes=7593984
+  classicaccounting:public.acct_entry size_bytes=745472
+  classicaccounting:public.acct_trans size_bytes=368640
+  classicaccounting:public.org size_bytes=262144
+  default_db:public.itm_items size_bytes=262144
+  default_db:public.org size_bytes=245760
+  classicaccounting:public.itm_items size_bytes=229376
 
 [Timed export sample]
-  public.imports_importrow: YES (db=sgr_dev, rows=18000, bytes=20302102, bytes_per_sec=106478219.52)
-  public.core_postal_code_record: YES (db=ca_2024_rec_inv, rows=43628, bytes=2556806, bytes_per_sec=26551837.46)
-  public.core_postal_code_record: YES (db=ca_2023, rows=43628, bytes=2556806, bytes_per_sec=26962933.92)
-  public.core_postal_code_record: YES (db=ca_2024, rows=43628, bytes=2556806, bytes_per_sec=26765823.56)
-  public.core_postal_code_record: YES (db=carlisle_2025, rows=43628, bytes=2556806, bytes_per_sec=27334883.85)
-  public.core_postal_code_record: YES (db=gts_rental_ca_backup, rows=43628, bytes=2556806, bytes_per_sec=27125249.48)
-  public.resultset_test: YES (db=postgres, rows=50000, bytes=1766812, bytes_per_sec=16526790.25)
-  public.deliveries_deliveryproduct: YES (db=sunrisedairy_backup2, rows=23410, bytes=936842, bytes_per_sec=17101598.78)
+  public.core_postal_code_record: YES (db=default_db, rows=43628, bytes=2556806, bytes_per_sec=25744366.05)
+  public.core_postal_code_record: YES (db=classicaccounting, rows=43628, bytes=2556806, bytes_per_sec=27211698.76)
+  public.acct_entry: YES (db=classicaccounting, rows=863, bytes=151781, bytes_per_sec=65861334.10)
+  public.acct_trans: YES (db=classicaccounting, rows=172, bytes=34142, bytes_per_sec=42964874.64)
+  public.org: YES (db=classicaccounting, rows=6, bytes=1097, bytes_per_sec=4528692.41)
+  public.itm_items: YES (db=default_db, rows=4, bytes=858, bytes_per_sec=2369132.87)
+  public.org: YES (db=default_db, rows=4, bytes=620, bytes_per_sec=2517394.46)
+  public.itm_items: YES (db=classicaccounting, rows=8, bytes=2018, bytes_per_sec=7673713.03)
 
 [Feasibility summary]
   inventory_source=probe2_inventory.json
-  total_non_system_table_bytes=150609920
+  total_non_system_table_bytes=38215680
   sampled_tables=8
   successful_samples=8
-  aggregate_bytes_per_second=43287208.38
-  aggregate_rows_per_second=374396.07
-  estimated_total_backup_seconds=3.48
-  estimated_total_backup_human=3.5s
+  aggregate_bytes_per_second=26857999.15
+  aggregate_rows_per_second=447181.98
+  estimated_total_backup_seconds=1.42
+  estimated_total_backup_human=1.4s
   recommendation=Full all-database backup in one run is feasible as a manual user action.
 
 [Per-database estimated durations]
-  sgr_dev: bytes=42033152, estimated=1.0s
-  ca_2024: bytes=15138816, estimated=0.3s
-  gts_rental_ca_backup: bytes=13516800, estimated=0.3s
-  ca_2023: bytes=12255232, estimated=0.3s
-  ca_2024_rec_inv: bytes=12173312, estimated=0.3s
-  carlisle_2025: bytes=10444800, estimated=0.2s
-  sunrisedairy_backup: bytes=7274496, estimated=0.2s
-  sunrisedairy_backup2: bytes=7233536, estimated=0.2s
-  postgres: bytes=6971392, estimated=0.2s
-  sunrisedairy: bytes=6242304, estimated=0.1s
-  test_sgr_dev: bytes=2957312, estimated=0.1s
-  gts_rental_scheduler_app_backup: bytes=2637824, estimated=0.1s
-  unique-suite-jake-beiler: bytes=2408448, estimated=0.1s
-  post_frame: bytes=1589248, estimated=0.0s
-  unique-suite-jake-beiler_prod_backup: bytes=1523712, estimated=0.0s
-  test_db: bytes=1212416, estimated=0.0s
-  fertilizer_cmd_test: bytes=1114112, estimated=0.0s
-  gts_scheduler_shop: bytes=1073152, estimated=0.0s
-  qualitysips: bytes=753664, estimated=0.0s
-  fertdebtest: bytes=647168, estimated=0.0s
-  fertilizer_cmd_ctr: bytes=606208, estimated=0.0s
-  django_probe: bytes=344064, estimated=0.0s
-  kah_2025: bytes=188416, estimated=0.0s
-  kahtest: bytes=139264, estimated=0.0s
-  scheduling_josiah: bytes=65536, estimated=0.0s
-  contacts: bytes=32768, estimated=0.0s
-  test_gts_rental_ca_backup: bytes=32768, estimated=0.0s
-  django_probe_ascii: bytes=0, estimated=0.0s
-  gts_scheduler: bytes=0, estimated=0.0s
-  highline_db: bytes=0, estimated=0.0s
+  default_db: bytes=20127744, estimated=0.7s
+  classicaccounting: bytes=14327808, estimated=0.5s
+  fertilizer: bytes=843776, estimated=0.0s
+  fertilizer1: bytes=843776, estimated=0.0s
+  fertilizer_cmd_ctr: bytes=843776, estimated=0.0s
+  postgres: bytes=753664, estimated=0.0s
+  puppy: bytes=335872, estimated=0.0s
+  classcheduler: bytes=139264, estimated=0.0s
+  django_probe: bytes=0, estimated=0.0s
 
 [Feasibility JSON written]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe6_feasibility.json
+  /home/default/pg_backup_probe/results/probe6_feasibility.json

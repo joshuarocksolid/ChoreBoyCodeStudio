@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+
 from PySide2.QtCore import QPointF, QRectF, Qt
-from PySide2.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
+from PySide2.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 
 _SIZE = 16
@@ -261,6 +264,36 @@ _ICON_BUILDERS: dict[str, tuple[str, bool]] = {
     "shell.action.run.removeAllBreakpoints": ("remove_all_breakpoints", False),
     "shell.action.build.package": ("package", True),
 }
+
+
+def generate_tab_close_icon(color: str, path: str) -> str:
+    size = 16
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(color))
+    pen.setWidthF(1.6)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    margin = 5
+    p.drawLine(margin, margin, size - margin, size - margin)
+    p.drawLine(size - margin, margin, margin, size - margin)
+    p.end()
+    pm.save(path, "PNG")
+    return path
+
+
+def ensure_tab_close_icons(
+    normal_color: str,
+    hover_color: str,
+) -> tuple[str, str]:
+    tmp = tempfile.gettempdir()
+    normal_path = os.path.join(tmp, "cbcs_tab_close.png")
+    hover_path = os.path.join(tmp, "cbcs_tab_close_hover.png")
+    generate_tab_close_icon(normal_color, normal_path)
+    generate_tab_close_icon(hover_color, hover_path)
+    return normal_path, hover_path
 
 
 def build_toolbar_icon(action_id: str, accent_color: str) -> QIcon | None:

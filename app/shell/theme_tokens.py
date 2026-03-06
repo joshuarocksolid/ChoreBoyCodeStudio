@@ -61,6 +61,8 @@ class ShellThemeTokens:
     syntax_semantic_variable: str = ""
     syntax_semantic_property: str = ""
     syntax_semantic_constant: str = ""
+    tab_close_icon_path: str = ""
+    tab_close_icon_hover_path: str = ""
 
 
 def tokens_from_palette(

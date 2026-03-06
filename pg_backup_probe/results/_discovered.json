@@ -1,0 +1,41 @@
+{
+  "binaries": {
+    "initdb": [],
+    "pg_ctl": [],
+    "pg_dump": [],
+    "pg_dumpall": [],
+    "pg_restore": [],
+    "postgres": [],
+    "psql": []
+  },
+  "connection": {
+    "database": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres"
+  },
+  "postgres_server": {
+    "config_file": "/home/PG_data/postgresql.conf",
+    "data_directory": "/home/PG_data",
+    "databases": [
+      "classcheduler",
+      "classicaccounting",
+      "default_db",
+      "django_probe",
+      "fertilizer",
+      "fertilizer1",
+      "fertilizer_cmd_ctr",
+      "postgres",
+      "puppy",
+      "template1"
+    ],
+    "hba_file": "/home/PG_data/pg_hba.conf",
+    "ident_file": "/home/PG_data/pg_ident.conf",
+    "server_version": "9.3.6"
+  },
+  "runtime": {
+    "executable": "/opt/freecad/usr/bin/FreeCAD",
+    "probe_root": "/home/default/pg_backup_probe",
+    "python_version": "3.9.2 (default, Feb 28 2021, 17:03:44) \n[GCC 10.2.1 20210110]"
+  }
+}

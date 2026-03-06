@@ -36,24 +36,24 @@
     </parameter>
 
     <field name="item_name" class="java.lang.String">
-        <fieldDescription><![CDATA[item_name]]></fieldDescription>
         <property name="net.sf.jasperreports.csv.column.index" value="0"/>
+        <fieldDescription><![CDATA[item_name]]></fieldDescription>
     </field>
     <field name="quantity" class="java.lang.String">
-        <fieldDescription><![CDATA[quantity]]></fieldDescription>
         <property name="net.sf.jasperreports.csv.column.index" value="1"/>
+        <fieldDescription><![CDATA[quantity]]></fieldDescription>
     </field>
     <field name="unit_price" class="java.lang.String">
-        <fieldDescription><![CDATA[unit_price]]></fieldDescription>
         <property name="net.sf.jasperreports.csv.column.index" value="2"/>
+        <fieldDescription><![CDATA[unit_price]]></fieldDescription>
     </field>
     <field name="paid" class="java.lang.String">
-        <fieldDescription><![CDATA[paid]]></fieldDescription>
         <property name="net.sf.jasperreports.csv.column.index" value="3"/>
+        <fieldDescription><![CDATA[paid]]></fieldDescription>
     </field>
     <field name="notes" class="java.lang.String">
-        <fieldDescription><![CDATA[notes]]></fieldDescription>
         <property name="net.sf.jasperreports.csv.column.index" value="4"/>
+        <fieldDescription><![CDATA[notes]]></fieldDescription>
     </field>
 
     <title>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import time
@@ -142,6 +143,7 @@ from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
+from app.shell.toolbar_icons import ensure_tab_close_icons
 from app.project.project_tree import build_project_tree
 from app.project.run_configs import (
     env_overrides_to_text,
@@ -566,6 +568,14 @@ class MainWindow(QMainWindow):
         self._is_applying_theme_styles = True
         try:
             tokens = self._resolve_theme_tokens()
+            close_normal, close_hover = ensure_tab_close_icons(
+                tokens.text_muted, tokens.text_primary,
+            )
+            tokens = replace(
+                tokens,
+                tab_close_icon_path=close_normal,
+                tab_close_icon_hover_path=close_hover,
+            )
             self.setStyleSheet(build_shell_style_sheet(tokens))
             for editor_widget in self._editor_widgets_by_path.values():
                 editor_widget.apply_theme(tokens)

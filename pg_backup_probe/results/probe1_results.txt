@@ -1,131 +1,36 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Executable: /home/joshua/.pyenv/versions/3.14.1/bin/python3
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
-  Results dir: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Executable: /opt/freecad/usr/bin/FreeCAD
+  Probe root: /home/default/pg_backup_probe
+  Results dir: /home/default/pg_backup_probe/results
 
 [PostgreSQL client binary search]
-  pg_dump: 5 candidate(s)
-    /usr/bin/pg_dump
-      exists=True read=True exec=True code=0
-      version=pg_dump (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-    /usr/lib/postgresql/13/bin/pg_dump
-      exists=True read=True exec=True code=0
-      version=pg_dump (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/pg_dump
-      exists=True read=True exec=True code=0
-      version=pg_dump (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/pg_dump
-      exists=True read=True exec=True code=0
-      version=pg_dump (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/pg_dump
-      exists=True read=True exec=True code=0
-      version=pg_dump (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  pg_dumpall: 5 candidate(s)
-    /usr/bin/pg_dumpall
-      exists=True read=True exec=True code=0
-      version=pg_dumpall (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-    /usr/lib/postgresql/13/bin/pg_dumpall
-      exists=True read=True exec=True code=0
-      version=pg_dumpall (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/pg_dumpall
-      exists=True read=True exec=True code=0
-      version=pg_dumpall (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/pg_dumpall
-      exists=True read=True exec=True code=0
-      version=pg_dumpall (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/pg_dumpall
-      exists=True read=True exec=True code=0
-      version=pg_dumpall (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  pg_restore: 5 candidate(s)
-    /usr/bin/pg_restore
-      exists=True read=True exec=True code=0
-      version=pg_restore (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-    /usr/lib/postgresql/13/bin/pg_restore
-      exists=True read=True exec=True code=0
-      version=pg_restore (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/pg_restore
-      exists=True read=True exec=True code=0
-      version=pg_restore (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/pg_restore
-      exists=True read=True exec=True code=0
-      version=pg_restore (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/pg_restore
-      exists=True read=True exec=True code=0
-      version=pg_restore (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  psql: 5 candidate(s)
-    /usr/bin/psql
-      exists=True read=True exec=True code=0
-      version=psql (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-    /usr/lib/postgresql/13/bin/psql
-      exists=True read=True exec=True code=0
-      version=psql (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/psql
-      exists=True read=True exec=True code=0
-      version=psql (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/psql
-      exists=True read=True exec=True code=0
-      version=psql (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/psql
-      exists=True read=True exec=True code=0
-      version=psql (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  postgres: 4 candidate(s)
-    /usr/lib/postgresql/13/bin/postgres
-      exists=True read=True exec=True code=0
-      version=postgres (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/postgres
-      exists=True read=True exec=True code=0
-      version=postgres (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/postgres
-      exists=True read=True exec=True code=0
-      version=postgres (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/postgres
-      exists=True read=True exec=True code=0
-      version=postgres (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  pg_ctl: 4 candidate(s)
-    /usr/lib/postgresql/13/bin/pg_ctl
-      exists=True read=True exec=True code=0
-      version=pg_ctl (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/pg_ctl
-      exists=True read=True exec=True code=0
-      version=pg_ctl (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/pg_ctl
-      exists=True read=True exec=True code=0
-      version=pg_ctl (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/pg_ctl
-      exists=True read=True exec=True code=0
-      version=pg_ctl (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
-  initdb: 4 candidate(s)
-    /usr/lib/postgresql/13/bin/initdb
-      exists=True read=True exec=True code=0
-      version=initdb (PostgreSQL) 13.23 (Debian 13.23-1.pgdg12+1)
-    /usr/lib/postgresql/15/bin/initdb
-      exists=True read=True exec=True code=0
-      version=initdb (PostgreSQL) 15.17 (Debian 15.17-1.pgdg12+1)
-    /usr/lib/postgresql/17/bin/initdb
-      exists=True read=True exec=True code=0
-      version=initdb (PostgreSQL) 17.9 (Debian 17.9-1.pgdg12+1)
-    /usr/lib/postgresql/18/bin/initdb
-      exists=True read=True exec=True code=0
-      version=initdb (PostgreSQL) 18.3 (Debian 18.3-1.pgdg12+1)
+  pg_dump (not found)
+  pg_dumpall (not found)
+  pg_restore (not found)
+  psql (not found)
+  postgres (not found)
+  pg_ctl (not found)
+  initdb (not found)
 
 [pg8000 import]
   pg8000: YES (1.31.5)
 
 [PostgreSQL server facts]
   connect: YES (postgres@localhost:5432/postgres)
-  server_version: 18.3 (Debian 18.3-1.pgdg12+1)
-  data_directory: /var/lib/postgresql/18/main
-  config_file: /etc/postgresql/18/main/postgresql.conf
-  hba_file: /etc/postgresql/18/main/pg_hba.conf
-  ident_file: /etc/postgresql/18/main/pg_ident.conf
-  databases: ca_2023, ca_2024, ca_2024_rec_inv, carlisle_2025, contacts, django_probe, django_probe_ascii, fertdebtest, fertilizer_cmd_ctr, fertilizer_cmd_test, gts_rental_ca_backup, gts_rental_scheduler_app_backup, gts_scheduler, gts_scheduler_shop, highline_db, kah_2025, kahtest, post_frame, postgres, qualitysips, scheduling_josiah, sgr_dev, sunrisedairy, sunrisedairy_backup, sunrisedairy_backup2, template1, test_db, test_gts_rental_ca_backup, test_sgr_dev, unique-suite-jake-beiler, unique-suite-jake-beiler_prod_backup
+  server_version: 9.3.6
+  data_directory: /home/PG_data
+  config_file: /home/PG_data/postgresql.conf
+  hba_file: /home/PG_data/pg_hba.conf
+  ident_file: /home/PG_data/pg_ident.conf
+  databases: classcheduler, classicaccounting, default_db, django_probe, fertilizer, fertilizer1, fertilizer_cmd_ctr, postgres, puppy, template1
   close connection: YES
 
 [Discovery summary]
-  pg_dump: YES (/usr/bin/pg_dump, /usr/lib/postgresql/13/bin/pg_dump, /usr/lib/postgresql/15/bin/pg_dump, /usr/lib/postgresql/17/bin/pg_dump, /usr/lib/postgresql/18/bin/pg_dump)
-  pg_dumpall: YES (/usr/bin/pg_dumpall, /usr/lib/postgresql/13/bin/pg_dumpall, /usr/lib/postgresql/15/bin/pg_dumpall, /usr/lib/postgresql/17/bin/pg_dumpall, /usr/lib/postgresql/18/bin/pg_dumpall)
-  psql: YES (/usr/bin/psql, /usr/lib/postgresql/13/bin/psql, /usr/lib/postgresql/15/bin/psql, /usr/lib/postgresql/17/bin/psql, /usr/lib/postgresql/18/bin/psql)
+  pg_dump (not found)
+  pg_dumpall (not found)
+  psql (not found)
 
 [Discovery file written]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/_discovered.json
+  /home/default/pg_backup_probe/_discovered.json

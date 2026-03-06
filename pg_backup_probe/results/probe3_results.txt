@@ -1,6 +1,7 @@
 [Runtime]
-  Python: 3.14.1 (main, Dec  4 2025, 20:26:12) [GCC 12.2.0]
-  Probe root: /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe
+  Python: 3.9.2 (default, Feb 28 2021, 17:03:44) 
+[GCC 10.2.1 20210110]
+  Probe root: /home/default/pg_backup_probe
   Target database: postgres
   Sample table: public.acct_trans
 
@@ -11,31 +12,34 @@
   connect: YES (postgres@localhost:5432/postgres)
 
 [Table existence]
-  sample table fallback (requested=public.acct_trans, using=job_manager.addresses)
-  table exists: YES (job_manager.addresses)
+  sample table fallback (requested=public.acct_trans, using=job_manager.user_roles)
+  table exists: YES (job_manager.user_roles)
 
 [Columns]
-  id: type=integer not_null=True default=nextval('job_manager.addresses_id_seq'::regclass)
-  address_line: type=character varying(255) not_null=True default=None
-  city: type=character varying(100) not_null=True default=None
-  state: type=character varying(100) not_null=True default=None
-  zip_code: type=character varying(20) not_null=True default=None
-  column_count: YES (5)
+  id: type=integer not_null=True default=nextval('job_manager.user_roles_id_seq'::regclass)
+  user_id: type=integer not_null=True default=None
+  role_id: type=integer not_null=True default=None
+  column_count: YES (3)
 
 [Primary key and unique constraints]
-  addresses_pkey: type=PRIMARY KEY columns=id
+  user_roles_pkey: type=PRIMARY KEY columns=id
   primary_or_unique_count (1)
 
 [Foreign keys]
-  foreign_key_count (0)
+  user_roles_role_id_fkey: (role_id) -> job_manager.roles (id) update=NO ACTION delete=CASCADE
+  user_roles_user_id_fkey: (user_id) -> job_manager.users (id) update=NO ACTION delete=CASCADE
+  foreign_key_count (2)
 
 [Indexes]
-  addresses_pkey: CREATE UNIQUE INDEX addresses_pkey ON job_manager.addresses USING btree (id)
-  index_count (1)
+  user_roles_pkey: CREATE UNIQUE INDEX user_roles_pkey ON job_manager.user_roles USING btree (id)
+  userrole_role_id: CREATE INDEX userrole_role_id ON job_manager.user_roles USING btree (role_id)
+  userrole_user_id: CREATE INDEX userrole_user_id ON job_manager.user_roles USING btree (user_id)
+  userrole_user_id_role_id: CREATE UNIQUE INDEX userrole_user_id_role_id ON job_manager.user_roles USING btree (user_id, role_id)
+  index_count (4)
 
 [Sequences]
   sequence_count_in_schema (16)
-  id: nextval('job_manager.addresses_id_seq'::regclass)
+  id: nextval('job_manager.user_roles_id_seq'::regclass)
   sequence_defaults_on_table (1)
 
 [Views sample]
@@ -48,8 +52,8 @@
   close connection: YES
 
 [Generated SQL]
-  generated_statement_count=3
+  generated_statement_count=8
 
 [Generated files]
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe3_extracted_ddl.sql
-  /home/joshua/Documents/RandomDevStuff/ChoreBoyCodeStudio/pg_backup_probe/results/probe3_metadata.json
+  /home/default/pg_backup_probe/results/probe3_extracted_ddl.sql
+  /home/default/pg_backup_probe/results/probe3_metadata.json
