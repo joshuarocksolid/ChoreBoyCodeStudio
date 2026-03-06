@@ -34,6 +34,21 @@ def parse_global_exclude_patterns(settings_payload: Mapping[str, Any]) -> list[s
     return patterns if patterns else list(DEFAULT_EXCLUDE_PATTERNS)
 
 
+def parse_project_exclude_patterns(settings_payload: Mapping[str, Any]) -> list[str]:
+    """Parse project-scoped exclude patterns without implicit defaults."""
+    raw = settings_payload.get(constants.UI_FILE_EXCLUDES_SETTINGS_KEY, {})
+    if not isinstance(raw, dict):
+        return []
+    patterns_raw = raw.get(constants.UI_FILE_EXCLUDES_PATTERNS_KEY, None)
+    if not isinstance(patterns_raw, list):
+        return []
+    patterns: list[str] = []
+    for item in patterns_raw:
+        if isinstance(item, str) and item.strip():
+            patterns.append(item.strip())
+    return patterns
+
+
 def compute_effective_excludes(
     global_patterns: Sequence[str],
     project_patterns: Sequence[str],

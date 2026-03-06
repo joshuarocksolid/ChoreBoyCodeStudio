@@ -83,6 +83,7 @@ from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.settings_service import SettingsService
+from app.persistence.settings_store import project_settings_has_overrides
 from app.run.console_model import ConsoleModel
 from app.run.exit_status import describe_exit_code
 from app.run.output_tail_buffer import OutputTailBuffer
@@ -123,11 +124,12 @@ from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
     MainWindowSettingsSnapshot,
     merge_import_update_policy,
+    merge_editor_settings_snapshot_for_scope,
     merge_last_project_path,
-    merge_editor_settings_snapshot,
     merge_theme_mode,
     parse_editor_settings_snapshot,
-    parse_main_window_settings,
+    parse_effective_editor_settings_snapshot,
+    parse_effective_main_window_settings,
 )
 from app.shell.shortcut_preferences import (
     build_effective_shortcut_map,
@@ -159,7 +161,11 @@ from app.project.run_configs import (
 )
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
-from app.project.file_excludes import compute_effective_excludes, parse_global_exclude_patterns
+from app.project.file_excludes import (
+    compute_effective_excludes,
+    parse_global_exclude_patterns,
+    parse_project_exclude_patterns,
+)
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import create_blank_project, enumerate_project_entries, open_project
 from app.project.project_manifest import set_project_default_entry
@@ -534,7 +540,7 @@ class MainWindow(QMainWindow):
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
         try:
-            settings = self._settings_service.load()
+            settings = self._settings_service.load_global()
         except Exception:
             return
         last_path = settings.get(constants.LAST_PROJECT_PATH_KEY)
@@ -556,10 +562,23 @@ class MainWindow(QMainWindow):
         if self._project_placeholder_label is not None:
             self._project_placeholder_label.setText(project_text)
         if self._status_controller is not None:
-            self._status_controller.set_project_state_text(f"Project: {project_text}")
+            status_text = f"Project: {project_text}"
+            loaded_project = self._loaded_project
+            if loaded_project is not None:
+                try:
+                    project_settings_payload = self._settings_service.load_project(loaded_project.project_root)
+                    if project_settings_has_overrides(project_settings_payload):
+                        status_text = f"{status_text} (project overrides)"
+                except Exception as exc:
+                    self._logger.warning(
+                        "Unable to evaluate project settings override state for %s: %s",
+                        loaded_project.project_root,
+                        exc,
+                    )
+            self._status_controller.set_project_state_text(status_text)
 
     def _restore_layout_from_settings(self) -> None:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         layout_state = parse_shell_layout_state(settings_payload)
         self.resize(layout_state.width, layout_state.height)
         if self._top_splitter is not None:
@@ -585,7 +604,7 @@ class MainWindow(QMainWindow):
             top_splitter_sizes=(int(top_sizes[0]), int(top_sizes[1])),
             vertical_splitter_sizes=(int(vertical_sizes[0]), int(vertical_sizes[1])),
         )
-        self._settings_service.update(
+        self._settings_service.update_global(
             lambda settings_payload: merge_layout_into_settings(settings_payload, layout_state)
         )
 
@@ -598,7 +617,7 @@ class MainWindow(QMainWindow):
         self._persist_layout_to_settings()
 
     def _load_import_update_policy(self) -> ImportUpdatePolicy:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         raw_value = settings_payload.get(constants.UI_IMPORT_UPDATE_POLICY_KEY, constants.UI_IMPORT_UPDATE_POLICY_DEFAULT)
         try:
             return ImportUpdatePolicy(str(raw_value))
@@ -682,17 +701,17 @@ class MainWindow(QMainWindow):
         return "prefer-dark" in result.stdout
 
     def _load_theme_mode(self) -> str:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return dict(snapshot.shortcut_overrides)
 
     def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {
             constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
@@ -700,8 +719,7 @@ class MainWindow(QMainWindow):
         }
 
     def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
-        settings_payload = self._settings_service.load()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
+        snapshot = self._load_effective_editor_settings_snapshot()
         return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
 
     def _configure_close_tab_shortcut(self) -> None:
@@ -721,7 +739,7 @@ class MainWindow(QMainWindow):
         self._configure_close_tab_shortcut()
 
     def _persist_theme_mode(self, mode: str) -> None:
-        self._settings_service.update(
+        self._settings_service.update_global(
             lambda settings_payload: merge_theme_mode(settings_payload, mode)
         )
 
@@ -767,14 +785,37 @@ class MainWindow(QMainWindow):
             self._apply_editor_preferences_to_open_editors()
 
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
-        self._settings_service.update(
+        self._settings_service.update_global(
             lambda settings_payload: merge_import_update_policy(settings_payload, policy.value)
         )
         self._import_update_policy = policy
 
+    def _current_project_root(self) -> str | None:
+        if self._loaded_project is None:
+            return None
+        return self._loaded_project.project_root
+
+    def _load_effective_editor_settings_snapshot(self) -> EditorSettingsSnapshot:
+        project_root = self._current_project_root()
+        global_settings_payload = self._settings_service.load_global()
+        project_settings_payload = None
+        if project_root is not None:
+            project_settings_payload = self._settings_service.load_project(project_root)
+        return parse_effective_editor_settings_snapshot(
+            global_settings_payload,
+            project_settings_payload,
+        )
+
     def _load_main_window_settings(self) -> MainWindowSettingsSnapshot:
-        settings_payload = self._settings_service.load()
-        return parse_main_window_settings(settings_payload)
+        project_root = self._current_project_root()
+        global_settings_payload = self._settings_service.load_global()
+        project_settings_payload = None
+        if project_root is not None:
+            project_settings_payload = self._settings_service.load_project(project_root)
+        return parse_effective_main_window_settings(
+            global_settings_payload,
+            project_settings_payload,
+        )
 
     def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool]:
         return self._load_main_window_settings().editor_preferences
@@ -792,11 +833,11 @@ class MainWindow(QMainWindow):
         return self._load_main_window_settings().intelligence_runtime_settings
 
     def _load_plugin_safe_mode(self) -> bool:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         return plugin_safe_mode_enabled(settings_payload)
 
     def _set_plugin_safe_mode(self, enabled: bool) -> None:
-        self._settings_service.update(
+        self._settings_service.update_global(
             lambda payload: merge_plugin_safe_mode(payload, enabled=enabled)
         )
         self._plugin_safe_mode = bool(enabled)
@@ -956,19 +997,43 @@ class MainWindow(QMainWindow):
         return normalized_name, Path(destination_parent) / normalized_name
 
     def _handle_open_settings_action(self) -> None:
-        settings_payload = self._settings_service.load()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
-        previous_theme_mode = snapshot.theme_mode
-        previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
-        previous_diagnostics_enabled = snapshot.diagnostics_enabled
-        previous_file_exclude_patterns = list(snapshot.file_exclude_patterns)
-        dialog = SettingsDialog(snapshot, self)
+        global_settings_payload = self._settings_service.load_global()
+        global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
+        project_root = self._current_project_root()
+        project_settings_payload: dict[str, Any] = {}
+        effective_snapshot = global_snapshot
+        if project_root is not None:
+            project_settings_payload = self._settings_service.load_project(project_root)
+            effective_snapshot = parse_effective_editor_settings_snapshot(
+                global_settings_payload,
+                project_settings_payload,
+            )
+
+        previous_theme_mode = global_snapshot.theme_mode
+        previous_lint_rule_overrides = dict(self._lint_rule_overrides)
+        previous_diagnostics_enabled = self._diagnostics_enabled
+        previous_effective_excludes = self._load_effective_exclude_patterns(project_root)
+        dialog = SettingsDialog(
+            global_snapshot,
+            self,
+            project_snapshot=effective_snapshot if project_root is not None else None,
+            project_scope_available=project_root is not None,
+        )
         if dialog.exec_() != QDialog.Accepted:
             return
 
+        selected_scope = dialog.selected_scope
         updated_snapshot = dialog.snapshot()
-        merged_settings = merge_editor_settings_snapshot(settings_payload, updated_snapshot)
-        self._settings_service.save(merged_settings)
+        merged_global_settings, merged_project_settings = merge_editor_settings_snapshot_for_scope(
+            scope=selected_scope,
+            global_settings_payload=global_settings_payload,
+            project_settings_payload=project_settings_payload,
+            snapshot=updated_snapshot,
+        )
+        if merged_global_settings != global_settings_payload:
+            self._settings_service.save_global(merged_global_settings)
+        if project_root is not None and merged_project_settings != project_settings_payload:
+            self._settings_service.save_project(project_root, merged_project_settings)
 
         if updated_snapshot.theme_mode != previous_theme_mode:
             self._handle_set_theme(updated_snapshot.theme_mode)
@@ -1022,14 +1087,18 @@ class MainWindow(QMainWindow):
         if not self._diagnostics_enabled:
             self._stored_lint_diagnostics.clear()
             self._render_merged_problems_panel()
-        if updated_snapshot.file_exclude_patterns != previous_file_exclude_patterns:
+        effective_excludes = self._load_effective_exclude_patterns(project_root)
+        if effective_excludes != previous_effective_excludes:
             self._reload_current_project()
             if self._search_sidebar is not None and self._loaded_project is not None:
-                effective_excludes = compute_effective_excludes(
-                    updated_snapshot.file_exclude_patterns,
-                    self._loaded_project.metadata.exclude_patterns,
+                self._search_sidebar.set_exclude_patterns(
+                    compute_effective_excludes(
+                        self._load_effective_exclude_patterns(self._loaded_project.project_root),
+                        self._loaded_project.metadata.exclude_patterns,
+                    )
                 )
-                self._search_sidebar.set_exclude_patterns(effective_excludes)
+        if self._loaded_project is not None:
+            self.set_project_placeholder(self._loaded_project.metadata.name)
         self._logger.info("Updated settings from dialog.")
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
@@ -1530,12 +1599,23 @@ class MainWindow(QMainWindow):
             confirm_proceed=self._confirm_proceed_with_unsaved_changes,
             on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
             on_error=self._show_open_project_error,
-            exclude_patterns=self._load_global_exclude_patterns(),
+            exclude_patterns=self._load_effective_exclude_patterns(project_root),
         )
 
     def _load_global_exclude_patterns(self) -> list[str]:
-        settings_payload = self._settings_service.load()
+        settings_payload = self._settings_service.load_global()
         return parse_global_exclude_patterns(settings_payload)
+
+    def _load_project_exclude_patterns(self, project_root: str | None) -> list[str]:
+        if not project_root:
+            return []
+        project_settings_payload = self._settings_service.load_project(project_root)
+        return parse_project_exclude_patterns(project_settings_payload)
+
+    def _load_effective_exclude_patterns(self, project_root: str | None = None) -> list[str]:
+        global_patterns = self._load_global_exclude_patterns()
+        project_patterns = self._load_project_exclude_patterns(project_root)
+        return compute_effective_excludes(global_patterns, project_patterns)
 
     def _refresh_open_recent_menu(self) -> None:
         self._project_controller.refresh_open_recent_menu(
@@ -1591,7 +1671,7 @@ class MainWindow(QMainWindow):
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
             effective_excludes = compute_effective_excludes(
-                self._load_global_exclude_patterns(),
+                self._load_effective_exclude_patterns(loaded_project.project_root),
                 loaded_project.metadata.exclude_patterns,
             )
             self._search_sidebar.set_exclude_patterns(effective_excludes)
@@ -1621,7 +1701,7 @@ class MainWindow(QMainWindow):
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
-            self._settings_service.update(
+            self._settings_service.update_global(
                 lambda settings: merge_last_project_path(settings, project_root)
             )
         except Exception as exc:
@@ -4147,9 +4227,17 @@ class MainWindow(QMainWindow):
             return
         self._loaded_project = open_project(
             self._loaded_project.project_root,
-            exclude_patterns=self._load_global_exclude_patterns(),
+            exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
         )
         self._populate_project_tree(self._loaded_project, preserve_state=True)
+        if self._search_sidebar is not None:
+            self._search_sidebar.set_project_root(self._loaded_project.project_root)
+            self._search_sidebar.set_exclude_patterns(
+                compute_effective_excludes(
+                    self._load_effective_exclude_patterns(self._loaded_project.project_root),
+                    self._loaded_project.metadata.exclude_patterns,
+                )
+            )
         self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
 
@@ -4586,9 +4674,9 @@ class MainWindow(QMainWindow):
         self._reload_current_project()
 
     def _scan_project_tree_signature(self, loaded_project: LoadedProject) -> tuple[str, ...]:
-        global_excludes = self._load_global_exclude_patterns()
+        layered_excludes = self._load_effective_exclude_patterns(loaded_project.project_root)
         effective_excludes = compute_effective_excludes(
-            global_excludes,
+            layered_excludes,
             loaded_project.metadata.exclude_patterns,
         )
         entries = enumerate_project_entries(
