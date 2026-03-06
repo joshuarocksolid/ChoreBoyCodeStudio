@@ -26,6 +26,48 @@ def test_open_file_is_deduplicated_and_marks_active_tab(tmp_path: Path) -> None:
     assert manager.active_tab() is first.tab
 
 
+def test_open_file_preview_marks_preview_state(tmp_path: Path) -> None:
+    file_path = tmp_path / "preview.py"
+    file_path.write_text("print('preview')\n", encoding="utf-8")
+    manager = EditorManager()
+
+    opened = manager.open_file(str(file_path), preview=True)
+
+    assert opened.tab.is_preview is True
+    assert manager.preview_tab() is opened.tab
+
+
+def test_opening_second_preview_replaces_existing_preview(tmp_path: Path) -> None:
+    first_path = tmp_path / "first.py"
+    second_path = tmp_path / "second.py"
+    first_path.write_text("print('first')\n", encoding="utf-8")
+    second_path.write_text("print('second')\n", encoding="utf-8")
+    manager = EditorManager()
+
+    first_open = manager.open_file(str(first_path), preview=True)
+    second_open = manager.open_file(str(second_path), preview=True)
+
+    assert first_open.closed_preview_path is None
+    assert second_open.closed_preview_path == str(first_path.resolve())
+    assert manager.get_tab(str(first_path.resolve())) is None
+    assert manager.get_tab(str(second_path.resolve())) is not None
+    assert manager.preview_tab() is second_open.tab
+
+
+def test_opening_existing_preview_permanently_promotes_tab(tmp_path: Path) -> None:
+    file_path = tmp_path / "promote.py"
+    file_path.write_text("print('promote')\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(file_path), preview=True)
+
+    reopened = manager.open_file(str(file_path), preview=False)
+
+    assert reopened.was_already_open is True
+    assert reopened.promoted_from_preview is True
+    assert reopened.tab.is_preview is False
+    assert manager.preview_tab() is None
+
+
 def test_update_tab_content_marks_tab_dirty(tmp_path: Path) -> None:
     """Updating content should toggle dirty state."""
     file_path = tmp_path / "run.py"
@@ -95,6 +137,21 @@ def test_remap_paths_for_move_updates_open_tabs_and_active_file(tmp_path: Path) 
     assert list(remapped.values()) == [new_path]
     assert manager.get_tab(new_path) is not None
     assert manager.active_tab() is manager.get_tab(new_path)
+
+
+def test_remap_paths_for_move_updates_preview_tracking(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "pkg").mkdir(parents=True)
+    source = root / "pkg" / "module.py"
+    source.write_text("x=1\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(source), preview=True)
+
+    manager.remap_paths_for_move(str(root / "pkg"), str(root / "renamed"))
+
+    preview = manager.preview_tab()
+    assert preview is not None
+    assert preview.file_path == str((root / "renamed" / "module.py").resolve())
 
 
 def test_close_file_removes_tab_and_reassigns_active(tmp_path: Path) -> None:

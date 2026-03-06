@@ -219,6 +219,7 @@ class _FilterToggle(QToolButton):
 class ProblemsPanel(QWidget):
     """VS Code-style problems panel with grouped tree and filter toolbar."""
 
+    item_preview_requested = Signal(str, int)
     item_activated = Signal(str, int)
     context_menu_requested = Signal(str, str)
 
@@ -280,6 +281,7 @@ class ProblemsPanel(QWidget):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._tree.itemClicked.connect(self._on_item_clicked)
         self._tree.itemActivated.connect(self._on_item_activated)
         self._tree.itemDoubleClicked.connect(self._on_item_activated)
         self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -493,6 +495,17 @@ class ProblemsPanel(QWidget):
     def _on_filter_changed(self) -> None:
         if self._current_mode == "diagnostics":
             self._rebuild_diagnostics_tree()
+
+    def _on_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
+        if not file_path or line_number is None:
+            return
+        try:
+            resolved_line = int(line_number)
+        except (TypeError, ValueError):
+            return
+        self.item_preview_requested.emit(str(file_path), resolved_line)
 
     def _on_item_activated(self, item: QTreeWidgetItem) -> None:
         file_path = item.data(0, ROLE_FILE_PATH)

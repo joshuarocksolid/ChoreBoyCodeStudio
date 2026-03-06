@@ -67,6 +67,48 @@ def test_quick_open_opens_selected_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     window.close()
 
 
+def test_quick_open_preview_then_enter_promotes_to_permanent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = _ensure_qapplication(monkeypatch)
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Quick Open Preview Project")
+    target_file = project_root / "beta.py"
+    target_file.write_text("print('beta')\n", encoding="utf-8")
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+
+    window._handle_quick_open_action()
+    app.processEvents()
+    dialog = window._quick_open_dialog
+    assert dialog is not None
+    dialog._search_input.setText("beta")
+    app.processEvents()
+    assert dialog._list_model.rowCount() == 1
+
+    preview_index = dialog._list_model.index(0, 0)
+    dialog._on_item_preview(preview_index)
+    app.processEvents()
+    active_tab = window._editor_manager.active_tab()
+    assert active_tab is not None
+    assert active_tab.file_path == str(target_file.resolve())
+    assert active_tab.is_preview is True
+
+    dialog._accept_current()
+    app.processEvents()
+    promoted_tab = window._editor_manager.active_tab()
+    assert promoted_tab is not None
+    assert promoted_tab.file_path == str(target_file.resolve())
+    assert promoted_tab.is_preview is False
+    window.close()
+
+
 def test_quick_open_can_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

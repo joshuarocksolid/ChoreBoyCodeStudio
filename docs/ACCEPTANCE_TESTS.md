@@ -1006,6 +1006,38 @@ Verify manifest compatibility guards prevent invalid activation.
 
 ---
 
+## AT-43 — Preview tab mode across explorer/navigation surfaces
+
+**Purpose:**  
+Verify single-preview semantics, promotion behavior, and preview toggle across all supported file-open surfaces.
+
+**Preconditions:**  
+- project with multiple Python files is open
+- `editor.enable_preview` initially enabled
+
+**Steps:**  
+1. In Project Tree, single-click file A then single-click file B.
+2. In Project Tree, double-click file C.
+3. In Quick Open, single-click file D in results list, then press Enter.
+4. In Search results, single-click one result then double-click another.
+5. In Problems panel, single-click one item then activate another.
+6. In Debug panel (stack/breakpoint list), single-click an item then double-click an item.
+7. Use Run Log “Open Log” action.
+8. Open a preview tab and promote it via:
+   - tab-header double-click,
+   - first content edit,
+   - keep-preview-open shortcut.
+9. Disable `editor.enable_preview` in Settings and repeat representative opens from tree/search/quick-open.
+
+**Expected Result:**  
+- only one preview tab exists at a time
+- each new preview replaces the previous preview tab
+- activation/double-click/Enter opens permanent tab for that source
+- all three promotion mechanisms convert preview to permanent
+- disabling preview makes all opens permanent and promotes any existing preview immediately
+
+---
+
 ## 11. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
