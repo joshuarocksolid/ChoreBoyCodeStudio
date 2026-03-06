@@ -31,6 +31,11 @@ def global_recent_projects_path(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
 
 
+def global_python_console_history_path(state_root: Optional[PathInput] = None) -> Path:
+    """Return persisted Python console history file path."""
+    return _global_state_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
+
+
 def global_logs_dir(state_root: Optional[PathInput] = None) -> Path:
     """Return the global logs directory path."""
     return _global_state_child(constants.GLOBAL_LOGS_DIRNAME, state_root)

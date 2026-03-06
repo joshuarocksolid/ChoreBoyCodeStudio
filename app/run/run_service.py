@@ -95,18 +95,32 @@ class RunService:
         )
 
         if loaded_project is None:
-            if run_mode != constants.RUN_MODE_PYTHON_REPL:
-                raise RunLifecycleError("Open a project before running code.")
-            resolved_project_root = build_repl_context_root(state_root=self._state_root)
-            entry = entry_file or "__repl__.py"
-            arguments = [] if argv is None else list(argv)
-            home_directory = Path.home().expanduser().resolve()
-            configured_working_directory = working_directory or str(home_directory)
-            working_directory_candidate = Path(configured_working_directory).expanduser()
-            if working_directory_candidate.is_absolute():
-                resolved_working_directory = working_directory_candidate.resolve()
+            if run_mode == constants.RUN_MODE_PYTHON_REPL:
+                resolved_project_root = build_repl_context_root(state_root=self._state_root)
+                entry = entry_file or "__repl__.py"
+                arguments = [] if argv is None else list(argv)
+                home_directory = Path.home().expanduser().resolve()
+                configured_working_directory = working_directory or str(home_directory)
+                working_directory_candidate = Path(configured_working_directory).expanduser()
+                if working_directory_candidate.is_absolute():
+                    resolved_working_directory = working_directory_candidate.resolve()
+                else:
+                    resolved_working_directory = (home_directory / working_directory_candidate).resolve()
             else:
-                resolved_working_directory = (home_directory / working_directory_candidate).resolve()
+                if entry_file is None:
+                    raise RunLifecycleError("Provide a file entry before running without a project.")
+                resolved_entry = Path(entry_file).expanduser().resolve()
+                if not resolved_entry.exists() or not resolved_entry.is_file():
+                    raise RunLifecycleError(f"Entry file not found: {resolved_entry}")
+                resolved_project_root = resolved_entry.parent
+                entry = str(resolved_entry)
+                arguments = [] if argv is None else list(argv)
+                configured_working_directory = working_directory or str(resolved_entry.parent)
+                working_directory_candidate = Path(configured_working_directory).expanduser()
+                if working_directory_candidate.is_absolute():
+                    resolved_working_directory = working_directory_candidate.resolve()
+                else:
+                    resolved_working_directory = (resolved_entry.parent / working_directory_candidate).resolve()
             manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
             log_path = build_repl_log_path(run_id, state_root=self._state_root)
             merged_env_overrides = {} if env_overrides is None else dict(env_overrides)

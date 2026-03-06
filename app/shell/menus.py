@@ -28,6 +28,7 @@ class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
     on_new_project: Callable[[], object] | None = None
+    on_new_window: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
@@ -51,6 +52,8 @@ class MenuCallbacks:
     on_show_outline: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
+    on_run_project: Callable[[], object] | None = None
+    on_debug_project: Callable[[], object] | None = None
     on_run_pytest_project: Callable[[], object] | None = None
     on_run_pytest_current_file: Callable[[], object] | None = None
     on_run_with_config: Callable[[], object] | None = None
@@ -142,6 +145,16 @@ def build_menu_stubs(
         "Ctrl+N",
         enabled=True,
         callback=callback_registry.on_new_project,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.newWindow",
+        "New Window",
+        "Ctrl+Shift+N",
+        enabled=True,
+        callback=callback_registry.on_new_window,
         shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
@@ -348,7 +361,7 @@ def build_menu_stubs(
         actions,
         "shell.action.edit.hoverInfo",
         "Show Hover Info",
-        "Ctrl+K",
+        "Ctrl+Shift+I",
         enabled=True,
         callback=callback_registry.on_hover_info,
         shortcut_overrides=shortcut_overrides,
@@ -360,28 +373,47 @@ def build_menu_stubs(
         run_menu,
         actions,
         "shell.action.run.run",
-        "Run",
+        "Run Active File",
         "F5",
         callback=callback_registry.on_run,
         shortcut_overrides=shortcut_overrides,
     )
     run_action = actions.get("shell.action.run.run")
     if run_action is not None:
-        run_action.setToolTip("Run the project entry script. Output appears in the Run Log tab.")
-        run_action.setStatusTip("Run the project entry script. Output appears in the Run Log tab.")
+        run_action.setToolTip("Run the currently active file. Output appears in the Run Log tab.")
+        run_action.setStatusTip("Run the currently active file. Output appears in the Run Log tab.")
     _register_menu_action(
         run_menu,
         actions,
         "shell.action.run.debug",
-        "Debug",
+        "Debug Active File",
         "Ctrl+F5",
         callback=callback_registry.on_debug,
         shortcut_overrides=shortcut_overrides,
     )
     debug_action = actions.get("shell.action.run.debug")
     if debug_action is not None:
-        debug_action.setToolTip("Start a debug session. Output appears in Run Log and Debug tabs.")
-        debug_action.setStatusTip("Start a debug session. Output appears in Run Log and Debug tabs.")
+        debug_action.setToolTip("Debug the currently active file. Output appears in Run Log and Debug tabs.")
+        debug_action.setStatusTip("Debug the currently active file. Output appears in Run Log and Debug tabs.")
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.runProject",
+        "Run Project",
+        "Shift+F5",
+        callback=callback_registry.on_run_project,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.debugProject",
+        "Debug Project",
+        "Ctrl+Shift+F5",
+        callback=callback_registry.on_debug_project,
+        shortcut_overrides=shortcut_overrides,
+    )
+    run_menu.addSeparator()
     _register_menu_action(
         run_menu,
         actions,
@@ -419,7 +451,7 @@ def build_menu_stubs(
         actions,
         "shell.action.run.stop",
         "Stop",
-        "Shift+F5",
+        "Ctrl+F2",
         callback=callback_registry.on_stop,
         shortcut_overrides=shortcut_overrides,
     )
@@ -428,7 +460,7 @@ def build_menu_stubs(
         actions,
         "shell.action.run.restart",
         "Restart",
-        "Ctrl+Shift+F5",
+        "Ctrl+Shift+F2",
         callback=callback_registry.on_restart,
         shortcut_overrides=shortcut_overrides,
     )

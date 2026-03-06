@@ -20,7 +20,13 @@ from app.editors.editor_overlay_policy import (
 )
 from app.editors.find_replace_bar import FindOptions
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
-from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
+from app.editors.text_editing import (
+    indent_lines,
+    next_line_indentation,
+    outdent_lines,
+    smart_backspace_columns,
+    toggle_comment_lines,
+)
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
@@ -83,7 +89,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self._syntax_registry = default_syntax_highlighter_registry()
         self._syntax_palette: dict[str, str] = {}
         self._tab_width = DEFAULT_TAB_WIDTH
-        self._comment_prefix = "# "
+        self._comment_prefix = "#"
         self._indent_style = "spaces"
         self._indent_size = DEFAULT_TAB_WIDTH
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
@@ -464,6 +470,10 @@ class CodeEditorWidget(QPlainTextEdit):
             if self._handle_smart_backspace():
                 e.accept()
                 return
+        if e.key() in {Qt.Key_Return, Qt.Key_Enter} and not (e.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
+            self._insert_newline_with_auto_indent()
+            e.accept()
+            return
 
         super().keyPressEvent(e)
         if not self._completion_enabled or not self._completion_auto_trigger:
@@ -922,13 +932,28 @@ class CodeEditorWidget(QPlainTextEdit):
         self._replace_selected_text(updated)
 
     def toggle_comment_selection(self) -> None:
-        selected = self.textCursor().selectedText()
-        if not selected:
-            cursor = self.textCursor()
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            cursor = self._expand_selection_to_full_lines(cursor)
+        else:
             cursor.select(QTextCursor.LineUnderCursor)
-            selected = cursor.selectedText()
+        selected = cursor.selectedText()
         updated = toggle_comment_lines(selected.replace("\u2029", "\n"), comment_prefix=self._comment_prefix)
-        self._replace_selected_text(updated)
+        cursor.insertText(updated)
+        self.setTextCursor(cursor)
+
+    def _expand_selection_to_full_lines(self, cursor: QTextCursor) -> QTextCursor:
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+        document = self.document()
+        start_block = document.findBlock(start)
+        end_lookup_position = end - 1 if end > start else end
+        end_block = document.findBlock(max(0, end_lookup_position))
+        expanded_cursor = QTextCursor(document)
+        expanded_cursor.setPosition(start_block.position())
+        end_position = max(expanded_cursor.position(), end_block.position() + max(0, end_block.length() - 1))
+        expanded_cursor.setPosition(end_position, QTextCursor.KeepAnchor)
+        return expanded_cursor
 
     def _replace_selected_text(self, replacement_text: str) -> None:
         cursor = self.textCursor()
@@ -954,6 +979,17 @@ class CodeEditorWidget(QPlainTextEdit):
         cursor.endEditBlock()
         self.setTextCursor(cursor)
         return True
+
+    def _insert_newline_with_auto_indent(self) -> None:
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            cursor.removeSelectedText()
+        line_prefix = cursor.block().text()[: cursor.positionInBlock()]
+        indent = next_line_indentation(line_prefix, indent_text=self._indent_text())
+        cursor.beginEditBlock()
+        cursor.insertText(f"\n{indent}")
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
 
     def _indent_text(self) -> str:
         if self._indent_style == "tabs":

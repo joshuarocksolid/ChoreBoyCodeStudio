@@ -9,8 +9,10 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtGui import QCloseEvent
+from app.bootstrap.paths import global_python_console_history_path
 from app.run.process_supervisor import ProcessEvent
 from app.shell.main_window import MainWindow
+from app.shell.python_console_history import load_python_console_history
 
 pytestmark = pytest.mark.integration
 
@@ -96,3 +98,24 @@ def test_close_event_blocks_post_close_run_event_application(
     window._process_queued_run_events()
     assert window._run_event_queue.empty() is True
     assert applied_events == []
+
+
+def test_close_event_persists_python_console_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ = _ensure_qapplication(monkeypatch)
+    state_root = tmp_path.resolve()
+    window = MainWindow(state_root=str(state_root))
+    assert window._python_console_widget is not None
+    window._python_console_widget.set_history(["print('saved')"])
+
+    monkeypatch.setattr(window, "_confirm_proceed_with_unsaved_changes", lambda _action: True)
+    monkeypatch.setattr(window._run_service.supervisor, "is_running", lambda: False)
+
+    close_event = QCloseEvent()
+    window.closeEvent(close_event)
+
+    assert close_event.isAccepted() is True
+    history_path = global_python_console_history_path(str(state_root))
+    assert load_python_console_history(history_path, max_entries=200) == ["print('saved')"]

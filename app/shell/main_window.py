@@ -6,6 +6,7 @@ import queue
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 from typing import Callable, Optional, TypeVar
 
@@ -36,10 +37,10 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_cache_dir, project_logs_dir
+from app.bootstrap.paths import global_cache_dir, global_python_console_history_path, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
-from app.core.errors import AppValidationError
+from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import CapabilityProbeReport
 from app.core.models import LoadedProject
 from app.debug.debug_command_service import (
@@ -89,6 +90,11 @@ from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
+from app.run.runtime_launch import (
+    build_runpy_bootstrap_payload,
+    is_freecad_runtime_executable,
+    resolve_runtime_executable,
+)
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
@@ -142,6 +148,7 @@ from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
+from app.shell.python_console_history import load_python_console_history, save_python_console_history
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
@@ -152,9 +159,10 @@ from app.project.run_configs import (
 )
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
-from app.project.file_excludes import parse_global_exclude_patterns
+from app.project.file_excludes import compute_effective_excludes, parse_global_exclude_patterns
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.project.project_service import create_blank_project, open_project
+from app.project.project_service import create_blank_project, enumerate_project_entries, open_project
+from app.project.project_manifest import set_project_default_entry
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
@@ -181,6 +189,7 @@ from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, Se
 from app.shell.help_controller import ShellHelpController
 from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
 from app.shell.toolbar import build_run_toolbar_widget
+from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
 
 TREE_ROLE_ABSOLUTE_PATH = 256
@@ -216,6 +225,7 @@ class MainWindow(QMainWindow):
         self._tree_file_icon_map = file_type_icon_map("#495057")
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
+        self._tree_entrypoint_icon = icon_run("#16A34A")
         self._editor_tabs_widget: QTabWidget | None = None
         self._activity_bar: ActivityBar | None = None
         self._sidebar_stack: QStackedWidget | None = None
@@ -230,6 +240,7 @@ class MainWindow(QMainWindow):
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
+        self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
@@ -270,6 +281,7 @@ class MainWindow(QMainWindow):
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
+        self._project_tree_structure_signature: tuple[str, ...] | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
@@ -333,6 +345,7 @@ class MainWindow(QMainWindow):
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
         self._active_run_session_log_path: str | None = None
         self._active_run_session_info: RunInfo | None = None
+        self._active_transient_entry_file_path: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
@@ -414,12 +427,15 @@ class MainWindow(QMainWindow):
             self,
             callbacks=MenuCallbacks(
                 on_open_project=self._handle_open_project_action,
+                on_new_window=self._handle_new_window_action,
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
                 on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
+                on_run_project=self._handle_run_project_action,
+                on_debug_project=self._handle_debug_project_action,
                 on_run_pytest_project=self._handle_run_pytest_project_action,
                 on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
                 on_run_with_config=self._handle_run_with_configuration_action,
@@ -641,6 +657,7 @@ class MainWindow(QMainWindow):
         self._tree_file_icon_map = file_type_icon_map(tokens.icon_primary)
         self._tree_folder_icon = folder_icon(tokens.icon_muted)
         self._tree_folder_open_icon = folder_open_icon(tokens.icon_muted)
+        self._tree_entrypoint_icon = icon_run(tokens.debug_running_color)
         if self._explorer_new_file_btn is not None:
             self._explorer_new_file_btn.setIcon(new_file_icon(tokens.icon_primary, tokens.icon_muted))
         if self._explorer_new_folder_btn is not None:
@@ -648,7 +665,7 @@ class MainWindow(QMainWindow):
         if self._explorer_refresh_btn is not None:
             self._explorer_refresh_btn.setIcon(refresh_icon(tokens.icon_primary))
         if self._loaded_project is not None:
-            self._populate_project_tree(self._loaded_project)
+            self._populate_project_tree(self._loaded_project, preserve_state=True)
 
     def _system_prefers_dark_theme(self) -> bool:
         try:
@@ -856,6 +873,35 @@ class MainWindow(QMainWindow):
             return
         self._open_project_by_path(selected_path)
 
+    def _handle_new_window_action(self) -> None:
+        repo_root = self._resolve_repo_root_for_launch()
+        editor_boot = (repo_root / "run_editor.py").resolve()
+        if not editor_boot.exists():
+            QMessageBox.warning(
+                self,
+                "New Window unavailable",
+                f"Editor boot script not found: {editor_boot}",
+            )
+            return
+        command = self._build_new_window_command(repo_root=repo_root, editor_boot=editor_boot)
+        try:
+            subprocess.Popen(command, cwd=str(repo_root), start_new_session=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "New Window unavailable", f"Unable to launch new window: {exc}")
+
+    def _resolve_repo_root_for_launch(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _build_new_window_command(self, *, repo_root: Path, editor_boot: Path) -> list[str]:
+        runtime_executable = resolve_runtime_executable(None)
+        if is_freecad_runtime_executable(runtime_executable):
+            payload = build_runpy_bootstrap_payload(
+                script_path=str(editor_boot),
+                path_entry=str(repo_root),
+            )
+            return [runtime_executable, "-c", payload]
+        return [runtime_executable, str(editor_boot)]
+
     def _handle_new_project_action(self) -> None:
         project_details = self._prompt_for_new_project_destination()
         if project_details is None:
@@ -979,7 +1025,6 @@ class MainWindow(QMainWindow):
         if updated_snapshot.file_exclude_patterns != previous_file_exclude_patterns:
             self._reload_current_project()
             if self._search_sidebar is not None and self._loaded_project is not None:
-                from app.project.file_excludes import compute_effective_excludes
                 effective_excludes = compute_effective_excludes(
                     updated_snapshot.file_exclude_patterns,
                     self._loaded_project.metadata.exclude_patterns,
@@ -1540,11 +1585,11 @@ class MainWindow(QMainWindow):
         self._logger.info("Project loaded: %s", loaded_project.project_root)
         self._update_explorer_buttons_enabled()
         self._populate_project_tree(loaded_project)
+        self._project_tree_structure_signature = tuple(entry.relative_path for entry in loaded_project.entries)
         self._reset_editor_tabs()
         self._stored_lint_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
-            from app.project.file_excludes import compute_effective_excludes
             effective_excludes = compute_effective_excludes(
                 self._load_global_exclude_patterns(),
                 loaded_project.metadata.exclude_patterns,
@@ -1773,14 +1818,168 @@ class MainWindow(QMainWindow):
             save_all_action.setEnabled(has_dirty_tabs)
 
     def _handle_run_action(self) -> bool:
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
+        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     def _handle_debug_action(self) -> bool:
+        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
+
+    def _handle_run_project_action(self) -> bool:
+        entry_file = self._resolve_project_entry_for_project_run()
+        if entry_file is None:
+            return False
+        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=entry_file)
+
+    def _handle_debug_project_action(self) -> bool:
+        entry_file = self._resolve_project_entry_for_project_run()
+        if entry_file is None:
+            return False
         breakpoint_entries: list[dict[str, int | str]] = []
         for file_path, line_numbers in self._breakpoints_by_file.items():
             for line_number in sorted(line_numbers):
                 breakpoint_entries.append({"file_path": file_path, "line_number": line_number})
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, breakpoints=breakpoint_entries)
+        return self._start_session(
+            mode=constants.RUN_MODE_PYTHON_DEBUG,
+            entry_file=entry_file,
+            breakpoints=breakpoint_entries,
+        )
+
+    def _start_active_file_session(self, *, mode: str) -> bool:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a file tab before running.")
+            return False
+        entry_path = Path(active_tab.file_path).expanduser().resolve()
+        if entry_path.suffix.lower() != ".py":
+            QMessageBox.warning(self, "Run unavailable", "Active file must be a Python file.")
+            return False
+        breakpoints: list[dict[str, int | str]] | None = None
+        if mode == constants.RUN_MODE_PYTHON_DEBUG:
+            breakpoints = []
+            for file_path, line_numbers in self._breakpoints_by_file.items():
+                for line_number in sorted(line_numbers):
+                    breakpoints.append({"file_path": file_path, "line_number": line_number})
+        transient_entry_file: str | None = None
+        entry_file = str(entry_path)
+        skip_save = False
+        if active_tab.is_dirty:
+            transient_entry_file = self._write_transient_entry_file(
+                source_file_path=active_tab.file_path,
+                source_content=active_tab.current_content,
+            )
+            entry_file = transient_entry_file
+            skip_save = True
+        started = self._start_session(
+            mode=mode,
+            entry_file=entry_file,
+            breakpoints=breakpoints,
+            skip_save=skip_save,
+        )
+        if transient_entry_file is not None:
+            if started:
+                self._active_transient_entry_file_path = transient_entry_file
+            else:
+                self._delete_transient_entry_file(transient_entry_file)
+        return started
+
+    def _write_transient_entry_file(self, *, source_file_path: str, source_content: str) -> str:
+        source_name = Path(source_file_path).name
+        safe_stem = Path(source_name).stem or "buffer"
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".py",
+            prefix=f"cbcs_{safe_stem}_",
+            delete=False,
+        ) as handle:
+            handle.write(source_content)
+            return str(Path(handle.name).resolve())
+
+    def _delete_transient_entry_file(self, path: str) -> None:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            self._logger.warning("Failed to delete transient run file: %s", path)
+
+    def _resolve_project_entry_for_project_run(self) -> str | None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
+            return None
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        default_entry = loaded_project.metadata.default_entry
+        default_entry_path = (project_root / default_entry).resolve()
+        if default_entry_path.exists() and default_entry_path.is_file():
+            return default_entry
+        replacement_entry = self._prompt_for_project_entry_replacement(default_entry)
+        if replacement_entry is None:
+            return None
+        if not self._set_project_entry_point(replacement_entry):
+            return None
+        return replacement_entry
+
+    def _prompt_for_project_entry_replacement(self, missing_entry: str) -> str | None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return None
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        candidates: list[str] = []
+        for candidate in sorted(project_root.rglob("*.py")):
+            if constants.PROJECT_META_DIRNAME in candidate.parts:
+                continue
+            if candidate.is_file():
+                candidates.append(candidate.relative_to(project_root).as_posix())
+        if not candidates:
+            QMessageBox.warning(
+                self,
+                "Entry point missing",
+                f"'{missing_entry}' no longer exists and no Python files are available.",
+            )
+            return None
+
+        selected, accepted = QInputDialog.getItem(
+            self,
+            "Entry point missing",
+            f"'{missing_entry}' no longer exists.\nSelect a replacement entry file:",
+            candidates,
+            0,
+            False,
+        )
+        if not accepted or not selected:
+            return None
+        return str(selected)
+
+    def _set_project_entry_point(self, relative_path: str) -> bool:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return False
+        normalized_relative = relative_path.strip()
+        if not normalized_relative:
+            return False
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        entry_path = (project_root / normalized_relative).resolve()
+        if not entry_path.exists() or not entry_path.is_file():
+            QMessageBox.warning(self, "Entry point", "Selected entry file does not exist.")
+            return False
+        if entry_path.suffix.lower() != ".py":
+            QMessageBox.warning(self, "Entry point", "Entry point must reference a Python file.")
+            return False
+        try:
+            entry_path.relative_to(project_root)
+        except ValueError:
+            QMessageBox.warning(self, "Entry point", "Entry point must be inside the opened project.")
+            return False
+
+        try:
+            updated_metadata = set_project_default_entry(
+                loaded_project.manifest_path,
+                default_entry=normalized_relative,
+            )
+        except (ProjectManifestValidationError, ValueError) as exc:
+            QMessageBox.warning(self, "Entry point", str(exc))
+            return False
+        self._loaded_project = replace(loaded_project, metadata=updated_metadata)
+        self._populate_project_tree(self._loaded_project, preserve_state=True)
+        return True
 
     def _handle_run_pytest_project_action(self) -> None:
         if self._loaded_project is None:
@@ -2591,6 +2790,27 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _restore_python_console_history(self) -> None:
+        if self._python_console_widget is None:
+            return
+        entries = load_python_console_history(
+            self._python_console_history_path,
+            max_entries=200,
+        )
+        self._python_console_widget.set_history(entries)
+
+    def _persist_python_console_history(self) -> None:
+        if self._python_console_widget is None:
+            return
+        try:
+            save_python_console_history(
+                self._python_console_history_path,
+                self._python_console_widget.history_snapshot(),
+                max_entries=200,
+            )
+        except OSError as exc:
+            self._logger.warning("Unable to persist python console history: %s", exc)
+
     def _append_python_console_line(self, text: str, stream: str = "stdout") -> None:
         if self._python_console_widget is None:
             return
@@ -2824,8 +3044,15 @@ class MainWindow(QMainWindow):
         self._run_session_controller.refresh_action_states(
             self._menu_registry,
             has_project=self._loaded_project is not None,
+            has_active_file=self._has_active_python_file(),
             has_breakpoints=bool(self._breakpoints_by_file),
         )
+
+    def _has_active_python_file(self) -> bool:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return False
+        return Path(active_tab.file_path).suffix.lower() == ".py"
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._is_shutting_down:
@@ -2983,6 +3210,10 @@ class MainWindow(QMainWindow):
                     terminated_by_user=event.terminated_by_user,
                 )
             )
+            transient_entry_file = getattr(self, "_active_transient_entry_file_path", None)
+            if transient_entry_file:
+                self._delete_transient_entry_file(transient_entry_file)
+                self._active_transient_entry_file_path = None
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._console_model.append(stream, text)
@@ -3129,6 +3360,7 @@ class MainWindow(QMainWindow):
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
             self._persist_session_state()
+            self._persist_python_console_history()
             event.accept()
             return
         event.ignore()
@@ -3448,6 +3680,7 @@ class MainWindow(QMainWindow):
         self._python_console_widget.input_submitted.connect(self._handle_python_console_submit)
         self._python_console_widget.interrupt_requested.connect(self._handle_python_console_interrupt)
         self._python_console_widget.restart_requested.connect(self._handle_start_python_console_action)
+        self._restore_python_console_history()
         clear_btn.clicked.connect(self._python_console_widget.clear_console)
         container_layout.addWidget(self._python_console_widget)
 
@@ -3498,19 +3731,72 @@ class MainWindow(QMainWindow):
         layout.addWidget(body_label, 1)
         return panel
 
-    def _populate_project_tree(self, loaded_project: LoadedProject) -> None:
+    def _populate_project_tree(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
         if self._project_tree_widget is None:
             return
 
+        expanded_paths: set[str] = set()
+        selected_paths: set[str] = set()
+        if preserve_state:
+            expanded_paths, selected_paths = self._capture_project_tree_state()
         self._project_tree_widget.clear()
         root_nodes = build_project_tree(loaded_project.entries)
         display_nodes = build_project_tree_display(root_nodes)
         for display_node in display_nodes:
             root_item = self._build_tree_item(display_node)
             self._project_tree_widget.addTopLevelItem(root_item)
-            if display_node.is_directory:
+            if not preserve_state and display_node.is_directory:
                 root_item.setExpanded(True)
                 root_item.setIcon(0, self._tree_folder_open_icon)
+        if preserve_state:
+            self._restore_project_tree_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
+
+    def _capture_project_tree_state(self) -> tuple[set[str], set[str]]:
+        if self._project_tree_widget is None:
+            return (set(), set())
+        expanded_paths: set[str] = set()
+        selected_paths: set[str] = set()
+        for item in self._iter_project_tree_items():
+            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            if not relative_path:
+                continue
+            if item.isExpanded():
+                expanded_paths.add(relative_path)
+            if item.isSelected():
+                selected_paths.add(relative_path)
+        return (expanded_paths, selected_paths)
+
+    def _restore_project_tree_state(self, *, expanded_paths: set[str], selected_paths: set[str]) -> None:
+        if self._project_tree_widget is None:
+            return
+        for item in self._iter_project_tree_items():
+            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            if not relative_path:
+                continue
+            if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
+                item.setExpanded(relative_path in expanded_paths)
+                item.setIcon(0, self._tree_folder_open_icon if item.isExpanded() else self._tree_folder_icon)
+            item.setSelected(relative_path in selected_paths)
+
+    def _iter_project_tree_items(self) -> list[QTreeWidgetItem]:
+        if self._project_tree_widget is None:
+            return []
+        collected: list[QTreeWidgetItem] = []
+        for index in range(self._project_tree_widget.topLevelItemCount()):
+            root_item = self._project_tree_widget.topLevelItem(index)
+            if root_item is None:
+                continue
+            collected.extend(self._collect_tree_descendants(root_item))
+        return collected
+
+    def _collect_tree_descendants(self, root_item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
+        collected = [root_item]
+        for child_index in range(root_item.childCount()):
+            child_item = root_item.child(child_index)
+            if child_item is None:
+                continue
+            collected.extend(self._collect_tree_descendants(child_item))
+        return collected
 
     def _build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
         item = QTreeWidgetItem([node.display_label])
@@ -3522,6 +3808,14 @@ class MainWindow(QMainWindow):
         else:
             ext = Path(node.absolute_path).suffix.lower()
             item.setIcon(0, self._tree_file_icon_map.get(ext, self._tree_file_icon))
+            if (
+                self._loaded_project is not None
+                and node.relative_path == self._loaded_project.metadata.default_entry
+            ):
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+                item.setIcon(0, self._tree_entrypoint_icon)
 
         for child_node in node.children:
             item.addChild(self._build_tree_item(child_node))
@@ -3584,6 +3878,19 @@ class MainWindow(QMainWindow):
         copy_path_action = menu.addAction("Copy Path")
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
+        run_file_action = None
+        set_entry_point_action = None
+        if (
+            not is_directory
+            and self._loaded_project is not None
+            and Path(absolute_path).suffix.lower() == ".py"
+        ):
+            menu.addSeparator()
+            run_file_action = menu.addAction("Run")
+            run_file_action.setEnabled(not self._run_service.supervisor.is_running())
+            set_entry_point_action = menu.addAction("Set as Entry Point")
+            if relative_path == self._loaded_project.metadata.default_entry:
+                set_entry_point_action.setEnabled(False)
 
         paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
         chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
@@ -3614,6 +3921,19 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(relative_path)
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
+        elif run_file_action is not None and chosen == run_file_action:
+            self._handle_tree_run_file(absolute_path)
+        elif set_entry_point_action is not None and chosen == set_entry_point_action:
+            self._set_project_entry_point(relative_path)
+
+    def _handle_tree_run_file(self, absolute_path: str) -> bool:
+        entry_path = Path(absolute_path).expanduser().resolve()
+        if entry_path.suffix.lower() != ".py":
+            return False
+        return self._start_session(
+            mode=constants.RUN_MODE_PYTHON_SCRIPT,
+            entry_file=str(entry_path),
+        )
 
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
@@ -3829,7 +4149,8 @@ class MainWindow(QMainWindow):
             self._loaded_project.project_root,
             exclude_patterns=self._load_global_exclude_patterns(),
         )
-        self._populate_project_tree(self._loaded_project)
+        self._populate_project_tree(self._loaded_project, preserve_state=True)
+        self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
 
     def _open_file_in_editor(self, file_path: str) -> bool:
@@ -4039,6 +4360,7 @@ class MainWindow(QMainWindow):
             return
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
         self._update_editor_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
@@ -4075,6 +4397,7 @@ class MainWindow(QMainWindow):
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
 
     def _close_active_tab(self) -> None:
         if self._editor_tabs_widget is None:
@@ -4094,6 +4417,7 @@ class MainWindow(QMainWindow):
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
+        self._refresh_run_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
 
@@ -4243,13 +4567,35 @@ class MainWindow(QMainWindow):
 
     def _poll_external_file_changes(self) -> None:
         stale_paths = self._editor_manager.stale_open_paths()
-        if not stale_paths:
+        if stale_paths:
+            active_tab = self._editor_manager.active_tab()
+            if active_tab is not None and active_tab.file_path in stale_paths:
+                self._check_for_external_file_change(active_tab.file_path)
+
+        loaded_project = self._loaded_project
+        if loaded_project is None:
             return
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
+        current_signature = self._scan_project_tree_signature(loaded_project)
+        previous_signature = self._project_tree_structure_signature
+        if previous_signature is None:
+            self._project_tree_structure_signature = current_signature
             return
-        if active_tab.file_path in stale_paths:
-            self._check_for_external_file_change(active_tab.file_path)
+        if current_signature == previous_signature:
+            return
+        self._project_tree_structure_signature = current_signature
+        self._reload_current_project()
+
+    def _scan_project_tree_signature(self, loaded_project: LoadedProject) -> tuple[str, ...]:
+        global_excludes = self._load_global_exclude_patterns()
+        effective_excludes = compute_effective_excludes(
+            global_excludes,
+            loaded_project.metadata.exclude_patterns,
+        )
+        entries = enumerate_project_entries(
+            loaded_project.project_root,
+            exclude_patterns=effective_excludes,
+        )
+        return tuple(entry.relative_path for entry in entries)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)

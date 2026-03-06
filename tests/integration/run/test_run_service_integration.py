@@ -138,6 +138,27 @@ def test_run_service_projectless_python_repl_uses_home_cwd_and_executes_multilin
     assert "0\n1" in output_text
 
 
+def test_run_service_projectless_script_executes_explicit_entry_file(tmp_path: Path) -> None:
+    """Projectless script mode should execute a provided absolute entry file."""
+    script_path = tmp_path / "snippet.py"
+    script_path.write_text("print('PROJECTLESS_SCRIPT_OK')\n", encoding="utf-8")
+    events: list[ProcessEvent] = []
+    service = RunService(
+        on_event=events.append,
+        runtime_executable=None,
+        runner_boot_path=str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve()),
+        state_root=str((tmp_path / "state").resolve()),
+    )
+
+    session = service.start_run(None, mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=str(script_path.resolve()))
+    assert Path(session.manifest_path).exists()
+
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
+    output_text = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert "PROJECTLESS_SCRIPT_OK" in output_text
+
+
 def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) -> None:
     """Debug mode should pause on configured breakpoint and resume via stdin command."""
     project_root = tmp_path / "project"

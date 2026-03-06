@@ -19,6 +19,8 @@ from app.shell.toolbar_icons import build_toolbar_icon
 _GROUP_1_IDS = (
     "shell.action.run.run",
     "shell.action.run.debug",
+    "shell.action.run.runProject",
+    "shell.action.run.debugProject",
     "shell.action.run.stop",
     "shell.action.run.restart",
 )
@@ -39,6 +41,8 @@ _GROUP_RIGHT_IDS = (
 _ACTION_ID_TO_OBJ_SUFFIX: dict[str, str] = {
     "shell.action.run.run": "run",
     "shell.action.run.debug": "debug",
+    "shell.action.run.runProject": "runProject",
+    "shell.action.run.debugProject": "debugProject",
     "shell.action.run.stop": "stop",
     "shell.action.run.restart": "restart",
     "shell.action.run.continue": "continue",

@@ -61,7 +61,7 @@ class _CoordinatorHarness:
         self.refresh_calls += 1
 
 
-def test_apply_output_routes_run_log_and_debug_console_lines() -> None:
+def test_apply_output_routes_run_log_and_debug_console_lines_without_focus_steal() -> None:
     harness = _CoordinatorHarness(
         active_mode=constants.RUN_MODE_PYTHON_DEBUG,
         auto_open_console=True,
@@ -73,7 +73,7 @@ def test_apply_output_routes_run_log_and_debug_console_lines() -> None:
     assert harness.output_tail == ["hello\n"]
     assert harness.console_lines == [("hello\n", "stdout")]
     assert harness.debug_lines == ["hello"]
-    assert harness.focused_tabs == ["run_log"]
+    assert harness.focused_tabs == []
     assert harness.refresh_calls == 0
 
 

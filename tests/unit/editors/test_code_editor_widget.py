@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.editors.text_editing import indent_lines, outdent_lines, smart_backspace_columns, toggle_comment_lines
+from app.editors.text_editing import (
+    indent_lines,
+    next_line_indentation,
+    outdent_lines,
+    smart_backspace_columns,
+    toggle_comment_lines,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -19,7 +25,7 @@ def test_indent_and_outdent_lines_round_trip() -> None:
 def test_toggle_comment_lines_comments_and_uncomments_block() -> None:
     original = "def run():\n    return 1"
     commented = toggle_comment_lines(original)
-    assert commented == "# def run():\n    # return 1"
+    assert commented == "#def run():\n#    return 1"
     uncommented = toggle_comment_lines(commented)
     assert uncommented == original
 
@@ -27,7 +33,13 @@ def test_toggle_comment_lines_comments_and_uncomments_block() -> None:
 def test_toggle_comment_lines_ignores_empty_lines() -> None:
     original = "value = 1\n\nprint(value)"
     commented = toggle_comment_lines(original)
-    assert commented == "# value = 1\n\n# print(value)"
+    assert commented == "#value = 1\n\n#print(value)"
+
+
+def test_toggle_comment_lines_uncomments_only_column_zero_prefix() -> None:
+    original = "    # inside block\n#top_level"
+    toggled = toggle_comment_lines(original)
+    assert toggled == "#    # inside block\n##top_level"
 
 
 def test_indent_and_outdent_support_tab_indent_text() -> None:
@@ -45,3 +57,9 @@ def test_smart_backspace_columns_uses_indent_boundaries_for_spaces() -> None:
 def test_smart_backspace_columns_only_triggers_in_leading_whitespace() -> None:
     assert smart_backspace_columns("    value = 1", 10, indent_text="    ") == 0
     assert smart_backspace_columns("\t\tvalue = 1", 2, indent_text="\t") == 1
+
+
+def test_next_line_indentation_carries_and_indents_after_colon() -> None:
+    assert next_line_indentation("    if ready:", indent_text="    ") == "        "
+    assert next_line_indentation("    value = 1", indent_text="    ") == "    "
+    assert next_line_indentation("\tif ready:", indent_text="\t") == "\t\t"

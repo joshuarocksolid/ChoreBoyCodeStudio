@@ -59,7 +59,12 @@ class RunSessionController:
         append_console_line: Callable[[str, str], None],
         append_python_console_line: Callable[[str], None],
     ) -> RunSessionStartResult:
-        if loaded_project is None:
+        allows_projectless_entry = (
+            loaded_project is None
+            and entry_file is not None
+            and mode in {constants.RUN_MODE_PYTHON_SCRIPT, constants.RUN_MODE_PYTHON_DEBUG}
+        )
+        if loaded_project is None and not allows_projectless_entry:
             return RunSessionStartResult(
                 started=False,
                 failure_reason=RunSessionStartFailureReason.NO_PROJECT,
@@ -71,7 +76,7 @@ class RunSessionController:
                 failure_reason=RunSessionStartFailureReason.ALREADY_RUNNING,
             )
 
-        if not skip_save and not save_all():
+        if loaded_project is not None and not skip_save and not save_all():
             return RunSessionStartResult(
                 started=False,
                 failure_reason=RunSessionStartFailureReason.SAVE_FAILED,
@@ -137,6 +142,7 @@ class RunSessionController:
         menu_registry: MenuStubRegistry | None,
         *,
         has_project: bool,
+        has_active_file: bool = False,
         has_breakpoints: bool = False,
     ) -> None:
         if menu_registry is None:
@@ -144,6 +150,8 @@ class RunSessionController:
 
         run_action = menu_registry.action("shell.action.run.run")
         debug_action = menu_registry.action("shell.action.run.debug")
+        run_project_action = menu_registry.action("shell.action.run.runProject")
+        debug_project_action = menu_registry.action("shell.action.run.debugProject")
         stop_action = menu_registry.action("shell.action.run.stop")
         restart_action = menu_registry.action("shell.action.run.restart")
         continue_action = menu_registry.action("shell.action.run.continue")
@@ -158,6 +166,7 @@ class RunSessionController:
 
         state = map_run_action_state(
             has_project=has_project,
+            has_active_file=has_active_file,
             is_running=self._run_service.supervisor.is_running(),
             is_debug_mode=self._run_service.is_debug_mode,
             is_debug_paused=self._run_service.is_debug_paused,
@@ -168,6 +177,10 @@ class RunSessionController:
             run_action.setEnabled(state.run_enabled)
         if debug_action is not None:
             debug_action.setEnabled(state.debug_enabled)
+        if run_project_action is not None:
+            run_project_action.setEnabled(state.run_project_enabled)
+        if debug_project_action is not None:
+            debug_project_action.setEnabled(state.debug_project_enabled)
         if stop_action is not None:
             stop_action.setEnabled(state.stop_enabled)
         if restart_action is not None:
