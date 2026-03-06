@@ -114,6 +114,10 @@ class TestSessionActivation:
         widget.set_session_active(True)
         assert len(widget.history) == 1
 
+    def test_set_history_replaces_existing_entries(self, widget: PythonConsoleWidget) -> None:
+        widget.set_history(["a = 1", "b = 2"])
+        assert widget.history_snapshot() == ["a = 1", "b = 2"]
+
 
 # ---------------------------------------------------------------------------
 # Prompt boundary protection
@@ -228,6 +232,27 @@ class TestHistoryNavigation:
         _press(active_widget, Qt.Key_Down)
         text = _get_plain_text(active_widget)
         assert text.endswith(_PROMPT)
+
+    def test_ctrl_r_opens_history_picker_and_replaces_input(
+        self,
+        active_widget: PythonConsoleWidget,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _type_text(active_widget, "first_cmd")
+        _press(active_widget, Qt.Key_Return)
+        _type_text(active_widget, "second_cmd")
+        _press(active_widget, Qt.Key_Return)
+
+        monkeypatch.setattr(
+            "app.shell.python_console_widget.QInputDialog.getItem",
+            lambda *_args, **_kwargs: ("first_cmd", True),
+        )
+        # Send the Ctrl modifier via direct event to trigger history picker.
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_R, Qt.ControlModifier, "r")
+        QApplication.sendEvent(active_widget, event)
+
+        text = _get_plain_text(active_widget)
+        assert text.endswith(_PROMPT + "first_cmd")
 
 
 # ---------------------------------------------------------------------------

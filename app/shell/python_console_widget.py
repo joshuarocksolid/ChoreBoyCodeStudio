@@ -23,7 +23,7 @@ from PySide2.QtGui import (
     QTextCharFormat,
     QTextCursor,
 )
-from PySide2.QtWidgets import QMenu, QTextEdit
+from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -215,6 +215,10 @@ class PythonConsoleWidget(QTextEdit):
         # Ctrl+A: select all (allow, but move cursor to end after).
         if key == Qt.Key_A and mods == _ctrl:
             super().keyPressEvent(event)
+            return
+
+        if key == Qt.Key_R and mods == _ctrl:
+            self._show_history_search_picker()
             return
 
         # Clipboard paste — allow, but protect the prompt boundary afterwards.
@@ -514,6 +518,37 @@ class PythonConsoleWidget(QTextEdit):
     @property
     def history(self) -> list[str]:
         return list(self._history)
+
+    def history_snapshot(self) -> list[str]:
+        return list(self._history)
+
+    def set_history(self, entries: list[str]) -> None:
+        normalized = [entry for entry in entries if isinstance(entry, str) and entry.strip()]
+        if len(normalized) > _MAX_HISTORY:
+            normalized = normalized[-_MAX_HISTORY:]
+        self._history = normalized
+        self._history_index = len(self._history)
+
+    def _show_history_search_picker(self) -> None:
+        if not self._history:
+            return
+        current_query = self._get_input_text().strip().lower()
+        candidates = list(reversed(self._history))
+        if current_query:
+            filtered = [entry for entry in candidates if current_query in entry.lower()]
+            if filtered:
+                candidates = filtered
+        selected, accepted = QInputDialog.getItem(
+            self,
+            "Console History",
+            "Select command:",
+            candidates,
+            0,
+            False,
+        )
+        if not accepted or not selected:
+            return
+        self._replace_input(str(selected))
 
 
 def _is_source_complete(source: str) -> bool:

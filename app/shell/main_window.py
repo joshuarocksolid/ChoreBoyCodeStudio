@@ -37,7 +37,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_cache_dir, project_logs_dir
+from app.bootstrap.paths import global_cache_dir, global_python_console_history_path, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectManifestValidationError
@@ -148,6 +148,7 @@ from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
+from app.shell.python_console_history import load_python_console_history, save_python_console_history
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
@@ -239,6 +240,7 @@ class MainWindow(QMainWindow):
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
+        self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
@@ -2788,6 +2790,27 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _restore_python_console_history(self) -> None:
+        if self._python_console_widget is None:
+            return
+        entries = load_python_console_history(
+            self._python_console_history_path,
+            max_entries=200,
+        )
+        self._python_console_widget.set_history(entries)
+
+    def _persist_python_console_history(self) -> None:
+        if self._python_console_widget is None:
+            return
+        try:
+            save_python_console_history(
+                self._python_console_history_path,
+                self._python_console_widget.history_snapshot(),
+                max_entries=200,
+            )
+        except OSError as exc:
+            self._logger.warning("Unable to persist python console history: %s", exc)
+
     def _append_python_console_line(self, text: str, stream: str = "stdout") -> None:
         if self._python_console_widget is None:
             return
@@ -3337,6 +3360,7 @@ class MainWindow(QMainWindow):
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
             self._persist_session_state()
+            self._persist_python_console_history()
             event.accept()
             return
         event.ignore()
@@ -3656,6 +3680,7 @@ class MainWindow(QMainWindow):
         self._python_console_widget.input_submitted.connect(self._handle_python_console_submit)
         self._python_console_widget.interrupt_requested.connect(self._handle_python_console_interrupt)
         self._python_console_widget.restart_requested.connect(self._handle_start_python_console_action)
+        self._restore_python_console_history()
         clear_btn.clicked.connect(self._python_console_widget.clear_console)
         container_layout.addWidget(self._python_console_widget)
 
