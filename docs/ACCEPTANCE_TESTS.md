@@ -830,11 +830,12 @@ Verify users can customize command shortcuts from Settings and observe immediate
 - editor is running
 
 **Steps:**  
-1. Open **File > Settings... > Keybindings**.
-2. Change the **Run** shortcut from `F5` to another valid binding (e.g. `Ctrl+R`).
-3. Save settings.
-4. Open the **Run** menu and verify displayed shortcut updated.
-5. Reopen settings and verify the custom value persisted.
+1. Open **File > Settings...** and set scope to **Global**.
+2. Open **Keybindings** tab.
+3. Change the **Run** shortcut from `F5` to another valid binding (e.g. `Ctrl+R`).
+4. Save settings.
+5. Open the **Run** menu and verify displayed shortcut updated.
+6. Reopen settings and verify the custom value persisted.
 
 **Expected Result:**  
 - updated shortcut appears in menu/action surfaces after save
@@ -852,11 +853,12 @@ Verify syntax token colors can be customized per theme and remain readable.
 - editor is running
 
 **Steps:**  
-1. Open **File > Settings... > Syntax Colors**.
-2. Select **Light Theme**, change one lexical token color (e.g. `keyword`), save.
-3. Reopen settings and confirm value persisted.
-4. Select **Dark Theme**, change one token color, save.
-5. Switch themes from **View > Theme** and verify editor remains readable in both modes.
+1. Open **File > Settings...** and set scope to **Global**.
+2. Open **Syntax Colors** tab.
+3. Select **Light Theme**, change one lexical token color (e.g. `keyword`), save.
+4. Reopen settings and confirm value persisted.
+5. Select **Dark Theme**, change one token color, save.
+6. Switch themes from **View > Theme** and verify editor remains readable in both modes.
 
 **Expected Result:**  
 - light and dark overrides are independently persisted
@@ -874,15 +876,49 @@ Verify rule-level lint settings (enable + severity) affect diagnostics output.
 - project with Python file producing at least one `PY220` and one `PY230` diagnostic
 
 **Steps:**  
-1. Open **File > Settings... > Linter**.
-2. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
-3. Save settings and re-run linting for affected file.
-4. Reopen settings and verify changes persisted.
+1. Open **File > Settings...**.
+2. Set scope to **Project**.
+3. Open **Linter** tab.
+4. Disable `PY220` (Unused import), set `PY230` (Unreachable statement) severity to `WARNING`.
+5. Save settings and re-run linting for affected file.
+6. Reopen settings and verify changes persisted in project scope.
+7. Use "Reset ... to Global" and verify baseline values are restored.
 
 **Expected Result:**  
 - disabled rule diagnostics are suppressed
 - severity override is reflected in problems/editor indicators
 - lint profile persists across settings reopen and app restart
+- reset-to-global clears project override values
+
+---
+
+## AT-43 — Settings scope layering and status indicator
+
+**Purpose:**  
+Verify global vs project scope controls, layered effective settings, and project-override status indication.
+
+**Preconditions:**  
+- editor is running
+- one project is open
+
+**Steps:**  
+1. Open **File > Settings...** with no project open and confirm **Project** scope is unavailable.
+2. Open a project and reopen **Settings**.
+3. Set scope to **Project** and change one project-overridable value (for example `editor.tab_width`).
+4. Save settings.
+5. Confirm `<project>/cbcs/settings.json` exists and contains project override sections.
+6. Verify status bar shows project override indicator.
+7. Switch scope to **Global** and confirm global-only tabs (`Keybindings`, `Syntax Colors`) are available.
+8. Switch back to **Project** and confirm global-only controls are hidden.
+9. Reset project overrides to global and save.
+10. Verify status bar indicator clears.
+
+**Expected Result:**  
+- scope selector correctly gates editable controls by scope
+- effective runtime settings follow layered precedence (`defaults -> global -> project`)
+- project settings persist in `<project>/cbcs/settings.json`
+- status bar clearly indicates when project overrides are active
+- reset-to-global removes active project overrides
 
 ---
 
