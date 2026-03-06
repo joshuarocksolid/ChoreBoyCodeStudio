@@ -91,6 +91,7 @@ from app.run.run_service import RunService
 from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.packager import package_project
+from app.plugins.api_broker import PluginApiBroker
 from app.plugins.contributions import DeclarativeContributionManager
 from app.plugins.discovery import discover_installed_plugins
 from app.plugins.registry_store import (
@@ -99,6 +100,7 @@ from app.plugins.registry_store import (
     record_registry_entry_failure,
 )
 from app.plugins.runtime_manager import PluginRuntimeManager
+from app.plugins.security_policy import merge_plugin_safe_mode, plugin_safe_mode_enabled
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -239,6 +241,7 @@ class MainWindow(QMainWindow):
         self._action_registry: ShellActionRegistry | None = None
         self._event_bus = ShellEventBus()
         self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
+        self._plugin_api_broker = PluginApiBroker(self._plugin_runtime_manager)
         self._plugin_safe_mode = self._load_plugin_safe_mode()
         self._declarative_contribution_manager = DeclarativeContributionManager(
             register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
@@ -252,7 +255,10 @@ class MainWindow(QMainWindow):
             subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
             unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
             emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
-            execute_plugin_runtime_command=self._execute_plugin_runtime_command,
+            execute_plugin_runtime_command=lambda command_id, payload: self._plugin_api_broker.invoke_runtime_command(
+                command_id,
+                payload,
+            ),
             on_runtime_command_success=self._clear_plugin_runtime_failure,
             on_runtime_command_failure=self._record_plugin_runtime_failure,
         )
@@ -764,24 +770,12 @@ class MainWindow(QMainWindow):
 
     def _load_plugin_safe_mode(self) -> bool:
         settings_payload = self._settings_service.load()
-        plugins_payload = settings_payload.get(constants.UI_PLUGINS_SETTINGS_KEY, {})
-        if not isinstance(plugins_payload, dict):
-            return constants.UI_PLUGINS_SAFE_MODE_DEFAULT
-        safe_mode = plugins_payload.get(constants.UI_PLUGINS_SAFE_MODE_KEY, constants.UI_PLUGINS_SAFE_MODE_DEFAULT)
-        return bool(safe_mode) if isinstance(safe_mode, bool) else constants.UI_PLUGINS_SAFE_MODE_DEFAULT
+        return plugin_safe_mode_enabled(settings_payload)
 
     def _set_plugin_safe_mode(self, enabled: bool) -> None:
-        def _merge(payload: dict[str, object]) -> dict[str, object]:
-            merged = dict(payload)
-            plugins_payload = merged.get(constants.UI_PLUGINS_SETTINGS_KEY, {})
-            if not isinstance(plugins_payload, dict):
-                plugins_payload = {}
-            plugins_payload = dict(plugins_payload)
-            plugins_payload[constants.UI_PLUGINS_SAFE_MODE_KEY] = bool(enabled)
-            merged[constants.UI_PLUGINS_SETTINGS_KEY] = plugins_payload
-            return merged
-
-        self._settings_service.update(_merge)
+        self._settings_service.update(
+            lambda payload: merge_plugin_safe_mode(payload, enabled=enabled)
+        )
         self._plugin_safe_mode = bool(enabled)
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
@@ -2333,15 +2327,11 @@ class MainWindow(QMainWindow):
             discovered_plugins,
             enabled_map=enabled_map,
         )
-        self._plugin_runtime_manager.reload_plugins()
+        self._plugin_api_broker.reload_runtime_plugins()
 
     def _execute_plugin_runtime_command(self, command_id: str, payload: dict[str, object]) -> object:
-        result = self._plugin_runtime_manager.invoke_command(command_id, payload)
-        if result is None:
-            return {}
-        if isinstance(result, (dict, list)):
-            return result
-        return {"result": result}
+        result = self._plugin_api_broker.invoke_runtime_command(command_id, payload)
+        return self._plugin_api_broker.coerce_result_payload(result)
 
     def _record_plugin_runtime_failure(self, plugin_id: str, version: str, error_message: str) -> None:
         updated_registry = record_registry_entry_failure(

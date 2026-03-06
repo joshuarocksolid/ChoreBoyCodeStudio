@@ -66,6 +66,11 @@ def global_plugins_registry_path(state_root: Optional[PathInput] = None) -> Path
     return global_plugins_dir(state_root) / constants.PLUGINS_REGISTRY_FILENAME
 
 
+def global_plugins_trust_path(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global plugin trust-state file path."""
+    return global_plugins_dir(state_root) / constants.PLUGINS_TRUST_FILENAME
+
+
 def plugin_install_dir(plugin_id: str, version: str, state_root: Optional[PathInput] = None) -> Path:
     """Return install directory for one plugin version."""
     return global_plugins_installed_dir(state_root) / plugin_id / version

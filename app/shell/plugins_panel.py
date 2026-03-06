@@ -18,8 +18,10 @@ from PySide2.QtWidgets import (
 
 from app.bootstrap.paths import PathInput
 from app.plugins.discovery import discover_installed_plugins
+from app.plugins.exporter import export_installed_plugin
 from app.plugins.installer import install_plugin, set_plugin_enabled, uninstall_plugin
 from app.plugins.registry_store import load_plugin_registry
+from app.plugins.trust_store import is_runtime_plugin_trusted, set_runtime_plugin_trust
 
 
 class PluginManagerDialog(QDialog):
@@ -51,6 +53,7 @@ class PluginManagerDialog(QDialog):
         self._uninstall_button = QPushButton("Uninstall", self)
         self._enable_button = QPushButton("Enable", self)
         self._disable_button = QPushButton("Disable", self)
+        self._export_button = QPushButton("Export...", self)
         self._refresh_button = QPushButton("Refresh", self)
         self._close_button = QPushButton("Close", self)
         self._safe_mode_checkbox = QCheckBox("Safe mode (disable all plugins)", self)
@@ -63,6 +66,7 @@ class PluginManagerDialog(QDialog):
         controls_row.addWidget(self._uninstall_button)
         controls_row.addWidget(self._enable_button)
         controls_row.addWidget(self._disable_button)
+        controls_row.addWidget(self._export_button)
         controls_row.addWidget(self._refresh_button)
         controls_row.addWidget(self._close_button)
 
@@ -77,6 +81,7 @@ class PluginManagerDialog(QDialog):
         self._uninstall_button.clicked.connect(self._handle_uninstall)
         self._enable_button.clicked.connect(self._handle_enable)
         self._disable_button.clicked.connect(self._handle_disable)
+        self._export_button.clicked.connect(self._handle_export)
         self._refresh_button.clicked.connect(self.refresh_plugins)
         self._close_button.clicked.connect(self.accept)
         self._safe_mode_checkbox.toggled.connect(self._handle_safe_mode_toggled)
@@ -114,6 +119,11 @@ class PluginManagerDialog(QDialog):
             item.setData(0, Qt.UserRole, discovered.plugin_id)
             item.setData(1, Qt.UserRole, discovered.version)
             item.setData(2, Qt.UserRole, enabled)
+            runtime_flag = bool(
+                discovered.manifest is not None
+                and discovered.manifest.runtime_entrypoint is not None
+            )
+            item.setData(3, Qt.UserRole, runtime_flag)
             self._plugins_tree.addTopLevelItem(item)
         self._update_button_states()
 
@@ -126,6 +136,7 @@ class PluginManagerDialog(QDialog):
         self._uninstall_button.setEnabled(has_selection)
         self._enable_button.setEnabled(has_selection and not self._selected_enabled())
         self._disable_button.setEnabled(has_selection and self._selected_enabled())
+        self._export_button.setEnabled(has_selection)
 
     def _selected_plugin_key(self) -> tuple[str, str] | None:
         selected_items = self._plugins_tree.selectedItems()
@@ -144,6 +155,13 @@ class PluginManagerDialog(QDialog):
             return False
         enabled = selected_items[0].data(2, Qt.UserRole)
         return bool(enabled)
+
+    def _selected_runtime(self) -> bool:
+        selected_items = self._plugins_tree.selectedItems()
+        if not selected_items:
+            return False
+        runtime_flag = selected_items[0].data(3, Qt.UserRole)
+        return bool(runtime_flag)
 
     def _handle_install(self) -> None:
         source_path = self._select_source_path()
@@ -209,6 +227,29 @@ class PluginManagerDialog(QDialog):
         if selected is None:
             return
         plugin_id, version = selected
+        if self._selected_runtime() and not is_runtime_plugin_trusted(
+            plugin_id,
+            version,
+            state_root=self._state_root,
+        ):
+            confirmation = QMessageBox.question(
+                self,
+                "Trust Runtime Plugin",
+                (
+                    f"{plugin_id}@{version} contains runtime code that executes outside the editor process."
+                    "\n\nEnable only if you trust this plugin."
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if confirmation != QMessageBox.Yes:
+                return
+            set_runtime_plugin_trust(
+                plugin_id,
+                version,
+                trusted=True,
+                state_root=self._state_root,
+            )
         try:
             set_plugin_enabled(plugin_id, version, enabled=True, state_root=self._state_root)
         except Exception as exc:
@@ -235,3 +276,31 @@ class PluginManagerDialog(QDialog):
     def _handle_safe_mode_toggled(self, checked: bool) -> None:
         if self._on_safe_mode_changed is not None:
             self._on_safe_mode_changed(bool(checked))
+
+    def _handle_export(self) -> None:
+        selected = self._selected_plugin_key()
+        if selected is None:
+            return
+        plugin_id, version = selected
+        destination_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Export Destination",
+            str(Path.home()),
+        )
+        if not destination_dir:
+            return
+        try:
+            archive_path = export_installed_plugin(
+                plugin_id,
+                version,
+                output_directory=destination_dir,
+                state_root=self._state_root,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Plugin Export Failed", str(exc))
+            return
+        QMessageBox.information(
+            self,
+            "Plugin Exported",
+            f"Exported to {archive_path}",
+        )
