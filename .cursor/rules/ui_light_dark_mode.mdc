@@ -1,0 +1,20 @@
+---
+description: Require UI compatibility across light and dark modes
+alwaysApply: true
+---
+
+# UI Theme Compatibility
+
+For user-facing UI work, ensure visuals and states remain usable in both light and dark mode.
+
+## Implementation guidance
+
+- Avoid hardcoded one-theme-only colors for text, backgrounds, borders, and state highlights.
+- Prefer semantic or theme-aware color tokens that can map cleanly to both themes.
+- Maintain readable contrast for normal, hover, selected, disabled, warning, and error states.
+- Ensure icons, badges, and status indicators stay recognizable on light and dark surfaces.
+
+## Validation expectations
+
+- When UI code changes, verify affected views in both light and dark mode before considering the task complete.
+- If dual-theme validation cannot be run, explicitly note that gap in the completion summary.

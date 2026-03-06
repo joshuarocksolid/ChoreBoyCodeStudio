@@ -1,0 +1,38 @@
+---
+description: Prefer hard cutover over legacy fallback paths
+alwaysApply: true
+---
+
+# Hard Cutover Over Legacy Fallbacks
+
+When implementing a replacement or major refactor, prefer a direct cutover to the new path.
+
+## Default approach
+
+- Migrate callers to the new implementation and remove obsolete code in the same change when practical.
+- Refactor until the new path is complete instead of preserving long-lived parallel "legacy vs new" execution branches.
+- Use tests to protect behavior parity, rather than runtime fallback chains.
+- If a temporary bridge is truly required, keep it explicit, short-lived, and tied to a removal step.
+
+## Avoid by default
+
+- Permanent compatibility toggles for internal behavior.
+- Silent fallback chains that hide failures (for example, `try new_path` then `old_path`).
+- Duplicating business rules across old and new code paths.
+
+## Exceptions
+
+- Add fallback paths only when explicitly requested or when a staged migration is required for production safety.
+- When an exception is necessary, document the removal condition and immediate follow-up task.
+
+## Example
+
+```python
+# BAD: long-lived fallback keeps both paths alive
+result = run_new_flow(data)
+if not result:
+    result = run_legacy_flow(data)
+
+# GOOD: cut over and fix the new path
+result = run_new_flow(data)
+```

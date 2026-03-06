@@ -1,0 +1,40 @@
+---
+description: Use red/green/refactor TDD for non-UI business logic
+alwaysApply: true
+---
+
+# TDD for Business Logic (Non-UI)
+
+For backend and business-logic work, prefer a red -> green -> refactor workflow.
+
+## Applies to
+
+- Python business logic in services, models, forms, permissions, query helpers, and non-trivial view behavior.
+- Domain rules such as scheduling constraints, calculations, validation, and orchestration side effects.
+
+## Workflow
+
+1. Write or update a focused failing test for the desired behavior (red).
+2. Implement the smallest code change needed to pass that test (green).
+3. Refactor for clarity and maintainability while tests stay green (refactor).
+4. Repeat per behavior and edge case.
+
+## Not the primary target
+
+- Pure UI markup/styling changes
+- Copy-only content edits that do not alter business behavior.
+
+## Expectations
+
+- Test behavior and outcomes, not incidental implementation details.
+- Start with the narrowest relevant test scope, then broaden if the change is cross-cutting.
+- If legacy code is hard to test, add a characterization test before refactoring.
+
+## Example cadence
+
+```text
+1) Add failing test for a new scheduling rule
+2) Implement minimal rule logic to pass
+3) Refactor duplicated conditionals
+4) Run relevant scheduler tests
+```

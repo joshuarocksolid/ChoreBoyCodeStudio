@@ -1,0 +1,31 @@
+---
+description: Apply project testing strategy defaults
+alwaysApply: true
+---
+
+# Testing Strategy Defaults
+
+Use this rule when planning or implementing tests.
+
+## Framework and markers
+
+- Use `pytest` as the default framework.
+- Tests run through FreeCAD AppRun via `run_tests.py`, using the real PySide2 runtime.
+- Follow marker taxonomy defined in `pyproject.toml`: `unit`, `integration`, `runtime_parity`, `manual_acceptance`.
+- Use `unittest.mock` only for unit-level isolation boundaries.
+
+## Layering expectations
+
+- Start with fast unit tests for business logic and explicit contracts.
+- Add integration tests for editor/runner boundaries, subprocess lifecycle, stdout/stderr, exit codes, and run logs.
+- Keep broad UI workflow validation manual through `docs/ACCEPTANCE_TESTS.md` unless the user explicitly requests UI automation.
+
+## Runtime compatibility
+
+- All tests run inside the FreeCAD AppRun Python (3.11) with real PySide2.
+- Any test tied to FreeCAD AppRun behavior should be marked `runtime_parity`.
+- Runtime-parity tests should fail with actionable diagnostics or skip clearly when prerequisites are missing.
+
+## Scope discipline
+
+- During setup-only requests, scaffold config/docs/directories without writing speculative test cases.
