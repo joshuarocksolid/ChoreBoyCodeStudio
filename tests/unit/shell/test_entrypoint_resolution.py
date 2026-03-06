@@ -50,7 +50,7 @@ def test_set_project_entry_point_persists_manifest_and_refreshes_tree(tmp_path: 
     window_any = cast(Any, window)
     window_any._loaded_project = loaded_project
     refresh_calls: list[LoadedProject] = []
-    window_any._populate_project_tree = lambda project: refresh_calls.append(project)
+    window_any._populate_project_tree = lambda project, **_kwargs: refresh_calls.append(project)
 
     updated = MainWindow._set_project_entry_point(window, "scripts/entry.py")
 

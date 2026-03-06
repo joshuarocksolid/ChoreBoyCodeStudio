@@ -153,9 +153,9 @@ from app.project.run_configs import (
 )
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
-from app.project.file_excludes import parse_global_exclude_patterns
+from app.project.file_excludes import compute_effective_excludes, parse_global_exclude_patterns
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.project.project_service import create_blank_project, open_project
+from app.project.project_service import create_blank_project, enumerate_project_entries, open_project
 from app.project.project_manifest import set_project_default_entry
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import BackgroundTaskRunner
@@ -274,6 +274,7 @@ class MainWindow(QMainWindow):
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
+        self._project_tree_structure_signature: tuple[str, ...] | None = None
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
@@ -656,7 +657,7 @@ class MainWindow(QMainWindow):
         if self._explorer_refresh_btn is not None:
             self._explorer_refresh_btn.setIcon(refresh_icon(tokens.icon_primary))
         if self._loaded_project is not None:
-            self._populate_project_tree(self._loaded_project)
+            self._populate_project_tree(self._loaded_project, preserve_state=True)
 
     def _system_prefers_dark_theme(self) -> bool:
         try:
@@ -987,7 +988,6 @@ class MainWindow(QMainWindow):
         if updated_snapshot.file_exclude_patterns != previous_file_exclude_patterns:
             self._reload_current_project()
             if self._search_sidebar is not None and self._loaded_project is not None:
-                from app.project.file_excludes import compute_effective_excludes
                 effective_excludes = compute_effective_excludes(
                     updated_snapshot.file_exclude_patterns,
                     self._loaded_project.metadata.exclude_patterns,
@@ -1548,11 +1548,11 @@ class MainWindow(QMainWindow):
         self._logger.info("Project loaded: %s", loaded_project.project_root)
         self._update_explorer_buttons_enabled()
         self._populate_project_tree(loaded_project)
+        self._project_tree_structure_signature = tuple(entry.relative_path for entry in loaded_project.entries)
         self._reset_editor_tabs()
         self._stored_lint_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
-            from app.project.file_excludes import compute_effective_excludes
             effective_excludes = compute_effective_excludes(
                 self._load_global_exclude_patterns(),
                 loaded_project.metadata.exclude_patterns,
@@ -1941,7 +1941,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Entry point", str(exc))
             return False
         self._loaded_project = replace(loaded_project, metadata=updated_metadata)
-        self._populate_project_tree(self._loaded_project)
+        self._populate_project_tree(self._loaded_project, preserve_state=True)
         return True
 
     def _handle_run_pytest_project_action(self) -> None:
@@ -3671,19 +3671,72 @@ class MainWindow(QMainWindow):
         layout.addWidget(body_label, 1)
         return panel
 
-    def _populate_project_tree(self, loaded_project: LoadedProject) -> None:
+    def _populate_project_tree(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
         if self._project_tree_widget is None:
             return
 
+        expanded_paths: set[str] = set()
+        selected_paths: set[str] = set()
+        if preserve_state:
+            expanded_paths, selected_paths = self._capture_project_tree_state()
         self._project_tree_widget.clear()
         root_nodes = build_project_tree(loaded_project.entries)
         display_nodes = build_project_tree_display(root_nodes)
         for display_node in display_nodes:
             root_item = self._build_tree_item(display_node)
             self._project_tree_widget.addTopLevelItem(root_item)
-            if display_node.is_directory:
+            if not preserve_state and display_node.is_directory:
                 root_item.setExpanded(True)
                 root_item.setIcon(0, self._tree_folder_open_icon)
+        if preserve_state:
+            self._restore_project_tree_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
+
+    def _capture_project_tree_state(self) -> tuple[set[str], set[str]]:
+        if self._project_tree_widget is None:
+            return (set(), set())
+        expanded_paths: set[str] = set()
+        selected_paths: set[str] = set()
+        for item in self._iter_project_tree_items():
+            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            if not relative_path:
+                continue
+            if item.isExpanded():
+                expanded_paths.add(relative_path)
+            if item.isSelected():
+                selected_paths.add(relative_path)
+        return (expanded_paths, selected_paths)
+
+    def _restore_project_tree_state(self, *, expanded_paths: set[str], selected_paths: set[str]) -> None:
+        if self._project_tree_widget is None:
+            return
+        for item in self._iter_project_tree_items():
+            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            if not relative_path:
+                continue
+            if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
+                item.setExpanded(relative_path in expanded_paths)
+                item.setIcon(0, self._tree_folder_open_icon if item.isExpanded() else self._tree_folder_icon)
+            item.setSelected(relative_path in selected_paths)
+
+    def _iter_project_tree_items(self) -> list[QTreeWidgetItem]:
+        if self._project_tree_widget is None:
+            return []
+        collected: list[QTreeWidgetItem] = []
+        for index in range(self._project_tree_widget.topLevelItemCount()):
+            root_item = self._project_tree_widget.topLevelItem(index)
+            if root_item is None:
+                continue
+            collected.extend(self._collect_tree_descendants(root_item))
+        return collected
+
+    def _collect_tree_descendants(self, root_item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
+        collected = [root_item]
+        for child_index in range(root_item.childCount()):
+            child_item = root_item.child(child_index)
+            if child_item is None:
+                continue
+            collected.extend(self._collect_tree_descendants(child_item))
+        return collected
 
     def _build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
         item = QTreeWidgetItem([node.display_label])
@@ -4036,7 +4089,8 @@ class MainWindow(QMainWindow):
             self._loaded_project.project_root,
             exclude_patterns=self._load_global_exclude_patterns(),
         )
-        self._populate_project_tree(self._loaded_project)
+        self._populate_project_tree(self._loaded_project, preserve_state=True)
+        self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
 
     def _open_file_in_editor(self, file_path: str) -> bool:
@@ -4453,13 +4507,35 @@ class MainWindow(QMainWindow):
 
     def _poll_external_file_changes(self) -> None:
         stale_paths = self._editor_manager.stale_open_paths()
-        if not stale_paths:
+        if stale_paths:
+            active_tab = self._editor_manager.active_tab()
+            if active_tab is not None and active_tab.file_path in stale_paths:
+                self._check_for_external_file_change(active_tab.file_path)
+
+        loaded_project = self._loaded_project
+        if loaded_project is None:
             return
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
+        current_signature = self._scan_project_tree_signature(loaded_project)
+        previous_signature = self._project_tree_structure_signature
+        if previous_signature is None:
+            self._project_tree_structure_signature = current_signature
             return
-        if active_tab.file_path in stale_paths:
-            self._check_for_external_file_change(active_tab.file_path)
+        if current_signature == previous_signature:
+            return
+        self._project_tree_structure_signature = current_signature
+        self._reload_current_project()
+
+    def _scan_project_tree_signature(self, loaded_project: LoadedProject) -> tuple[str, ...]:
+        global_excludes = self._load_global_exclude_patterns()
+        effective_excludes = compute_effective_excludes(
+            global_excludes,
+            loaded_project.metadata.exclude_patterns,
+        )
+        entries = enumerate_project_entries(
+            loaded_project.project_root,
+            exclude_patterns=effective_excludes,
+        )
+        return tuple(entry.relative_path for entry in entries)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
         draft_entry = self._autosave_store.load_draft(tab_state.file_path)
