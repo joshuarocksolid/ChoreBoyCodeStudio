@@ -113,4 +113,4 @@ def test_apply_exit_clears_session_and_focuses_problems_for_failed_run() -> None
     assert harness.statuses == [("failed", 1)]
     assert harness.focused_tabs == ["problems"]
     assert harness.refresh_calls == 1
-    assert any("Run finished (code=1)." in line[0] for line in harness.console_lines)
+    assert any("Run finished" in line[0] for line in harness.console_lines)

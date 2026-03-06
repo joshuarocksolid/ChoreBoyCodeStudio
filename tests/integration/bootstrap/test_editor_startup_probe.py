@@ -1,5 +1,7 @@
 """Integration tests for startup capability probe wiring."""
 
+from types import SimpleNamespace
+
 import pytest
 
 import run_editor
@@ -46,6 +48,11 @@ def test_main_runs_startup_probe_and_stores_report(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_startup_capability_probe", fake_probe)
+    monkeypatch.setattr(
+        run_editor,
+        "initialize_tree_sitter_runtime",
+        lambda: SimpleNamespace(is_available=True, message="ok"),
+    )
     monkeypatch.setattr(run_editor, "_start_editor", lambda: 0)
 
     assert run_editor.main() == 0
@@ -67,6 +74,11 @@ def test_main_logs_failed_probe_checks_clearly(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_startup_capability_probe", lambda: report)
+    monkeypatch.setattr(
+        run_editor,
+        "initialize_tree_sitter_runtime",
+        lambda: SimpleNamespace(is_available=True, message="ok"),
+    )
     monkeypatch.setattr(run_editor, "_start_editor", lambda: 0)
 
     assert run_editor.main() == 0
@@ -98,6 +110,11 @@ def test_main_sets_startup_report_before_shell_launch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_startup_capability_probe", fake_probe)
+    monkeypatch.setattr(
+        run_editor,
+        "initialize_tree_sitter_runtime",
+        lambda: SimpleNamespace(is_available=True, message="ok"),
+    )
     monkeypatch.setattr(run_editor, "_start_editor", fake_start_editor)
 
     assert run_editor.main() == 0

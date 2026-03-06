@@ -45,7 +45,8 @@ def test_open_plain_python_folder_auto_initializes_manifest(tmp_path: Path) -> N
     assert payload["template"] == "imported_external"
     assert payload["default_entry"] == "run.py"
     assert loaded_project.metadata.default_entry == "run.py"
-    assert all(not entry.relative_path.startswith("cbcs") for entry in loaded_project.entries)
+    assert any(entry.relative_path == "cbcs" for entry in loaded_project.entries)
+    assert any(entry.relative_path == "cbcs/project.json" for entry in loaded_project.entries)
 
 
 def test_open_plain_python_folder_infers_entry_from_pyproject_scripts(tmp_path: Path) -> None:

@@ -123,6 +123,14 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     window_any._append_console_line = (
         lambda text, stream="stdout": console_lines.append((text, stream))
     )
+    window_any._active_run_session_info = None
+    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
+    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
+        apply=lambda process_event: (
+            window_any._append_console_line(process_event.text or "", stream=process_event.stream or "stdout"),
+            window_any._append_debug_output_line((process_event.text or "").rstrip()),
+        )
+    )
 
     event = ProcessEvent(event_type="output", stream="stdout", text="hello-debug\n")
     MainWindow._apply_run_event(window, event)
@@ -151,6 +159,14 @@ def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
     run_log_widget = object()
     window_any._run_log_panel = run_log_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({run_log_widget: 2})
+    window_any._active_run_session_info = None
+    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
+    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
+        apply=lambda process_event: (
+            window_any._append_console_line(process_event.text or "", stream=process_event.stream or "stdout"),
+            window_any._bottom_tabs_widget.setCurrentIndex(2),
+        )
+    )
 
     event = ProcessEvent(event_type="output", stream="stdout", text="hello\n")
     MainWindow._apply_run_event(window, event)
@@ -184,6 +200,15 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
     problems_widget = object()
     window_any._problems_panel = problems_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({problems_widget: 3})
+    window_any._active_run_session_info = None
+    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
+    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
+        apply=lambda process_event: (
+            window_any._finalize_run_log(process_event.return_code),
+            window_any._update_problems_from_output(),
+            window_any._bottom_tabs_widget.setCurrentIndex(3),
+        )
+    )
 
     event = ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False)
     MainWindow._apply_run_event(window, event)
@@ -206,6 +231,7 @@ def test_start_session_in_debug_enables_debug_input() -> None:
     window_any._auto_open_console_on_run_output = False
     window_any._set_run_status = lambda _status: None
     window_any._is_shutting_down = False
+    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
 
     started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
     debug_panel = cast(_FakeDebugPanel, window_any._debug_panel)

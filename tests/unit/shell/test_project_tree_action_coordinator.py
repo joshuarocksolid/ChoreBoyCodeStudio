@@ -57,7 +57,6 @@ def _coordinator(
         apply_breakpoints_to_widget=lambda _widget, _bps: None,
         update_widget_language=lambda _widget, _path: None,
         maybe_rewrite_imports=lambda _src, _dst: None,
-        prune_semantic_state=lambda: None,
         reload_project=lambda: reloaded.append(True),
     )
     return coordinator, reloaded
