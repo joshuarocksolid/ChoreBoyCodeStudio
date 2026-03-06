@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
 from app.intelligence.lint_profile import parse_lint_rule_overrides
+from app.persistence.settings_store import compute_effective_settings_payload, filter_project_settings_payload
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS, parse_global_exclude_patterns
 from app.shell.shortcut_preferences import parse_shortcut_overrides
 from app.shell.syntax_color_preferences import (
@@ -67,6 +68,11 @@ class MainWindowSettingsSnapshot:
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
     intelligence_runtime_settings: IntelligenceRuntimeSettings
+
+
+SETTINGS_SCOPE_GLOBAL = "global"
+SETTINGS_SCOPE_PROJECT = "project"
+SETTINGS_SCOPES: tuple[str, str] = (SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT)
 
 
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
@@ -235,6 +241,30 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
     )
 
 
+def parse_effective_editor_settings_snapshot(
+    global_settings_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any] | None = None,
+) -> EditorSettingsSnapshot:
+    """Parse layered effective settings into an editor snapshot."""
+    effective_payload = compute_effective_settings_payload(
+        global_settings_payload,
+        project_settings_payload,
+    )
+    return parse_editor_settings_snapshot(effective_payload)
+
+
+def parse_effective_main_window_settings(
+    global_settings_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any] | None = None,
+) -> MainWindowSettingsSnapshot:
+    """Parse layered effective settings into main-window runtime preferences."""
+    effective_payload = compute_effective_settings_payload(
+        global_settings_payload,
+        project_settings_payload,
+    )
+    return parse_main_window_settings(effective_payload)
+
+
 def merge_theme_mode(settings_payload: Mapping[str, Any], theme_mode: str) -> dict[str, Any]:
     """Merge validated theme mode into settings payload."""
     merged = dict(settings_payload)
@@ -338,6 +368,65 @@ def merge_editor_settings_snapshot(
     return merged
 
 
+def merge_editor_settings_snapshot_for_scope(
+    *,
+    scope: str,
+    global_settings_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any],
+    snapshot: EditorSettingsSnapshot,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Merge settings snapshot into the selected scope payload(s)."""
+    normalized_scope = scope if scope in SETTINGS_SCOPES else SETTINGS_SCOPE_GLOBAL
+    if normalized_scope == SETTINGS_SCOPE_GLOBAL:
+        return (
+            merge_editor_settings_snapshot(global_settings_payload, snapshot),
+            filter_project_settings_payload(project_settings_payload),
+        )
+
+    global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
+    global_overridable_payload = _extract_project_overridable_payload(
+        merge_editor_settings_snapshot({}, global_snapshot)
+    )
+    desired_overridable_payload = _extract_project_overridable_payload(
+        merge_editor_settings_snapshot({}, snapshot)
+    )
+    override_payload = _diff_mapping_payload(
+        desired_overridable_payload,
+        global_overridable_payload,
+    )
+    base_project_payload = filter_project_settings_payload(project_settings_payload)
+    merged_project_payload = _merge_project_scope_overrides(
+        base_project_payload,
+        override_payload,
+    )
+    return (dict(global_settings_payload), merged_project_payload)
+
+
+def has_project_override(project_settings_payload: Mapping[str, Any], *key_path: str) -> bool:
+    """Return True when a project override exists for the key path."""
+    if not key_path:
+        return False
+    current: Any = project_settings_payload
+    for key in key_path:
+        if not isinstance(current, Mapping) or key not in current:
+            return False
+        current = current.get(key)
+    return True
+
+
+def remove_project_override(
+    project_settings_payload: Mapping[str, Any],
+    *key_path: str,
+) -> dict[str, Any]:
+    """Return payload copy with one project override path removed."""
+    payload = filter_project_settings_payload(project_settings_payload)
+    if not key_path:
+        return payload
+
+    _remove_nested_key(payload, list(key_path))
+    return filter_project_settings_payload(payload)
+
+
 def _coerce_bool(value: Any, *, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
@@ -372,3 +461,65 @@ def _normalize_lint_rule_override_map(payload: Mapping[str, Any]) -> dict[str, d
         if normalized_override:
             normalized[code] = normalized_override
     return normalized
+
+
+def _extract_project_overridable_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    extracted: dict[str, Any] = {}
+    for key in constants.PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS:
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            extracted[key] = dict(value)
+    return extracted
+
+
+def _diff_mapping_payload(
+    desired_payload: Mapping[str, Any],
+    baseline_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    diff: dict[str, Any] = {}
+    for key, desired_value in desired_payload.items():
+        baseline_value = baseline_payload.get(key)
+        if isinstance(desired_value, Mapping) and isinstance(baseline_value, Mapping):
+            child_diff = _diff_mapping_payload(desired_value, baseline_value)
+            if child_diff:
+                diff[key] = child_diff
+            continue
+        if desired_value != baseline_value:
+            diff[key] = desired_value
+    return diff
+
+
+def _merge_project_scope_overrides(
+    base_project_payload: Mapping[str, Any],
+    override_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    schema_version_raw = base_project_payload.get("schema_version", 1)
+    if isinstance(schema_version_raw, int) and not isinstance(schema_version_raw, bool) and schema_version_raw > 0:
+        schema_version = schema_version_raw
+    else:
+        schema_version = 1
+    merged: dict[str, Any] = {
+        "schema_version": schema_version,
+    }
+    for key in constants.PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS:
+        value = override_payload.get(key)
+        if isinstance(value, Mapping) and value:
+            merged[key] = dict(value)
+    return filter_project_settings_payload(merged)
+
+
+def _remove_nested_key(payload: dict[str, Any], key_path: list[str]) -> None:
+    if not key_path:
+        return
+    key = key_path[0]
+    if key not in payload:
+        return
+    if len(key_path) == 1:
+        payload.pop(key, None)
+        return
+    child = payload.get(key)
+    if not isinstance(child, dict):
+        return
+    _remove_nested_key(child, key_path[1:])
+    if not child:
+        payload.pop(key, None)

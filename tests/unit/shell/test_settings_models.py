@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import pytest
 
+from app.core import constants
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
+    SETTINGS_SCOPE_GLOBAL,
+    SETTINGS_SCOPE_PROJECT,
+    has_project_override,
     merge_import_update_policy,
+    merge_editor_settings_snapshot_for_scope,
     merge_last_project_path,
     merge_editor_settings_snapshot,
     merge_theme_mode,
     parse_editor_settings_snapshot,
+    parse_effective_editor_settings_snapshot,
     parse_main_window_settings,
+    remove_project_override,
 )
 
 pytestmark = pytest.mark.unit
@@ -355,3 +362,127 @@ def test_merge_import_update_policy_defaults_blank_value() -> None:
 def test_merge_last_project_path_sets_project_root_key() -> None:
     merged = merge_last_project_path({}, "/tmp/project")
     assert merged["last_project_path"] == "/tmp/project"
+
+
+def test_parse_effective_editor_settings_snapshot_applies_project_overrides() -> None:
+    global_payload = {
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
+            constants.UI_EDITOR_FONT_SIZE_KEY: 12,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: "dark",
+        },
+    }
+    project_payload = {
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: "light",
+        },
+    }
+
+    snapshot = parse_effective_editor_settings_snapshot(global_payload, project_payload)
+
+    assert snapshot.tab_width == 2
+    assert snapshot.font_size == 12
+    assert snapshot.theme_mode == "dark"
+
+
+def test_merge_editor_settings_snapshot_for_scope_global_updates_global_only() -> None:
+    global_payload = {
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
+        },
+    }
+    project_payload = {
+        "schema_version": 1,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+    }
+    updated_snapshot = EditorSettingsSnapshot(tab_width=6)
+
+    merged_global, merged_project = merge_editor_settings_snapshot_for_scope(
+        scope=SETTINGS_SCOPE_GLOBAL,
+        global_settings_payload=global_payload,
+        project_settings_payload=project_payload,
+        snapshot=updated_snapshot,
+    )
+
+    assert merged_global[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 6
+    assert merged_project == project_payload
+
+
+def test_merge_editor_settings_snapshot_for_scope_project_persists_only_diffs() -> None:
+    global_payload = {
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
+            constants.UI_EDITOR_FONT_SIZE_KEY: 11,
+        },
+        constants.UI_OUTPUT_SETTINGS_KEY: {
+            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: True,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: constants.UI_THEME_MODE_DARK,
+        },
+    }
+    project_payload = {"schema_version": 1}
+    updated_snapshot = EditorSettingsSnapshot(
+        tab_width=2,
+        font_size=11,
+        auto_open_console_on_run_output=False,
+        theme_mode=constants.UI_THEME_MODE_LIGHT,
+    )
+
+    merged_global, merged_project = merge_editor_settings_snapshot_for_scope(
+        scope=SETTINGS_SCOPE_PROJECT,
+        global_settings_payload=global_payload,
+        project_settings_payload=project_payload,
+        snapshot=updated_snapshot,
+    )
+
+    assert merged_global == global_payload
+    assert merged_project == {
+        "schema_version": 1,
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
+        },
+        constants.UI_OUTPUT_SETTINGS_KEY: {
+            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: False,
+        },
+    }
+    assert constants.UI_THEME_SETTINGS_KEY not in merged_project
+
+
+def test_has_project_override_and_remove_project_override_manage_nested_paths() -> None:
+    payload = {
+        "schema_version": 1,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY: {
+            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: False,
+            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY: 3,
+        },
+    }
+    assert has_project_override(
+        payload,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY,
+        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
+    ) is True
+
+    updated = remove_project_override(
+        payload,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY,
+        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
+    )
+
+    assert has_project_override(
+        updated,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY,
+        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
+    ) is False
+    assert has_project_override(
+        updated,
+        constants.UI_INTELLIGENCE_SETTINGS_KEY,
+        constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
+    ) is True
