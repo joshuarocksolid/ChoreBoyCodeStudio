@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, TypeVar
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
@@ -150,6 +150,15 @@ from app.shell.background_tasks import BackgroundTaskRunner
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.action_registry import ShellActionRegistry
 from app.shell.command_broker import CommandBroker
+from app.shell.events import (
+    ProjectOpenFailedEvent,
+    ProjectOpenedEvent,
+    RunProcessExitEvent,
+    RunProcessOutputEvent,
+    RunProcessStateEvent,
+    RunSessionStartedEvent,
+    ShellEventBus,
+)
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.project_tree_controller import ProjectTreeController
@@ -167,6 +176,7 @@ TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
 EVENT_QUEUE_BATCH_LIMIT = 200
+ShellEventT = TypeVar("ShellEventT")
 
 
 class _MiddleClickTabBar(QTabBar):
@@ -217,6 +227,7 @@ class MainWindow(QMainWindow):
         self._menu_registry: MenuStubRegistry | None = None
         self._command_broker = CommandBroker()
         self._action_registry: ShellActionRegistry | None = None
+        self._event_bus = ShellEventBus()
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
@@ -777,6 +788,12 @@ class MainWindow(QMainWindow):
             return
         self._action_registry.unregister_menu_action(command_id)
         self._action_registry.unregister_command(command_id)
+
+    def subscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
+        self._event_bus.subscribe(event_type, handler)
+
+    def unsubscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
+        self._event_bus.unsubscribe(event_type, handler)
 
     def _handle_open_project_action(self) -> None:
         selected_path = QFileDialog.getExistingDirectory(self, "Open Project", str(Path.home()))
@@ -1511,6 +1528,9 @@ class MainWindow(QMainWindow):
 
     def _show_open_project_error(self, project_root: str, details: str) -> None:
         self._logger.warning("Project open failed for %s: %s", project_root, details)
+        self._event_bus.publish(
+            ProjectOpenFailedEvent(project_root=project_root, error_message=details)
+        )
         QMessageBox.critical(
             self,
             "Unable to open project",
@@ -1553,6 +1573,12 @@ class MainWindow(QMainWindow):
             loaded_project.project_root,
             len(loaded_project.entries),
             (time.perf_counter() - started_at) * 1000.0,
+        )
+        self._event_bus.publish(
+            ProjectOpenedEvent(
+                project_root=loaded_project.project_root,
+                project_name=loaded_project.metadata.name,
+            )
         )
         self._persist_last_project_path(loaded_project.project_root)
 
@@ -2072,6 +2098,14 @@ class MainWindow(QMainWindow):
                 run_id=result.session.run_id,
                 mode=result.session.mode,
                 entry_file=result.session.entry_file,
+            )
+            self._event_bus.publish(
+                RunSessionStartedEvent(
+                    run_id=result.session.run_id,
+                    mode=result.session.mode,
+                    entry_file=result.session.entry_file,
+                    project_root=result.session.project_root,
+                )
             )
         if self._debug_panel is not None:
             self._debug_panel.set_command_input_enabled(
@@ -2855,7 +2889,37 @@ class MainWindow(QMainWindow):
             processed += 1
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
+        active_session = self._active_run_session_info
+        run_id = active_session.run_id if active_session is not None else None
+        mode = active_session.mode if active_session is not None else None
         self._get_run_output_coordinator().apply(event)
+        if event.event_type == "output":
+            self._event_bus.publish(
+                RunProcessOutputEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    stream=event.stream or "stdout",
+                    text=event.text or "",
+                )
+            )
+        elif event.event_type == "state":
+            self._event_bus.publish(
+                RunProcessStateEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    state=event.state,
+                    terminated_by_user=event.terminated_by_user,
+                )
+            )
+        elif event.event_type == "exit":
+            self._event_bus.publish(
+                RunProcessExitEvent(
+                    run_id=run_id,
+                    mode=mode,
+                    return_code=event.return_code,
+                    terminated_by_user=event.terminated_by_user,
+                )
+            )
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._console_model.append(stream, text)
