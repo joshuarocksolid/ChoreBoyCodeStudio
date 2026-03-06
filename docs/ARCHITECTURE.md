@@ -359,13 +359,17 @@ choreboy_code_studio/
       problem_parser.py
     plugins/
       __init__.py
+      api_broker.py
       manifest.py
       models.py
       discovery.py
       package_format.py
       registry_store.py
       installer.py
+      exporter.py
       contributions.py
+      security_policy.py
+      trust_store.py
       rpc_protocol.py
       host_supervisor.py
       runtime_manager.py

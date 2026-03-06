@@ -54,7 +54,12 @@ Each plugin provides `plugin.json` with:
 * Failure quarantine and explicit re-enable flow
 * Actionable per-plugin logs and diagnostics
 
-## 8. Phase plan
+## 8. Share workflow
+
+* Installed plugins can be exported as local `.cbcs-plugin.zip` bundles.
+* Export/import remains filesystem-first for USB transfer workflows.
+
+## 9. Phase plan
 
 ## Phase H00 (completed): Pre-plugin stabilization
 
@@ -102,7 +107,7 @@ Each plugin provides `plugin.json` with:
 * API reference
 * Versioning and compatibility policy
 
-## 9. Acceptance coverage
+## 10. Acceptance coverage
 
 Plugin platform acceptance is tracked in:
 
