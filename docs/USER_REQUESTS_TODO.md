@@ -133,13 +133,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Syntax highlighting colors "run out" around line 630 in dark mode when editing a large Python file (650+ lines). Switching to light mode appeared to fix the issue. |
-| **Root cause** | Two contributing factors identified. **(1)** `MAX_SEMANTIC_SELECTIONS_PER_REFRESH = 1800` in `app/editors/code_editor_widget.py` (line 42) caps how many semantic token overlays (`ExtraSelection`) are applied. The semantic analyzer (`app/intelligence/semantic_tokens.py`) generates a span for every variable reference, function/method call, attribute access, import, parameter, etc. — large files easily exceed 1800 spans, causing tokens beyond the budget to lose semantic coloring. **(2)** `_rebuild_semantic_selections()` (lines 344-368) runs on file open, text change, and theme change but NOT on scroll. The viewport-based prioritization in `_prioritized_semantic_spans()` (lines 385-401) becomes stale when the user scrolls to a different region. |
-| **Why dark mode only** | The issue exists in both themes but is only perceptible in dark mode. Dark mode semantic colors (bright `#79C0FF`, `#7EE787`) contrast starkly with the default text color (`#E9ECEF`) on the dark background (`#1B1F23`). In light mode, semantic colors (dark `#1C7ED6`, `#2F9E44`) are visually close to the default text (`#212529`) on white, masking the loss. Switching themes triggers `_rebuild_semantic_selections()` with the current viewport, re-prioritizing spans for the visible region. |
-| **Affected code** | `app/editors/code_editor_widget.py` — `MAX_SEMANTIC_SELECTIONS_PER_REFRESH`, `_prioritized_semantic_spans()`, `_rebuild_semantic_selections()`. `app/intelligence/semantic_tokens.py` — `_SemanticTokenCollector` (span generation). |
-| **Potential fixes** | (a) Re-prioritize semantic selections on scroll (debounced) so the visible viewport always has full semantic coloring. (b) Increase or dynamically scale the cap based on file size / span count. (c) Hybrid: maintain a viewport-window of semantic selections that updates lazily on scroll. |
+| **Resolution** | Resolved by the tree-sitter hard cutover. Highlighting is now applied directly through `QSyntaxHighlighter.setFormat()` from tree-sitter query captures, not semantic `ExtraSelection` overlays. |
+| **Why this fixes it** | The old failure mode was an overlay-cap issue (`MAX_SEMANTIC_SELECTIONS_PER_REFRESH`) combined with stale viewport prioritization. The new pipeline has no semantic overlay cap and updates visible-window captures through the tree-sitter highlighter policy. |
+| **Implemented in** | `app/treesitter/highlighter.py`, `app/editors/code_editor_widget.py`, `app/editors/syntax_registry.py`, `run_editor.py` |
 
 ---
 
@@ -225,10 +224,11 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Request** | Add syntax highlighting and validation for `.jrxml` (JasperReports XML) files opened in ChoreBoy Code Studio. JRXML files are XML-based report definitions used by the `jasper_bridge` library (see `docs/JASPER_BRIDGE_PLAN.md`). Syntax highlighting should treat them as XML with awareness of JasperReports-specific elements and attributes. Validation could check well-formedness and flag common JRXML authoring mistakes. |
-| **Affected code** | `app/editors/syntax_registry.py` (register JRXML file extension with an XML-based highlighter), `app/editors/` (new or extended highlighter for XML/JRXML), `app/intelligence/` (optional: JRXML-specific diagnostics). |
-| **Notes** | Originated from the `jasper_bridge` planning process. Kept separate from the library itself — `jasper_bridge` is a standalone importable library with no IDE dependency. |
+| **Resolution** | `.jrxml` is now registered in the tree-sitter language registry under the XML path. Files open with tree-sitter syntax highlighting through the shared highlighter pipeline. |
+| **Implemented in** | `app/treesitter/language_registry.py` (`.jrxml` extension mapping), `app/treesitter/queries/xml.scm`, `app/editors/syntax_registry.py` |
+| **Notes** | Syntax support is complete in-editor. JRXML domain validation rules remain a separate optional enhancement. |
 
 ---
 

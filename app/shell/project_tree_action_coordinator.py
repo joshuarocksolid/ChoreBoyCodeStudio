@@ -31,7 +31,6 @@ class ProjectTreeActionCoordinator(Generic[W]):
         apply_breakpoints_to_widget: Callable[[W, set[int]], None],
         update_widget_language: Callable[[W, str], None],
         maybe_rewrite_imports: Callable[[str, str], None],
-        prune_semantic_state: Callable[[], None],
         reload_project: Callable[[], None],
     ) -> None:
         self._project_tree_controller = project_tree_controller
@@ -47,7 +46,6 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._apply_breakpoints_to_widget = apply_breakpoints_to_widget
         self._update_widget_language = update_widget_language
         self._maybe_rewrite_imports = maybe_rewrite_imports
-        self._prune_semantic_state = prune_semantic_state
         self._reload_project = reload_project
 
     def handle_new_file(self, destination_directory: str, file_name: str) -> str | None:
@@ -176,4 +174,3 @@ class ProjectTreeActionCoordinator(Generic[W]):
             refresh_breakpoints_list=self._refresh_breakpoints_list,
             maybe_rewrite_imports=self._maybe_rewrite_imports,
         )
-        self._prune_semantic_state()

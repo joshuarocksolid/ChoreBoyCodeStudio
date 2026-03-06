@@ -25,7 +25,6 @@ from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.intelligence.latency_tracker import RollingLatencyTracker
-from app.intelligence.semantic_tokens import MODIFIER_READONLY, SemanticTokenSpan
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
@@ -39,7 +38,6 @@ VIEWPORT_CHAR_MARGIN = 8000
 LANGUAGE_ATTACH_WARNING_MS = 80.0
 THEME_APPLY_WARNING_MS = 90.0
 OVERLAY_REFRESH_WARNING_MS = 24.0
-MAX_SEMANTIC_SELECTIONS_PER_REFRESH = 1800
 
 
 class _LineNumberArea(QWidget):
@@ -119,19 +117,6 @@ class CodeEditorWidget(QPlainTextEdit):
         self._diagnostic_selections: list[QTextEdit.ExtraSelection] = []
         self._diagnostic_lines: dict[int, DiagnosticSeverity] = {}
         self._diagnostic_ranges: list[tuple[int, int, str]] = []
-        self._semantic_spans: list[SemanticTokenSpan] = []
-        self._semantic_selections: list[QTextEdit.ExtraSelection] = []
-        self._semantic_token_colors: dict[str, QColor] = {
-            "function": QColor("#1C7ED6"),
-            "method": QColor("#1971C2"),
-            "class": QColor("#1864AB"),
-            "parameter": QColor("#2B8A3E"),
-            "import": QColor("#9C36B5"),
-            "variable": QColor("#2F9E44"),
-            "property": QColor("#1A73E8"),
-            "constant": QColor("#C97A00"),
-        }
-        self._semantic_span_signature: tuple[tuple[int, int, str, tuple[str, ...]], ...] = ()
         self._cached_non_cursor_selections: list[QTextEdit.ExtraSelection] = []
         self._overlay_cache_dirty = True
         self._overlay_generation = 0
@@ -143,6 +128,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._highlight_current_line)
+        self.verticalScrollBar().valueChanged.connect(self._handle_viewport_changed)
         self._update_line_number_area_width(0)
         self._highlight_current_line()
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
@@ -175,17 +161,6 @@ class CodeEditorWidget(QPlainTextEdit):
         if tokens.diag_info_color:
             self._diag_info_color = QColor(tokens.diag_info_color)
         self._syntax_palette = syntax_palette_from_tokens(tokens)
-        self._semantic_token_colors = {
-            "function": QColor(tokens.syntax_semantic_function),
-            "method": QColor(tokens.syntax_semantic_method),
-            "class": QColor(tokens.syntax_semantic_class),
-            "parameter": QColor(tokens.syntax_semantic_parameter),
-            "import": QColor(tokens.syntax_semantic_import),
-            "variable": QColor(tokens.syntax_semantic_variable),
-            "property": QColor(tokens.syntax_semantic_property),
-            "constant": QColor(tokens.syntax_semantic_constant),
-        }
-        self._rebuild_semantic_selections()
         self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
@@ -194,6 +169,8 @@ class CodeEditorWidget(QPlainTextEdit):
             is_dark=tokens.is_dark,
             syntax_palette=self._syntax_palette,
         )
+        self._apply_highlighter_runtime_policy()
+        self._notify_highlighter_viewport_lines()
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         self._record_latency_metric(self._theme_apply_latency, elapsed_ms, warning_threshold_ms=THEME_APPLY_WARNING_MS)
 
@@ -220,8 +197,37 @@ class CodeEditorWidget(QPlainTextEdit):
             self._highlighting_reduced_threshold_chars,
             int(lexical_only_threshold_chars),
         )
-        self._rebuild_semantic_selections()
+        self._apply_highlighter_runtime_policy()
+        self._notify_highlighter_viewport_lines()
         self._mark_overlay_cache_dirty()
+        self._refresh_extra_selections()
+
+    def _apply_highlighter_runtime_policy(self) -> None:
+        if self._highlighter is None:
+            return
+        if hasattr(self._highlighter, "set_highlighting_policy"):
+            self._highlighter.set_highlighting_policy(  # type: ignore[union-attr]
+                adaptive_mode=self._highlighting_adaptive_mode,
+                reduced_threshold_chars=self._highlighting_reduced_threshold_chars,
+                lexical_only_threshold_chars=self._highlighting_lexical_only_threshold_chars,
+            )
+
+    def _notify_highlighter_viewport_lines(self) -> None:
+        if self._highlighter is None:
+            return
+        if not hasattr(self._highlighter, "set_viewport_lines"):
+            return
+        document = self.document()
+        if document is None:
+            return
+        top_cursor = self.cursorForPosition(QPoint(0, 0))
+        bottom_cursor = self.cursorForPosition(QPoint(0, max(0, self.viewport().height() - 1)))
+        start_line = top_cursor.blockNumber()
+        end_line = max(start_line, bottom_cursor.blockNumber())
+        self._highlighter.set_viewport_lines(start_line, end_line)  # type: ignore[union-attr]
+
+    def _handle_viewport_changed(self, _value: int) -> None:
+        self._notify_highlighter_viewport_lines()
         self._refresh_extra_selections()
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
@@ -321,99 +327,6 @@ class CodeEditorWidget(QPlainTextEdit):
         self._refresh_extra_selections()
         self._line_number_area.update()
 
-    def set_semantic_token_spans(self, spans: list[SemanticTokenSpan]) -> None:
-        """Apply semantic token spans as overlay selections."""
-        signature = self._semantic_signature(spans)
-        if signature == self._semantic_span_signature:
-            return
-        self._semantic_span_signature = signature
-        self._semantic_spans = list(spans)
-        self._rebuild_semantic_selections()
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-
-    def clear_semantic_tokens(self) -> None:
-        if not self._semantic_spans and not self._semantic_selections:
-            return
-        self._semantic_spans.clear()
-        self._semantic_span_signature = ()
-        self._semantic_selections.clear()
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-
-    def _rebuild_semantic_selections(self) -> None:
-        self._semantic_selections = []
-        if self._effective_highlighting_mode() != constants.HIGHLIGHTING_MODE_NORMAL:
-            return
-        document = self.document()
-        max_position = max(0, document.characterCount() - 1)
-        for span in self._prioritized_semantic_spans():
-            if span.end <= span.start:
-                continue
-            if span.start >= max_position:
-                continue
-            start = max(0, span.start)
-            end = min(max_position, span.end)
-            if end <= start:
-                continue
-            color = self._semantic_color_for_span(span)
-            if color is None:
-                continue
-            selection = cast(Any, QTextEdit.ExtraSelection())
-            selection.format.setForeground(color)
-            cursor = QTextCursor(document)
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.KeepAnchor)
-            selection.cursor = cursor
-            self._semantic_selections.append(selection)
-
-    def _semantic_color_for_span(self, span: SemanticTokenSpan) -> QColor | None:
-        if (
-            MODIFIER_READONLY in span.token_modifiers
-            and span.token_type in ("variable", "constant", "property")
-        ):
-            readonly_color = self._semantic_token_colors.get("constant")
-            if readonly_color is not None:
-                return readonly_color
-        direct = self._semantic_token_colors.get(span.token_type)
-        if direct is not None:
-            return direct
-        if span.token_type == "constant":
-            return self._semantic_token_colors.get("constant") or self._semantic_token_colors.get("variable")
-        return None
-
-    def _prioritized_semantic_spans(self) -> list[SemanticTokenSpan]:
-        if len(self._semantic_spans) <= MAX_SEMANTIC_SELECTIONS_PER_REFRESH:
-            return list(self._semantic_spans)
-        visible_start, visible_end = self._visible_document_window()
-        viewport_first: list[SemanticTokenSpan] = []
-        non_viewport: list[SemanticTokenSpan] = []
-        for span in self._semantic_spans:
-            if span.end <= span.start:
-                continue
-            if span.start < visible_end and span.end > visible_start:
-                viewport_first.append(span)
-            else:
-                non_viewport.append(span)
-        if len(viewport_first) >= MAX_SEMANTIC_SELECTIONS_PER_REFRESH:
-            return viewport_first[:MAX_SEMANTIC_SELECTIONS_PER_REFRESH]
-        remaining = MAX_SEMANTIC_SELECTIONS_PER_REFRESH - len(viewport_first)
-        return viewport_first + non_viewport[:remaining]
-
-    @staticmethod
-    def _semantic_signature(spans: list[SemanticTokenSpan]) -> tuple[tuple[int, int, str, tuple[str, ...]], ...]:
-        normalized = [
-            (
-                span.start,
-                span.end,
-                span.token_type,
-                tuple(sorted(span.token_modifiers)),
-            )
-            for span in spans
-        ]
-        normalized.sort()
-        return tuple(normalized)
-
     def _diag_color_for_severity(self, severity: DiagnosticSeverity) -> QColor:
         if severity == DiagnosticSeverity.ERROR:
             return self._diag_error_color
@@ -468,6 +381,8 @@ class CodeEditorWidget(QPlainTextEdit):
             syntax_palette=self._syntax_palette,
             sample_text="\n".join(sample_lines),
         )
+        self._apply_highlighter_runtime_policy()
+        self._notify_highlighter_viewport_lines()
         self._active_file_path = file_path
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         self._record_latency_metric(
@@ -586,6 +501,7 @@ class CodeEditorWidget(QPlainTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+        self._notify_highlighter_viewport_lines()
 
     def paint_line_number_area(self, event) -> None:
         painter = QPainter(self._line_number_area)
@@ -884,7 +800,6 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def _build_non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
         selections: list[QTextEdit.ExtraSelection] = []
-        effective_mode = self._effective_highlighting_mode()
         if self._debug_execution_line is not None:
             debug_sel = cast(Any, QTextEdit.ExtraSelection())
             debug_sel.format.setBackground(self._debug_execution_line_bg)
@@ -896,8 +811,6 @@ class CodeEditorWidget(QPlainTextEdit):
                 debug_sel.cursor = debug_cursor
                 selections.append(debug_sel)
         selections.extend(self._diagnostic_selections)
-        if effective_mode == constants.HIGHLIGHTING_MODE_NORMAL:
-            selections.extend(self._semantic_selections)
         selections.extend(self._bounded_search_selections())
         return selections
 

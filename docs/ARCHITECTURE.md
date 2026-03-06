@@ -322,9 +322,26 @@ choreboy_code_studio/
       __init__.py
       editor_tab.py
       editor_manager.py
-      syntax_python.py
+      syntax_engine.py
+      syntax_registry.py
       search_panel.py
       quick_open.py
+    treesitter/
+      __init__.py
+      loader.py
+      language_registry.py
+      highlighter.py
+      queries/
+        python.scm
+        json.scm
+        javascript.scm
+        html.scm
+        xml.scm
+        css.scm
+        bash.scm
+        markdown.scm
+        yaml.scm
+        sql.scm
     project/
       __init__.py
       project_service.py
@@ -531,13 +548,12 @@ Text editing behavior:
 * tabs
 * dirty state
 * syntax highlighting
-* stateful lexical highlighting per language (multiline-aware block state)
-* language highlighter registry (extension/sniff based) to avoid hardcoded branching
-* semantic token overlay fed by background analysis with document-revision guards
-* debounced/coalesced semantic refresh scheduling with keyed background-task replacement
-* cancellation-aware semantic extraction to avoid stale or long-running token walks
+* tree-sitter-driven `QSyntaxHighlighter` pipeline (query captures mapped directly to `setFormat`)
+* language/query registry (extension + sniff based) for deterministic tree-sitter language resolution
+* incremental parse updates (`tree.edit` + `parser.parse(source, old_tree)`) with changed-range capture refresh
 * adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
-* viewport-capped overlay application for large buffers (diagnostics/search/semantic decorations)
+* viewport-window query execution for large buffers (reduced + lexical_only modes)
+* no semantic `ExtraSelection` overlay pipeline in the editor path
 * line numbers and breakpoint gutter markers
 * search within file
 * quick open support
@@ -935,7 +951,6 @@ Current implementation explicitly offloads:
 * unresolved import analysis
 * project health checks
 * support bundle generation
-* semantic token extraction
 
 to background workers/tasks to avoid blocking the UI thread.
 
@@ -943,11 +958,10 @@ to background workers/tasks to avoid blocking the UI thread.
 
 The editor highlighting contract is performance-gated with integration tests:
 
-* Python lexical full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
-* Python semantic extraction at ~2,000 LOC: p95 <= 120ms
-* semantic extraction under typing-burst variants: p95 <= 140ms
+* Python tree-sitter full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
+* incremental tree-sitter parse+capture refresh under typing-burst variants: p95 <= 140ms
 * theme-switch apply cost across 10 open editors: p95 <= 150ms per editor
-* large-file mode must keep overlay volume bounded (viewport-capped non-cursor selections)
+* large-file mode must keep capture-query work bounded (viewport-window query execution)
 * bracket-match path must remain bounded on large files (no unbounded cursor-move scans)
 
 These gates are part of release validation and should be updated only with explicit evidence.

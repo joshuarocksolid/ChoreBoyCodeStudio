@@ -65,14 +65,6 @@ from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
-from app.intelligence.latency_tracker import RollingLatencyTracker
-from app.intelligence.semantic_tokens import (
-    PARSE_STATE_CANCELLED,
-    PARSE_STATE_FAILED,
-    SemanticTokenExtractionResult,
-    SemanticTokenSpan,
-    build_python_semantic_result,
-)
 from app.intelligence.signature_service import resolve_signature_help
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -278,11 +270,6 @@ class MainWindow(QMainWindow):
         self._realtime_lint_timer.setSingleShot(True)
         self._realtime_lint_timer.setInterval(300)
         self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
-        self._pending_semantic_refreshes: dict[str, CodeEditorWidget] = {}
-        self._semantic_refresh_timer = QTimer(self)
-        self._semantic_refresh_timer.setSingleShot(True)
-        self._semantic_refresh_timer.setInterval(120)
-        self._semantic_refresh_timer.timeout.connect(self._flush_scheduled_semantic_token_refreshes)
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
@@ -292,13 +279,6 @@ class MainWindow(QMainWindow):
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
-        self._semantic_revision_by_file: dict[str, int] = {}
-        self._semantic_source_fingerprint_by_file: dict[str, tuple[int, int]] = {}
-        self._semantic_last_good_spans_by_file: dict[str, list[SemanticTokenSpan]] = {}
-        self._semantic_last_applied_signature_by_file: dict[str, tuple[tuple[int, int, str, tuple[str, ...]], ...]] = {}
-        self._semantic_schedule_count = 0
-        self._semantic_superseded_count = 0
-        self._semantic_refresh_latency = RollingLatencyTracker("semantic_refresh_ms", window_size=180, snapshot_interval=30)
         self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
@@ -366,7 +346,6 @@ class MainWindow(QMainWindow):
             apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
             update_widget_language=self._update_widget_language_for_path,
             maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
-            prune_semantic_state=self._prune_semantic_state_maps,
             reload_project=self._reload_current_project,
         )
 
@@ -3588,31 +3567,8 @@ class MainWindow(QMainWindow):
     def _apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
         self._project_tree_action_coordinator.apply_path_move_updates(source_path, destination_path)
 
-    def _prune_semantic_state_maps(self) -> None:
-        self._semantic_revision_by_file = {
-            path: revision
-            for path, revision in self._semantic_revision_by_file.items()
-            if path in self._editor_widgets_by_path
-        }
-        self._semantic_source_fingerprint_by_file = {
-            path: fingerprint
-            for path, fingerprint in self._semantic_source_fingerprint_by_file.items()
-            if path in self._editor_widgets_by_path
-        }
-        self._semantic_last_good_spans_by_file = {
-            path: spans
-            for path, spans in self._semantic_last_good_spans_by_file.items()
-            if path in self._editor_widgets_by_path
-        }
-        self._semantic_last_applied_signature_by_file = {
-            path: signature
-            for path, signature in self._semantic_last_applied_signature_by_file.items()
-            if path in self._editor_widgets_by_path
-        }
-
     def _update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
-        self._schedule_semantic_token_refresh(new_path, widget)
 
     def _update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         if self._editor_tabs_widget is None:
@@ -3700,13 +3656,6 @@ class MainWindow(QMainWindow):
             existing_index = self._tab_index_for_path(opened_result.tab.file_path)
             if existing_index >= 0:
                 self._editor_tabs_widget.setCurrentIndex(existing_index)
-                existing_widget = self._editor_widgets_by_path.get(opened_result.tab.file_path)
-                if existing_widget is not None:
-                    self._schedule_semantic_token_refresh(
-                        opened_result.tab.file_path,
-                        existing_widget,
-                        immediate=True,
-                    )
             self._refresh_save_action_states()
             self._update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -3774,11 +3723,6 @@ class MainWindow(QMainWindow):
             editor_widget.toPlainText(),
         )
         self._handle_editor_tab_changed(tab_index)
-        self._schedule_semantic_token_refresh(
-            opened_result.tab.file_path,
-            editor_widget,
-            immediate=True,
-        )
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
         self._logger.info(
@@ -3826,7 +3770,6 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
-        self._schedule_semantic_token_refresh(tab_state.file_path, editor_widget)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -3935,12 +3878,6 @@ class MainWindow(QMainWindow):
         widget = self._editor_widgets_by_path.pop(file_path, None)
         if widget is not None:
             self._release_editor_widget(widget)
-        self._pending_semantic_refreshes.pop(file_path, None)
-        self._semantic_revision_by_file.pop(file_path, None)
-        self._semantic_source_fingerprint_by_file.pop(file_path, None)
-        self._semantic_last_good_spans_by_file.pop(file_path, None)
-        self._semantic_last_applied_signature_by_file.pop(file_path, None)
-        self._background_tasks.cancel(self._semantic_task_key(file_path))
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
         self._stored_lint_diagnostics.pop(file_path, None)
@@ -3960,17 +3897,9 @@ class MainWindow(QMainWindow):
             self._editor_tabs_widget.clear()
         self._autosave_timer.stop()
         self._realtime_lint_timer.stop()
-        self._semantic_refresh_timer.stop()
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
-        self._pending_semantic_refreshes.clear()
         self._clear_debug_execution_indicator()
-        for file_path in list(self._semantic_revision_by_file):
-            self._background_tasks.cancel(self._semantic_task_key(file_path))
-        self._semantic_revision_by_file.clear()
-        self._semantic_source_fingerprint_by_file.clear()
-        self._semantic_last_good_spans_by_file.clear()
-        self._semantic_last_applied_signature_by_file.clear()
         self._editor_widgets_by_path.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
@@ -4164,156 +4093,6 @@ class MainWindow(QMainWindow):
 
     def _run_scheduled_realtime_lint(self) -> None:
         self._diagnostics_orchestrator.run_scheduled_realtime_lint()
-    @staticmethod
-    def _semantic_task_key(file_path: str) -> str:
-        return f"semantic_tokens:{file_path}"
-
-    def _schedule_semantic_token_refresh(
-        self,
-        file_path: str,
-        editor_widget: CodeEditorWidget,
-        *,
-        immediate: bool = False,
-    ) -> None:
-        if immediate:
-            self._pending_semantic_refreshes.pop(file_path, None)
-            self._run_semantic_token_refresh(file_path, editor_widget)
-            return
-        self._pending_semantic_refreshes[file_path] = editor_widget
-        self._semantic_refresh_timer.start()
-
-    def _flush_scheduled_semantic_token_refreshes(self) -> None:
-        if not self._pending_semantic_refreshes:
-            return
-        pending_items = list(self._pending_semantic_refreshes.items())
-        self._pending_semantic_refreshes.clear()
-        for file_path, editor_widget in pending_items:
-            if self._editor_widgets_by_path.get(file_path) is not editor_widget:
-                continue
-            self._run_semantic_token_refresh(file_path, editor_widget)
-
-    def _run_semantic_token_refresh(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
-        source_text = editor_widget.toPlainText()
-        if not self._should_enable_python_semantic_tokens(file_path=file_path, source_text=source_text):
-            editor_widget.clear_semantic_tokens()
-            self._semantic_revision_by_file.pop(file_path, None)
-            self._semantic_source_fingerprint_by_file.pop(file_path, None)
-            self._semantic_last_good_spans_by_file.pop(file_path, None)
-            self._semantic_last_applied_signature_by_file.pop(file_path, None)
-            self._background_tasks.cancel(self._semantic_task_key(file_path))
-            return
-        source_fingerprint = (len(source_text), hash(source_text))
-        if self._semantic_source_fingerprint_by_file.get(file_path) == source_fingerprint:
-            return
-        self._semantic_source_fingerprint_by_file[file_path] = source_fingerprint
-
-        self._semantic_schedule_count += 1
-        if file_path in self._semantic_revision_by_file:
-            self._semantic_superseded_count += 1
-        if (
-            self._intelligence_runtime_settings.metrics_logging_enabled
-            and self._semantic_schedule_count % 80 == 0
-        ):
-            self._logger.info(
-                "Semantic scheduling telemetry: scheduled=%s superseded=%s",
-                self._semantic_schedule_count,
-                self._semantic_superseded_count,
-            )
-
-        revision = self._semantic_revision_by_file.get(file_path, 0) + 1
-        self._semantic_revision_by_file[file_path] = revision
-        started_at = time.perf_counter()
-
-        def task(cancel_event) -> SemanticTokenExtractionResult:  # type: ignore[no-untyped-def]
-            if cancel_event.is_set():
-                return SemanticTokenExtractionResult(spans=[], parse_state=PARSE_STATE_CANCELLED)
-            return build_python_semantic_result(source_text, should_cancel=cancel_event.is_set)
-
-        def on_success(result: SemanticTokenExtractionResult) -> None:
-            if self._semantic_revision_by_file.get(file_path) != revision:
-                return
-            widget = self._editor_widgets_by_path.get(file_path)
-            if widget is None:
-                return
-            if result.is_cancelled:
-                return
-            spans_to_apply = list(result.spans)
-            if result.parse_state == PARSE_STATE_FAILED:
-                previous_spans = self._semantic_last_good_spans_by_file.get(file_path)
-                if previous_spans is not None:
-                    spans_to_apply = list(previous_spans)
-            else:
-                self._semantic_last_good_spans_by_file[file_path] = list(result.spans)
-
-            signature = self._semantic_span_signature(spans_to_apply)
-            if self._semantic_last_applied_signature_by_file.get(file_path) != signature:
-                widget.set_semantic_token_spans(spans_to_apply)
-                self._semantic_last_applied_signature_by_file[file_path] = signature
-            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-            snapshot = self._semantic_refresh_latency.record(elapsed_ms)
-            if self._intelligence_runtime_settings.metrics_logging_enabled:
-                if elapsed_ms > 160.0:
-                    self._logger.warning(
-                        "Semantic tokens latency warning: file=%s elapsed_ms=%.2f count=%s",
-                        file_path,
-                        elapsed_ms,
-                        len(spans_to_apply),
-                    )
-                elif snapshot is not None:
-                    self._logger.info(
-                        (
-                            "Semantic tokens telemetry: file=%s elapsed_ms=%.2f count=%s "
-                            "window_count=%s p50_ms=%.2f p95_ms=%.2f max_ms=%.2f"
-                        ),
-                        file_path,
-                        elapsed_ms,
-                        len(spans_to_apply),
-                        snapshot.count,
-                        snapshot.p50_ms,
-                        snapshot.p95_ms,
-                        snapshot.max_ms,
-                    )
-
-        def on_error(exc: Exception) -> None:
-            self._logger.debug("Semantic token refresh failed: file=%s error=%s", file_path, exc)
-
-        self._background_tasks.run(
-            key=self._semantic_task_key(file_path),
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _should_enable_python_semantic_tokens(self, *, file_path: str, source_text: str) -> bool:
-        source_size = len(source_text)
-        reduced_threshold = self._intelligence_runtime_settings.highlighting_reduced_threshold_chars
-        adaptive_mode = self._intelligence_runtime_settings.highlighting_adaptive_mode
-        if adaptive_mode != constants.HIGHLIGHTING_MODE_NORMAL:
-            return False
-        if source_size >= reduced_threshold:
-            return False
-        suffix = Path(file_path).suffix.lower()
-        if suffix in {".py", ".pyw"}:
-            return True
-        stripped = source_text.lstrip()
-        first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
-        return first_line.startswith("#!") and "python" in first_line.lower()
-
-    @staticmethod
-    def _semantic_span_signature(
-        spans: list[SemanticTokenSpan],
-    ) -> tuple[tuple[int, int, str, tuple[str, ...]], ...]:
-        normalized = [
-            (
-                span.start,
-                span.end,
-                span.token_type,
-                tuple(sorted(span.token_modifiers)),
-            )
-            for span in spans
-        ]
-        normalized.sort()
-        return tuple(normalized)
 
     def _flush_pending_autosaves(self) -> None:
         if not self._pending_autosave_payloads:
