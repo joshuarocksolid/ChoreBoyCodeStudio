@@ -94,6 +94,7 @@ from app.packaging.packager import package_project
 from app.plugins.contributions import DeclarativeContributionManager
 from app.plugins.discovery import discover_installed_plugins
 from app.plugins.registry_store import load_plugin_registry
+from app.plugins.runtime_manager import PluginRuntimeManager
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
@@ -233,6 +234,7 @@ class MainWindow(QMainWindow):
         self._command_broker = CommandBroker()
         self._action_registry: ShellActionRegistry | None = None
         self._event_bus = ShellEventBus()
+        self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
         self._declarative_contribution_manager = DeclarativeContributionManager(
             register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
                 command_id=command_id,
@@ -245,6 +247,7 @@ class MainWindow(QMainWindow):
             subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
             unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
             emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
+            execute_plugin_runtime_command=self._execute_plugin_runtime_command,
         )
         self._status_controller: ShellStatusBarController | None = None
         self._toolbar = None
@@ -2290,6 +2293,15 @@ class MainWindow(QMainWindow):
             discovered_plugins,
             enabled_map=enabled_map,
         )
+        self._plugin_runtime_manager.reload_plugins()
+
+    def _execute_plugin_runtime_command(self, command_id: str, payload: dict[str, object]) -> object:
+        result = self._plugin_runtime_manager.invoke_command(command_id, payload)
+        if result is None:
+            return {}
+        if isinstance(result, (dict, list)):
+            return result
+        return {"result": result}
 
     def _render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         """Run diagnostics for *file_path* and update the editor + problems panel.
@@ -3155,6 +3167,7 @@ class MainWindow(QMainWindow):
                 self._logger.warning("Failed to stop active run during window close: %s", exc)
 
         self._repl_manager.shutdown()
+        self._plugin_runtime_manager.stop()
         self._run_session_controller.clear_active_session_mode()
         self._set_run_status("idle")
         if self._python_console_widget is not None:

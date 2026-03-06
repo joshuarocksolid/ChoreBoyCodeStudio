@@ -32,6 +32,7 @@ class DeclarativeContributionManager:
         subscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         unsubscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         emit_message: Callable[[str], None],
+        execute_plugin_runtime_command: Callable[[str, dict[str, Any]], Any],
     ) -> None:
         self._register_runtime_command = register_runtime_command
         self._register_runtime_menu_command = register_runtime_menu_command
@@ -40,6 +41,7 @@ class DeclarativeContributionManager:
         self._subscribe_shell_event = subscribe_shell_event
         self._unsubscribe_shell_event = unsubscribe_shell_event
         self._emit_message = emit_message
+        self._execute_plugin_runtime_command = execute_plugin_runtime_command
         self._registered_command_ids: set[str] = set()
         self._event_subscriptions: list[tuple[type[object], Callable[[object], None]]] = []
 
@@ -93,24 +95,40 @@ class DeclarativeContributionManager:
             message = command_payload.get("message")
             if not isinstance(message, str) or not message.strip():
                 message = f"{plugin_id}: {command_id}"
+            runtime_flag = bool(command_payload.get("runtime", False))
+            runtime_payload = command_payload.get("runtime_payload", {})
+            if not isinstance(runtime_payload, dict):
+                runtime_payload = {}
+            normalized_command_id = command_id.strip()
 
-            self._register_runtime_command(
-                command_id.strip(),
-                lambda text=message: self._emit_message(text),
-                True,
-            )
+            if runtime_flag:
+                self._register_runtime_command(
+                    normalized_command_id,
+                    lambda cid=normalized_command_id, payload=dict(runtime_payload): self._execute_plugin_runtime_command(
+                        cid,
+                        payload,
+                    ),
+                    True,
+                )
+            else:
+                self._register_runtime_command(
+                    normalized_command_id,
+                    lambda text=message: self._emit_message(text),
+                    True,
+                )
+
             self._register_runtime_menu_command(
-                command_id=command_id.strip(),
+                command_id=normalized_command_id,
                 menu_id=menu_id.strip(),
                 label=title.strip(),
-                handler=lambda cid=command_id.strip(): self._execute_runtime_command(cid),
+                handler=lambda cid=normalized_command_id: self._execute_runtime_command(cid),
                 shortcut=shortcut,
                 enabled=True,
                 status_tip=status_tip,
                 tool_tip=tool_tip,
                 replace=True,
             )
-            self._registered_command_ids.add(command_id.strip())
+            self._registered_command_ids.add(normalized_command_id)
 
     def _apply_event_hooks(self, hooks_payload: list[Any]) -> None:
         for hook_payload in hooks_payload:
