@@ -54,6 +54,7 @@ from app.intelligence.lint_profile import (
     LINT_SEVERITY_INFO,
     LINT_SEVERITY_WARNING,
 )
+from app.core import constants
 
 
 class SettingsDialog(QDialog):
@@ -167,10 +168,6 @@ class SettingsDialog(QDialog):
         self._completion_min_chars_input.setValue(snapshot.completion_min_chars)
         intelligence_form.addRow("Completion min chars", self._completion_min_chars_input)
 
-        self._diagnostics_enabled_input = QCheckBox(intelligence_group)
-        self._diagnostics_enabled_input.setChecked(snapshot.diagnostics_enabled)
-        intelligence_form.addRow("Enable diagnostics", self._diagnostics_enabled_input)
-
         self._diagnostics_realtime_input = QCheckBox(intelligence_group)
         self._diagnostics_realtime_input.setChecked(snapshot.diagnostics_realtime)
         intelligence_form.addRow("Realtime diagnostics", self._diagnostics_realtime_input)
@@ -268,6 +265,20 @@ class SettingsDialog(QDialog):
         linter_layout = QVBoxLayout(linter_tab)
         tabs.addTab(linter_tab, "Linter")
 
+        linter_controls = QGroupBox("Provider")
+        linter_controls_form = QFormLayout(linter_controls)
+        self._linter_enabled_input = QCheckBox(linter_controls)
+        self._linter_enabled_input.setChecked(snapshot.diagnostics_enabled)
+        self._linter_enabled_input.toggled.connect(self._handle_linter_enabled_toggled)
+        linter_controls_form.addRow("Enable Python linting", self._linter_enabled_input)
+        self._linter_provider_input = QComboBox(linter_controls)
+        self._linter_provider_input.addItem("Default (built-in)", constants.LINTER_PROVIDER_DEFAULT)
+        self._linter_provider_input.addItem("Pyflakes", constants.LINTER_PROVIDER_PYFLAKES)
+        provider_index = self._linter_provider_input.findData(snapshot.selected_linter)
+        self._linter_provider_input.setCurrentIndex(provider_index if provider_index >= 0 else 0)
+        linter_controls_form.addRow("Linter provider", self._linter_provider_input)
+        linter_layout.addWidget(linter_controls)
+
         self._linter_table = QTableWidget(0, 5, linter_tab)
         self._linter_table.setHorizontalHeaderLabels(["Code", "Rule", "Enabled", "Severity", "Reset"])
         self._linter_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -282,6 +293,7 @@ class SettingsDialog(QDialog):
         linter_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         linter_layout.addWidget(self._linter_table, 1)
         self._populate_linter_table()
+        self._sync_linter_control_states()
 
         files_tab = QWidget(tabs)
         files_layout = QVBoxLayout(files_tab)
@@ -350,7 +362,7 @@ class SettingsDialog(QDialog):
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),
-            diagnostics_enabled=self._diagnostics_enabled_input.isChecked(),
+            diagnostics_enabled=self._linter_enabled_input.isChecked(),
             diagnostics_realtime=self._diagnostics_realtime_input.isChecked(),
             quick_fixes_enabled=self._quick_fixes_enabled_input.isChecked(),
             quick_fix_require_preview_for_multifile=self._quick_fix_multifile_preview_input.isChecked(),
@@ -361,6 +373,7 @@ class SettingsDialog(QDialog):
             theme_mode=["system", "light", "dark"][self._theme_mode_input.currentIndex()],
             auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
             auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
+            selected_linter=str(self._linter_provider_input.currentData()),
             shortcut_overrides=self._shortcut_overrides_snapshot(),
             syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
             syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
@@ -620,6 +633,14 @@ class SettingsDialog(QDialog):
             self._syntax_validation_label.setVisible(False)
             self._has_invalid_syntax_colors = False
         self._refresh_validation_state()
+
+    def _handle_linter_enabled_toggled(self, _checked: bool) -> None:
+        self._sync_linter_control_states()
+
+    def _sync_linter_control_states(self) -> None:
+        enabled = self._linter_enabled_input.isChecked()
+        self._linter_provider_input.setEnabled(enabled)
+        self._linter_table.setEnabled(enabled)
 
     def _populate_linter_table(self) -> None:
         self._lint_enabled_inputs.clear()

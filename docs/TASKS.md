@@ -1107,6 +1107,7 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - settings dialog Keybindings tab (search/edit/reset)
   - syntax color override model + Settings Syntax Colors tab with theme-specific overrides and color picking
   - lint profile model + Settings Linter tab (rule enablement + severity overrides)
+  - linter runtime controls: global enable/disable toggle + provider selector (`default`, `pyflakes`)
   - diagnostics pipeline integration for lint profile suppression/severity remap
   - docs/test coverage updates for new settings contracts
 - Primary files:

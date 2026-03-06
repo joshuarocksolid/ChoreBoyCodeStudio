@@ -489,3 +489,32 @@ def test_unresolved_import_respects_lint_profile_disable(tmp_path: Path) -> None
         lint_rule_overrides={"PY200": {"enabled": False}},
     )
     assert all(d.code != "PY200" for d in diagnostics)
+
+
+def test_analyze_python_file_pyflakes_reports_undefined_name(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("print(unknown_name)\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        selected_linter="pyflakes",
+    )
+
+    codes = [diagnostic.code for diagnostic in diagnostics]
+    assert "PY301" in codes
+    undefined = [diagnostic for diagnostic in diagnostics if diagnostic.code == "PY301"]
+    assert undefined
+    assert undefined[0].severity == DiagnosticSeverity.ERROR
+
+
+def test_analyze_python_file_pyflakes_respects_disable_override(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("print(unknown_name)\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        selected_linter="pyflakes",
+        lint_rule_overrides={"PY301": {"enabled": False}},
+    )
+
+    assert all(diagnostic.code != "PY301" for diagnostic in diagnostics)

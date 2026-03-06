@@ -315,6 +315,7 @@ class MainWindow(QMainWindow):
         )
         self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
+        self._selected_linter = self._load_selected_linter()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
         self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
         self._autosave_store = AutosaveStore(state_root=self._state_root)
@@ -687,6 +688,11 @@ class MainWindow(QMainWindow):
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
 
+    def _load_selected_linter(self) -> str:
+        settings_payload = self._settings_service.load()
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return snapshot.selected_linter
+
     def _configure_close_tab_shortcut(self) -> None:
         if self._close_tab_shortcut is None:
             self._close_tab_shortcut = QShortcut(QKeySequence(), self)
@@ -915,6 +921,7 @@ class MainWindow(QMainWindow):
         previous_theme_mode = snapshot.theme_mode
         previous_lint_rule_overrides = dict(snapshot.lint_rule_overrides)
         previous_diagnostics_enabled = snapshot.diagnostics_enabled
+        previous_selected_linter = snapshot.selected_linter
         previous_file_exclude_patterns = list(snapshot.file_exclude_patterns)
         dialog = SettingsDialog(snapshot, self)
         if dialog.exec_() != QDialog.Accepted:
@@ -956,6 +963,7 @@ class MainWindow(QMainWindow):
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
+        self._selected_linter = self._load_selected_linter()
         if not self._diagnostics_enabled or not self._diagnostics_realtime:
             self._realtime_lint_timer.stop()
             self._pending_realtime_lint_file_path = None
@@ -971,7 +979,10 @@ class MainWindow(QMainWindow):
         self._apply_theme_styles()
         lint_profile_changed = self._lint_rule_overrides != previous_lint_rule_overrides
         diagnostics_enabled_changed = self._diagnostics_enabled != previous_diagnostics_enabled
-        if self._diagnostics_enabled and (lint_profile_changed or diagnostics_enabled_changed):
+        selected_linter_changed = self._selected_linter != previous_selected_linter
+        if self._diagnostics_enabled and (
+            lint_profile_changed or diagnostics_enabled_changed or selected_linter_changed
+        ):
             self._relint_open_python_files()
         if not self._diagnostics_enabled:
             self._stored_lint_diagnostics.clear()
@@ -2335,6 +2346,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root, source=buffer_source,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            selected_linter=self._selected_linter,
             lint_rule_overrides=self._lint_rule_overrides,
         )
         if self._intelligence_runtime_settings.metrics_logging_enabled:
@@ -2373,6 +2385,7 @@ class MainWindow(QMainWindow):
                 file_path, project_root=project_root, source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
                 allow_runtime_import_probe=True,
+                selected_linter=self._selected_linter,
                 lint_rule_overrides=self._lint_rule_overrides,
             )
             self._stored_lint_diagnostics[file_path] = diagnostics
@@ -2450,6 +2463,7 @@ class MainWindow(QMainWindow):
             file_path, project_root=project_root,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
+            selected_linter=self._selected_linter,
             lint_rule_overrides=self._lint_rule_overrides,
         )
         fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
