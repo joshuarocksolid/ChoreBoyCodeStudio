@@ -261,13 +261,18 @@ myapp/
 ## Where settings live
 
 * Global settings: `~/choreboy_code_studio_state/settings.json` (or under Home)
-* Per-project: `<project>/cbcs/project.json`
+* Per-project settings overrides: `<project>/cbcs/settings.json`
+* Per-project metadata: `<project>/cbcs/project.json`
 
 ## What settings include
 
 * recent projects list
 * editor preferences (font size, tab width)
 * run configs
+* scoped settings layering:
+  * `defaults -> global settings.json -> project cbcs/settings.json`
+  * global-only settings stay machine/user specific (`theme`, `syntax_colors`, `keybindings`, `ui_layout`, `last_project_path`, import-update policy)
+  * project-overridable settings include editor/intelligence/linter/file-excludes/output preferences
 * optional: file index cache (SQLite)
 
 SQLite is available and proven; use it for indexing/search speed if needed. 

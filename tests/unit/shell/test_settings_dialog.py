@@ -10,7 +10,7 @@ from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import QApplication
 
 from app.shell.settings_dialog import SettingsDialog
-from app.shell.settings_models import EditorSettingsSnapshot
+from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
 
 pytestmark = pytest.mark.unit
 
@@ -97,6 +97,47 @@ def test_settings_dialog_reset_all_keybindings_restores_defaults() -> None:
     dialog._handle_reset_all_shortcuts()
     snapshot = dialog.snapshot()
     assert snapshot.shortcut_overrides == {}
+
+
+def test_settings_dialog_disables_project_scope_without_project_snapshot() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    assert dialog._project_scope_available is False
+    assert dialog._scope_input is not None
+    assert dialog._scope_input.currentData() != SETTINGS_SCOPE_PROJECT
+
+
+def test_settings_dialog_project_scope_hides_global_only_controls() -> None:
+    global_snapshot = EditorSettingsSnapshot(
+        tab_width=4,
+        auto_open_console_on_run_output=True,
+        file_exclude_patterns=["__pycache__", ".git"],
+    )
+    project_snapshot = EditorSettingsSnapshot(
+        tab_width=2,
+        auto_open_console_on_run_output=False,
+        file_exclude_patterns=["__pycache__", ".git", "*.tmp"],
+    )
+    dialog = SettingsDialog(
+        global_snapshot,
+        project_snapshot=project_snapshot,
+        project_scope_available=True,
+        initial_scope=SETTINGS_SCOPE_PROJECT,
+    )
+
+    assert dialog.selected_scope == SETTINGS_SCOPE_PROJECT
+    assert dialog._appearance_group is not None
+    assert dialog._appearance_group.isVisible() is False
+    assert dialog._scope_banner_label is not None
+    assert "Project settings override global settings" in dialog._scope_banner_label.text()
+
+    dialog._handle_reset_output_group_to_global()
+    dialog._handle_reset_editor_group_to_global()
+    snapshot = dialog.snapshot()
+    assert snapshot.tab_width == global_snapshot.tab_width
+    assert (
+        snapshot.auto_open_console_on_run_output
+        == global_snapshot.auto_open_console_on_run_output
+    )
 
 
 def test_settings_dialog_snapshot_includes_enable_preview_toggle() -> None:

@@ -423,6 +423,7 @@ Recommended project shape:
 my_project/
   cbcs/
     project.json
+    settings.json
     plugins.json
     runs/
     logs/
@@ -479,6 +480,30 @@ This file should be human-readable JSON and contain:
 
 SQLite can still be used for caches and indexes, but not for the project’s primary identity.
 
+## 10.3 Project settings overrides
+
+Per-project settings overrides are stored at:
+
+```text
+<project>/cbcs/settings.json
+```
+
+This file follows the same JSON shape as global settings, but only project-overridable root sections are honored:
+
+* `editor`
+* `intelligence`
+* `linter`
+* `file_excludes`
+* `output`
+
+Effective settings resolution is:
+
+1. hardcoded defaults
+2. global settings (`~/choreboy_code_studio_state/settings.json`)
+3. project overrides (`<project>/cbcs/settings.json`)
+
+Global-only settings (for example theme mode, keybindings, syntax color overrides, layout state, and last project path) remain in global state and are ignored when present in project settings files.
+
 ---
 
 ## 11. Global App State
@@ -508,7 +533,7 @@ Recommended contents:
 ## 11.1 What belongs here
 
 * recent projects
-* editor preferences
+* editor preferences (global defaults)
 * global shortcuts/preferences
 * syntax-color customization overrides (light/dark token maps)
 * linter runtime settings (global enable/disable + selected provider)

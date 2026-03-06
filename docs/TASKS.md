@@ -1132,6 +1132,39 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `docs/ACCEPTANCE_TESTS.md`
   - `docs/TASKS.md`
 
+### G23 — Scoped global + per-project settings layering and scope controls
+- Status: `DONE`
+- Release class: `RELEASE-CRITICAL`
+- Objective: deliver layered settings resolution (`defaults -> global -> project`) with explicit settings scope controls in the UI.
+- Scope:
+  - add per-project settings path and persistence (`<project>/cbcs/settings.json`)
+  - enforce project-overridable vs global-only settings boundaries
+  - add effective settings merge helpers and scope-aware merge-back logic
+  - add Settings dialog scope selector (Global / Project), project-scope reset-to-global controls, and disabled project scope when no project is open
+  - wire MainWindow to consume layered effective settings and show project-override status indicator
+  - preserve `cbcs/` visibility and extend exclude parsing for project scope
+- Primary files:
+  - `app/core/constants.py`
+  - `app/bootstrap/paths.py`
+  - `app/persistence/settings_store.py`
+  - `app/persistence/settings_service.py`
+  - `app/shell/settings_models.py`
+  - `app/shell/settings_dialog.py`
+  - `app/shell/main_window.py`
+  - `app/project/file_excludes.py`
+  - `tests/unit/bootstrap/test_paths.py`
+  - `tests/unit/core/test_constants.py`
+  - `tests/unit/persistence/test_settings_store.py`
+  - `tests/unit/persistence/test_settings_service.py`
+  - `tests/unit/shell/test_settings_models.py`
+  - `tests/unit/shell/test_settings_dialog.py`
+  - `tests/unit/project/test_file_excludes.py`
+  - `docs/PRD.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/USER_REQUESTS_TODO.md`
+  - `docs/TASKS.md`
+
 ### G22 — Tree-sitter syntax-highlighting hard cutover
 - Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
