@@ -85,6 +85,7 @@ class PythonConsoleWidget(QTextEdit):
         self.setReadOnly(False)
         self.setUndoRedoEnabled(False)
         self.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setAcceptRichText(False)
         self.setAcceptDrops(True)
         self.setCursorWidth(2)

@@ -763,6 +763,47 @@ print(conn.run("select version()"))
 * Batch inserts/updates when possible.
 * With psycopg: use `COPY FROM STDIN` for bulk inserts instead of individual `INSERT` statements.
 
+### ORM recommendation on top of psycopg 3 binary
+
+For PostgreSQL ORM usage on ChoreBoy, use **SQLAlchemy 2.0.x** with the
+`postgresql+psycopg` dialect on top of `cb_psycopg` bootstrap.
+
+Why this combination:
+
+* SQLAlchemy 2.1+ requires Python 3.10+, while ChoreBoy runtime is Python 3.9
+* SQLAlchemy 2.0 supports psycopg 3 (`postgresql+psycopg`) for both sync and async engines
+* psycopg 3 binary C acceleration is already validated on ChoreBoy (section 4H)
+* This keeps complexity lower than introducing additional native stacks by default
+
+Recommended production default:
+
+1. `cb_psycopg.bootstrap()` at process startup
+2. SQLAlchemy engine URL: `postgresql+psycopg://...`
+3. Conservative pool settings (`pool_pre_ping`, small pool size)
+4. Set `client_encoding` to UTF8 per connection to avoid SQL_ASCII byte surprises
+
+### Full-stack acceleration experiment (optional)
+
+SQLAlchemy ships optional Cython acceleration modules. A dedicated probe suite
+has been added to evaluate whether loading these modules via memfd on ChoreBoy
+provides meaningful gains versus complexity:
+
+* `sqlalchemy_probe/probe1_environment.py`
+* `sqlalchemy_probe/probe2_cext_memfd.py`
+* `sqlalchemy_probe/probe3_sync_orm.py`
+* `sqlalchemy_probe/probe4_async_orm.py`
+* `sqlalchemy_probe/probe5_pg93_limits.py`
+* `sqlalchemy_probe/probe6_benchmarks.py`
+* `sqlalchemy_probe/SUMMARY.md`
+
+Use this evidence to decide between:
+
+* **driver-only acceleration** (recommended default): psycopg binary + SQLAlchemy
+* **full-stack acceleration** (optional): also memfd-load SQLAlchemy Cython modules
+
+Until benchmark evidence proves otherwise, prefer driver-only acceleration for
+the best reliability/complexity trade-off on ChoreBoy.
+
 ## 6. FreeCAD Export Strategy (Headless vs GUI)
 
 ### Current finding

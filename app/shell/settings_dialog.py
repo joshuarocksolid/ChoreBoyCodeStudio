@@ -802,6 +802,7 @@ class SettingsDialog(QDialog):
         self._syntax_color_row_by_token.clear()
         defaults = self._syntax_defaults_for_theme(theme_key)
         overrides = self._syntax_color_overrides_by_theme.setdefault(theme_key, {})
+        self._syntax_color_table.setRowCount(0)
         self._syntax_color_table.setRowCount(len(SYNTAX_COLOR_TOKENS))
         for row_index, token in enumerate(SYNTAX_COLOR_TOKENS):
             self._syntax_color_row_by_token[token.key] = row_index
@@ -921,6 +922,7 @@ class SettingsDialog(QDialog):
     def _populate_linter_table(self) -> None:
         self._lint_enabled_inputs.clear()
         self._lint_severity_inputs.clear()
+        self._linter_table.setRowCount(0)
         self._linter_table.setRowCount(len(LINT_RULE_DEFINITIONS))
         severity_values = [LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO]
         for row_index, definition in enumerate(LINT_RULE_DEFINITIONS):

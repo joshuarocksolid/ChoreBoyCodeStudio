@@ -118,8 +118,22 @@ def _load_shared_library(shared_object_path: Path, label: str) -> ctypes.CDLL:
 
 def _write_memfd(shared_object_path: Path, label: str) -> str:
     data = shared_object_path.read_bytes()
-    fd = os.memfd_create(label, 0)
+    fd = _memfd_create(label, 0)
     os.write(fd, data)
     os.lseek(fd, 0, os.SEEK_SET)
     _OPEN_FDS.append(fd)
     return f"/proc/self/fd/{fd}"
+
+
+def _memfd_create(name: str, flags: int) -> int:
+    """Call memfd_create, falling back to libc ctypes when os.memfd_create is missing."""
+    if hasattr(os, "memfd_create"):
+        return os.memfd_create(name, flags)
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    libc.memfd_create.argtypes = [ctypes.c_char_p, ctypes.c_uint]
+    libc.memfd_create.restype = ctypes.c_int
+    fd = libc.memfd_create(name.encode("utf-8"), flags)
+    if fd < 0:
+        errno = ctypes.get_errno()
+        raise OSError(errno, os.strerror(errno), name)
+    return fd

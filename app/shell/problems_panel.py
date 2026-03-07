@@ -274,6 +274,8 @@ class ProblemsPanel(QWidget):
         self._tree.setRootIsDecorated(True)
         self._tree.setIndentation(16)
         self._tree.setAlternatingRowColors(False)
+        self._tree.setWordWrap(True)
+        self._tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._tree.setExpandsOnDoubleClick(False)
         header = self._tree.header()
         header.setStretchLastSection(False)

@@ -4622,7 +4622,7 @@ class MainWindow(QMainWindow):
         if self._editor_manager.get_tab(file_path) is None:
             return
         tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
-        if tab_state.is_preview:
+        if tab_state.is_preview and tab_state.is_dirty:
             self._promote_preview_tab(file_path)
             refreshed_state = self._editor_manager.get_tab(file_path)
             if refreshed_state is not None:

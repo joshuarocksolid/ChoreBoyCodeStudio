@@ -216,6 +216,19 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._source_text = new_source
         self._dirty = True
 
+    def rehighlight(self) -> None:  # noqa: N802
+        self._sync_source_from_document()
+        super().rehighlight()
+
+    def _sync_source_from_document(self) -> None:
+        document = self.document()
+        if document is None:
+            return
+        current_text = document.toPlainText()
+        if current_text != self._source_text:
+            self._source_text = current_text
+            self._dirty = True
+
     def _ensure_tree_and_cache(self) -> None:
         if not self._dirty and not self._viewport_dirty and self._capture_cache:
             return
@@ -341,7 +354,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                     if line_number not in spans_by_line:
                         spans_by_line[line_number] = []
                         seen_by_line[line_number] = set()
-                    span_key = (span.token_name, span.start_col, span.end_col)
+                    span_key = (span.start_col, span.end_col)
                     if span_key in seen_by_line[line_number]:
                         continue
                     seen_by_line[line_number].add(span_key)

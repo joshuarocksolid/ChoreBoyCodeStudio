@@ -118,7 +118,7 @@ class RunLogPanel(QWidget):
         self._text = QTextEdit(self)
         self._text.setObjectName("shell.bottom.runLog.textArea")
         self._text.setReadOnly(True)
-        self._text.setLineWrapMode(QTextEdit.NoWrap)
+        self._text.setLineWrapMode(QTextEdit.WidgetWidth)
         mono = QFont("Monospace", 10)
         mono.setStyleHint(QFont.Monospace)
         self._text.setFont(mono)
