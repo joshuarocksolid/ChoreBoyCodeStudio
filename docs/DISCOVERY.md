@@ -526,6 +526,41 @@ The memfd technique for C extensions mirrors the JNI in-process loading discover
 
 ---
 
+## 4F. libpq.so Loadable from System Path (2026-03-06)
+
+**Date discovered:** 2026-03-06 (pg_backup_probe probe 7)
+
+### Finding
+
+PostgreSQL's native client library (`libpq.so`) can be loaded via `ctypes.CDLL` from the system library path, but **not** from the PostgreSQL installation directory.
+
+| Path | Exists | Loadable | Owner |
+|---|---|---|---|
+| `/opt/PostgreSQL/9.3/lib/libpq.so` | YES | NO (Permission denied) | root:daemon (gid=1) |
+| `/opt/PostgreSQL/9.3/lib/libpq.so.5` | YES | NO (Permission denied) | root:daemon (gid=1) |
+| `/usr/lib/x86_64-linux-gnu/libpq.so` | YES | **YES** | root:root (gid=0) |
+
+### Why `/opt/` is blocked but `/usr/lib/` is not
+
+AppArmor whitelists the system library path (`/usr/lib/`) for `dlopen()` calls, but blocks loading `.so` files from `/opt/PostgreSQL/`. This matches the broader pattern: the `/opt/PostgreSQL/9.3/bin/pg_dump` binary is also blocked from execution despite having `rwxr-xr-x` permissions. The AppArmor profile for the FreeCAD AppRun process restricts access to the PostgreSQL installation directory specifically.
+
+### What this enables
+
+`libpq.so` provides the full PostgreSQL wire protocol implementation in C, including:
+
+* `PQconnectdb()` — connect to PostgreSQL
+* `PQexec()` — execute queries
+* `PQgetResult()` — retrieve results
+* `PQputCopyData()` / `PQgetCopyData()` — COPY protocol at native speed
+
+This could be used as a high-performance alternative to pg8000 for bulk data operations (COPY export/import). However, pg8000 already achieves ~26 MB/s throughput on ChoreBoy, which is more than sufficient for the ~36 MB of total database content.
+
+### Current status
+
+Discovered and validated as loadable. Not currently used — pg8000 handles all PostgreSQL connectivity. This remains a potential optimization path if performance-critical scenarios arise in the future.
+
+---
+
 ## 5. Postgres Strategy (Deep Dive)
 
 ### What we know
