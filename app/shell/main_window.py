@@ -8,10 +8,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from typing import Callable, Optional, TypeVar
+from typing import Any, Callable, Mapping, Optional, TypeVar
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QMouseEvent
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
@@ -239,12 +239,17 @@ class _MiddleClickTabBar(QTabBar):
         for index in range(self.count()):
             self.initStyleOption(option, index)
             data = self.tabData(index)
-            if isinstance(data, dict) and bool(data.get("is_preview")):
-                preview_font = option.font
+            is_preview = isinstance(data, dict) and bool(data.get("is_preview"))
+            if is_preview:
+                preview_font = QFont(self.font())
                 preview_font.setItalic(True)
-                option.font = preview_font
+                option.fontMetrics = QFontMetrics(preview_font)
+                painter.save()
+                painter.setFont(preview_font)
             painter.drawControl(QStyle.CE_TabBarTabShape, option)
             painter.drawControl(QStyle.CE_TabBarTabLabel, option)
+            if is_preview:
+                painter.restore()
         event.accept()
 
 
@@ -339,6 +344,7 @@ class MainWindow(QMainWindow):
             self._editor_trim_trailing_whitespace_on_save,
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
+            self._editor_auto_save,
         ) = self._load_editor_preferences()
         self._pending_project_tree_preview_path: str | None = None
         self._project_tree_preview_click_timer = QTimer(self)
@@ -382,6 +388,10 @@ class MainWindow(QMainWindow):
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(500)
         self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
+        self._auto_save_to_file_timer = QTimer(self)
+        self._auto_save_to_file_timer.setSingleShot(True)
+        self._auto_save_to_file_timer.setInterval(1000)
+        self._auto_save_to_file_timer.timeout.connect(self._flush_auto_save_to_file)
         self._pending_realtime_lint_file_path: str | None = None
         self._realtime_lint_timer = QTimer(self)
         self._realtime_lint_timer.setSingleShot(True)
@@ -475,10 +485,12 @@ class MainWindow(QMainWindow):
             self,
             callbacks=MenuCallbacks(
                 on_open_project=self._handle_open_project_action,
+                on_open_file=self._handle_open_file_action,
                 on_new_window=self._handle_new_window_action,
                 on_file_menu_about_to_show=self._refresh_open_recent_menu,
                 on_save=self._handle_save_action,
                 on_save_all=self._handle_save_all_action,
+                on_toggle_auto_save=self._handle_toggle_auto_save,
                 on_open_settings=self._handle_open_settings_action,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
@@ -558,6 +570,7 @@ class MainWindow(QMainWindow):
         self._apply_theme_styles()
         self._apply_runtime_intelligence_preferences_to_open_editors()
         self._sync_theme_menu_check_state()
+        self._sync_auto_save_menu_state()
         self._restore_layout_from_settings()
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
@@ -872,7 +885,7 @@ class MainWindow(QMainWindow):
             project_settings_payload,
         )
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool]:
         return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
@@ -968,6 +981,27 @@ class MainWindow(QMainWindow):
         if not selected_path:
             return
         self._open_project_by_path(selected_path)
+
+    def _handle_open_file_action(self) -> None:
+        start_dir = str(Path.home())
+        if self._loaded_project is not None:
+            start_dir = self._loaded_project.project_root
+
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Open File",
+            start_dir,
+            "Python Files (*.py);;"
+            "JSON Files (*.json);;"
+            "Markdown Files (*.md);;"
+            "Text Files (*.txt);;"
+            "All Files (*)",
+        )
+        if not file_paths:
+            return
+
+        for file_path in file_paths:
+            self._open_file_in_editor(file_path, preview=False)
 
     def _handle_new_window_action(self) -> None:
         repo_root = self._resolve_repo_root_for_launch()
@@ -1106,7 +1140,9 @@ class MainWindow(QMainWindow):
             self._editor_trim_trailing_whitespace_on_save,
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
+            self._editor_auto_save,
         ) = self._load_editor_preferences()
+        self._sync_auto_save_menu_state()
         (
             self._completion_enabled,
             self._completion_auto_trigger,
@@ -1911,6 +1947,35 @@ class MainWindow(QMainWindow):
                 any_failure = True
         self._refresh_save_action_states()
         return not any_failure
+
+    def _handle_toggle_auto_save(self, checked: bool) -> None:
+        self._editor_auto_save = checked
+        self._settings_service.update_global(
+            lambda payload: _merge_auto_save_setting(payload, checked)
+        )
+        if not checked:
+            self._auto_save_to_file_timer.stop()
+
+    def _sync_auto_save_menu_state(self) -> None:
+        if self._menu_registry is None:
+            return
+        action = self._menu_registry.action("shell.action.file.autoSave")
+        if action is not None:
+            action.blockSignals(True)
+            action.setChecked(self._editor_auto_save)
+            action.blockSignals(False)
+
+    def _schedule_auto_save_to_file(self) -> None:
+        self._auto_save_to_file_timer.start()
+
+    def _flush_auto_save_to_file(self) -> None:
+        for tab in self._editor_manager.all_tabs():
+            if not tab.is_dirty:
+                continue
+            try:
+                self._save_tab(tab.file_path)
+            except Exception:
+                self._logger.warning("Auto-save to file failed for %s", tab.file_path, exc_info=True)
 
     def _save_tab(self, file_path: str) -> bool:
         self._apply_format_on_save_if_enabled(file_path)
@@ -3532,6 +3597,8 @@ class MainWindow(QMainWindow):
             self._is_shutting_down = True
             self._begin_shutdown_teardown()
             self._stop_active_run_before_close()
+            if self._editor_auto_save:
+                self._flush_auto_save_to_file()
             self._flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
@@ -3544,6 +3611,7 @@ class MainWindow(QMainWindow):
 
     def _begin_shutdown_teardown(self) -> None:
         self._autosave_timer.stop()
+        self._auto_save_to_file_timer.stop()
         self._realtime_lint_timer.stop()
         self._project_tree_preview_click_timer.stop()
         self._pending_project_tree_preview_path = None
@@ -3712,6 +3780,7 @@ class MainWindow(QMainWindow):
         self._project_tree_widget.set_drop_callback(self._handle_project_tree_drop)
         self._project_tree_widget.itemExpanded.connect(self._handle_tree_item_expanded)
         self._project_tree_widget.itemCollapsed.connect(self._handle_tree_item_collapsed)
+        self._project_tree_widget.deleteRequested.connect(self._handle_project_tree_delete_key)
         layout.addWidget(self._project_tree_widget, 1)
         self._update_explorer_buttons_enabled()
         return page
@@ -4220,6 +4289,15 @@ class MainWindow(QMainWindow):
         if error_message is not None:
             QMessageBox.warning(self, "Rename", error_message)
 
+    def _handle_project_tree_delete_key(self) -> None:
+        selected = self._get_selected_tree_paths()
+        if not selected:
+            return
+        if len(selected) == 1:
+            self._handle_tree_delete(selected[0][0])
+        else:
+            self._handle_tree_bulk_delete([entry[0] for entry in selected])
+
     def _handle_tree_delete(self, target_path: str) -> None:
         confirmation = QMessageBox.question(
             self,
@@ -4558,6 +4636,8 @@ class MainWindow(QMainWindow):
         self._refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
             self._schedule_autosave(tab_state.file_path, tab_state.current_content)
+            if self._editor_auto_save:
+                self._schedule_auto_save_to_file()
         else:
             self._pending_autosave_payloads.pop(tab_state.file_path, None)
             self._autosave_store.delete_draft(tab_state.file_path)
@@ -4708,6 +4788,7 @@ class MainWindow(QMainWindow):
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
         self._autosave_timer.stop()
+        self._auto_save_to_file_timer.stop()
         self._realtime_lint_timer.stop()
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
@@ -4939,3 +5020,11 @@ class MainWindow(QMainWindow):
                 self._autosave_store.save_draft(file_path, content)
             except OSError as exc:
                 self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)
+
+
+def _merge_auto_save_setting(payload: Mapping[str, Any], enabled: bool) -> dict[str, Any]:
+    merged = dict(payload)
+    editor = dict(merged.get(constants.UI_EDITOR_SETTINGS_KEY, {}))
+    editor[constants.UI_EDITOR_AUTO_SAVE_KEY] = enabled
+    merged[constants.UI_EDITOR_SETTINGS_KEY] = editor
+    return merged

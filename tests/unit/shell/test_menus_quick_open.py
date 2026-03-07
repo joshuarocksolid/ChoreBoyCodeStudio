@@ -46,7 +46,7 @@ def test_quick_open_action_is_registered_with_callback_and_shortcut(_ensure_qapp
     assert calls == ["triggered"]
 
 
-def test_quick_open_action_is_visible_in_file_and_edit_menus(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+def test_quick_open_action_is_only_in_file_menu(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
     _ = build_menu_stubs(window, callbacks=MenuCallbacks())
 
@@ -59,5 +59,4 @@ def test_quick_open_action_is_visible_in_file_and_edit_menus(_ensure_qapp) -> No
     edit_actions = [action for action in edit_menu.actions() if action.text() == "Quick Open..."]
 
     assert len(file_actions) == 1
-    assert len(edit_actions) == 1
-    assert file_actions[0] is edit_actions[0]
+    assert len(edit_actions) == 0

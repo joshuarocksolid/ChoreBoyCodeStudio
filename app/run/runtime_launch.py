@@ -36,6 +36,6 @@ def build_runpy_bootstrap_payload(
         resolved_path_entry = str(Path(path_entry).expanduser().resolve())
         statements.append(f"sys.path.insert(0, {resolved_path_entry!r}) if {resolved_path_entry!r} not in sys.path else None;")
     if argv is not None:
-        statements.append(f"sys.argv={list(argv)!r};")
+        statements.append(f"sys.argv={[str(a) for a in argv]!r};")
     statements.append(f"runpy.run_path({resolved_script!r}, run_name='__main__')")
     return "".join(statements)

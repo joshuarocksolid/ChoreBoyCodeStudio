@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide2.QtCore import Qt
+from PySide2.QtCore import Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget
 
 
 class ProjectTreeWidget(QTreeWidget):
     """QTreeWidget extension that delegates drag/drop file moves to callback."""
+
+    deleteRequested = Signal()
 
     def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
@@ -22,6 +24,12 @@ class ProjectTreeWidget(QTreeWidget):
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            self.deleteRequested.emit()
+            return
+        super().keyPressEvent(event)
 
     def set_drop_callback(self, callback: Callable[[str, str], bool] | None) -> None:
         self._drop_callback = callback

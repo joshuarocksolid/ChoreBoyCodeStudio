@@ -140,7 +140,7 @@ class ReplSessionManager:
         save_run_manifest(str(manifest_path), manifest)
 
         self._host_manager.start_manifest(
-            manifest_path=manifest_path,
+            manifest_path=str(manifest_path),
             cwd=str(home_dir),
         )
 

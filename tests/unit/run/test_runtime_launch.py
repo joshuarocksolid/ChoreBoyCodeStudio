@@ -45,6 +45,25 @@ def test_resolve_runtime_executable_prefers_explicit_override(tmp_path: Path) ->
     assert resolved == str(runtime_path.resolve())
 
 
+def test_build_runpy_bootstrap_payload_stringifies_path_objects_in_argv() -> None:
+    """PosixPath objects in argv must be converted to plain strings.
+
+    Regression: when a pathlib.Path leaked into the argv list, repr()
+    serialized it as ``PosixPath('/...')`` inside the generated -c payload,
+    causing ``NameError: name 'PosixPath' is not defined`` at launch.
+    """
+    manifest_path = Path("/tmp/manifest.json")
+    payload = build_runpy_bootstrap_payload(
+        script_path="/workspace/run_runner.py",
+        argv=["run_runner.py", "--manifest", manifest_path],
+    )
+
+    assert "PosixPath" not in payload, (
+        "Path objects must not appear as PosixPath(...) in the bootstrap payload"
+    )
+    assert "'/tmp/manifest.json'" in payload
+
+
 def test_resolve_runtime_executable_falls_back_to_sys_executable_when_default_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

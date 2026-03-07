@@ -31,9 +31,11 @@ class MenuCallbacks:
     on_new_window: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
+    on_open_file: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
+    on_toggle_auto_save: Callable[[bool], object] | None = None
     on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
@@ -165,6 +167,7 @@ def build_menu_stubs(
         enabled=True,
         callback=callback_registry.on_new_project_from_template,
     )
+    file_menu.addSeparator()
     _register_menu_action(
         file_menu,
         actions,
@@ -173,6 +176,16 @@ def build_menu_stubs(
         "Ctrl+O",
         enabled=True,
         callback=callback_registry.on_open_project,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.openFile",
+        "Open File...",
+        "Ctrl+Shift+O",
+        enabled=True,
+        callback=callback_registry.on_open_file,
         shortcut_overrides=shortcut_overrides,
     )
     open_recent_menu = file_menu.addMenu("Open Recent")
@@ -214,6 +227,18 @@ def build_menu_stubs(
         callback=callback_registry.on_save_all,
         shortcut_overrides=shortcut_overrides,
     )
+
+    action_class = importlib.import_module("PySide2.QtWidgets").QAction
+    auto_save_action = action_class("Auto Save", file_menu)
+    auto_save_action.setObjectName("shell.action.file.autoSave")
+    auto_save_action.setCheckable(True)
+    auto_save_action.setChecked(False)
+    auto_save_action.setEnabled(True)
+    if callback_registry.on_toggle_auto_save is not None:
+        auto_save_action.toggled.connect(callback_registry.on_toggle_auto_save)
+    file_menu.addAction(auto_save_action)
+    actions["shell.action.file.autoSave"] = auto_save_action
+
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -243,8 +268,6 @@ def build_menu_stubs(
     _register_menu_action(
         edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z", shortcut_overrides=shortcut_overrides
     )
-    if quick_open_action is not None:
-        edit_menu.addAction(quick_open_action)
     edit_menu.addSeparator()
     _register_menu_action(
         edit_menu,

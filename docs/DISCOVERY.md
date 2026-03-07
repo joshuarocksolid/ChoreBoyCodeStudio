@@ -27,7 +27,7 @@ This effectively creates a new “application platform” for ChoreBoy:
 - **Qt UI frontend**
 - **FreeCAD headless backend engine**
 - **SQLite local persistence**
-- Optional: **Postgres connectivity** via vendored pure-Python driver (pg8000), if needed.
+- **Postgres connectivity** via vendored psycopg 3 with C acceleration (or pg8000 as fallback)
 
 ---
 
@@ -160,11 +160,13 @@ These probes were run and verified on ChoreBoy:
   * `/home/default/myapp/logs/probe.sqlite3`
 * Insert/select worked
 
-### ✅ Subprocess
+### ✅ Subprocess (severely restricted)
 
-* Can run shell commands:
-
-  * `echo`, `uname`, etc.
+* `/bin/sh` is the **only** binary that can be executed via subprocess.
+* Shell builtins (`echo`) work because they run inside `/bin/sh` itself.
+* All other binaries are blocked by AppArmor — including `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`, `/usr/bin/id`, Java, `pg_dump`, `at`, `systemd-run`.
+* Several common utilities do not exist in the AppImage filesystem at all: `uname`, `cat`, `ssh`, `soffice`.
+* See pg_backup_probe probe 9 for the full execution whitelist (14 binaries tested, only `/bin/sh` allowed).
 
 ### ✅ Qt UI Designer Loading
 
@@ -557,7 +559,118 @@ This could be used as a high-performance alternative to pg8000 for bulk data ope
 
 ### Current status
 
-Discovered and validated as loadable. Not currently used — pg8000 handles all PostgreSQL connectivity. This remains a potential optimization path if performance-critical scenarios arise in the future.
+Validated and **actively used** by psycopg 3 binary (see section 4H). The bundled libpq 17.0.5 from psycopg\_binary is loaded via memfd and provides full C-accelerated PostgreSQL connectivity.
+
+---
+
+## 4H. psycopg 3 with C Acceleration via memfd (2026-03-07)
+
+**Date discovered:** 2026-03-07 (psycopg3\_probe, probes 1-6)
+
+### Finding
+
+psycopg 3 with full **Cython C acceleration** (`psycopg_binary`) runs on ChoreBoy by loading its 16 compiled `.so` files (14 bundled native libs + 2 Cython extensions) entirely from memory via `memfd_create`, bypassing the `noexec` restrictions on all writable filesystems.
+
+This is the most complex memfd loading achieved on ChoreBoy: a 14-library dependency chain (OpenSSL 3.5, Kerberos, LDAP, libpq 17.0.5) loaded in topological order with `RTLD_GLOBAL`, followed by two Cython C extensions loaded via `ExtensionFileLoader`.
+
+### Loading recipe
+
+```
+1. Patch ctypes.util.find_library for "pq" and "c" (ldconfig incomplete)
+2. Load 14 bundled .libs/*.so via memfd + ctypes.CDLL(RTLD_GLOBAL)
+3. Load pq.so via memfd + ExtensionFileLoader  [MUST BE FIRST]
+4. Load _psycopg.so via memfd + ExtensionFileLoader
+5. import psycopg  (falls back to python due to circular import)
+6. psycopg.pq.import_from_libpq()  (re-detect → binary)
+```
+
+### Key details
+
+| Property | Value |
+|---|---|
+| psycopg version | 3.2.9 (last to support Python 3.9) |
+| Bundled libpq | **17.0.5** (connects to PG 9.3 server) |
+| Bundled OpenSSL | **3.5.0** |
+| pq.\_\_impl\_\_ | `binary` (Cython C acceleration active) |
+| Total memfd usage | ~10.4 MB |
+| Vendor size on disk | ~13 MB |
+| Integration tests | **41/41 passed** |
+
+### Performance vs pg8000
+
+| Metric | psycopg binary | pg8000 | Winner |
+|---|---|---|---|
+| Simple SELECT x2000 | 6,499 q/s | 12,974 q/s | pg8000 (2x) |
+| Parameterized x1000 | 7,732 q/s | 4,849 q/s | **psycopg (1.59x)** |
+
+pg8000 is faster for trivial queries (zero FFI overhead), but psycopg binary is **59% faster for parameterized queries** where Cython's compiled marshaling outperforms pure Python. For real-world workloads with complex queries and large result sets, psycopg binary is the clear winner.
+
+### Issues resolved
+
+1. **`find_library` broken**: ChoreBoy's ldconfig cache doesn't include libpq or libc. Patched to return known paths.
+2. **Extension loading order**: `pq.so` must load before `_psycopg.so` (which imports pq during init).
+3. **Circular import**: `_psycopg` init triggers `import_from_libpq()` before psycopg is ready. Fixed by re-calling `import_from_libpq()` after import.
+4. **SQL\_ASCII encoding**: PG 9.3 returns text as bytes. Application code must decode explicitly.
+5. **`version.py` exception handler**: Broadened from `PackageNotFoundError` to `Exception`.
+
+---
+
+## 4G. AppArmor Execution Whitelist: Only `/bin/sh` Allowed (2026-03-06)
+
+**Date discovered:** 2026-03-06 (pg_backup_probe probe 9)
+
+### Finding
+
+The FreeCAD AppImage's AppArmor profile enforces a near-total execution whitelist. Out of 14 binaries tested, **only `/bin/sh` (dash, 125 KB) can be executed** via `subprocess.run()`. All other binaries receive `PermissionError` (errno 13) or do not exist in the AppImage's filesystem view.
+
+### Complete whitelist map
+
+| Binary | Exists | Executable | Notes |
+|---|---|---|---|
+| `/bin/sh` | YES | **YES** | The ONLY allowed binary |
+| `/bin/bash` | YES | NO | Blocked despite `rwxr-xr-x` |
+| `/usr/bin/env` | YES | NO | Blocked |
+| `/usr/bin/uname` | NO | — | Not present in AppImage filesystem |
+| `/usr/bin/id` | YES | NO | Blocked |
+| `/usr/bin/cat` | NO | — | Not present in AppImage filesystem |
+| `/usr/bin/python3` | YES | NO | Blocked (5.4 MB binary exists but can't run) |
+| `/usr/bin/soffice` | NO | — | Not present in AppImage filesystem |
+| `/usr/bin/libreoffice` | NO | — | Not present in AppImage filesystem |
+| `/usr/lib/jvm/.../java` | YES | NO | Blocked |
+| `/opt/PostgreSQL/.../pg_dump` | YES | NO | Blocked, and binary can't even be read |
+| `/usr/bin/ssh` | NO | — | Not present in AppImage filesystem |
+| `/usr/bin/at` | YES | NO | Blocked |
+| `/usr/bin/systemd-run` | YES | NO | Blocked |
+
+### Security context
+
+- uid=1000, gid=1000, groups=[1000] (regular unprivileged user)
+- Seccomp: **off** (`Seccomp: 0` in `/proc/self/status`)
+- AppArmor profile name: unreadable (`/proc/self/attr/current` → Permission denied)
+- This confirms: all execution restrictions are enforced by **AppArmor**, not seccomp
+
+### Shell inherits restrictions
+
+`/bin/sh` executes successfully, but when it tries to run a blocked binary, the kernel returns `EACCES`:
+
+```
+$ /bin/sh -c "/opt/PostgreSQL/9.3/bin/pg_dump --version"
+/bin/sh: 1: /opt/PostgreSQL/9.3/bin/pg_dump: Permission denied
+(exit code 126)
+```
+
+The shell does NOT transition to an unconfined AppArmor profile. It inherits the same restrictions as the parent Python process. This eliminates shell-mediated execution as a bypass strategy.
+
+### Read access also blocked for some paths
+
+`os.access("/opt/PostgreSQL/9.3/bin/pg_dump", os.R_OK)` returns `True` (POSIX permissions check passes), but `open(path, "rb")` raises `PermissionError`. AppArmor blocks the actual `open()` syscall despite Unix file permissions allowing it. This makes `memfd_create` + `fexecve` bypass impossible — the binary cannot be loaded into memory.
+
+### Implications
+
+- Any code running inside FreeCAD AppRun can only spawn processes via `/bin/sh` — and those processes inherit the same restrictions.
+- Shell builtins (`echo`, `printf`, `test`, `[`, `read`, etc.) work because they execute within `/bin/sh` itself — no `execve()` is needed.
+- There is no "escape hatch" binary that could proxy-execute blocked commands.
+- External tools (LibreOffice, Java, Python3, pg_dump, ssh, at, systemd-run) must be accessed via in-process techniques (ctypes/JNI) or through IPC with independently running processes.
 
 ---
 
@@ -583,40 +696,48 @@ No Django version supports both Python 3.9 and PostgreSQL 9.3:
 **Result:** Django ORM cannot be used with PostgreSQL on ChoreBoy until PG is
 upgraded. Django + SQLite remains fully functional (probes 1-5 confirmed).
 
-### Decision: **Use vendored `pg8000` (pure Python) for Postgres**
+### Decision: **Use psycopg 3 binary (C-accelerated) for Postgres**
 
-We will standardize on **`pg8000` vendored into `myapp/vendor/`** as the Postgres connector for ChoreBoy Qt apps running via FreeCAD AppRun.
+**Updated 2026-03-07.** We now recommend **psycopg 3 with C acceleration** (`psycopg_binary`) as the primary PostgreSQL driver on ChoreBoy. This replaces the earlier pg8000 recommendation.
 
-**Why this is the best fit for ChoreBoy:**
+**Why psycopg 3 binary:**
 
-* **Works in the locked FreeCAD AppRun runtime** (no system installs required)
-* **Pure Python** (no compiled wheels / no libpq dependency)
-* **Simple deployment**: ship as part of the app folder
-* **Good performance** for typical CRUD workloads, especially when we reuse connections and batch work
+* **C-accelerated**: Cython-compiled marshaling is 59% faster than pg8000 for parameterized queries
+* **Bundled libpq 17**: ships its own modern libpq, independent of the ancient system version
+* **Full feature set**: COPY protocol, typed error handling, prepared statements, savepoints, async support
+* **Industry standard**: psycopg is the most widely used Python PostgreSQL adapter
+* **Proven on ChoreBoy**: 41/41 integration tests pass with C acceleration active (psycopg3\_probe)
 
-### Benchmark result (confirmed)
+**The trade-off:** Requires the memfd bootstrap (~10.4 MB in memory, ~13 MB on disk). pg8000 remains available as a zero-complexity fallback for simple cases.
 
-We ran an in-app micro-benchmark using `pg8000`:
+### Benchmark comparison (confirmed on ChoreBoy)
 
-* Queries: **2000** (`select 1` loop in a single transaction)
-* Total time: **0.1223 seconds**
-* Throughput: **~16,347 queries/sec**
-* Avg time/query: **~0.061 ms**
+| Metric | psycopg 3 binary | pg8000 | Winner |
+|---|---|---|---|
+| Simple SELECT x2000 | 6,499 q/s | **12,974 q/s** | pg8000 (2x) |
+| Parameterized x1000 | **7,732 q/s** | 4,849 q/s | psycopg (1.59x) |
+| INSERT x1000 | 281 inserts/s | (not tested) | — |
+| COPY FROM STDIN | native | not supported | psycopg |
 
-**Interpretation:** Driver overhead is very low in this environment; `pg8000` is not a bottleneck for normal application workloads.
+pg8000 is faster for trivial `SELECT 1` queries (zero FFI overhead vs libpq call overhead). psycopg binary wins on parameterized queries and will scale better on complex workloads with large result sets.
 
-### How to vendor `pg8000`
+### When to use which driver
 
-On a normal Linux machine:
+| Use case | Recommended driver |
+|---|---|
+| Production applications | **psycopg 3 binary** |
+| Parameterized queries, complex workloads | **psycopg 3 binary** |
+| Bulk data operations (COPY) | **psycopg 3 binary** |
+| Simple scripts, quick prototypes | **pg8000** (zero setup) |
+| Environments where memfd is unavailable | **pg8000** (pure Python) |
 
-```bash
-mkdir -p myapp/vendor
-python3 -m pip install --target myapp/vendor pg8000
-```
+### How to bootstrap psycopg 3 binary on ChoreBoy
 
-Copy the entire `myapp/` folder to ChoreBoy.
+See section 4H for the complete loading recipe, or `psycopg3_probe/probe5_full_binary.py` for the reference implementation.
 
-In code:
+### pg8000 remains available as fallback
+
+pg8000 still works and requires no memfd loading:
 
 ```python
 import sys
@@ -635,17 +756,12 @@ conn = pg8000.native.Connection(
 print(conn.run("select version()"))
 ```
 
-### Operational notes (for max performance)
+### Operational notes (for max performance with either driver)
 
 * Prefer **one connection per worker/thread** (or a small pool) rather than reconnecting frequently.
 * Wrap multiple statements in a **transaction** to reduce round trips.
 * Batch inserts/updates when possible.
-
-### Fallback options (only if required later)
-
-1. **SQLite locally + periodic sync/export**
-2. **Local bridge service** (HTTP/IPC) that uses a faster native driver outside AppRun (e.g., psycopg3/asyncpg)
-3. If `psql` becomes available later, call it via subprocess
+* With psycopg: use `COPY FROM STDIN` for bulk inserts instead of individual `INSERT` statements.
 
 ## 6. FreeCAD Export Strategy (Headless vs GUI)
 

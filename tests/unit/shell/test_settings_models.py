@@ -36,6 +36,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
     assert snapshot.enable_preview is True
+    assert snapshot.auto_save is False
     assert snapshot.completion_enabled is True
     assert snapshot.completion_auto_trigger is False
     assert snapshot.diagnostics_enabled is True
@@ -353,7 +354,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         }
     )
 
-    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False, False)
+    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False, False, False)
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
     assert grouped.output_preferences == (False, False)
@@ -504,3 +505,35 @@ def test_has_project_override_and_remove_project_override_manage_nested_paths() 
         constants.UI_INTELLIGENCE_SETTINGS_KEY,
         constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
     ) is True
+
+
+# --- auto_save tests ---
+
+
+def test_parse_auto_save_defaults_to_false() -> None:
+    snapshot = parse_editor_settings_snapshot({})
+    assert snapshot.auto_save is False
+
+
+def test_parse_auto_save_reads_explicit_true() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {"auto_save": True}})
+    assert snapshot.auto_save is True
+
+
+def test_parse_auto_save_ignores_non_bool_value() -> None:
+    snapshot = parse_editor_settings_snapshot({"editor": {"auto_save": "yes"}})
+    assert snapshot.auto_save is False
+
+
+def test_merge_auto_save_round_trip() -> None:
+    for value in (True, False):
+        snapshot = EditorSettingsSnapshot(auto_save=value)
+        merged = merge_editor_settings_snapshot({}, snapshot)
+        assert merged["editor"]["auto_save"] is value
+        restored = parse_editor_settings_snapshot(merged)
+        assert restored.auto_save is value
+
+
+def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
+    grouped = parse_main_window_settings({"editor": {"auto_save": True}})
+    assert grouped.editor_preferences[-1] is True
