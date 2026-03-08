@@ -281,6 +281,38 @@ class TestPackageProject:
         assert result.project_folder_name == "app_files"
         assert Path(result.output_path).name == "my_app"
 
+    def test_returns_failure_when_entry_file_missing(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "main.py").write_text("print(1)\n")
+
+        result = package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file="missing.py",
+            output_dir=str(tmp_path / "out"),
+        )
+
+        assert result.success is False
+        assert result.error == "Entry file not found in project: missing.py"
+
+    def test_returns_failure_when_entry_file_outside_project(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "main.py").write_text("print(1)\n")
+        outside_entry = tmp_path / "outside.py"
+        outside_entry.write_text("print('outside')\n")
+
+        result = package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file=str(outside_entry),
+            output_dir=str(tmp_path / "out"),
+        )
+
+        assert result.success is False
+        assert result.error == f"Entry file must be inside project root: {outside_entry}"
+
     def test_repackage_removes_stale_files(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()

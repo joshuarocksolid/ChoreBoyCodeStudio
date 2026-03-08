@@ -132,6 +132,19 @@ def package_project(
             success=False,
             error=f"Project root does not exist: {project_root}",
         )
+    root = root.resolve()
+
+    resolved_entry_path, entry_error = _resolve_entry_path(root=root, entry_file=entry_file)
+    if entry_error is not None:
+        return PackageResult(
+            output_path="",
+            desktop_name="",
+            project_folder_name="",
+            success=False,
+            error=entry_error,
+        )
+    assert resolved_entry_path is not None
+    entry_relative_path = resolved_entry_path.relative_to(root).as_posix()
 
     sanitized = sanitize_project_name(project_name)
     project_files_folder = "app_files"
@@ -172,7 +185,7 @@ def package_project(
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(file_path, dest)
 
-        desktop_content = build_desktop_entry(project_name, entry_file, install_dir)
+        desktop_content = build_desktop_entry(project_name, entry_relative_path, install_dir)
         (package_dir / desktop_name).write_text(desktop_content, encoding="utf-8")
     except Exception as exc:
         return PackageResult(
@@ -189,3 +202,17 @@ def package_project(
         project_folder_name=project_files_folder,
         success=True,
     )
+
+
+def _resolve_entry_path(*, root: Path, entry_file: str) -> tuple[Path | None, str | None]:
+    if not entry_file.strip():
+        return None, "Entry file must be a non-empty path."
+    candidate = Path(entry_file).expanduser()
+    resolved_entry = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    try:
+        resolved_entry.relative_to(root)
+    except ValueError:
+        return None, f"Entry file must be inside project root: {entry_file}"
+    if not resolved_entry.exists() or not resolved_entry.is_file():
+        return None, f"Entry file not found in project: {entry_file}"
+    return resolved_entry, None
