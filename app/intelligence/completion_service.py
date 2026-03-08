@@ -75,7 +75,12 @@ class CompletionService:
                 prefix=prefix,
                 limit=project_limit,
             ),
-            *provide_project_module_items(project_root=request.project_root, prefix=prefix, limit=project_limit),
+            *provide_project_module_items(
+                project_root=request.project_root,
+                prefix=prefix,
+                limit=project_limit,
+                cache_db_path=self._cache_db_path,
+            ),
             *provide_builtin_items(prefix),
             *provide_keyword_items(prefix),
         ]

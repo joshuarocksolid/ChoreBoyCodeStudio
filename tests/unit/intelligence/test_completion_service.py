@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.intelligence.completion_providers import extract_completion_prefix
+from app.intelligence.completion_providers import provide_project_module_items
 from app.intelligence.completion_service import CompletionRequest, CompletionService
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
 
@@ -272,3 +273,32 @@ def test_completion_service_module_member_completion_uses_parse_recovery(tmp_pat
     completions = service.complete(request)
 
     assert any(item.insert_text == "recovered" for item in completions)
+
+
+def test_project_module_items_uses_indexed_file_cache_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    cache = SQLiteSymbolIndex(str(cache_path))
+    module_file = project_root / "pkg" / "mod.py"
+    cache.upsert_file_fingerprints(
+        str(project_root.resolve()),
+        {str(module_file.resolve()): (10, 100)},
+    )
+
+    monkeypatch.setattr(
+        Path,
+        "rglob",
+        lambda self, pattern: (_ for _ in () if False),  # pragma: no cover - must not be used
+    )
+
+    results = provide_project_module_items(
+        project_root=str(project_root),
+        prefix="pkg",
+        limit=10,
+        cache_db_path=str(cache_path),
+    )
+
+    assert [item.insert_text for item in results] == ["pkg.mod"]

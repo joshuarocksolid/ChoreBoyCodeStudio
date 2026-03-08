@@ -229,6 +229,21 @@ class SQLiteSymbolIndex:
             )
             connection.commit()
 
+    def list_indexed_python_files(self, project_root: str) -> list[str]:
+        """Return indexed Python file paths for project in deterministic order."""
+        project = str(Path(project_root).expanduser().resolve())
+        with sqlite3.connect(self._db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT file_path
+                FROM indexed_files
+                WHERE project_root = ? AND file_path LIKE '%.py'
+                ORDER BY file_path
+                """,
+                (project,),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def upsert_symbols_for_files(self, project_root: str, symbols_by_file: dict[str, list[IndexedSymbol]]) -> None:
         if not symbols_by_file:
             return

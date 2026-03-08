@@ -2,14 +2,15 @@
 
 ## Executive summary
 
-This audit found and validated multiple real performance issues, with three high-confidence fixes shipped:
+This audit found and validated multiple real performance issues, with four high-confidence fixes shipped:
 
 1. **Confirmed bottleneck fixed:** run-log output rendering had superlinear growth from repeated full-text checks.
 2. **Confirmed bottleneck fixed (routine-path):** unresolved-import runtime probing caused large UI-thread lint stalls.
 3. **Confirmed bottleneck fixed for exclusion-heavy workloads:** search now prunes excluded directories before scanning files.
+4. **Confirmed bottleneck fixed:** project-module completion now reuses indexed module metadata with in-process caching.
 
 The highest measured gain was in run-log rendering throughput (**~27x faster at 40k lines**).  
-The audit also identified remaining scalability risks (not yet changed), especially no-match module completion scans and synchronous reference/rename analysis on very large projects.
+The audit also identified remaining scalability risks (not yet changed), especially synchronous reference/rename analysis on very large projects.
 
 ---
 
@@ -58,20 +59,19 @@ The audit also identified remaining scalability risks (not yet changed), especia
 
 ---
 
-## Likely bottlenecks / strong suspicions
-
-## 4) Project module completion has poor no-match worst-case behavior
+## 4) Project module completion had poor no-match worst-case behavior (fixed)
 - **Severity:** Medium-High  
-- **Confidence:** High (measured)  
-- **File(s):** `app/intelligence/completion_providers.py`  
+- **Confidence:** High (measured before/after)  
+- **File(s):** `app/intelligence/completion_providers.py`, `app/intelligence/completion_service.py`, `app/persistence/sqlite_index.py`  
 - **Evidence:**  
-  - 20k files, no-match prefix: **371 ms**
-  - 20k files, matching prefix: **11 ms**
+  - Before (no indexed module cache path): no-match prefix **~251.67 ms**
+  - After (indexed metadata + in-process cache): no-match prefix **~27.58 ms**
+  - After matching prefix: **~24.26 ms**
 - **Scenario:** Completion queries with rare/invalid prefixes in large projects.
-- **Root cause:** Full recursive module scan each request in no-match paths.
-- **Suggested fix:** Add cached module index (project-root scoped, invalidated on file tree changes) or use symbol/cache DB for module names.
-- **Expected impact:** Lower p95 completion latency on large projects.
-- **Validation method:** completion provider microbenchmarks.
+- **Root cause:** Full recursive filesystem module scan per request in no-match paths.
+- **Suggested fix:** Reuse indexed file metadata and cache derived module names by project/cache stamp (implemented).
+- **Expected impact:** Lower completion p95 latency on large projects.
+- **Validation method:** Completion service microbenchmarks + new unit coverage.
 
 ---
 
@@ -122,10 +122,13 @@ The audit also identified remaining scalability risks (not yet changed), especia
 1. `RunLogPanel.append_live_line` O(1) newline check.
 2. Routine lint triggers now disable runtime subprocess import probing.
 3. `find_in_files` traversal now uses streaming `os.walk` with directory-level exclusion pruning.
-4. Added/updated tests:
+4. Project module completions now use indexed module metadata cache when available.
+5. Added/updated tests:
    - `tests/integration/performance/test_responsiveness_thresholds.py`
    - `tests/unit/shell/test_main_window_lint_probe_policy.py`
    - `tests/unit/editors/test_search_panel.py`
+   - `tests/unit/intelligence/test_completion_service.py`
+   - `tests/unit/persistence/test_sqlite_index.py`
 
 ---
 
@@ -137,17 +140,16 @@ The audit also identified remaining scalability risks (not yet changed), especia
 | Run log append (10k lines) | 1,058 ms | 155 ms | **~6.8x faster** |
 | Lint unresolved imports (20, probe on/off) | 1,461 ms / 1.15 ms | routine path now uses off | Removes routine cold stall class |
 | Search with huge excluded dir | ~607 ms (old behavior simulation) | 1.34 ms | **~453x faster** |
+| Completion no-match (20k modules) | ~251.67 ms | 27.58 ms | **~9.1x faster** |
 
 ---
 
 ## Highest-value next profiling steps
 
-1. **Completion module cache prototype**
-   - Add project-scoped module-name cache and measure no-match completion p95.
-2. **UI-thread frame-time profiling**
+1. **UI-thread frame-time profiling**
    - Instrument Qt event-loop stalls during references/rename/search operations.
-3. **Search indexing experiment**
+2. **Search indexing experiment**
    - Compare current streaming scan vs optional indexed search for >50k file projects.
-4. **Runtime-parity retest in AppRun with populated vendor artifacts**
+3. **Runtime-parity retest in AppRun with populated vendor artifacts**
    - Re-run tree-sitter/highlighting perf gates currently skipped in this VM checkout.
 

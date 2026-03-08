@@ -109,6 +109,26 @@ Validation:
 - Added unit test:
   - `test_find_in_files_exclude_patterns_skip_directory_tree`
 
+### Fix D — Completion module suggestions now reuse indexed module cache
+
+Changed:
+- `app/intelligence/completion_providers.py`
+- `app/intelligence/completion_service.py`
+- `app/persistence/sqlite_index.py`
+- `tests/unit/intelligence/test_completion_service.py`
+- `tests/unit/persistence/test_sqlite_index.py`
+
+Change summary:
+- Added `SQLiteSymbolIndex.list_indexed_python_files(...)`.
+- `provide_project_module_items(...)` now accepts `cache_db_path` and prefers indexed file metadata when available.
+- Added in-process module-name cache keyed by `(project_root, cache_db_path, cache mtime)` to avoid repeated DB/path conversion overhead.
+- Completion service now passes its cache DB path into module provider.
+
+Validation:
+- New tests:
+  - `test_project_module_items_uses_indexed_file_cache_when_available`
+  - `test_sqlite_symbol_index_lists_indexed_python_files`
+
 ## 5) Post-fix measurements
 
 ### 5.1 Run log append scaling (after Fix A)
@@ -145,6 +165,18 @@ Measured analyzer cost difference on unresolved imports:
 
 Routine lint now follows disabled-probe path, removing this cold-start stall class from normal typing/save flows.
 
+### 5.4 Completion no-match latency (after Fix D with indexed cache)
+
+Measured on 20k Python files with indexed fingerprint cache:
+- no-match completion query (`zzzz`): **27.58 ms avg**
+- matching query (`m0`): **24.26 ms avg**
+
+Reference before Fix D (same audit baseline class, no indexed module cache path):
+- no-match completion query: **~251.67 ms**
+
+Improvement:
+- no-match completion latency reduced by roughly **9x** in indexed-cache scenario.
+
 ## 6) Final targeted regression suite run
 
 Command:
@@ -159,4 +191,19 @@ Command:
 
 Result:
 - **32 passed**
+
+Additional comprehensive targeted suite (including optional completion optimization):
+
+```bash
+/workspace/.venv/bin/python -m pytest \
+  tests/unit/shell/test_run_log_panel.py \
+  tests/unit/shell/test_main_window_lint_probe_policy.py \
+  tests/unit/editors/test_search_panel.py \
+  tests/unit/intelligence/test_completion_service.py \
+  tests/unit/persistence/test_sqlite_index.py \
+  tests/integration/performance/test_responsiveness_thresholds.py -vv
+```
+
+Result:
+- **50 passed**
 
