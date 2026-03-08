@@ -163,7 +163,7 @@ Validation therefore used:
 3. `a732058` — Validate project tree names and move edge cases  
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
-6. *(this changeset)* exporter archive-component validation hardening
+6. `5ccdff4` — Harden plugin exporter archive path components
 
 ---
 
