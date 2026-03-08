@@ -15,7 +15,6 @@ from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeyS
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
-    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -189,6 +188,7 @@ from app.shell.events import (
 )
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
+from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
@@ -977,7 +977,7 @@ class MainWindow(QMainWindow):
         self._event_bus.unsubscribe(event_type, handler)
 
     def _handle_open_project_action(self) -> None:
-        selected_path = QFileDialog.getExistingDirectory(self, "Open Project", str(Path.home()))
+        selected_path = choose_existing_directory(self, "Open Project", str(Path.home()))
         if not selected_path:
             return
         self._open_project_by_path(selected_path)
@@ -987,7 +987,7 @@ class MainWindow(QMainWindow):
         if self._loaded_project is not None:
             start_dir = self._loaded_project.project_root
 
-        file_paths, _ = QFileDialog.getOpenFileNames(
+        file_paths = choose_open_files(
             self,
             "Open File",
             start_dir,
@@ -1079,7 +1079,7 @@ class MainWindow(QMainWindow):
         if not accepted_name or not normalized_name:
             return None
 
-        destination_parent = QFileDialog.getExistingDirectory(self, "Choose Project Folder", str(Path.home()))
+        destination_parent = choose_existing_directory(self, "Choose Project Folder", str(Path.home()))
         if not destination_parent:
             return None
 
@@ -3209,9 +3209,7 @@ class MainWindow(QMainWindow):
         project_root = self._loaded_project.project_root
         project_name = self._loaded_project.metadata.name
         entry_file = self._loaded_project.metadata.default_entry
-        output_dir = QFileDialog.getExistingDirectory(
-            self, "Choose Package Output Folder", str(Path.home()),
-        )
+        output_dir = choose_existing_directory(self, "Choose Package Output Folder", str(Path.home()))
         if not output_dir:
             return
 
