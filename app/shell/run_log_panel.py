@@ -164,7 +164,7 @@ class RunLogPanel(QWidget):
 
             cursor = self._text.textCursor()
             cursor.movePosition(QTextCursor.End)
-            if self._text.toPlainText():
+            if cursor.position() > 0:
                 cursor.insertText("\n")
             cursor.insertText(display, fmt)
 
