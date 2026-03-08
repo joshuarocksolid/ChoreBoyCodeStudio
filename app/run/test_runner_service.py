@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-import sys
 import time
 
 from app.run.problem_parser import ProblemEntry
+from app.run.runtime_launch import is_freecad_runtime_executable, resolve_runtime_executable
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class PytestRunResult:
 def run_pytest_project(project_root: str, *, timeout_seconds: int = 300) -> PytestRunResult:
     """Run pytest in project root and parse navigable failures."""
     normalized_root = str(Path(project_root).expanduser().resolve())
-    command = [sys.executable, "-m", "pytest", "-q"]
+    command = _build_pytest_command(pytest_args=["-q"])
     return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
 
 
@@ -41,8 +41,17 @@ def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: i
     target = Path(target_path).expanduser()
     resolved_target = target if target.is_absolute() else (Path(normalized_root) / target)
     target_arg = str(resolved_target.resolve())
-    command = [sys.executable, "-m", "pytest", "-q", target_arg]
+    command = _build_pytest_command(pytest_args=["-q", target_arg])
     return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
+def _build_pytest_command(*, pytest_args: list[str]) -> list[str]:
+    runtime_executable = resolve_runtime_executable(None)
+    normalized_args = [str(arg) for arg in pytest_args]
+    if is_freecad_runtime_executable(runtime_executable):
+        payload = f"import pytest, sys;sys.exit(pytest.main({normalized_args!r}))"
+        return [runtime_executable, "-c", payload]
+    return [runtime_executable, "-m", "pytest", *normalized_args]
 
 
 def _run_pytest_command(project_root: str, command: list[str], *, timeout_seconds: int) -> PytestRunResult:

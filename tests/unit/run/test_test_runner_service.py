@@ -34,6 +34,10 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
 
     def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
         assert kwargs["cwd"] == str(project_root.resolve())
+        command = list(args[0])
+        assert command[0] == "/opt/freecad/AppRun"
+        assert command[1] == "-c"
+        assert "pytest.main(['-q'])" in command[2]
         return subprocess.CompletedProcess(
             args=args[0],
             returncode=1,
@@ -41,6 +45,8 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
             stderr="",
         )
 
+    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.test_runner_service.is_freecad_runtime_executable", lambda _runtime: True)
     monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_project(str(project_root))
@@ -73,9 +79,12 @@ def test_run_pytest_target_includes_target_argument(
             stderr="",
         )
 
+    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/usr/bin/python3")
+    monkeypatch.setattr("app.run.test_runner_service.is_freecad_runtime_executable", lambda _runtime: False)
     monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_target(str(project_root), str(target))
 
     assert result.return_code == 0
+    assert captured_command[:4] == ["/usr/bin/python3", "-m", "pytest", "-q"]
     assert captured_command[-1] == str(target.resolve())
