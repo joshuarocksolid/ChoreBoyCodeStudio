@@ -63,6 +63,32 @@ def test_parse_plugin_manifest_rejects_invalid_runtime_entrypoint() -> None:
         )
 
 
+def test_parse_plugin_manifest_rejects_runtime_entrypoint_traversal() -> None:
+    with pytest.raises(PluginManifestValidationError, match="cannot contain"):
+        parse_plugin_manifest(
+            {
+                "id": "acme.demo",
+                "name": "Demo Plugin",
+                "version": "1.0.0",
+                "api_version": 1,
+                "runtime": {"entrypoint": "../../outside.py"},
+            }
+        )
+
+
+def test_parse_plugin_manifest_rejects_absolute_runtime_entrypoint() -> None:
+    with pytest.raises(PluginManifestValidationError, match="must be a relative path"):
+        parse_plugin_manifest(
+            {
+                "id": "acme.demo",
+                "name": "Demo Plugin",
+                "version": "1.0.0",
+                "api_version": 1,
+                "runtime": {"entrypoint": "/tmp/outside.py"},
+            }
+        )
+
+
 def test_parse_plugin_manifest_rejects_path_traversal_plugin_id() -> None:
     with pytest.raises(PluginManifestValidationError, match="id must use only"):
         parse_plugin_manifest(
