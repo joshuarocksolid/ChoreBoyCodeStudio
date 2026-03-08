@@ -46,7 +46,7 @@ These constraints are non-negotiable unless the docs are explicitly updated:
 1. Users are on a **locked-down ChoreBoy system**.
 2. The main runtime is **FreeCAD AppRun** at `/opt/freecad/AppRun`.
 3. The available Python environment is **not** a normal system Python setup.
-4. The FreeCAD runtime ships **Python 3.9.2**. All code must be compatible with **Python 3.9** (no 3.10+ features). See `docs/DISCOVERY.md` section 1A and `.cursor/rules/python39_compatibility.mdc`.
+4. The FreeCAD runtime on **ChoreBoy production** ships **Python 3.9.2**. The **Cursor Cloud** development environment ships **Python 3.11** in the same FreeCAD AppRun. All code must be compatible with **Python 3.9** (no 3.10+ features). See `docs/DISCOVERY.md` section 1A and `.cursor/rules/python39_compatibility.mdc`.
 5. `PySide2` is available in the FreeCAD runtime.
 6. `import FreeCAD` works for headless/backend operations.
 7. Some FreeCAD features that depend on GUI modules do **not** work in console mode.
@@ -352,7 +352,44 @@ When in doubt, preserve the architecture and reduce complexity.
 
 ### FreeCAD AppRun runtime
 
-FreeCAD 1.0.2 is extracted to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides PySide2 5.15.15, FreeCAD 1.0.2 headless backend, pytest 9.0.2, and Python 3.11 runtime. Both the application and the test suite run through AppRun.
+FreeCAD 1.0.2 is extracted to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides PySide2 5.15.15, FreeCAD 1.0.2 headless backend, and **Python 3.11** runtime. Both the application and the test suite run through AppRun.
+
+**Note on Python version parity:** ChoreBoy production ships **Python 3.9.2**, while the Cursor Cloud FreeCAD AppRun ships **Python 3.11**. All code must remain compatible with **Python 3.9** (the production floor). The `.cursor/rules/python39_compatibility.mdc` rule enforces this. Vendored native `.so` files must be compiled for **cpython-311** to match the Cloud environment.
+
+**Note on `os.memfd_create`:** The conda-forge Python 3.11 build in this AppRun does **not** expose `os.memfd_create`. The `app/treesitter/loader.py` already has a ctypes fallback that calls `libc.memfd_create` directly, which works.
+
+### Environment setup (required before running tests or GUI)
+
+1. **Install pytest into the FreeCAD Python** (not pre-installed):
+```bash
+/opt/freecad/usr/bin/python -c "
+import subprocess, sys, os
+result = subprocess.run(
+    [sys.executable, '-m', 'pip', 'install', 'pytest>=9.0'],
+    env={**os.environ, 'PYTHONHOME': '/opt/freecad/usr'}
+)
+raise SystemExit(result.returncode)
+"
+```
+
+2. **Populate vendored dependencies** (not tracked in git):
+```bash
+# Download cp311 wheels (matching FreeCAD's Python 3.11)
+pip download tree-sitter==0.21.3 --python-version 311 --abi cp311 \
+  --platform manylinux_2_17_x86_64 --only-binary :all: --no-deps -d /tmp/wheels/
+pip download tree-sitter-languages==1.10.2 --python-version 311 --abi cp311 \
+  --platform manylinux_2_17_x86_64 --only-binary :all: --no-deps -d /tmp/wheels/
+
+# Extract into vendor/ (pip --target won't install cross-platform wheels)
+cd /tmp && mkdir -p extract_ts extract_tsl
+cd /tmp/extract_ts && unzip -o /tmp/wheels/tree_sitter-0.21.3-cp311-*.whl
+cd /tmp/extract_tsl && unzip -o /tmp/wheels/tree_sitter_languages-1.10.2-cp311-*.whl
+cp -r /tmp/extract_ts/tree_sitter /workspace/vendor/tree_sitter
+cp -r /tmp/extract_tsl/tree_sitter_languages /workspace/vendor/tree_sitter_languages
+
+# Install pure-Python pyflakes
+pip install pyflakes==3.4.0 --target=/workspace/vendor/ --no-deps
+```
 
 ### Running tests
 
