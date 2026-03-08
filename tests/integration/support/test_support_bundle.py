@@ -70,3 +70,28 @@ def test_build_support_bundle_includes_run_log_when_provided(tmp_path: Path) -> 
     with zipfile.ZipFile(bundle_path, "r") as archive:
         names = set(archive.namelist())
         assert f"project_logs/{run_log_path.name}" in names
+
+
+def test_build_support_bundle_includes_fallback_app_log(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    state_root = tmp_path / "state"
+    _write_valid_project(project_root)
+
+    blocker = state_root / "logs"
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("block mkdir", encoding="utf-8")
+
+    logging_result = configure_app_logging(state_root=state_root)
+    assert logging_result.tier == "fallback"
+    assert logging_result.log_path is not None
+    logging_result.log_path.write_text("fallback app log\n", encoding="utf-8")
+
+    bundle_path = build_support_bundle(
+        project_root,
+        state_root=state_root,
+        destination_dir=tmp_path / "bundles",
+    )
+
+    with zipfile.ZipFile(bundle_path, "r") as archive:
+        names = set(archive.namelist())
+        assert "global_logs/app.log" in names

@@ -78,7 +78,7 @@ def global_plugins_trust_path(state_root: Optional[PathInput] = None) -> Path:
 
 def plugin_install_dir(plugin_id: str, version: str, state_root: Optional[PathInput] = None) -> Path:
     """Return install directory for one plugin version."""
-    return global_plugins_installed_dir(state_root) / plugin_id / version
+    return global_plugins_installed_dir(state_root) / _safe_path_component(plugin_id, "plugin_id") / _safe_path_component(version, "version")
 
 
 def global_state_db_path(state_root: Optional[PathInput] = None) -> Path:
@@ -165,3 +165,14 @@ def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:
     if not candidate.is_absolute():
         raise ValueError(f"{field_name} must be an absolute path")
     return candidate.resolve()
+
+
+def _safe_path_component(value: str, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    if normalized in {".", ".."}:
+        raise ValueError(f"{field_name} cannot be '.' or '..'")
+    if "/" in normalized or "\\" in normalized:
+        raise ValueError(f"{field_name} cannot contain path separators")
+    return normalized

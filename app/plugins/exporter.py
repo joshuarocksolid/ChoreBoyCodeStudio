@@ -30,7 +30,9 @@ def export_installed_plugin(
 
     destination_dir = Path(output_directory).expanduser().resolve()
     destination_dir.mkdir(parents=True, exist_ok=True)
-    archive_name = f"{plugin_id}-{version}{constants.PLUGIN_PACKAGE_EXTENSION}"
+    safe_plugin_id = _safe_archive_component(plugin_id, field_name="plugin_id")
+    safe_version = _safe_archive_component(version, field_name="version")
+    archive_name = f"{safe_plugin_id}-{safe_version}{constants.PLUGIN_PACKAGE_EXTENSION}"
     archive_path = destination_dir / archive_name
     if archive_path.exists():
         archive_path.unlink()
@@ -41,3 +43,14 @@ def export_installed_plugin(
                 continue
             archive.write(file_path, file_path.relative_to(install_path))
     return archive_path
+
+
+def _safe_archive_component(value: str, *, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise AppValidationError(f"{field_name} must be a non-empty string.")
+    if normalized in {".", ".."}:
+        raise AppValidationError(f"{field_name} cannot be '.' or '..'.")
+    if "/" in normalized or "\\" in normalized:
+        raise AppValidationError(f"{field_name} cannot contain path separators.")
+    return normalized

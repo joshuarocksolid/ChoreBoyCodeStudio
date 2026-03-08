@@ -10,6 +10,7 @@ from typing import List, NamedTuple, Optional
 from app.bootstrap.paths import (
     PathInput,
     global_app_log_path,
+    resolve_global_state_root,
     resolve_temp_root,
     try_ensure_directory,
 )
@@ -18,6 +19,8 @@ from app.core import constants
 TIER_PRIMARY = "primary"
 TIER_FALLBACK = "fallback"
 TIER_STDERR = "stderr"
+_ACTIVE_LOG_PATH: Optional[Path] = None
+_ACTIVE_STATE_ROOT: Optional[Path] = None
 
 
 class LoggingResult(NamedTuple):
@@ -46,6 +49,7 @@ def configure_app_logging(
         _configure_file_handler(app_logger, log_path, formatter, level)
     else:
         _configure_stderr_handler(app_logger, formatter, level)
+    _set_active_log_path(log_path, state_root=state_root)
 
     return LoggingResult(log_path=log_path, tier=tier, warnings=warnings)
 
@@ -56,6 +60,19 @@ def get_subsystem_logger(subsystem: str) -> logging.Logger:
     if not normalized:
         raise ValueError("subsystem must be a non-empty string")
     return logging.getLogger(f"{constants.APP_LOGGER_NAMESPACE}.{normalized}")
+
+
+def get_active_log_path(state_root: Optional[PathInput] = None) -> Optional[Path]:
+    """Return currently configured app log path, falling back to canonical path if present."""
+    requested_state_root = resolve_global_state_root(state_root).resolve()
+    if _ACTIVE_LOG_PATH is not None and _ACTIVE_STATE_ROOT == requested_state_root:
+        resolved = _ACTIVE_LOG_PATH.resolve()
+        if resolved.exists():
+            return resolved
+    fallback = global_app_log_path(state_root)
+    if fallback.exists():
+        return fallback.resolve()
+    return None
 
 
 def _resolve_log_path_with_fallback(
@@ -128,3 +145,9 @@ def _configure_stderr_handler(
     handler.setLevel(level)
     handler.setFormatter(formatter)
     app_logger.addHandler(handler)
+
+
+def _set_active_log_path(log_path: Optional[Path], *, state_root: Optional[PathInput] = None) -> None:
+    global _ACTIVE_LOG_PATH, _ACTIVE_STATE_ROOT
+    _ACTIVE_LOG_PATH = None if log_path is None else log_path.resolve()
+    _ACTIVE_STATE_ROOT = resolve_global_state_root(state_root).resolve()

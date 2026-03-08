@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.errors import PluginManifestValidationError
 from app.core import constants
 from app.plugins.installer import install_plugin, set_plugin_enabled, uninstall_plugin
 from app.plugins.registry_store import load_plugin_registry
@@ -70,3 +71,12 @@ def test_uninstall_plugin_removes_installation_and_registry_entry(tmp_path: Path
 
     assert Path(result.install_path).exists() is False
     assert load_plugin_registry(state_root).entries == []
+
+
+def test_install_plugin_rejects_manifest_with_path_like_id(tmp_path: Path) -> None:
+    source_root = tmp_path / "plugin_source"
+    _write_plugin_source(source_root, plugin_id="../../escape", version="1.0.0")
+    state_root = str((tmp_path / "state").resolve())
+
+    with pytest.raises(PluginManifestValidationError):
+        install_plugin(source_root, state_root=state_root)

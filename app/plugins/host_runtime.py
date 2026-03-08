@@ -8,6 +8,7 @@ from app.core import constants
 from app.plugins.discovery import evaluate_manifest_compatibility
 from app.plugins.manifest import load_plugin_manifest
 from app.plugins.registry_store import load_plugin_registry
+from app.plugins.trust_store import is_runtime_plugin_trusted
 
 
 RuntimeCommandHandler = Callable[[dict[str, Any]], Any]
@@ -40,6 +41,12 @@ def load_runtime_command_handlers(
         if not compatibility.is_compatible:
             continue
         if not manifest.runtime_entrypoint:
+            continue
+        if not is_runtime_plugin_trusted(
+            manifest.plugin_id,
+            manifest.version,
+            state_root=state_root,
+        ):
             continue
         try:
             module = _load_runtime_module(
@@ -81,7 +88,16 @@ def _load_runtime_module(
     install_path: Path,
     runtime_entrypoint: str,
 ) -> object:
-    entrypoint_path = (install_path / runtime_entrypoint).resolve()
+    resolved_install_path = install_path.resolve()
+    entrypoint_path = (resolved_install_path / runtime_entrypoint).resolve()
+    try:
+        entrypoint_path.relative_to(resolved_install_path)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Runtime entrypoint escapes plugin install path: {runtime_entrypoint}"
+        ) from exc
+    if not entrypoint_path.exists() or not entrypoint_path.is_file():
+        raise RuntimeError(f"Runtime entrypoint not found: {runtime_entrypoint}")
     module_name = f"cbcs_plugin_{plugin_id.replace('.', '_').replace('-', '_')}"
     module_spec = importlib.util.spec_from_file_location(module_name, entrypoint_path)
     if module_spec is None or module_spec.loader is None:

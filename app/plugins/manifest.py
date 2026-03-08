@@ -2,19 +2,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 from app.core.errors import PluginManifestValidationError
 from app.plugins.models import PluginEngineConstraints, PluginManifest
+
+PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+PLUGIN_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 
 def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | None = None) -> PluginManifest:
     if not isinstance(payload, dict):
         _raise_error("Plugin manifest payload must be a JSON object.", manifest_path=manifest_path)
 
-    plugin_id = _require_non_empty_string(payload, "id", manifest_path=manifest_path)
+    plugin_id = _require_plugin_id(payload, manifest_path=manifest_path)
     name = _require_non_empty_string(payload, "name", manifest_path=manifest_path)
-    version = _require_non_empty_string(payload, "version", manifest_path=manifest_path)
+    version = _require_plugin_version(payload, manifest_path=manifest_path)
     api_version = _require_positive_int(payload, "api_version", manifest_path=manifest_path)
 
     runtime_payload = payload.get("runtime", {})
@@ -30,7 +34,7 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
                     field="runtime.entrypoint",
                     manifest_path=manifest_path,
                 )
-            runtime_entrypoint = entrypoint.strip()
+            runtime_entrypoint = _validate_runtime_entrypoint(entrypoint.strip(), manifest_path=manifest_path)
 
     activation_events = _parse_string_list(
         payload.get("activation_events", []),
@@ -166,6 +170,36 @@ def _optional_non_empty_string(
     return value.strip()
 
 
+def _require_plugin_id(
+    payload: Mapping[str, Any],
+    *,
+    manifest_path: Path | None,
+) -> str:
+    plugin_id = _require_non_empty_string(payload, "id", manifest_path=manifest_path)
+    if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
+        _raise_error(
+            "id must use only letters, numbers, dots, underscores, or hyphens.",
+            field="id",
+            manifest_path=manifest_path,
+        )
+    return plugin_id
+
+
+def _require_plugin_version(
+    payload: Mapping[str, Any],
+    *,
+    manifest_path: Path | None,
+) -> str:
+    version = _require_non_empty_string(payload, "version", manifest_path=manifest_path)
+    if not PLUGIN_VERSION_PATTERN.fullmatch(version):
+        _raise_error(
+            "version must use only letters, numbers, dots, underscores, plus, or hyphens.",
+            field="version",
+            manifest_path=manifest_path,
+        )
+    return version
+
+
 def _require_positive_int(
     payload: Mapping[str, Any],
     field: str,
@@ -178,6 +212,39 @@ def _require_positive_int(
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         _raise_error(f"{field} must be a positive integer.", field=field, manifest_path=manifest_path)
     return value
+
+
+def _validate_runtime_entrypoint(
+    entrypoint: str,
+    *,
+    manifest_path: Path | None,
+) -> str:
+    if "\\" in entrypoint:
+        _raise_error(
+            "runtime.entrypoint must use forward slashes and cannot contain backslashes.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
+    candidate = Path(entrypoint)
+    if candidate.is_absolute():
+        _raise_error(
+            "runtime.entrypoint must be a relative path inside the plugin package.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
+    if any(part in {"..", "."} for part in candidate.parts):
+        _raise_error(
+            "runtime.entrypoint cannot contain '.' or '..' path segments.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
+    if not candidate.parts:
+        _raise_error(
+            "runtime.entrypoint must not be empty.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
+    return candidate.as_posix()
 
 
 def _optional_positive_int(
