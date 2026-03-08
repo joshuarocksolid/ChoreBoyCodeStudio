@@ -213,7 +213,7 @@ Validation therefore used:
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
 8. `4e4a9cc` — Include active fallback app log in support bundles  
-9. *(this changeset)* scope active log lookup by state root
+9. `a5a1eba` — Scope active log lookup by state root
 
 ---
 

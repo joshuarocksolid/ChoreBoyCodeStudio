@@ -320,7 +320,7 @@ Auditor mode: deep skeptical audit (evidence-first)
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
 8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
 9. `4e4a9cc` — Include active fallback app log in support bundles  
-10. *(pending this changeset)* scope active-log lookup by state root
+10. `a5a1eba` — Scope active-log lookup by state root
 
 ---
 
