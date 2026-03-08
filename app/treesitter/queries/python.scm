@@ -8,8 +8,6 @@
 (false) @number
 (none) @constant.builtin
 
-(identifier) @variable
-
 (function_definition name: (identifier) @function.def)
 (class_definition name: (identifier) @class.def)
 (decorator (identifier) @decorator)
@@ -39,3 +37,5 @@
 ["=" "+" "-" "*" "/" "%" "**" "//" "|" "&" "^" "~"
  "<" ">" "<=" ">=" "==" "!=" "+=" "-=" "*=" "/="
  "and" "or" "not" "in" "is"] @operator
+
+(identifier) @variable

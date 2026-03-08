@@ -8,9 +8,6 @@
 (false) @number
 (null) @constant.builtin
 
-(identifier) @variable
-(property_identifier) @property
-
 (function_declaration name: (identifier) @function.def)
 (class_declaration name: (identifier) @class.def)
 (method_definition name: (property_identifier) @function.def)
@@ -30,3 +27,6 @@
 ["=" "+" "-" "*" "/" "%" "**" "!" "==" "!=" "===" "!==" "<"
  ">" "<=" ">=" "&&" "||" "?" "??" "+=" "-=" "*=" "/=" "%="
  "=>" ] @operator
+
+(property_identifier) @property
+(identifier) @variable
