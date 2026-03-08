@@ -63,6 +63,30 @@ def test_parse_plugin_manifest_rejects_invalid_runtime_entrypoint() -> None:
         )
 
 
+def test_parse_plugin_manifest_rejects_path_traversal_plugin_id() -> None:
+    with pytest.raises(PluginManifestValidationError, match="id must use only"):
+        parse_plugin_manifest(
+            {
+                "id": "../../escape",
+                "name": "Demo Plugin",
+                "version": "1.0.0",
+                "api_version": 1,
+            }
+        )
+
+
+def test_parse_plugin_manifest_rejects_path_traversal_version() -> None:
+    with pytest.raises(PluginManifestValidationError, match="version must use only"):
+        parse_plugin_manifest(
+            {
+                "id": "acme.demo",
+                "name": "Demo Plugin",
+                "version": "../1.0.0",
+                "api_version": 1,
+            }
+        )
+
+
 def test_load_plugin_manifest_reads_manifest_from_disk(tmp_path: Path) -> None:
     manifest_path = tmp_path / "plugin.json"
     manifest_path.write_text(

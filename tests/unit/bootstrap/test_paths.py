@@ -39,6 +39,14 @@ def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:
     assert paths.global_app_log_path(state_root) == state_root / constants.GLOBAL_LOGS_DIRNAME / constants.APP_LOG_FILENAME
 
 
+def test_plugin_install_dir_rejects_path_traversal_components(tmp_path: Path) -> None:
+    state_root = tmp_path / constants.GLOBAL_STATE_DIRNAME
+    with pytest.raises(ValueError):
+        paths.plugin_install_dir("../../escape", "1.0.0", state_root)
+    with pytest.raises(ValueError):
+        paths.plugin_install_dir("acme.demo", "../1.0.0", state_root)
+
+
 def test_resolve_temp_root_is_absolute_and_namespaced() -> None:
     """Temp root should be deterministic and app-scoped."""
     expected = Path(tempfile.gettempdir()).resolve() / constants.TEMP_NAMESPACE_DIRNAME
