@@ -2759,10 +2759,11 @@ class MainWindow(QMainWindow):
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         editor_widget = self._editor_widgets_by_path.get(file_path)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
+        allow_runtime_import_probe = trigger == "manual"
         diagnostics = analyze_python_file(
             file_path, project_root=project_root, source=buffer_source,
             known_runtime_modules=self._known_runtime_modules,
-            allow_runtime_import_probe=True,
+            allow_runtime_import_probe=allow_runtime_import_probe,
             selected_linter=self._selected_linter,
             lint_rule_overrides=self._lint_rule_overrides,
         )
@@ -2801,7 +2802,7 @@ class MainWindow(QMainWindow):
             diagnostics = analyze_python_file(
                 file_path, project_root=project_root, source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
-                allow_runtime_import_probe=True,
+                allow_runtime_import_probe=False,
                 selected_linter=self._selected_linter,
                 lint_rule_overrides=self._lint_rule_overrides,
             )

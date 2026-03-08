@@ -151,6 +151,20 @@ def test_find_in_files_exclude_globs(tmp_path: Path) -> None:
     assert matches[0].relative_path == "a.py"
 
 
+def test_find_in_files_exclude_patterns_skip_directory_tree(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    generated = project_root / "generated"
+    generated.mkdir()
+    (generated / "hidden.py").write_text("needle\n", encoding="utf-8")
+    (project_root / "visible.py").write_text("needle\n", encoding="utf-8")
+
+    matches = find_in_files(project_root, "needle", exclude_patterns=["generated"])
+
+    assert len(matches) == 1
+    assert matches[0].relative_path == "visible.py"
+
+
 def test_find_in_files_returns_column_and_length(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

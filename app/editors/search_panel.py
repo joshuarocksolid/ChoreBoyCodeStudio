@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,41 +99,61 @@ def find_in_files(
     results: list[SearchMatch] = []
     _active_excludes = exclude_patterns or []
 
-    for file_path in sorted(root.rglob("*")):
+    for current_dir, dir_names, file_names in os.walk(root, topdown=True, followlinks=False):
         if cancel_event is not None and cancel_event.is_set():
             break
         if len(results) >= max_results:
             break
-        if not file_path.is_file():
-            continue
-        if any(part in _STRUCTURAL_SKIP_DIRS for part in file_path.parts):
-            continue
-        rel_path = file_path.relative_to(root).as_posix()
-        if _active_excludes and should_exclude_relative_path(rel_path, _active_excludes, is_directory=False):
-            continue
-        if not _should_include_file(rel_path, opts):
-            continue
 
-        try:
-            with file_path.open("r", encoding="utf-8") as handle:
-                for line_index, line in enumerate(handle, start=1):
-                    if cancel_event is not None and cancel_event.is_set():
-                        return results
-                    for m in pattern.finditer(line):
-                        results.append(
-                            SearchMatch(
-                                relative_path=rel_path,
-                                absolute_path=str(file_path.resolve()),
-                                line_number=line_index,
-                                line_text=line.rstrip("\n"),
-                                column=m.start(),
-                                match_length=m.end() - m.start(),
-                            )
-                        )
-                        if len(results) >= max_results:
+        current_path = Path(current_dir)
+        pruned_dir_names: list[str] = []
+        for directory_name in sorted(dir_names):
+            if directory_name in _STRUCTURAL_SKIP_DIRS:
+                continue
+            directory_path = current_path / directory_name
+            relative_directory_path = directory_path.relative_to(root).as_posix()
+            if _active_excludes and should_exclude_relative_path(
+                relative_directory_path,
+                _active_excludes,
+                is_directory=True,
+            ):
+                continue
+            pruned_dir_names.append(directory_name)
+        dir_names[:] = pruned_dir_names
+
+        for file_name in sorted(file_names):
+            if cancel_event is not None and cancel_event.is_set():
+                return results
+            if len(results) >= max_results:
+                return results
+
+            file_path = current_path / file_name
+            rel_path = file_path.relative_to(root).as_posix()
+            if _active_excludes and should_exclude_relative_path(rel_path, _active_excludes, is_directory=False):
+                continue
+            if not _should_include_file(rel_path, opts):
+                continue
+
+            try:
+                with file_path.open("r", encoding="utf-8") as handle:
+                    for line_index, line in enumerate(handle, start=1):
+                        if cancel_event is not None and cancel_event.is_set():
                             return results
-        except (UnicodeDecodeError, OSError):
-            continue
+                        for m in pattern.finditer(line):
+                            results.append(
+                                SearchMatch(
+                                    relative_path=rel_path,
+                                    absolute_path=str(file_path.resolve()),
+                                    line_number=line_index,
+                                    line_text=line.rstrip("\n"),
+                                    column=m.start(),
+                                    match_length=m.end() - m.start(),
+                                )
+                            )
+                            if len(results) >= max_results:
+                                return results
+            except (UnicodeDecodeError, OSError):
+                continue
     return results
 
 

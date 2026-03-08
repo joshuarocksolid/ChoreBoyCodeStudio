@@ -16,6 +16,7 @@ from app.persistence.sqlite_index import SQLiteSymbolIndex
 
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _MODULE_MEMBER_CONTEXT_PATTERN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$")
+_PROJECT_MODULE_CACHE: dict[tuple[str, str], tuple[int, list[str]]] = {}
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,13 @@ def provide_project_symbol_items(
     return items
 
 
-def provide_project_module_items(*, project_root: str | None, prefix: str, limit: int) -> list[CompletionItem]:
+def provide_project_module_items(
+    *,
+    project_root: str | None,
+    prefix: str,
+    limit: int,
+    cache_db_path: str | None = None,
+) -> list[CompletionItem]:
     """Return completion candidates for project-local importable modules."""
     if project_root is None:
         return []
@@ -159,6 +166,25 @@ def provide_project_module_items(*, project_root: str | None, prefix: str, limit
         return []
 
     candidates: list[str] = []
+    if cache_db_path:
+        cache_path = Path(cache_db_path).expanduser().resolve()
+        cache_stamp = int(cache_path.stat().st_mtime_ns) if cache_path.exists() else -1
+        cache_key = (str(root), str(cache_path))
+        cached_entry = _PROJECT_MODULE_CACHE.get(cache_key)
+        if cached_entry is not None and cached_entry[0] == cache_stamp:
+            return _module_completion_items(
+                _filter_module_names(cached_entry[1], prefix=prefix, limit=limit)
+            )
+
+        indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
+        if indexed_files:
+            candidates = _module_names_from_indexed_paths(
+                project_root=root,
+                indexed_file_paths=indexed_files,
+            )
+            _PROJECT_MODULE_CACHE[cache_key] = (cache_stamp, candidates)
+            return _module_completion_items(_filter_module_names(candidates, prefix=prefix, limit=limit))
+
     for file_path in root.rglob("*.py"):
         if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
@@ -172,15 +198,7 @@ def provide_project_module_items(*, project_root: str | None, prefix: str, limit
             break
 
     deduped = sorted(set(candidates))
-    return [
-        CompletionItem(
-            label=module_name,
-            insert_text=module_name,
-            kind=CompletionKind.MODULE,
-            detail="project module",
-        )
-        for module_name in deduped
-    ]
+    return _module_completion_items(deduped)
 
 
 def provide_module_member_items(
@@ -260,6 +278,49 @@ def _collect_module_symbols_from_file(*, file_path: Path, member_prefix: str) ->
     return {name for name in symbols if _matches_prefix(name, member_prefix)}
 
 
+def _module_names_from_indexed_paths(
+    *,
+    project_root: Path,
+    indexed_file_paths: list[str],
+) -> list[str]:
+    normalized_root = project_root.as_posix().rstrip("/")
+    root_prefix = f"{normalized_root}/"
+    module_names: set[str] = set()
+    for file_path in indexed_file_paths:
+        normalized_path = file_path.replace("\\", "/")
+        if not normalized_path.startswith(root_prefix):
+            continue
+        relative_path = normalized_path[len(root_prefix) :]
+        module_name = _module_name_from_relative_path(relative_path)
+        if module_name is None:
+            continue
+        module_names.add(module_name)
+    return sorted(module_names)
+
+
+def _filter_module_names(module_names: list[str], *, prefix: str, limit: int) -> list[str]:
+    filtered: list[str] = []
+    for module_name in module_names:
+        if not _matches_prefix(module_name, prefix):
+            continue
+        filtered.append(module_name)
+        if len(filtered) >= limit:
+            break
+    return filtered
+
+
+def _module_completion_items(module_names: list[str]) -> list[CompletionItem]:
+    return [
+        CompletionItem(
+            label=module_name,
+            insert_text=module_name,
+            kind=CompletionKind.MODULE,
+            detail="project module",
+        )
+        for module_name in module_names
+    ]
+
+
 def _collect_top_level_symbols_from_ast(syntax_tree: ast.AST) -> set[str]:
     symbols: set[str] = set()
     for node in getattr(syntax_tree, "body", []):
@@ -298,6 +359,10 @@ def _extract_target_names(target: ast.AST) -> set[str]:
 
 def _module_name_from_path(project_root: Path, file_path: Path) -> str | None:
     relative_path = file_path.relative_to(project_root).as_posix()
+    return _module_name_from_relative_path(relative_path)
+
+
+def _module_name_from_relative_path(relative_path: str) -> str | None:
     if not relative_path.endswith(".py"):
         return None
     module_path = relative_path[:-3]
