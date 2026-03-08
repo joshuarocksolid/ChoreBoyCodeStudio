@@ -153,12 +153,51 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.5 Runtime plugin entrypoint escape
+
+### Target files
+- `app/plugins/manifest.py`
+- `app/plugins/host_runtime.py`
+- `tests/unit/plugins/test_host_runtime.py`
+
+### Repro script (before fix)
+- Installed plugin with:
+  - `runtime.entrypoint: "../../outside_runtime.py"`
+- Created `outside_runtime.py` outside plugin folder.
+- Called `load_runtime_command_handlers(...)`.
+- Observed command handler loaded and executed external file.
+
+### Evidence snippet
+- `handler_found True`
+- `handler_result {'outside_loaded': True, 'payload': {'k': 1}}`
+
+### Static proof
+- Manifest parser accepted arbitrary runtime entrypoint strings.
+- Host runtime loader resolved `install_path / runtime_entrypoint` but did not enforce that resolved path stayed under plugin install root.
+
+### Fix implemented
+- Manifest validation now rejects runtime entrypoints with:
+  - absolute paths
+  - `.` / `..` segments
+  - backslashes
+- Runtime loader now enforces `resolved_entrypoint.relative_to(resolved_install_path)`.
+- Added tests:
+  - `tests/unit/plugins/test_manifest.py` (invalid runtime entrypoint cases)
+  - `tests/unit/plugins/test_host_runtime.py`
+
+### Post-fix verification
+- Re-ran malicious install:
+  - `blocked runtime.entrypoint cannot contain '.' or '..' path segments...`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  
 2. `6c89d68` — Block plugin install path traversal inputs  
 3. `a732058` — Validate project tree names and move edge cases  
-4. `b96d8ea` — Fail packaging when entrypoint is invalid
+4. `b96d8ea` — Fail packaging when entrypoint is invalid  
+5. `b2ee677` — Constrain plugin runtime entrypoint paths
 
 ---
 

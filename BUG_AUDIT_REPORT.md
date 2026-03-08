@@ -1,0 +1,177 @@
+# BUG_AUDIT_REPORT
+
+Date: 2026-03-08
+
+## Executive summary
+
+Deep skeptical audit identified **5 confirmed bugs** with concrete evidence and reproductions.  
+All 5 were fixed with minimal scoped changes and pushed as separate commits.
+
+Highest-impact issues were:
+- runner lifecycle race that could orphan active processes
+- plugin path traversal vectors during install/runtime loading
+- project-tree operations permitting path escapes and uncaught move/rename exceptions
+- packager producing successful artifacts with broken entrypoints
+
+Tooling limitations in this environment:
+- `pytest` unavailable in both AppRun and system Python
+- `pyright` unavailable
+
+Validation therefore used:
+- deterministic repro scripts
+- static code-path proof
+- syntax compilation (`compileall`)
+
+---
+
+## Confirmed bugs
+
+## 1) Stale process exit clobbers active runner state
+- **Severity:** High  
+- **Confidence:** High  
+- **File(s):** `app/run/process_supervisor.py`  
+- **Evidence:** stress repro showed active second PID alive while supervisor reported `is_running=False`, `state=exited`, `process_id=None`; stale events only.
+- **Reproduction steps:**
+  1. Start a fast process (`python -c pass`).
+  2. Immediately start a second long-running process.
+  3. Observe stale waiter from first process races with second process state.
+- **Why it happens:** `_wait_for_exit` unconditionally reset `self._process`/state and global stream resources even when invoked for stale process.
+- **Suggested fix:** isolate resources per PID and ignore stale waiter events unless process is still active.
+- **Fix applied:** ✅ commit `925ec32`
+
+---
+
+## 2) Plugin install path traversal via manifest `id` and `version`
+- **Severity:** High  
+- **Confidence:** High  
+- **File(s):** `app/plugins/manifest.py`, `app/bootstrap/paths.py`, `app/plugins/installer.py`  
+- **Evidence:** installing plugin with `id='../../escape_plugin'` and/or `version='../../escape_version'` created install paths outside expected `plugins/installed/<id>/<version>` subtree.
+- **Reproduction steps:**
+  1. Create plugin manifest with traversal-like `id`/`version`.
+  2. Call `install_plugin(...)`.
+  3. Inspect resulting install path; it escapes install root.
+- **Why it happens:** manifest only required non-empty strings; path helper joined raw values directly.
+- **Suggested fix:** strict identifier/version validation + path-component safety checks.
+- **Fix applied:** ✅ commit `6c89d68`
+
+---
+
+## 3) Runtime plugin entrypoint can escape plugin root
+- **Severity:** High  
+- **Confidence:** High  
+- **File(s):** `app/plugins/manifest.py`, `app/plugins/host_runtime.py`  
+- **Evidence:** before fix, plugin with `runtime.entrypoint="../../outside_runtime.py"` loaded and executed handler from external file:
+  - `handler_found True`
+  - `handler_result {'outside_loaded': True, ...}`
+- **Reproduction steps:**
+  1. Install plugin declaring traversal runtime entrypoint.
+  2. Place executable Python file at resolved external location.
+  3. Load runtime handlers and invoke command.
+- **Why it happens:** no manifest/runtime loader boundary enforcement for resolved entrypoint path.
+- **Suggested fix:** reject traversal/absolute entrypoints in manifest and enforce runtime loader relative-to-plugin-root check.
+- **Fix applied:** ✅ commit `b2ee677`
+
+---
+
+## 4) Project tree creation/rename accepted path-like names and leaked exceptions
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/shell/project_tree_action_coordinator.py`  
+- **Evidence:**
+  - `handle_new_file(destination, "../escape.py")` created file outside intended boundary.
+  - `handle_rename(..., "../bad")` raised uncaught `ValueError`.
+  - folder move into child surfaced uncaught move error.
+- **Reproduction steps:**
+  1. Invoke tree actions with path-like user input names.
+  2. Observe escape behavior or uncaught exceptions.
+- **Why it happens:** no child-name validation + no exception guards around filesystem move/copy edge cases.
+- **Suggested fix:** validate names as child components only; catch move/copy/rename errors and return user-facing messages.
+- **Fix applied:** ✅ commit `a732058`
+
+---
+
+## 5) Packager reports success with missing entry file
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/packaging/packager.py`  
+- **Evidence:** `package_project(..., entry_file='missing.py')` returned success and generated launcher referencing non-existent file.
+- **Reproduction steps:**
+  1. Create project containing `main.py` only.
+  2. Package with missing entry file path.
+  3. Observe success result and broken artifact.
+- **Why it happens:** no preflight validation that entrypoint exists and is inside project root.
+- **Suggested fix:** resolve entry path, enforce in-project boundary, require existing file.
+- **Fix applied:** ✅ commit `b96d8ea`
+
+---
+
+## Likely bugs / strong suspicions
+
+## A) Plugin export filename can break on malformed registry IDs/versions
+- **Severity:** Low-Medium  
+- **Confidence:** Medium  
+- **File(s):** `app/plugins/exporter.py`, `app/plugins/registry_store.py`
+- **Evidence:** with malformed plugin id/version values (manually crafted), export attempted to create archive path containing traversal-like segments and failed with `FileNotFoundError`.
+- **Reproduction steps:**
+  1. Inject malformed plugin id/version into registry or call export with malformed values.
+  2. Call `export_installed_plugin(...)`.
+  3. Observe path error.
+- **Suggested fix:** sanitize archive filename components even when registry data is malformed.
+
+---
+
+## Implementation gaps
+
+## 1) Validation toolchain unavailable in environment
+- **Severity:** Medium (process/testing risk)  
+- **Confidence:** High  
+- **Evidence:**
+  - `python3 run_tests.py -q` -> missing pytest
+  - `python3 -m pytest -q` -> missing pytest
+  - `pyright --version` -> command not found
+- **Gap:** unable to run full automated regression suite in this environment.
+- **Suggested fix:** restore test/type tooling in CI/dev image and run targeted suites for changed modules.
+
+## 2) Coverage concentration gap in high-complexity shell/runtime surfaces
+- **Severity:** Medium  
+- **Confidence:** Medium  
+- **Evidence:** several high-complexity modules have limited direct test granularity (notably `app/shell/main_window.py`, `app/treesitter/*`, parts of plugin runtime wiring).
+- **Gap:** high behavior complexity with relatively sparse focused regression tests increases change risk.
+- **Suggested fix:** add focused unit/integration seams around complex orchestration paths.
+
+---
+
+## Risky areas not fully audited
+
+- Full GUI interaction matrix in `app/shell/main_window.py` (very large orchestrator).
+- Tree-sitter runtime loader/highlighter behavior under unusual vendor/runtime failures.
+- End-to-end plugin host IPC under repeated crash/restart + concurrent command pressure.
+- Cross-platform path semantics for plugin export/import edge cases beyond Linux.
+
+---
+
+## Fixes applied
+
+1. `925ec32` — Harden supervisor against stale exit races  
+2. `6c89d68` — Block plugin install path traversal inputs  
+3. `a732058` — Validate project tree names and move edge cases  
+4. `b96d8ea` — Fail packaging when entrypoint is invalid  
+5. `b2ee677` — Constrain plugin runtime entrypoint paths
+
+---
+
+## Suggested next tests
+
+1. Restore pytest and run:
+   - `python3 run_tests.py -v tests/unit/run/test_process_supervisor.py`
+   - `python3 run_tests.py -v tests/unit/plugins/`
+   - `python3 run_tests.py -v tests/unit/shell/test_project_tree_action_coordinator.py`
+   - `python3 run_tests.py -v tests/unit/packaging/test_packager.py`
+2. Run plugin manager manual acceptance:
+   - install/enable runtime plugin
+   - safe mode toggle
+   - repeated runtime failure quarantine flow
+3. Run manual tree-file operations in GUI:
+   - invalid names, drag-drop folder to child, bulk cut/paste edge cases
+4. Package and launch smoke test with valid and invalid entrypoint paths.
+
