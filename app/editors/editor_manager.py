@@ -94,8 +94,13 @@ class EditorManager:
 
     def update_tab_content(self, file_path: str, content: str) -> EditorTabState:
         """Update tab content and return resulting state."""
-        tab = self._require_tab(file_path)
+        normalized_path = str(Path(file_path).expanduser().resolve())
+        tab = self._require_tab(normalized_path)
         tab.update_content(content)
+        if tab.is_preview and tab.is_dirty:
+            tab.promote()
+            if self._preview_file_path == normalized_path:
+                self._preview_file_path = None
         return tab
 
     def save_tab(self, file_path: str) -> EditorTabState:

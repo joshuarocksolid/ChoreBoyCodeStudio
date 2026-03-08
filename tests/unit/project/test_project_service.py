@@ -281,6 +281,39 @@ def test_assess_project_root_returns_invalid_state_for_non_python_folder(tmp_pat
     assert "no Python files were found" in assessment.message
 
 
+def test_assess_project_root_rejects_shared_temp_root_even_with_python_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_temp_root = tmp_path / "shared_tmp"
+    shared_temp_root.mkdir()
+    (shared_temp_root / "orphan.py").write_text("print('tmp')\n", encoding="utf-8")
+    monkeypatch.setattr(project_service.tempfile, "gettempdir", lambda: str(shared_temp_root))
+
+    assessment = assess_project_root(shared_temp_root)
+
+    assert assessment.state == ProjectRootState.INVALID
+    assert "Shared temporary root folders cannot be opened as projects" in assessment.message
+    with pytest.raises(ProjectStructureValidationError, match="Shared temporary root folders cannot be opened"):
+        open_project(shared_temp_root)
+
+
+def test_assess_project_root_allows_nested_project_inside_temp_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_temp_root = tmp_path / "shared_tmp"
+    nested_project = shared_temp_root / "actual_project"
+    nested_project.mkdir(parents=True)
+    (nested_project / "run.py").write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.setattr(project_service.tempfile, "gettempdir", lambda: str(shared_temp_root))
+
+    assessment = assess_project_root(nested_project)
+
+    assert assessment.state == ProjectRootState.IMPORTABLE
+    assert assessment.inferred_entry == "run.py"
+
+
 def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path) -> None:
     """Structure validation should fail clearly when `cbcs/project.json` is missing."""
     project_root = tmp_path / "project_without_manifest"

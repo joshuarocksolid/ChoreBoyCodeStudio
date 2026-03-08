@@ -6,7 +6,6 @@ from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
     QCheckBox,
     QDialog,
-    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QMessageBox,
@@ -22,6 +21,7 @@ from app.plugins.exporter import export_installed_plugin
 from app.plugins.installer import install_plugin, set_plugin_enabled, uninstall_plugin
 from app.plugins.registry_store import load_plugin_registry
 from app.plugins.trust_store import is_runtime_plugin_trusted, set_runtime_plugin_trust
+from app.shell.file_dialogs import choose_existing_directory, choose_open_file
 
 
 class PluginManagerDialog(QDialog):
@@ -182,14 +182,10 @@ class PluginManagerDialog(QDialog):
         )
 
     def _select_source_path(self) -> str | None:
-        selected_directory = QFileDialog.getExistingDirectory(
-            self,
-            "Select Plugin Folder",
-            str(Path.home()),
-        )
+        selected_directory = choose_existing_directory(self, "Select Plugin Folder", str(Path.home()))
         if selected_directory:
             return selected_directory
-        selected_file, _ = QFileDialog.getOpenFileName(
+        selected_file = choose_open_file(
             self,
             "Select Plugin Package",
             str(Path.home()),
@@ -282,11 +278,7 @@ class PluginManagerDialog(QDialog):
         if selected is None:
             return
         plugin_id, version = selected
-        destination_dir = QFileDialog.getExistingDirectory(
-            self,
-            "Select Export Destination",
-            str(Path.home()),
-        )
+        destination_dir = choose_existing_directory(self, "Select Export Destination", str(Path.home()))
         if not destination_dir:
             return
         try:
