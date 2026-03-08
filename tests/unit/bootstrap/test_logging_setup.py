@@ -173,6 +173,23 @@ def test_get_active_log_path_returns_fallback_when_primary_unwritable(tmp_path: 
     assert active_log_path == result.log_path
 
 
+def test_get_active_log_path_ignores_active_log_from_different_state_root(tmp_path: Path) -> None:
+    first_state_root = tmp_path / "state_one"
+    second_state_root = tmp_path / "state_two"
+
+    first_result = logging_setup.configure_app_logging(state_root=first_state_root)
+    assert first_result.log_path is not None
+    first_result.log_path.write_text("state one log\n", encoding="utf-8")
+
+    second_expected = logging_setup.global_app_log_path(second_state_root)
+    second_expected.parent.mkdir(parents=True, exist_ok=True)
+    second_expected.write_text("state two log\n", encoding="utf-8")
+
+    active_for_second = logging_setup.get_active_log_path(state_root=second_state_root)
+
+    assert active_for_second == second_expected
+
+
 # --- Helpers ---
 
 

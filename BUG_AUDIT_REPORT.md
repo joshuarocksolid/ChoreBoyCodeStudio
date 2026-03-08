@@ -4,8 +4,8 @@ Date: 2026-03-08
 
 ## Executive summary
 
-Deep skeptical audit identified **8 confirmed bugs** with concrete evidence and reproductions.  
-All 8 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **9 confirmed bugs** with concrete evidence and reproductions.  
+All 9 were fixed with minimal scoped changes and pushed as separate commits.
 
 Highest-impact issues were:
 - runner lifecycle race that could orphan active processes
@@ -152,6 +152,21 @@ Validation therefore used:
 
 ---
 
+## 9) Active log-path lookup was not scoped by state root
+- **Severity:** Low-Medium  
+- **Confidence:** High  
+- **File(s):** `app/bootstrap/logging_setup.py`  
+- **Evidence:** active log path cache was global and returned regardless of caller-requested state root.
+- **Reproduction steps:**
+  1. Configure logging with `state_root=A`.
+  2. Request active log path for `state_root=B`.
+  3. Observe path from A returned before fix.
+- **Why it happens:** `_ACTIVE_LOG_PATH` had no associated state-root context check.
+- **Suggested fix:** store active state-root alongside active log path and enforce root match in getter.
+- **Fix applied:** ✅ (post-audit hardening)
+
+---
+
 ## Likely bugs / strong suspicions
 
 - No additional high-confidence likely bugs remain after applied hardening in this audit pass.
@@ -197,7 +212,8 @@ Validation therefore used:
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
-8. `4e4a9cc` — Include active fallback app log in support bundles
+8. `4e4a9cc` — Include active fallback app log in support bundles  
+9. *(this changeset)* scope active log lookup by state root
 
 ---
 

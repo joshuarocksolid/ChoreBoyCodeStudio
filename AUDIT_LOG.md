@@ -282,6 +282,33 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.9 Active log lookup leaked across state roots
+
+### Target files
+- `app/bootstrap/logging_setup.py`
+- `tests/unit/bootstrap/test_logging_setup.py`
+
+### Repro analysis (before fix)
+- Logging setup stored a single global active log path.
+- `get_active_log_path(state_root=...)` returned that active path regardless of requested state root.
+- In multi-state-root workflows/tests, support bundle or diagnostics could include a log from the wrong state root.
+
+### Static proof
+- `get_active_log_path` had no state-root match check for `_ACTIVE_LOG_PATH`.
+
+### Fix implemented
+- Added `_ACTIVE_STATE_ROOT` tracking.
+- `get_active_log_path(state_root=...)` now returns active path only when it matches requested state root.
+- Added unit test:
+  - `test_get_active_log_path_ignores_active_log_from_different_state_root`.
+
+### Post-fix verification
+- Repro script output:
+  - `active_for_state_two .../state_two/logs/app.log`
+  - `expected_state_two .../state_two/logs/app.log`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  
@@ -292,7 +319,8 @@ Auditor mode: deep skeptical audit (evidence-first)
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
 8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
-9. `4e4a9cc` — Include active fallback app log in support bundles
+9. `4e4a9cc` — Include active fallback app log in support bundles  
+10. *(pending this changeset)* scope active-log lookup by state root
 
 ---
 
