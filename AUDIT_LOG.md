@@ -251,6 +251,37 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.8 Support bundle missed active fallback app log
+
+### Target files
+- `app/bootstrap/logging_setup.py`
+- `app/support/support_bundle.py`
+- `tests/unit/bootstrap/test_logging_setup.py`
+- `tests/integration/support/test_support_bundle.py`
+
+### Repro script (before fix)
+- Forced primary log path failure to trigger fallback tier.
+- `configure_app_logging(...)` selected fallback `/tmp/choreboy_code_studio/logs/app.log`.
+- `build_support_bundle(...)` checked only canonical primary `global_app_log_path(state_root)`, so app log was omitted.
+
+### Static proof
+- `support_bundle.py` used `global_app_log_path(state_root)` directly.
+- Logging setup can route to fallback path while primary path remains nonexistent.
+
+### Fix implemented
+- Added `get_active_log_path(state_root=...)` in logging bootstrap to expose configured active log destination.
+- Support bundle now includes this active log path (fallback or primary).
+- Added regression tests for:
+  - active fallback path resolution
+  - support bundle inclusion of fallback app log.
+
+### Post-fix verification
+- Repro output after fix:
+  - `tier fallback`
+  - `has_app_log True`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  
@@ -260,7 +291,8 @@ Auditor mode: deep skeptical audit (evidence-first)
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
-8. `2ad86e8` — Enforce runtime-plugin trust gate at load time
+8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
+9. *(pending this changeset)* include active fallback app log in support bundles
 
 ---
 

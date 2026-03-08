@@ -4,8 +4,8 @@ Date: 2026-03-08
 
 ## Executive summary
 
-Deep skeptical audit identified **7 confirmed bugs** with concrete evidence and reproductions.  
-All 7 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **8 confirmed bugs** with concrete evidence and reproductions.  
+All 8 were fixed with minimal scoped changes and pushed as separate commits.
 
 Highest-impact issues were:
 - runner lifecycle race that could orphan active processes
@@ -136,6 +136,22 @@ Validation therefore used:
 
 ---
 
+## 8) Support bundle omitted app log when logging used fallback tier
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/bootstrap/logging_setup.py`, `app/support/support_bundle.py`  
+- **Evidence:** when primary state-root log path was unwritable and fallback log path was active, support bundle did not include `global_logs/app.log` before fix.
+- **Reproduction steps:**
+  1. Force `configure_app_logging(state_root=...)` into fallback tier.
+  2. Write log line to fallback path.
+  3. Build support bundle.
+  4. Inspect archive entries (app log missing before fix).
+- **Why it happens:** support bundle looked only at canonical primary path, not current active logging destination.
+- **Suggested fix:** expose active configured log path from logging bootstrap and use that in support bundle generation.
+- **Fix applied:** ✅ (post-audit hardening)
+
+---
+
 ## Likely bugs / strong suspicions
 
 - No additional high-confidence likely bugs remain after applied hardening in this audit pass.
@@ -180,7 +196,8 @@ Validation therefore used:
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
-7. `2ad86e8` — Enforce runtime plugin trust at handler load
+7. `2ad86e8` — Enforce runtime plugin trust at handler load  
+8. *(this changeset)* include active fallback app log in support bundles
 
 ---
 

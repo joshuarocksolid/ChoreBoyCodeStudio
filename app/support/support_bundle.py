@@ -8,7 +8,8 @@ from pathlib import Path
 import tempfile
 import zipfile
 
-from app.bootstrap.paths import PathInput, global_app_log_path, project_manifest_path
+from app.bootstrap.logging_setup import get_active_log_path
+from app.bootstrap.paths import PathInput, project_manifest_path
 from app.support.diagnostics import ProjectHealthReport
 
 
@@ -32,7 +33,7 @@ def build_support_bundle(
     bundle_path = output_dir / bundle_name
 
     manifest_file = project_manifest_path(str(resolved_project_root))
-    app_log_file = global_app_log_path(state_root)
+    app_log_file = get_active_log_path(state_root=state_root)
     run_log_file = (
         Path(last_run_log_path).expanduser().resolve()
         if last_run_log_path is not None
@@ -42,7 +43,7 @@ def build_support_bundle(
     with zipfile.ZipFile(bundle_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         if manifest_file.exists():
             archive.write(manifest_file, arcname="project/cbcs/project.json")
-        if app_log_file.exists():
+        if app_log_file is not None and app_log_file.exists():
             archive.write(app_log_file, arcname="global_logs/app.log")
         if run_log_file is not None and run_log_file.exists():
             archive.write(run_log_file, arcname=f"project_logs/{run_log_file.name}")
