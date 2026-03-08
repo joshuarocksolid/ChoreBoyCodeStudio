@@ -260,7 +260,7 @@ Auditor mode: deep skeptical audit (evidence-first)
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
-8. *(pending this changeset)* enforce runtime-plugin trust gate at load time
+8. `2ad86e8` — Enforce runtime-plugin trust gate at load time
 
 ---
 

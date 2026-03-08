@@ -180,7 +180,7 @@ Validation therefore used:
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
-7. *(this changeset)* enforce runtime trust gate for runtime plugin loading
+7. `2ad86e8` — Enforce runtime plugin trust at handler load
 
 ---
 
