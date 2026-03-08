@@ -116,3 +116,54 @@ def test_handle_paste_cut_applies_moves_and_clears_clipboard(monkeypatch: pytest
         ("/tmp/project/a.py", "/tmp/project/dest/a.py"),
         ("/tmp/project/b.py", "/tmp/project/dest/b.py"),
     ]
+
+
+def test_handle_new_file_rejects_path_separators() -> None:
+    tree_controller = _FakeProjectTreeController()
+    coordinator, reloaded = _coordinator(tree_controller)
+
+    error = coordinator.handle_new_file("/tmp/project", "../escape.py")
+
+    assert error == "File name cannot include path separators."
+    assert reloaded == []
+
+
+def test_handle_rename_rejects_path_separators() -> None:
+    tree_controller = _FakeProjectTreeController()
+    coordinator, reloaded = _coordinator(tree_controller)
+
+    error = coordinator.handle_rename("/tmp/project/old.py", "../new.py")
+
+    assert error == "New name cannot include path separators."
+    assert tree_controller.move_calls == []
+    assert reloaded == []
+
+
+def test_handle_drop_move_rejects_folder_move_into_itself(tmp_path) -> None:
+    tree_controller = _FakeProjectTreeController()
+    coordinator, reloaded = _coordinator(tree_controller)
+    source = tmp_path / "folder"
+    child = source / "child"
+    child.mkdir(parents=True)
+
+    error = coordinator.handle_drop_move(str(source), str(child))
+
+    assert error == "Cannot move a folder into itself."
+    assert tree_controller.move_calls == []
+    assert reloaded == []
+
+
+def test_handle_drop_move_returns_oserror_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    tree_controller = _FakeProjectTreeController()
+    coordinator, reloaded = _coordinator(tree_controller)
+
+    def _raise_oserror(_source: str, _destination: str) -> FileOperationResult:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("app.shell.project_tree_action_coordinator.move_path", _raise_oserror)
+
+    error = coordinator.handle_drop_move("/tmp/project/a.py", "/tmp/project/target")
+
+    assert error == "permission denied"
+    assert tree_controller.move_calls == []
+    assert reloaded == []
