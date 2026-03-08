@@ -80,6 +80,24 @@ def test_update_tab_content_marks_tab_dirty(tmp_path: Path) -> None:
     assert opened.tab.is_dirty is True
 
 
+def test_editing_preview_tab_promotes_to_permanent(tmp_path: Path) -> None:
+    first_path = tmp_path / "first.py"
+    second_path = tmp_path / "second.py"
+    first_path.write_text("print('first')\n", encoding="utf-8")
+    second_path.write_text("print('second')\n", encoding="utf-8")
+    manager = EditorManager()
+
+    first_open = manager.open_file(str(first_path), preview=True)
+    updated = manager.update_tab_content(str(first_path), "print('first edited')\n")
+    second_open = manager.open_file(str(second_path), preview=True)
+
+    assert first_open.tab.is_preview is False
+    assert updated.is_preview is False
+    assert manager.preview_tab() is second_open.tab
+    assert second_open.closed_preview_path is None
+    assert manager.get_tab(str(first_path.resolve())) is not None
+
+
 def test_save_tab_persists_content_and_clears_dirty_state(tmp_path: Path) -> None:
     """Saving a dirty tab should write content and clear dirty flag."""
     file_path = tmp_path / "run.py"

@@ -109,6 +109,57 @@ def test_quick_open_preview_then_enter_promotes_to_permanent(
     window.close()
 
 
+def test_preview_tab_promotes_on_first_edit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = _ensure_qapplication(monkeypatch)
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Preview Edit Promotion")
+    first_file = project_root / "first.py"
+    second_file = project_root / "second.py"
+    first_file.write_text("print('first')\n", encoding="utf-8")
+    second_file.write_text("print('second')\n", encoding="utf-8")
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+
+    window._handle_quick_open_action()
+    app.processEvents()
+    dialog = window._quick_open_dialog
+    assert dialog is not None
+    dialog._search_input.setText("first")
+    app.processEvents()
+    assert dialog._list_model.rowCount() == 1
+    preview_index = dialog._list_model.index(0, 0)
+    dialog._on_item_preview(preview_index)
+    app.processEvents()
+
+    first_tab = window._editor_manager.active_tab()
+    assert first_tab is not None
+    assert first_tab.file_path == str(first_file.resolve())
+    assert first_tab.is_preview is True
+
+    editor = window._editor_widgets_by_path[str(first_file.resolve())]
+    editor.insertPlainText("# edited")
+    app.processEvents()
+
+    promoted_tab = window._editor_manager.get_tab(str(first_file.resolve()))
+    assert promoted_tab is not None
+    assert promoted_tab.is_preview is False
+
+    assert window._open_file_in_editor(str(second_file.resolve()), preview=True) is True
+    app.processEvents()
+    assert window._editor_tabs_widget is not None
+    assert window._editor_tabs_widget.count() == 2
+    assert window._handle_save_all_action() is True
+    window.close()
+
+
 def test_quick_open_can_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
