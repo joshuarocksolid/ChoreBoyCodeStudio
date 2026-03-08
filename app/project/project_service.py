@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -109,6 +110,15 @@ def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
             state=ProjectRootState.CANONICAL,
             project_root=resolved_root,
             message="Project has canonical cbcs/project.json metadata.",
+        )
+    if _is_shared_temp_root(resolved_root):
+        return ProjectRootAssessment(
+            state=ProjectRootState.INVALID,
+            project_root=resolved_root,
+            message=(
+                "Shared temporary root folders cannot be opened as projects. "
+                "Choose a specific project directory instead."
+            ),
         )
 
     try:
@@ -352,6 +362,13 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         )
     if cbcs_dir.is_dir() and manifest_path.is_file():
         return
+    if _is_shared_temp_root(project_root):
+        raise ProjectStructureValidationError(
+            "Shared temporary root folders cannot be opened as projects. "
+            "Choose a specific project directory instead.",
+            project_root=project_root,
+            manifest_path=manifest_path,
+        )
 
     try:
         inferred_entry = _infer_default_entry_file(project_root)
@@ -509,3 +526,8 @@ def _resolve_project_root(project_root: PathInput) -> Path:
     if not candidate.is_absolute():
         raise ValueError("project_root must be an absolute path.")
     return candidate.resolve()
+
+
+def _is_shared_temp_root(project_root: Path) -> bool:
+    temp_root = Path(tempfile.gettempdir()).expanduser().resolve()
+    return project_root == temp_root
