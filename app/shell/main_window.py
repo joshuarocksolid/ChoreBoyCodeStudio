@@ -3327,14 +3327,16 @@ class MainWindow(QMainWindow):
                 if kind == "output":
                     text: str = arg1  # type: ignore[assignment]
                     stream: str = arg2  # type: ignore[assignment]
-                    for line in text.rstrip().splitlines():
-                        self._append_python_console_line(line, stream=stream)
+                    if text:
+                        self._append_python_console_line(text, stream=stream)
                 elif kind == "started":
                     if self._python_console_widget is not None:
                         self._python_console_widget.set_session_active(True)
                 elif kind == "ended":
                     return_code: int | None = arg1  # type: ignore[assignment]
                     terminated_by_user: bool = arg2  # type: ignore[assignment]
+                    if self._python_console_widget is not None:
+                        self._python_console_widget.set_session_active(False)
                     if not terminated_by_user:
                         exit_detail = describe_exit_code(return_code)
                         if return_code is not None and return_code < 0:
