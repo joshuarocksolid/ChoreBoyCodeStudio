@@ -6,7 +6,7 @@ Run on the dev machine (any Python 3.6+):
 
 Produces:
     dist/ChoreBoyCodeStudio-v{version}/   -- staging directory
-    dist/ChoreBoyCodeStudio-v{version}.tar.gz -- archive for USB transfer
+    dist/ChoreBoyCodeStudio-v{version}.zip -- password-protected archive for USB transfer
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import os
 import re
 import shutil
 import sys
-import tarfile
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -104,9 +104,20 @@ def _copytree_filtered(src: Path, dst: Path) -> None:
             shutil.copy2(str(entry), str(dst / entry.name))
 
 
-def _make_tarball(source_dir: Path, output_path: Path) -> None:
-    with tarfile.open(str(output_path), "w:gz") as tar:
-        tar.add(str(source_dir), arcname=source_dir.name)
+def _make_zip(source_dir: Path, output_path: Path, password: str = "rsd") -> None:
+    """Create a password-protected, uncompressed zip via the ``zip`` CLI."""
+    if output_path.exists():
+        output_path.unlink()
+    subprocess.run(
+        [
+            "zip", "-r", "-0",
+            "-P", password,
+            output_path.name,
+            source_dir.name,
+        ],
+        cwd=str(source_dir.parent),
+        check=True,
+    )
 
 
 def main() -> int:
@@ -152,9 +163,9 @@ def main() -> int:
     )
     (staging / "INSTALL.txt").write_text(install_txt, encoding="utf-8")
 
-    archive_path = dist_dir / f"{package_name}.tar.gz"
+    archive_path = dist_dir / f"{package_name}.zip"
     print(f"  Creating archive: {archive_path.name} ...")
-    _make_tarball(staging, archive_path)
+    _make_zip(staging, archive_path)
 
     archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
     print()
