@@ -223,7 +223,9 @@ Auditor mode: deep skeptical audit (evidence-first)
 2. `6c89d68` — Block plugin install path traversal inputs  
 3. `a732058` — Validate project tree names and move edge cases  
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
-5. `b2ee677` — Constrain plugin runtime entrypoint paths
+5. `b2ee677` — Constrain plugin runtime entrypoint paths  
+6. `5ccdff4` — Harden plugin exporter archive path components  
+7. `7ef2fc4` — Record exporter hardening commit in bug report
 
 ---
 
