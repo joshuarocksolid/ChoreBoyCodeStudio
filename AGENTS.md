@@ -354,6 +354,10 @@ When in doubt, preserve the architecture and reduce complexity.
 
 FreeCAD 1.0.2 is extracted to `/opt/freecad/` so that `/opt/freecad/AppRun` is available — matching the ChoreBoy production environment. This provides PySide2 5.15.15, FreeCAD 1.0.2 headless backend, pytest 9.0.2, and Python 3.11 runtime. Both the application and the test suite run through AppRun.
 
+### Vendored packages
+
+The `vendor/` directory must be populated before the app can use tree-sitter or pyflakes. The update script auto-populates it with cp311 wheels for `tree-sitter==0.21.3`, `tree-sitter-languages==1.10.2`, and `pyflakes==3.4.0`. See `vendor/README.md` for manual setup and update instructions. Contents are gitignored — only `vendor/README.md` is tracked.
+
 ### Running tests
 
 Tests run inside the FreeCAD AppRun Python with real PySide2 — no shims, no separate venv:
