@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from app.core import constants
 from app.editors.editor_overlay_policy import effective_highlighting_mode
@@ -122,6 +122,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._viewport_lines = (0, 0)
         self._dirty = True
         self._viewport_dirty = True
+        self._last_synced_revision: int = document.revision() if document is not None else -1
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
 
@@ -139,6 +140,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._source_text = document.toPlainText() if document is not None else ""
         self._dirty = True
         self._viewport_dirty = True
+        self._last_synced_revision = document.revision() if document is not None else -1
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
 
@@ -224,10 +226,14 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         document = self.document()
         if document is None:
             return
+        rev = document.revision()
+        if rev == self._last_synced_revision:
+            return
         current_text = document.toPlainText()
         if current_text != self._source_text:
             self._source_text = current_text
             self._dirty = True
+        self._last_synced_revision = rev
 
     def _ensure_tree_and_cache(self) -> None:
         if not self._dirty and not self._viewport_dirty and self._capture_cache:
@@ -285,7 +291,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         if self._tree is None or self._query is None:
             self._capture_cache.clear()
             return
-        line_count = max(1, len(self._source_text.split("\n")))
+        line_count = max(1, self._source_text.count("\n") + 1)
         mode = self._effective_mode()
 
         if mode == constants.HIGHLIGHTING_MODE_NORMAL:
@@ -334,7 +340,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         max_line = max(0, len(lines) - 1)
         merged_ranges = self._merge_line_ranges(line_ranges)
         spans_by_line: dict[int, list[_CaptureSpan]] = {}
-        seen_by_line: dict[int, set[tuple[str, int, int]]] = {}
+        seen_by_line: dict[int, set[tuple[int, int]]] = {}
 
         for start_line, end_line in merged_ranges:
             bounded_start = max(0, min(start_line, max_line))
@@ -370,7 +376,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         node: Any,
         token_name: str,
         lines: list[str],
-    ) -> list[tuple[int, _CaptureSpan]]:
+    ) -> Iterator[tuple[int, _CaptureSpan]]:
         if not lines:
             lines = [""]
         max_line = len(lines) - 1
@@ -378,33 +384,31 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         end_line = max(0, min(int(node.end_point[0]), max_line))
         start_byte_col = max(0, int(node.start_point[1]))
         end_byte_col = max(0, int(node.end_point[1]))
-        results: list[tuple[int, _CaptureSpan]] = []
 
         if start_line == end_line:
             line_text = lines[start_line]
             start_col = self._byte_col_to_char_col(line_text, start_byte_col)
             end_col = self._byte_col_to_char_col(line_text, end_byte_col)
             if end_col > start_col:
-                results.append((start_line, _CaptureSpan(token_name=token_name, start_col=start_col, end_col=end_col)))
-            return results
+                yield (start_line, _CaptureSpan(token_name=token_name, start_col=start_col, end_col=end_col))
+            return
 
         first_line_text = lines[start_line]
         first_start = self._byte_col_to_char_col(first_line_text, start_byte_col)
         first_end = len(first_line_text)
         if first_end > first_start:
-            results.append((start_line, _CaptureSpan(token_name=token_name, start_col=first_start, end_col=first_end)))
+            yield (start_line, _CaptureSpan(token_name=token_name, start_col=first_start, end_col=first_end))
 
         for line_number in range(start_line + 1, end_line):
             middle_line_text = lines[line_number]
             middle_end = len(middle_line_text)
             if middle_end > 0:
-                results.append((line_number, _CaptureSpan(token_name=token_name, start_col=0, end_col=middle_end)))
+                yield (line_number, _CaptureSpan(token_name=token_name, start_col=0, end_col=middle_end))
 
         last_line_text = lines[end_line]
         last_end = self._byte_col_to_char_col(last_line_text, end_byte_col)
         if last_end > 0:
-            results.append((end_line, _CaptureSpan(token_name=token_name, start_col=0, end_col=last_end)))
-        return results
+            yield (end_line, _CaptureSpan(token_name=token_name, start_col=0, end_col=last_end))
 
     def _resolve_token_name(self, capture_name: str) -> str | None:
         direct = _CAPTURE_TOKEN_MAP.get(capture_name)
@@ -443,6 +447,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
 
     @staticmethod
     def _byte_col_to_char_col(line_text: str, byte_col: int) -> int:
+        if line_text.isascii():
+            return min(byte_col, len(line_text))
         encoded = line_text.encode("utf-8")
         clamped = max(0, min(byte_col, len(encoded)))
         return len(encoded[:clamped].decode("utf-8", errors="ignore"))
@@ -450,6 +456,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
     @staticmethod
     def _char_to_byte_offset(text: str, offset: int) -> int:
         clamped = max(0, min(offset, len(text)))
+        if text.isascii():
+            return clamped
         return len(text[:clamped].encode("utf-8"))
 
     @staticmethod
@@ -458,6 +466,9 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         line = text.count("\n", 0, clamped)
         line_start = text.rfind("\n", 0, clamped)
         segment_start = 0 if line_start < 0 else line_start + 1
+        col = clamped - segment_start
+        if text.isascii():
+            return (line, col)
         segment = text[segment_start:clamped]
         return (line, len(segment.encode("utf-8")))
 

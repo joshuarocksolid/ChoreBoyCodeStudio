@@ -7,6 +7,8 @@ from typing import Mapping
 
 from PySide2.QtGui import QColor, QPalette
 
+from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
+
 
 @dataclass(frozen=True)
 class ShellThemeTokens:
@@ -83,6 +85,12 @@ def tokens_from_palette(
     else:
         window_color = palette.color(QPalette.Window)
         is_dark = prefer_dark or window_color.lightness() < 128
+    sp = DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE
+    syntax_kwargs = {
+        field_name: sp[token_key]
+        for token_key, field_name in _SYNTAX_OVERRIDE_FIELD_MAP.items()
+        if token_key in sp
+    }
     if is_dark:
         return ShellThemeTokens(
             window_bg="#1F2428",
@@ -112,30 +120,7 @@ def tokens_from_palette(
             diag_error_color="#FF6B6B",
             diag_warning_color="#E5A100",
             diag_info_color="#5B8CFF",
-            syntax_keyword="#569CD6",
-            syntax_builtin="#4EC9B0",
-            syntax_string="#CE9178",
-            syntax_comment="#6A9955",
-            syntax_number="#B5CEA8",
-            syntax_function="#DCDCAA",
-            syntax_class="#4EC9B0",
-            syntax_decorator="#DCDCAA",
-            syntax_operator="#D4D4D4",
-            syntax_punctuation="#D4D4D4",
-            syntax_parameter="#9CDCFE",
-            syntax_json_key="#9CDCFE",
-            syntax_json_literal="#569CD6",
-            syntax_markdown_heading="#569CD6",
-            syntax_markdown_emphasis="#569CD6",
-            syntax_markdown_code="#CE9178",
-            syntax_semantic_function="#DCDCAA",
-            syntax_semantic_method="#DCDCAA",
-            syntax_semantic_class="#4EC9B0",
-            syntax_semantic_parameter="#9CDCFE",
-            syntax_semantic_import="#9CDCFE",
-            syntax_semantic_variable="#9CDCFE",
-            syntax_semantic_property="#9CDCFE",
-            syntax_semantic_constant="#4FC1FF",
+            **syntax_kwargs,
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -165,30 +150,7 @@ def tokens_from_palette(
         diag_error_color="#E03131",
         diag_warning_color="#D97706",
         diag_info_color="#3366FF",
-        syntax_keyword="#0000FF",
-        syntax_builtin="#267F99",
-        syntax_string="#A31515",
-        syntax_comment="#008000",
-        syntax_number="#098658",
-        syntax_function="#795E26",
-        syntax_class="#267F99",
-        syntax_decorator="#795E26",
-        syntax_operator="#000000",
-        syntax_punctuation="#000000",
-        syntax_parameter="#001080",
-        syntax_json_key="#0451A5",
-        syntax_json_literal="#0000FF",
-        syntax_markdown_heading="#800000",
-        syntax_markdown_emphasis="#800000",
-        syntax_markdown_code="#800000",
-        syntax_semantic_function="#795E26",
-        syntax_semantic_method="#795E26",
-        syntax_semantic_class="#267F99",
-        syntax_semantic_parameter="#001080",
-        syntax_semantic_import="#001080",
-        syntax_semantic_variable="#001080",
-        syntax_semantic_property="#001080",
-        syntax_semantic_constant="#0070C1",
+        **syntax_kwargs,
     )
 
 
