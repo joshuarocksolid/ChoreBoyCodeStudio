@@ -4,8 +4,8 @@ Date: 2026-03-08
 
 ## Executive summary
 
-Deep skeptical audit identified **6 confirmed bugs** with concrete evidence and reproductions.  
-All 6 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **7 confirmed bugs** with concrete evidence and reproductions.  
+All 7 were fixed with minimal scoped changes and pushed as separate commits.
 
 Highest-impact issues were:
 - runner lifecycle race that could orphan active processes
@@ -120,6 +120,22 @@ Validation therefore used:
 
 ---
 
+## 7) Runtime plugin trust prompt was not enforced at runtime load
+- **Severity:** Medium-High  
+- **Confidence:** High  
+- **File(s):** `app/plugins/host_runtime.py`, `app/plugins/trust_store.py`  
+- **Evidence:** before fix, an enabled runtime plugin with no trust entry still loaded command handlers.
+- **Reproduction steps:**
+  1. Add runtime plugin to registry as enabled.
+  2. Do not set trust (`trusted_runtime_plugins` remains false/absent).
+  3. Call `load_runtime_command_handlers(...)`.
+  4. Observe runtime handler present.
+- **Why it happens:** loader checked enabled + compatibility but never checked trust store.
+- **Suggested fix:** gate runtime module loading on `is_runtime_plugin_trusted(...)`.
+- **Fix applied:** ✅ (post-audit hardening)
+
+---
+
 ## Likely bugs / strong suspicions
 
 - No additional high-confidence likely bugs remain after applied hardening in this audit pass.
@@ -163,7 +179,8 @@ Validation therefore used:
 3. `a732058` — Validate project tree names and move edge cases  
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
-6. `5ccdff4` — Harden plugin exporter archive path components
+6. `5ccdff4` — Harden plugin exporter archive path components  
+7. *(this changeset)* enforce runtime trust gate for runtime plugin loading
 
 ---
 

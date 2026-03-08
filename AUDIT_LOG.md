@@ -217,6 +217,40 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.7 Runtime trust flag not enforced when loading runtime handlers
+
+### Target files
+- `app/plugins/host_runtime.py`
+- `app/plugins/trust_store.py`
+- `tests/unit/plugins/test_host_runtime.py`
+
+### Repro script (before fix)
+- Created enabled runtime plugin in registry with no trust entry.
+- Called `load_runtime_command_handlers(state_root=...)`.
+- Observed runtime command handler loaded despite trust never granted.
+
+### Static proof
+- `load_runtime_command_handlers(...)` filtered only by:
+  - registry enabled flag
+  - manifest compatibility
+  - runtime entrypoint presence
+- No trust-store check existed before loading runtime module.
+
+### Fix implemented
+- Added trust gate:
+  - `is_runtime_plugin_trusted(plugin_id, version, state_root=...)`
+- Runtime handlers are now skipped unless trust is explicitly true.
+- Added tests in `tests/unit/plugins/test_host_runtime.py`:
+  - untrusted plugin skipped
+  - trusted plugin loaded and callable.
+
+### Post-fix verification
+- Repro output after fix:
+  - `untrusted_handler_count 0`
+  - `trusted_handler_count 1`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  
@@ -225,7 +259,8 @@ Auditor mode: deep skeptical audit (evidence-first)
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
-7. `7ef2fc4` — Record exporter hardening commit in bug report
+7. `7ef2fc4` — Record exporter hardening commit in bug report  
+8. *(pending this changeset)* enforce runtime-plugin trust gate at load time
 
 ---
 

@@ -8,6 +8,7 @@ from app.core import constants
 from app.plugins.discovery import evaluate_manifest_compatibility
 from app.plugins.manifest import load_plugin_manifest
 from app.plugins.registry_store import load_plugin_registry
+from app.plugins.trust_store import is_runtime_plugin_trusted
 
 
 RuntimeCommandHandler = Callable[[dict[str, Any]], Any]
@@ -40,6 +41,12 @@ def load_runtime_command_handlers(
         if not compatibility.is_compatible:
             continue
         if not manifest.runtime_entrypoint:
+            continue
+        if not is_runtime_plugin_trusted(
+            manifest.plugin_id,
+            manifest.version,
+            state_root=state_root,
+        ):
             continue
         try:
             module = _load_runtime_module(
