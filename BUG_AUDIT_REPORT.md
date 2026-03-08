@@ -4,8 +4,8 @@ Date: 2026-03-08
 
 ## Executive summary
 
-Deep skeptical audit identified **9 confirmed bugs** with concrete evidence and reproductions.  
-All 9 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  
+All 10 were fixed with minimal scoped changes and pushed as separate commits.
 
 Highest-impact issues were:
 - runner lifecycle race that could orphan active processes
@@ -167,6 +167,21 @@ Validation therefore used:
 
 ---
 
+## 10) Packager allowed entrypoint paths excluded from packaged payload
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/packaging/packager.py`  
+- **Evidence:** packaging succeeded with `entry_file='cbcs/logs/run_entry.py'` even though `cbcs/logs` is excluded, producing artifact with missing entrypoint.
+- **Reproduction steps:**
+  1. Create project containing `cbcs/logs/run_entry.py`.
+  2. Run `package_project(..., entry_file='cbcs/logs/run_entry.py')`.
+  3. Observe success result and absent packaged entry file.
+- **Why it happens:** entrypoint existence check did not verify inclusion after exclusion filters.
+- **Suggested fix:** reject entrypoint when resolved path is filtered by packager exclusion rules.
+- **Fix applied:** ✅ (post-audit hardening)
+
+---
+
 ## Likely bugs / strong suspicions
 
 - No additional high-confidence likely bugs remain after applied hardening in this audit pass.
@@ -213,7 +228,8 @@ Validation therefore used:
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
 8. `4e4a9cc` — Include active fallback app log in support bundles  
-9. `a5a1eba` — Scope active log lookup by state root
+9. `a5a1eba` — Scope active log lookup by state root  
+10. *(this changeset)* reject excluded packaging entrypoint paths
 
 ---
 

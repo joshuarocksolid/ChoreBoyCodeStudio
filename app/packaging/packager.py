@@ -145,6 +145,17 @@ def package_project(
         )
     assert resolved_entry_path is not None
     entry_relative_path = resolved_entry_path.relative_to(root).as_posix()
+    if _should_exclude(Path(entry_relative_path)):
+        return PackageResult(
+            output_path="",
+            desktop_name="",
+            project_folder_name="",
+            success=False,
+            error=(
+                "Entry file resolves to an excluded path and would not be packaged: "
+                f"{entry_file}"
+            ),
+        )
 
     sanitized = sanitize_project_name(project_name)
     project_files_folder = "app_files"

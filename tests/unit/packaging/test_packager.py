@@ -313,6 +313,23 @@ class TestPackageProject:
         assert result.success is False
         assert result.error == f"Entry file must be inside project root: {outside_entry}"
 
+    def test_returns_failure_when_entry_file_is_excluded_path(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        logs_dir = project / "cbcs" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        (logs_dir / "run_entry.py").write_text("print('run')\n")
+
+        result = package_project(
+            project_root=str(project),
+            project_name="proj",
+            entry_file="cbcs/logs/run_entry.py",
+            output_dir=str(tmp_path / "out"),
+        )
+
+        assert result.success is False
+        assert result.error == "Entry file resolves to an excluded path and would not be packaged: cbcs/logs/run_entry.py"
+
     def test_repackage_removes_stale_files(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()

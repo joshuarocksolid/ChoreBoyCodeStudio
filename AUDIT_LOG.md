@@ -309,6 +309,35 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.10 Packager accepted entrypoint paths that are excluded from package payload
+
+### Target files
+- `app/packaging/packager.py`
+- `tests/unit/packaging/test_packager.py`
+
+### Repro script (before fix)
+- Project contained `cbcs/logs/run_entry.py`.
+- Called `package_project(..., entry_file='cbcs/logs/run_entry.py')`.
+- Result:
+  - `success True`
+  - packaged entry file missing (`entry_in_pkg_exists False`).
+
+### Static proof
+- Packager validated entry existence but did not enforce that entry path survived `_should_exclude(...)` filters.
+- `cbcs/logs` is explicitly excluded from copy.
+
+### Fix implemented
+- Added preflight check: reject entrypoint when resolved relative path is excluded.
+- Added regression test:
+  - `test_returns_failure_when_entry_file_is_excluded_path`.
+
+### Post-fix verification
+- Repro output after fix:
+  - `success False`
+  - `error Entry file resolves to an excluded path and would not be packaged: cbcs/logs/run_entry.py`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  
@@ -320,7 +349,8 @@ Auditor mode: deep skeptical audit (evidence-first)
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
 8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
 9. `4e4a9cc` — Include active fallback app log in support bundles  
-10. `a5a1eba` — Scope active-log lookup by state root
+10. `a5a1eba` — Scope active-log lookup by state root  
+11. *(pending this changeset)* reject excluded packaging entrypoint paths
 
 ---
 
