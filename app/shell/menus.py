@@ -137,6 +137,7 @@ def build_menu_stubs(
 
     file_menu = menu_bar.addMenu("&File")
     file_menu.setObjectName("shell.menu.file")
+    menus["shell.menu.file"] = file_menu
     if callback_registry.on_file_menu_about_to_show is not None:
         file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
     _register_menu_action(
@@ -262,6 +263,7 @@ def build_menu_stubs(
 
     edit_menu = menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
+    menus["shell.menu.edit"] = edit_menu
     _register_menu_action(
         edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z", shortcut_overrides=shortcut_overrides
     )
@@ -392,6 +394,7 @@ def build_menu_stubs(
 
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
+    menus["shell.menu.run"] = run_menu
     _register_menu_action(
         run_menu,
         actions,
@@ -582,6 +585,7 @@ def build_menu_stubs(
 
     view_menu = menu_bar.addMenu("&View")
     view_menu.setObjectName("shell.menu.view")
+    menus["shell.menu.view"] = view_menu
     _register_menu_action(
         view_menu,
         actions,
@@ -646,6 +650,7 @@ def build_menu_stubs(
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
+    menus["shell.menu.tools"] = tools_menu
     _register_menu_action(
         tools_menu,
         actions,
@@ -738,6 +743,7 @@ def build_menu_stubs(
 
     help_menu = menu_bar.addMenu("&Help")
     help_menu.setObjectName("shell.menu.help")
+    menus["shell.menu.help"] = help_menu
     _register_menu_action(
         help_menu,
         actions,

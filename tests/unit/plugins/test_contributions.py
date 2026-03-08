@@ -101,3 +101,62 @@ def test_clear_unregisters_commands_and_unsubscribes_handlers() -> None:
 
     assert unregistered_commands == ["acme.demo.hello"]
     assert unsubscribed_events == [RunSessionStartedEvent]
+
+
+def test_apply_continues_when_one_menu_registration_fails() -> None:
+    registered_menu_commands: list[str] = []
+    registered_runtime_commands: list[str] = []
+
+    def _register_menu_command(**kwargs):  # type: ignore[no-untyped-def]
+        command_id = kwargs["command_id"]
+        if command_id == "acme.demo.invalid":
+            raise KeyError("menu not found: shell.menu.unknown")
+        registered_menu_commands.append(command_id)
+
+    manager = DeclarativeContributionManager(
+        register_runtime_command=lambda command_id, _handler, _replace: registered_runtime_commands.append(command_id),
+        register_runtime_menu_command=_register_menu_command,
+        unregister_runtime_menu_command=lambda _command_id: None,
+        execute_runtime_command=lambda _command_id: None,
+        subscribe_shell_event=lambda _event_type, _handler: None,
+        unsubscribe_shell_event=lambda _event_type, _handler: None,
+        emit_message=lambda _message: None,
+        execute_plugin_runtime_command=lambda _command_id, payload: payload,
+        on_runtime_command_success=lambda _plugin_id, _version: None,
+        on_runtime_command_failure=lambda _plugin_id, _version, _error: None,
+    )
+
+    manifest = PluginManifest(
+        plugin_id="acme.demo",
+        name="Demo Plugin",
+        version="1.0.0",
+        api_version=1,
+        contributes={
+            "commands": [
+                {
+                    "id": "acme.demo.invalid",
+                    "title": "Invalid Menu",
+                    "menu_id": "shell.menu.unknown",
+                },
+                {
+                    "id": "acme.demo.valid",
+                    "title": "Valid Command",
+                    "menu_id": "shell.menu.tools",
+                },
+            ],
+        },
+    )
+    discovered = DiscoveredPlugin(
+        plugin_id="acme.demo",
+        version="1.0.0",
+        install_path="/tmp/demo",
+        manifest_path="/tmp/demo/plugin.json",
+        manifest=manifest,
+        compatibility=PluginCompatibility(is_compatible=True, reasons=[]),
+    )
+
+    manager.apply([discovered], enabled_map={("acme.demo", "1.0.0"): True})
+
+    assert "acme.demo.invalid" in registered_runtime_commands
+    assert "acme.demo.valid" in registered_runtime_commands
+    assert registered_menu_commands == ["acme.demo.valid"]

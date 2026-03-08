@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 from typing import Any
 
 from app.plugins.models import DiscoveredPlugin
@@ -19,6 +20,7 @@ EVENT_TYPE_MAP: dict[str, type[object]] = {
     "project_opened": ProjectOpenedEvent,
     "project_open_failed": ProjectOpenFailedEvent,
 }
+_LOGGER = logging.getLogger(__name__)
 
 
 class DeclarativeContributionManager:
@@ -99,42 +101,53 @@ class DeclarativeContributionManager:
             message = command_payload.get("message")
             if not isinstance(message, str) or not message.strip():
                 message = f"{plugin_id}: {command_id}"
+            normalized_command_id = command_id.strip()
+            if not normalized_command_id:
+                continue
             runtime_flag = bool(command_payload.get("runtime", False))
             runtime_payload = command_payload.get("runtime_payload", {})
             if not isinstance(runtime_payload, dict):
                 runtime_payload = {}
-            normalized_command_id = command_id.strip()
+            try:
+                if runtime_flag:
+                    self._register_runtime_command(
+                        normalized_command_id,
+                        lambda cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
+                            plugin_id=pid,
+                            version=ver,
+                            command_id=cid,
+                            payload=payload,
+                        ),
+                        True,
+                    )
+                else:
+                    self._register_runtime_command(
+                        normalized_command_id,
+                        lambda text=message: self._emit_message(text),
+                        True,
+                    )
 
-            if runtime_flag:
-                self._register_runtime_command(
-                    normalized_command_id,
-                    lambda cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
-                        plugin_id=pid,
-                        version=ver,
-                        command_id=cid,
-                        payload=payload,
-                    ),
-                    True,
+                self._register_runtime_menu_command(
+                    command_id=normalized_command_id,
+                    menu_id=menu_id.strip(),
+                    label=title.strip(),
+                    handler=lambda cid=normalized_command_id: self._execute_runtime_command(cid),
+                    shortcut=shortcut,
+                    enabled=True,
+                    status_tip=status_tip,
+                    tool_tip=tool_tip,
+                    replace=True,
                 )
-            else:
-                self._register_runtime_command(
+                self._registered_command_ids.add(normalized_command_id)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Failed to register declarative command '%s' from plugin %s@%s: %s",
                     normalized_command_id,
-                    lambda text=message: self._emit_message(text),
-                    True,
+                    plugin_id,
+                    version,
+                    exc,
                 )
-
-            self._register_runtime_menu_command(
-                command_id=normalized_command_id,
-                menu_id=menu_id.strip(),
-                label=title.strip(),
-                handler=lambda cid=normalized_command_id: self._execute_runtime_command(cid),
-                shortcut=shortcut,
-                enabled=True,
-                status_tip=status_tip,
-                tool_tip=tool_tip,
-                replace=True,
-            )
-            self._registered_command_ids.add(normalized_command_id)
+                continue
 
     def _execute_runtime_command_with_quarantine(
         self,
