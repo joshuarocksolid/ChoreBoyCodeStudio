@@ -197,7 +197,7 @@ Validation therefore used:
 5. `b2ee677` — Constrain plugin runtime entrypoint paths  
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
-8. *(this changeset)* include active fallback app log in support bundles
+8. `4e4a9cc` — Include active fallback app log in support bundles
 
 ---
 

@@ -292,7 +292,7 @@ Auditor mode: deep skeptical audit (evidence-first)
 6. `5ccdff4` — Harden plugin exporter archive path components  
 7. `7ef2fc4` — Record exporter hardening commit in bug report  
 8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
-9. *(pending this changeset)* include active fallback app log in support bundles
+9. `4e4a9cc` — Include active fallback app log in support bundles
 
 ---
 
