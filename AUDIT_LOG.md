@@ -191,6 +191,32 @@ Auditor mode: deep skeptical audit (evidence-first)
 
 ---
 
+## 2.6 Plugin export archive-name traversal hardening
+
+### Target files
+- `app/plugins/exporter.py`
+- `tests/unit/plugins/test_exporter.py`
+
+### Repro script (before fix)
+- With malformed plugin id/version values in registry or caller input, export composed archive filename directly from raw values.
+- Example path-like id (`../evil`) produced invalid path behavior and non-actionable export failure.
+
+### Static proof
+- `archive_name = f"{plugin_id}-{version}{...}"` with no component sanitation.
+
+### Fix implemented
+- Added `_safe_archive_component(...)` guard for both plugin id and version.
+- Rejects empty values, `.`/`..`, and path separators.
+- Added unit tests for:
+  - normal archive generation
+  - path-like plugin id rejection.
+
+### Post-fix verification
+- Repro now blocked with explicit error:
+  - `blocked plugin_id cannot contain path separators.`
+
+---
+
 ## 3) Commits produced during audit
 
 1. `925ec32` — Harden supervisor against stale exit races  

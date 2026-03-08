@@ -4,8 +4,8 @@ Date: 2026-03-08
 
 ## Executive summary
 
-Deep skeptical audit identified **5 confirmed bugs** with concrete evidence and reproductions.  
-All 5 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **6 confirmed bugs** with concrete evidence and reproductions.  
+All 6 were fixed with minimal scoped changes and pushed as separate commits.
 
 Highest-impact issues were:
 - runner lifecycle race that could orphan active processes
@@ -105,18 +105,24 @@ Validation therefore used:
 
 ---
 
+## 6) Plugin export archive filename used unsanitized id/version
+- **Severity:** Low-Medium  
+- **Confidence:** High  
+- **File(s):** `app/plugins/exporter.py`  
+- **Evidence:** malformed plugin identifiers (e.g. `../evil`) produced invalid path behavior during export before fix.
+- **Reproduction steps:**
+  1. Insert malformed plugin id/version in registry (or call exporter with malformed values).
+  2. Call `export_installed_plugin(...)`.
+  3. Observe archive path misuse/error.
+- **Why it happens:** archive filename used raw id/version string concatenation.
+- **Suggested fix:** validate/sanitize archive filename components.
+- **Fix applied:** ✅ (post-audit hardening)
+
+---
+
 ## Likely bugs / strong suspicions
 
-## A) Plugin export filename can break on malformed registry IDs/versions
-- **Severity:** Low-Medium  
-- **Confidence:** Medium  
-- **File(s):** `app/plugins/exporter.py`, `app/plugins/registry_store.py`
-- **Evidence:** with malformed plugin id/version values (manually crafted), export attempted to create archive path containing traversal-like segments and failed with `FileNotFoundError`.
-- **Reproduction steps:**
-  1. Inject malformed plugin id/version into registry or call export with malformed values.
-  2. Call `export_installed_plugin(...)`.
-  3. Observe path error.
-- **Suggested fix:** sanitize archive filename components even when registry data is malformed.
+- No additional high-confidence likely bugs remain after applied hardening in this audit pass.
 
 ---
 
@@ -156,7 +162,8 @@ Validation therefore used:
 2. `6c89d68` — Block plugin install path traversal inputs  
 3. `a732058` — Validate project tree names and move edge cases  
 4. `b96d8ea` — Fail packaging when entrypoint is invalid  
-5. `b2ee677` — Constrain plugin runtime entrypoint paths
+5. `b2ee677` — Constrain plugin runtime entrypoint paths  
+6. *(this changeset)* exporter archive-component validation hardening
 
 ---
 
