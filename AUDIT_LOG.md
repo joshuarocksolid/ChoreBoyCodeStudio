@@ -350,7 +350,7 @@ Auditor mode: deep skeptical audit (evidence-first)
 8. `2ad86e8` — Enforce runtime-plugin trust gate at load time  
 9. `4e4a9cc` — Include active fallback app log in support bundles  
 10. `a5a1eba` — Scope active-log lookup by state root  
-11. *(pending this changeset)* reject excluded packaging entrypoint paths
+11. `05b49ac` — Reject excluded packaging entrypoint paths
 
 ---
 

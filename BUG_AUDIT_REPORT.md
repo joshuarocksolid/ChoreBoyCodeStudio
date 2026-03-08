@@ -229,7 +229,7 @@ Validation therefore used:
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
 8. `4e4a9cc` — Include active fallback app log in support bundles  
 9. `a5a1eba` — Scope active log lookup by state root  
-10. *(this changeset)* reject excluded packaging entrypoint paths
+10. `05b49ac` — Reject excluded packaging entrypoint paths
 
 ---
 
