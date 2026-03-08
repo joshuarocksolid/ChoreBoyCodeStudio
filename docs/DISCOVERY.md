@@ -763,46 +763,73 @@ print(conn.run("select version()"))
 * Batch inserts/updates when possible.
 * With psycopg: use `COPY FROM STDIN` for bulk inserts instead of individual `INSERT` statements.
 
-### ORM recommendation on top of psycopg 3 binary
+### ORM: SQLAlchemy 2.0.x with full Cython acceleration (validated)
 
-For PostgreSQL ORM usage on ChoreBoy, use **SQLAlchemy 2.0.x** with the
-`postgresql+psycopg` dialect on top of `cb_psycopg` bootstrap.
+**Updated 2026-03-08.** For PostgreSQL ORM on ChoreBoy, use **SQLAlchemy 2.0.48**
+with the `postgresql+psycopg` dialect and **full Cython acceleration** — all
+validated on live ChoreBoy with PG 9.3.6 (`sqlalchemy_probe`, 6/6 probes pass).
 
-Why this combination:
+The production stack requires three bootstrap modules before `import sqlalchemy`:
 
-* SQLAlchemy 2.1+ requires Python 3.10+, while ChoreBoy runtime is Python 3.9
-* SQLAlchemy 2.0 supports psycopg 3 (`postgresql+psycopg`) for both sync and async engines
-* psycopg 3 binary C acceleration is already validated on ChoreBoy (section 4H)
-* This keeps complexity lower than introducing additional native stacks by default
+1. `cb_psycopg.bootstrap()` — psycopg 3 binary C acceleration + libpq via memfd
+2. `cb_greenlet.bootstrap()` — greenlet C extension via memfd (enables async ORM)
+3. `cb_sqlalchemy_cext.bootstrap()` — `sys.meta_path` import hook that loads 5
+   SQLAlchemy Cython modules (`cyextension/*`) from memfd on demand
 
-Recommended production default:
+After bootstrap, both sync and async ORM paths work:
 
-1. `cb_psycopg.bootstrap()` at process startup
-2. SQLAlchemy engine URL: `postgresql+psycopg://...`
-3. Conservative pool settings (`pool_pre_ping`, small pool size)
-4. Set `client_encoding` to UTF8 per connection to avoid SQL_ASCII byte surprises
+* **Sync**: `create_engine("postgresql+psycopg://...")` — 14/14 tests pass
+  (CRUD, joinedload, savepoints, bulk insert, reflection, stream\_results, UTF-8)
+* **Async**: `create_async_engine("postgresql+psycopg://...")` — 13/13 tests pass
+  (async CRUD, selectinload, rollback, AsyncConnection)
 
-### Full-stack acceleration experiment (optional)
+Production engine settings:
 
-SQLAlchemy ships optional Cython acceleration modules. A dedicated probe suite
-has been added to evaluate whether loading these modules via memfd on ChoreBoy
-provides meaningful gains versus complexity:
+* `pool_pre_ping=True`, small pool size, zero aggressive overflow
+* Set `client_encoding` to UTF8 per connection to avoid SQL\_ASCII byte surprises
 
-* `sqlalchemy_probe/probe1_environment.py`
-* `sqlalchemy_probe/probe2_cext_memfd.py`
-* `sqlalchemy_probe/probe3_sync_orm.py`
-* `sqlalchemy_probe/probe4_async_orm.py`
-* `sqlalchemy_probe/probe5_pg93_limits.py`
-* `sqlalchemy_probe/probe6_benchmarks.py`
-* `sqlalchemy_probe/SUMMARY.md`
+### SQLAlchemy performance on ChoreBoy
 
-Use this evidence to decide between:
+Benchmarked on live ChoreBoy (PG 9.3.6, psycopg 3.2.9 binary, SA 2.0.48 with
+Cython acceleration active):
 
-* **driver-only acceleration** (recommended default): psycopg binary + SQLAlchemy
-* **full-stack acceleration** (optional): also memfd-load SQLAlchemy Cython modules
+| Layer | SELECT 1 (q/s) | Parameterized (q/s) | vs raw psycopg |
+|---|---|---|---|
+| Raw psycopg | 9,950 | 8,564 | 1.00x |
+| SA Core | 5,475 | 3,791 | 0.55x / 0.44x |
+| SA ORM | 4,522 | 3,409 | 0.45x / 0.40x |
+| SA Async | 3,113 | — | 0.31x |
 
-Until benchmark evidence proves otherwise, prefer driver-only acceleration for
-the best reliability/complexity trade-off on ChoreBoy.
+ORM overhead is roughly 2x versus raw psycopg — typical for SQLAlchemy with
+Cython acceleration. Async adds greenlet context-switch overhead; suitable for
+I/O-bound concurrency rather than per-query throughput.
+
+### PG 9.3 SQL feature boundaries (validated)
+
+Probe 5 mapped which SQL features work and which are blocked on PG 9.3:
+
+**Works on PG 9.3:**
+
+* JSON type and `->` / `->>` operators
+* Materialized views (`CREATE MATERIALIZED VIEW` / `REFRESH`)
+* `LATERAL` joins
+* Full ORM surface: CRUD, relationships, transactions, savepoints, bulk insert,
+  schema reflection, streaming results, UTF-8 string roundtrip
+
+**Unavailable on PG 9.3 (expected failures, not blockers):**
+
+| Feature | Minimum PG | Error |
+|---|---|---|
+| `JSONB` type cast | 9.4 | `type "jsonb" does not exist` |
+| `ON CONFLICT` (upsert) | 9.5 | `syntax error at or near "ON"` |
+| `GENERATED ALWAYS AS ... STORED` | 12 | `syntax error at or near "GENERATED"` |
+| `int4multirange` type cast | 14 | `type "int4multirange" does not exist` |
+
+Application code must avoid these constructs when targeting PG 9.3.
+
+### Probe evidence
+
+Full results and analysis: `sqlalchemy_probe/SUMMARY.md`
 
 ## 6. FreeCAD Export Strategy (Headless vs GUI)
 

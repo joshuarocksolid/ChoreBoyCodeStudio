@@ -46,28 +46,39 @@ PRUNE_DIR_SUFFIXES = {
 
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
 
+INSTALLER_DESKTOP_TEMPLATE = """\
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install ChoreBoy Code Studio
+Comment=Install ChoreBoy Code Studio on this system
+Terminal=false
+Categories=Utility;
+
+Exec=/bin/sh -c 'desktop="%k";root="$(cd "$(dirname "$desktop")" && pwd)";export CBCS_INSTALLER_ROOT="$root";/opt/freecad/AppRun -c "import os,runpy,sys;root=os.environ.get(\"CBCS_INSTALLER_ROOT\", os.getcwd());sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root, \"installer\", \"install.py\"), run_name=\"__main__\")"'
+"""
+
 INSTALL_TXT = """\
 ChoreBoy Code Studio - Installation Instructions
 =================================================
 
-1. Plug the USB drive into your ChoreBoy system.
+1. Copy this entire folder to your ChoreBoy Home Folder.
 
-2. Open the file manager and navigate to this folder.
+2. Open the folder in the ChoreBoy file manager.
 
-3. Open a terminal (right-click > "Open Terminal Here" if available)
-   or use the LibrePy Console, then run:
+3. Right-click the "install_choreboy_code_studio.desktop" file
+   and select "Allow Launching" (you only need to do this once).
 
-       /opt/freecad/AppRun python3 {path_placeholder}/install.py
+4. Double-click "install_choreboy_code_studio.desktop" to start
+   the installer.
 
-   Replace {path_placeholder} with the full path to this folder,
-   for example:
+5. Follow the on-screen wizard to choose where to install.
 
-       /opt/freecad/AppRun python3 /media/usb/ChoreBoyCodeStudio-v{version}/install.py
+6. Once installed, launch ChoreBoy Code Studio from your
+   application menu or desktop shortcut.
 
-4. Follow the on-screen wizard to choose an install location.
-
-5. Once installed, launch ChoreBoy Code Studio from your application
-   menu or desktop shortcut.
+7. After a successful install, you can delete this installer
+   folder from your Home Folder.
 """
 
 
@@ -134,34 +145,40 @@ def main() -> int:
     staging.mkdir(parents=True)
     print(f"Packaging {package_name} ...")
 
+    payload_dir = staging / "payload"
+    payload_dir.mkdir()
+
     for dir_name in INCLUDE_DIRS:
         src = REPO_ROOT / dir_name
         if not src.is_dir():
             print(f"  WARNING: directory not found, skipping: {dir_name}")
             continue
-        print(f"  Copying {dir_name}/ ...")
-        _copytree_filtered(src, staging / dir_name)
+        print(f"  Copying payload/{dir_name}/ ...")
+        _copytree_filtered(src, payload_dir / dir_name)
 
     for file_name in INCLUDE_FILES:
         src = REPO_ROOT / file_name
         if not src.is_file():
             print(f"  WARNING: file not found, skipping: {file_name}")
             continue
-        print(f"  Copying {file_name}")
-        shutil.copy2(str(src), str(staging / file_name))
+        print(f"  Copying payload/{file_name}")
+        shutil.copy2(str(src), str(payload_dir / file_name))
 
-    print("  Copying install.py ...")
+    installer_dir = staging / "installer"
+    installer_dir.mkdir()
+    print("  Copying installer/install.py ...")
     if not INSTALLER_SOURCE.is_file():
         print(f"  ERROR: installer not found at {INSTALLER_SOURCE}")
         return 1
-    shutil.copy2(str(INSTALLER_SOURCE), str(staging / "install.py"))
+    shutil.copy2(str(INSTALLER_SOURCE), str(installer_dir / "install.py"))
+
+    print("  Generating install_choreboy_code_studio.desktop ...")
+    desktop_path = staging / "install_choreboy_code_studio.desktop"
+    desktop_path.write_text(INSTALLER_DESKTOP_TEMPLATE, encoding="utf-8")
+    desktop_path.chmod(desktop_path.stat().st_mode | 0o755)
 
     print("  Generating INSTALL.txt ...")
-    install_txt = INSTALL_TXT.format(
-        path_placeholder="<this-folder>",
-        version=version,
-    )
-    (staging / "INSTALL.txt").write_text(install_txt, encoding="utf-8")
+    (staging / "INSTALL.txt").write_text(INSTALL_TXT, encoding="utf-8")
 
     archive_path = dist_dir / f"{package_name}.zip"
     print(f"  Creating archive: {archive_path.name} ...")

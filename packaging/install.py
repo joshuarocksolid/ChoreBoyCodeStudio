@@ -37,7 +37,7 @@ APP_RUN_PATH = "/opt/freecad/AppRun"
 DEFAULT_INSTALL_DIR = "/home/default/choreboy_code_studio"
 DESKTOP_FILENAME = "choreboy_code_studio.desktop"
 
-SKIP_NAMES = {"install.py", "INSTALL.txt"}
+PAYLOAD_DIRNAME = "payload"
 
 DESKTOP_TEMPLATE = """\
 [Desktop Entry]
@@ -52,13 +52,18 @@ Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='{install_dir}';sys.path.i
 
 
 def _source_root() -> Path:
-    """The directory containing this install.py (the extracted package root)."""
+    """The directory containing this install.py (the installer/ subdir)."""
     return Path(__file__).resolve().parent
+
+
+def _payload_root() -> Path:
+    """The payload/ sibling directory containing the app files to install."""
+    return _source_root().parent / PAYLOAD_DIRNAME
 
 
 def _app_version() -> str:
     """Best-effort version extraction from constants.py without importing app."""
-    constants_path = _source_root() / "app" / "core" / "constants.py"
+    constants_path = _payload_root() / "app" / "core" / "constants.py"
     if constants_path.is_file():
         for line in constants_path.read_text(encoding="utf-8").splitlines():
             if line.startswith("APP_VERSION"):
@@ -73,7 +78,7 @@ def _app_version() -> str:
 # ---------------------------------------------------------------------------
 
 class InstallWorker(QThread):
-    """Copies source files to the install directory in a background thread."""
+    """Copies payload files to the install directory in a background thread."""
 
     progress = Signal(int)
     status = Signal(str)
@@ -82,13 +87,13 @@ class InstallWorker(QThread):
 
     def __init__(
         self,
-        source_root: Path,
+        payload_root: Path,
         install_dir: Path,
         add_desktop_shortcut: bool,
         parent: Optional[object] = None,
     ) -> None:
         super().__init__(parent)
-        self.source_root = source_root
+        self.payload_root = payload_root
         self.install_dir = install_dir
         self.add_desktop_shortcut = add_desktop_shortcut
 
@@ -100,14 +105,17 @@ class InstallWorker(QThread):
             self.finished_err.emit(str(exc))
 
     def _do_install(self) -> None:
-        src = self.source_root
+        src = self.payload_root
         dst = self.install_dir
 
-        items = [
-            entry
-            for entry in sorted(src.iterdir())
-            if entry.name not in SKIP_NAMES
-        ]
+        if not src.is_dir():
+            self.finished_err.emit(
+                f"Payload directory not found: {src}\n"
+                "Make sure the installer folder sits next to the payload/ folder."
+            )
+            return
+
+        items = list(sorted(src.iterdir()))
         total = len(items)
         if total == 0:
             self.finished_err.emit("No files found in package directory.")
@@ -279,7 +287,7 @@ class InstallPage(QWizardPage):
         desktop_shortcut = bool(self.field("desktop_shortcut"))
 
         self.worker = InstallWorker(
-            source_root=_source_root(),
+            payload_root=_payload_root(),
             install_dir=install_dir,
             add_desktop_shortcut=desktop_shortcut,
         )
