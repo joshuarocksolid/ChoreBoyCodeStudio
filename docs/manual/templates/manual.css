@@ -1,0 +1,171 @@
+@page {
+  size: Letter;
+  margin: 0.7in;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+  color: #1f2937;
+  line-height: 1.45;
+  font-size: 10.5pt;
+}
+
+.manual {
+  max-width: 7.1in;
+  margin: 0 auto;
+}
+
+h1,
+h2,
+h3 {
+  color: #0f172a;
+  margin-top: 0.3em;
+  margin-bottom: 0.35em;
+}
+
+h1 {
+  font-size: 22pt;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 0.12in;
+}
+
+h2 {
+  font-size: 15pt;
+}
+
+h3 {
+  font-size: 12pt;
+}
+
+p {
+  margin: 0.09in 0 0.11in 0;
+}
+
+ul,
+ol {
+  margin: 0.04in 0 0.14in 0.22in;
+}
+
+li {
+  margin: 0.04in 0;
+}
+
+code {
+  font-family: "JetBrains Mono", "Consolas", "SFMono-Regular", Menlo, monospace;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.95em;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 0.12in 0.14in;
+  overflow-x: auto;
+  font-size: 9pt;
+  line-height: 1.35;
+  margin: 0.12in 0;
+}
+
+pre code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+img {
+  width: 100%;
+  max-width: 6.8in;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: block;
+  margin: 0.12in auto 0.05in auto;
+}
+
+p.image-caption {
+  color: #334155;
+  font-style: italic;
+  font-size: 9.2pt;
+  margin-top: 0;
+  margin-bottom: 0.16in;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #cbd5e1;
+  margin: 0.18in 0;
+}
+
+.cover {
+  padding-top: 2in;
+  text-align: center;
+}
+
+.cover h1 {
+  border-bottom: none;
+  font-size: 30pt;
+  margin-bottom: 0.22in;
+}
+
+.subtitle {
+  font-size: 15pt;
+  color: #334155;
+}
+
+.meta {
+  color: #475569;
+  margin: 0.07in 0;
+}
+
+.toc h1 {
+  margin-bottom: 0.15in;
+}
+
+.toc ol {
+  margin-left: 0.16in;
+}
+
+.toc li {
+  margin: 0.07in 0;
+}
+
+.toc-level-2 {
+  margin-left: 0.2in;
+}
+
+.toc-level-3 {
+  margin-left: 0.38in;
+}
+
+.chapter {
+  page-break-inside: avoid;
+}
+
+.page-break-after {
+  page-break-after: always;
+}
+
+.callout-important {
+  background: #fff7ed;
+  border-left: 4px solid #f97316;
+  padding: 0.1in 0.13in;
+  border-radius: 6px;
+  margin: 0.11in 0;
+}
+
+.callout-tip {
+  background: #ecfeff;
+  border-left: 4px solid #06b6d4;
+  padding: 0.1in 0.13in;
+  border-radius: 6px;
+  margin: 0.11in 0;
+}

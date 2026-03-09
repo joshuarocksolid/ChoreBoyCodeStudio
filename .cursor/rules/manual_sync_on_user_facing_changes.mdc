@@ -1,0 +1,42 @@
+# Manual Sync on User-Facing Changes
+
+Apply this rule whenever a change affects what end users see or do in ChoreBoy Code Studio.
+
+## Trigger conditions
+
+This rule applies when a change modifies any of the following:
+
+- menu labels, menu structure, toolbar labels, button labels, dialog labels, panel labels
+- project/file workflows (open, create, run, debug, stop, package, plugin management)
+- settings behavior or settings defaults
+- keyboard shortcuts or shortcut defaults
+- run/debug/log/troubleshooting behavior shown to users
+- plugin UX (install/enable/disable/safe mode/quarantine/trust prompts)
+- error messages, warnings, or user guidance text
+- user-facing file paths or location guidance
+
+## Required actions
+
+When this rule triggers, you must do all of the following in the same change:
+
+1. Update affected chapter(s) under `docs/manual/chapters/`.
+2. Update screenshot metadata in `docs/manual/screenshots/shot_list.json` if any screenshot relevance changed.
+3. Replace affected screenshot files under `docs/manual/screenshots/` when UI visuals changed.
+4. Update `docs/manual/feature_trace_matrix.md` if feature-to-chapter mapping changed.
+5. Run:
+   - `python3 docs/manual/build_manual.py --check`
+   - `python3 docs/manual/build_manual.py --pdf`
+6. Ensure generated PDF exists at:
+   - `docs/manual/dist/ChoreBoy_Code_Studio_User_Manual_v0.1.pdf`
+
+## Hard constraints
+
+- Do not mark manual work as complete if the PDF was not regenerated after user-facing changes.
+- Do not leave stale screenshots that contradict current UI.
+- Do not document TODO or unshipped behavior as available features.
+
+## Exception policy
+
+Only skip manual updates if the change is strictly internal and has zero user-facing impact.
+If skipped, explicitly state why this rule did not trigger in your change notes.
+
