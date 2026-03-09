@@ -49,7 +49,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.run.debugProject", "Debug Project", "Ctrl+Shift+F5", "Run"),
     ShortcutCommand("shell.action.run.pytestProject", "Run Project Tests", "Ctrl+Shift+T", "Run"),
     ShortcutCommand("shell.action.run.pytestCurrentFile", "Run Current File Tests", "Ctrl+Alt+T", "Run"),
-    ShortcutCommand("shell.action.run.stop", "Stop", "Ctrl+F2", "Run"),
+    ShortcutCommand("shell.action.run.stop", "Stop", "Shift+F2", "Run"),
     ShortcutCommand("shell.action.run.restart", "Restart", "Ctrl+Shift+F2", "Run"),
     ShortcutCommand("shell.action.run.continue", "Continue", "F6", "Run"),
     ShortcutCommand("shell.action.run.pause", "Pause", "Ctrl+F6", "Run"),

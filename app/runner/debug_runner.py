@@ -63,10 +63,18 @@ def run_debug_session(manifest: RunManifest, entry_callable: Callable[[str], Non
         file_path = str(breakpoint_entry["file_path"])
         line_number = int(breakpoint_entry["line_number"])
         try:
-            debugger.set_break(file_path, line_number)
+            result = debugger.set_break(file_path, line_number)
+            if result:
+                print(
+                    f"Failed to set breakpoint {file_path}:{line_number}: {result}",
+                    file=sys.stderr,
+                )
+                continue
             has_valid_breakpoints = True
         except Exception as exc:
             print(f"Failed to set breakpoint {file_path}:{line_number}: {exc}", file=sys.stderr)
+    if manifest.breakpoints and not has_valid_breakpoints:
+        print("No valid breakpoints were set; debug run will continue without pausing.", file=sys.stderr)
     debugger.configure_initial_breakpoint_seek(True)
 
     try:
