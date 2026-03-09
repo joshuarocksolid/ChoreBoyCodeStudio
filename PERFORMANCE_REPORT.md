@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-This audit found and validated multiple real performance issues, with eight high-confidence fixes shipped:
+This audit found and validated multiple real performance issues, with nine high-confidence fixes shipped:
 
 1. **Confirmed bottleneck fixed:** run-log output rendering had superlinear growth from repeated full-text checks.
 2. **Confirmed bottleneck fixed (routine-path):** unresolved-import runtime probing caused large UI-thread lint stalls.
@@ -12,9 +12,10 @@ This audit found and validated multiple real performance issues, with eight high
 6. **Confirmed bottleneck fixed:** reference scanning no longer rereads every file twice or performs avoidable path normalization in the hot path.
 7. **Confirmed bottleneck fixed:** cache-cold go-to-definition now builds the symbol index with less per-file path overhead.
 8. **Confirmed responsiveness bottleneck fixed:** lint/diagnostics scheduling no longer runs analysis inline on the shell thread.
+9. **Confirmed bottleneck fixed:** project-open enumeration no longer pays heavy per-entry path normalization costs.
 
 The highest measured gain was in run-log rendering throughput (**~27x faster at 40k lines**).  
-The audit still has important remaining work to do, especially in synchronous diagnostics and project enumeration on very large trees, but the largest navigation/refactor responsiveness problems have been materially reduced.
+The audit still has important remaining work to do, especially inside the diagnostics engine itself, but the largest navigation/refactor responsiveness problems and the major project-open scalability issue have been materially reduced.
 
 ---
 
@@ -147,6 +148,24 @@ The audit still has important remaining work to do, especially in synchronous di
 - **Expected impact:** avoids editor stalls from routine lint scheduling even though analyzer throughput itself is still a separate concern.
 - **Validation method:** updated shell lint-policy tests + focused AppRun handler-return benchmark.
 
+## 9) Project-open enumeration paid heavy per-entry `relative_to()` / `resolve()` costs (fixed)
+- **Severity:** High  
+- **Confidence:** High (measured before/after + targeted regression test)  
+- **File(s):** `app/project/project_service.py`  
+- **Evidence:**  
+  - Before:
+    - ~1,001 files: **36.40 ms**
+    - ~20,001 files: **753.43 ms**
+  - After:
+    - ~1,001 files: **2.30 ms**
+    - ~20,001 files: **31.95 ms**
+  - Added regression test proving enumeration no longer performs per-entry `resolve()` work.
+- **Scenario:** opening large project trees.
+- **Root cause:** hot-loop use of `Path.relative_to()` and `Path.resolve()` for every enumerated entry.
+- **Suggested fix:** construct relative and absolute paths directly from the `os.walk()` payload while preserving output semantics (implemented).
+- **Expected impact:** dramatically faster project-open latency on medium and large trees.
+- **Validation method:** project-service unit suite + before/after scaling benchmark.
+
 ---
 
 ## Scalability risks
@@ -175,24 +194,9 @@ The audit still has important remaining work to do, especially in synchronous di
 - **Expected impact:** lower editor stalls during lint-heavy editing flows.
 - **Validation method:** targeted profiling + large-buffer diagnostic benchmarks.
 
-## 10) Project-open enumeration still performs heavy path normalization at scale
-- **Severity:** Medium  
-- **Confidence:** Medium-High  
-- **File(s):** `app/project/project_service.py`  
-- **Evidence:**  
-  - `open_project()` reaches roughly **753 ms** at ~20k files
-  - profiler shows `_build_project_entry()` dominated by `relative_to()` and `resolve()`
-- **Scenario:** opening very large project trees.
-- **Root cause:** repeated path-object normalization during full-tree enumeration.
-- **Suggested fix:** reduce path conversion churn while preserving current entry ordering and structure.
-- **Expected impact:** better large-project open latency.
-- **Validation method:** project-open scaling benchmark + profiler rerun.
-
----
-
 ## Low-priority inefficiencies
 
-## 11) `SQLiteSymbolIndex` object recreation overhead
+## 10) `SQLiteSymbolIndex` object recreation overhead
 - **Severity:** Low  
 - **Confidence:** High  
 - **File(s):** `app/intelligence/completion_providers.py`, `app/intelligence/navigation_service.py`, `app/persistence/sqlite_index.py`  
@@ -215,7 +219,8 @@ The audit still has important remaining work to do, especially in synchronous di
 6. `find_references()` now performs a single per-file pass and avoids redundant path normalization.
 7. Cold symbol-index construction now avoids unnecessary per-file `resolve()` calls.
 8. Shell lint scheduling now uses `BackgroundTaskRunner` instead of analyzing inline.
-9. Added/updated tests:
+9. Project enumeration now builds entry paths directly from the `os.walk()` payload.
+10. Added/updated tests:
    - `tests/integration/performance/test_responsiveness_thresholds.py`
    - `tests/unit/shell/test_main_window_lint_probe_policy.py`
    - `tests/unit/editors/test_search_panel.py`
@@ -223,6 +228,7 @@ The audit still has important remaining work to do, especially in synchronous di
    - `tests/unit/persistence/test_sqlite_index.py`
    - `tests/unit/shell/test_main_window_reference_rename_actions.py`
    - `tests/unit/intelligence/test_reference_service.py`
+   - `tests/unit/project/test_project_service.py`
 
 ---
 
@@ -239,15 +245,16 @@ The audit still has important remaining work to do, especially in synchronous di
 | `lookup_definition_with_cache` cold (~10k files) | 652.93 ms | 343.64 ms | **~1.9x faster** |
 | Shell action return with 250 ms injected engine delay | inline/blocking | 0.30-0.36 ms | UI-thread work removed |
 | Lint handler return with 250 ms injected analyzer delay | inline/blocking | 0.42 ms | UI-thread work removed |
+| `open_project` (~20k files) | 753.43 ms | 31.95 ms | **~24x faster** |
 
 ---
 
 ## Highest-value next profiling steps
 
-1. **UI-thread frame-time profiling**
-   - Instrument Qt event-loop stalls during references/rename/search operations.
+1. **Diagnostics engine profiling**
+   - Focus on unresolved-import resolution and large-file analyzer throughput.
 2. **Search indexing experiment**
    - Compare current streaming scan vs optional indexed search for >50k file projects.
-3. **Runtime-parity retest in AppRun with populated vendor artifacts**
-   - Re-run tree-sitter/highlighting perf gates currently skipped in this VM checkout.
+3. **SQLite symbol-cache query/index experiment**
+   - Re-evaluate prefix/exact query plans now that larger UI-thread bottlenecks have been reduced.
 

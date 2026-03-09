@@ -366,6 +366,30 @@ def test_enumerate_project_entries_is_deterministic_and_includes_cbcs(tmp_path: 
     ]
 
 
+def test_enumerate_project_entries_avoids_per_entry_resolve_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_root = tmp_path / "project_tree_perf"
+    _write_valid_manifest(project_root, name="Project Tree Perf")
+    (project_root / "app").mkdir()
+    (project_root / "app" / "main.py").write_text("print('main')\n", encoding="utf-8")
+    (project_root / "notes.txt").write_text("notes\n", encoding="utf-8")
+
+    original_resolve = Path.resolve
+    resolve_calls = {"count": 0}
+
+    def counting_resolve(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        resolve_calls["count"] += 1
+        return original_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", counting_resolve)
+
+    entries = enumerate_project_entries(project_root)
+
+    assert entries
+    assert resolve_calls["count"] <= 2
+
+
 def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:
     """Successful open should persist project path into recent projects."""
     project_root = tmp_path / "tracked_project"

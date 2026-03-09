@@ -234,6 +234,76 @@ Observed:
 - A brief attempt at deeper analyzer-internal refactoring did **not** produce reliable throughput improvements on import-heavy workloads, so it was not kept.
 - This slice intentionally limits itself to the shell-level responsiveness fix with strong evidence.
 
+## 0.4) Slice 6 — project-open enumeration path cleanup
+
+### Why this slice
+
+After the highest-value navigation and lint responsiveness work landed, project-open enumeration remained the next strongest measured scalability risk:
+- roughly **753 ms** at ~20k files in planning measurements
+- profiler dominated by `_build_project_entry()`, `Path.relative_to()`, and per-entry `resolve()`
+
+### Changed files
+
+- `app/project/project_service.py`
+- `tests/unit/project/test_project_service.py`
+
+### Change summary
+
+- Reworked `enumerate_project_entries()` to build relative and absolute paths directly from the `os.walk()` payload.
+- Removed per-entry `Path.relative_to()` and `Path.resolve()` work from the hot loop.
+- Preserved:
+  - deterministic ordering
+  - `ProjectFileEntry` shape
+  - existing open/import behavior
+
+### TDD / regression coverage
+
+Added focused unit coverage:
+
+- `tests/unit/project/test_project_service.py::test_enumerate_project_entries_avoids_per_entry_resolve_calls`
+
+This test failed before the change because enumeration resolved each entry path individually.
+
+### Validation
+
+Targeted suite:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_project_service.py
+```
+
+Result:
+- **27 passed**
+
+Performance regression suite:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_responsiveness_thresholds.py tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Before / after measurements
+
+#### `open_project()` scaling
+
+Before:
+- ~1,001 files: **36.40 ms**
+- ~5,001 files: **179.88 ms**
+- ~10,001 files: **354.59 ms**
+- ~20,001 files: **753.43 ms**
+
+After:
+- ~1,001 files: **2.30 ms**
+- ~5,001 files: **8.79 ms**
+- ~10,001 files: **15.99 ms**
+- ~20,001 files: **31.95 ms**
+
+Improvement:
+- roughly **15.8x faster** at ~1k files
+- roughly **24.0x faster** at ~20k files
+
 ## 1) Environment and validation notes
 
 - Repository branch: `cursor/performance-audit-report-4d51`
