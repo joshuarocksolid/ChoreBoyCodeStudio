@@ -20,6 +20,7 @@ def test_create_and_delete_file(tmp_path: Path) -> None:
     delete_result = delete_path(str(target))
     assert delete_result.success is True
     assert not target.exists()
+    assert delete_result.message == "Path deleted permanently."
 
 
 def test_rename_move_copy_and_duplicate(tmp_path: Path) -> None:
@@ -64,3 +65,22 @@ def test_delete_path_moves_to_trash_when_enabled(tmp_path: Path, monkeypatch: py
     assert target.exists() is False
     assert result.destination_path is not None
     assert Path(result.destination_path).exists()
+
+
+def test_delete_path_defaults_to_permanent_delete_even_when_home_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default delete should match the UI's permanent-delete contract."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    target = tmp_path / "permanent_delete.py"
+    target.write_text("print('x')\n", encoding="utf-8")
+
+    result = delete_path(str(target))
+
+    assert result.success is True
+    assert result.message == "Path deleted permanently."
+    assert target.exists() is False
+    assert (fake_home / ".local" / "share" / "Trash" / "files").exists() is False

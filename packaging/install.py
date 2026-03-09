@@ -36,6 +36,7 @@ APP_NAME = "ChoreBoy Code Studio"
 APP_RUN_PATH = "/opt/freecad/AppRun"
 DEFAULT_INSTALL_DIR = "/home/default/choreboy_code_studio"
 DESKTOP_FILENAME = "choreboy_code_studio.desktop"
+EXPECTED_STAGING_PARENT = Path("/home/default")
 
 PAYLOAD_DIRNAME = "payload"
 
@@ -56,9 +57,14 @@ def _source_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _package_root() -> Path:
+    """The copied installer package root containing installer/ and payload/."""
+    return _source_root().parent
+
+
 def _payload_root() -> Path:
     """The payload/ sibling directory containing the app files to install."""
-    return _source_root().parent / PAYLOAD_DIRNAME
+    return _package_root() / PAYLOAD_DIRNAME
 
 
 def _app_version() -> str:
@@ -71,6 +77,28 @@ def _app_version() -> str:
                 if len(parts) == 2:
                     return parts[1].strip().strip("\"'")
     return "unknown"
+
+
+def build_installed_desktop_entry(install_dir: str | Path) -> str:
+    """Return the installed launcher that hardcodes the chosen install path."""
+    resolved_install_dir = str(Path(install_dir).expanduser().resolve())
+    return DESKTOP_TEMPLATE.format(install_dir=resolved_install_dir)
+
+
+def build_staging_location_warning(package_root: Path) -> str | None:
+    """Return a warning when the installer package is not staged in /home/default."""
+    resolved_package_root = package_root.expanduser().resolve()
+    try:
+        resolved_package_root.relative_to(EXPECTED_STAGING_PARENT)
+    except ValueError:
+        return (
+            "This installer package is intended to be copied into "
+            f"{EXPECTED_STAGING_PARENT}/ before you run it.\n\n"
+            f"Current package folder:\n{resolved_package_root}\n\n"
+            "Keep the entire installer folder together in /home/default/, "
+            "then launch install_choreboy_code_studio.desktop from there."
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +167,7 @@ class InstallWorker(QThread):
         self.progress.emit(100)
 
     def _write_desktop_files(self) -> None:
-        content = DESKTOP_TEMPLATE.format(install_dir=str(self.install_dir))
+        content = build_installed_desktop_entry(self.install_dir)
 
         apps_dir = Path.home() / ".local" / "share" / "applications"
         apps_dir.mkdir(parents=True, exist_ok=True)
@@ -168,13 +196,31 @@ class WelcomePage(QWizardPage):
 
         layout = QVBoxLayout(self)
         layout.addSpacing(20)
-        layout.addWidget(
-            QLabel(
-                f"This wizard will install <b>{APP_NAME}</b> v{version} "
-                "on your ChoreBoy system.\n\n"
-                "Click <b>Next</b> to choose an installation directory."
+        package_root = _package_root()
+        staging_warning = build_staging_location_warning(package_root)
+        intro_lines = [
+            f"This wizard will install <b>{APP_NAME}</b> v{version} on your ChoreBoy system.",
+            "",
+            f"Before running the installer, copy this entire package folder into <code>{EXPECTED_STAGING_PARENT}/</code>.",
+            "Keep <code>install_choreboy_code_studio.desktop</code>, <code>installer/</code>, and <code>payload/</code> together.",
+            "",
+            "Later in this wizard you will choose where the application files should live.",
+            "The installed launcher will hardcode that chosen location.",
+            "If you move the installed folder later, rerun the installer.",
+        ]
+        if staging_warning is not None:
+            intro_lines.extend(
+                [
+                    "",
+                    "<b>Current staging warning:</b>",
+                    staging_warning.replace("\n", "<br>"),
+                ]
             )
-        )
+        intro_lines.extend(["", "Click <b>Next</b> to choose an installation directory."])
+        intro_label = QLabel("<br>".join(intro_lines))
+        intro_label.setWordWrap(True)
+        intro_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(intro_label)
         layout.addStretch()
 
 
@@ -183,8 +229,8 @@ class DirectoryPage(QWizardPage):
         super().__init__(parent)
         self.setTitle("Choose Installation Directory")
         self.setSubTitle(
-            "Select where to install ChoreBoy Code Studio. "
-            "The directory will be created if it does not exist."
+            "Select the final location for the Code Studio files. "
+            "The installed launcher will point to this exact directory."
         )
 
         layout = QVBoxLayout(self)
@@ -218,6 +264,17 @@ class DirectoryPage(QWizardPage):
             self.path_edit.setText(str(chosen_path))
 
     def validatePage(self) -> bool:
+        staging_warning = build_staging_location_warning(_package_root())
+        if staging_warning is not None:
+            reply = QMessageBox.question(
+                self,
+                "Installer Location Warning",
+                staging_warning + "\n\nContinue anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return False
         path_text = self.path_edit.text().strip()
         if not path_text:
             QMessageBox.warning(self, "Invalid Path", "Please enter an installation directory.")
@@ -258,6 +315,8 @@ class ConfirmPage(QWizardPage):
             f"<b>Install directory:</b><br>{install_dir}<br><br>"
             f"<b>Desktop shortcut:</b> {desktop_text}<br><br>"
             f"<b>Menu entry:</b> ~/.local/share/applications/{DESKTOP_FILENAME}<br><br>"
+            "The installed launcher will hardcode this install directory.<br><br>"
+            "If you later move the installed folder, rerun the installer.<br><br>"
             "Click <b>Install</b> to begin copying files."
         )
 
@@ -330,6 +389,8 @@ class DonePage(QWizardPage):
             f"<b>{APP_NAME}</b> has been installed to:<br>"
             f"<code>{install_dir}</code><br><br>"
             "A launcher entry has been added to your application menu.<br><br>"
+            "That launcher now hardcodes this install directory.<br><br>"
+            "If you move the installed folder later, rerun the installer so the launcher is regenerated.<br><br>"
             "You can launch it from the application menu or desktop shortcut.<br><br>"
             "Click <b>Finish</b> to close the installer."
         )

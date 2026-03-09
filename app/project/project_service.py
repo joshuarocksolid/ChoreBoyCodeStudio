@@ -130,13 +130,19 @@ def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
             message=f"Unable to inspect project files for Python entrypoints: {exc}",
         )
     if inferred_entry is None:
+        message = (
+            "Project metadata is missing and no runnable Python entry files were found. "
+            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
+        )
+        if not _contains_any_python_file(resolved_root):
+            message = (
+                "Project metadata is missing and no Python files were found. "
+                "Add a `.py` file (for example `main.py`) and try again."
+            )
         return ProjectRootAssessment(
             state=ProjectRootState.INVALID,
             project_root=resolved_root,
-            message=(
-                "Project metadata is missing and no Python files were found. "
-                "Add a `.py` file (for example `main.py`) and try again."
-            ),
+            message=message,
         )
 
     return ProjectRootAssessment(
@@ -379,9 +385,17 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         ) from exc
 
     if inferred_entry is None:
+        message = (
+            "Project metadata is missing and no runnable Python entry files were found. "
+            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
+        )
+        if not _contains_any_python_file(project_root):
+            message = (
+                "Project metadata is missing and no Python files were found. "
+                "Add a `.py` file (for example `main.py`) and try again."
+            )
         raise ProjectStructureValidationError(
-            "Project metadata is missing and no Python files were found. "
-            "Add a `.py` file (for example `main.py`) and try again.",
+            message,
             project_root=project_root,
             manifest_path=manifest_path,
         )
@@ -418,7 +432,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     top_level_python_files = sorted(
         file_path.name
         for file_path in project_root.iterdir()
-        if file_path.is_file() and file_path.suffix == ".py"
+        if file_path.is_file() and file_path.suffix == ".py" and file_path.name != "__init__.py"
     )
     if top_level_python_files:
         return top_level_python_files[0]
@@ -430,7 +444,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
         current_path = Path(current_dir)
         dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-        python_files = sorted(name for name in file_names if name.endswith(".py"))
+        python_files = sorted(name for name in file_names if name.endswith(".py") and name != "__init__.py")
         if python_files:
             return (current_path / python_files[0]).relative_to(project_root).as_posix()
     return None
@@ -496,9 +510,6 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
         package_main = file_candidate / "__main__.py"
         if package_main.exists() and package_main.is_file():
             return package_main.relative_to(project_root).as_posix()
-        package_init = file_candidate / "__init__.py"
-        if package_init.exists() and package_init.is_file():
-            return package_init.relative_to(project_root).as_posix()
     return None
 
 
@@ -510,6 +521,14 @@ def _infer_recursive_package_main(project_root: Path) -> str | None:
             continue
         return candidate.relative_to(project_root).as_posix()
     return None
+
+
+def _contains_any_python_file(project_root: Path) -> bool:
+    for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
+        dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
+        if any(name.endswith(".py") for name in file_names):
+            return True
+    return False
 
 
 def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) -> ProjectFileEntry:

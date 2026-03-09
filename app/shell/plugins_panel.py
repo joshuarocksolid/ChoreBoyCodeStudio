@@ -15,7 +15,7 @@ from PySide2.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.bootstrap.paths import PathInput
+from app.bootstrap.paths import PathInput, global_plugins_logs_dir
 from app.plugins.discovery import discover_installed_plugins
 from app.plugins.exporter import export_installed_plugin
 from app.plugins.installer import install_plugin, set_plugin_enabled, uninstall_plugin
@@ -92,6 +92,10 @@ class PluginManagerDialog(QDialog):
     def refresh_plugins(self) -> None:
         self._plugins_tree.clear()
         registry = load_plugin_registry(self._state_root)
+        registry_map = {
+            (entry.plugin_id, entry.version): entry
+            for entry in registry.entries
+        }
         enabled_map = {
             (entry.plugin_id, entry.version): entry.enabled
             for entry in registry.entries
@@ -99,6 +103,7 @@ class PluginManagerDialog(QDialog):
         discovered_plugins = discover_installed_plugins(state_root=self._state_root)
         for discovered in discovered_plugins:
             key = (discovered.plugin_id, discovered.version)
+            registry_entry = registry_map.get(key)
             enabled = enabled_map.get(key, True)
             if discovered.compatibility is None:
                 compatibility_text = "invalid"
@@ -106,6 +111,17 @@ class PluginManagerDialog(QDialog):
                 compatibility_text = "compatible"
             else:
                 compatibility_text = "; ".join(discovered.compatibility.reasons) or "incompatible"
+            detail_lines = [
+                f"Plugin: {discovered.plugin_id}@{discovered.version}",
+                f"Path: {discovered.install_path}",
+                f"Plugin host log: {global_plugins_logs_dir(self._state_root) / 'plugin_host.log'}",
+            ]
+            if registry_entry is not None and registry_entry.failure_count > 0:
+                compatibility_text = f"{compatibility_text}; failures={registry_entry.failure_count}"
+                detail_lines.append(f"Failure count: {registry_entry.failure_count}")
+            if registry_entry is not None and registry_entry.last_error:
+                compatibility_text = f"{compatibility_text}; last error recorded"
+                detail_lines.append(f"Last error: {registry_entry.last_error}")
             enabled_text = "yes" if enabled else "no"
             item = QTreeWidgetItem(
                 [
@@ -124,6 +140,9 @@ class PluginManagerDialog(QDialog):
                 and discovered.manifest.runtime_entrypoint is not None
             )
             item.setData(3, Qt.UserRole, runtime_flag)
+            detail_text = "\n".join(detail_lines)
+            for column in range(self._plugins_tree.columnCount()):
+                item.setToolTip(column, detail_text)
             self._plugins_tree.addTopLevelItem(item)
         self._update_button_states()
 

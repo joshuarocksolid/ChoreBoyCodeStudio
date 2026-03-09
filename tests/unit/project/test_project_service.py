@@ -165,6 +165,50 @@ def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint
     assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
 
 
+def test_open_project_auto_initialize_skips_package_callable_pyproject_target(tmp_path: Path) -> None:
+    """Package-callable pyproject targets should not silently map to __init__.py."""
+    project_root = tmp_path / "pyproject_package_target_project"
+    (project_root / "src" / "my_app").mkdir(parents=True)
+    (project_root / "src" / "my_app" / "__init__.py").write_text(
+        "def main():\n    print('package main')\n",
+        encoding="utf-8",
+    )
+    (project_root / "pyproject.toml").write_text(
+        "[project]\n"
+        "name = \"my-app\"\n"
+        "[project.scripts]\n"
+        "my-app = \"my_app:main\"\n",
+        encoding="utf-8",
+    )
+    (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "run.py"
+
+
+def test_open_project_auto_initialize_rejects_package_callable_pyproject_without_runnable_file(tmp_path: Path) -> None:
+    """Package-callable pyproject targets without runnable files should fail clearly."""
+    project_root = tmp_path / "pyproject_package_only_project"
+    (project_root / "src" / "my_app").mkdir(parents=True)
+    (project_root / "src" / "my_app" / "__init__.py").write_text(
+        "def main():\n    print('package main')\n",
+        encoding="utf-8",
+    )
+    (project_root / "pyproject.toml").write_text(
+        "[project]\n"
+        "name = \"my-app\"\n"
+        "[project.scripts]\n"
+        "my-app = \"my_app:main\"\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectStructureValidationError) as exc_info:
+        open_project(project_root)
+
+    assert "no runnable Python entry files were found" in str(exc_info.value)
+
+
 def test_open_project_auto_initialize_skips_pyproject_inference_without_toml_parser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -3,6 +3,284 @@
 Date: 2026-03-08  
 Auditor mode: deep skeptical audit (evidence-first)
 
+## Current final status (2026-03-09)
+- Branch: `cursor/adversarial-code-audit-9904`
+- Full automated validation:
+  - `python3 run_tests.py -v --import-mode=importlib` -> **passed**
+  - targeted pyright on audited non-UI modules -> **passed**
+- High-value fixes landed for:
+  - ChoreBoy installer packaging contract documentation/behavior
+  - imported `pyproject` package-callable inference
+  - built-in pytest runner contract drift
+  - plugin runtime log diagnostics persistence
+  - drag/drop unit-test contract mismatch
+- Remaining non-fixed finding explicitly carried in the report:
+  - none currently at the same confidence level; remaining risk areas are called out in the report
+
+---
+
+## 2026-03-09 addendum — ChoreBoy installer packaging contract
+
+### User clarification incorporated
+- The relevant "packaging" workflow for this review is the **Code Studio distribution installer**:
+  - `package.py`
+  - `packaging/install.py`
+- Intended contract on ChoreBoy:
+  - user copies the entire distribution folder into `/home/default/`
+  - user runs the bundled installer from that copied folder
+  - installer prompts for the final location where Code Studio should live
+  - installed `.desktop` launcher hardcodes that chosen final location
+
+### Evidence of prior ambiguity
+- The repo previously had:
+  - installer implementation already hardcoding the chosen final install path
+  - generated install instructions that only said "copy to your ChoreBoy Home Folder"
+  - no dedicated developer doc explaining the distinction between:
+    - installer package staging location
+    - final installed application location
+- This created a documentation/mental-model gap for future developers and reviewers.
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_distribution_installer.py`
+- Result: **passed**
+- Coverage added for:
+  - install instructions explicitly requiring `/home/default/` staging
+  - bundled installer launcher continuing to resolve from installer folder
+  - installed launcher hardcoding chosen install directory
+  - warning when installer package is not staged under `/home/default/`
+
+#### `"/opt/freecad/AppRun" -c "<installer contract evidence snippet>"`
+- Result: **passed**
+- Key output:
+  - install instructions now begin with:
+    - `Copy this entire folder into /home/default/ on the ChoreBoy.`
+    - `Keep the entire folder together.`
+  - non-home staging warning now explains:
+    - installer package should be copied into `/home/default/`
+  - installed launcher `Exec=` now shows a hardcoded final install path:
+    - `root='/home/default/tools/code_studio'`
+
+### Fixes implemented
+- `package.py`
+  - extracted helper builders for installer desktop entry and install instructions
+  - updated generated `INSTALL.txt` to explicitly require `/home/default/` staging
+  - documented that the installer folder must stay together
+  - documented that installed launchers hardcode the chosen install directory
+- `packaging/install.py`
+  - added explicit helper for installed desktop-entry generation
+  - added staging-location warning helper for packages not copied under `/home/default/`
+  - updated wizard copy to explain:
+    - staging in `/home/default/`
+    - final install directory choice
+    - hardcoded launcher target semantics
+    - rerun-installer requirement after moving installed files
+- `docs/PACKAGING.md`
+  - added developer-facing source-of-truth documentation for the ChoreBoy-specific packaging/install workflow
+- `docs/ARCHITECTURE.md`
+  - registered `PACKAGING.md` in canonical file ownership
+
+---
+
+## 2026-03-09 addendum — imported `pyproject` package-callable inference
+
+### Confirmed behavior before fix
+- Reproduction project:
+  - `pyproject.toml` with:
+    - `[project.scripts]`
+    - `demo = "demo_pkg:main"`
+  - package file:
+    - `src/demo_pkg/__init__.py` defining `main()`
+- Prior result:
+  - imported project metadata inferred `default_entry = src/demo_pkg/__init__.py`
+  - running the imported project exited `0`
+  - no user output was produced because `runpy.run_path(__init__.py)` never called `main()`
+
+### Commands run after fix
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_project_service.py tests/integration/project/test_project_import_open.py`
+- Result: **passed**
+- Coverage added for:
+  - package-callable `pyproject` targets no longer mapping silently to `__init__.py`
+  - fallback to runnable file (`run.py`) when available
+  - clear validation failure when only non-runnable `__init__.py` exists
+
+#### `python3 - <<'PY' ...` (package-callable pyproject repro)
+- Result: **passed**
+- Key output:
+  - `DEFAULT_ENTRY run.py`
+  - runner output included `RUN_FALLBACK_OK`
+  - runner output did **not** include package callable side effects from `__init__.py`
+
+### Fixes implemented
+- `app/project/project_service.py`
+  - stopped treating package `__init__.py` as a valid inferred runnable entrypoint for `pyproject` script targets
+  - excluded `__init__.py` from generic top-level/recursive runnable-file fallback
+  - added clearer error message when Python files exist but no runnable entry file can be inferred
+- tests added/updated:
+  - `tests/unit/project/test_project_service.py`
+  - `tests/integration/project/test_project_import_open.py`
+
+---
+
+## 2026-03-09 addendum — built-in pytest runner contract drift
+
+### Confirmed behavior before fix
+- `app/run/test_runner_service.py` previously:
+  - built direct AppRun payloads using `pytest.main(['-q'])`
+  - omitted required `--import-mode=importlib`
+  - preferred `.venv` runtimes despite repo/runtime guidance saying no virtualenv
+  - ignored repository-local `run_tests.py`
+- Reproduction:
+  - `run_pytest_project('/workspace')` returned:
+    - `RETURN_CODE 2`
+    - `FAILURE_COUNT 0`
+  - built command was:
+    - `['/opt/freecad/AppRun', '-c', "import sys;import pytest;sys.exit(pytest.main(['-q']))"]`
+
+### Commands run after fix
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Result: **passed**
+- Coverage now verifies:
+  - `--import-mode=importlib` is always included
+  - `run_tests.py` is preferred when present in the project root
+  - runtime selection no longer walks `.venv` paths by default
+  - `CBCS_PYTEST_EXECUTABLE` still works as an explicit override
+
+#### `python3 -c "from app.run.test_runner_service import run_pytest_project; ..."`
+- Result: **passed**
+- Key output after fix:
+  - `RETURN_CODE 1`
+  - command:
+    - `['/opt/freecad/AppRun', '-c', "import runpy, sys; ... runpy.run_path('/workspace/run_tests.py', run_name='__main__')"]`
+- This changed the repo repro from an immediate collection/bootstrap failure (`2`) to the real failing-test result (`1`).
+
+### Fixes implemented
+- `app/run/test_runner_service.py`
+  - now injects `--import-mode=importlib` into pytest args
+  - prefers project-local `run_tests.py` when present
+  - removes implicit `.venv` runtime discovery
+  - keeps `CBCS_PYTEST_EXECUTABLE` as the explicit override path
+- tests updated:
+  - `tests/unit/run/test_test_runner_service.py`
+
+---
+
+## 2026-03-09 addendum — plugin runtime diagnostics persistence
+
+### Audit question
+- Docs and acceptance expectations claimed runtime plugin failures should be visible in plugin status/log diagnostics.
+- Before this pass, code search showed:
+  - in-memory `PluginRuntimeManager.last_error`
+  - registry `last_error` / `failure_count`
+  - no persistent plugin host log writing despite `global_plugins_logs_dir()` helper existing
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins/test_runtime_manager.py`
+- Result: **passed**
+- Coverage now verifies:
+  - stderr is still captured as `last_error`
+  - plugin host stderr is persisted to a log file
+  - plugin host exit events are persisted to a log file
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins`
+- Result: **passed**
+
+#### `python3 - <<'PY' ...` (plugin runtime log persistence repro)
+- Result: **passed**
+- Key output:
+  - `LOG_PATH /tmp/.../state/plugins/logs/plugin_host.log`
+  - log contents:
+    - `stderr: boom`
+    - `host exited return_code=3 terminated_by_user=False`
+
+### Fixes implemented
+- `app/plugins/runtime_manager.py`
+  - now writes plugin host diagnostics to `plugins/logs/plugin_host.log`
+  - logs stderr lines, command timeouts/failures, host reload/start/stop, and host exits
+  - exposes `log_file_path` for diagnostics/UI use
+- `app/shell/plugins_panel.py`
+  - now includes failure-count/last-error details in displayed compatibility text when present
+  - adds per-row tooltip details including plugin host log path
+- tests updated:
+  - `tests/unit/plugins/test_runtime_manager.py`
+
+---
+
+## 2026-03-09 addendum — drag/drop failing test mismatch and final suite status
+
+### Failing baseline test analysis
+- Baseline full-suite run originally failed only:
+  - `tests/unit/shell/test_project_tree_action_coordinator.py::test_handle_drop_move_returns_oserror_message`
+- Static/behavioral analysis:
+  - `ProjectTreeWidget.dropEvent()` only passes an existing target item path from `itemAt(event.pos())`
+  - the failing test passed a nonexistent target path (`/tmp/project/target`)
+  - `handle_drop_move(...)` therefore correctly normalized destination back to the source parent and returned:
+    - `Cannot move item onto itself.`
+- Conclusion:
+  - this was a **test-contract mismatch**, not a confirmed product bug
+
+### Fix implemented
+- Updated the unit test to use an actual existing target directory, matching the real tree-widget drag/drop contract.
+
+### Validation commands
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+
+#### `python3 run_tests.py -v --import-mode=importlib`
+- Result: **passed**
+- Full suite now completes successfully in this environment after the audit fixes and the drag/drop test correction.
+
+---
+
+## 2026-03-09 addendum — delete semantics now match UI contract
+
+### Confirmed behavior before fix
+- `delete_path(...)` defaulted to `use_trash=True`
+- project tree delete flows called `delete_path(target_path)` with that default
+- UI confirmation text in `MainWindow` said:
+  - `This action cannot be undone.`
+- implementation therefore mismatched the user-facing contract and depended on hidden `~/.local/share/Trash/files`
+- any `OSError` in trash handling silently fell back to permanent deletion
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_file_operations.py tests/unit/project/test_bulk_file_operations.py`
+- Result: **passed**
+- Coverage now verifies:
+  - default delete is permanent
+  - explicit `use_trash=True` still moves to trash when requested
+  - bulk delete callers using `use_trash=False` remain green
+
+#### `python3 run_tests.py -v --import-mode=importlib`
+- Result: **passed**
+
+### Fix implemented
+- `app/project/file_operations.py`
+  - changed `delete_path(..., use_trash=False)` default to permanent delete
+- `tests/unit/project/test_file_operations.py`
+  - now asserts default delete matches permanent-delete semantics
+  - keeps explicit trash behavior under `use_trash=True` covered
+
+---
+
+## 2026-03-09 addendum — targeted pyright closeout
+
+### Commands run
+
+#### `pyright app/project/project_service.py app/project/file_operations.py app/run/test_runner_service.py app/plugins/runtime_manager.py tests/unit/project/test_project_service.py tests/integration/project/test_project_import_open.py tests/unit/run/test_test_runner_service.py tests/unit/plugins/test_runtime_manager.py tests/unit/project/test_file_operations.py tests/unit/project/test_bulk_file_operations.py tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+- Output:
+  - `0 errors, 0 warnings, 0 informations`
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+- Purpose:
+  - re-validated the small test-only signature adjustment made to satisfy targeted pyright
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`

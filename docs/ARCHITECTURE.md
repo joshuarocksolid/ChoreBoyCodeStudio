@@ -1207,6 +1207,7 @@ To reduce ambiguity for humans and AI agents:
 * `ACCEPTANCE_TESTS.md` defines **how success is validated**
 * `TASKS.md` defines **implementation slices**
 * `AGENTS.md` defines **how AI agents should work in this repo**
+* `PACKAGING.md` defines the **ChoreBoy-specific distribution packaging and installer contract**
 * `docs/designer/ARCHITECTURE_PLAN.md` defines the **Designer subsystem plan** (`.ui` builder module boundaries, contracts, and rollout), with companion wireframe/backlog docs in `docs/designer/`
 * `docs/plugins/PRD.md` defines the **Plugin subsystem plan** (manifest, lifecycle, host process, and rollout)
 

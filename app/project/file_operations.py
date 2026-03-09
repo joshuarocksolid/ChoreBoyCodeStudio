@@ -79,7 +79,7 @@ def copy_path(source_path: str, destination_path: str) -> FileOperationResult:
     )
 
 
-def delete_path(target_path: str, *, use_trash: bool = True) -> FileOperationResult:
+def delete_path(target_path: str, *, use_trash: bool = False) -> FileOperationResult:
     target = Path(target_path).expanduser().resolve()
     if not target.exists():
         return FileOperationResult(success=False, message=f"Path does not exist: {target}")

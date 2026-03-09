@@ -5,7 +5,7 @@ Run on the dev machine (any Python 3.6+):
     python3 package.py
 
 Produces:
-    dist/ChoreBoyCodeStudio-v{version}/   -- staging directory
+    dist/ChoreBoyCodeStudio-v{version}/   -- staging directory to copy to /home/default/ on ChoreBoy
     dist/ChoreBoyCodeStudio-v{version}.zip -- password-protected archive for USB transfer
 """
 
@@ -45,6 +45,7 @@ PRUNE_DIR_SUFFIXES = {
 }
 
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
+CHOREBOY_STAGING_ROOT = "/home/default"
 
 INSTALLER_DESKTOP_TEMPLATE = """\
 [Desktop Entry]
@@ -62,24 +63,46 @@ INSTALL_TXT = """\
 ChoreBoy Code Studio - Installation Instructions
 =================================================
 
-1. Copy this entire folder to your ChoreBoy Home Folder.
+1. Copy this entire folder into `/home/default/` on the ChoreBoy.
 
-2. Open the folder in the ChoreBoy file manager.
+2. Keep the entire folder together.
+   Do not move `install_choreboy_code_studio.desktop` away from the
+   rest of this installer folder.
 
-3. Right-click the "install_choreboy_code_studio.desktop" file
+3. Open this copied folder from `/home/default/` in the ChoreBoy
+   file manager.
+
+4. Right-click the "install_choreboy_code_studio.desktop" file
    and select "Allow Launching" (you only need to do this once).
 
-4. Double-click "install_choreboy_code_studio.desktop" to start
+5. Double-click "install_choreboy_code_studio.desktop" to start
    the installer.
 
-5. Follow the on-screen wizard to choose where to install.
+6. Follow the on-screen wizard to choose where the Code Studio files
+   should live on disk.
 
-6. Once installed, launch ChoreBoy Code Studio from your
+7. The installer writes the application-menu entry (and optional
+   desktop shortcut) to hardcode the chosen installation directory.
+
+8. If you later move the installed Code Studio folder, rerun this
+   installer so the launcher points at the new location.
+
+9. Once installed, launch ChoreBoy Code Studio from your
    application menu or desktop shortcut.
 
-7. After a successful install, you can delete this installer
+10. After a successful install, you can delete this installer
    folder from your Home Folder.
 """
+
+
+def build_installer_desktop_entry() -> str:
+    """Return the launcher used to start the bundled installer."""
+    return INSTALLER_DESKTOP_TEMPLATE
+
+
+def build_install_instructions() -> str:
+    """Return human instructions shipped with the installer package."""
+    return INSTALL_TXT
 
 
 def _read_version() -> str:
@@ -174,11 +197,11 @@ def main() -> int:
 
     print("  Generating install_choreboy_code_studio.desktop ...")
     desktop_path = staging / "install_choreboy_code_studio.desktop"
-    desktop_path.write_text(INSTALLER_DESKTOP_TEMPLATE, encoding="utf-8")
+    desktop_path.write_text(build_installer_desktop_entry(), encoding="utf-8")
     desktop_path.chmod(desktop_path.stat().st_mode | 0o755)
 
     print("  Generating INSTALL.txt ...")
-    (staging / "INSTALL.txt").write_text(INSTALL_TXT, encoding="utf-8")
+    (staging / "INSTALL.txt").write_text(build_install_instructions(), encoding="utf-8")
 
     archive_path = dist_dir / f"{package_name}.zip"
     print(f"  Creating archive: {archive_path.name} ...")
