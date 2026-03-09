@@ -1,0 +1,94 @@
+{
+  "screenshots": [
+    {
+      "id": "manual_01_main_window",
+      "file": "manual_01_main_window.png",
+      "chapter": "01_quick_start",
+      "purpose": "Show launch-ready window and major layout areas"
+    },
+    {
+      "id": "manual_02_new_project_dialog",
+      "file": "manual_02_new_project_dialog.png",
+      "chapter": "01_quick_start",
+      "purpose": "Show template choices in New Project flow"
+    },
+    {
+      "id": "manual_03_run_log_success",
+      "file": "manual_03_run_log_success.png",
+      "chapter": "01_quick_start",
+      "purpose": "Show successful run output in Run Log"
+    },
+    {
+      "id": "manual_04_interface_tour",
+      "file": "manual_04_interface_tour.png",
+      "chapter": "02_interface_tour",
+      "purpose": "Show full interface with numbered callouts"
+    },
+    {
+      "id": "manual_05_open_project",
+      "file": "manual_05_open_project.png",
+      "chapter": "03_core_workflow",
+      "purpose": "Show Open Project operation"
+    },
+    {
+      "id": "manual_06_run_menu_modes",
+      "file": "manual_06_run_menu_modes.png",
+      "chapter": "03_core_workflow",
+      "purpose": "Show run mode commands for active file vs project"
+    },
+    {
+      "id": "manual_07_template_picker",
+      "file": "manual_07_template_picker.png",
+      "chapter": "04_projects_and_files",
+      "purpose": "Show project template picker choices"
+    },
+    {
+      "id": "manual_08_tree_context_menu",
+      "file": "manual_08_tree_context_menu.png",
+      "chapter": "04_projects_and_files",
+      "purpose": "Show right-click actions in project tree"
+    },
+    {
+      "id": "manual_09_find_in_files",
+      "file": "manual_09_find_in_files.png",
+      "chapter": "05_editing_and_navigation",
+      "purpose": "Show project-wide search results"
+    },
+    {
+      "id": "manual_10_run_toolbar_panels",
+      "file": "manual_10_run_toolbar_panels.png",
+      "chapter": "06_run_debug_console",
+      "purpose": "Show run/debug toolbar and bottom panels"
+    },
+    {
+      "id": "manual_11_settings_dialog",
+      "file": "manual_11_settings_dialog.png",
+      "chapter": "07_settings_customization",
+      "purpose": "Show settings dialog and scope switch"
+    },
+    {
+      "id": "manual_12_plugin_manager",
+      "file": "manual_12_plugin_manager.png",
+      "chapter": "08_plugins",
+      "purpose": "Show plugin manager state and controls"
+    },
+    {
+      "id": "manual_13_package_project",
+      "file": "manual_13_package_project.png",
+      "chapter": "09_packaging_backup",
+      "purpose": "Show project packaging flow"
+    },
+    {
+      "id": "manual_14_project_health_check",
+      "file": "manual_14_project_health_check.png",
+      "chapter": "10_troubleshooting",
+      "purpose": "Show project health check report"
+    },
+    {
+      "id": "manual_15_support_bundle",
+      "file": "manual_15_support_bundle.png",
+      "chapter": "10_troubleshooting",
+      "purpose": "Show support bundle generation confirmation"
+    }
+  ]
+}
