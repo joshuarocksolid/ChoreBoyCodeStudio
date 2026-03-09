@@ -176,6 +176,64 @@ Improvement:
 - roughly **1.45x faster** at ~1k files
 - roughly **1.9x faster** at ~10k files
 
+## 0.3) Slice 5 — background diagnostics dispatch
+
+### Why this slice
+
+Planning measurements showed that `analyze_python_file()` can take hundreds of milliseconds on large/import-heavy files, and the shell previously executed linting synchronously in:
+- save-triggered lint
+- tab-change lint
+- realtime lint timer
+- bulk relint of open files
+
+This slice focuses on **editor responsiveness**, not analyzer throughput.
+
+### Changed files
+
+- `app/shell/main_window.py`
+- `tests/unit/shell/test_main_window_lint_probe_policy.py`
+
+### Change summary
+
+- `_render_lint_diagnostics_for_file()` now schedules diagnostics through `BackgroundTaskRunner`.
+- `_lint_all_open_files()` now schedules per-file lint work instead of running each analysis inline.
+- Existing runtime-probe policy is preserved:
+  - manual lint still allows runtime import probing
+  - routine flows still disable it
+
+### Validation
+
+Targeted suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_main_window_lint_probe_policy.py tests/unit/intelligence/test_diagnostics_service.py
+```
+
+Result:
+- **34 passed**
+
+Performance regression suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_responsiveness_thresholds.py tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Focused responsiveness measurement
+
+A targeted AppRun benchmark monkeypatched `analyze_python_file()` to sleep for 250 ms, then measured `_render_lint_diagnostics_for_file(..., trigger='save')`.
+
+Observed:
+- lint handler return time: **0.42 ms**
+- background task still completed successfully afterward
+
+### Important note
+
+- A brief attempt at deeper analyzer-internal refactoring did **not** produce reliable throughput improvements on import-heavy workloads, so it was not kept.
+- This slice intentionally limits itself to the shell-level responsiveness fix with strong evidence.
+
 ## 1) Environment and validation notes
 
 - Repository branch: `cursor/performance-audit-report-4d51`

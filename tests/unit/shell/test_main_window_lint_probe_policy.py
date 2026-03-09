@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -13,6 +14,14 @@ from app.core import constants  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+
+class _FakeBackgroundTasks:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def run(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
 
 
 def _build_window_stub() -> MainWindow:
@@ -29,6 +38,7 @@ def _build_window_stub() -> MainWindow:
     window_any._intelligence_runtime_settings = SimpleNamespace(metrics_logging_enabled=False)
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: None)
+    window_any._background_tasks = _FakeBackgroundTasks()
     window_any._push_diagnostics_to_editor = lambda *_args, **_kwargs: None
     window_any._update_tab_diagnostic_indicator = lambda *_args, **_kwargs: None
     window_any._render_merged_problems_panel = lambda: None
@@ -38,6 +48,7 @@ def _build_window_stub() -> MainWindow:
 
 def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_stub()
+    window_any = cast(Any, window)
     captured: list[bool] = []
 
     def _fake_analyze(*_args, **kwargs):  # type: ignore[no-untyped-def]
@@ -47,12 +58,15 @@ def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.Mon
     monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
 
     MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="manual")
+    background_call = window_any._background_tasks.calls[0]
+    background_call["task"](threading.Event())
 
     assert captured == [True]
 
 
 def test_render_lint_save_trigger_disables_runtime_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_stub()
+    window_any = cast(Any, window)
     captured: list[bool] = []
 
     def _fake_analyze(*_args, **kwargs):  # type: ignore[no-untyped-def]
@@ -62,6 +76,8 @@ def test_render_lint_save_trigger_disables_runtime_probe(monkeypatch: pytest.Mon
     monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
 
     MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="save")
+    background_call = window_any._background_tasks.calls[0]
+    background_call["task"](threading.Event())
 
     assert captured == [False]
 
@@ -82,5 +98,8 @@ def test_lint_all_open_files_disables_runtime_probe(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
 
     MainWindow._lint_all_open_files(window)
+    assert len(window_any._background_tasks.calls) == 2
+    for background_call in window_any._background_tasks.calls:
+        background_call["task"](threading.Event())
 
     assert captured == [False, False]
