@@ -477,7 +477,7 @@ def build_menu_stubs(
         actions,
         "shell.action.run.stop",
         "Stop",
-        "Ctrl+F2",
+        "Shift+F2",
         callback=callback_registry.on_stop,
         shortcut_overrides=shortcut_overrides,
     )
