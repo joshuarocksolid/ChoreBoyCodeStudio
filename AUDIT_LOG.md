@@ -107,6 +107,50 @@ Auditor mode: deep skeptical audit (evidence-first)
   - `tests/unit/project/test_project_service.py`
   - `tests/integration/project/test_project_import_open.py`
 
+---
+
+## 2026-03-09 addendum — built-in pytest runner contract drift
+
+### Confirmed behavior before fix
+- `app/run/test_runner_service.py` previously:
+  - built direct AppRun payloads using `pytest.main(['-q'])`
+  - omitted required `--import-mode=importlib`
+  - preferred `.venv` runtimes despite repo/runtime guidance saying no virtualenv
+  - ignored repository-local `run_tests.py`
+- Reproduction:
+  - `run_pytest_project('/workspace')` returned:
+    - `RETURN_CODE 2`
+    - `FAILURE_COUNT 0`
+  - built command was:
+    - `['/opt/freecad/AppRun', '-c', "import sys;import pytest;sys.exit(pytest.main(['-q']))"]`
+
+### Commands run after fix
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Result: **passed**
+- Coverage now verifies:
+  - `--import-mode=importlib` is always included
+  - `run_tests.py` is preferred when present in the project root
+  - runtime selection no longer walks `.venv` paths by default
+  - `CBCS_PYTEST_EXECUTABLE` still works as an explicit override
+
+#### `python3 -c "from app.run.test_runner_service import run_pytest_project; ..."`
+- Result: **passed**
+- Key output after fix:
+  - `RETURN_CODE 1`
+  - command:
+    - `['/opt/freecad/AppRun', '-c', "import runpy, sys; ... runpy.run_path('/workspace/run_tests.py', run_name='__main__')"]`
+- This changed the repo repro from an immediate collection/bootstrap failure (`2`) to the real failing-test result (`1`).
+
+### Fixes implemented
+- `app/run/test_runner_service.py`
+  - now injects `--import-mode=importlib` into pytest args
+  - prefers project-local `run_tests.py` when present
+  - removes implicit `.venv` runtime discovery
+  - keeps `CBCS_PYTEST_EXECUTABLE` as the explicit override path
+- tests updated:
+  - `tests/unit/run/test_test_runner_service.py`
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`

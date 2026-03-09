@@ -9,9 +9,15 @@ from shutil import which
 import subprocess
 import time
 
-from app.bootstrap.paths import resolve_app_root
 from app.run.problem_parser import ProblemEntry
-from app.run.runtime_launch import is_freecad_runtime_executable, resolve_runtime_executable
+from app.run.runtime_launch import (
+    build_runpy_bootstrap_payload,
+    is_freecad_runtime_executable,
+    resolve_runtime_executable,
+)
+
+_IMPORT_MODE_ARG = "--import-mode=importlib"
+_RUN_TESTS_FILENAME = "run_tests.py"
 
 
 @dataclass(frozen=True)
@@ -50,12 +56,19 @@ def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: i
 
 def _build_pytest_command(*, project_root: str, pytest_args: list[str]) -> list[str]:
     runtime_executable = _select_pytest_runtime(project_root=project_root)
-    normalized_args = [str(arg) for arg in pytest_args]
+    normalized_args = _normalized_pytest_args(pytest_args)
+    run_tests_script = _project_run_tests_script(project_root)
+    if run_tests_script is not None:
+        if is_freecad_runtime_executable(runtime_executable):
+            payload = build_runpy_bootstrap_payload(
+                script_path=str(run_tests_script),
+                path_entry=project_root,
+                argv=[str(run_tests_script), *normalized_args],
+            )
+            return [runtime_executable, "-c", payload]
+        return [runtime_executable, str(run_tests_script), *normalized_args]
     if is_freecad_runtime_executable(runtime_executable):
-        payload = _build_apprun_pytest_payload(
-            pytest_args=normalized_args,
-            extra_sys_paths=_candidate_pytest_site_packages(project_root=project_root),
-        )
+        payload = _build_apprun_pytest_payload(pytest_args=normalized_args)
         return [runtime_executable, "-c", payload]
     return [runtime_executable, "-m", "pytest", *normalized_args]
 
@@ -70,17 +83,16 @@ def _select_pytest_runtime(*, project_root: str) -> str:
     raise RuntimeError(
         "Pytest is not available in detected runtimes. "
         f"Tried: {attempted_text}. "
-        "Install pytest in the project/app virtual environment or runtime."
+        "Install pytest in the configured runtime or set CBCS_PYTEST_EXECUTABLE."
     )
 
 
 def _candidate_pytest_runtimes(project_root: str) -> list[str]:
+    _ = project_root
     candidates: list[str] = []
     seen: set[str] = set()
     raw_candidates = [
         os.environ.get("CBCS_PYTEST_EXECUTABLE"),
-        str(Path(project_root).expanduser().resolve() / ".venv" / "bin" / "python"),
-        str(resolve_app_root() / ".venv" / "bin" / "python"),
         resolve_runtime_executable(None),
     ]
     for raw_candidate in raw_candidates:
@@ -89,27 +101,6 @@ def _candidate_pytest_runtimes(project_root: str) -> list[str]:
             continue
         seen.add(normalized)
         candidates.append(normalized)
-    return candidates
-
-
-def _candidate_pytest_site_packages(*, project_root: str) -> list[str]:
-    candidates: list[str] = []
-    seen: set[str] = set()
-    roots = [
-        Path(project_root).expanduser().resolve() / ".venv",
-        resolve_app_root() / ".venv",
-    ]
-    for root in roots:
-        if not root.exists() or not root.is_dir():
-            continue
-        for site_packages in sorted(root.glob("lib/python*/site-packages")):
-            if not site_packages.is_dir():
-                continue
-            normalized = str(site_packages)
-            if normalized in seen:
-                continue
-            seen.add(normalized)
-            candidates.append(normalized)
     return candidates
 
 
@@ -131,15 +122,10 @@ def _normalize_runtime_candidate(candidate: str | None) -> str | None:
 
 
 def _runtime_supports_pytest(runtime_executable: str, *, project_root: str) -> bool:
+    _ = project_root
     command: list[str]
     if is_freecad_runtime_executable(runtime_executable):
-        command = [
-            runtime_executable,
-            "-c",
-            _build_apprun_pytest_probe_payload(
-                extra_sys_paths=_candidate_pytest_site_packages(project_root=project_root)
-            ),
-        ]
+        command = [runtime_executable, "-c", _build_apprun_pytest_probe_payload()]
     else:
         command = [runtime_executable, "-c", "import pytest"]
     try:
@@ -155,21 +141,36 @@ def _runtime_supports_pytest(runtime_executable: str, *, project_root: str) -> b
     return completed.returncode == 0
 
 
-def _build_apprun_pytest_probe_payload(*, extra_sys_paths: list[str]) -> str:
+def _build_apprun_pytest_probe_payload() -> str:
     statements = ["import sys;"]
-    for extra_path in extra_sys_paths:
-        statements.append(f"sys.path.insert(0, {extra_path!r}) if {extra_path!r} not in sys.path else None;")
     statements.append("import pytest;sys.exit(0)")
     return "".join(statements)
 
 
-def _build_apprun_pytest_payload(*, pytest_args: list[str], extra_sys_paths: list[str]) -> str:
+def _build_apprun_pytest_payload(*, pytest_args: list[str]) -> str:
     statements = ["import sys;"]
-    for extra_path in extra_sys_paths:
-        statements.append(f"sys.path.insert(0, {extra_path!r}) if {extra_path!r} not in sys.path else None;")
     statements.append("import pytest;")
     statements.append(f"sys.exit(pytest.main({pytest_args!r}))")
     return "".join(statements)
+
+
+def _normalized_pytest_args(pytest_args: list[str]) -> list[str]:
+    normalized_args = [str(arg) for arg in pytest_args]
+    if _IMPORT_MODE_ARG not in normalized_args:
+        insert_at = len(normalized_args)
+        for index, arg in enumerate(normalized_args):
+            if not arg.startswith("-"):
+                insert_at = index
+                break
+        normalized_args.insert(insert_at, _IMPORT_MODE_ARG)
+    return normalized_args
+
+
+def _project_run_tests_script(project_root: str) -> Path | None:
+    candidate = Path(project_root).expanduser().resolve() / _RUN_TESTS_FILENAME
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
 
 
 def _run_pytest_command(project_root: str, command: list[str], *, timeout_seconds: int) -> PytestRunResult:

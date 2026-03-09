@@ -49,6 +49,23 @@ This audit pass clarified and documented the actual ChoreBoy contract:
 - **Suggested fix:** never infer package `__init__.py` as a runnable entrypoint for console-script targets; fall back to real runnable files when available, otherwise fail with actionable validation.
 - **Fix applied:** ✅ on 2026-03-09
 
+## 13) Built-in pytest runner diverged from documented runtime contract
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/run/test_runner_service.py`, `tests/unit/run/test_test_runner_service.py`  
+- **Evidence:** prior built-in command for this repo was:
+  - `['/opt/freecad/AppRun', '-c', "import sys;import pytest;sys.exit(pytest.main(['-q']))"]`
+  - running `run_pytest_project('/workspace')` returned `RETURN_CODE 2`
+  - the repo’s documented/supported contract requires `run_tests.py` and `--import-mode=importlib`
+- **Reproduction steps:**
+  1. Call `run_pytest_project('/workspace')`.
+  2. Inspect `result.command`.
+  3. Observe missing `run_tests.py` and missing `--import-mode=importlib`.
+  4. Observe return code `2` instead of the real test-result code.
+- **Why it happens:** helper built raw `pytest.main(['-q'])` AppRun payloads and attempted `.venv` discovery instead of following repository/runtime rules.
+- **Suggested fix:** normalize args with `--import-mode=importlib`, prefer project-local `run_tests.py` when present, and stop implicit `.venv` runtime discovery.
+- **Fix applied:** ✅ on 2026-03-09
+
 ## Executive summary
 
 Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  
