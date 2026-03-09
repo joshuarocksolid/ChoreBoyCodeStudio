@@ -10,7 +10,7 @@ Use:
 
 This creates a distributable project folder with launcher metadata.
 
-![Figure 13 — Package Project flow](../screenshots/manual_13_package_project.png)
+![Figure 13 — Package Project button in the main window](../screenshots/manual_13_package_project.png)
 
 ## Share projects with other users
 

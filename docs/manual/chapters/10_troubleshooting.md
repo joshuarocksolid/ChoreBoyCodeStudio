@@ -9,7 +9,7 @@ Use this chapter when something does not work as expected.
 3. Look at startup status in the status bar.
 4. Run `Tools > Project Health Check`.
 
-![Figure 14 — Project Health Check report](../screenshots/manual_14_project_health_check.png)
+![Figure 14 — Tools menu with Project Health Check command](../screenshots/manual_14_project_health_check.png)
 
 ## Problem: project will not open
 
@@ -96,5 +96,5 @@ When you need help from another person:
 2. Use `Tools > Generate Support Bundle`.
 3. Share generated bundle and project folder.
 
-![Figure 15 — Support bundle generation](../screenshots/manual_15_support_bundle.png)
+![Figure 15 — Tools menu with Generate Support Bundle command](../screenshots/manual_15_support_bundle.png)
 

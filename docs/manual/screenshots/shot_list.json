@@ -52,7 +52,7 @@
       "id": "manual_09_find_in_files",
       "file": "manual_09_find_in_files.png",
       "chapter": "05_editing_and_navigation",
-      "purpose": "Show project-wide search results"
+      "purpose": "Show project-wide search panel and query input"
     },
     {
       "id": "manual_10_run_toolbar_panels",
@@ -64,31 +64,31 @@
       "id": "manual_11_settings_dialog",
       "file": "manual_11_settings_dialog.png",
       "chapter": "07_settings_customization",
-      "purpose": "Show settings dialog and scope switch"
+      "purpose": "Show File menu path to Settings"
     },
     {
       "id": "manual_12_plugin_manager",
       "file": "manual_12_plugin_manager.png",
       "chapter": "08_plugins",
-      "purpose": "Show plugin manager state and controls"
+      "purpose": "Show Tools menu access to Plugin Manager"
     },
     {
       "id": "manual_13_package_project",
       "file": "manual_13_package_project.png",
       "chapter": "09_packaging_backup",
-      "purpose": "Show project packaging flow"
+      "purpose": "Show Package Project entry point in main UI"
     },
     {
       "id": "manual_14_project_health_check",
       "file": "manual_14_project_health_check.png",
       "chapter": "10_troubleshooting",
-      "purpose": "Show project health check report"
+      "purpose": "Show Tools menu access to Project Health Check"
     },
     {
       "id": "manual_15_support_bundle",
       "file": "manual_15_support_bundle.png",
       "chapter": "10_troubleshooting",
-      "purpose": "Show support bundle generation confirmation"
+      "purpose": "Show Tools menu access to Generate Support Bundle"
     }
   ]
 }

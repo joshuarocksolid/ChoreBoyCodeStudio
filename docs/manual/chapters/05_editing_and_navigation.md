@@ -15,10 +15,10 @@ Use this for focused edits in one file.
 
 Use `Ctrl+Shift+F`.
 
-This searches across your project and groups results by file.
-Click a result to preview, double-click to open permanently.
+This opens the project-wide search panel and scans files for your text.
+Click a result to preview, and double-click to open permanently.
 
-![Figure 9 — Find in Files results](../screenshots/manual_09_find_in_files.png)
+![Figure 9 — Find in Files search panel](../screenshots/manual_09_find_in_files.png)
 
 ## Quick Open
 

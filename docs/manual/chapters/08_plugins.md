@@ -6,7 +6,7 @@ Open plugin tools from:
 
 - `Tools > Plugin Manager...`
 
-![Figure 12 — Plugin Manager](../screenshots/manual_12_plugin_manager.png)
+![Figure 12 — Tools menu path to Plugin Manager](../screenshots/manual_12_plugin_manager.png)
 
 ## What plugins are good for
 

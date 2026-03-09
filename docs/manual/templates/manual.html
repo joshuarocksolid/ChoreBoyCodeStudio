@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+{{ css }}
+  </style>
+</head>
+<body>
+  <main class="manual">
+    <section class="cover page-break-after">
+      <h1>{{ title }}</h1>
+      <p class="subtitle">{{ subtitle }}</p>
+      <p class="meta">Version {{ version }} · {{ build_date }}</p>
+      <p class="meta">Letter format · Full color</p>
+    </section>
+
+    <section class="toc page-break-after">
+      <h1>Table of Contents</h1>
+      <ol>
+{% for item in toc %}
+        <li class="toc-level-{{ item.level }}"><a href="#{{ item.anchor }}">{{ item.label }}</a></li>
+{% endfor %}
+      </ol>
+    </section>
+
+{% for chapter in chapters %}
+    <section class="chapter">
+{{ chapter.html }}
+    </section>
+{% endfor %}
+  </main>
+</body>
+</html>

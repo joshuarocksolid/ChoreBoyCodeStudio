@@ -2,7 +2,7 @@
 
 This chapter explains what each part of the window does.
 
-![Figure 4 — Numbered UI tour](../screenshots/manual_04_interface_tour.png)
+![Figure 4 — Interface overview](../screenshots/manual_04_interface_tour.png)
 
 ## 1. Menu bar
 

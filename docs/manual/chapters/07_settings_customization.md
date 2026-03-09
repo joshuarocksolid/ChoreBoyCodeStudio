@@ -4,7 +4,7 @@ Use Settings to make Code Studio fit your workflow.
 
 Open with `File > Settings...`.
 
-![Figure 11 — Settings dialog](../screenshots/manual_11_settings_dialog.png)
+![Figure 11 — File menu path to Settings](../screenshots/manual_11_settings_dialog.png)
 
 ## Global vs project scope
 

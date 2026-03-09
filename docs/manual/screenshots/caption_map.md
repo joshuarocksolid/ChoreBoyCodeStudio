@@ -8,11 +8,11 @@
 - `manual_06_run_menu_modes.png` — Run menu showing active-file vs project commands.
 - `manual_07_template_picker.png` — New project template picker.
 - `manual_08_tree_context_menu.png` — Project tree right-click context menu.
-- `manual_09_find_in_files.png` — Find in Files result list.
+- `manual_09_find_in_files.png` — Find in Files panel and query controls.
 - `manual_10_run_toolbar_panels.png` — Run/Debug toolbar with bottom panels.
-- `manual_11_settings_dialog.png` — Settings dialog with scope selection.
-- `manual_12_plugin_manager.png` — Plugin Manager window.
-- `manual_13_package_project.png` — Package Project action flow.
-- `manual_14_project_health_check.png` — Project Health Check report.
-- `manual_15_support_bundle.png` — Support bundle generation confirmation.
+- `manual_11_settings_dialog.png` — File menu path to open Settings.
+- `manual_12_plugin_manager.png` — Tools menu path to Plugin Manager.
+- `manual_13_package_project.png` — Package Project button in the main window.
+- `manual_14_project_health_check.png` — Tools menu with Project Health Check command.
+- `manual_15_support_bundle.png` — Tools menu with Generate Support Bundle command.
 
