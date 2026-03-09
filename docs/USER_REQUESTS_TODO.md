@@ -146,10 +146,10 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Request** | Add a "Run" option to the existing right-click context menu on the project file tree. When a file is right-clicked, the context menu (which already has New File, Rename, Delete, Duplicate, Copy, Cut, Paste, Copy Path, etc.) should also include a "Run" action that executes the selected file through the runner. |
 | **Affected code** | `app/shell/main_window.py` — `_show_single_item_context_menu()` (line 3374) builds the existing `QMenu`. Add a "Run" action to this menu (for non-directory files, ideally `.py` only). When chosen, call `self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=absolute_path)` which already accepts an `entry_file` parameter (line 1991). |
-| **Notes** | The context menu and run infrastructure both already exist. The wiring is straightforward: add the menu action, gate it to files (not directories), and invoke the existing `_start_session` with the file path. Could optionally restrict to `.py` files only and disable/hide the action when a run is already in progress. |
+| **Notes** | Implemented: file-tree context menu now includes **Run** for Python files and routes execution through the existing run session path. Verified in smoke test report group 22 (#11). |
 
 ---
 
@@ -157,10 +157,10 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Request** | Three related changes: **(A)** Run (F5) and Debug (Ctrl+F5) should execute the file currently open and focused in the editor, not the project's `default_entry`. Currently `default_entry` is inferred at project-open time (often the alphabetically first `.py` file), so editing `probe6` and clicking Debug runs `probe1`. **(B)** Add separate "Run Project" (Shift+F5) and "Debug Project" (Ctrl+Shift+F5) actions that always run from the project entry point. **(C)** Let users explicitly set the project entry point via a "Set as Entry Point" right-click option in the file tree. The entry point file should be visually distinguished with bold text and a play-icon badge. |
 | **Affected code** | `app/shell/main_window.py` — `_handle_run_action`, `_handle_debug_action`, `_build_tree_item`, `_show_single_item_context_menu`. `app/shell/menus.py` — new Run Project / Debug Project menu actions. `app/shell/toolbar.py` — new toolbar buttons. `app/shell/toolbar_icons.py` — new icons. `app/shell/actions.py` — new enabled-state fields. `app/shell/icon_provider.py` — entry-point file icon. `app/run/run_service.py` — entry resolution (no changes needed, already supports `entry_file` override). |
-| **Notes** | Packaging (`app/packaging/packager.py`) already uses `metadata.default_entry` for the `.desktop` Exec line, so the explicit entry point set by the user carries through to packaging automatically. |
+| **Notes** | Implemented: F5/Ctrl+F5 run/debug active file, Shift+F5/Ctrl+Shift+F5 run/debug project entry, and **Set as Entry Point** updates `cbcs/project.json` with visual tree indicator. Verified in smoke test report group 22 (#12). |
 
 ---
 
@@ -179,10 +179,10 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Request** | When the configured entry file (e.g. `default_entry` in `cbcs/project.json`) is deleted or missing from disk, the editor should detect this gracefully and prompt the user to select a new entry file rather than failing silently or crashing. |
 | **Affected code** | `app/shell/main_window.py` (entry file resolution and run invocation), `app/run/run_service.py` / `app/run/execution_context.py` (entry path existence check), `app/project/project_service.py` (project metadata loading). |
-| **Notes** | Related to request #12 (explicit entry point management). The detection could happen at run time (when the user clicks Run/Debug) and/or proactively via filesystem watching. A dialog or inline prompt should let the user pick a replacement `.py` file from the project tree. |
+| **Notes** | Implemented: run/debug now detects missing entry file at launch time, prompts for replacement `.py`, and persists the updated entry point. Verified in smoke test report group 22 (#14). |
 
 ---
 
@@ -190,10 +190,10 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Request** | Add a "New Window" action to the File menu (like VS Code's `Ctrl+Shift+N`) that launches a fresh, independent editor instance so the user can quickly open a separate project in a new window. |
 | **Affected code** | `app/shell/menus.py` — add a `shell.action.file.newWindow` action to the File menu (between "New Project from Template" and "Open Project", or after "Open Recent" — matching VS Code's placement). Add an `on_new_window` callback to `MenuCallbacks`. `app/shell/main_window.py` — implement the callback that spawns a new editor process. The mechanism should mirror `dev_launch_editor.py`'s `build_apprun_command()` + `subprocess.Popen(..., start_new_session=True)` pattern, launching a detached AppRun child running `run_editor.py`. `app/shell/shortcut_preferences.py` — register a default shortcut (e.g. `Ctrl+Shift+N`). |
-| **Notes** | No shared state between windows — each is a fully independent process, consistent with the filesystem-first, separate-process architecture. |
+| **Notes** | Implemented: **File > New Window** and `Ctrl+Shift+N` launch a detached, independent editor process. Verified in smoke test report group 22 (#15). |
 
 ---
 
