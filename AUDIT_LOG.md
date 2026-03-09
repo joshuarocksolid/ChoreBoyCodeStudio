@@ -14,7 +14,7 @@ Auditor mode: deep skeptical audit (evidence-first)
   - plugin runtime log diagnostics persistence
   - drag/drop unit-test contract mismatch
 - Remaining non-fixed finding explicitly carried in the report:
-  - delete-to-trash semantics rely on hidden `~/.local` and may silently fall back to permanent delete on real ChoreBoy systems
+  - none currently at the same confidence level; remaining risk areas are called out in the report
 
 ---
 
@@ -232,6 +232,37 @@ Auditor mode: deep skeptical audit (evidence-first)
 #### `python3 run_tests.py -v --import-mode=importlib`
 - Result: **passed**
 - Full suite now completes successfully in this environment after the audit fixes and the drag/drop test correction.
+
+---
+
+## 2026-03-09 addendum — delete semantics now match UI contract
+
+### Confirmed behavior before fix
+- `delete_path(...)` defaulted to `use_trash=True`
+- project tree delete flows called `delete_path(target_path)` with that default
+- UI confirmation text in `MainWindow` said:
+  - `This action cannot be undone.`
+- implementation therefore mismatched the user-facing contract and depended on hidden `~/.local/share/Trash/files`
+- any `OSError` in trash handling silently fell back to permanent deletion
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_file_operations.py tests/unit/project/test_bulk_file_operations.py`
+- Result: **passed**
+- Coverage now verifies:
+  - default delete is permanent
+  - explicit `use_trash=True` still moves to trash when requested
+  - bulk delete callers using `use_trash=False` remain green
+
+#### `python3 run_tests.py -v --import-mode=importlib`
+- Result: **passed**
+
+### Fix implemented
+- `app/project/file_operations.py`
+  - changed `delete_path(..., use_trash=False)` default to permanent delete
+- `tests/unit/project/test_file_operations.py`
+  - now asserts default delete matches permanent-delete semantics
+  - keeps explicit trash behavior under `use_trash=True` covered
 
 ## 1) Baseline validation and environment reality
 

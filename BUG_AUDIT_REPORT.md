@@ -79,15 +79,29 @@ This audit pass clarified and documented the actual ChoreBoy contract:
 - **Suggested fix:** persist plugin host stderr/exit diagnostics under `plugins/logs/plugin_host.log` and surface the log path / failure details in plugin diagnostics UI.
 - **Fix applied:** ✅ on 2026-03-09
 
+## 15) Default delete behavior contradicted the UI warning and depended on hidden trash semantics
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/project/file_operations.py`, `tests/unit/project/test_file_operations.py`  
+- **Evidence:** project tree delete confirmations warned `This action cannot be undone.`, but `delete_path(...)` defaulted to `use_trash=True`, routing deletes through hidden `~/.local/share/Trash/files` and silently falling back to permanent deletion on `OSError`.
+- **Reproduction steps:**
+  1. Inspect `delete_path(...)` default parameters and `ProjectTreeActionCoordinator.handle_delete(...)`.
+  2. Compare with the UI delete confirmation wording in `MainWindow`.
+  3. Observe mismatch between user-facing semantics and implementation.
+- **Why it happens:** filesystem helper defaulted to trash semantics, while the UI and constrained-environment behavior already treated delete as irreversible.
+- **Suggested fix:** make default delete semantics permanent so code matches the existing UI contract; keep trash behavior explicit/opt-in only.
+- **Fix applied:** ✅ on 2026-03-09
+
 ## Executive summary
 
-Deep skeptical audit identified **14 confirmed bugs / implementation failures with concrete evidence**, plus **1 likely bug / strong suspicion** and **1 test-contract mismatch**.
+Deep skeptical audit identified **15 confirmed bugs / implementation failures with concrete evidence**, plus **1 test-contract mismatch**.
 
 Highest-value confirmed issues addressed in this pass:
 - ChoreBoy distribution installer packaging contract was under-documented and easy to misuse
 - imported `pyproject.toml` package-callable targets silently resolved to `__init__.py`
 - built-in pytest runner diverged from the documented `run_tests.py` + `--import-mode=importlib` contract
 - plugin runtime failures were not persisted to plugin log diagnostics
+- default delete behavior contradicted the UI’s permanent-delete warning and depended on hidden trash semantics
 - a stale drag/drop test failure masked a test-contract mismatch rather than a product bug
 
 Previously confirmed audit fixes from the earlier pass remain included here:
@@ -264,19 +278,7 @@ Final validation state:
 
 ## Likely bugs / strong suspicions
 
-## 1) Delete-to-trash path depends on hidden `~/.local` and silently falls back to permanent delete
-- **Severity:** Medium  
-- **Confidence:** Medium-High  
-- **File(s):** `app/project/file_operations.py`  
-- **Evidence:** delete flow tries hidden system trash path:
-  - `Path.home() / ".local" / "share" / "Trash" / "files"`
-  - on any `OSError`, implementation silently falls back to permanent deletion
-- **Reproduction steps:**
-  1. Inspect `delete_path(..., use_trash=True)`.
-  2. Note ChoreBoy discovery/docs warning that hidden directories are unreliable.
-  3. Observe any trash-path failure becomes permanent delete without a user-visible distinction.
-- **Why it is suspicious:** on ChoreBoy, hidden-directory behavior has already caused reliability issues elsewhere; this path combines that risk with silent escalation from trash semantics to permanent deletion.
-- **Suggested fix:** either use an explicit visible trash/recycle path owned by Code Studio, or surface when delete is falling back to permanent removal instead of silently changing semantics.
+- No additional high-confidence likely bugs remain after the applied fixes in this audit pass.
 
 ---
 
@@ -304,7 +306,7 @@ Final validation state:
 - Tree-sitter runtime loader/highlighter behavior under unusual vendor/runtime failures.
 - End-to-end plugin host IPC under repeated crash/restart + concurrent command pressure.
 - Cross-platform path semantics for plugin export/import edge cases beyond Linux.
-- Filesystem delete/trash semantics on real ChoreBoy target.
+- Optional explicit `use_trash=True` behavior on a real ChoreBoy target.
 
 ---
 
@@ -339,7 +341,8 @@ Final validation state:
 12. `dd18bb5` — Fix pyproject package entry inference  
 13. `17aa650` — Align built-in pytest runner contract  
 14. `f89ced1` — Persist plugin runtime diagnostics  
-15. `9700bb2` — Align drag-drop test with widget contract
+15. `9700bb2` — Align drag-drop test with widget contract  
+16. `TBD` — Match default delete semantics to permanent-delete UI contract
 
 ---
 
@@ -351,9 +354,8 @@ Final validation state:
    - repeated runtime failure quarantine flow
 2. Run manual tree-file operations in GUI:
    - invalid names, drag-drop folder to child, bulk cut/paste edge cases
-3. Exercise delete/trash behavior on a real ChoreBoy target:
-   - verify whether hidden `~/.local/share/Trash/files` is reliable
-   - verify whether fallback to permanent delete is user-visible
+3. Exercise optional explicit `use_trash=True` behavior on a real ChoreBoy target:
+   - verify whether hidden `~/.local/share/Trash/files` is reliable when explicitly requested
 4. Package and launch smoke test with valid and invalid entrypoint paths.
 5. Run targeted pyright review on touched modules after reducing PySide noise.
 
