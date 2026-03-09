@@ -50,18 +50,9 @@ def find_references(
     if not root.exists():
         return ReferenceSearchResult(symbol_name=symbol_name, hits=[])
 
-    definition_positions = _collect_definition_positions(root, symbol_name=symbol_name)
     hits: list[ReferenceHit] = []
-    for file_path in sorted(root.rglob("*.py")):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
-        hits.extend(
-            _collect_references_from_file(
-                file_path=file_path.resolve(),
-                symbol_name=symbol_name,
-                definition_positions=definition_positions,
-            )
-        )
+    for file_path in _iter_python_files(root):
+        hits.extend(_collect_references_from_file(file_path=file_path, symbol_name=symbol_name))
     hits.sort(key=lambda item: (item.file_path, item.line_number, item.column_number))
     return ReferenceSearchResult(symbol_name=symbol_name, hits=hits)
 
@@ -81,20 +72,12 @@ def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
     return symbol
 
 
-def _collect_definition_positions(project_root: Path, *, symbol_name: str) -> set[tuple[str, int, int]]:
-    positions: set[tuple[str, int, int]] = set()
-    for file_path in sorted(project_root.rglob("*.py")):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
-        positions.update(_collect_file_definitions(file_path.resolve(), symbol_name=symbol_name))
-    return positions
-
-
-def _collect_file_definitions(file_path: Path, *, symbol_name: str) -> set[tuple[str, int, int]]:
-    try:
-        source = file_path.read_text(encoding="utf-8")
-    except OSError:
-        return set()
+def _collect_file_definitions(
+    file_path: Path,
+    *,
+    source: str,
+    symbol_name: str,
+) -> set[tuple[str, int, int]]:
     try:
         syntax_tree = ast.parse(source)
     except SyntaxError:
@@ -102,30 +85,31 @@ def _collect_file_definitions(file_path: Path, *, symbol_name: str) -> set[tuple
 
     source_lines = source.splitlines()
     positions: set[tuple[str, int, int]] = set()
+    file_path_text = str(file_path)
     for node in ast.walk(syntax_tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == symbol_name:
             column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-            positions.add((str(file_path), int(node.lineno), column))
+            positions.add((file_path_text, int(node.lineno), column))
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == symbol_name:
-                    positions.add((str(file_path), int(target.lineno), int(target.col_offset)))
+                    positions.add((file_path_text, int(target.lineno), int(target.col_offset)))
         elif isinstance(node, ast.AnnAssign):
             target = node.target
             if isinstance(target, ast.Name) and target.id == symbol_name:
-                positions.add((str(file_path), int(target.lineno), int(target.col_offset)))
+                positions.add((file_path_text, int(target.lineno), int(target.col_offset)))
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 alias_name = alias.asname or alias.name.split(".")[0]
                 if alias_name == symbol_name:
                     column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-                    positions.add((str(file_path), int(node.lineno), column))
+                    positions.add((file_path_text, int(node.lineno), column))
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 alias_name = alias.asname or alias.name
                 if alias_name == symbol_name:
                     column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-                    positions.add((str(file_path), int(node.lineno), column))
+                    positions.add((file_path_text, int(node.lineno), column))
     return positions
 
 
@@ -133,13 +117,17 @@ def _collect_references_from_file(
     *,
     file_path: Path,
     symbol_name: str,
-    definition_positions: set[tuple[str, int, int]],
 ) -> list[ReferenceHit]:
     try:
         source = file_path.read_text(encoding="utf-8")
     except OSError:
         return []
 
+    definition_positions = _collect_file_definitions(
+        file_path,
+        source=source,
+        symbol_name=symbol_name,
+    )
     line_lookup = source.splitlines()
     hits: list[ReferenceHit] = []
     try:
@@ -147,16 +135,17 @@ def _collect_references_from_file(
     except (tokenize.TokenError, IndentationError):
         return []
 
+    file_path_text = str(file_path)
     for token in token_stream:
         if token.type != tokenize.NAME or token.string != symbol_name:
             continue
         line_number, column = token.start
         line_text = line_lookup[line_number - 1] if 0 < line_number <= len(line_lookup) else ""
-        position_key = (str(file_path), int(line_number), int(column))
+        position_key = (file_path_text, int(line_number), int(column))
         hits.append(
             ReferenceHit(
                 symbol_name=symbol_name,
-                file_path=str(file_path),
+                file_path=file_path_text,
                 line_number=int(line_number),
                 column_number=int(column),
                 line_text=line_text.strip(),
@@ -164,6 +153,14 @@ def _collect_references_from_file(
             )
         )
     return hits
+
+
+def _iter_python_files(project_root: Path) -> list[Path]:
+    return [
+        file_path
+        for file_path in sorted(project_root.rglob("*.py"))
+        if constants.PROJECT_META_DIRNAME not in file_path.parts
+    ]
 
 
 def _is_symbol_character(character: str) -> bool:

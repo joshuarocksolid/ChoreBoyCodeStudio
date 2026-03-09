@@ -85,3 +85,34 @@ def test_find_references_returns_empty_when_no_symbol_at_cursor(tmp_path: Path) 
 
     assert result.symbol_name == ""
     assert result.hits == []
+
+
+def test_find_references_reads_each_python_file_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    helper = project_root / "helper.py"
+    helper.write_text("def helper_task(value):\n    return value\nhelper_task(1)\n", encoding="utf-8")
+    current_file = project_root / "main.py"
+    current_source = "from helper import helper_task\nresult = helper_task(2)\n"
+    current_file.write_text(current_source, encoding="utf-8")
+
+    original_read_text = Path.read_text
+    read_counts: dict[str, int] = {}
+
+    def counting_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        resolved = str(self.resolve())
+        read_counts[resolved] = read_counts.get(resolved, 0) + 1
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    result = find_references(
+        project_root=str(project_root.resolve()),
+        current_file_path=str(current_file.resolve()),
+        source_text=current_source,
+        cursor_position=current_source.rfind("helper_task") + 2,
+    )
+
+    assert result.symbol_name == "helper_task"
+    assert read_counts[str(helper.resolve())] == 1
+    assert read_counts[str(current_file.resolve())] == 1

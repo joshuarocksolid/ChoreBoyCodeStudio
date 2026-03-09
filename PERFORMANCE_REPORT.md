@@ -2,16 +2,18 @@
 
 ## Executive summary
 
-This audit found and validated multiple real performance issues, with five high-confidence fixes shipped:
+This audit found and validated multiple real performance issues, with seven high-confidence fixes shipped:
 
 1. **Confirmed bottleneck fixed:** run-log output rendering had superlinear growth from repeated full-text checks.
 2. **Confirmed bottleneck fixed (routine-path):** unresolved-import runtime probing caused large UI-thread lint stalls.
 3. **Confirmed bottleneck fixed for exclusion-heavy workloads:** search now prunes excluded directories before scanning files.
 4. **Confirmed bottleneck fixed:** project-module completion now reuses indexed module metadata with in-process caching.
 5. **Confirmed responsiveness bottleneck fixed:** find-references and rename-planning actions no longer execute project scans on the UI thread.
+6. **Confirmed bottleneck fixed:** reference scanning no longer rereads every file twice or performs avoidable path normalization in the hot path.
+7. **Confirmed bottleneck fixed:** cache-cold go-to-definition now builds the symbol index with less per-file path overhead.
 
 The highest measured gain was in run-log rendering throughput (**~27x faster at 40k lines**).  
-The audit still has important remaining engine-level work to do: reference scanning, cold go-to-definition, and diagnostics remain expensive internally, but the first user-facing shell freeze in navigation/refactor actions has now been removed.
+The audit still has important remaining work to do, especially in synchronous diagnostics and project enumeration on very large trees, but the largest navigation/refactor responsiveness problems have been materially reduced.
 
 ---
 
@@ -93,6 +95,44 @@ The audit still has important remaining engine-level work to do: reference scann
 
 ---
 
+## 6) Reference search reread every file twice and paid unnecessary path-normalization cost (fixed)
+- **Severity:** High  
+- **Confidence:** High (measured before/after + targeted regression test)  
+- **File(s):** `app/intelligence/reference_service.py`  
+- **Evidence:**  
+  - Before:
+    - ~1,002 files: **113.60 ms**
+    - ~10,002 files: **951.66 ms**
+  - After:
+    - ~1,002 files: **49.44 ms**
+    - ~10,002 files: **499.21 ms**
+  - Added regression test proving each Python file is read once during reference search.
+- **Scenario:** reference search and rename planning across medium/large projects.
+- **Root cause:** the old implementation scanned the full project twice and reread each file once for definitions plus once for token references.
+- **Suggested fix:** combine definition/reference collection into a single per-file pass and avoid redundant normalization work (implemented).
+- **Expected impact:** lower total wait time for reference search and rename planning after shell-level backgrounding.
+- **Validation method:** new unit performance-contract test + scaling benchmark reruns.
+
+## 7) Cold go-to-definition paid excessive per-file `resolve()` cost during index build (fixed)
+- **Severity:** Medium-High  
+- **Confidence:** High (measured before/after)  
+- **File(s):** `app/intelligence/symbol_index.py`, `app/intelligence/navigation_service.py`  
+- **Evidence:**  
+  - Before cold lookup:
+    - ~1,002 files: **76.87 ms**
+    - ~10,002 files: **652.93 ms**
+  - After cold lookup:
+    - ~1,002 files: **52.94 ms**
+    - ~10,002 files: **343.64 ms**
+  - Warm lookup remains fast at roughly **1.56–4.80 ms**
+- **Scenario:** first go-to-definition in a cache-cold project.
+- **Root cause:** symbol-index construction repeatedly normalized already-absolute paths.
+- **Suggested fix:** keep path handling on the already-resolved project root and avoid per-file `resolve()` in hot loops (implemented).
+- **Expected impact:** materially better first-lookup latency without changing warm-cache semantics.
+- **Validation method:** symbol-index/navigation unit tests + cold/warm lookup benchmarks.
+
+---
+
 ## Scalability risks
 
 ## 6) Find-in-files remains linear for broad no-match scans
@@ -106,23 +146,37 @@ The audit still has important remaining engine-level work to do: reference scann
 - **Expected impact:** Better responsiveness at very large scales.
 - **Validation method:** scaling benchmark across 1k-20k files.
 
-## 7) Reference search / rename planning engine still scales linearly
+## 7) Diagnostics remain synchronous and expensive on large/import-heavy files
 - **Severity:** Medium  
 - **Confidence:** Medium-High  
-- **File(s):** `app/intelligence/reference_service.py`, `app/intelligence/refactor_service.py`  
+- **File(s):** `app/intelligence/diagnostics_service.py`, `app/shell/main_window.py`  
 - **Evidence:**  
-  - `find_references` scales to roughly **952 ms** at ~10k files in synthetic benchmarks.
-- **Scenario:** interactive reference/rename commands in larger workspaces.
-- **Root cause:** full-project token/AST walks plus repeated path normalization and double scanning.
-- **Suggested fix:** optimize `reference_service.py` internals after the shell-layer backgrounding already landed.
-- **Expected impact:** lower total wait time after the UI-thread freeze has been removed.
-- **Validation method:** targeted profiling + scaling benchmark reruns.
+  - `analyze_python_file()` reaches roughly **176 ms** at ~158k chars
+  - `analyze_python_file()` reaches roughly **360 ms** at ~320k chars on import-heavy source
+- **Scenario:** tab-change/save/realtime lint on large Python files.
+- **Root cause:** repeated AST walks plus repeated filesystem checks in unresolved-import analysis.
+- **Suggested fix:** reduce algorithmic work in `diagnostics_service.py`, then consider a constrained large-file policy if needed.
+- **Expected impact:** lower editor stalls during lint-heavy editing flows.
+- **Validation method:** targeted profiling + large-buffer diagnostic benchmarks.
+
+## 8) Project-open enumeration still performs heavy path normalization at scale
+- **Severity:** Medium  
+- **Confidence:** Medium-High  
+- **File(s):** `app/project/project_service.py`  
+- **Evidence:**  
+  - `open_project()` reaches roughly **753 ms** at ~20k files
+  - profiler shows `_build_project_entry()` dominated by `relative_to()` and `resolve()`
+- **Scenario:** opening very large project trees.
+- **Root cause:** repeated path-object normalization during full-tree enumeration.
+- **Suggested fix:** reduce path conversion churn while preserving current entry ordering and structure.
+- **Expected impact:** better large-project open latency.
+- **Validation method:** project-open scaling benchmark + profiler rerun.
 
 ---
 
 ## Low-priority inefficiencies
 
-## 8) `SQLiteSymbolIndex` object recreation overhead
+## 9) `SQLiteSymbolIndex` object recreation overhead
 - **Severity:** Low  
 - **Confidence:** High  
 - **File(s):** `app/intelligence/completion_providers.py`, `app/intelligence/navigation_service.py`, `app/persistence/sqlite_index.py`  
@@ -142,13 +196,16 @@ The audit still has important remaining engine-level work to do: reference scann
 3. `find_in_files` traversal now uses streaming `os.walk` with directory-level exclusion pruning.
 4. Project module completions now use indexed module metadata cache when available.
 5. `Find References` and `Rename Symbol` now dispatch expensive planning work through `BackgroundTaskRunner` instead of scanning inline on the UI thread.
-5. Added/updated tests:
+6. `find_references()` now performs a single per-file pass and avoids redundant path normalization.
+7. Cold symbol-index construction now avoids unnecessary per-file `resolve()` calls.
+8. Added/updated tests:
    - `tests/integration/performance/test_responsiveness_thresholds.py`
    - `tests/unit/shell/test_main_window_lint_probe_policy.py`
    - `tests/unit/editors/test_search_panel.py`
    - `tests/unit/intelligence/test_completion_service.py`
    - `tests/unit/persistence/test_sqlite_index.py`
    - `tests/unit/shell/test_main_window_reference_rename_actions.py`
+   - `tests/unit/intelligence/test_reference_service.py`
 
 ---
 
@@ -161,6 +218,9 @@ The audit still has important remaining engine-level work to do: reference scann
 | Lint unresolved imports (20, probe on/off) | 1,461 ms / 1.15 ms | routine path now uses off | Removes routine cold stall class |
 | Search with huge excluded dir | ~607 ms (old behavior simulation) | 1.34 ms | **~453x faster** |
 | Completion no-match (20k modules) | ~251.67 ms | 27.58 ms | **~9.1x faster** |
+| `find_references` (~10k files) | 951.66 ms | 499.21 ms | **~1.9x faster** |
+| `lookup_definition_with_cache` cold (~10k files) | 652.93 ms | 343.64 ms | **~1.9x faster** |
+| Shell action return with 250 ms injected engine delay | inline/blocking | 0.30-0.36 ms | UI-thread work removed |
 
 ---
 

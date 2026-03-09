@@ -74,6 +74,108 @@ Conclusion:
 - This slice does not make the underlying analysis faster yet.
 - It **does** remove the expensive scan/planning work from the UI-thread action path, which is the highest-confidence responsiveness win for these commands.
 
+## 0.2) Slice 3/4 — reference scan + cold go-to-definition engine optimization
+
+### Why this slice
+
+After shell-level backgrounding, the next highest-value work was reducing the underlying engine cost for:
+- `find_references()`
+- rename planning (which reuses `find_references()`)
+- cache-cold `lookup_definition_with_cache()`
+
+### Changed files
+
+- `app/intelligence/reference_service.py`
+- `app/intelligence/symbol_index.py`
+- `tests/unit/intelligence/test_reference_service.py`
+
+### Change summary
+
+#### Reference engine
+- Removed the double full-project scan in `find_references()`.
+- Each Python file is now:
+  - read once
+  - definitions collected from the in-memory source
+  - token references collected from the same source payload
+- Avoided repeated per-file `resolve()`/string normalization in the hot path.
+
+#### Cold definition lookup path
+- Removed unnecessary per-file `resolve()` calls during symbol-index construction.
+- Preserved existing cache contract and warm-lookup behavior.
+
+### TDD / regression coverage
+
+Added focused unit coverage:
+
+- `tests/unit/intelligence/test_reference_service.py::test_find_references_reads_each_python_file_once`
+
+This test failed before the implementation because each file was read twice by the old reference path.
+
+### Validation
+
+Targeted suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_reference_service.py
+python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_symbol_index.py tests/unit/intelligence/test_navigation_service.py
+```
+
+Results:
+- reference-service suite: **5 passed**
+- symbol-index/navigation suites: **7 passed**
+
+### Before / after measurements
+
+#### `find_references()` scaling
+
+Before:
+- ~1,002 files: **113.60 ms**
+- ~2,502 files: **241.01 ms**
+- ~5,002 files: **482.18 ms**
+- ~10,002 files: **951.66 ms**
+
+After:
+- ~1,002 files: **49.44 ms**
+- ~2,502 files: **122.03 ms**
+- ~5,002 files: **248.75 ms**
+- ~10,002 files: **499.21 ms**
+
+Improvement:
+- roughly **2.3x faster** at ~1k files
+- roughly **2.0x faster** at ~10k files
+
+#### `plan_rename_symbol()` scaling
+
+After:
+- ~1,002 files: **47.82 ms**
+- ~2,502 files: **118.39 ms**
+- ~5,002 files: **239.10 ms**
+- ~10,002 files: **492.00 ms**
+
+Conclusion:
+- rename planning inherits the same engine win because it delegates to `find_references()`
+
+#### Cold `lookup_definition_with_cache()` scaling
+
+Before:
+- ~1,002 files: **76.87 ms**
+- ~2,502 files: **173.75 ms**
+- ~5,002 files: **330.99 ms**
+- ~10,002 files: **652.93 ms**
+
+After:
+- ~1,002 files: **52.94 ms**
+- ~2,502 files: **95.27 ms**
+- ~5,002 files: **181.38 ms**
+- ~10,002 files: **343.64 ms**
+
+Warm path after change:
+- still ~**1.56–4.80 ms**
+
+Improvement:
+- roughly **1.45x faster** at ~1k files
+- roughly **1.9x faster** at ~10k files
+
 ## 1) Environment and validation notes
 
 - Repository branch: `cursor/performance-audit-report-4d51`

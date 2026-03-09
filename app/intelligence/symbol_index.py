@@ -161,6 +161,7 @@ def _extract_symbols(file_path: Path) -> list[SymbolLocation]:
         return []
 
     symbols: list[SymbolLocation] = []
+    file_path_text = str(file_path)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             symbol_kind = "class" if isinstance(node, ast.ClassDef) else "function"
@@ -171,7 +172,7 @@ def _extract_symbols(file_path: Path) -> list[SymbolLocation]:
             symbols.append(
                 SymbolLocation(
                     name=node.name,
-                    file_path=str(file_path.resolve()),
+                    file_path=file_path_text,
                     line_number=int(node.lineno),
                     symbol_kind=symbol_kind,
                     signature_text=signature_text,
@@ -188,7 +189,7 @@ def _list_python_source_files(project_root: str | Path) -> list[Path]:
     for file_path in sorted(root.rglob("*.py")):
         if constants.PROJECT_META_DIRNAME in file_path.parts:
             continue
-        python_files.append(file_path.resolve())
+        python_files.append(file_path)
     return python_files
 
 
