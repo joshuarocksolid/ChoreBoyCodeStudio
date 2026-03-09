@@ -151,6 +151,48 @@ Auditor mode: deep skeptical audit (evidence-first)
 - tests updated:
   - `tests/unit/run/test_test_runner_service.py`
 
+---
+
+## 2026-03-09 addendum — plugin runtime diagnostics persistence
+
+### Audit question
+- Docs and acceptance expectations claimed runtime plugin failures should be visible in plugin status/log diagnostics.
+- Before this pass, code search showed:
+  - in-memory `PluginRuntimeManager.last_error`
+  - registry `last_error` / `failure_count`
+  - no persistent plugin host log writing despite `global_plugins_logs_dir()` helper existing
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins/test_runtime_manager.py`
+- Result: **passed**
+- Coverage now verifies:
+  - stderr is still captured as `last_error`
+  - plugin host stderr is persisted to a log file
+  - plugin host exit events are persisted to a log file
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins`
+- Result: **passed**
+
+#### `python3 - <<'PY' ...` (plugin runtime log persistence repro)
+- Result: **passed**
+- Key output:
+  - `LOG_PATH /tmp/.../state/plugins/logs/plugin_host.log`
+  - log contents:
+    - `stderr: boom`
+    - `host exited return_code=3 terminated_by_user=False`
+
+### Fixes implemented
+- `app/plugins/runtime_manager.py`
+  - now writes plugin host diagnostics to `plugins/logs/plugin_host.log`
+  - logs stderr lines, command timeouts/failures, host reload/start/stop, and host exits
+  - exposes `log_file_path` for diagnostics/UI use
+- `app/shell/plugins_panel.py`
+  - now includes failure-count/last-error details in displayed compatibility text when present
+  - adds per-row tooltip details including plugin host log path
+- tests updated:
+  - `tests/unit/plugins/test_runtime_manager.py`
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`

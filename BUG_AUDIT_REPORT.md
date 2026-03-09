@@ -66,6 +66,19 @@ This audit pass clarified and documented the actual ChoreBoy contract:
 - **Suggested fix:** normalize args with `--import-mode=importlib`, prefer project-local `run_tests.py` when present, and stop implicit `.venv` runtime discovery.
 - **Fix applied:** ✅ on 2026-03-09
 
+## 14) Plugin runtime failures were not persisted to plugin log diagnostics
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/plugins/runtime_manager.py`, `app/shell/plugins_panel.py`, `tests/unit/plugins/test_runtime_manager.py`  
+- **Evidence:** before fix, runtime failures only updated in-memory `last_error` / registry metadata; there was no persistent plugin host log file despite `global_plugins_logs_dir()` existing and acceptance/docs expecting log diagnostics.
+- **Reproduction steps:**
+  1. Trigger `PluginRuntimeManager._handle_event(...)` with stderr output and host exit.
+  2. Inspect plugin state directory.
+  3. Observe no persistent plugin host log was written before the fix.
+- **Why it happens:** runtime manager consumed stderr/exit events but did not persist them to disk or expose a stable log path in diagnostics UI.
+- **Suggested fix:** persist plugin host stderr/exit diagnostics under `plugins/logs/plugin_host.log` and surface the log path / failure details in plugin diagnostics UI.
+- **Fix applied:** ✅ on 2026-03-09
+
 ## Executive summary
 
 Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  

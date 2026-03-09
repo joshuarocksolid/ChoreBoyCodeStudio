@@ -84,6 +84,12 @@ def test_host_exit_unblocks_pending_request_with_error(monkeypatch: pytest.Monke
 
     thread = threading.Thread(target=worker)
     thread.start()
+    deadline = threading.Event()
+    for _attempt in range(100):
+        with manager._pending_lock:
+            if manager._pending_requests:
+                break
+        deadline.wait(0.01)
     manager._handle_event(ProcessEvent(event_type="exit", return_code=1))
     thread.join(timeout=1.0)
 
@@ -98,3 +104,32 @@ def test_stderr_output_is_recorded_as_last_error(monkeypatch: pytest.MonkeyPatch
     manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom"))
 
     assert manager.last_error == "boom"
+
+
+def test_stderr_output_is_persisted_to_plugin_host_log(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager(state_root=str((tmp_path / "state").resolve()))
+
+    manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom\n"))
+
+    log_path = manager.log_file_path
+    assert "plugin_host.log" in log_path
+    assert "stderr: boom" in open(log_path, encoding="utf-8").read()
+
+
+def test_host_exit_is_persisted_to_plugin_host_log(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager(state_root=str((tmp_path / "state").resolve()))
+
+    manager._handle_event(ProcessEvent(event_type="exit", return_code=3, terminated_by_user=False))
+
+    assert "host exited return_code=3 terminated_by_user=False" in open(
+        manager.log_file_path,
+        encoding="utf-8",
+    ).read()
