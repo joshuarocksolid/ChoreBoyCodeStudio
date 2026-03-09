@@ -34,6 +34,21 @@ This audit pass clarified and documented the actual ChoreBoy contract:
 - **Suggested fix:** document the packaging model explicitly in both generated user instructions and developer-facing docs, and reinforce it in installer UI copy.
 - **Fix applied:** ✅ documented and tested on 2026-03-09
 
+## 12) Imported `pyproject` package-callable targets silently resolved to `__init__.py`
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `app/project/project_service.py`, `tests/unit/project/test_project_service.py`, `tests/integration/project/test_project_import_open.py`  
+- **Evidence:** for `[project.scripts] demo = "demo_pkg:main"`, project import previously inferred `default_entry = src/demo_pkg/__init__.py`; running the imported project exited `0` with no output because `main()` was never invoked.
+- **Reproduction steps:**
+  1. Create project with `pyproject.toml` script target `demo_pkg:main`.
+  2. Put `main()` in `src/demo_pkg/__init__.py`.
+  3. Import project through `open_project(...)`.
+  4. Observe inferred entry file is `__init__.py`.
+  5. Run imported project and observe silent success with no callable execution.
+- **Why it happens:** module-reference resolution treated package `__init__.py` as though it were a directly runnable script entrypoint, but runner semantics execute files with `runpy.run_path(...)` and do not call exported callables.
+- **Suggested fix:** never infer package `__init__.py` as a runnable entrypoint for console-script targets; fall back to real runnable files when available, otherwise fail with actionable validation.
+- **Fix applied:** ✅ on 2026-03-09
+
 ## Executive summary
 
 Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  

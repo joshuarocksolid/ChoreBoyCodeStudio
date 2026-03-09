@@ -66,6 +66,47 @@ Auditor mode: deep skeptical audit (evidence-first)
 - `docs/ARCHITECTURE.md`
   - registered `PACKAGING.md` in canonical file ownership
 
+---
+
+## 2026-03-09 addendum — imported `pyproject` package-callable inference
+
+### Confirmed behavior before fix
+- Reproduction project:
+  - `pyproject.toml` with:
+    - `[project.scripts]`
+    - `demo = "demo_pkg:main"`
+  - package file:
+    - `src/demo_pkg/__init__.py` defining `main()`
+- Prior result:
+  - imported project metadata inferred `default_entry = src/demo_pkg/__init__.py`
+  - running the imported project exited `0`
+  - no user output was produced because `runpy.run_path(__init__.py)` never called `main()`
+
+### Commands run after fix
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_project_service.py tests/integration/project/test_project_import_open.py`
+- Result: **passed**
+- Coverage added for:
+  - package-callable `pyproject` targets no longer mapping silently to `__init__.py`
+  - fallback to runnable file (`run.py`) when available
+  - clear validation failure when only non-runnable `__init__.py` exists
+
+#### `python3 - <<'PY' ...` (package-callable pyproject repro)
+- Result: **passed**
+- Key output:
+  - `DEFAULT_ENTRY run.py`
+  - runner output included `RUN_FALLBACK_OK`
+  - runner output did **not** include package callable side effects from `__init__.py`
+
+### Fixes implemented
+- `app/project/project_service.py`
+  - stopped treating package `__init__.py` as a valid inferred runnable entrypoint for `pyproject` script targets
+  - excluded `__init__.py` from generic top-level/recursive runnable-file fallback
+  - added clearer error message when Python files exist but no runnable entry file can be inferred
+- tests added/updated:
+  - `tests/unit/project/test_project_service.py`
+  - `tests/integration/project/test_project_import_open.py`
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`
