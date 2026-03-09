@@ -2,15 +2,16 @@
 
 ## Executive summary
 
-This audit found and validated multiple real performance issues, with four high-confidence fixes shipped:
+This audit found and validated multiple real performance issues, with five high-confidence fixes shipped:
 
 1. **Confirmed bottleneck fixed:** run-log output rendering had superlinear growth from repeated full-text checks.
 2. **Confirmed bottleneck fixed (routine-path):** unresolved-import runtime probing caused large UI-thread lint stalls.
 3. **Confirmed bottleneck fixed for exclusion-heavy workloads:** search now prunes excluded directories before scanning files.
 4. **Confirmed bottleneck fixed:** project-module completion now reuses indexed module metadata with in-process caching.
+5. **Confirmed responsiveness bottleneck fixed:** find-references and rename-planning actions no longer execute project scans on the UI thread.
 
 The highest measured gain was in run-log rendering throughput (**~27x faster at 40k lines**).  
-The audit also identified remaining scalability risks (not yet changed), especially synchronous reference/rename analysis on very large projects.
+The audit still has important remaining engine-level work to do: reference scanning, cold go-to-definition, and diagnostics remain expensive internally, but the first user-facing shell freeze in navigation/refactor actions has now been removed.
 
 ---
 
@@ -75,9 +76,26 @@ The audit also identified remaining scalability risks (not yet changed), especia
 
 ---
 
+## 5) Find References / Rename planning blocked the UI thread (fixed at shell layer)
+- **Severity:** High  
+- **Confidence:** High (code-path change + automated validation + focused timing)  
+- **File(s):** `app/shell/main_window.py`  
+- **Evidence:**  
+  - Planning-phase measurement showed `find_references()` scaling to roughly **952 ms at ~10k files**
+  - Focused post-fix action benchmark with 250 ms injected engine delay:
+    - `Find References` handler returned in **0.36 ms**
+    - `Rename Symbol` handler returned in **0.30 ms**
+- **Scenario:** interactive navigation/refactor actions on medium/large projects.
+- **Root cause:** shell action handlers performed project-wide analysis inline on the UI thread.
+- **Suggested fix:** dispatch reference search and rename planning through `BackgroundTaskRunner` while preserving current result UI (implemented).
+- **Expected impact:** eliminates editor freezes when the user triggers these actions, even before deeper engine optimization lands.
+- **Validation method:** new shell action unit tests + AppRun benchmark with injected slow task behavior.
+
+---
+
 ## Scalability risks
 
-## 5) Find-in-files remains linear for broad no-match scans
+## 6) Find-in-files remains linear for broad no-match scans
 - **Severity:** Medium  
 - **Confidence:** High (measured)  
 - **File(s):** `app/editors/search_panel.py`  
@@ -88,23 +106,23 @@ The audit also identified remaining scalability risks (not yet changed), especia
 - **Expected impact:** Better responsiveness at very large scales.
 - **Validation method:** scaling benchmark across 1k-20k files.
 
-## 6) Find references/rename planning currently synchronous in UI path
+## 7) Reference search / rename planning engine still scales linearly
 - **Severity:** Medium  
 - **Confidence:** Medium-High  
-- **File(s):** `app/shell/main_window.py`, `app/intelligence/reference_service.py`, `app/intelligence/refactor_service.py`  
+- **File(s):** `app/intelligence/reference_service.py`, `app/intelligence/refactor_service.py`  
 - **Evidence:**  
-  - `find_references` scales to ~**180 ms** at 2k files in synthetic benchmark.
+  - `find_references` scales to roughly **952 ms** at ~10k files in synthetic benchmarks.
 - **Scenario:** interactive reference/rename commands in larger workspaces.
-- **Root cause:** full-project token/AST walks in command path.
-- **Suggested fix:** background-task execution for reference search + progressive result rendering.
-- **Expected impact:** smoother interaction on medium/large projects.
-- **Validation method:** targeted command profiling + UI-thread frame-time capture.
+- **Root cause:** full-project token/AST walks plus repeated path normalization and double scanning.
+- **Suggested fix:** optimize `reference_service.py` internals after the shell-layer backgrounding already landed.
+- **Expected impact:** lower total wait time after the UI-thread freeze has been removed.
+- **Validation method:** targeted profiling + scaling benchmark reruns.
 
 ---
 
 ## Low-priority inefficiencies
 
-## 7) `SQLiteSymbolIndex` object recreation overhead
+## 8) `SQLiteSymbolIndex` object recreation overhead
 - **Severity:** Low  
 - **Confidence:** High  
 - **File(s):** `app/intelligence/completion_providers.py`, `app/intelligence/navigation_service.py`, `app/persistence/sqlite_index.py`  
@@ -123,12 +141,14 @@ The audit also identified remaining scalability risks (not yet changed), especia
 2. Routine lint triggers now disable runtime subprocess import probing.
 3. `find_in_files` traversal now uses streaming `os.walk` with directory-level exclusion pruning.
 4. Project module completions now use indexed module metadata cache when available.
+5. `Find References` and `Rename Symbol` now dispatch expensive planning work through `BackgroundTaskRunner` instead of scanning inline on the UI thread.
 5. Added/updated tests:
    - `tests/integration/performance/test_responsiveness_thresholds.py`
    - `tests/unit/shell/test_main_window_lint_probe_policy.py`
    - `tests/unit/editors/test_search_panel.py`
    - `tests/unit/intelligence/test_completion_service.py`
    - `tests/unit/persistence/test_sqlite_index.py`
+   - `tests/unit/shell/test_main_window_reference_rename_actions.py`
 
 ---
 

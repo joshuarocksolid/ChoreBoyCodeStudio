@@ -1,8 +1,78 @@
 # Performance Audit Log
 
-Date: 2026-03-08  
+Date: 2026-03-09  
 Auditor: Cursor performance audit agent  
 Scope: end-to-end responsiveness + high-impact throughput bottlenecks in editor/search/lint/output paths.
+
+## 0) Current branch continuation note
+
+- Repository branch: `cursor/performance-audit-report-d9b6`
+- This log continues prior performance-audit work already present in the repo.
+- Earlier sections below describe previously landed fixes that remain relevant baseline context.
+
+## 0.1) Slice 1 — UI-thread unblocking for reference / rename actions
+
+### Why this slice
+
+Planning-phase profiling and measurement confirmed that:
+- `find_references()` scales to roughly **952 ms at ~10k files**
+- rename planning reuses the same scan path
+- both actions were executed synchronously from `MainWindow`
+
+This slice focuses on **responsiveness first**: moving those actions off the UI thread before deeper engine optimization.
+
+### Changed files
+
+- `app/shell/main_window.py`
+- `tests/unit/shell/test_main_window_reference_rename_actions.py` (new)
+
+### Change summary
+
+- `MainWindow._handle_find_references_action()` now schedules reference search through `BackgroundTaskRunner` instead of executing the scan inline.
+- `MainWindow._handle_rename_symbol_action()` now schedules rename planning through `BackgroundTaskRunner` instead of planning inline on the UI thread.
+- Existing result behavior is preserved:
+  - find references still populates the Problems panel
+  - rename still shows preview, applies the plan, refreshes open tabs, reloads project state, and reports final counts
+
+### Validation
+
+Targeted correctness suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib \
+  tests/unit/shell/test_main_window_reference_rename_actions.py \
+  tests/unit/intelligence/test_reference_service.py \
+  tests/unit/intelligence/test_refactor_service.py \
+  tests/unit/intelligence/test_navigation_service.py \
+  tests/unit/intelligence/test_symbol_index.py
+```
+
+Result:
+- **18 passed**
+
+Performance regression suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib \
+  tests/integration/performance/test_responsiveness_thresholds.py \
+  tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Focused responsiveness measurement
+
+A targeted AppRun benchmark monkeypatched `find_references()` and `plan_rename_symbol()` to each sleep for 250 ms, then measured the action handler return time after backgrounding.
+
+Observed:
+- `Find References` handler return time: **0.36 ms**
+- `Rename Symbol` handler return time: **0.30 ms**
+- Both background tasks still completed successfully afterward.
+
+Conclusion:
+- This slice does not make the underlying analysis faster yet.
+- It **does** remove the expensive scan/planning work from the UI-thread action path, which is the highest-confidence responsiveness win for these commands.
 
 ## 1) Environment and validation notes
 

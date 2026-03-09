@@ -1380,53 +1380,71 @@ class MainWindow(QMainWindow):
         if active_tab is None or editor_widget is None:
             QMessageBox.warning(self, "Find References", "Open a file tab first.")
             return
+        project_root = self._loaded_project.project_root
+        current_file_path = active_tab.file_path
+        source_text = editor_widget.toPlainText()
+        cursor_position = editor_widget.textCursor().position()
 
-        started_at = time.perf_counter()
-        result = find_references(
-            project_root=self._loaded_project.project_root,
-            current_file_path=active_tab.file_path,
-            source_text=editor_widget.toPlainText(),
-            cursor_position=editor_widget.textCursor().position(),
-        )
-        if self._intelligence_runtime_settings.metrics_logging_enabled:
-            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-            if elapsed_ms > 1200.0:
-                self._logger.warning(
-                    "References latency warning: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
-                    active_tab.file_path,
-                    result.symbol_name,
-                    elapsed_ms,
-                    len(result.hits),
-                )
-            else:
-                self._logger.info(
-                    "References telemetry: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
-                    active_tab.file_path,
-                    result.symbol_name,
-                    elapsed_ms,
-                    len(result.hits),
-                )
-        if not result.symbol_name:
-            QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
-            return
-        if not result.hits:
-            QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
-            return
-
-        if self._problems_panel is None:
-            return
-        ref_items = [
-            ResultItem(
-                label=f"[{'def' if hit.is_definition else 'ref'}] {hit.line_text.strip()}",
-                file_path=hit.file_path,
-                line_number=hit.line_number,
-                tooltip=hit.file_path,
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            started_at = time.perf_counter()
+            result = find_references(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
             )
-            for hit in result.hits
-        ]
-        self._problems_panel.set_results(f"References: {result.symbol_name}", ref_items)
-        self._update_problems_tab_title(self._problems_panel.problem_count())
-        self._focus_problems_tab()
+            if self._intelligence_runtime_settings.metrics_logging_enabled:
+                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                if elapsed_ms > 1200.0:
+                    self._logger.warning(
+                        "References latency warning: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                        current_file_path,
+                        result.symbol_name,
+                        elapsed_ms,
+                        len(result.hits),
+                    )
+                else:
+                    self._logger.info(
+                        "References telemetry: file=%s symbol=%s elapsed_ms=%.2f hits=%s",
+                        current_file_path,
+                        result.symbol_name,
+                        elapsed_ms,
+                        len(result.hits),
+                    )
+            return result
+
+        def on_success(result) -> None:  # type: ignore[no-untyped-def]
+            if not result.symbol_name:
+                QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
+                return
+            if not result.hits:
+                QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
+                return
+
+            if self._problems_panel is None:
+                return
+            ref_items = [
+                ResultItem(
+                    label=f"[{'def' if hit.is_definition else 'ref'}] {hit.line_text.strip()}",
+                    file_path=hit.file_path,
+                    line_number=hit.line_number,
+                    tooltip=hit.file_path,
+                )
+                for hit in result.hits
+            ]
+            self._problems_panel.set_results(f"References: {result.symbol_name}", ref_items)
+            self._update_problems_tab_title(self._problems_panel.problem_count())
+            self._focus_problems_tab()
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Find References", f"Reference search failed: {exc}")
+
+        self._background_tasks.run(
+            key="find_references",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_rename_symbol_action(self) -> None:
         if self._loaded_project is None:
@@ -1455,70 +1473,91 @@ class MainWindow(QMainWindow):
         if not self._handle_save_all_action():
             QMessageBox.warning(self, "Rename Symbol", "Fix save errors before renaming.")
             return
+        project_root = self._loaded_project.project_root
+        current_file_path = active_tab.file_path
+        source_text = editor_widget.toPlainText()
+        cursor_position = editor_widget.textCursor().position()
 
-        started_at = time.perf_counter()
-        plan = plan_rename_symbol(
-            project_root=self._loaded_project.project_root,
-            current_file_path=active_tab.file_path,
-            source_text=editor_widget.toPlainText(),
-            cursor_position=editor_widget.textCursor().position(),
-            new_symbol=new_symbol,
-        )
-        if self._intelligence_runtime_settings.metrics_logging_enabled:
-            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-            hit_count = 0 if plan is None else len(plan.hits)
-            if elapsed_ms > 800.0:
-                self._logger.warning(
-                    "Rename planning latency warning: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
-                    active_tab.file_path,
-                    old_symbol,
-                    new_symbol,
-                    elapsed_ms,
-                    hit_count,
-                )
-            else:
-                self._logger.info(
-                    "Rename planning telemetry: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
-                    active_tab.file_path,
-                    old_symbol,
-                    new_symbol,
-                    elapsed_ms,
-                    hit_count,
-                )
-        if plan is None or not plan.hits:
-            QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
-            return
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            started_at = time.perf_counter()
+            plan = plan_rename_symbol(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                new_symbol=new_symbol,
+            )
+            if self._intelligence_runtime_settings.metrics_logging_enabled:
+                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                hit_count = 0 if plan is None else len(plan.hits)
+                if elapsed_ms > 800.0:
+                    self._logger.warning(
+                        "Rename planning latency warning: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                        current_file_path,
+                        old_symbol,
+                        new_symbol,
+                        elapsed_ms,
+                        hit_count,
+                    )
+                else:
+                    self._logger.info(
+                        "Rename planning telemetry: file=%s old_symbol=%s new_symbol=%s elapsed_ms=%.2f hits=%s",
+                        current_file_path,
+                        old_symbol,
+                        new_symbol,
+                        elapsed_ms,
+                        hit_count,
+                    )
+            return plan
 
-        preview_lines = [f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}" for hit in plan.hits[:20]]
-        preview_body = "\n".join(preview_lines)
-        if len(plan.hits) > 20:
-            preview_body += f"\n... and {len(plan.hits) - 20} more occurrence(s)"
-        confirm = QMessageBox.question(
-            self,
-            "Rename Preview",
-            (
-                f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'?\n"
-                f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n\n"
-                f"{preview_body}"
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if confirm != QMessageBox.Yes:
-            return
+        def on_success(plan) -> None:  # type: ignore[no-untyped-def]
+            if plan is None or not plan.hits:
+                QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
+                return
 
-        try:
-            result = apply_rename_plan(plan)
-        except OSError as exc:
-            QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
-            return
+            preview_lines = [
+                f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}"
+                for hit in plan.hits[:20]
+            ]
+            preview_body = "\n".join(preview_lines)
+            if len(plan.hits) > 20:
+                preview_body += f"\n... and {len(plan.hits) - 20} more occurrence(s)"
+            confirm = QMessageBox.question(
+                self,
+                "Rename Preview",
+                (
+                    f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'?\n"
+                    f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n\n"
+                    f"{preview_body}"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if confirm != QMessageBox.Yes:
+                return
 
-        self._refresh_open_tabs_from_disk(result.changed_files)
-        self._reload_current_project()
-        QMessageBox.information(
-            self,
-            "Rename Symbol",
-            f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+            try:
+                result = apply_rename_plan(plan)
+            except OSError as exc:
+                QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
+                return
+
+            self._refresh_open_tabs_from_disk(result.changed_files)
+            self._reload_current_project()
+            QMessageBox.information(
+                self,
+                "Rename Symbol",
+                f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+            )
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(self, "Rename Symbol", f"Rename planning failed: {exc}")
+
+        self._background_tasks.run(
+            key="rename_symbol",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def _handle_go_to_definition_action(self) -> None:
