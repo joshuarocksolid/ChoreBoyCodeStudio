@@ -3,6 +3,69 @@
 Date: 2026-03-08  
 Auditor mode: deep skeptical audit (evidence-first)
 
+---
+
+## 2026-03-09 addendum — ChoreBoy installer packaging contract
+
+### User clarification incorporated
+- The relevant "packaging" workflow for this review is the **Code Studio distribution installer**:
+  - `package.py`
+  - `packaging/install.py`
+- Intended contract on ChoreBoy:
+  - user copies the entire distribution folder into `/home/default/`
+  - user runs the bundled installer from that copied folder
+  - installer prompts for the final location where Code Studio should live
+  - installed `.desktop` launcher hardcodes that chosen final location
+
+### Evidence of prior ambiguity
+- The repo previously had:
+  - installer implementation already hardcoding the chosen final install path
+  - generated install instructions that only said "copy to your ChoreBoy Home Folder"
+  - no dedicated developer doc explaining the distinction between:
+    - installer package staging location
+    - final installed application location
+- This created a documentation/mental-model gap for future developers and reviewers.
+
+### Commands run
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_distribution_installer.py`
+- Result: **passed**
+- Coverage added for:
+  - install instructions explicitly requiring `/home/default/` staging
+  - bundled installer launcher continuing to resolve from installer folder
+  - installed launcher hardcoding chosen install directory
+  - warning when installer package is not staged under `/home/default/`
+
+#### `"/opt/freecad/AppRun" -c "<installer contract evidence snippet>"`
+- Result: **passed**
+- Key output:
+  - install instructions now begin with:
+    - `Copy this entire folder into /home/default/ on the ChoreBoy.`
+    - `Keep the entire folder together.`
+  - non-home staging warning now explains:
+    - installer package should be copied into `/home/default/`
+  - installed launcher `Exec=` now shows a hardcoded final install path:
+    - `root='/home/default/tools/code_studio'`
+
+### Fixes implemented
+- `package.py`
+  - extracted helper builders for installer desktop entry and install instructions
+  - updated generated `INSTALL.txt` to explicitly require `/home/default/` staging
+  - documented that the installer folder must stay together
+  - documented that installed launchers hardcode the chosen install directory
+- `packaging/install.py`
+  - added explicit helper for installed desktop-entry generation
+  - added staging-location warning helper for packages not copied under `/home/default/`
+  - updated wizard copy to explain:
+    - staging in `/home/default/`
+    - final install directory choice
+    - hardcoded launcher target semantics
+    - rerun-installer requirement after moving installed files
+- `docs/PACKAGING.md`
+  - added developer-facing source-of-truth documentation for the ChoreBoy-specific packaging/install workflow
+- `docs/ARCHITECTURE.md`
+  - registered `PACKAGING.md` in canonical file ownership
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`

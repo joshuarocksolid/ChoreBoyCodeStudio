@@ -2,6 +2,38 @@
 
 Date: 2026-03-08
 
+---
+
+## 2026-03-09 addendum — packaging/install contract clarification
+
+### Executive summary update
+
+The distribution installer workflow for **Code Studio itself** was functioning in code but under-documented and easy to misread.
+
+This audit pass clarified and documented the actual ChoreBoy contract:
+
+- users copy the full distribution folder into `/home/default/`
+- users run the installer from that copied folder
+- users choose the final install location for Code Studio
+- the installed `.desktop` launcher **hardcodes that chosen final location**
+
+### Confirmed bug / implementation gap
+
+## 11) Distribution packaging contract was under-documented and easy to misapply
+- **Severity:** Medium  
+- **Confidence:** High  
+- **File(s):** `package.py`, `packaging/install.py`, `docs/PACKAGING.md`, `docs/ARCHITECTURE.md`  
+- **Evidence:** the installer already wrote a launcher hardcoded to the chosen install directory, but generated instructions and developer docs did not clearly explain:
+  - required staging in `/home/default/`
+  - need to keep the installer folder together
+  - distinction between installer package location and final installed app location
+- **Reproduction steps:**
+  1. Inspect `package.py` generated installer assets and `packaging/install.py`.
+  2. Observe that installed `.desktop` entries hardcode the chosen install path.
+  3. Observe that prior generated instructions did not explicitly describe the ChoreBoy-specific staging/install contract.
+- **Suggested fix:** document the packaging model explicitly in both generated user instructions and developer-facing docs, and reinforce it in installer UI copy.
+- **Fix applied:** ✅ documented and tested on 2026-03-09
+
 ## Executive summary
 
 Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  
