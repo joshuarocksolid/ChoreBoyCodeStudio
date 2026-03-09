@@ -180,3 +180,43 @@ def test_start_active_file_session_cleans_transient_file_when_start_fails() -> N
     assert started is False
     assert deleted == ["/tmp/transient.py"]
     assert window_any._active_transient_entry_file_path is None
+
+
+def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_transient_path() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._editor_manager = SimpleNamespace(
+        active_tab=lambda: SimpleNamespace(
+            file_path="/tmp/project/dirty.py",
+            is_dirty=True,
+            current_content="print('dirty')\n",
+        )
+    )
+    window_any._breakpoints_by_file = {
+        "/tmp/project/dirty.py": {9, 2},
+        "/tmp/project/other.py": {1},
+    }
+    window_any._active_transient_entry_file_path = None
+    window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
+    deleted: list[str] = []
+    window_any._delete_transient_entry_file = deleted.append
+    calls: list[dict[str, object]] = []
+    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+
+    started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG)
+
+    assert started is True
+    assert calls == [
+        {
+            "mode": constants.RUN_MODE_PYTHON_DEBUG,
+            "entry_file": "/tmp/transient.py",
+            "breakpoints": [
+                {"file_path": "/tmp/transient.py", "line_number": 2},
+                {"file_path": "/tmp/transient.py", "line_number": 9},
+                {"file_path": "/tmp/project/other.py", "line_number": 1},
+            ],
+            "skip_save": True,
+        }
+    ]
+    assert deleted == []
+    assert window_any._active_transient_entry_file_path == "/tmp/transient.py"

@@ -2078,17 +2078,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Run unavailable", "Open a file tab before running.")
             return False
         entry_path = Path(active_tab.file_path).expanduser().resolve()
+        active_file_path = str(entry_path)
         if entry_path.suffix.lower() != ".py":
             QMessageBox.warning(self, "Run unavailable", "Active file must be a Python file.")
             return False
-        breakpoints: list[dict[str, int | str]] | None = None
-        if mode == constants.RUN_MODE_PYTHON_DEBUG:
-            breakpoints = []
-            for file_path, line_numbers in self._breakpoints_by_file.items():
-                for line_number in sorted(line_numbers):
-                    breakpoints.append({"file_path": file_path, "line_number": line_number})
         transient_entry_file: str | None = None
-        entry_file = str(entry_path)
+        entry_file = active_file_path
         skip_save = False
         if active_tab.is_dirty:
             transient_entry_file = self._write_transient_entry_file(
@@ -2097,6 +2092,16 @@ class MainWindow(QMainWindow):
             )
             entry_file = transient_entry_file
             skip_save = True
+        breakpoints: list[dict[str, int | str]] | None = None
+        if mode == constants.RUN_MODE_PYTHON_DEBUG:
+            remapped_active_path = transient_entry_file
+            breakpoints = []
+            for file_path, line_numbers in self._breakpoints_by_file.items():
+                breakpoint_file_path = file_path
+                if remapped_active_path is not None and file_path == active_file_path:
+                    breakpoint_file_path = remapped_active_path
+                for line_number in sorted(line_numbers):
+                    breakpoints.append({"file_path": breakpoint_file_path, "line_number": line_number})
         started = self._start_session(
             mode=mode,
             entry_file=entry_file,
