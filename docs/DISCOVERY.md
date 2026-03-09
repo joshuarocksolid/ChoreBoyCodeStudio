@@ -765,42 +765,48 @@ print(conn.run("select version()"))
 
 ### ORM: SQLAlchemy 2.0.x with full Cython acceleration (validated)
 
-**Updated 2026-03-08.** For PostgreSQL ORM on ChoreBoy, use **SQLAlchemy 2.0.48**
+**Updated 2026-03-09.** For PostgreSQL ORM on ChoreBoy, use **SQLAlchemy 2.0.48**
 with the `postgresql+psycopg` dialect and **full Cython acceleration** — all
-validated on live ChoreBoy with PG 9.3.6 (`sqlalchemy_probe`, 6/6 probes pass).
+validated on live ChoreBoy with PG 9.3.6 (`cb_sqlalchemy_test`, 8/8 probes pass,
+87 tests total, 0 failures, 4 expected-fail on PG 9.3 feature boundaries).
 
-The production stack requires three bootstrap modules before `import sqlalchemy`:
+The production library is `cb_sqlalchemy`, which wraps the three-stage bootstrap
+and provides `create_engine()` / `create_async_engine()` / `get_session_factory()`
+with safe defaults:
 
 1. `cb_psycopg.bootstrap()` — psycopg 3 binary C acceleration + libpq via memfd
-2. `cb_greenlet.bootstrap()` — greenlet C extension via memfd (enables async ORM)
-3. `cb_sqlalchemy_cext.bootstrap()` — `sys.meta_path` import hook that loads 5
+2. `_greenlet.bootstrap()` — greenlet C extension via memfd (enables async ORM)
+3. `_cext.bootstrap()` — `sys.meta_path` import hook that loads 5
    SQLAlchemy Cython modules (`cyextension/*`) from memfd on demand
 
 After bootstrap, both sync and async ORM paths work:
 
-* **Sync**: `create_engine("postgresql+psycopg://...")` — 14/14 tests pass
-  (CRUD, joinedload, savepoints, bulk insert, reflection, stream\_results, UTF-8)
-* **Async**: `create_async_engine("postgresql+psycopg://...")` — 13/13 tests pass
-  (async CRUD, selectinload, rollback, AsyncConnection)
+* **Sync**: `cb_sqlalchemy.create_engine("postgresql+psycopg://...")` — full ORM
+  surface validated (CRUD, joinedload, savepoints, bulk insert, reflection,
+  stream\_results, UTF-8, advanced patterns, stress/edge cases)
+* **Async**: `cb_sqlalchemy.create_async_engine("postgresql+psycopg://...")` —
+  async CRUD, selectinload, rollback, AsyncConnection all pass
 
-Production engine settings:
+Production engine defaults (`CHOREBOY_ENGINE_DEFAULTS`):
 
-* `pool_pre_ping=True`, small pool size, zero aggressive overflow
-* Set `client_encoding` to UTF8 per connection to avoid SQL\_ASCII byte surprises
+* `pool_pre_ping=True`, `pool_size=2`, `max_overflow=0`, `echo=False`
+* `client_encoding=utf8` — passed to dialect and enforced via connect event hook
+* `pool_size`/`max_overflow` auto-stripped when using `NullPool` or `StaticPool`
 
 ### SQLAlchemy performance on ChoreBoy
 
 Benchmarked on live ChoreBoy (PG 9.3.6, psycopg 3.2.9 binary, SA 2.0.48 with
-Cython acceleration active):
+Cython acceleration active, `cb_sqlalchemy_test` probe 6, 1500 simple / 800
+parameterized iterations):
 
 | Layer | SELECT 1 (q/s) | Parameterized (q/s) | vs raw psycopg |
 |---|---|---|---|
-| Raw psycopg | 9,950 | 8,564 | 1.00x |
-| SA Core | 5,475 | 3,791 | 0.55x / 0.44x |
-| SA ORM | 4,522 | 3,409 | 0.45x / 0.40x |
-| SA Async | 3,113 | — | 0.31x |
+| Raw psycopg | 10,045 | 8,576 | 1.00x |
+| SA Core | 4,994 | 3,396 | 0.50x / 0.40x |
+| SA ORM | 4,215 | 3,197 | 0.42x / 0.37x |
+| SA Async | 2,598 | — | 0.26x |
 
-ORM overhead is roughly 2x versus raw psycopg — typical for SQLAlchemy with
+ORM overhead is roughly 2-2.5x versus raw psycopg — typical for SQLAlchemy with
 Cython acceleration. Async adds greenlet context-switch overhead; suitable for
 I/O-bound concurrency rather than per-query throughput.
 
@@ -829,7 +835,8 @@ Application code must avoid these constructs when targeting PG 9.3.
 
 ### Probe evidence
 
-Full results and analysis: `sqlalchemy_probe/SUMMARY.md`
+* Initial validation (6 probes): `sqlalchemy_probe/SUMMARY.md`
+* Full test suite (8 probes, 87 tests): `cb_sqlalchemy_test/SUMMARY.md`
 
 ## 6. FreeCAD Export Strategy (Headless vs GUI)
 
