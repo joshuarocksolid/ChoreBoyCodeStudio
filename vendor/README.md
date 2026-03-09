@@ -38,7 +38,24 @@ must match the runtime that will load them:
 - **Cloud dev environment**: CPython 3.11, x86_64 Linux (FreeCAD AppRun)
 
 If you need wheels for a CPython version that pip does not select automatically,
-download them explicitly from PyPI and extract into this folder.
+download them explicitly from PyPI and extract into this folder:
+
+```bash
+# For Cloud dev (Python 3.11):
+pip download tree-sitter==0.21.3 --python-version 311 --abi cp311 \
+  --platform manylinux_2_17_x86_64 --only-binary :all: --no-deps -d /tmp/wheels/
+pip download tree-sitter-languages==1.10.2 --python-version 311 --abi cp311 \
+  --platform manylinux_2_17_x86_64 --only-binary :all: --no-deps -d /tmp/wheels/
+
+# Extract wheels (they are zip files):
+cd /tmp && mkdir -p extract_ts extract_tsl
+cd /tmp/extract_ts && unzip -o /tmp/wheels/tree_sitter-0.21.3-cp311-*.whl
+cd /tmp/extract_tsl && unzip -o /tmp/wheels/tree_sitter_languages-1.10.2-cp311-*.whl
+cp -r /tmp/extract_ts/tree_sitter vendor/tree_sitter
+cp -r /tmp/extract_tsl/tree_sitter_languages vendor/tree_sitter_languages
+
+# For ChoreBoy production (Python 3.9), use cp39 instead of cp311.
+```
 
 ## How the app loads vendor packages
 
