@@ -7,6 +7,7 @@ import shutil
 
 from app.bootstrap.paths import PathInput, ensure_directory, plugin_install_dir
 from app.core import constants
+from app.filesystem.trash import move_path_to_trash
 from app.plugins.manifest import load_plugin_manifest
 from app.plugins.models import PluginRegistryEntry
 from app.plugins.package_format import locate_manifest_root, stage_plugin_source
@@ -77,7 +78,7 @@ def uninstall_plugin(
     for entry in entries:
         install_path = Path(entry.install_path).expanduser().resolve()
         if install_path.exists():
-            shutil.rmtree(install_path, ignore_errors=True)
+            move_path_to_trash(install_path, state_root=state_root)
     remove_registry_entry(plugin_id, version=version, state_root=state_root)
 
 

@@ -60,10 +60,14 @@ def test_set_plugin_enabled_updates_registry_state(tmp_path: Path) -> None:
     assert registry.entries[0].enabled is False
 
 
-def test_uninstall_plugin_removes_installation_and_registry_entry(tmp_path: Path) -> None:
+def test_uninstall_plugin_removes_installation_and_registry_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source_root = tmp_path / "plugin_source"
     _write_plugin_source(source_root, plugin_id="acme.demo", version="1.0.0")
     state_root = str((tmp_path / "state").resolve())
+    monkeypatch.setenv("XDG_DATA_HOME", str((tmp_path / "xdg_data").resolve()))
     result = install_plugin(source_root, state_root=state_root)
     assert Path(result.install_path).exists()
 
@@ -71,6 +75,9 @@ def test_uninstall_plugin_removes_installation_and_registry_entry(tmp_path: Path
 
     assert Path(result.install_path).exists() is False
     assert load_plugin_registry(state_root).entries == []
+    trash_files = (tmp_path / "xdg_data" / "Trash" / "files")
+    assert trash_files.exists() is True
+    assert any(trash_files.iterdir()) is True
 
 
 def test_install_plugin_rejects_manifest_with_path_like_id(tmp_path: Path) -> None:
