@@ -153,16 +153,20 @@ def test_handle_drop_move_rejects_folder_move_into_itself(tmp_path) -> None:
     assert reloaded == []
 
 
-def test_handle_drop_move_returns_oserror_message(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_drop_move_returns_oserror_message(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     tree_controller = _FakeProjectTreeController()
     coordinator, reloaded = _coordinator(tree_controller)
+    source = tmp_path / "project" / "a.py"
+    target_dir = tmp_path / "project" / "target"
+    target_dir.mkdir(parents=True)
+    source.write_text("print('x')\n", encoding="utf-8")
 
     def _raise_oserror(_source: str, _destination: str) -> FileOperationResult:
         raise OSError("permission denied")
 
     monkeypatch.setattr("app.shell.project_tree_action_coordinator.move_path", _raise_oserror)
 
-    error = coordinator.handle_drop_move("/tmp/project/a.py", "/tmp/project/target")
+    error = coordinator.handle_drop_move(str(source), str(target_dir))
 
     assert error == "permission denied"
     assert tree_controller.move_calls == []

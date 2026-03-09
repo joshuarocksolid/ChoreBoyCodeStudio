@@ -193,6 +193,33 @@ Auditor mode: deep skeptical audit (evidence-first)
 - tests updated:
   - `tests/unit/plugins/test_runtime_manager.py`
 
+---
+
+## 2026-03-09 addendum — drag/drop failing test mismatch and final suite status
+
+### Failing baseline test analysis
+- Baseline full-suite run originally failed only:
+  - `tests/unit/shell/test_project_tree_action_coordinator.py::test_handle_drop_move_returns_oserror_message`
+- Static/behavioral analysis:
+  - `ProjectTreeWidget.dropEvent()` only passes an existing target item path from `itemAt(event.pos())`
+  - the failing test passed a nonexistent target path (`/tmp/project/target`)
+  - `handle_drop_move(...)` therefore correctly normalized destination back to the source parent and returned:
+    - `Cannot move item onto itself.`
+- Conclusion:
+  - this was a **test-contract mismatch**, not a confirmed product bug
+
+### Fix implemented
+- Updated the unit test to use an actual existing target directory, matching the real tree-widget drag/drop contract.
+
+### Validation commands
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+
+#### `python3 run_tests.py -v --import-mode=importlib`
+- Result: **passed**
+- Full suite now completes successfully in this environment after the audit fixes and the drag/drop test correction.
+
 ## 1) Baseline validation and environment reality
 
 ### Command: `python3 run_tests.py -q`

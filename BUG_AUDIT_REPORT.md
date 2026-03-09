@@ -261,7 +261,19 @@ Validation therefore used:
 
 ## Likely bugs / strong suspicions
 
-- No additional high-confidence likely bugs remain after applied hardening in this audit pass.
+## 1) Delete-to-trash path depends on hidden `~/.local` and silently falls back to permanent delete
+- **Severity:** Medium  
+- **Confidence:** Medium-High  
+- **File(s):** `app/project/file_operations.py`  
+- **Evidence:** delete flow tries hidden system trash path:
+  - `Path.home() / ".local" / "share" / "Trash" / "files"`
+  - on any `OSError`, implementation silently falls back to permanent deletion
+- **Reproduction steps:**
+  1. Inspect `delete_path(..., use_trash=True)`.
+  2. Note ChoreBoy discovery/docs warning that hidden directories are unreliable.
+  3. Observe any trash-path failure becomes permanent delete without a user-visible distinction.
+- **Why it is suspicious:** on ChoreBoy, hidden-directory behavior has already caused reliability issues elsewhere; this path combines that risk with silent escalation from trash semantics to permanent deletion.
+- **Suggested fix:** either use an explicit visible trash/recycle path owned by Code Studio, or surface when delete is falling back to permanent removal instead of silently changing semantics.
 
 ---
 
@@ -292,6 +304,22 @@ Validation therefore used:
 - Tree-sitter runtime loader/highlighter behavior under unusual vendor/runtime failures.
 - End-to-end plugin host IPC under repeated crash/restart + concurrent command pressure.
 - Cross-platform path semantics for plugin export/import edge cases beyond Linux.
+- Filesystem delete/trash semantics on real ChoreBoy target.
+
+---
+
+## Code smell / maintainability risk
+
+## 1) One prior full-suite failure was a test-contract mismatch, not a product bug
+- **Severity:** Low  
+- **Confidence:** High  
+- **File(s):** `tests/unit/shell/test_project_tree_action_coordinator.py`, `app/project/project_tree_widget.py`, `app/shell/project_tree_action_coordinator.py`  
+- **Evidence:** failing test used nonexistent target path, but real drag/drop contract only passes existing tree-item paths from `itemAt(event.pos())`.
+- **Reproduction steps:**
+  1. Compare `ProjectTreeWidget.dropEvent()` target extraction with the old unit test inputs.
+  2. Observe mismatch between real widget contract and test assumptions.
+- **Suggested fix:** keep tests aligned with the real widget callback contract and avoid synthetic target paths that cannot arise from the UI.
+- **Fix applied:** ✅ test corrected on 2026-03-09
 
 ---
 
