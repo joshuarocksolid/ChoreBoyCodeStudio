@@ -342,7 +342,7 @@ Final validation state:
 13. `17aa650` — Align built-in pytest runner contract  
 14. `f89ced1` — Persist plugin runtime diagnostics  
 15. `9700bb2` — Align drag-drop test with widget contract  
-16. `TBD` — Match default delete semantics to permanent-delete UI contract
+16. `18700d6` — Match default delete semantics to permanent-delete UI contract
 
 ---
 
