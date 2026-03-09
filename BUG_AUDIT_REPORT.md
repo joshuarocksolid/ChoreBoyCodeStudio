@@ -114,7 +114,8 @@ Previously confirmed audit fixes from the earlier pass remain included here:
 Final validation state:
 - `python3 run_tests.py -v --import-mode=importlib` -> **passed**
 - targeted suites for packaging, project import, pytest runner, plugins, and drag/drop all **passed**
-- `pyright` is available but remains dominated by pre-existing PySide stub noise plus a smaller set of real type issues that were not the primary target of this audit pass
+- targeted `pyright` review on the audited non-UI modules -> **passed** (`0 errors`)
+- full-repo `pyright` still remains dominated by pre-existing PySide stub noise outside the audited non-UI slice
 
 ---
 

@@ -16,10 +16,12 @@ pytestmark = pytest.mark.unit
 class _FakeWidget:
     released: bool = False
 
-    def set_breakpoints(self, _breakpoints: set[int]) -> None:
+    def set_breakpoints(self, breakpoints: set[int]) -> None:
+        _ = breakpoints
         return
 
-    def set_language_for_path(self, _file_path: str) -> None:
+    def set_language_for_path(self, file_path: str) -> None:
+        _ = file_path
         return
 
     def deleteLater(self) -> None:  # noqa: N802

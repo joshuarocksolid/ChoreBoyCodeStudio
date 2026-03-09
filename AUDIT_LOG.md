@@ -7,6 +7,7 @@ Auditor mode: deep skeptical audit (evidence-first)
 - Branch: `cursor/adversarial-code-audit-9904`
 - Full automated validation:
   - `python3 run_tests.py -v --import-mode=importlib` -> **passed**
+  - targeted pyright on audited non-UI modules -> **passed**
 - High-value fixes landed for:
   - ChoreBoy installer packaging contract documentation/behavior
   - imported `pyproject` package-callable inference
@@ -263,6 +264,22 @@ Auditor mode: deep skeptical audit (evidence-first)
 - `tests/unit/project/test_file_operations.py`
   - now asserts default delete matches permanent-delete semantics
   - keeps explicit trash behavior under `use_trash=True` covered
+
+---
+
+## 2026-03-09 addendum — targeted pyright closeout
+
+### Commands run
+
+#### `pyright app/project/project_service.py app/project/file_operations.py app/run/test_runner_service.py app/plugins/runtime_manager.py tests/unit/project/test_project_service.py tests/integration/project/test_project_import_open.py tests/unit/run/test_test_runner_service.py tests/unit/plugins/test_runtime_manager.py tests/unit/project/test_file_operations.py tests/unit/project/test_bulk_file_operations.py tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+- Output:
+  - `0 errors, 0 warnings, 0 informations`
+
+#### `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_project_tree_action_coordinator.py`
+- Result: **passed**
+- Purpose:
+  - re-validated the small test-only signature adjustment made to satisfy targeted pyright
 
 ## 1) Baseline validation and environment reality
 
