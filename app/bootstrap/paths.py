@@ -51,6 +51,21 @@ def global_crash_reports_dir(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_CRASH_REPORTS_DIRNAME, state_root)
 
 
+def global_trash_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global trash directory path."""
+    return _global_state_child(constants.GLOBAL_TRASH_DIRNAME, state_root)
+
+
+def global_trash_files_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global trash-files directory path."""
+    return global_trash_dir(state_root) / constants.GLOBAL_TRASH_FILES_DIRNAME
+
+
+def global_trash_info_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global trash-metadata directory path."""
+    return global_trash_dir(state_root) / constants.GLOBAL_TRASH_INFO_DIRNAME
+
+
 def global_plugins_dir(state_root: Optional[PathInput] = None) -> Path:
     """Return the global plugins state directory path."""
     return _global_state_child(constants.PLUGINS_STATE_DIRNAME, state_root)

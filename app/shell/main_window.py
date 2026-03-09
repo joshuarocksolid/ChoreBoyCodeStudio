@@ -4215,7 +4215,7 @@ class MainWindow(QMainWindow):
         new_folder_action = menu.addAction("New Folder…")
         menu.addSeparator()
         rename_action = menu.addAction("Rename…")
-        delete_action = menu.addAction("Delete")
+        delete_action = menu.addAction("Move to Trash")
         duplicate_action = menu.addAction("Duplicate")
         menu.addSeparator()
         copy_action = menu.addAction("Copy")
@@ -4289,7 +4289,7 @@ class MainWindow(QMainWindow):
         abs_paths = [entry[0] for entry in selected]
 
         menu = QMenu(self)
-        delete_action = menu.addAction(f"Delete {len(selected)} Items")
+        delete_action = menu.addAction(f"Move {len(selected)} Items to Trash")
         duplicate_action = menu.addAction(f"Duplicate {len(selected)} Items")
         menu.addSeparator()
         copy_action = menu.addAction("Copy")
@@ -4361,8 +4361,8 @@ class MainWindow(QMainWindow):
     def _handle_tree_delete(self, target_path: str) -> None:
         confirmation = QMessageBox.question(
             self,
-            "Delete",
-            f"Delete '{Path(target_path).name}'?\nThis action cannot be undone.",
+            "Move to Trash",
+            f"Move '{Path(target_path).name}' to trash?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -4370,7 +4370,7 @@ class MainWindow(QMainWindow):
             return
         error_message = self._project_tree_action_coordinator.handle_delete(target_path)
         if error_message is not None:
-            QMessageBox.warning(self, "Delete", error_message)
+            QMessageBox.warning(self, "Move to Trash", error_message)
 
     def _handle_tree_duplicate(self, source_path: str) -> None:
         error_message = self._project_tree_action_coordinator.handle_duplicate(source_path)
@@ -4381,8 +4381,8 @@ class MainWindow(QMainWindow):
         names = "\n".join(f"  • {Path(p).name}" for p in paths)
         confirmation = QMessageBox.question(
             self,
-            "Delete",
-            f"Delete {len(paths)} items?\n\n{names}\n\nThis action cannot be undone.",
+            "Move to Trash",
+            f"Move {len(paths)} items to trash?\n\n{names}",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -4390,7 +4390,7 @@ class MainWindow(QMainWindow):
             return
         failed = self._project_tree_action_coordinator.handle_bulk_delete(paths)
         if failed:
-            QMessageBox.warning(self, "Delete", "\n".join(failed))
+            QMessageBox.warning(self, "Move to Trash", "\n".join(failed))
 
     def _handle_tree_bulk_duplicate(self, paths: list[str]) -> None:
         failed = self._project_tree_action_coordinator.handle_bulk_duplicate(paths)

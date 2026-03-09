@@ -35,6 +35,9 @@ def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:
     assert paths.global_logs_dir(state_root) == state_root / constants.GLOBAL_LOGS_DIRNAME
     assert paths.global_cache_dir(state_root) == state_root / constants.GLOBAL_CACHE_DIRNAME
     assert paths.global_crash_reports_dir(state_root) == state_root / constants.GLOBAL_CRASH_REPORTS_DIRNAME
+    assert paths.global_trash_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME
+    assert paths.global_trash_files_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME / constants.GLOBAL_TRASH_FILES_DIRNAME
+    assert paths.global_trash_info_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME / constants.GLOBAL_TRASH_INFO_DIRNAME
     assert paths.global_state_db_path(state_root) == state_root / constants.GLOBAL_STATE_DB_FILENAME
     assert paths.global_app_log_path(state_root) == state_root / constants.GLOBAL_LOGS_DIRNAME / constants.APP_LOG_FILENAME
 

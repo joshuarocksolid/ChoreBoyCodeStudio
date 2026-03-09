@@ -678,12 +678,13 @@ Verify modern explorer actions are available and reliable from the project tree.
 - project with nested files/folders is open
 
 **Steps:**  
-1. Use tree context menu for create/rename/delete/duplicate.
+1. Use tree context menu for create/rename/move-to-trash/duplicate.
 2. Use cut/copy/paste and drag-drop move.
 3. Use copy path / copy relative path / reveal in file manager.
 
 **Expected Result:**  
-- filesystem operations complete successfully with clear confirmations on destructive actions
+- filesystem operations complete successfully with clear confirmations on move-to-trash actions
+- deleted items are moved to trash (not permanently removed immediately)
 - tree refreshes to reflect resulting state
 - path copy actions return correct values
 

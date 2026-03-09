@@ -11,7 +11,10 @@ from app.project.file_operations import copy_path, create_directory, create_file
 pytestmark = pytest.mark.unit
 
 
-def test_create_and_delete_file(tmp_path: Path) -> None:
+def test_create_and_delete_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    xdg_data_home = tmp_path / "xdg_data"
+    xdg_data_home.mkdir()
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data_home))
     target = tmp_path / "folder" / "new.py"
     create_result = create_file(str(target), content="print('ok')\n")
     assert create_result.success is True
@@ -20,7 +23,7 @@ def test_create_and_delete_file(tmp_path: Path) -> None:
     delete_result = delete_path(str(target))
     assert delete_result.success is True
     assert not target.exists()
-    assert delete_result.message == "Path deleted permanently."
+    assert delete_result.message == "Path moved to trash."
 
 
 def test_rename_move_copy_and_duplicate(tmp_path: Path) -> None:
@@ -53,9 +56,9 @@ def test_create_directory_conflict_returns_failure(tmp_path: Path) -> None:
 
 def test_delete_path_moves_to_trash_when_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Delete operation should prefer user trash path when available."""
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    monkeypatch.setenv("HOME", str(fake_home))
+    xdg_data_home = tmp_path / "xdg_data"
+    xdg_data_home.mkdir()
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data_home))
     target = tmp_path / "trash_me.py"
     target.write_text("print('x')\n", encoding="utf-8")
 
@@ -71,14 +74,14 @@ def test_delete_path_defaults_to_permanent_delete_even_when_home_exists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default delete should match the UI's permanent-delete contract."""
+    """Explicit permanent delete remains available for non-trash scenarios."""
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     target = tmp_path / "permanent_delete.py"
     target.write_text("print('x')\n", encoding="utf-8")
 
-    result = delete_path(str(target))
+    result = delete_path(str(target), use_trash=False)
 
     assert result.success is True
     assert result.message == "Path deleted permanently."

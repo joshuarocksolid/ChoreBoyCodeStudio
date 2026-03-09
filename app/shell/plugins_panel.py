@@ -221,8 +221,11 @@ class PluginManagerDialog(QDialog):
         plugin_id, version = selected
         confirmation = QMessageBox.question(
             self,
-            "Uninstall Plugin",
-            f"Uninstall {plugin_id}@{version}?",
+            "Move Plugin to Trash",
+            (
+                f"Move {plugin_id}@{version} to trash and uninstall?\n"
+                "You can restore it from trash if needed."
+            ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -236,6 +239,11 @@ class PluginManagerDialog(QDialog):
         self.refresh_plugins()
         if self._on_plugins_changed is not None:
             self._on_plugins_changed()
+        QMessageBox.information(
+            self,
+            "Plugin Uninstalled",
+            f"{plugin_id}@{version} was moved to trash and uninstalled.",
+        )
 
     def _handle_enable(self) -> None:
         selected = self._selected_plugin_key()

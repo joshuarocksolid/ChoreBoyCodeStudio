@@ -50,9 +50,9 @@ Comprehensive end-to-end smoke testing was performed across **22 test groups** c
 ### Group 4: Project Tree ✅
 - File/folder hierarchy displays correctly
 - Expand/collapse works on all folder nodes
-- **File context menu** has all 12+ options: New File, New Folder, Rename, Delete, Duplicate, Copy, Cut, Paste, Copy Path, Copy Relative Path, Reveal in File Manager, **Run**, **Set as Entry Point**
+- **File context menu** has all 12+ options: New File, New Folder, Rename, Move to Trash, Duplicate, Copy, Cut, Paste, Copy Path, Copy Relative Path, Reveal in File Manager, **Run**, **Set as Entry Point**
 - **Folder context menu** has all expected options
-- File operations (create, rename, delete, duplicate) all work correctly
+- File operations (create, rename, move to trash, duplicate) all work correctly
 - Tree updates after each operation
 
 ### Group 5: File Editing ✅

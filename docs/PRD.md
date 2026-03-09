@@ -121,7 +121,7 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 
 * Open folder
 * New file / New folder
-* Rename / Delete (with confirmations)
+* Rename / Move to Trash (with confirmations)
 * “Reveal in File Manager” (important for ChoreBoy habits)
 
 ### Center: Editor
