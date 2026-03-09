@@ -1,6 +1,6 @@
 # BUG_AUDIT_REPORT
 
-Date: 2026-03-08
+Date: 2026-03-09
 
 ---
 
@@ -81,23 +81,26 @@ This audit pass clarified and documented the actual ChoreBoy contract:
 
 ## Executive summary
 
-Deep skeptical audit identified **10 confirmed bugs** with concrete evidence and reproductions.  
-All 10 were fixed with minimal scoped changes and pushed as separate commits.
+Deep skeptical audit identified **14 confirmed bugs / implementation failures with concrete evidence**, plus **1 likely bug / strong suspicion** and **1 test-contract mismatch**.
 
-Highest-impact issues were:
+Highest-value confirmed issues addressed in this pass:
+- ChoreBoy distribution installer packaging contract was under-documented and easy to misuse
+- imported `pyproject.toml` package-callable targets silently resolved to `__init__.py`
+- built-in pytest runner diverged from the documented `run_tests.py` + `--import-mode=importlib` contract
+- plugin runtime failures were not persisted to plugin log diagnostics
+- a stale drag/drop test failure masked a test-contract mismatch rather than a product bug
+
+Previously confirmed audit fixes from the earlier pass remain included here:
 - runner lifecycle race that could orphan active processes
-- plugin path traversal vectors during install/runtime loading
-- project-tree operations permitting path escapes and uncaught move/rename exceptions
-- packager producing successful artifacts with broken entrypoints
+- plugin install/runtime traversal vectors
+- project-tree path escape and uncaught filesystem errors
+- packaging entrypoint validation holes
+- support-bundle log-path gaps
 
-Tooling limitations in this environment:
-- `pytest` unavailable in both AppRun and system Python
-- `pyright` unavailable
-
-Validation therefore used:
-- deterministic repro scripts
-- static code-path proof
-- syntax compilation (`compileall`)
+Final validation state:
+- `python3 run_tests.py -v --import-mode=importlib` -> **passed**
+- targeted suites for packaging, project import, pytest runner, plugins, and drag/drop all **passed**
+- `pyright` is available but remains dominated by pre-existing PySide stub noise plus a smaller set of real type issues that were not the primary target of this audit pass
 
 ---
 
@@ -279,22 +282,19 @@ Validation therefore used:
 
 ## Implementation gaps
 
-## 1) Validation toolchain unavailable in environment
-- **Severity:** Medium (process/testing risk)  
-- **Confidence:** High  
-- **Evidence:**
-  - `python3 run_tests.py -q` -> missing pytest
-  - `python3 -m pytest -q` -> missing pytest
-  - `pyright --version` -> command not found
-- **Gap:** unable to run full automated regression suite in this environment.
-- **Suggested fix:** restore test/type tooling in CI/dev image and run targeted suites for changed modules.
-
-## 2) Coverage concentration gap in high-complexity shell/runtime surfaces
+## 1) Coverage concentration gap in high-complexity shell/runtime surfaces
 - **Severity:** Medium  
 - **Confidence:** Medium  
 - **Evidence:** several high-complexity modules have limited direct test granularity (notably `app/shell/main_window.py`, `app/treesitter/*`, parts of plugin runtime wiring).
 - **Gap:** high behavior complexity with relatively sparse focused regression tests increases change risk.
 - **Suggested fix:** add focused unit/integration seams around complex orchestration paths.
+
+## 2) Pyright remains noisy enough to hide smaller real issues
+- **Severity:** Low-Medium  
+- **Confidence:** High  
+- **Evidence:** full `pyright` output is still dominated by PySide/PyQt stub issues and broad attribute-access noise, reducing its usefulness as a high-signal regression tool.
+- **Gap:** smaller real typing regressions can be buried in the current baseline.
+- **Suggested fix:** either suppress known PySide false positives more aggressively or carve out targeted typed modules with cleaner reporting.
 
 ---
 
@@ -334,22 +334,26 @@ Validation therefore used:
 7. `2ad86e8` — Enforce runtime plugin trust at handler load  
 8. `4e4a9cc` — Include active fallback app log in support bundles  
 9. `a5a1eba` — Scope active log lookup by state root  
-10. `05b49ac` — Reject excluded packaging entrypoint paths
+10. `05b49ac` — Reject excluded packaging entrypoint paths  
+11. `8e83a14` — Clarify ChoreBoy installer packaging contract  
+12. `dd18bb5` — Fix pyproject package entry inference  
+13. `17aa650` — Align built-in pytest runner contract  
+14. `f89ced1` — Persist plugin runtime diagnostics  
+15. `9700bb2` — Align drag-drop test with widget contract
 
 ---
 
 ## Suggested next tests
 
-1. Restore pytest and run:
-   - `python3 run_tests.py -v tests/unit/run/test_process_supervisor.py`
-   - `python3 run_tests.py -v tests/unit/plugins/`
-   - `python3 run_tests.py -v tests/unit/shell/test_project_tree_action_coordinator.py`
-   - `python3 run_tests.py -v tests/unit/packaging/test_packager.py`
-2. Run plugin manager manual acceptance:
+1. Run plugin manager manual acceptance:
    - install/enable runtime plugin
    - safe mode toggle
    - repeated runtime failure quarantine flow
-3. Run manual tree-file operations in GUI:
+2. Run manual tree-file operations in GUI:
    - invalid names, drag-drop folder to child, bulk cut/paste edge cases
+3. Exercise delete/trash behavior on a real ChoreBoy target:
+   - verify whether hidden `~/.local/share/Trash/files` is reliable
+   - verify whether fallback to permanent delete is user-visible
 4. Package and launch smoke test with valid and invalid entrypoint paths.
+5. Run targeted pyright review on touched modules after reducing PySide noise.
 

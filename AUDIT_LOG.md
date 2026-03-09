@@ -3,6 +3,19 @@
 Date: 2026-03-08  
 Auditor mode: deep skeptical audit (evidence-first)
 
+## Current final status (2026-03-09)
+- Branch: `cursor/adversarial-code-audit-9904`
+- Full automated validation:
+  - `python3 run_tests.py -v --import-mode=importlib` -> **passed**
+- High-value fixes landed for:
+  - ChoreBoy installer packaging contract documentation/behavior
+  - imported `pyproject` package-callable inference
+  - built-in pytest runner contract drift
+  - plugin runtime log diagnostics persistence
+  - drag/drop unit-test contract mismatch
+- Remaining non-fixed finding explicitly carried in the report:
+  - delete-to-trash semantics rely on hidden `~/.local` and may silently fall back to permanent delete on real ChoreBoy systems
+
 ---
 
 ## 2026-03-09 addendum — ChoreBoy installer packaging contract
