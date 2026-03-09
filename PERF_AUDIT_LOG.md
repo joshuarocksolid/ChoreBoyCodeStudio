@@ -1,8 +1,308 @@
 # Performance Audit Log
 
-Date: 2026-03-08  
+Date: 2026-03-09  
 Auditor: Cursor performance audit agent  
 Scope: end-to-end responsiveness + high-impact throughput bottlenecks in editor/search/lint/output paths.
+
+## 0) Current branch continuation note
+
+- Repository branch: `cursor/performance-audit-report-d9b6`
+- This log continues prior performance-audit work already present in the repo.
+- Earlier sections below describe previously landed fixes that remain relevant baseline context.
+
+## 0.1) Slice 1 — UI-thread unblocking for reference / rename actions
+
+### Why this slice
+
+Planning-phase profiling and measurement confirmed that:
+- `find_references()` scales to roughly **952 ms at ~10k files**
+- rename planning reuses the same scan path
+- both actions were executed synchronously from `MainWindow`
+
+This slice focuses on **responsiveness first**: moving those actions off the UI thread before deeper engine optimization.
+
+### Changed files
+
+- `app/shell/main_window.py`
+- `tests/unit/shell/test_main_window_reference_rename_actions.py` (new)
+
+### Change summary
+
+- `MainWindow._handle_find_references_action()` now schedules reference search through `BackgroundTaskRunner` instead of executing the scan inline.
+- `MainWindow._handle_rename_symbol_action()` now schedules rename planning through `BackgroundTaskRunner` instead of planning inline on the UI thread.
+- Existing result behavior is preserved:
+  - find references still populates the Problems panel
+  - rename still shows preview, applies the plan, refreshes open tabs, reloads project state, and reports final counts
+
+### Validation
+
+Targeted correctness suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib \
+  tests/unit/shell/test_main_window_reference_rename_actions.py \
+  tests/unit/intelligence/test_reference_service.py \
+  tests/unit/intelligence/test_refactor_service.py \
+  tests/unit/intelligence/test_navigation_service.py \
+  tests/unit/intelligence/test_symbol_index.py
+```
+
+Result:
+- **18 passed**
+
+Performance regression suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib \
+  tests/integration/performance/test_responsiveness_thresholds.py \
+  tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Focused responsiveness measurement
+
+A targeted AppRun benchmark monkeypatched `find_references()` and `plan_rename_symbol()` to each sleep for 250 ms, then measured the action handler return time after backgrounding.
+
+Observed:
+- `Find References` handler return time: **0.36 ms**
+- `Rename Symbol` handler return time: **0.30 ms**
+- Both background tasks still completed successfully afterward.
+
+Conclusion:
+- This slice does not make the underlying analysis faster yet.
+- It **does** remove the expensive scan/planning work from the UI-thread action path, which is the highest-confidence responsiveness win for these commands.
+
+## 0.2) Slice 3/4 — reference scan + cold go-to-definition engine optimization
+
+### Why this slice
+
+After shell-level backgrounding, the next highest-value work was reducing the underlying engine cost for:
+- `find_references()`
+- rename planning (which reuses `find_references()`)
+- cache-cold `lookup_definition_with_cache()`
+
+### Changed files
+
+- `app/intelligence/reference_service.py`
+- `app/intelligence/symbol_index.py`
+- `tests/unit/intelligence/test_reference_service.py`
+
+### Change summary
+
+#### Reference engine
+- Removed the double full-project scan in `find_references()`.
+- Each Python file is now:
+  - read once
+  - definitions collected from the in-memory source
+  - token references collected from the same source payload
+- Avoided repeated per-file `resolve()`/string normalization in the hot path.
+
+#### Cold definition lookup path
+- Removed unnecessary per-file `resolve()` calls during symbol-index construction.
+- Preserved existing cache contract and warm-lookup behavior.
+
+### TDD / regression coverage
+
+Added focused unit coverage:
+
+- `tests/unit/intelligence/test_reference_service.py::test_find_references_reads_each_python_file_once`
+
+This test failed before the implementation because each file was read twice by the old reference path.
+
+### Validation
+
+Targeted suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_reference_service.py
+python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_symbol_index.py tests/unit/intelligence/test_navigation_service.py
+```
+
+Results:
+- reference-service suite: **5 passed**
+- symbol-index/navigation suites: **7 passed**
+
+### Before / after measurements
+
+#### `find_references()` scaling
+
+Before:
+- ~1,002 files: **113.60 ms**
+- ~2,502 files: **241.01 ms**
+- ~5,002 files: **482.18 ms**
+- ~10,002 files: **951.66 ms**
+
+After:
+- ~1,002 files: **49.44 ms**
+- ~2,502 files: **122.03 ms**
+- ~5,002 files: **248.75 ms**
+- ~10,002 files: **499.21 ms**
+
+Improvement:
+- roughly **2.3x faster** at ~1k files
+- roughly **2.0x faster** at ~10k files
+
+#### `plan_rename_symbol()` scaling
+
+After:
+- ~1,002 files: **47.82 ms**
+- ~2,502 files: **118.39 ms**
+- ~5,002 files: **239.10 ms**
+- ~10,002 files: **492.00 ms**
+
+Conclusion:
+- rename planning inherits the same engine win because it delegates to `find_references()`
+
+#### Cold `lookup_definition_with_cache()` scaling
+
+Before:
+- ~1,002 files: **76.87 ms**
+- ~2,502 files: **173.75 ms**
+- ~5,002 files: **330.99 ms**
+- ~10,002 files: **652.93 ms**
+
+After:
+- ~1,002 files: **52.94 ms**
+- ~2,502 files: **95.27 ms**
+- ~5,002 files: **181.38 ms**
+- ~10,002 files: **343.64 ms**
+
+Warm path after change:
+- still ~**1.56–4.80 ms**
+
+Improvement:
+- roughly **1.45x faster** at ~1k files
+- roughly **1.9x faster** at ~10k files
+
+## 0.3) Slice 5 — background diagnostics dispatch
+
+### Why this slice
+
+Planning measurements showed that `analyze_python_file()` can take hundreds of milliseconds on large/import-heavy files, and the shell previously executed linting synchronously in:
+- save-triggered lint
+- tab-change lint
+- realtime lint timer
+- bulk relint of open files
+
+This slice focuses on **editor responsiveness**, not analyzer throughput.
+
+### Changed files
+
+- `app/shell/main_window.py`
+- `tests/unit/shell/test_main_window_lint_probe_policy.py`
+
+### Change summary
+
+- `_render_lint_diagnostics_for_file()` now schedules diagnostics through `BackgroundTaskRunner`.
+- `_lint_all_open_files()` now schedules per-file lint work instead of running each analysis inline.
+- Existing runtime-probe policy is preserved:
+  - manual lint still allows runtime import probing
+  - routine flows still disable it
+
+### Validation
+
+Targeted suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_main_window_lint_probe_policy.py tests/unit/intelligence/test_diagnostics_service.py
+```
+
+Result:
+- **34 passed**
+
+Performance regression suites:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_responsiveness_thresholds.py tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Focused responsiveness measurement
+
+A targeted AppRun benchmark monkeypatched `analyze_python_file()` to sleep for 250 ms, then measured `_render_lint_diagnostics_for_file(..., trigger='save')`.
+
+Observed:
+- lint handler return time: **0.42 ms**
+- background task still completed successfully afterward
+
+### Important note
+
+- A brief attempt at deeper analyzer-internal refactoring did **not** produce reliable throughput improvements on import-heavy workloads, so it was not kept.
+- This slice intentionally limits itself to the shell-level responsiveness fix with strong evidence.
+
+## 0.4) Slice 6 — project-open enumeration path cleanup
+
+### Why this slice
+
+After the highest-value navigation and lint responsiveness work landed, project-open enumeration remained the next strongest measured scalability risk:
+- roughly **753 ms** at ~20k files in planning measurements
+- profiler dominated by `_build_project_entry()`, `Path.relative_to()`, and per-entry `resolve()`
+
+### Changed files
+
+- `app/project/project_service.py`
+- `tests/unit/project/test_project_service.py`
+
+### Change summary
+
+- Reworked `enumerate_project_entries()` to build relative and absolute paths directly from the `os.walk()` payload.
+- Removed per-entry `Path.relative_to()` and `Path.resolve()` work from the hot loop.
+- Preserved:
+  - deterministic ordering
+  - `ProjectFileEntry` shape
+  - existing open/import behavior
+
+### TDD / regression coverage
+
+Added focused unit coverage:
+
+- `tests/unit/project/test_project_service.py::test_enumerate_project_entries_avoids_per_entry_resolve_calls`
+
+This test failed before the change because enumeration resolved each entry path individually.
+
+### Validation
+
+Targeted suite:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_project_service.py
+```
+
+Result:
+- **27 passed**
+
+Performance regression suite:
+
+```bash
+python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_responsiveness_thresholds.py tests/integration/performance/test_editor_highlighting_performance.py
+```
+
+Result:
+- **11 passed**
+
+### Before / after measurements
+
+#### `open_project()` scaling
+
+Before:
+- ~1,001 files: **36.40 ms**
+- ~5,001 files: **179.88 ms**
+- ~10,001 files: **354.59 ms**
+- ~20,001 files: **753.43 ms**
+
+After:
+- ~1,001 files: **2.30 ms**
+- ~5,001 files: **8.79 ms**
+- ~10,001 files: **15.99 ms**
+- ~20,001 files: **31.95 ms**
+
+Improvement:
+- roughly **15.8x faster** at ~1k files
+- roughly **24.0x faster** at ~20k files
 
 ## 1) Environment and validation notes
 

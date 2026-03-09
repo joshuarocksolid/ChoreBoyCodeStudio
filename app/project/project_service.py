@@ -285,13 +285,16 @@ def enumerate_project_entries(
         ) from error
 
     try:
+        root_text = str(resolved_root)
         for current_dir, dir_names, file_names in os.walk(
             resolved_root,
             topdown=True,
             onerror=_on_walk_error,
             followlinks=False,
         ):
-            current_path = Path(current_dir)
+            current_relative_dir = os.path.relpath(current_dir, root_text)
+            if current_relative_dir == ".":
+                current_relative_dir = ""
             _active_excludes = exclude_patterns or []
             dir_names[:] = sorted(
                 name for name in dir_names
@@ -303,21 +306,21 @@ def enumerate_project_entries(
             )
 
             for directory_name in dir_names:
-                directory_path = current_path / directory_name
                 entries.append(
-                    _build_project_entry(
-                        path=directory_path,
-                        project_root=resolved_root,
+                    _build_project_entry_from_walk(
+                        current_dir=current_dir,
+                        current_relative_dir=current_relative_dir,
+                        entry_name=directory_name,
                         is_directory=True,
                     )
                 )
 
             for file_name in file_names:
-                file_path = current_path / file_name
                 entries.append(
-                    _build_project_entry(
-                        path=file_path,
-                        project_root=resolved_root,
+                    _build_project_entry_from_walk(
+                        current_dir=current_dir,
+                        current_relative_dir=current_relative_dir,
+                        entry_name=file_name,
                         is_directory=False,
                     )
                 )
@@ -536,6 +539,22 @@ def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) 
     return ProjectFileEntry(
         relative_path=relative_path,
         absolute_path=str(path.resolve()),
+        is_directory=is_directory,
+    )
+
+
+def _build_project_entry_from_walk(
+    *,
+    current_dir: str,
+    current_relative_dir: str,
+    entry_name: str,
+    is_directory: bool,
+) -> ProjectFileEntry:
+    relative_path = entry_name if not current_relative_dir else f"{current_relative_dir}/{entry_name}"
+    absolute_path = os.path.join(current_dir, entry_name)
+    return ProjectFileEntry(
+        relative_path=relative_path,
+        absolute_path=absolute_path,
         is_directory=is_directory,
     )
 
