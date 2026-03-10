@@ -30,13 +30,23 @@ def test_parse_syntax_color_overrides_validates_theme_shape_and_token_keys() -> 
             "syntax_colors": {
                 "light": {
                     "keyword": "#123456",
+                    "keyword_control": "445566",
+                    "keyword_import": "#abcdef",
+                    "escape": "#0a0b0c",
+                    "markdown_strong": "0d0e0f",
                     "unknown_token": "#654321",
                 },
                 "dark": "invalid-shape",
             }
         }
     )
-    assert parsed[THEME_LIGHT] == {"keyword": "#123456"}
+    assert parsed[THEME_LIGHT] == {
+        "keyword": "#123456",
+        "keyword_control": "#445566",
+        "keyword_import": "#ABCDEF",
+        "escape": "#0A0B0C",
+        "markdown_strong": "#0D0E0F",
+    }
     assert parsed[THEME_DARK] == {}
 
 

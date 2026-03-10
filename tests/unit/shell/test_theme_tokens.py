@@ -64,7 +64,11 @@ class TestTokensFromPalette:
         assert tokens.accent == "#5B8CFF"
         assert tokens.tree_hover_bg != ""
         assert tokens.syntax_keyword != ""
+        assert tokens.syntax_keyword_control != ""
+        assert tokens.syntax_keyword_import != ""
+        assert tokens.syntax_escape != ""
         assert tokens.syntax_markdown_code != ""
+        assert tokens.syntax_markdown_strong != ""
         assert tokens.syntax_semantic_function != ""
         assert tokens.syntax_semantic_method != ""
         assert tokens.syntax_semantic_variable != ""
@@ -77,7 +81,11 @@ class TestTokensFromPalette:
         assert tokens.accent == "#3366FF"
         assert tokens.tree_hover_bg != ""
         assert tokens.syntax_keyword != ""
+        assert tokens.syntax_keyword_control != ""
+        assert tokens.syntax_keyword_import != ""
+        assert tokens.syntax_escape != ""
         assert tokens.syntax_markdown_code != ""
+        assert tokens.syntax_markdown_strong != ""
         assert tokens.syntax_semantic_function != ""
         assert tokens.syntax_semantic_method != ""
         assert tokens.syntax_semantic_variable != ""
@@ -91,6 +99,10 @@ class TestTokensFromPalette:
         assert light.editor_bg != dark.editor_bg
         assert light.text_primary != dark.text_primary
         assert light.syntax_keyword != dark.syntax_keyword
+        assert light.syntax_keyword_control != dark.syntax_keyword_control
+        assert light.syntax_keyword_import != dark.syntax_keyword_import
+        assert light.syntax_escape != dark.syntax_escape
+        assert light.syntax_markdown_strong != dark.syntax_markdown_strong
         assert light.syntax_semantic_function != dark.syntax_semantic_function
         assert light.syntax_semantic_method != dark.syntax_semantic_method
         assert light.syntax_semantic_variable != dark.syntax_semantic_variable
@@ -103,10 +115,18 @@ class TestTokensFromPalette:
             tokens,
             {
                 "keyword": "#123456",
+                "keyword_control": "#112233",
+                "keyword_import": "#332211",
+                "escape": "#ABCDEF",
+                "markdown_strong": "#FEDCBA",
                 "semantic_method": "#654321",
                 "unknown": "#ABCDEF",
             },
         )
         assert overridden.syntax_keyword == "#123456"
+        assert overridden.syntax_keyword_control == "#112233"
+        assert overridden.syntax_keyword_import == "#332211"
+        assert overridden.syntax_escape == "#ABCDEF"
+        assert overridden.syntax_markdown_strong == "#FEDCBA"
         assert overridden.syntax_semantic_method == "#654321"
         assert overridden.syntax_string == tokens.syntax_string

@@ -4,9 +4,12 @@
 Run on the dev machine (any Python 3.6+):
     python3 package.py
 
-Produces:
-    dist/ChoreBoyCodeStudio-v{version}/   -- staging directory to copy to /home/default/ on ChoreBoy
-    dist/ChoreBoyCodeStudio-v{version}.zip -- password-protected archive for USB transfer
+Produces (inside the artifacts directory):
+    dist/choreboy_code_studio_installer_v{version}/   -- staging directory
+    dist/choreboy_code_studio_installer_v{version}.zip -- password-protected archive
+
+Vendor files and dist output live in a sibling artifacts directory to keep
+large/binary files out of the editor workspace.  Override with CBCS_ARTIFACTS_DIR.
 """
 
 from __future__ import annotations
@@ -20,9 +23,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 
+ARTIFACTS_DIR = Path(
+    os.environ.get("CBCS_ARTIFACTS_DIR", "")
+    or str(REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts")
+)
+
 INCLUDE_DIRS = [
     "app",
-    "vendor",
     "templates",
     "example_projects",
 ]
@@ -158,7 +165,7 @@ def main() -> int:
     version = _read_version()
     package_name = f"choreboy_code_studio_installer_v{version}"
 
-    dist_dir = REPO_ROOT / "dist"
+    dist_dir = ARTIFACTS_DIR / "dist"
     staging = dist_dir / package_name
 
     if staging.exists():
@@ -178,6 +185,14 @@ def main() -> int:
             continue
         print(f"  Copying payload/{dir_name}/ ...")
         _copytree_filtered(src, payload_dir / dir_name)
+
+    vendor_src = ARTIFACTS_DIR / "vendor"
+    if not vendor_src.is_dir():
+        print(f"  ERROR: vendor directory not found at {vendor_src}")
+        print("  Set CBCS_ARTIFACTS_DIR or place vendor/ in the artifacts directory.")
+        return 1
+    print(f"  Copying payload/vendor/ (from {vendor_src}) ...")
+    _copytree_filtered(vendor_src, payload_dir / "vendor")
 
     for file_name in INCLUDE_FILES:
         src = REPO_ROOT / file_name

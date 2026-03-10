@@ -25,7 +25,10 @@ class SyntaxColorToken:
 
 SYNTAX_COLOR_TOKENS: tuple[SyntaxColorToken, ...] = (
     SyntaxColorToken("keyword", "Keyword", "Lexical"),
+    SyntaxColorToken("keyword_control", "Keyword Control", "Lexical"),
+    SyntaxColorToken("keyword_import", "Keyword Import", "Lexical"),
     SyntaxColorToken("builtin", "Builtin", "Lexical"),
+    SyntaxColorToken("escape", "Escape Sequence", "Lexical"),
     SyntaxColorToken("string", "String", "Lexical"),
     SyntaxColorToken("comment", "Comment", "Lexical"),
     SyntaxColorToken("number", "Number", "Lexical"),
@@ -39,6 +42,7 @@ SYNTAX_COLOR_TOKENS: tuple[SyntaxColorToken, ...] = (
     SyntaxColorToken("json_literal", "JSON Literal", "Lexical"),
     SyntaxColorToken("markdown_heading", "Markdown Heading", "Lexical"),
     SyntaxColorToken("markdown_emphasis", "Markdown Emphasis", "Lexical"),
+    SyntaxColorToken("markdown_strong", "Markdown Strong", "Lexical"),
     SyntaxColorToken("markdown_code", "Markdown Code", "Lexical"),
     SyntaxColorToken("semantic_function", "Semantic Function", "Semantic"),
     SyntaxColorToken("semantic_method", "Semantic Method", "Semantic"),

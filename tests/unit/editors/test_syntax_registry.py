@@ -95,6 +95,10 @@ def test_registry_sniffs_extensionless_python_without_shebang() -> None:
 def test_syntax_palette_includes_extended_semantic_keys() -> None:
     tokens = tokens_from_palette(QPalette(), force_mode="dark")
     palette = syntax_palette_from_tokens(tokens)
+    assert palette["keyword_control"] == tokens.syntax_keyword_control
+    assert palette["keyword_import"] == tokens.syntax_keyword_import
+    assert palette["escape"] == tokens.syntax_escape
+    assert palette["markdown_strong"] == tokens.syntax_markdown_strong
     assert palette["semantic_function"] == tokens.syntax_semantic_function
     assert palette["semantic_method"] == tokens.syntax_semantic_method
     assert palette["semantic_class"] == tokens.syntax_semantic_class

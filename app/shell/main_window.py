@@ -1110,6 +1110,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(
             global_snapshot,
             self,
+            tokens=self._resolve_theme_tokens(),
             project_snapshot=effective_snapshot if project_root is not None else None,
             project_scope_available=project_root is not None,
         )

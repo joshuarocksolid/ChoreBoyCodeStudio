@@ -1,11 +1,12 @@
 (comment) @comment
 
 (string) @string
+(escape_sequence) @escape
 
 (integer) @number
 (float) @number
-(true) @number
-(false) @number
+(true) @constant.builtin
+(false) @constant.builtin
 (none) @constant.builtin
 
 (function_definition name: (identifier) @function.def)
@@ -27,15 +28,22 @@
 
 (type (identifier) @type)
 
-["def" "class" "return" "if" "elif" "else" "for" "while"
- "import" "from" "as" "pass" "raise" "and" "or" "not" "in"
- "is" "with" "try" "except" "finally" "yield" "lambda"
- "global" "nonlocal" "del" "assert" "break" "continue"] @keyword
+["def" "class" "lambda"] @keyword
+
+["return" "if" "elif" "else" "for" "while" "pass" "raise"
+ "with" "try" "except" "finally" "yield" "global" "nonlocal"
+ "del" "assert" "break" "continue"] @keyword.control
+
+["import" "from" "as"] @keyword.import
 
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 ["," "." ":" ";"] @punctuation.delimiter
 ["=" "+" "-" "*" "/" "%" "**" "//" "|" "&" "^" "~"
  "<" ">" "<=" ">=" "==" "!=" "+=" "-=" "*=" "/="
  "and" "or" "not" "in" "is"] @operator
+
+(interpolation
+ "{" @punctuation.delimiter
+ "}" @punctuation.delimiter)
 
 (identifier) @variable

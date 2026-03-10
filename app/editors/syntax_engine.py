@@ -21,7 +21,10 @@ class TokenStyle:
 
 DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
     "keyword": "#0000FF",
+    "keyword_control": "#AF00DB",
+    "keyword_import": "#AF00DB",
     "builtin": "#267F99",
+    "escape": "#EE0000",
     "string": "#A31515",
     "comment": "#008000",
     "number": "#098658",
@@ -35,6 +38,7 @@ DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
     "json_literal": "#0000FF",
     "markdown_heading": "#800000",
     "markdown_emphasis": "#800000",
+    "markdown_strong": "#800000",
     "markdown_code": "#800000",
     "semantic_function": "#795E26",
     "semantic_method": "#795E26",
@@ -47,7 +51,10 @@ DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
 }
 DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "keyword": "#569CD6",
+    "keyword_control": "#C586C0",
+    "keyword_import": "#C586C0",
     "builtin": "#4EC9B0",
+    "escape": "#D7BA7D",
     "string": "#CE9178",
     "comment": "#6A9955",
     "number": "#B5CEA8",
@@ -61,6 +68,7 @@ DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "json_literal": "#569CD6",
     "markdown_heading": "#569CD6",
     "markdown_emphasis": "#569CD6",
+    "markdown_strong": "#569CD6",
     "markdown_code": "#CE9178",
     "semantic_function": "#DCDCAA",
     "semantic_method": "#DCDCAA",

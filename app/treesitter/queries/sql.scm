@@ -5,6 +5,7 @@
 
 (from_clause (identifier) @class.def)
 (table_column name: (identifier) @property)
+(function_call function: (identifier) @function.call)
 
 ["SELECT" "FROM" "WHERE" "INSERT" "UPDATE" "DELETE" "CREATE" "DROP"
  "ALTER" "TABLE" "INTO" "VALUES" "SET" "JOIN" "LEFT" "RIGHT" "INNER"

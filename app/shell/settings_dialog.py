@@ -20,6 +20,7 @@ from PySide2.QtWidgets import (
     QFormLayout,
     QColorDialog,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -59,6 +60,8 @@ from app.intelligence.lint_profile import (
     LINT_SEVERITY_WARNING,
 )
 from app.core import constants
+from app.shell.style_sheet import build_settings_style_sheet
+from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 
 class SettingsDialog(QDialog):
@@ -69,6 +72,7 @@ class SettingsDialog(QDialog):
         snapshot: EditorSettingsSnapshot,
         parent=None,
         *,
+        tokens: ShellThemeTokens | None = None,
         project_snapshot: EditorSettingsSnapshot | None = None,
         project_scope_available: bool = False,
         initial_scope: str = SETTINGS_SCOPE_GLOBAL,
@@ -77,6 +81,11 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.setModal(True)
         self.resize(860, 640)
+        self.setObjectName("shell.settingsDialog")
+        if tokens is None:
+            tokens = tokens_from_palette(self.palette())
+        self._tokens = tokens
+        self.setStyleSheet(build_settings_style_sheet(tokens))
         self._project_scope_available = bool(project_scope_available and project_snapshot is not None)
         self._active_scope = SETTINGS_SCOPE_GLOBAL
         self._scope_snapshots: dict[str, EditorSettingsSnapshot] = {
@@ -87,6 +96,7 @@ class SettingsDialog(QDialog):
         self._shortcut_editors: dict[str, QKeySequenceEdit] = {}
         self._shortcut_rows: dict[str, int] = {}
         self._syntax_color_inputs: dict[str, QLineEdit] = {}
+        self._syntax_color_swatches: dict[str, QLabel] = {}
         self._syntax_color_row_by_token: dict[str, int] = {}
         self._syntax_color_overrides_by_theme: dict[str, dict[str, str]] = {
             THEME_LIGHT: dict(snapshot.syntax_color_overrides_light),
@@ -115,9 +125,14 @@ class SettingsDialog(QDialog):
         self._file_excludes_reset_btn: QPushButton | None = None
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
         scope_row = QHBoxLayout()
-        scope_row.addWidget(QLabel("Settings Scope", self))
+        _scope_label = QLabel("Settings Scope", self)
+        _scope_label.setObjectName("shell.settingsDialog.scopeLabel")
+        scope_row.addWidget(_scope_label)
         self._scope_input = QComboBox(self)
+        self._scope_input.setObjectName("shell.settingsDialog.scopeInput")
         self._scope_input.addItem("Global", SETTINGS_SCOPE_GLOBAL)
         self._scope_input.addItem("Project", SETTINGS_SCOPE_PROJECT)
         if not self._project_scope_available:
@@ -132,19 +147,32 @@ class SettingsDialog(QDialog):
         layout.addLayout(scope_row)
 
         self._scope_banner_label = QLabel(self)
+        self._scope_banner_label.setObjectName("shell.settingsDialog.scopeBanner")
         self._scope_banner_label.setWordWrap(True)
         layout.addWidget(self._scope_banner_label)
 
         tabs = QTabWidget(self)
+        tabs.setObjectName("shell.settingsDialog.tabs")
         self._tabs_widget = tabs
         layout.addWidget(tabs)
 
         general_tab = QWidget(tabs)
-        general_layout = QVBoxLayout(general_tab)
+        _general_tab_layout = QVBoxLayout(general_tab)
+        _general_tab_layout.setContentsMargins(0, 0, 0, 0)
         tabs.addTab(general_tab, "General")
+        _scroll_area = QScrollArea(general_tab)
+        _scroll_area.setWidgetResizable(True)
+        _scroll_area.setObjectName("shell.settingsDialog.generalScroll")
+        _scroll_content = QWidget()
+        general_layout = QVBoxLayout(_scroll_content)
+        general_layout.setContentsMargins(16, 12, 16, 12)
+        general_layout.setSpacing(4)
         appearance_group = QGroupBox("Appearance")
+        appearance_group.setObjectName("shell.settingsDialog.appearanceGroup")
         self._appearance_group = appearance_group
         appearance_form = QFormLayout(appearance_group)
+        appearance_form.setVerticalSpacing(10)
+        appearance_form.setHorizontalSpacing(16)
         self._theme_mode_input = QComboBox(appearance_group)
         self._theme_mode_input.addItems(["System", "Light", "Dark"])
         _mode_to_index = {"system": 0, "light": 1, "dark": 2}
@@ -153,7 +181,10 @@ class SettingsDialog(QDialog):
         general_layout.addWidget(appearance_group)
 
         output_group = QGroupBox("Output")
+        output_group.setObjectName("shell.settingsDialog.outputGroup")
         output_form = QFormLayout(output_group)
+        output_form.setVerticalSpacing(10)
+        output_form.setHorizontalSpacing(16)
         self._auto_open_console_on_run_output_input = QCheckBox(output_group)
         self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
         output_form.addRow("Auto-open Run Log on run output", self._auto_open_console_on_run_output_input)
@@ -161,12 +192,16 @@ class SettingsDialog(QDialog):
         self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
         output_form.addRow("Auto-open Problems on run failure", self._auto_open_problems_on_run_failure_input)
         self._output_reset_to_global_btn = QPushButton("Reset Output Overrides to Global", output_group)
+        self._output_reset_to_global_btn.setObjectName("shell.settingsDialog.outputResetGlobal")
         self._output_reset_to_global_btn.clicked.connect(self._handle_reset_output_group_to_global)
         output_form.addRow("", self._output_reset_to_global_btn)
         general_layout.addWidget(output_group)
 
         editor_group = QGroupBox("Editor")
+        editor_group.setObjectName("shell.settingsDialog.editorGroup")
         editor_form = QFormLayout(editor_group)
+        editor_form.setVerticalSpacing(10)
+        editor_form.setHorizontalSpacing(16)
         self._tab_width_input = QSpinBox(editor_group)
         self._tab_width_input.setRange(2, 16)
         self._tab_width_input.setValue(snapshot.tab_width)
@@ -213,12 +248,16 @@ class SettingsDialog(QDialog):
         self._auto_save_input.setChecked(snapshot.auto_save)
         editor_form.addRow("Auto save", self._auto_save_input)
         self._editor_reset_to_global_btn = QPushButton("Reset Editor Overrides to Global", editor_group)
+        self._editor_reset_to_global_btn.setObjectName("shell.settingsDialog.editorResetGlobal")
         self._editor_reset_to_global_btn.clicked.connect(self._handle_reset_editor_group_to_global)
         editor_form.addRow("", self._editor_reset_to_global_btn)
         general_layout.addWidget(editor_group)
 
         intelligence_group = QGroupBox("Intelligence")
+        intelligence_group.setObjectName("shell.settingsDialog.intelligenceGroup")
         intelligence_form = QFormLayout(intelligence_group)
+        intelligence_form.setVerticalSpacing(10)
+        intelligence_form.setHorizontalSpacing(16)
         self._completion_enabled_input = QCheckBox(intelligence_group)
         self._completion_enabled_input.setChecked(snapshot.completion_enabled)
         intelligence_form.addRow("Enable completion", self._completion_enabled_input)
@@ -262,31 +301,37 @@ class SettingsDialog(QDialog):
         self._intelligence_reset_to_global_btn = QPushButton(
             "Reset Intelligence Overrides to Global", intelligence_group
         )
+        self._intelligence_reset_to_global_btn.setObjectName("shell.settingsDialog.intelligenceResetGlobal")
         self._intelligence_reset_to_global_btn.clicked.connect(self._handle_reset_intelligence_group_to_global)
         intelligence_form.addRow("", self._intelligence_reset_to_global_btn)
         general_layout.addWidget(intelligence_group)
         general_layout.addStretch(1)
+        _scroll_area.setWidget(_scroll_content)
+        _general_tab_layout.addWidget(_scroll_area)
 
         keybindings_tab = QWidget(tabs)
         keybindings_layout = QVBoxLayout(keybindings_tab)
         self._keybindings_tab_index = tabs.addTab(keybindings_tab, "Keybindings")
 
         self._shortcut_search_input = QLineEdit(keybindings_tab)
+        self._shortcut_search_input.setObjectName("shell.settingsDialog.shortcutSearch")
         self._shortcut_search_input.setPlaceholderText("Search commands...")
         self._shortcut_search_input.textChanged.connect(self._filter_shortcut_rows)
         keybindings_layout.addWidget(self._shortcut_search_input)
 
         self._shortcut_reset_all_btn = QPushButton("Reset All Keybindings", keybindings_tab)
+        self._shortcut_reset_all_btn.setObjectName("shell.settingsDialog.resetAllShortcuts")
         self._shortcut_reset_all_btn.clicked.connect(self._handle_reset_all_shortcuts)
         keybindings_layout.addWidget(self._shortcut_reset_all_btn)
 
         self._shortcut_conflict_label = QLabel(keybindings_tab)
-        self._shortcut_conflict_label.setStyleSheet("color: #C92A2A;")
+        self._shortcut_conflict_label.setObjectName("shell.settingsDialog.shortcutConflict")
         self._shortcut_conflict_label.setWordWrap(True)
         self._shortcut_conflict_label.setVisible(False)
         keybindings_layout.addWidget(self._shortcut_conflict_label)
 
         self._shortcut_table = QTableWidget(0, 4, keybindings_tab)
+        self._shortcut_table.setObjectName("shell.settingsDialog.shortcutTable")
         self._shortcut_table.setHorizontalHeaderLabels(["Command", "Shortcut", "Default", "Reset"])
         self._shortcut_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._shortcut_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -305,18 +350,20 @@ class SettingsDialog(QDialog):
         self._syntax_tab_index = tabs.addTab(syntax_tab, "Syntax Colors")
 
         self._syntax_theme_input = QComboBox(syntax_tab)
+        self._syntax_theme_input.setObjectName("shell.settingsDialog.syntaxThemeInput")
         self._syntax_theme_input.addItem("Light Theme", THEME_LIGHT)
         self._syntax_theme_input.addItem("Dark Theme", THEME_DARK)
         self._syntax_theme_input.currentIndexChanged.connect(self._handle_syntax_theme_changed)
         syntax_layout.addWidget(self._syntax_theme_input)
 
         self._syntax_validation_label = QLabel(syntax_tab)
-        self._syntax_validation_label.setStyleSheet("color: #C92A2A;")
+        self._syntax_validation_label.setObjectName("shell.settingsDialog.syntaxValidation")
         self._syntax_validation_label.setWordWrap(True)
         self._syntax_validation_label.setVisible(False)
         syntax_layout.addWidget(self._syntax_validation_label)
 
         self._syntax_color_table = QTableWidget(0, 4, syntax_tab)
+        self._syntax_color_table.setObjectName("shell.settingsDialog.syntaxColorTable")
         self._syntax_color_table.setHorizontalHeaderLabels(["Token", "Color", "Pick", "Reset"])
         self._syntax_color_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._syntax_color_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -335,7 +382,10 @@ class SettingsDialog(QDialog):
         tabs.addTab(linter_tab, "Linter")
 
         linter_controls = QGroupBox("Provider")
+        linter_controls.setObjectName("shell.settingsDialog.linterProviderGroup")
         linter_controls_form = QFormLayout(linter_controls)
+        linter_controls_form.setVerticalSpacing(10)
+        linter_controls_form.setHorizontalSpacing(16)
         self._linter_enabled_input = QCheckBox(linter_controls)
         self._linter_enabled_input.setChecked(snapshot.diagnostics_enabled)
         self._linter_enabled_input.toggled.connect(self._handle_linter_enabled_toggled)
@@ -349,6 +399,7 @@ class SettingsDialog(QDialog):
         linter_layout.addWidget(linter_controls)
 
         self._linter_table = QTableWidget(0, 5, linter_tab)
+        self._linter_table.setObjectName("shell.settingsDialog.linterTable")
         self._linter_table.setHorizontalHeaderLabels(["Code", "Rule", "Enabled", "Severity", "Reset"])
         self._linter_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._linter_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -363,6 +414,7 @@ class SettingsDialog(QDialog):
         linter_layout.addWidget(self._linter_table, 1)
         self._populate_linter_table()
         self._linter_reset_to_global_btn = QPushButton("Reset Linter Overrides to Global", linter_tab)
+        self._linter_reset_to_global_btn.setObjectName("shell.settingsDialog.linterResetGlobal")
         self._linter_reset_to_global_btn.clicked.connect(self._handle_reset_linter_overrides_to_global)
         linter_layout.addWidget(self._linter_reset_to_global_btn)
         self._sync_linter_control_states()
@@ -372,6 +424,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(files_tab, "Files")
 
         excludes_group = QGroupBox("File Exclusions")
+        excludes_group.setObjectName("shell.settingsDialog.fileExcludesGroup")
         excludes_vbox = QVBoxLayout(excludes_group)
 
         excludes_help = QLabel(
@@ -379,29 +432,35 @@ class SettingsDialog(QDialog):
             "Quick Open, and search results. Patterns are matched against "
             "names and relative paths."
         )
+        excludes_help.setObjectName("shell.settingsDialog.fileExcludesHelp")
         excludes_help.setWordWrap(True)
         excludes_vbox.addWidget(excludes_help)
 
         self._file_excludes_list = QListWidget(excludes_group)
+        self._file_excludes_list.setObjectName("shell.settingsDialog.fileExcludesList")
         for pattern in snapshot.file_exclude_patterns:
             self._file_excludes_list.addItem(pattern)
         excludes_vbox.addWidget(self._file_excludes_list, 1)
 
         add_row = QHBoxLayout()
         self._file_exclude_input = QLineEdit(excludes_group)
+        self._file_exclude_input.setObjectName("shell.settingsDialog.fileExcludeInput")
         self._file_exclude_input.setPlaceholderText("e.g. *.pyc, build, .mypy_cache")
         self._file_exclude_input.returnPressed.connect(self._handle_add_file_exclude)
         add_row.addWidget(self._file_exclude_input, 1)
         add_btn = QPushButton("Add", excludes_group)
+        add_btn.setObjectName("shell.settingsDialog.addExcludeBtn")
         add_btn.clicked.connect(self._handle_add_file_exclude)
         add_row.addWidget(add_btn)
         excludes_vbox.addLayout(add_row)
 
         btn_row = QHBoxLayout()
         remove_btn = QPushButton("Remove Selected", excludes_group)
+        remove_btn.setObjectName("shell.settingsDialog.removeExcludeBtn")
         remove_btn.clicked.connect(self._handle_remove_file_exclude)
         btn_row.addWidget(remove_btn)
         reset_btn = QPushButton("Reset to Defaults", excludes_group)
+        reset_btn.setObjectName("shell.settingsDialog.resetExcludesBtn")
         self._file_excludes_reset_btn = reset_btn
         reset_btn.clicked.connect(self._handle_reset_file_excludes)
         btn_row.addWidget(reset_btn)
@@ -412,10 +471,16 @@ class SettingsDialog(QDialog):
         files_layout.addStretch(1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        buttons.setObjectName("shell.settingsDialog.buttonBox")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._ok_button = buttons.button(QDialogButtonBox.Ok)
+        if self._ok_button is not None:
+            self._ok_button.setObjectName("shell.settingsDialog.okBtn")
+        _cancel_button = buttons.button(QDialogButtonBox.Cancel)
+        if _cancel_button is not None:
+            _cancel_button.setObjectName("shell.settingsDialog.cancelBtn")
         normalized_initial_scope = initial_scope
         if normalized_initial_scope not in {SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT}:
             normalized_initial_scope = SETTINGS_SCOPE_GLOBAL
@@ -799,6 +864,7 @@ class SettingsDialog(QDialog):
     def _populate_syntax_color_table(self, theme_key: str) -> None:
         self._active_syntax_theme_key = theme_key
         self._syntax_color_inputs.clear()
+        self._syntax_color_swatches.clear()
         self._syntax_color_row_by_token.clear()
         defaults = self._syntax_defaults_for_theme(theme_key)
         overrides = self._syntax_color_overrides_by_theme.setdefault(theme_key, {})
@@ -809,7 +875,17 @@ class SettingsDialog(QDialog):
             label_item = QTableWidgetItem(f"{token.category} / {token.label}")
             self._syntax_color_table.setItem(row_index, 0, label_item)
 
-            color_input = QLineEdit(self._syntax_color_table)
+            color_container = QWidget(self._syntax_color_table)
+            color_layout = QHBoxLayout(color_container)
+            color_layout.setContentsMargins(4, 2, 4, 2)
+            color_layout.setSpacing(6)
+
+            swatch = QLabel(color_container)
+            swatch.setFixedSize(16, 16)
+            color_layout.addWidget(swatch)
+            self._syntax_color_swatches[token.key] = swatch
+
+            color_input = QLineEdit(color_container)
             color_input.setPlaceholderText(defaults.get(token.key, ""))
             effective_color = overrides.get(token.key, defaults.get(token.key, ""))
             color_input.setText(effective_color)
@@ -817,7 +893,10 @@ class SettingsDialog(QDialog):
                 lambda _text, key=token.key: self._handle_syntax_color_text_edited(key)
             )
             self._syntax_color_inputs[token.key] = color_input
-            self._syntax_color_table.setCellWidget(row_index, 1, color_input)
+            color_layout.addWidget(color_input)
+
+            self._syntax_color_table.setCellWidget(row_index, 1, color_container)
+            self._update_syntax_swatch(token.key, effective_color)
 
             pick_button = QPushButton("Pick", self._syntax_color_table)
             pick_button.clicked.connect(
@@ -859,8 +938,10 @@ class SettingsDialog(QDialog):
         overrides = self._syntax_color_overrides_by_theme.setdefault(self._active_syntax_theme_key, {})
         overrides.pop(token_key, None)
         input_widget = self._syntax_color_inputs.get(token_key)
+        default_color = defaults.get(token_key, "")
         if input_widget is not None:
-            input_widget.setText(defaults.get(token_key, ""))
+            input_widget.setText(default_color)
+        self._update_syntax_swatch(token_key, default_color)
         self._refresh_syntax_validation()
 
     def _handle_syntax_color_text_edited(self, token_key: str) -> None:
@@ -872,11 +953,14 @@ class SettingsDialog(QDialog):
         raw_text = input_widget.text().strip()
         if not raw_text:
             overrides.pop(token_key, None)
-            input_widget.setText(defaults.get(token_key, ""))
+            default_color = defaults.get(token_key, "")
+            input_widget.setText(default_color)
+            self._update_syntax_swatch(token_key, default_color)
             self._refresh_syntax_validation()
             return
         normalized = normalize_hex_color(input_widget.text())
         if normalized is None:
+            self._update_syntax_swatch(token_key, raw_text)
             self._refresh_syntax_validation()
             return
         if normalized == defaults.get(token_key):
@@ -884,17 +968,34 @@ class SettingsDialog(QDialog):
         else:
             overrides[token_key] = normalized
         input_widget.setText(normalized)
+        self._update_syntax_swatch(token_key, normalized)
         self._refresh_syntax_validation()
+
+    def _update_syntax_swatch(self, token_key: str, hex_color: str) -> None:
+        swatch = self._syntax_color_swatches.get(token_key)
+        if swatch is None:
+            return
+        normalized = normalize_hex_color(hex_color)
+        border = self._tokens.border
+        if normalized:
+            swatch.setStyleSheet(
+                f"background: {normalized}; border: 1px solid {border}; border-radius: 3px;"
+            )
+        else:
+            swatch.setStyleSheet(
+                f"background: transparent; border: 1px solid {border}; border-radius: 3px;"
+            )
 
     def _refresh_syntax_validation(self) -> None:
         invalid_entries: list[str] = []
+        error_color = self._tokens.diag_error_color
         for token_key, input_widget in self._syntax_color_inputs.items():
             if not input_widget.text().strip():
                 input_widget.setStyleSheet("")
                 continue
             normalized = normalize_hex_color(input_widget.text())
             if normalized is None:
-                input_widget.setStyleSheet("border: 1px solid #C92A2A;")
+                input_widget.setStyleSheet(f"border: 1px solid {error_color};")
                 invalid_entries.append(token_key)
             else:
                 input_widget.setStyleSheet("")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterator
 
@@ -9,9 +10,87 @@ from app.editors.syntax_engine import TokenStyle, ThemedSyntaxHighlighter
 
 _QUERY_MARGIN_LINES = 220
 _RANGE_EXPANSION_LINES = 3
+_ESCAPE_SEQUENCE_PATTERN = re.compile(r"\\(?:[0-7]{1,3}|x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|N\{[^}\n]*\}|.)")
+_PYTHON_SPECIAL_VARIABLES = frozenset({"self", "cls"})
+_PYTHON_BUILTIN_FUNCTIONS = frozenset(
+    {
+        "abs",
+        "all",
+        "any",
+        "ascii",
+        "bin",
+        "bool",
+        "breakpoint",
+        "bytearray",
+        "bytes",
+        "callable",
+        "chr",
+        "classmethod",
+        "compile",
+        "complex",
+        "delattr",
+        "dict",
+        "dir",
+        "divmod",
+        "enumerate",
+        "eval",
+        "exec",
+        "filter",
+        "float",
+        "format",
+        "frozenset",
+        "getattr",
+        "globals",
+        "hasattr",
+        "hash",
+        "help",
+        "hex",
+        "id",
+        "input",
+        "int",
+        "isinstance",
+        "issubclass",
+        "iter",
+        "len",
+        "list",
+        "locals",
+        "map",
+        "max",
+        "memoryview",
+        "min",
+        "next",
+        "object",
+        "oct",
+        "open",
+        "ord",
+        "pow",
+        "print",
+        "property",
+        "range",
+        "repr",
+        "reversed",
+        "round",
+        "set",
+        "setattr",
+        "slice",
+        "sorted",
+        "staticmethod",
+        "str",
+        "sum",
+        "super",
+        "tuple",
+        "type",
+        "vars",
+        "zip",
+        "__import__",
+    }
+)
 
 _CAPTURE_TOKEN_MAP: dict[str, str] = {
     "keyword": "keyword",
+    "keyword.control": "keyword_control",
+    "keyword.import": "keyword_import",
+    "escape": "escape",
     "comment": "comment",
     "string": "string",
     "number": "number",
@@ -39,6 +118,7 @@ _CAPTURE_TOKEN_MAP: dict[str, str] = {
     "json_literal": "json_literal",
     "markdown_heading": "markdown_heading",
     "markdown_emphasis": "markdown_emphasis",
+    "markdown_strong": "markdown_strong",
     "markdown_code": "markdown_code",
     "tag": "class",
     "attribute": "semantic_property",
@@ -65,7 +145,10 @@ class _CaptureSpan:
 class TreeSitterHighlighter(ThemedSyntaxHighlighter):
     TOKEN_STYLES = {
         "keyword": TokenStyle("keyword", bold=True),
+        "keyword_control": TokenStyle("keyword_control", bold=True),
+        "keyword_import": TokenStyle("keyword_import"),
         "builtin": TokenStyle("builtin"),
+        "escape": TokenStyle("escape"),
         "string": TokenStyle("string"),
         "comment": TokenStyle("comment", italic=True),
         "number": TokenStyle("number"),
@@ -79,6 +162,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         "json_literal": TokenStyle("json_literal"),
         "markdown_heading": TokenStyle("markdown_heading", bold=True),
         "markdown_emphasis": TokenStyle("markdown_emphasis"),
+        "markdown_strong": TokenStyle("markdown_strong", bold=True),
         "markdown_code": TokenStyle("markdown_code"),
         "semantic_function": TokenStyle("semantic_function"),
         "semantic_method": TokenStyle("semantic_method"),
@@ -217,6 +301,11 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._pending_edits.append(pending_edit)
         self._source_text = new_source
         self._dirty = True
+        start_line = pending_edit.start_point[0]
+        end_line = pending_edit.new_end_point[0]
+        rehighlight_start = max(0, start_line - _RANGE_EXPANSION_LINES)
+        rehighlight_end = max(rehighlight_start, end_line + _RANGE_EXPANSION_LINES)
+        self._rehighlight_line_window(rehighlight_start, rehighlight_end)
 
     def rehighlight(self) -> None:  # noqa: N802
         self._sync_source_from_document()
@@ -354,6 +443,14 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 token_name = self._resolve_token_name(capture_name)
                 if token_name is None:
                     continue
+                token_name = self._apply_capture_overrides(
+                    capture_name=capture_name,
+                    token_name=token_name,
+                    node=node,
+                    lines=lines,
+                )
+                if token_name is None:
+                    continue
                 for line_number, span in self._build_spans_for_node(node=node, token_name=token_name, lines=lines):
                     if line_number < bounded_start or line_number > bounded_end:
                         continue
@@ -365,6 +462,18 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                         continue
                     seen_by_line[line_number].add(span_key)
                     spans_by_line[line_number].append(span)
+                    if token_name == "string":
+                        line_text = lines[line_number]
+                        for escape_span in self._lex_escape_spans(
+                            line_text=line_text,
+                            start_col=span.start_col,
+                            end_col=span.end_col,
+                        ):
+                            escape_key = (escape_span.start_col, escape_span.end_col)
+                            if escape_key in seen_by_line[line_number]:
+                                continue
+                            seen_by_line[line_number].add(escape_key)
+                            spans_by_line[line_number].append(escape_span)
 
         for line_number in list(spans_by_line.keys()):
             spans_by_line[line_number].sort(key=lambda value: (value.start_col, value.end_col, value.token_name))
@@ -409,6 +518,54 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         last_end = self._byte_col_to_char_col(last_line_text, end_byte_col)
         if last_end > 0:
             yield (end_line, _CaptureSpan(token_name=token_name, start_col=0, end_col=last_end))
+
+    def _apply_capture_overrides(
+        self,
+        *,
+        capture_name: str,
+        token_name: str,
+        node: Any,
+        lines: list[str],
+    ) -> str | None:
+        if self._language_key != "python":
+            return token_name
+        node_text = self._node_text(node=node, lines=lines)
+        if not node_text:
+            return token_name
+        if capture_name in {"variable", "variable.def", "parameter"} and node_text in _PYTHON_SPECIAL_VARIABLES:
+            return "builtin"
+        if capture_name == "function.call" and node_text in _PYTHON_BUILTIN_FUNCTIONS:
+            return "builtin"
+        return token_name
+
+    def _node_text(self, *, node: Any, lines: list[str]) -> str:
+        if not lines:
+            return ""
+        max_line = len(lines) - 1
+        start_line = max(0, min(int(node.start_point[0]), max_line))
+        end_line = max(0, min(int(node.end_point[0]), max_line))
+        if start_line != end_line:
+            return ""
+        line_text = lines[start_line]
+        start_col = self._byte_col_to_char_col(line_text, max(0, int(node.start_point[1])))
+        end_col = self._byte_col_to_char_col(line_text, max(0, int(node.end_point[1])))
+        if end_col <= start_col:
+            return ""
+        return line_text[start_col:end_col]
+
+    @staticmethod
+    def _lex_escape_spans(*, line_text: str, start_col: int, end_col: int) -> Iterator[_CaptureSpan]:
+        segment_start = max(0, min(start_col, len(line_text)))
+        segment_end = max(segment_start, min(end_col, len(line_text)))
+        if segment_end <= segment_start:
+            return
+        segment = line_text[segment_start:segment_end]
+        for match in _ESCAPE_SEQUENCE_PATTERN.finditer(segment):
+            escape_start = segment_start + match.start()
+            escape_end = segment_start + match.end()
+            if escape_end <= escape_start:
+                continue
+            yield _CaptureSpan(token_name="escape", start_col=escape_start, end_col=escape_end)
 
     def _resolve_token_name(self, capture_name: str) -> str | None:
         direct = _CAPTURE_TOKEN_MAP.get(capture_name)

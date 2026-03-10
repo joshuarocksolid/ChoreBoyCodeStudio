@@ -2,11 +2,14 @@
 (string) @string
 (template_string) @string
 (regex) @string
+(escape_sequence) @escape
 
 (number) @number
-(true) @number
-(false) @number
+(true) @constant.builtin
+(false) @constant.builtin
 (null) @constant.builtin
+(this) @variable.builtin
+(super) @variable.builtin
 
 (function_declaration name: (identifier) @function.def)
 (class_declaration name: (identifier) @class.def)
@@ -17,10 +20,19 @@
 (call_expression function: (identifier) @function.call)
 (call_expression function: (member_expression property: (property_identifier) @method.call))
 
-["function" "class" "return" "if" "else" "for" "while"
- "switch" "case" "break" "continue" "import" "export" "from"
- "as" "const" "let" "var" "new" "try" "catch" "finally"
- "throw" "await" "async"] @keyword
+["function" "class" "const" "let" "var" "new" "async"
+ "static" "extends" "typeof" "instanceof" "void" "delete"
+ "in" "of"] @keyword
+
+["return" "if" "else" "for" "while" "switch" "case" "break"
+ "continue" "try" "catch" "finally" "throw" "await" "do"
+ "default" "yield" "debugger" "with"] @keyword.control
+
+["import" "export" "from" "as"] @keyword.import
+
+(template_substitution
+ "${" @punctuation.delimiter
+ "}" @punctuation.delimiter)
 
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 ["," "." ":" ";"] @punctuation.delimiter

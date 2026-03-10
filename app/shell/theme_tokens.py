@@ -40,7 +40,10 @@ class ShellThemeTokens:
     diag_warning_color: str = ""
     diag_info_color: str = ""
     syntax_keyword: str = ""
+    syntax_keyword_control: str = ""
+    syntax_keyword_import: str = ""
     syntax_builtin: str = ""
+    syntax_escape: str = ""
     syntax_string: str = ""
     syntax_comment: str = ""
     syntax_number: str = ""
@@ -54,6 +57,7 @@ class ShellThemeTokens:
     syntax_json_literal: str = ""
     syntax_markdown_heading: str = ""
     syntax_markdown_emphasis: str = ""
+    syntax_markdown_strong: str = ""
     syntax_markdown_code: str = ""
     syntax_semantic_function: str = ""
     syntax_semantic_method: str = ""
@@ -160,7 +164,10 @@ def to_qcolor(hex_color: str) -> QColor:
 
 _SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
     "keyword": "syntax_keyword",
+    "keyword_control": "syntax_keyword_control",
+    "keyword_import": "syntax_keyword_import",
     "builtin": "syntax_builtin",
+    "escape": "syntax_escape",
     "string": "syntax_string",
     "comment": "syntax_comment",
     "number": "syntax_number",
@@ -174,6 +181,7 @@ _SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
     "json_literal": "syntax_json_literal",
     "markdown_heading": "syntax_markdown_heading",
     "markdown_emphasis": "syntax_markdown_emphasis",
+    "markdown_strong": "syntax_markdown_strong",
     "markdown_code": "syntax_markdown_code",
     "semantic_function": "syntax_semantic_function",
     "semantic_method": "syntax_semantic_method",

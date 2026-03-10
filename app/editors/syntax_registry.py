@@ -66,7 +66,10 @@ def default_syntax_highlighter_registry() -> SyntaxHighlighterRegistry:
 def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
     return {
         "keyword": tokens.syntax_keyword,
+        "keyword_control": tokens.syntax_keyword_control,
+        "keyword_import": tokens.syntax_keyword_import,
         "builtin": tokens.syntax_builtin,
+        "escape": tokens.syntax_escape,
         "string": tokens.syntax_string,
         "comment": tokens.syntax_comment,
         "number": tokens.syntax_number,
@@ -80,6 +83,7 @@ def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
         "json_literal": tokens.syntax_json_literal,
         "markdown_heading": tokens.syntax_markdown_heading,
         "markdown_emphasis": tokens.syntax_markdown_emphasis,
+        "markdown_strong": tokens.syntax_markdown_strong,
         "markdown_code": tokens.syntax_markdown_code,
         "semantic_function": tokens.syntax_semantic_function,
         "semantic_method": tokens.syntax_semantic_method,
