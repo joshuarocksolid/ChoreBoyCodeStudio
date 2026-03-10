@@ -133,6 +133,74 @@ def test_main_foreground_returns_child_exit_code(monkeypatch: pytest.MonkeyPatch
     assert kwargs["cwd"] == str(repo_root)
 
 
+def test_resolve_artifacts_dir_uses_env_var(tmp_path: Path) -> None:
+    """CBCS_ARTIFACTS_DIR env var should override the sibling convention."""
+    custom_dir = tmp_path / "custom_artifacts"
+    env = {dev_launch_editor.ARTIFACTS_DIR_ENV_VAR: str(custom_dir)}
+
+    resolved = dev_launch_editor.resolve_artifacts_dir(repo_root=tmp_path, env=env)
+    assert resolved == custom_dir.resolve()
+
+
+def test_resolve_artifacts_dir_defaults_to_sibling(tmp_path: Path) -> None:
+    """Without env var, artifacts dir should be a sibling of the repo root."""
+    repo_root = tmp_path / "MyRepo"
+    repo_root.mkdir()
+
+    resolved = dev_launch_editor.resolve_artifacts_dir(repo_root=repo_root, env={})
+    assert resolved == (tmp_path / dev_launch_editor.DEFAULT_ARTIFACTS_DIRNAME).resolve()
+
+
+def test_ensure_vendor_symlink_creates_symlink(tmp_path: Path) -> None:
+    """Symlink should be created when artifacts vendor exists but repo vendor does not."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    artifacts_dir = tmp_path / "artifacts"
+    vendor_dir = artifacts_dir / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "dummy.py").write_text("x = 1\n", encoding="utf-8")
+
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+
+    link = repo_root / "vendor"
+    assert link.is_symlink()
+    assert link.resolve() == vendor_dir.resolve()
+    assert (link / "dummy.py").read_text(encoding="utf-8") == "x = 1\n"
+
+
+def test_ensure_vendor_symlink_noop_when_vendor_already_exists(tmp_path: Path) -> None:
+    """No symlink should be created when vendor/ already exists at repo root."""
+    repo_root = tmp_path / "repo"
+    existing_vendor = repo_root / "vendor"
+    existing_vendor.mkdir(parents=True)
+    (existing_vendor / "local.py").write_text("y = 2\n", encoding="utf-8")
+
+    artifacts_dir = tmp_path / "artifacts"
+    (artifacts_dir / "vendor").mkdir(parents=True)
+
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+
+    assert not existing_vendor.is_symlink()
+    assert (existing_vendor / "local.py").read_text(encoding="utf-8") == "y = 2\n"
+
+
+def test_ensure_vendor_symlink_warns_when_artifacts_vendor_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Missing artifacts vendor should warn but not crash."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+
+    assert not (repo_root / "vendor").exists()
+    err = capsys.readouterr().err
+    assert "not found" in err.lower()
+    assert dev_launch_editor.ARTIFACTS_DIR_ENV_VAR in err
+
+
 def test_main_returns_actionable_error_when_apprun_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

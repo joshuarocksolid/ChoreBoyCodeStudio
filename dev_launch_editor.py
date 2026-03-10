@@ -19,7 +19,10 @@ from app.run.runtime_launch import build_runpy_bootstrap_payload
 
 DEFAULT_DEV_APPRUN_PATH = Path("/opt/freecad/AppRun")
 DEFAULT_EDITOR_BOOT_FILENAME = "run_editor.py"
+DEFAULT_ARTIFACTS_DIRNAME = "ChoreBoyCodeStudio_artifacts"
+VENDOR_DIRNAME = "vendor"
 APP_RUN_ENV_VAR = "CBCS_APPRUN"
+ARTIFACTS_DIR_ENV_VAR = "CBCS_ARTIFACTS_DIR"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -66,6 +69,43 @@ def resolve_apprun_path(cli_apprun: str | None, env: Mapping[str, str] | None = 
         return Path(configured_path).expanduser().resolve()
 
     return DEFAULT_DEV_APPRUN_PATH
+
+
+def resolve_artifacts_dir(
+    repo_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve the artifacts directory from env var or sibling convention."""
+    env_values = os.environ if env is None else env
+    configured = env_values.get(ARTIFACTS_DIR_ENV_VAR)
+    if configured:
+        return Path(configured).expanduser().resolve()
+    root = resolve_repo_root() if repo_root is None else repo_root.resolve()
+    return (root.parent / DEFAULT_ARTIFACTS_DIRNAME).resolve()
+
+
+def ensure_vendor_symlink(repo_root: Path, artifacts_dir: Path) -> None:
+    """Symlink <repo_root>/vendor to <artifacts_dir>/vendor if needed.
+
+    In development the vendored dependencies live in the artifacts directory
+    (outside the workspace) while the application code resolves ``vendor/``
+    relative to the repo root.  A symlink bridges the two without modifying
+    any application code.
+    """
+    repo_vendor = repo_root / VENDOR_DIRNAME
+    if repo_vendor.exists() or repo_vendor.is_symlink():
+        return
+
+    artifacts_vendor = artifacts_dir / VENDOR_DIRNAME
+    if not artifacts_vendor.is_dir():
+        _eprint(
+            f"Vendor directory not found at {artifacts_vendor}\n"
+            f"Set {ARTIFACTS_DIR_ENV_VAR} or populate the artifacts vendor directory.\n"
+            "The editor will launch without vendored dependencies (tree-sitter, pyflakes)."
+        )
+        return
+
+    repo_vendor.symlink_to(artifacts_vendor)
 
 
 def build_apprun_command(app_run_path: Path, editor_boot_path: Path) -> list[str]:
@@ -124,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Launch run_editor.py through FreeCAD runtime in dev parity mode."""
     args = parse_args(argv)
     repo_root = resolve_repo_root()
+    artifacts_dir = resolve_artifacts_dir(repo_root=repo_root)
+    ensure_vendor_symlink(repo_root, artifacts_dir)
     app_run_path = resolve_apprun_path(args.apprun)
     editor_boot_path = resolve_editor_boot_path(repo_root=repo_root)
     command = build_apprun_command(app_run_path=app_run_path, editor_boot_path=editor_boot_path)

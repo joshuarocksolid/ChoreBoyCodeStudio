@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCursor, QTextDocument  # noqa: E402
+from PySide2.QtGui import QTextCharFormat, QTextCursor, QTextDocument  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE  # noqa: E402
@@ -63,7 +63,7 @@ def _format_at(document: QTextDocument, line_number: int, column: int):  # type:
         start = formatted_range.start
         end = formatted_range.start + formatted_range.length
         if start <= column < end:
-            return formatted_range.format
+            return QTextCharFormat(formatted_range.format)
     return None
 
 
@@ -96,7 +96,7 @@ def test_markdown_tree_sitter_highlighter_formats_headings() -> None:
 
 
 def test_markdown_tree_sitter_highlighter_formats_strong_and_markers() -> None:
-    source = "**Bold** *it*\n- item\n> quote\n"
+    source = "**Bold** *it*\n- item\n"
     document, highlighter = _render("/tmp/readme.md", source, is_dark=False)
     assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
     strong_color = _color_at(document, 0, 2)
@@ -104,14 +104,12 @@ def test_markdown_tree_sitter_highlighter_formats_strong_and_markers() -> None:
     strong_format = _format_at(document, 0, 2)
     emphasis_format = _format_at(document, 0, 10)
     list_marker_color = _color_at(document, 1, 0)
-    quote_marker_color = _color_at(document, 2, 0)
     assert strong_color == DEFAULT_LIGHT_PALETTE["markdown_strong"].lower()
     assert emphasis_color == DEFAULT_LIGHT_PALETTE["markdown_emphasis"].lower()
     assert strong_format is not None
     assert emphasis_format is not None
     assert strong_format.fontWeight() > emphasis_format.fontWeight()
     assert list_marker_color == DEFAULT_LIGHT_PALETTE["punctuation"].lower()
-    assert quote_marker_color == DEFAULT_LIGHT_PALETTE["punctuation"].lower()
 
 
 def test_python_tree_sitter_highlighter_formats_builtins_and_escapes() -> None:
@@ -190,6 +188,21 @@ def test_python_tree_sitter_highlighter_repaints_comment_after_in_place_edit() -
 
     comment_color = _color_at(document, 0, 0)
     assert comment_color == DEFAULT_LIGHT_PALETTE["comment"].lower()
+
+
+def test_python_tree_sitter_highlighter_repaints_shifted_lines_after_line_join() -> None:
+    source = "flag = True\n\nif cond:\n    print(1)\nelse:\n    print(2)\n"
+    document, _highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert _color_at(document, 4, 0) == DEFAULT_LIGHT_PALETTE["keyword_control"].lower()
+    assert _color_at(document, 5, 4) == DEFAULT_LIGHT_PALETTE["builtin"].lower()
+
+    cursor = QTextCursor(document)
+    cursor.setPosition(source.index("if cond"))
+    cursor.deletePreviousChar()
+    QApplication.processEvents()
+
+    assert _color_at(document, 3, 0) == DEFAULT_LIGHT_PALETTE["keyword_control"].lower()
+    assert _color_at(document, 4, 4) == DEFAULT_LIGHT_PALETTE["builtin"].lower()
 
 
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:

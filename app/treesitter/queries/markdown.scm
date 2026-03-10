@@ -8,15 +8,9 @@
 (link_label) @markdown_emphasis
 
 [
- (list_marker_plus)
- (list_marker_minus)
- (list_marker_star)
- (list_marker_dot)
- (list_marker_parenthesis)
- (block_quote_marker)
+ (list_marker)
  (thematic_break)
- (task_list_marker_checked)
- (task_list_marker_unchecked)
+ (task_list_item_marker)
 ] @punctuation.delimiter
 
 (backslash_escape) @escape

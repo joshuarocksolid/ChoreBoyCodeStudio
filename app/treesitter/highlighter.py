@@ -195,6 +195,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         try:
             self._query = language.query(query_source)
         except Exception:
+            import traceback
+            print(f"[TreeSitterHighlighter] query compilation failed for {language_key}: {traceback.format_exc()}")
             self._query = None
         self._tree: Any | None = None
         self._source_text = document.toPlainText() if document is not None else ""
@@ -301,10 +303,13 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._pending_edits.append(pending_edit)
         self._source_text = new_source
         self._dirty = True
-        start_line = pending_edit.start_point[0]
-        end_line = pending_edit.new_end_point[0]
-        rehighlight_start = max(0, start_line - _RANGE_EXPANSION_LINES)
-        rehighlight_end = max(rehighlight_start, end_line + _RANGE_EXPANSION_LINES)
+        line_delta = int(pending_edit.new_end_point[0]) - int(pending_edit.old_end_point[0])
+        if line_delta != 0:
+            self._shift_capture_cache_for_line_delta(pending_edit=pending_edit)
+        rehighlight_start, rehighlight_end = self._rehighlight_window_for_edit(
+            pending_edit=pending_edit,
+            line_delta=line_delta,
+        )
         self._rehighlight_line_window(rehighlight_start, rehighlight_end)
 
     def rehighlight(self) -> None:  # noqa: N802
@@ -322,6 +327,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         if current_text != self._source_text:
             self._source_text = current_text
             self._dirty = True
+            self._tree = None
+            self._pending_edits.clear()
         self._last_synced_revision = rev
 
     def _ensure_tree_and_cache(self) -> None:
@@ -413,6 +420,49 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             end_line = min(line_count - 1, int(change_range.end_point[0]) + _RANGE_EXPANSION_LINES)
             ranges.append((start_line, max(start_line, end_line)))
         return self._merge_line_ranges(ranges)
+
+    @staticmethod
+    def _first_reusable_line_after_edit(*, pending_edit: _PendingEdit) -> tuple[int, int]:
+        old_line = int(pending_edit.old_end_point[0])
+        new_line = int(pending_edit.new_end_point[0])
+        if int(pending_edit.old_end_point[1]) != 0:
+            return (old_line + 1, new_line + 1)
+        return (old_line, new_line)
+
+    def _shift_capture_cache_for_line_delta(self, *, pending_edit: _PendingEdit) -> None:
+        if not self._capture_cache:
+            return
+        start_line = int(pending_edit.start_point[0])
+        reusable_old_line, reusable_new_line = self._first_reusable_line_after_edit(pending_edit=pending_edit)
+        shifted_cache: dict[int, list[_CaptureSpan]] = {}
+        for line_number, spans in self._capture_cache.items():
+            if line_number < start_line:
+                shifted_cache[line_number] = spans
+                continue
+            if line_number < reusable_old_line:
+                continue
+            shifted_line = reusable_new_line + (line_number - reusable_old_line)
+            if shifted_line < 0:
+                continue
+            shifted_cache[shifted_line] = spans
+        self._capture_cache = shifted_cache
+
+    def _rehighlight_window_for_edit(self, *, pending_edit: _PendingEdit, line_delta: int) -> tuple[int, int]:
+        document = self.document()
+        start_line = int(pending_edit.start_point[0])
+        end_line = int(pending_edit.new_end_point[0])
+        rehighlight_start = max(0, start_line - _RANGE_EXPANSION_LINES)
+        rehighlight_end = max(rehighlight_start, end_line + _RANGE_EXPANSION_LINES)
+        if line_delta == 0 or document is None:
+            return (rehighlight_start, rehighlight_end)
+
+        viewport_start, viewport_end = self._viewport_lines
+        if viewport_start != 0 or viewport_end != 0:
+            rehighlight_start = min(rehighlight_start, viewport_start)
+            rehighlight_end = max(rehighlight_end, viewport_end + _RANGE_EXPANSION_LINES)
+        else:
+            rehighlight_end = max(rehighlight_end, max(0, document.blockCount() - 1))
+        return (rehighlight_start, max(rehighlight_start, rehighlight_end))
 
     def _query_window_for_large_modes(self, line_count: int) -> tuple[int, int] | None:
         start_line, end_line = self._viewport_lines
