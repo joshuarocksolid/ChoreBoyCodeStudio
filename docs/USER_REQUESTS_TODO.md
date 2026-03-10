@@ -100,8 +100,8 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 | **Status** | DONE |
 | **Requested by** | Ervin N. Newswanger |
 | **Request** | Enable drag-and-drop onto the Python console widget. Currently dragging a file into the console only pastes the file path as text rather than executing or inserting the file contents. |
-| **Implemented in** | `app/shell/python_console_widget.py` — `setAcceptDrops(True)`, `dragEnterEvent()` (filters local `.py` files), `dropEvent()` (extracts paths), and `_handle_dropped_local_path()` (executes dropped `.py` files via `runpy.run_path()` in the REPL). |
-| **Notes** | Drop behavior: `.py` files are executed in the console REPL session. |
+| **Implemented in** | `app/shell/python_console_widget.py` — `setAcceptDrops(True)`, `dragEnterEvent()` (filters local `.py` files), `dropEvent()` (extracts paths), and `_handle_dropped_local_path()` (executes dropped `.py` files via `runpy.run_path()` in the REPL). `app/project/project_tree_widget.py` — `mimeData()` override embeds `file://` URLs so drags from the project tree are accepted by the console. |
+| **Notes** | Drop behavior: `.py` files are executed in the console REPL session. Drags from the project tree and external file managers are both supported. |
 
 ---
 

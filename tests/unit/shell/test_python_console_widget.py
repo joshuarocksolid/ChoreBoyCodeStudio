@@ -8,8 +8,8 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtGui import QColor, QFont, QKeyEvent  # noqa: E402
+from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
+from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
@@ -329,6 +329,70 @@ class TestDragAndDropExecution:
 
         assert handled is False
         assert "is not a Python file" in _get_plain_text(active_widget)
+
+    def test_drag_enter_accepts_url_mime_data(
+        self,
+        active_widget: PythonConsoleWidget,
+        tmp_path: Path,
+    ) -> None:
+        script = tmp_path / "from_tree.py"
+        script.write_text("x = 1\n", encoding="utf-8")
+
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(script))])
+        event = QDragEnterEvent(
+            QPoint(10, 10),
+            Qt.CopyAction,
+            mime,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        active_widget.dragEnterEvent(event)
+
+        assert event.isAccepted()
+
+    def test_drag_enter_rejects_mime_without_urls(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        mime = QMimeData()
+        mime.setData("application/x-qabstractitemmodeldatalist", b"\x00")
+        event = QDragEnterEvent(
+            QPoint(10, 10),
+            Qt.CopyAction,
+            mime,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        active_widget.dragEnterEvent(event)
+
+        assert not event.isAccepted()
+
+    def test_drop_event_with_url_executes_python_file(
+        self,
+        active_widget: PythonConsoleWidget,
+        tmp_path: Path,
+    ) -> None:
+        script = tmp_path / "tree_drop.py"
+        script.write_text("print('tree')\n", encoding="utf-8")
+        submitted: list[str] = []
+        active_widget.input_submitted.connect(submitted.append)
+
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(script))])
+        drop = QDropEvent(
+            QPoint(10, 10),
+            Qt.CopyAction,
+            mime,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        active_widget.dropEvent(drop)
+
+        assert drop.isAccepted()
+        assert len(submitted) == 1
+        assert "runpy.run_path" in submitted[0]
+        assert "Executing dropped file" in _get_plain_text(active_widget)
 
 
 # ---------------------------------------------------------------------------

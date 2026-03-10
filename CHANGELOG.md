@@ -51,10 +51,6 @@ All notable changes to ChoreBoy Code Studio are documented in this file.
 
 - Add complete user program manual with chapters, screenshots, and build pipeline.
 - Add plugin authoring guide.
-- Update DISCOVERY.md with SQLAlchemy 2.0.48 validation results and production library details.
-- Add PostgreSQL `libpq.so` loading documentation (AppArmor constraints).
-- Publish end-to-end smoke test report, performance audit report, and adversarial code audit.
-- Add development environment setup documentation.
 
 ### Developer Experience
 

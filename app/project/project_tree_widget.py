@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtWidgets import QAbstractItemView, QTreeWidget
+from PySide2.QtCore import QUrl, Qt, Signal
+from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 
 
 class ProjectTreeWidget(QTreeWidget):
@@ -33,6 +33,18 @@ class ProjectTreeWidget(QTreeWidget):
 
     def set_drop_callback(self, callback: Callable[[str, str], bool] | None) -> None:
         self._drop_callback = callback
+
+    def mimeData(self, items: list[QTreeWidgetItem]) -> "QMimeData":  # type: ignore[override]  # noqa: N802
+        """Include ``file://`` URLs so other widgets (e.g. the console) can accept tree drags."""
+        data = super().mimeData(items)
+        urls = []
+        for item in items:
+            path = str(item.data(0, 256) or "")
+            if path:
+                urls.append(QUrl.fromLocalFile(path))
+        if urls:
+            data.setUrls(urls)
+        return data
 
     def startDrag(self, supportedActions) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         current = self.currentItem()
