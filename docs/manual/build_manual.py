@@ -26,7 +26,7 @@ SCREENSHOTS_DIR = ROOT / "screenshots"
 TEMPLATES_DIR = ROOT / "templates"
 DIST_DIR = ROOT / "dist"
 
-VERSION = "0.1"
+VERSION = "0.2"
 TITLE = "ChoreBoy Code Studio User Manual"
 SUBTITLE = "Hobbyist Edition"
 HTML_FILENAME = f"ChoreBoy_Code_Studio_User_Manual_v{VERSION}.html"
