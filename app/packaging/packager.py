@@ -54,16 +54,12 @@ def build_desktop_entry(
     install_dir_normalized = install_dir.strip().strip("/")
     entry_path = f"{install_dir_normalized}/{entry_file}".strip("/")
     exec_line = (
-        "/bin/sh -c "
-        f"'desktop=\"%k\";"
-        "root=\"$(cd \"$(dirname \"$desktop\")\" && pwd)\";"
-        "export CBCS_PROJECT_ROOT=\"$root\";"
         f"{_APPRUN_PATH} -c "
-        "\"import os,runpy,sys;"
-        "root=os.environ.get('CBCS_PROJECT_ROOT', os.getcwd());"
+        '"import os,runpy,sys;'
+        "root=os.path.dirname(os.path.abspath('%k'));"
         "sys.path.insert(0,root) if root not in sys.path else None;"
         "os.chdir(root);"
-        f"runpy.run_path(os.path.join(root, {entry_path!r}), run_name='__main__')\"'"
+        f"runpy.run_path(os.path.join(root,{entry_path!r}),run_name='__main__')\""
     )
     return (
         "[Desktop Entry]\n"

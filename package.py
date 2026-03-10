@@ -56,7 +56,7 @@ Comment=Install ChoreBoy Code Studio on this system
 Terminal=false
 Categories=Utility;
 
-Exec=/bin/sh -c 'desktop="%k";root="$(cd "$(dirname "$desktop")" && pwd)";export CBCS_INSTALLER_ROOT="$root";/opt/freecad/AppRun -c "import os,runpy,sys;root=os.environ.get(\"CBCS_INSTALLER_ROOT\", os.getcwd());sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root, \"installer\", \"install.py\"), run_name=\"__main__\")"'
+Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='{staging_path}';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root,'installer','install.py'),run_name='__main__')"
 """
 
 INSTALL_TXT = """\
@@ -95,9 +95,9 @@ ChoreBoy Code Studio - Installation Instructions
 """
 
 
-def build_installer_desktop_entry() -> str:
+def build_installer_desktop_entry(staging_path: str) -> str:
     """Return the launcher used to start the bundled installer."""
-    return INSTALLER_DESKTOP_TEMPLATE
+    return INSTALLER_DESKTOP_TEMPLATE.format(staging_path=staging_path)
 
 
 def build_install_instructions() -> str:
@@ -156,7 +156,7 @@ def _make_zip(source_dir: Path, output_path: Path, password: str = "rsd") -> Non
 
 def main() -> int:
     version = _read_version()
-    package_name = f"ChoreBoyCodeStudio-v{version}"
+    package_name = f"choreboy_code_studio_installer_v{version}"
 
     dist_dir = REPO_ROOT / "dist"
     staging = dist_dir / package_name
@@ -196,8 +196,9 @@ def main() -> int:
     shutil.copy2(str(INSTALLER_SOURCE), str(installer_dir / "install.py"))
 
     print("  Generating install_choreboy_code_studio.desktop ...")
+    staging_path = f"{CHOREBOY_STAGING_ROOT}/{package_name}"
     desktop_path = staging / "install_choreboy_code_studio.desktop"
-    desktop_path.write_text(build_installer_desktop_entry(), encoding="utf-8")
+    desktop_path.write_text(build_installer_desktop_entry(staging_path), encoding="utf-8")
     desktop_path.chmod(desktop_path.stat().st_mode | 0o755)
 
     print("  Generating INSTALL.txt ...")

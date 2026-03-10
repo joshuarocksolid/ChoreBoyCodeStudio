@@ -258,6 +258,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, startup_report: Optional[CapabilityProbeReport] = None, state_root: str | None = None) -> None:
         super().__init__()
+        _app_icon_path = str(Path(__file__).resolve().parents[2] / "app" / "ui" / "icons" / "Python_Icon.png")
+        if Path(_app_icon_path).is_file():
+            self.setWindowIcon(QIcon(_app_icon_path))
         self._project_placeholder_label: QLabel | None = None
         self._center_stack: QStackedWidget | None = None
         self._welcome_widget: WelcomeWidget | None = None

@@ -3,8 +3,8 @@ Type=Application
 Version=1.0
 Name=ChoreBoy Code Studio
 Comment=Launch ChoreBoy Code Studio (Qt via FreeCAD AppRun)
-#Icon=/home/default/choreboy_code_studio/app/ui/icons/app_icon.png
+Icon=/home/default/choreboy_code_studio_v0.1/app/ui/icons/Python_Icon.png
 Terminal=false
 Categories=Utility;Development;
 
-Exec=/bin/sh -c 'desktop="%k";root="$(cd "$(dirname "$desktop")" && pwd)";export CBCS_ROOT="$root";/opt/freecad/AppRun -c "import os,runpy,sys;root=os.environ.get(\"CBCS_ROOT\", os.getcwd());sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root, \"run_editor.py\"), run_name=\"__main__\")"'
+Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/choreboy_code_studio_v0.1';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root,'run_editor.py'),run_name='__main__')"

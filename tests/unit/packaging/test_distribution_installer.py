@@ -32,14 +32,18 @@ def test_distribution_install_instructions_require_home_default_staging() -> Non
     assert "hardcode the chosen installation directory" in instructions
 
 
-def test_distribution_installer_desktop_entry_uses_installer_folder_location() -> None:
+def test_distribution_installer_desktop_entry_uses_direct_apprun() -> None:
     package_module = _load_module("distribution_package", "package.py")
 
-    desktop_entry = package_module.build_installer_desktop_entry()
+    desktop_entry = package_module.build_installer_desktop_entry(
+        "/home/default/choreboy_code_studio_installer_v0.1"
+    )
 
-    assert "%k" in desktop_entry
+    assert "/home/default/choreboy_code_studio_installer_v0.1" in desktop_entry
     assert "installer" in desktop_entry
     assert "install.py" in desktop_entry
+    assert "/opt/freecad/AppRun" in desktop_entry
+    assert "/bin/sh" not in desktop_entry
 
 
 def test_installed_desktop_entry_hardcodes_selected_install_dir() -> None:
@@ -50,12 +54,14 @@ def test_installed_desktop_entry_hardcodes_selected_install_dir() -> None:
     assert "/home/default/tools/code_studio" in desktop_entry
     assert "run_editor.py" in desktop_entry
     assert "%k" not in desktop_entry
+    assert "/bin/sh" not in desktop_entry
+    assert "/opt/freecad/AppRun" in desktop_entry
 
 
 def test_build_staging_location_warning_requires_home_default_staging() -> None:
     installer_module = _load_module("distribution_installer", "packaging/install.py")
 
-    warning = installer_module.build_staging_location_warning(Path("/tmp/ChoreBoyCodeStudio-v0.1"))
+    warning = installer_module.build_staging_location_warning(Path("/tmp/choreboy_code_studio_installer_v0.1"))
 
     assert warning is not None
     assert "/home/default/" in warning
@@ -64,6 +70,6 @@ def test_build_staging_location_warning_requires_home_default_staging() -> None:
 def test_build_staging_location_warning_allows_home_default_staging() -> None:
     installer_module = _load_module("distribution_installer", "packaging/install.py")
 
-    warning = installer_module.build_staging_location_warning(Path("/home/default/ChoreBoyCodeStudio-v0.1"))
+    warning = installer_module.build_staging_location_warning(Path("/home/default/choreboy_code_studio_installer_v0.1"))
 
     assert warning is None

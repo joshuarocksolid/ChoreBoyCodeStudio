@@ -9,7 +9,6 @@ No imports from the app package -- this file must stand alone.
 
 from __future__ import annotations
 
-import os
 import shutil
 import stat
 import sys
@@ -19,7 +18,6 @@ from typing import Optional
 from PySide2.QtCore import Qt, QThread, Signal
 from PySide2.QtWidgets import (
     QApplication,
-    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -34,7 +32,8 @@ from PySide2.QtWidgets import (
 
 APP_NAME = "ChoreBoy Code Studio"
 APP_RUN_PATH = "/opt/freecad/AppRun"
-DEFAULT_INSTALL_DIR = "/home/default/choreboy_code_studio"
+_DEFAULT_INSTALL_BASE = "/home/default"
+_DEFAULT_INSTALL_DIRNAME = "choreboy_code_studio"
 DESKTOP_FILENAME = "choreboy_code_studio.desktop"
 EXPECTED_STAGING_PARENT = Path("/home/default")
 
@@ -48,6 +47,8 @@ Name=ChoreBoy Code Studio
 Comment=Launch ChoreBoy Code Studio (Qt via FreeCAD AppRun)
 Terminal=false
 Categories=Utility;Development;
+Icon={install_dir}/app/ui/icons/Python_Icon.png
+
 Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='{install_dir}';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root,'run_editor.py'),run_name='__main__')"
 """
 
@@ -77,6 +78,18 @@ def _app_version() -> str:
                 if len(parts) == 2:
                     return parts[1].strip().strip("\"'")
     return "unknown"
+
+
+def _default_install_dir(version: str) -> str:
+    """Build the default install directory path including the version."""
+    suffix = "_v" + version if version and version != "unknown" else ""
+    return str(Path(_DEFAULT_INSTALL_BASE) / (_DEFAULT_INSTALL_DIRNAME + suffix))
+
+
+def _install_dirname(version: str) -> str:
+    """Build the versioned install folder name for browse dialogs."""
+    suffix = "_v" + version if version and version != "unknown" else ""
+    return _DEFAULT_INSTALL_DIRNAME + suffix
 
 
 def build_installed_desktop_entry(install_dir: str | Path) -> str:
@@ -117,13 +130,11 @@ class InstallWorker(QThread):
         self,
         payload_root: Path,
         install_dir: Path,
-        add_desktop_shortcut: bool,
         parent: Optional[object] = None,
     ) -> None:
         super().__init__(parent)
         self.payload_root = payload_root
         self.install_dir = install_dir
-        self.add_desktop_shortcut = add_desktop_shortcut
 
     def run(self) -> None:
         try:
@@ -169,24 +180,13 @@ class InstallWorker(QThread):
     def _write_desktop_files(self) -> None:
         content = build_installed_desktop_entry(self.install_dir)
 
-        apps_dir = Path.home() / ".local" / "share" / "applications"
-        apps_dir.mkdir(parents=True, exist_ok=True)
-        apps_desktop = apps_dir / DESKTOP_FILENAME
-        apps_desktop.write_text(content, encoding="utf-8")
-        apps_desktop.chmod(apps_desktop.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
-
-        if self.add_desktop_shortcut:
-            desktop_dir = Path.home() / "Desktop"
-            if desktop_dir.is_dir():
-                desk_file = desktop_dir / DESKTOP_FILENAME
-                desk_file.write_text(content, encoding="utf-8")
-                desk_file.chmod(
-                    desk_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP
-                )
+        desktop_file = self.install_dir / DESKTOP_FILENAME
+        desktop_file.write_text(content, encoding="utf-8")
+        desktop_file.chmod(desktop_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
 
 
 # ---------------------------------------------------------------------------
-# Wizard pages
+# Installer pages
 # ---------------------------------------------------------------------------
 
 class WelcomePage(QWizardPage):
@@ -199,12 +199,12 @@ class WelcomePage(QWizardPage):
         package_root = _package_root()
         staging_warning = build_staging_location_warning(package_root)
         intro_lines = [
-            f"This wizard will install <b>{APP_NAME}</b> v{version} on your ChoreBoy system.",
+            f"This installer will set up <b>{APP_NAME}</b> v{version} on your ChoreBoy system.",
             "",
             f"Before running the installer, copy this entire package folder into <code>{EXPECTED_STAGING_PARENT}/</code>.",
             "Keep <code>install_choreboy_code_studio.desktop</code>, <code>installer/</code>, and <code>payload/</code> together.",
             "",
-            "Later in this wizard you will choose where the application files should live.",
+            "On the next page you will choose where the application files should live.",
             "The installed launcher will hardcode that chosen location.",
             "If you move the installed folder later, rerun the installer.",
         ]
@@ -225,8 +225,9 @@ class WelcomePage(QWizardPage):
 
 
 class DirectoryPage(QWizardPage):
-    def __init__(self, parent: Optional[QWizard] = None) -> None:
+    def __init__(self, version: str, parent: Optional[QWizard] = None) -> None:
         super().__init__(parent)
+        self._version = version
         self.setTitle("Choose Installation Directory")
         self.setSubTitle(
             "Select the final location for the Code Studio files. "
@@ -236,7 +237,7 @@ class DirectoryPage(QWizardPage):
         layout = QVBoxLayout(self)
 
         row = QHBoxLayout()
-        self.path_edit = QLineEdit(DEFAULT_INSTALL_DIR)
+        self.path_edit = QLineEdit(_default_install_dir(version))
         self.path_edit.setMinimumWidth(350)
         row.addWidget(self.path_edit)
 
@@ -244,14 +245,9 @@ class DirectoryPage(QWizardPage):
         browse_btn.clicked.connect(self._browse)
         row.addWidget(browse_btn)
         layout.addLayout(row)
-
-        self.desktop_check = QCheckBox("Also add shortcut to Desktop")
-        self.desktop_check.setChecked(True)
-        layout.addWidget(self.desktop_check)
         layout.addStretch()
 
-        self.registerField("install_dir*", self.path_edit)
-        self.registerField("desktop_shortcut", self.desktop_check)
+        self.registerField("install_dir", self.path_edit)
 
     def _browse(self) -> None:
         chosen = QFileDialog.getExistingDirectory(
@@ -260,7 +256,7 @@ class DirectoryPage(QWizardPage):
             str(Path.home()),
         )
         if chosen:
-            chosen_path = Path(chosen) / "choreboy_code_studio"
+            chosen_path = Path(chosen) / _install_dirname(self._version)
             self.path_edit.setText(str(chosen_path))
 
     def validatePage(self) -> bool:
@@ -309,12 +305,9 @@ class ConfirmPage(QWizardPage):
 
     def initializePage(self) -> None:
         install_dir = self.field("install_dir")
-        desktop = self.field("desktop_shortcut")
-        desktop_text = "Yes" if desktop else "No"
         self.summary_label.setText(
             f"<b>Install directory:</b><br>{install_dir}<br><br>"
-            f"<b>Desktop shortcut:</b> {desktop_text}<br><br>"
-            f"<b>Menu entry:</b> ~/.local/share/applications/{DESKTOP_FILENAME}<br><br>"
+            f"<b>Launcher:</b> {install_dir}/{DESKTOP_FILENAME}<br><br>"
             "The installed launcher will hardcode this install directory.<br><br>"
             "If you later move the installed folder, rerun the installer.<br><br>"
             "Click <b>Install</b> to begin copying files."
@@ -343,12 +336,10 @@ class InstallPage(QWizardPage):
 
     def initializePage(self) -> None:
         install_dir = Path(self.field("install_dir"))
-        desktop_shortcut = bool(self.field("desktop_shortcut"))
 
         self.worker = InstallWorker(
             payload_root=_payload_root(),
             install_dir=install_dir,
-            add_desktop_shortcut=desktop_shortcut,
         )
         self.worker.progress.connect(self.progress_bar.setValue)
         self.worker.status.connect(self.status_label.setText)
@@ -388,19 +379,19 @@ class DonePage(QWizardPage):
         self.done_label.setText(
             f"<b>{APP_NAME}</b> has been installed to:<br>"
             f"<code>{install_dir}</code><br><br>"
-            "A launcher entry has been added to your application menu.<br><br>"
-            "That launcher now hardcodes this install directory.<br><br>"
+            f"A <code>{DESKTOP_FILENAME}</code> launcher has been placed in the install directory.<br><br>"
+            "To add it to your desktop or application menu, copy or move the "
+            "<code>.desktop</code> file to your preferred location.<br><br>"
             "If you move the installed folder later, rerun the installer so the launcher is regenerated.<br><br>"
-            "You can launch it from the application menu or desktop shortcut.<br><br>"
             "Click <b>Finish</b> to close the installer."
         )
 
 
 # ---------------------------------------------------------------------------
-# Main wizard
+# Main installer
 # ---------------------------------------------------------------------------
 
-class InstallerWizard(QWizard):
+class Installer(QWizard):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} Installer")
@@ -409,7 +400,7 @@ class InstallerWizard(QWizard):
 
         version = _app_version()
         self.addPage(WelcomePage(version))
-        self.addPage(DirectoryPage())
+        self.addPage(DirectoryPage(version))
         self.addPage(ConfirmPage())
         self.addPage(InstallPage())
         self.addPage(DonePage())
@@ -417,8 +408,8 @@ class InstallerWizard(QWizard):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    wizard = InstallerWizard()
-    wizard.show()
+    installer = Installer()
+    installer.show()
     return app.exec_()
 
 

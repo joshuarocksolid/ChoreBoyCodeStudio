@@ -61,7 +61,7 @@ class TestBuildDesktopEntry:
 
     def test_exec_contains_entry_file_path(self) -> None:
         content = build_desktop_entry("myapp", "main.py", "app_files")
-        assert "os.path.join(root, 'app_files/main.py')" in content
+        assert "os.path.join(root,'app_files/main.py')" in content
 
     def test_exec_bootstraps_runpy_and_sys_path(self) -> None:
         content = build_desktop_entry("myapp", "main.py", "app_files")
@@ -71,7 +71,7 @@ class TestBuildDesktopEntry:
 
     def test_custom_entry_file(self) -> None:
         content = build_desktop_entry("myapp", "app/run.py", "app_files")
-        assert "os.path.join(root, 'app_files/app/run.py')" in content
+        assert "os.path.join(root,'app_files/app/run.py')" in content
 
     def test_comment_mentions_project(self) -> None:
         content = build_desktop_entry("Cool Tool", "main.py", "app_files")
@@ -81,6 +81,7 @@ class TestBuildDesktopEntry:
         content = build_desktop_entry("Cool Tool", "main.py", "app_files")
         assert "%k" in content
         assert "/home/default" not in content
+        assert "/bin/sh" not in content
 
 
 class TestPackageProject:
@@ -264,7 +265,7 @@ class TestPackageProject:
         assert "[Desktop Entry]" in content
         assert "Name=Cool Tool" in content
         assert "/opt/freecad/AppRun" in content
-        assert "os.path.join(root, 'app_files/main.py')" in content
+        assert "os.path.join(root,'app_files/main.py')" in content
 
     def test_result_metadata_fields(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
