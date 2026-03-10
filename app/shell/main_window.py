@@ -1147,6 +1147,8 @@ class MainWindow(QMainWindow):
             self._editor_auto_save,
         ) = self._load_editor_preferences()
         self._sync_auto_save_menu_state()
+        if not self._editor_auto_save:
+            self._auto_save_to_file_timer.stop()
         (
             self._completion_enabled,
             self._completion_auto_trigger,
@@ -2012,6 +2014,8 @@ class MainWindow(QMainWindow):
         self._auto_save_to_file_timer.start()
 
     def _flush_auto_save_to_file(self) -> None:
+        if not self._editor_auto_save:
+            return
         for tab in self._editor_manager.all_tabs():
             if not tab.is_dirty:
                 continue
