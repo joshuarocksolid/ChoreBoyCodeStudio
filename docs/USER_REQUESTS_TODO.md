@@ -299,13 +299,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Syntax coloring still appears wrong/"pretty colorful" while editing a FreeCAD macro with GUI/object operations. |
-| **Severity / Impact (triage)** | Medium — readability and trust in syntax signal are reduced during macro authoring/debugging. |
-| **Affected code** | `app/treesitter/language_registry.py` (extension mapping), `app/editors/code_editor_widget.py` (language sniff sample), `app/treesitter/highlighter.py` (capture/token mapping), `app/shell/syntax_color_preferences.py` (override parsing/validation). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once repro is confirmed on latest build and root cause is scoped. |
-| **Notes** | Prior evidence indicates large-file dark-mode highlighting was fixed (request #10, smoke report, changelog). First step is regression verification on latest release. If still reproducible, prioritize macro-extension detection and capture mapping parity for macro-style Python content. Bash script users (e.g. Jason Rissler) have also reported occasional quirks; no specific repro yet. The "undefined names colored as parameters" behavior (request #27) is part of what Clair saw as incorrect/"pretty colorful" macro coloring; v0.1 did not color undefined names as parameters. |
+| **Resolution** | Implemented macro-focused language detection fixes so FreeCAD macro files resolve to Python highlighting instead of markdown false positives. |
+| **Implemented in** | `app/treesitter/language_registry.py` (`.fcmacro` extension mapping + markdown sniff hardening), `app/editors/code_editor_widget.py` (expanded language sniff sample window), `tests/unit/editors/test_syntax_registry.py`, `tests/unit/intelligence/test_semantic_tokens.py`. |
+| **Notes** | Root cause was ambiguous extensionless sniffing and missing `.FCMacro` mapping. Regression tests now cover macro comment headers and extension mapping. |
 
 ---
 
@@ -313,13 +312,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Improve the Settings dialog so syntax token names are not chopped/clipped in the Syntax Colors table. |
 | **Rationale** | Truncated token labels make color customization harder and increase misconfiguration risk. |
-| **Affected code** | `app/shell/settings_dialog.py` (header resize policy and table layout), `app/shell/style_sheet.py` (table spacing/padding that affects available width), `tests/unit/shell/test_settings_dialog.py` (missing layout-regression coverage). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` as a UI polish slice when width/elision behavior and acceptance criteria are finalized. |
-| **Notes** | Likely tied to current section resize modes where non-label columns consume content width. Validate final behavior in both light and dark themes per UI theme compatibility rule. |
+| **Implemented in** | `app/shell/settings_dialog.py` (fixed-width utility columns + protected token column width + tooltips), `tests/unit/shell/test_settings_dialog.py` (layout and tooltip coverage). |
+| **Validation evidence** | Automated: settings dialog unit suite passes. Manual: syntax token labels verified readable in both light and dark themes (`/tmp/computer-use/581f5.webp`). |
+| **Notes** | Token label clipping is resolved at default dialog size, with tooltip fallback preserving full token text. |
 
 ---
 
@@ -342,16 +341,16 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Undefined identifiers (e.g. `nothing` in `test3 = nothing`) are not colored differently; they use the same variable/parameter color as defined names. |
 | **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applies to all identifiers regardless of whether they are defined. |
 | **V1 vs V2** | In v0.1 (pre–tree-sitter, semantic overlays), parameters/identifiers were only colored when defined; undefined names (e.g. `nothing` in `test3 = nothing`) were not colored as parameters. In v0.2 (tree-sitter cutover, see request #10), all identifiers are colored as variable/parameter via the lexical catch-all, so undefined and defined names look the same. Joshua has added "color parameters only when defined" as a feature to implement (Clair was not aware he was requesting a new feature). |
 | **User observation (Clair)** | More accurate syntax coloring in v0.1 for this case; v0.2 is faster and uses less CPU. |
 | **Related** | Request #10 (tree-sitter cutover). A future enhancement may integrate diagnostics or semantic resolution to restore "only color when defined" behavior. |
-| **Current behavior** | Pyflakes reports undefined names (PY301) and the editor shows squiggly underlines and Problems panel entries. Syntax color stays "variable" because the highlighter does not consume diagnostics. |
-| **Possible enhancements** | **(A)** Integrate diagnostics into highlighting — when a range has a PY301 (undefined name) diagnostic, apply a different style (e.g. error color) to that identifier. **(B)** Document that undefined names are indicated by diagnostics (squiggles, Problems panel), not by syntax color. **(C)** Add a separate semantic highlighter using pyflakes or similar. |
-| **Affected code** | `app/treesitter/highlighter.py` (capture mapping), `app/treesitter/queries/python.scm`, `app/editors/code_editor_widget.py` (diagnostic overlay), `app/intelligence/diagnostics_service.py`. |
+| **Resolution** | Implemented diagnostics-aware undefined-name differentiation: PY301/PY302 ranges now apply error foreground tint in addition to existing squiggle underline. |
+| **Implemented in** | `app/editors/code_editor_widget.py` (diagnostic foreground tint for PY301/PY302), `app/intelligence/diagnostics_service.py` (identifier-length span extraction from pyflakes messages), `tests/unit/intelligence/test_diagnostics_service.py`, `tests/unit/editors/test_code_editor_widget_highlighting.py`. |
+| **Current behavior** | Undefined names are now visually distinct in-editor (error-tinted + squiggle), while normal variable coloring remains unchanged. Problems panel diagnostics remain intact. |
 
 ---
 

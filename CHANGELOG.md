@@ -19,6 +19,9 @@ All notable changes to ChoreBoy Code Studio are documented in this file.
 - Enhance syntax highlighting with dark/light theme-aware default palettes.
 - Expand Treesitter token coverage for JavaScript, Python, and SQL (variables, properties, keywords, operators).
 - Track document revisions in the Treesitter highlighter for more accurate line counting.
+- Fix FreeCAD macro highlighting detection by mapping `.FCMacro` to Python and reducing markdown false positives for macro-style comment headers.
+- Add diagnostics-aware undefined-name differentiation (PY301/PY302) so undefined identifiers render with error tint in-editor.
+- Improve Settings > Syntax Colors table readability with protected token-column width and full-label tooltips.
 
 ### Security Hardening
 
@@ -51,6 +54,8 @@ All notable changes to ChoreBoy Code Studio are documented in this file.
 
 - Add complete user program manual with chapters, screenshots, and build pipeline.
 - Add plugin authoring guide.
+- Clarify FreeCAD macro debug workflow boundaries and exception-handling guidance.
+- Add incremental status-update process docs, reusable template, and sample email-ready batch packet.
 
 ### Developer Experience
 
