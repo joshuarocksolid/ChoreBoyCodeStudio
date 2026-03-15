@@ -9,6 +9,7 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 - `DONE` — implemented and validated
 - `IN PROGRESS` — currently being worked on
 - `TODO` — not started
+- `DEFERRED` — intentionally out of current core scope
 
 ---
 
@@ -121,12 +122,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DEFERRED |
 | **Requested by** | (anonymous), Reuben Shirk (relayed by Kevin Hoover) |
 | **Request** | All internal paths should be relative so the application can be moved out of the home directory into any user-chosen location. Only the `.desktop` launcher file should need updating when the install folder changes. |
 | **Rationale** | Users with busy home directories want to keep the app in a dedicated programming folder without path breakage. Currently some paths are anchored to `~/`, forcing a home-directory install. |
 | **Affected code** | `app/core/constants.py` defines `GLOBAL_STATE_DIRNAME` and path helpers; `run_editor.py` and `dev_launch_editor.py` resolve the app root; `.desktop` file references an absolute install path. Any code that expands `~` or assumes a home-directory base needs auditing. |
-| **Notes** | Related to the existing hidden-folder constraint (`.cursor/rules/no_hidden_folders.mdc`). A full audit of path resolution across the codebase would be the first step. |
+| **Notes** | Intentionally deferred for now. We will keep the current hardcoded installer behavior because it has proven reliable on ChoreBoy. Revisit after we have a validated non-hardcoded launch path that works consistently in production constraints. |
 
 ---
 
@@ -285,12 +286,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DEFERRED |
 | **Request** | "Git idea via faxmail terminal." |
-| **Rationale** | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous. |
-| **Affected code/docs** | To be determined after scope clarification (possible touchpoints: run/debug UX docs, communication/release workflow docs, or terminal integration surfaces). |
-| **TASKS linkage** | Do not mirror into `docs/TASKS.md` until requested behavior is clarified. |
-| **Notes** | Needs clarification before implementation: exact user flow, whether this is outbound update sharing vs bidirectional collaboration, and whether behavior belongs inside the app UI or external terminal workflow. |
+| **Rationale** | This appears to be a niche workflow and does not belong in core IDE scope right now. |
+| **Affected code/docs** | Core app: none planned. Future candidate: plugin platform docs/backlog. |
+| **TASKS linkage** | Do not mirror into `docs/TASKS.md` core backlog. Track only as future plugin concept if requested. |
+| **Notes** | Deferred from core implementation. If revived, implement as an optional plugin rather than a built-in feature. |
 
 ---
 
@@ -326,13 +327,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | IN PROGRESS |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
 | **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
 | **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
 | **TASKS linkage** | Mirror into `docs/TASKS.md` as a docs/support slice if macro-focused guidance or extension support changes are approved. |
-| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance should recommend targeted exception handling only, and avoid broad `try/except` that swallows traceback diagnostics. |
+| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. We are tightening docs to explicitly reinforce: GUI-dependent macros must run/debug inside FreeCAD, and broad top-level `try/except` that swallows tracebacks is not recommended. |
 | **Research summary** | Edit-in-CBCS, run-in-FreeCAD is the recommended workflow for GUI-dependent macros. The runner executes headless (no FreeCAD GUI), so `FreeCAD.ActiveDocument` is `None` and GUI operations fail. CBCS Run/Debug works for headless scripts only. Attaching a debugger to a running FreeCAD process (e.g. via debugpy) would require new integration and is out of scope for v1. |
 
 ---
