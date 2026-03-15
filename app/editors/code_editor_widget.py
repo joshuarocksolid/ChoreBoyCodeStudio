@@ -309,6 +309,8 @@ class CodeEditorWidget(QPlainTextEdit):
             sel = cast(Any, QTextEdit.ExtraSelection())
             sel.format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
             sel.format.setUnderlineColor(color)
+            if diag.code in {"PY301", "PY302"}:
+                sel.format.setForeground(color)
             cursor = QTextCursor(doc)
             cursor.setPosition(start_pos)
             cursor.setPosition(end_pos, QTextCursor.KeepAnchor)

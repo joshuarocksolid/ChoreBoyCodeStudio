@@ -7,6 +7,7 @@ from dataclasses import replace
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import re
 import sys
 from typing import Any, Mapping
 
@@ -65,6 +66,8 @@ _STDLIB_FALLBACK: frozenset[str] = frozenset({
     "xml", "xmlrpc",
     "zipfile", "zipimport", "zlib", "zoneinfo",
 })
+
+_PYFLAKES_SYMBOL_IN_QUOTES = re.compile(r"['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]")
 
 
 @dataclass(frozen=True)
@@ -532,6 +535,10 @@ def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiag
     text = raw_text.strip()
     if not text:
         return None
+    if col_start is not None and code in {"PY301", "PY302"}:
+        symbol_length = _pyflakes_symbol_length(text)
+        if symbol_length is not None:
+            col_end = col_start + symbol_length
     return CodeDiagnostic(
         code=code,
         severity=severity,
@@ -541,6 +548,17 @@ def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiag
         col_start=col_start,
         col_end=col_end,
     )
+
+
+def _pyflakes_symbol_length(message_text: str) -> int | None:
+    """Best-effort identifier length extraction from pyflakes message text."""
+    match = _PYFLAKES_SYMBOL_IN_QUOTES.search(message_text)
+    if match is None:
+        return None
+    symbol = match.group(1).strip()
+    if not symbol:
+        return None
+    return len(symbol)
 
 
 def _ensure_vendor_path_on_sys_path() -> None:
