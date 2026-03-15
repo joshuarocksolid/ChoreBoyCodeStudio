@@ -20,6 +20,17 @@ def test_resolve_for_path_uses_extension_mapping(monkeypatch: pytest.MonkeyPatch
     assert resolved == ("python", sentinel, "query:python")
 
 
+def test_resolve_for_path_maps_fcmacro_to_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = TreeSitterLanguageRegistry()
+    sentinel = object()
+    monkeypatch.setattr(registry, "_language_for_key", lambda _key: sentinel)
+    monkeypatch.setattr(registry, "_query_source_for_key", lambda key: f"query:{key}")
+
+    resolved = registry.resolve_for_path(file_path="/tmp/probe.FCMacro", sample_text="")
+
+    assert resolved == ("python", sentinel, "query:python")
+
+
 def test_resolve_for_path_sniffs_python_shebang(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = TreeSitterLanguageRegistry()
     sentinel = object()
@@ -29,6 +40,20 @@ def test_resolve_for_path_sniffs_python_shebang(monkeypatch: pytest.MonkeyPatch)
     resolved = registry.resolve_for_path(
         file_path="/tmp/script",
         sample_text="#!/usr/bin/env python3\nprint('ok')\n",
+    )
+
+    assert resolved == ("python", sentinel, "query:python")
+
+
+def test_resolve_for_path_prefers_python_for_macro_comment_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = TreeSitterLanguageRegistry()
+    sentinel = object()
+    monkeypatch.setattr(registry, "_language_for_key", lambda _key: sentinel)
+    monkeypatch.setattr(registry, "_query_source_for_key", lambda key: f"query:{key}")
+
+    resolved = registry.resolve_for_path(
+        file_path="/tmp/macro_script",
+        sample_text="# FreeCAD macro script\nimport FreeCAD\nApp = FreeCAD\n",
     )
 
     assert resolved == ("python", sentinel, "query:python")

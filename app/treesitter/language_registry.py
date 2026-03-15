@@ -21,7 +21,7 @@ class _LanguageSpec:
 _LANGUAGE_SPECS: tuple[_LanguageSpec, ...] = (
     _LanguageSpec(
         key="python",
-        extensions=(".py", ".pyw", ".pyi"),
+        extensions=(".py", ".pyw", ".pyi", ".fcmacro"),
         query_file="python.scm",
         symbol_candidates=("tree_sitter_python",),
         language_name="python",
@@ -203,12 +203,12 @@ class TreeSitterLanguageRegistry:
                 return ".sh"
             if first_line.startswith("#!") and ("node" in lower_first or "deno" in lower_first):
                 return ".js"
+            if self._looks_like_python(stripped):
+                return ".py"
             if self._looks_like_json(stripped):
                 return ".json"
             if self._looks_like_markdown(stripped):
                 return ".md"
-            if self._looks_like_python(stripped):
-                return ".py"
             if self._looks_like_html(stripped):
                 return ".html"
             if self._looks_like_xml(stripped):
@@ -237,13 +237,26 @@ class TreeSitterLanguageRegistry:
     def _looks_like_markdown(stripped: str) -> bool:
         if not stripped:
             return False
-        first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
-        if first_line.startswith(("#", "```", "~~~", "> ", "- ", "* ")):
+        lines = [line.rstrip() for line in stripped.splitlines()[:8] if line.strip()]
+        if not lines:
+            return False
+        first_line = lines[0]
+        if first_line.startswith(("```", "~~~", "> ", "- ", "* ")):
             return True
         if re.match(r"^\d+[.)]\s+\S", first_line):
             return True
         if "[" in first_line and "](" in first_line:
             return True
+        heading_like = re.match(r"^#{1,6}\s+\S", first_line) is not None
+        if not heading_like:
+            return False
+        for line in lines[1:]:
+            if line.startswith(("```", "~~~", "> ", "- ", "* ")):
+                return True
+            if re.match(r"^\d+[.)]\s+\S", line):
+                return True
+            if "[" in line and "](" in line:
+                return True
         return False
 
     @staticmethod

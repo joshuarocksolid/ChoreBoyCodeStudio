@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCursor  # noqa: E402
+from PySide2.QtGui import QTextCharFormat, QTextCursor  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.core import constants  # noqa: E402
@@ -99,6 +99,28 @@ def test_large_documents_cap_overlay_decorations_to_viewport_budget() -> None:
     editor.highlight_all_matches("value", FindOptions())
     # One line highlight + capped non-cursor overlays.
     assert len(editor.extraSelections()) <= 701
+
+
+def test_undefined_name_diagnostics_apply_error_foreground_tint() -> None:
+    editor = CodeEditorWidget()
+    editor.setPlainText("print(unknown_name)\n")
+    diagnostics = [
+        CodeDiagnostic(
+            code="PY301",
+            severity=DiagnosticSeverity.ERROR,
+            file_path="/tmp/main.py",
+            line_number=1,
+            message="undefined name 'unknown_name'",
+            col_start=6,
+            col_end=18,
+        )
+    ]
+    editor.set_diagnostics(diagnostics)
+
+    assert editor._diagnostic_selections
+    selection = editor._diagnostic_selections[0]
+    assert selection.format.underlineStyle() == QTextCharFormat.WaveUnderline
+    assert selection.format.foreground().color().name().lower() == editor._diag_error_color.name().lower()
 
 
 def test_notify_highlighter_viewport_lines_updates_window_for_large_modes() -> None:

@@ -9,6 +9,7 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 - `DONE` — implemented and validated
 - `IN PROGRESS` — currently being worked on
 - `TODO` — not started
+- `DEFERRED` — intentionally out of current core scope
 
 ---
 
@@ -121,12 +122,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DEFERRED |
 | **Requested by** | (anonymous), Reuben Shirk (relayed by Kevin Hoover) |
 | **Request** | All internal paths should be relative so the application can be moved out of the home directory into any user-chosen location. Only the `.desktop` launcher file should need updating when the install folder changes. |
 | **Rationale** | Users with busy home directories want to keep the app in a dedicated programming folder without path breakage. Currently some paths are anchored to `~/`, forcing a home-directory install. |
 | **Affected code** | `app/core/constants.py` defines `GLOBAL_STATE_DIRNAME` and path helpers; `run_editor.py` and `dev_launch_editor.py` resolve the app root; `.desktop` file references an absolute install path. Any code that expands `~` or assumes a home-directory base needs auditing. |
-| **Notes** | Related to the existing hidden-folder constraint (`.cursor/rules/no_hidden_folders.mdc`). A full audit of path resolution across the codebase would be the first step. |
+| **Notes** | Intentionally deferred for now. We will keep the current hardcoded installer behavior because it has proven reliable on ChoreBoy. Revisit after we have a validated non-hardcoded launch path that works consistently in production constraints. |
 
 ---
 
@@ -271,13 +272,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Joe Miller |
 | **Request** | Ship incremental updates so progress can be shared by email in small, clear batches. |
 | **Rationale** | Stakeholders need frequent progress snapshots that are easy to forward without reading full backlog/changelog context. |
-| **Affected code/docs** | `docs/USER_REQUESTS_TODO.md`, `docs/TASKS.md`, `docs/SMOKE_TEST_REPORT.md` (process/evidence alignment for incremental status mail-outs). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once the reporting cadence/format is scoped (likely `RELEASE-CRITICAL` docs/process slice). |
-| **Notes** | Define a repeatable update packet format (What shipped / What changed / What is next / Known risks), include evidence links per batch, and keep each update concise enough for direct email use. |
+| **Affected code/docs** | `docs/STATUS_UPDATES.md` (process contract), `docs/templates/STATUS_UPDATE_TEMPLATE.md` (reusable packet template), `docs/status_updates/2026-03-15-batch-01.md` (sample packet). |
+| **TASKS linkage** | Process artifacts implemented directly in docs; no additional core backlog slice required at this time. |
+| **Notes** | Completed. We now have a repeatable packet format: What shipped / What changed / What’s next / Known risks-blockers / Evidence links. |
 
 ---
 
@@ -285,12 +286,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DEFERRED |
 | **Request** | "Git idea via faxmail terminal." |
-| **Rationale** | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous. |
-| **Affected code/docs** | To be determined after scope clarification (possible touchpoints: run/debug UX docs, communication/release workflow docs, or terminal integration surfaces). |
-| **TASKS linkage** | Do not mirror into `docs/TASKS.md` until requested behavior is clarified. |
-| **Notes** | Needs clarification before implementation: exact user flow, whether this is outbound update sharing vs bidirectional collaboration, and whether behavior belongs inside the app UI or external terminal workflow. |
+| **Rationale** | This appears to be a niche workflow and does not belong in core IDE scope right now. |
+| **Affected code/docs** | Core app: none planned. Future candidate: plugin platform docs/backlog. |
+| **TASKS linkage** | Do not mirror into `docs/TASKS.md` core backlog. Track only as future plugin concept if requested. |
+| **Notes** | Deferred from core implementation. If revived, implement as an optional plugin rather than a built-in feature. |
 
 ---
 
@@ -298,13 +299,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Syntax coloring still appears wrong/"pretty colorful" while editing a FreeCAD macro with GUI/object operations. |
-| **Severity / Impact (triage)** | Medium — readability and trust in syntax signal are reduced during macro authoring/debugging. |
-| **Affected code** | `app/treesitter/language_registry.py` (extension mapping), `app/editors/code_editor_widget.py` (language sniff sample), `app/treesitter/highlighter.py` (capture/token mapping), `app/shell/syntax_color_preferences.py` (override parsing/validation). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once repro is confirmed on latest build and root cause is scoped. |
-| **Notes** | Prior evidence indicates large-file dark-mode highlighting was fixed (request #10, smoke report, changelog). First step is regression verification on latest release. If still reproducible, prioritize macro-extension detection and capture mapping parity for macro-style Python content. Bash script users (e.g. Jason Rissler) have also reported occasional quirks; no specific repro yet. The "undefined names colored as parameters" behavior (request #27) is part of what Clair saw as incorrect/"pretty colorful" macro coloring; v0.1 did not color undefined names as parameters. |
+| **Resolution** | Implemented macro-focused language detection fixes so FreeCAD macro files resolve to Python highlighting instead of markdown false positives. |
+| **Implemented in** | `app/treesitter/language_registry.py` (`.fcmacro` extension mapping + markdown sniff hardening), `app/editors/code_editor_widget.py` (expanded language sniff sample window), `tests/unit/editors/test_syntax_registry.py`, `tests/unit/intelligence/test_semantic_tokens.py`. |
+| **Notes** | Root cause was ambiguous extensionless sniffing and missing `.FCMacro` mapping. Regression tests now cover macro comment headers and extension mapping. |
 
 ---
 
@@ -312,13 +312,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Improve the Settings dialog so syntax token names are not chopped/clipped in the Syntax Colors table. |
 | **Rationale** | Truncated token labels make color customization harder and increase misconfiguration risk. |
-| **Affected code** | `app/shell/settings_dialog.py` (header resize policy and table layout), `app/shell/style_sheet.py` (table spacing/padding that affects available width), `tests/unit/shell/test_settings_dialog.py` (missing layout-regression coverage). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` as a UI polish slice when width/elision behavior and acceptance criteria are finalized. |
-| **Notes** | Likely tied to current section resize modes where non-label columns consume content width. Validate final behavior in both light and dark themes per UI theme compatibility rule. |
+| **Implemented in** | `app/shell/settings_dialog.py` (fixed-width utility columns + protected token column width + tooltips), `tests/unit/shell/test_settings_dialog.py` (layout and tooltip coverage). |
+| **Validation evidence** | Automated: settings dialog unit suite passes. Manual: syntax token labels verified readable in both light and dark themes (`/tmp/computer-use/581f5.webp`). |
+| **Notes** | Token label clipping is resolved at default dialog size, with tooltip fallback preserving full token text. |
 
 ---
 
@@ -326,13 +326,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
 | **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
 | **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
 | **TASKS linkage** | Mirror into `docs/TASKS.md` as a docs/support slice if macro-focused guidance or extension support changes are approved. |
-| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance should recommend targeted exception handling only, and avoid broad `try/except` that swallows traceback diagnostics. |
+| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance now explicitly reinforces: GUI-dependent macros must run/debug inside FreeCAD, and broad top-level `try/except` that swallows tracebacks is not recommended. See `docs/manual/chapters/06_run_debug_console.md` and `docs/manual/chapters/10_troubleshooting.md`. |
 | **Research summary** | Edit-in-CBCS, run-in-FreeCAD is the recommended workflow for GUI-dependent macros. The runner executes headless (no FreeCAD GUI), so `FreeCAD.ActiveDocument` is `None` and GUI operations fail. CBCS Run/Debug works for headless scripts only. Attaching a debugger to a running FreeCAD process (e.g. via debugpy) would require new integration and is out of scope for v1. |
 
 ---
@@ -341,16 +341,16 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Undefined identifiers (e.g. `nothing` in `test3 = nothing`) are not colored differently; they use the same variable/parameter color as defined names. |
 | **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applies to all identifiers regardless of whether they are defined. |
 | **V1 vs V2** | In v0.1 (pre–tree-sitter, semantic overlays), parameters/identifiers were only colored when defined; undefined names (e.g. `nothing` in `test3 = nothing`) were not colored as parameters. In v0.2 (tree-sitter cutover, see request #10), all identifiers are colored as variable/parameter via the lexical catch-all, so undefined and defined names look the same. Joshua has added "color parameters only when defined" as a feature to implement (Clair was not aware he was requesting a new feature). |
 | **User observation (Clair)** | More accurate syntax coloring in v0.1 for this case; v0.2 is faster and uses less CPU. |
 | **Related** | Request #10 (tree-sitter cutover). A future enhancement may integrate diagnostics or semantic resolution to restore "only color when defined" behavior. |
-| **Current behavior** | Pyflakes reports undefined names (PY301) and the editor shows squiggly underlines and Problems panel entries. Syntax color stays "variable" because the highlighter does not consume diagnostics. |
-| **Possible enhancements** | **(A)** Integrate diagnostics into highlighting — when a range has a PY301 (undefined name) diagnostic, apply a different style (e.g. error color) to that identifier. **(B)** Document that undefined names are indicated by diagnostics (squiggles, Problems panel), not by syntax color. **(C)** Add a separate semantic highlighter using pyflakes or similar. |
-| **Affected code** | `app/treesitter/highlighter.py` (capture mapping), `app/treesitter/queries/python.scm`, `app/editors/code_editor_widget.py` (diagnostic overlay), `app/intelligence/diagnostics_service.py`. |
+| **Resolution** | Implemented diagnostics-aware undefined-name differentiation: PY301/PY302 ranges now apply error foreground tint in addition to existing squiggle underline. |
+| **Implemented in** | `app/editors/code_editor_widget.py` (diagnostic foreground tint for PY301/PY302), `app/intelligence/diagnostics_service.py` (identifier-length span extraction from pyflakes messages), `tests/unit/intelligence/test_diagnostics_service.py`, `tests/unit/editors/test_code_editor_widget_highlighting.py`. |
+| **Current behavior** | Undefined names are now visually distinct in-editor (error-tinted + squiggle), while normal variable coloring remains unchanged. Problems panel diagnostics remain intact. |
 
 ---
 

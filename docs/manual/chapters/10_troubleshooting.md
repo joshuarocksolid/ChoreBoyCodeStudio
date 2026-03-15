@@ -79,6 +79,7 @@ Fix:
 1. Edit and save your macro in Code Studio (syntax highlighting and linting remain useful).
 2. Run the macro inside FreeCAD (Macro > Macros or your usual macro launcher).
 3. Use FreeCAD for execution and debugging; use Code Studio for editing.
+4. Avoid broad top-level `try/except` wrappers that swallow traceback details; keep exception output visible and handle errors at targeted boundaries.
 
 ## Problem: FreeCAD GUI module error in run
 

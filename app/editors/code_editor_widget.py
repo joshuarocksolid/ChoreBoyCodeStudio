@@ -44,6 +44,7 @@ VIEWPORT_CHAR_MARGIN = 8000
 LANGUAGE_ATTACH_WARNING_MS = 80.0
 THEME_APPLY_WARNING_MS = 90.0
 OVERLAY_REFRESH_WARNING_MS = 24.0
+LANGUAGE_SNIFF_SAMPLE_LINES = 12
 
 
 class _LineNumberArea(QWidget):
@@ -308,6 +309,8 @@ class CodeEditorWidget(QPlainTextEdit):
             sel = cast(Any, QTextEdit.ExtraSelection())
             sel.format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
             sel.format.setUnderlineColor(color)
+            if diag.code in {"PY301", "PY302"}:
+                sel.format.setForeground(color)
             cursor = QTextCursor(doc)
             cursor.setPosition(start_pos)
             cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
@@ -377,7 +380,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
         sample_lines: list[str] = []
         block = document.firstBlock()
-        while block.isValid() and len(sample_lines) < 4:
+        while block.isValid() and len(sample_lines) < LANGUAGE_SNIFF_SAMPLE_LINES:
             sample_lines.append(block.text())
             block = block.next()
         self._highlighter = self._syntax_registry.create_for_path(

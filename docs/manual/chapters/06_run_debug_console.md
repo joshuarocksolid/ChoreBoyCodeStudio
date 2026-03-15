@@ -83,4 +83,5 @@ For FreeCAD macros that need an open document (`FreeCAD.ActiveDocument`) or the 
 - **Recommended workflow**: Edit and save in Code Studio, then run the macro inside FreeCAD.
 - Code Studio provides syntax highlighting, linting, and editing. FreeCAD provides the document and GUI context needed for execution and debugging.
 - Code Studio Run/Debug runs scripts headless. `FreeCAD.ActiveDocument` is `None` and GUI operations fail, so it is suitable for headless scripts and utilities only.
+- Do **not** wrap the whole macro in a broad top-level `try/except` that hides traceback details. Use targeted `try/except` blocks around known failure points and keep traceback output visible.
 

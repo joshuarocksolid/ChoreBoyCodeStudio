@@ -61,6 +61,12 @@ from app.intelligence.lint_profile import (
 )
 from app.core import constants
 from app.shell.style_sheet import build_settings_style_sheet
+
+
+_SYNTAX_TOKEN_COLUMN_MIN_WIDTH = 320
+_SYNTAX_COLOR_COLUMN_WIDTH = 170
+_SYNTAX_PICK_COLUMN_WIDTH = 70
+_SYNTAX_RESET_COLUMN_WIDTH = 76
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 
@@ -369,11 +375,17 @@ class SettingsDialog(QDialog):
         self._syntax_color_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._syntax_color_table.setFocusPolicy(Qt.NoFocus)
         self._syntax_color_table.verticalHeader().setVisible(False)
+        self._syntax_color_table.setMinimumWidth(760)
         syntax_header = self._syntax_color_table.horizontalHeader()
-        syntax_header.setSectionResizeMode(0, QHeaderView.Stretch)
-        syntax_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        syntax_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        syntax_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        syntax_header.setStretchLastSection(False)
+        syntax_header.setSectionResizeMode(0, QHeaderView.Interactive)
+        syntax_header.setSectionResizeMode(1, QHeaderView.Fixed)
+        syntax_header.setSectionResizeMode(2, QHeaderView.Fixed)
+        syntax_header.setSectionResizeMode(3, QHeaderView.Fixed)
+        self._syntax_color_table.setColumnWidth(0, _SYNTAX_TOKEN_COLUMN_MIN_WIDTH)
+        self._syntax_color_table.setColumnWidth(1, _SYNTAX_COLOR_COLUMN_WIDTH)
+        self._syntax_color_table.setColumnWidth(2, _SYNTAX_PICK_COLUMN_WIDTH)
+        self._syntax_color_table.setColumnWidth(3, _SYNTAX_RESET_COLUMN_WIDTH)
         syntax_layout.addWidget(self._syntax_color_table, 1)
         self._populate_syntax_color_table(self._active_syntax_theme_key)
 
@@ -873,6 +885,7 @@ class SettingsDialog(QDialog):
         for row_index, token in enumerate(SYNTAX_COLOR_TOKENS):
             self._syntax_color_row_by_token[token.key] = row_index
             label_item = QTableWidgetItem(f"{token.category} / {token.label}")
+            label_item.setToolTip(label_item.text())
             self._syntax_color_table.setItem(row_index, 0, label_item)
 
             color_container = QWidget(self._syntax_color_table)

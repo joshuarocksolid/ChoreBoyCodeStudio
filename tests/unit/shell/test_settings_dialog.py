@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QHeaderView
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -52,6 +52,25 @@ def test_settings_dialog_snapshot_includes_syntax_color_overrides() -> None:
 
     snapshot = dialog.snapshot()
     assert snapshot.syntax_color_overrides_light["keyword"] == "#112233"
+
+
+def test_settings_dialog_syntax_table_keeps_token_column_readable() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    header = dialog._syntax_color_table.horizontalHeader()
+
+    assert header.sectionResizeMode(0) == QHeaderView.Interactive
+    assert header.sectionResizeMode(1) == QHeaderView.Fixed
+    assert header.sectionResizeMode(2) == QHeaderView.Fixed
+    assert header.sectionResizeMode(3) == QHeaderView.Fixed
+    assert dialog._syntax_color_table.columnWidth(0) >= 320
+
+
+def test_settings_dialog_syntax_token_cells_expose_full_tooltip() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    first_token_item = dialog._syntax_color_table.item(0, 0)
+
+    assert first_token_item is not None
+    assert first_token_item.toolTip() == first_token_item.text()
 
 
 def test_settings_dialog_invalid_syntax_color_disables_ok() -> None:

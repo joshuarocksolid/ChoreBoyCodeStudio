@@ -505,6 +505,9 @@ def test_analyze_python_file_pyflakes_reports_undefined_name(tmp_path: Path) -> 
     undefined = [diagnostic for diagnostic in diagnostics if diagnostic.code == "PY301"]
     assert undefined
     assert undefined[0].severity == DiagnosticSeverity.ERROR
+    assert undefined[0].col_start is not None
+    assert undefined[0].col_end is not None
+    assert (undefined[0].col_end - undefined[0].col_start) >= len("unknown_name")
 
 
 def test_analyze_python_file_pyflakes_respects_disable_override(tmp_path: Path) -> None:
