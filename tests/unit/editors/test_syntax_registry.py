@@ -66,6 +66,16 @@ def test_registry_supports_pyw_extension_for_python() -> None:
     _assert_python_highlighter_shape(highlighter)
 
 
+def test_registry_supports_fcmacro_extension_for_python() -> None:
+    registry = default_syntax_highlighter_registry()
+    highlighter = registry.create_for_path(
+        file_path="/tmp/macro.FCMacro",
+        document=QTextDocument(),
+        is_dark=False,
+    )
+    _assert_python_highlighter_shape(highlighter)
+
+
 def test_registry_sniffs_extensionless_markdown_files() -> None:
     registry = default_syntax_highlighter_registry()
     highlighter = registry.create_for_path(
@@ -88,6 +98,17 @@ def test_registry_sniffs_extensionless_python_without_shebang() -> None:
         document=QTextDocument(),
         is_dark=False,
         sample_text="def configure(ctx):\n    pass\n",
+    )
+    _assert_python_highlighter_shape(highlighter)
+
+
+def test_registry_sniffs_macro_comment_with_python_import_as_python() -> None:
+    registry = default_syntax_highlighter_registry()
+    highlighter = registry.create_for_path(
+        file_path="/tmp/macro_script",
+        document=QTextDocument(),
+        is_dark=False,
+        sample_text="# FreeCAD macro script\nimport FreeCAD\nprint('ok')\n",
     )
     _assert_python_highlighter_shape(highlighter)
 
