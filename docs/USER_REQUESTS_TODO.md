@@ -272,13 +272,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Joe Miller |
 | **Request** | Ship incremental updates so progress can be shared by email in small, clear batches. |
 | **Rationale** | Stakeholders need frequent progress snapshots that are easy to forward without reading full backlog/changelog context. |
-| **Affected code/docs** | `docs/USER_REQUESTS_TODO.md`, `docs/TASKS.md`, `docs/SMOKE_TEST_REPORT.md` (process/evidence alignment for incremental status mail-outs). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once the reporting cadence/format is scoped (likely `RELEASE-CRITICAL` docs/process slice). |
-| **Notes** | Define a repeatable update packet format (What shipped / What changed / What is next / Known risks), include evidence links per batch, and keep each update concise enough for direct email use. |
+| **Affected code/docs** | `docs/STATUS_UPDATES.md` (process contract), `docs/templates/STATUS_UPDATE_TEMPLATE.md` (reusable packet template), `docs/status_updates/2026-03-15-batch-01.md` (sample packet). |
+| **TASKS linkage** | Process artifacts implemented directly in docs; no additional core backlog slice required at this time. |
+| **Notes** | Completed. We now have a repeatable packet format: What shipped / What changed / What’s next / Known risks-blockers / Evidence links. |
 
 ---
 
