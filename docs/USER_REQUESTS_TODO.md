@@ -327,13 +327,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | IN PROGRESS |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
 | **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
 | **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
 | **TASKS linkage** | Mirror into `docs/TASKS.md` as a docs/support slice if macro-focused guidance or extension support changes are approved. |
-| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. We are tightening docs to explicitly reinforce: GUI-dependent macros must run/debug inside FreeCAD, and broad top-level `try/except` that swallows tracebacks is not recommended. |
+| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance now explicitly reinforces: GUI-dependent macros must run/debug inside FreeCAD, and broad top-level `try/except` that swallows tracebacks is not recommended. See `docs/manual/chapters/06_run_debug_console.md` and `docs/manual/chapters/10_troubleshooting.md`. |
 | **Research summary** | Edit-in-CBCS, run-in-FreeCAD is the recommended workflow for GUI-dependent macros. The runner executes headless (no FreeCAD GUI), so `FreeCAD.ActiveDocument` is `None` and GUI operations fail. CBCS Run/Debug works for headless scripts only. Attaching a debugger to a running FreeCAD process (e.g. via debugpy) would require new integration and is out of scope for v1. |
 
 ---
