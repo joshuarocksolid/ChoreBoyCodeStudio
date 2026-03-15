@@ -267,6 +267,107 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 ---
 
+### 22. Ship incremental updates in email-ready batches
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Joe Miller |
+| **Request** | Ship incremental updates so progress can be shared by email in small, clear batches. |
+| **Rationale** | Stakeholders need frequent progress snapshots that are easy to forward without reading full backlog/changelog context. |
+| **Affected code/docs** | `docs/USER_REQUESTS_TODO.md`, `docs/TASKS.md`, `docs/SMOKE_TEST_REPORT.md` (process/evidence alignment for incremental status mail-outs). |
+| **TASKS linkage** | Mirror into `docs/TASKS.md` once the reporting cadence/format is scoped (likely `RELEASE-CRITICAL` docs/process slice). |
+| **Notes** | Define a repeatable update packet format (What shipped / What changed / What is next / Known risks), include evidence links per batch, and keep each update concise enough for direct email use. |
+
+---
+
+### 23. "Git idea via faxmail terminal" intake
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Request** | "Git idea via faxmail terminal." |
+| **Rationale** | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous. |
+| **Affected code/docs** | To be determined after scope clarification (possible touchpoints: run/debug UX docs, communication/release workflow docs, or terminal integration surfaces). |
+| **TASKS linkage** | Do not mirror into `docs/TASKS.md` until requested behavior is clarified. |
+| **Notes** | Needs clarification before implementation: exact user flow, whether this is outbound update sharing vs bidirectional collaboration, and whether behavior belongs inside the app UI or external terminal workflow. |
+
+---
+
+### 24. Syntax coloring appears incorrect for FreeCAD macro workflow
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
+| **Request** | Syntax coloring still appears wrong/"pretty colorful" while editing a FreeCAD macro with GUI/object operations. |
+| **Severity / Impact (triage)** | Medium — readability and trust in syntax signal are reduced during macro authoring/debugging. |
+| **Affected code** | `app/treesitter/language_registry.py` (extension mapping), `app/editors/code_editor_widget.py` (language sniff sample), `app/treesitter/highlighter.py` (capture/token mapping), `app/shell/syntax_color_preferences.py` (override parsing/validation). |
+| **TASKS linkage** | Mirror into `docs/TASKS.md` once repro is confirmed on latest build and root cause is scoped. |
+| **Notes** | Prior evidence indicates large-file dark-mode highlighting was fixed (request #10, smoke report, changelog). First step is regression verification on latest release. If still reproducible, prioritize macro-extension detection and capture mapping parity for macro-style Python content. Bash script users (e.g. Jason Rissler) have also reported occasional quirks; no specific repro yet. The "undefined names colored as parameters" behavior (request #27) is part of what Clair saw as incorrect/"pretty colorful" macro coloring; v0.1 did not color undefined names as parameters. |
+
+---
+
+### 25. Settings dialog chops syntax token names
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
+| **Request** | Improve the Settings dialog so syntax token names are not chopped/clipped in the Syntax Colors table. |
+| **Rationale** | Truncated token labels make color customization harder and increase misconfiguration risk. |
+| **Affected code** | `app/shell/settings_dialog.py` (header resize policy and table layout), `app/shell/style_sheet.py` (table spacing/padding that affects available width), `tests/unit/shell/test_settings_dialog.py` (missing layout-regression coverage). |
+| **TASKS linkage** | Mirror into `docs/TASKS.md` as a UI polish slice when width/elision behavior and acceptance criteria are finalized. |
+| **Notes** | Likely tied to current section resize modes where non-label columns consume content width. Validate final behavior in both light and dark themes per UI theme compatibility rule. |
+
+---
+
+### 26. FreeCAD macro debug guidance for active-file workflow
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
+| **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
+| **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
+| **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
+| **TASKS linkage** | Mirror into `docs/TASKS.md` as a docs/support slice if macro-focused guidance or extension support changes are approved. |
+| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance should recommend targeted exception handling only, and avoid broad `try/except` that swallows traceback diagnostics. |
+| **Research summary** | Edit-in-CBCS, run-in-FreeCAD is the recommended workflow for GUI-dependent macros. The runner executes headless (no FreeCAD GUI), so `FreeCAD.ActiveDocument` is `None` and GUI operations fail. CBCS Run/Debug works for headless scripts only. Attaching a debugger to a running FreeCAD process (e.g. via debugpy) would require new integration and is out of scope for v1. |
+
+---
+
+### 27. Undefined identifiers not colored differently from variables
+
+| Field | Value |
+|-------|-------|
+| **Status** | TODO |
+| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
+| **Request** | Undefined identifiers (e.g. `nothing` in `test3 = nothing`) are not colored differently; they use the same variable/parameter color as defined names. |
+| **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applies to all identifiers regardless of whether they are defined. |
+| **V1 vs V2** | In v0.1 (pre–tree-sitter, semantic overlays), parameters/identifiers were only colored when defined; undefined names (e.g. `nothing` in `test3 = nothing`) were not colored as parameters. In v0.2 (tree-sitter cutover, see request #10), all identifiers are colored as variable/parameter via the lexical catch-all, so undefined and defined names look the same. Joshua has added "color parameters only when defined" as a feature to implement (Clair was not aware he was requesting a new feature). |
+| **User observation (Clair)** | More accurate syntax coloring in v0.1 for this case; v0.2 is faster and uses less CPU. |
+| **Related** | Request #10 (tree-sitter cutover). A future enhancement may integrate diagnostics or semantic resolution to restore "only color when defined" behavior. |
+| **Current behavior** | Pyflakes reports undefined names (PY301) and the editor shows squiggly underlines and Problems panel entries. Syntax color stays "variable" because the highlighter does not consume diagnostics. |
+| **Possible enhancements** | **(A)** Integrate diagnostics into highlighting — when a range has a PY301 (undefined name) diagnostic, apply a different style (e.g. error color) to that identifier. **(B)** Document that undefined names are indicated by diagnostics (squiggles, Problems panel), not by syntax color. **(C)** Add a separate semantic highlighter using pyflakes or similar. |
+| **Affected code** | `app/treesitter/highlighter.py` (capture mapping), `app/treesitter/queries/python.scm`, `app/editors/code_editor_widget.py` (diagnostic overlay), `app/intelligence/diagnostics_service.py`. |
+
+---
+
+### 28. File Open dialog start directory
+
+| Field | Value |
+|-------|-------|
+| **Status** | DONE |
+| **Requested by** | Jason Rissler (Sunrise Circuits) |
+| **Request** | File > Open File should open the dialog in the folder of the file currently being edited, not project root or home. Useful when editing files outside the project (e.g. bash scripts in another folder). |
+| **Current behavior (before fix)** | Project root if project loaded, else home. |
+| **Proposed behavior** | 3-tier fallback: (1) active file's parent dir if an editor tab with a saved file path is active, (2) project root if project loaded, (3) home. |
+| **Research** | Atom defaults to active file's directory; VS Code users requested same (issues #151722, #151668). |
+| **Implemented in** | `app/shell/main_window.py` — `_handle_open_file_action()` uses active tab path, then project root, then home. File filter extended with Shell Scripts (*.sh *.bash) for discoverability. |
+
+---
+
 ## Cross-cutting
 
 - UI changes must validate in both light and dark themes (see `.cursor/rules/ui_light_dark_mode.mdc`).

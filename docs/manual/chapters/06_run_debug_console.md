@@ -76,3 +76,11 @@ You can run short snippets, test expressions, and inspect values without changin
 - Use **Debug** when you need step-by-step control.
 - Use **Python Console** for quick experiments and checks.
 
+## FreeCAD macro workflow
+
+For FreeCAD macros that need an open document (`FreeCAD.ActiveDocument`) or the GUI (selection, view manipulation, etc.):
+
+- **Recommended workflow**: Edit and save in Code Studio, then run the macro inside FreeCAD.
+- Code Studio provides syntax highlighting, linting, and editing. FreeCAD provides the document and GUI context needed for execution and debugging.
+- Code Studio Run/Debug runs scripts headless. `FreeCAD.ActiveDocument` is `None` and GUI operations fail, so it is suitable for headless scripts and utilities only.
+

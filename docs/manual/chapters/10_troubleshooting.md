@@ -63,6 +63,23 @@ Fix:
 3. Confirm active file vs project debug mode.
 4. If still not pausing, use normal run + Run Log + Problems for diagnosis.
 
+## Problem: FreeCAD macro needs document or Gui
+
+Symptom:
+
+- `FreeCAD.ActiveDocument` is `None` when running from Code Studio.
+- Script fails with errors related to selection, view, or GUI operations.
+
+Meaning:
+
+Code Studio runs scripts headless. There is no open FreeCAD document or GUI context.
+
+Fix:
+
+1. Edit and save your macro in Code Studio (syntax highlighting and linting remain useful).
+2. Run the macro inside FreeCAD (Macro > Macros or your usual macro launcher).
+3. Use FreeCAD for execution and debugging; use Code Studio for editing.
+
 ## Problem: FreeCAD GUI module error in run
 
 Symptom:

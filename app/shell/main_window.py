@@ -989,6 +989,11 @@ class MainWindow(QMainWindow):
         start_dir = str(Path.home())
         if self._loaded_project is not None:
             start_dir = self._loaded_project.project_root
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is not None and active_tab.file_path:
+            parent = Path(active_tab.file_path).parent
+            if parent.is_dir():
+                start_dir = str(parent)
 
         file_paths = choose_open_files(
             self,
@@ -996,6 +1001,7 @@ class MainWindow(QMainWindow):
             start_dir,
             "Python Files (*.py);;"
             "JSON Files (*.json);;"
+            "Shell Scripts (*.sh *.bash);;"
             "Markdown Files (*.md);;"
             "Text Files (*.txt);;"
             "All Files (*)",
