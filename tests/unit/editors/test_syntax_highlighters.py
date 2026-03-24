@@ -205,6 +205,47 @@ def test_python_tree_sitter_highlighter_repaints_shifted_lines_after_line_join()
     assert _color_at(document, 4, 4) == DEFAULT_LIGHT_PALETTE["builtin"].lower()
 
 
+def test_python_generic_identifiers_not_colored() -> None:
+    line0 = "def build(value):"
+    line1 = "    return value"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    keyword_color = _color_at(document, 0, 0)
+    assert keyword_color == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    value_usage_color = _color_at(document, 1, line1.index("value"))
+    assert value_usage_color is None
+
+
+def test_python_freecad_macro_coloring() -> None:
+    lines = [
+        "import FreeCAD",
+        "doc = FreeCAD.newDocument('Test')",
+        "box = doc.addObject('Part::Box', 'B')",
+        "box.Length = 50",
+        "print(box.Width)",
+    ]
+    source = "\n".join(lines) + "\n"
+    document, highlighter = _render("/tmp/macro.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    import_kw = _color_at(document, 0, 0)
+    assert import_kw == DEFAULT_LIGHT_PALETTE["keyword_import"].lower()
+    freecad_standalone = _color_at(document, 0, lines[0].index("FreeCAD"))
+    assert freecad_standalone is None
+    doc_lhs = _color_at(document, 1, 0)
+    assert doc_lhs is None
+    new_document_call = _color_at(document, 1, lines[1].index("newDocument"))
+    assert new_document_call == DEFAULT_LIGHT_PALETTE["semantic_method"].lower()
+    string_color = _color_at(document, 1, lines[1].index("'Test'"))
+    assert string_color == DEFAULT_LIGHT_PALETTE["string"].lower()
+    box_standalone = _color_at(document, 3, 0)
+    assert box_standalone is None
+    length_prop = _color_at(document, 3, lines[3].index("Length"))
+    assert length_prop == DEFAULT_LIGHT_PALETTE["semantic_property"].lower()
+    print_builtin = _color_at(document, 4, 0)
+    assert print_builtin == DEFAULT_LIGHT_PALETTE["builtin"].lower()
+
+
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:
     document = QTextDocument()
     registry = default_syntax_highlighter_registry()

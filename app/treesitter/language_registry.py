@@ -21,7 +21,7 @@ class _LanguageSpec:
 _LANGUAGE_SPECS: tuple[_LanguageSpec, ...] = (
     _LanguageSpec(
         key="python",
-        extensions=(".py", ".pyw", ".pyi"),
+        extensions=(".py", ".pyw", ".pyi", ".fcmacro"),
         query_file="python.scm",
         symbol_candidates=("tree_sitter_python",),
         language_name="python",

@@ -103,8 +103,6 @@ _CAPTURE_TOKEN_MAP: dict[str, str] = {
     "method.call": "semantic_method",
     "class.def": "class",
     "parameter": "parameter",
-    "variable": "semantic_variable",
-    "variable.def": "semantic_variable",
     "variable.builtin": "builtin",
     "property": "semantic_property",
     "module": "semantic_import",
@@ -491,8 +489,6 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             )
             for node, capture_name in captures:
                 token_name = self._resolve_token_name(capture_name)
-                if token_name is None:
-                    continue
                 token_name = self._apply_capture_overrides(
                     capture_name=capture_name,
                     token_name=token_name,

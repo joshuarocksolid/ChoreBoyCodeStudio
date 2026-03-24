@@ -17,7 +17,7 @@
 (call function: (identifier) @function.call)
 (call function: (attribute attribute: (identifier) @method.call))
 
-(parameter (identifier) @parameter)
+(parameters (identifier) @parameter)
 (default_parameter name: (identifier) @parameter)
 (typed_parameter (identifier) @parameter)
 (typed_default_parameter name: (identifier) @parameter)

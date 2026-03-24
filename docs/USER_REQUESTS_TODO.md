@@ -298,13 +298,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Syntax coloring still appears wrong/"pretty colorful" while editing a FreeCAD macro with GUI/object operations. |
-| **Severity / Impact (triage)** | Medium — readability and trust in syntax signal are reduced during macro authoring/debugging. |
-| **Affected code** | `app/treesitter/language_registry.py` (extension mapping), `app/editors/code_editor_widget.py` (language sniff sample), `app/treesitter/highlighter.py` (capture/token mapping), `app/shell/syntax_color_preferences.py` (override parsing/validation). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once repro is confirmed on latest build and root cause is scoped. |
-| **Notes** | Prior evidence indicates large-file dark-mode highlighting was fixed (request #10, smoke report, changelog). First step is regression verification on latest release. If still reproducible, prioritize macro-extension detection and capture mapping parity for macro-style Python content. Bash script users (e.g. Jason Rissler) have also reported occasional quirks; no specific repro yet. The "undefined names colored as parameters" behavior (request #27) is part of what Clair saw as incorrect/"pretty colorful" macro coloring; v0.1 did not color undefined names as parameters. |
+| **Root cause** | Two issues in the tree-sitter highlighting pipeline: **(A)** The `(identifier) @variable` catch-all in `python.scm` colored every unmatched identifier as `semantic_variable`, flooding FreeCAD macro code with bright cyan text. **(B)** The `(parameter (identifier) @parameter)` query pattern referenced a non-existent `parameter` node type in the tree-sitter Python grammar; tree-sitter treated it as a catch-all, coloring ALL identifiers as parameters regardless of context. Both captures mapped to the same `#9CDCFE` color in dark mode, producing the "pretty colorful" effect. |
+| **Resolution** | Removed `variable` and `variable.def` entries from `_CAPTURE_TOKEN_MAP` so generic identifiers revert to default text color. Fixed the query pattern from `(parameter ...)` to `(parameters ...)` (the actual grammar node type) so only function signature parameters are colored. Restructured capture processing flow so `_apply_capture_overrides` runs even for unmapped captures, preserving `self`/`cls` → `builtin` coloring. Added `.fcmacro` extension to the Python language spec for direct FreeCAD macro file support. |
+| **Implemented in** | `app/treesitter/highlighter.py` (token map + capture flow), `app/treesitter/queries/python.scm` (parameter query fix), `app/treesitter/language_registry.py` (`.fcmacro` extension). |
+| **Notes** | Keywords, strings, numbers, comments, function/class definitions, method calls, properties, decorators, and builtin calls remain correctly colored. Only generic/unrecognized identifiers lost coloring, matching v0.1 behavior. The "Semantic Variable" token in Settings > Syntax Colors has no visible effect after this change. Related: request #27 (undefined identifier coloring) remains a separate enhancement. |
 
 ---
 
@@ -326,14 +326,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
 | **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
 | **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` as a docs/support slice if macro-focused guidance or extension support changes are approved. |
-| **Notes** | Current behavior: active-file run/debug is `.py`-oriented; unhandled exceptions already surface to Run Log and Problems. Guidance should recommend targeted exception handling only, and avoid broad `try/except` that swallows traceback diagnostics. |
-| **Research summary** | Edit-in-CBCS, run-in-FreeCAD is the recommended workflow for GUI-dependent macros. The runner executes headless (no FreeCAD GUI), so `FreeCAD.ActiveDocument` is `None` and GUI operations fail. CBCS Run/Debug works for headless scripts only. Attaching a debugger to a running FreeCAD process (e.g. via debugpy) would require new integration and is out of scope for v1. |
+| **Notes** | By design: CBCS Run/Debug executes Python headless — FreeCAD macros that use the GUI (`ActiveDocument`, `Part`, `Gui`) should be run directly in FreeCAD's macro editor, not in CBCS. No code changes needed; current behavior is correct. Broad `try/except` wrapping is not recommended. |
 
 ---
 
@@ -341,16 +339,13 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Undefined identifiers (e.g. `nothing` in `test3 = nothing`) are not colored differently; they use the same variable/parameter color as defined names. |
-| **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applies to all identifiers regardless of whether they are defined. |
-| **V1 vs V2** | In v0.1 (pre–tree-sitter, semantic overlays), parameters/identifiers were only colored when defined; undefined names (e.g. `nothing` in `test3 = nothing`) were not colored as parameters. In v0.2 (tree-sitter cutover, see request #10), all identifiers are colored as variable/parameter via the lexical catch-all, so undefined and defined names look the same. Joshua has added "color parameters only when defined" as a feature to implement (Clair was not aware he was requesting a new feature). |
-| **User observation (Clair)** | More accurate syntax coloring in v0.1 for this case; v0.2 is faster and uses less CPU. |
-| **Related** | Request #10 (tree-sitter cutover). A future enhancement may integrate diagnostics or semantic resolution to restore "only color when defined" behavior. |
-| **Current behavior** | Pyflakes reports undefined names (PY301) and the editor shows squiggly underlines and Problems panel entries. Syntax color stays "variable" because the highlighter does not consume diagnostics. |
-| **Possible enhancements** | **(A)** Integrate diagnostics into highlighting — when a range has a PY301 (undefined name) diagnostic, apply a different style (e.g. error color) to that identifier. **(B)** Document that undefined names are indicated by diagnostics (squiggles, Problems panel), not by syntax color. **(C)** Add a separate semantic highlighter using pyflakes or similar. |
-| **Affected code** | `app/treesitter/highlighter.py` (capture mapping), `app/treesitter/queries/python.scm`, `app/editors/code_editor_widget.py` (diagnostic overlay), `app/intelligence/diagnostics_service.py`. |
+| **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applied to all identifiers regardless of whether they are defined. |
+| **Resolution** | Resolved by request #24 (macro syntax coloring fix): the `variable` and `variable.def` entries were removed from `_CAPTURE_TOKEN_MAP` in `app/treesitter/highlighter.py`, so the catch-all `(identifier) @variable` capture no longer maps to any color. Generic identifiers — both defined and undefined — now render in default text color, matching v0.1 behavior. Undefined names are still flagged by pyflakes (PY301) with squiggly underlines and Problems panel entries. |
+| **Additional fix** | Pyflakes diagnostic column spans (`col_end`) were widened to cover the full identifier name instead of just 1 character, using `message.message_args` to extract the symbol name length. This improves squiggle underline accuracy for all pyflakes-backed diagnostics (PY301, PY220, PY302, PY303, etc.). |
+| **Implemented in** | `app/treesitter/highlighter.py` (catch-all token unmapping, via request #24), `app/intelligence/diagnostics_service.py` (`_diagnostic_from_pyflakes_message` col_end fix). |
 
 ---
 

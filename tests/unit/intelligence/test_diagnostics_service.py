@@ -518,3 +518,52 @@ def test_analyze_python_file_pyflakes_respects_disable_override(tmp_path: Path) 
     )
 
     assert all(diagnostic.code != "PY301" for diagnostic in diagnostics)
+
+
+def test_pyflakes_undefined_name_col_end_spans_full_identifier(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("x = unknown_name\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        selected_linter="pyflakes",
+    )
+
+    py301 = [d for d in diagnostics if d.code == "PY301"]
+    assert len(py301) == 1
+    diag = py301[0]
+    assert diag.col_start is not None
+    assert diag.col_end is not None
+    assert diag.col_end - diag.col_start == len("unknown_name")
+
+
+def test_pyflakes_unused_import_col_end_spans_module_name(tmp_path: Path) -> None:
+    file_path = tmp_path / "module.py"
+    file_path.write_text("import json\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        selected_linter="pyflakes",
+    )
+
+    py220 = [d for d in diagnostics if d.code == "PY220"]
+    assert len(py220) == 1
+    diag = py220[0]
+    assert diag.col_start is not None
+    assert diag.col_end is not None
+    assert diag.col_end - diag.col_start == len("json")
+
+
+def test_pyflakes_col_end_fallback_when_no_message_args(tmp_path: Path) -> None:
+    """When message_args is empty or absent, col_end falls back to col_start + 1."""
+    from app.intelligence.diagnostics_service import _diagnostic_from_pyflakes_message
+
+    class _FakeMessage:
+        lineno = 1
+        col = 5
+
+    msg = _FakeMessage()
+    diag = _diagnostic_from_pyflakes_message(msg, tmp_path / "module.py")
+    assert diag is not None
+    assert diag.col_start == 5
+    assert diag.col_end == 6

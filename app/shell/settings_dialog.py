@@ -8,6 +8,7 @@ from PySide2.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -62,6 +63,7 @@ from app.intelligence.lint_profile import (
 from app.core import constants
 from app.shell.style_sheet import build_settings_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.ui.segmented_control import SegmentedControl
 
 
 class SettingsDialog(QDialog):
@@ -112,7 +114,7 @@ class SettingsDialog(QDialog):
         self._has_invalid_syntax_colors = False
         self._is_updating_shortcut_editors = False
         self._ok_button = None
-        self._scope_input: QComboBox | None = None
+        self._scope_input: SegmentedControl | None = None
         self._scope_banner_label: QLabel | None = None
         self._tabs_widget: QTabWidget | None = None
         self._keybindings_tab_index: int | None = None
@@ -127,33 +129,46 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(12)
+
+        scope_header = QFrame(self)
+        scope_header.setObjectName("shell.settingsDialog.scopeHeader")
+        scope_header.setFrameShape(QFrame.NoFrame)
+        scope_header_layout = QVBoxLayout(scope_header)
+        scope_header_layout.setContentsMargins(0, 0, 0, 0)
+        scope_header_layout.setSpacing(6)
+
         scope_row = QHBoxLayout()
-        _scope_label = QLabel("Settings Scope", self)
-        _scope_label.setObjectName("shell.settingsDialog.scopeLabel")
-        scope_row.addWidget(_scope_label)
-        self._scope_input = QComboBox(self)
-        self._scope_input.setObjectName("shell.settingsDialog.scopeInput")
-        self._scope_input.addItem("Global", SETTINGS_SCOPE_GLOBAL)
-        self._scope_input.addItem("Project", SETTINGS_SCOPE_PROJECT)
+        self._scope_input = SegmentedControl(scope_header)
+        self._scope_input.setObjectName("shell.settingsDialog.scopeSegmented")
+        self._scope_input.add_segment("Global", SETTINGS_SCOPE_GLOBAL)
+        self._scope_input.add_segment("Project", SETTINGS_SCOPE_PROJECT)
         if not self._project_scope_available:
-            model = self._scope_input.model()
-            item = model.item(1) if hasattr(model, "item") else None
-            if item is not None:
-                item.setEnabled(False)
-                item.setToolTip("Open a project to edit project scope settings.")
-        self._scope_input.currentIndexChanged.connect(self._handle_scope_changed)
+            self._scope_input.set_segment_enabled(SETTINGS_SCOPE_PROJECT, False)
+            self._scope_input.set_segment_tooltip(
+                SETTINGS_SCOPE_PROJECT,
+                "Open a project to edit project scope settings.",
+            )
+        self._scope_input.selection_changed.connect(self._handle_scope_changed)
         scope_row.addWidget(self._scope_input)
         scope_row.addStretch(1)
-        layout.addLayout(scope_row)
+        scope_header_layout.addLayout(scope_row)
 
-        self._scope_banner_label = QLabel(self)
+        self._scope_banner_label = QLabel(scope_header)
         self._scope_banner_label.setObjectName("shell.settingsDialog.scopeBanner")
         self._scope_banner_label.setWordWrap(True)
-        layout.addWidget(self._scope_banner_label)
+        scope_header_layout.addWidget(self._scope_banner_label)
+        layout.addWidget(scope_header)
 
         tabs = QTabWidget(self)
         tabs.setObjectName("shell.settingsDialog.tabs")
         self._tabs_widget = tabs
+        tab_bar = tabs.tabBar()
+        tab_font = QFont()
+        tab_font.setPixelSize(12)
+        tab_font.setWeight(QFont.DemiBold)
+        tab_bar.setFont(tab_font)
+        tab_bar.setElideMode(Qt.ElideNone)
+        tab_bar.setExpanding(False)
         layout.addWidget(tabs)
 
         general_tab = QWidget(tabs)
@@ -370,6 +385,7 @@ class SettingsDialog(QDialog):
         self._syntax_color_table.setFocusPolicy(Qt.NoFocus)
         self._syntax_color_table.verticalHeader().setVisible(False)
         syntax_header = self._syntax_color_table.horizontalHeader()
+        syntax_header.setMinimumSectionSize(200)
         syntax_header.setSectionResizeMode(0, QHeaderView.Stretch)
         syntax_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         syntax_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
@@ -609,14 +625,11 @@ class SettingsDialog(QDialog):
         finally:
             self._is_updating_shortcut_editors = False
 
-    def _handle_scope_changed(self, _index: int) -> None:
+    def _handle_scope_changed(self, selected_scope: str) -> None:
         if self._scope_input is None:
             return
-        selected_scope = str(self._scope_input.currentData())
         if selected_scope == SETTINGS_SCOPE_PROJECT and not self._project_scope_available:
-            self._scope_input.blockSignals(True)
-            self._scope_input.setCurrentIndex(self._scope_input.findData(self._active_scope))
-            self._scope_input.blockSignals(False)
+            self._scope_input.set_selected(self._active_scope)
             return
         if selected_scope not in {SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT}:
             return
@@ -636,7 +649,7 @@ class SettingsDialog(QDialog):
         self._active_scope = normalized_scope
         if self._scope_input is not None:
             self._scope_input.blockSignals(True)
-            self._scope_input.setCurrentIndex(self._scope_input.findData(normalized_scope))
+            self._scope_input.set_selected(normalized_scope)
             self._scope_input.blockSignals(False)
         if apply_snapshot:
             snapshot = self._scope_snapshots.get(normalized_scope, self._scope_snapshots[SETTINGS_SCOPE_GLOBAL])
@@ -648,8 +661,7 @@ class SettingsDialog(QDialog):
         if self._scope_banner_label is not None:
             if is_project_scope:
                 self._scope_banner_label.setText(
-                    "Project settings override global settings for this project. "
-                    "Values shown here are inherited from global unless you change them."
+                    "Project overrides apply to this project only."
                 )
             else:
                 self._scope_banner_label.setText(
@@ -886,6 +898,7 @@ class SettingsDialog(QDialog):
             self._syntax_color_swatches[token.key] = swatch
 
             color_input = QLineEdit(color_container)
+            color_input.setMaximumWidth(90)
             color_input.setPlaceholderText(defaults.get(token.key, ""))
             effective_color = overrides.get(token.key, defaults.get(token.key, ""))
             color_input.setText(effective_color)

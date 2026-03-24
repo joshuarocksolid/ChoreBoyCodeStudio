@@ -1046,6 +1046,7 @@ QDialog#shell\\.settingsDialog QTabBar::tab {{
     background: {tokens.panel_bg};
     color: {tokens.text_muted};
     padding: 8px 16px;
+    min-height: 16px;
     border: 1px solid {tokens.border};
     border-bottom: none;
     font-size: 12px;
@@ -1060,13 +1061,52 @@ QDialog#shell\\.settingsDialog QTabBar::tab:hover:!selected {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
 }}
+/* -- Scope header -------------------------------------------------------- */
+QFrame#shell\\.settingsDialog\\.scopeHeader {{
+    background: transparent;
+    border-bottom: 1px solid {tokens.border};
+    padding-bottom: 8px;
+}}
+/* -- Segmented control --------------------------------------------------- */
+QWidget#shell\\.settingsDialog\\.scopeSegmented {{
+    background: {tokens.input_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 2px;
+    max-width: 220px;
+}}
+QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    padding: 5px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 80px;
+}}
+QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton[segmentActive="true"] {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+}}
+QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton[segmentActive="true"]:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    color: #FFFFFF;
+}}
+QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton:disabled {{
+    color: {tokens.border};
+    background: transparent;
+}}
 /* -- Scope banner -------------------------------------------------------- */
 QLabel#shell\\.settingsDialog\\.scopeBanner {{
-    background: {tokens.badge_bg};
+    background: transparent;
     color: {tokens.text_muted};
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: 2px 0px;
+    font-size: 11px;
 }}
 /* -- Group boxes --------------------------------------------------------- */
 QDialog#shell\\.settingsDialog QGroupBox {{
@@ -1094,11 +1134,6 @@ QDialog#shell\\.settingsDialog QLabel {{
     color: {tokens.text_primary};
     font-size: 12px;
     background: transparent;
-}}
-QLabel#shell\\.settingsDialog\\.scopeLabel {{
-    color: {tokens.text_muted};
-    font-weight: 600;
-    font-size: 12px;
 }}
 QLabel#shell\\.settingsDialog\\.fileExcludesHelp {{
     color: {tokens.text_muted};

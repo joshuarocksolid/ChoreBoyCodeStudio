@@ -527,7 +527,13 @@ def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiag
     line_number = int(getattr(message, "lineno", 1))
     col_start_value = getattr(message, "col", None)
     col_start = int(col_start_value) if col_start_value is not None else None
-    col_end = None if col_start is None else col_start + 1
+    col_end = None
+    if col_start is not None:
+        message_args = getattr(message, "message_args", ())
+        if message_args and isinstance(message_args[0], str):
+            col_end = col_start + len(message_args[0])
+        else:
+            col_end = col_start + 1
     raw_text = str(message)
     text = raw_text.strip()
     if not text:

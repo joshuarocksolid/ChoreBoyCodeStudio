@@ -6,7 +6,8 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QKeySequence
+from PySide2.QtCore import Qt
+from PySide2.QtGui import QFont, QKeySequence
 from PySide2.QtWidgets import QApplication
 
 from app.shell.settings_dialog import SettingsDialog
@@ -103,7 +104,7 @@ def test_settings_dialog_disables_project_scope_without_project_snapshot() -> No
     dialog = SettingsDialog(EditorSettingsSnapshot())
     assert dialog._project_scope_available is False
     assert dialog._scope_input is not None
-    assert dialog._scope_input.currentData() != SETTINGS_SCOPE_PROJECT
+    assert dialog._scope_input.selected_data() != SETTINGS_SCOPE_PROJECT
 
 
 def test_settings_dialog_project_scope_hides_global_only_controls() -> None:
@@ -128,7 +129,7 @@ def test_settings_dialog_project_scope_hides_global_only_controls() -> None:
     assert dialog._appearance_group is not None
     assert dialog._appearance_group.isVisible() is False
     assert dialog._scope_banner_label is not None
-    assert "Project settings override global settings" in dialog._scope_banner_label.text()
+    assert "Project overrides apply to this project only" in dialog._scope_banner_label.text()
 
     dialog._handle_reset_output_group_to_global()
     dialog._handle_reset_editor_group_to_global()
@@ -146,3 +147,26 @@ def test_settings_dialog_snapshot_includes_enable_preview_toggle() -> None:
 
     snapshot = dialog.snapshot()
     assert snapshot.enable_preview is False
+
+
+def test_settings_dialog_tab_bar_prevents_label_clipping() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    tab_bar = dialog._tabs_widget.tabBar()
+
+    assert tab_bar.elideMode() == Qt.ElideNone
+    assert tab_bar.expanding() is False
+
+    font = tab_bar.font()
+    assert font.pixelSize() == 12
+    assert font.weight() >= QFont.DemiBold
+
+
+def test_settings_dialog_syntax_color_table_width_constraints() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    header = dialog._syntax_color_table.horizontalHeader()
+    assert header.minimumSectionSize() >= 200
+
+    for token_key, line_edit in dialog._syntax_color_inputs.items():
+        assert line_edit.maximumWidth() == 90, (
+            f"Color input for '{token_key}' should have maximumWidth 90"
+        )

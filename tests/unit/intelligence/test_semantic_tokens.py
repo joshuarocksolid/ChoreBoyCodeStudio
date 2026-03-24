@@ -45,6 +45,17 @@ def test_resolve_for_path_sniffs_markdown_basename(monkeypatch: pytest.MonkeyPat
     assert resolved == ("markdown", sentinel, "query:markdown")
 
 
+def test_resolve_for_path_fcmacro_extension(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = TreeSitterLanguageRegistry()
+    sentinel = object()
+    monkeypatch.setattr(registry, "_language_for_key", lambda _key: sentinel)
+    monkeypatch.setattr(registry, "_query_source_for_key", lambda key: f"query:{key}")
+
+    resolved = registry.resolve_for_path(file_path="/tmp/my_macro.FCMacro", sample_text="")
+
+    assert resolved == ("python", sentinel, "query:python")
+
+
 def test_resolve_for_path_returns_none_when_sniff_fails() -> None:
     registry = TreeSitterLanguageRegistry()
 
