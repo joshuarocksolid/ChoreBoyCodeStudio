@@ -11,6 +11,11 @@ from app.editors.syntax_engine import TokenStyle, ThemedSyntaxHighlighter
 _QUERY_MARGIN_LINES = 220
 _RANGE_EXPANSION_LINES = 3
 _ESCAPE_SEQUENCE_PATTERN = re.compile(r"\\(?:[0-7]{1,3}|x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|N\{[^}\n]*\}|.)")
+_MARKDOWN_ATX_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+.*$")
+_MARKDOWN_LIST_MARKER_PATTERN = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+")
+_MARKDOWN_STRONG_PATTERN = re.compile(r"(?<!\*)\*\*([^*\n]+)\*\*(?!\*)")
+_MARKDOWN_EMPHASIS_PATTERN = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
+_MARKDOWN_CODE_SPAN_PATTERN = re.compile(r"`[^`\n]+`")
 _PYTHON_SPECIAL_VARIABLES = frozenset({"self", "cls"})
 _PYTHON_BUILTIN_FUNCTIONS = frozenset(
     {
@@ -188,7 +193,10 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._language_key = language_key
         self._language = language
         self._parser: Any = tree_sitter.Parser()
-        self._parser.set_language(language)
+        if hasattr(self._parser, "set_language"):
+            self._parser.set_language(language)
+        else:
+            self._parser.language = language
         self._query: Any | None
         try:
             self._query = language.query(query_source)
@@ -196,9 +204,11 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             import traceback
             print(f"[TreeSitterHighlighter] query compilation failed for {language_key}: {traceback.format_exc()}")
             self._query = None
+        self._query_supports_range_kwargs: bool | None = None
         self._tree: Any | None = None
         self._source_text = document.toPlainText() if document is not None else ""
         self._pending_edits: list[_PendingEdit] = []
+        self._queued_contents_changes: list[tuple[int, int, int, str]] = []
         self._capture_cache: dict[int, list[_CaptureSpan]] = {}
         self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
         self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
@@ -209,6 +219,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._last_synced_revision: int = document.revision() if document is not None else -1
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
+            document.contentsChanged.connect(self._on_contents_changed)
 
     def setDocument(self, document) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         previous_document = self.document()
@@ -217,9 +228,14 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 previous_document.contentsChange.disconnect(self._on_contents_change)
             except Exception:
                 pass
+            try:
+                previous_document.contentsChanged.disconnect(self._on_contents_changed)
+            except Exception:
+                pass
         super().setDocument(document)
         self._tree = None
         self._pending_edits.clear()
+        self._queued_contents_changes.clear()
         self._capture_cache.clear()
         self._source_text = document.toPlainText() if document is not None else ""
         self._dirty = True
@@ -227,6 +243,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         self._last_synced_revision = document.revision() if document is not None else -1
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
+            document.contentsChanged.connect(self._on_contents_changed)
 
     def set_highlighting_policy(
         self,
@@ -281,11 +298,22 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             self.setFormat(span.start_col, span.end_col - span.start_col, token_format)
 
     def _on_contents_change(self, position: int, chars_removed: int, chars_added: int) -> None:
+        self._queued_contents_changes.append((position, chars_removed, chars_added, self._source_text))
+
+    def _on_contents_changed(self) -> None:
         document = self.document()
         if document is None:
             return
         new_source = document.toPlainText()
-        old_source = self._source_text
+        if not self._queued_contents_changes:
+            if new_source != self._source_text:
+                self._source_text = new_source
+                self._tree = None
+                self._pending_edits.clear()
+                self._dirty = True
+                self._rehighlight_line_window(0, max(0, document.blockCount() - 1))
+            return
+        position, chars_removed, chars_added, old_source = self._queued_contents_changes.pop(0)
         start_char_old = max(0, min(position, len(old_source)))
         old_end_char = max(start_char_old, min(position + chars_removed, len(old_source)))
         start_char_new = max(0, min(position, len(new_source)))
@@ -340,8 +368,18 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
 
         old_tree = self._tree
         changed_ranges: list[Any] = []
+        pending_line_ranges: list[tuple[int, int]] = []
         full_rebuild = old_tree is None
         if self._dirty:
+            if self._pending_edits:
+                for edit in self._pending_edits:
+                    line_delta = int(edit.new_end_point[0]) - int(edit.old_end_point[0])
+                    pending_line_ranges.append(
+                        self._rehighlight_window_for_edit(
+                            pending_edit=edit,
+                            line_delta=line_delta,
+                        )
+                    )
             if old_tree is not None and self._pending_edits:
                 for edit in self._pending_edits:
                     old_tree.edit(
@@ -367,7 +405,11 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 return
             full_rebuild = True
 
-        self._update_capture_cache(changed_ranges=changed_ranges, full_rebuild=full_rebuild)
+        self._update_capture_cache(
+            changed_ranges=changed_ranges,
+            full_rebuild=full_rebuild,
+            fallback_line_ranges=pending_line_ranges,
+        )
         self._viewport_dirty = False
 
     def _parse_with_optional_tree(self, old_tree: Any | None) -> tuple[Any | None, bool]:
@@ -381,7 +423,13 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 raise
             return self._parser.parse(source_bytes), False
 
-    def _update_capture_cache(self, *, changed_ranges: list[Any], full_rebuild: bool) -> None:
+    def _update_capture_cache(
+        self,
+        *,
+        changed_ranges: list[Any],
+        full_rebuild: bool,
+        fallback_line_ranges: list[tuple[int, int]],
+    ) -> None:
         if self._tree is None or self._query is None:
             self._capture_cache.clear()
             return
@@ -393,6 +441,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 self._capture_cache = self._query_capture_ranges([(0, line_count - 1)])
                 return
             line_ranges = self._line_ranges_from_changed_ranges(changed_ranges, line_count)
+            if fallback_line_ranges:
+                line_ranges = self._merge_line_ranges([*line_ranges, *fallback_line_ranges])
             if not line_ranges:
                 return
             for start_line, end_line in line_ranges:
@@ -482,10 +532,9 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         for start_line, end_line in merged_ranges:
             bounded_start = max(0, min(start_line, max_line))
             bounded_end = max(bounded_start, min(end_line, max_line))
-            captures = self._query.captures(
-                self._tree.root_node,
-                start_point=(bounded_start, 0),
-                end_point=(bounded_end + 1, 0),
+            captures = self._captures_for_range(
+                start_line=bounded_start,
+                end_line=bounded_end,
             )
             for node, capture_name in captures:
                 token_name = self._resolve_token_name(capture_name)
@@ -500,30 +549,102 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 for line_number, span in self._build_spans_for_node(node=node, token_name=token_name, lines=lines):
                     if line_number < bounded_start or line_number > bounded_end:
                         continue
-                    if line_number not in spans_by_line:
-                        spans_by_line[line_number] = []
-                        seen_by_line[line_number] = set()
-                    span_key = (span.start_col, span.end_col)
-                    if span_key in seen_by_line[line_number]:
-                        continue
-                    seen_by_line[line_number].add(span_key)
-                    spans_by_line[line_number].append(span)
-                    if token_name == "string":
+                    if self._append_capture_span(
+                        spans_by_line=spans_by_line,
+                        seen_by_line=seen_by_line,
+                        line_number=line_number,
+                        span=span,
+                    ) and token_name == "string":
                         line_text = lines[line_number]
                         for escape_span in self._lex_escape_spans(
                             line_text=line_text,
                             start_col=span.start_col,
                             end_col=span.end_col,
                         ):
-                            escape_key = (escape_span.start_col, escape_span.end_col)
-                            if escape_key in seen_by_line[line_number]:
-                                continue
-                            seen_by_line[line_number].add(escape_key)
-                            spans_by_line[line_number].append(escape_span)
+                            self._append_capture_span(
+                                spans_by_line=spans_by_line,
+                                seen_by_line=seen_by_line,
+                                line_number=line_number,
+                                span=escape_span,
+                            )
+
+        if self._language_key == "markdown":
+            self._add_markdown_lexical_spans(
+                lines=lines,
+                merged_ranges=merged_ranges,
+                spans_by_line=spans_by_line,
+                seen_by_line=seen_by_line,
+            )
 
         for line_number in list(spans_by_line.keys()):
             spans_by_line[line_number].sort(key=lambda value: (value.start_col, value.end_col, value.token_name))
         return spans_by_line
+
+    @staticmethod
+    def _append_capture_span(
+        *,
+        spans_by_line: dict[int, list[_CaptureSpan]],
+        seen_by_line: dict[int, set[tuple[int, int]]],
+        line_number: int,
+        span: _CaptureSpan,
+    ) -> bool:
+        if line_number not in spans_by_line:
+            spans_by_line[line_number] = []
+            seen_by_line[line_number] = set()
+        span_key = (span.start_col, span.end_col)
+        if span_key in seen_by_line[line_number]:
+            return False
+        seen_by_line[line_number].add(span_key)
+        spans_by_line[line_number].append(span)
+        return True
+
+    def _captures_for_range(self, *, start_line: int, end_line: int) -> list[tuple[Any, str]]:
+        if self._tree is None or self._query is None:
+            return []
+        raw_captures: Any
+        if self._query_supports_range_kwargs is not False:
+            try:
+                raw_captures = self._query.captures(
+                    self._tree.root_node,
+                    start_point=(start_line, 0),
+                    end_point=(end_line + 1, 0),
+                )
+                self._query_supports_range_kwargs = True
+            except TypeError:
+                self._query_supports_range_kwargs = False
+                raw_captures = self._query.captures(self._tree.root_node)
+        else:
+            raw_captures = self._query.captures(self._tree.root_node)
+        return self._normalize_captures(
+            raw_captures,
+            start_line=start_line,
+            end_line=end_line,
+        )
+
+    @staticmethod
+    def _normalize_captures(
+        raw_captures: Any,
+        *,
+        start_line: int,
+        end_line: int,
+    ) -> list[tuple[Any, str]]:
+        normalized: list[tuple[Any, str]] = []
+        if isinstance(raw_captures, dict):
+            for capture_name, nodes in raw_captures.items():
+                for node in nodes:
+                    if TreeSitterHighlighter._node_intersects_line_range(node, start_line, end_line):
+                        normalized.append((node, capture_name))
+            return normalized
+        for node, capture_name in raw_captures:
+            if TreeSitterHighlighter._node_intersects_line_range(node, start_line, end_line):
+                normalized.append((node, capture_name))
+        return normalized
+
+    @staticmethod
+    def _node_intersects_line_range(node: Any, start_line: int, end_line: int) -> bool:
+        node_start = int(node.start_point[0])
+        node_end = int(node.end_point[0])
+        return not (node_end < start_line or node_start > end_line)
 
     def _build_spans_for_node(
         self,
@@ -612,6 +733,64 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             if escape_end <= escape_start:
                 continue
             yield _CaptureSpan(token_name="escape", start_col=escape_start, end_col=escape_end)
+
+    def _add_markdown_lexical_spans(
+        self,
+        *,
+        lines: list[str],
+        merged_ranges: list[tuple[int, int]],
+        spans_by_line: dict[int, list[_CaptureSpan]],
+        seen_by_line: dict[int, set[tuple[int, int]]],
+    ) -> None:
+        for start_line, end_line in merged_ranges:
+            for line_number in range(start_line, end_line + 1):
+                if line_number < 0 or line_number >= len(lines):
+                    continue
+                line_text = lines[line_number]
+                if not line_text:
+                    continue
+                if _MARKDOWN_ATX_HEADING_PATTERN.match(line_text):
+                    self._append_capture_span(
+                        spans_by_line=spans_by_line,
+                        seen_by_line=seen_by_line,
+                        line_number=line_number,
+                        span=_CaptureSpan(
+                            token_name="markdown_heading",
+                            start_col=0,
+                            end_col=len(line_text),
+                        ),
+                    )
+                list_marker_match = _MARKDOWN_LIST_MARKER_PATTERN.match(line_text)
+                if list_marker_match is not None:
+                    marker_text = list_marker_match.group(0).rstrip()
+                    marker_start = list_marker_match.start()
+                    marker_end = marker_start + len(marker_text)
+                    self._append_capture_span(
+                        spans_by_line=spans_by_line,
+                        seen_by_line=seen_by_line,
+                        line_number=line_number,
+                        span=_CaptureSpan(
+                            token_name="punctuation",
+                            start_col=marker_start,
+                            end_col=marker_end,
+                        ),
+                    )
+                for pattern, token_name in (
+                    (_MARKDOWN_CODE_SPAN_PATTERN, "markdown_code"),
+                    (_MARKDOWN_STRONG_PATTERN, "markdown_strong"),
+                    (_MARKDOWN_EMPHASIS_PATTERN, "markdown_emphasis"),
+                ):
+                    for match in pattern.finditer(line_text):
+                        self._append_capture_span(
+                            spans_by_line=spans_by_line,
+                            seen_by_line=seen_by_line,
+                            line_number=line_number,
+                            span=_CaptureSpan(
+                                token_name=token_name,
+                                start_col=match.start(),
+                                end_col=match.end(),
+                            ),
+                        )
 
     def _resolve_token_name(self, capture_name: str) -> str | None:
         direct = _CAPTURE_TOKEN_MAP.get(capture_name)

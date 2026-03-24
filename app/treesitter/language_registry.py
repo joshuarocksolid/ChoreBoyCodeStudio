@@ -2,94 +2,11 @@ from __future__ import annotations
 
 import ctypes
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from app.bootstrap.paths import resolve_app_root
-from app.treesitter.loader import initialize_tree_sitter_runtime, languages_library, tree_sitter_module
-
-
-@dataclass(frozen=True)
-class _LanguageSpec:
-    key: str
-    extensions: tuple[str, ...]
-    query_file: str
-    symbol_candidates: tuple[str, ...]
-    language_name: str
-
-
-_LANGUAGE_SPECS: tuple[_LanguageSpec, ...] = (
-    _LanguageSpec(
-        key="python",
-        extensions=(".py", ".pyw", ".pyi", ".fcmacro"),
-        query_file="python.scm",
-        symbol_candidates=("tree_sitter_python",),
-        language_name="python",
-    ),
-    _LanguageSpec(
-        key="json",
-        extensions=(".json", ".jsonc", ".json5"),
-        query_file="json.scm",
-        symbol_candidates=("tree_sitter_json",),
-        language_name="json",
-    ),
-    _LanguageSpec(
-        key="html",
-        extensions=(".html", ".htm"),
-        query_file="html.scm",
-        symbol_candidates=("tree_sitter_html",),
-        language_name="html",
-    ),
-    _LanguageSpec(
-        key="xml",
-        extensions=(".xml", ".jrxml", ".svg", ".xsl"),
-        query_file="xml.scm",
-        symbol_candidates=("tree_sitter_xml", "tree_sitter_html"),
-        language_name="xml",
-    ),
-    _LanguageSpec(
-        key="css",
-        extensions=(".css",),
-        query_file="css.scm",
-        symbol_candidates=("tree_sitter_css",),
-        language_name="css",
-    ),
-    _LanguageSpec(
-        key="javascript",
-        extensions=(".js", ".jsx", ".mjs"),
-        query_file="javascript.scm",
-        symbol_candidates=("tree_sitter_javascript",),
-        language_name="javascript",
-    ),
-    _LanguageSpec(
-        key="bash",
-        extensions=(".sh", ".bash"),
-        query_file="bash.scm",
-        symbol_candidates=("tree_sitter_bash",),
-        language_name="bash",
-    ),
-    _LanguageSpec(
-        key="markdown",
-        extensions=(".md", ".markdown", ".mdx", ".mkd"),
-        query_file="markdown.scm",
-        symbol_candidates=("tree_sitter_markdown",),
-        language_name="markdown",
-    ),
-    _LanguageSpec(
-        key="yaml",
-        extensions=(".yaml", ".yml"),
-        query_file="yaml.scm",
-        symbol_candidates=("tree_sitter_yaml",),
-        language_name="yaml",
-    ),
-    _LanguageSpec(
-        key="sql",
-        extensions=(".sql",),
-        query_file="sql.scm",
-        symbol_candidates=("tree_sitter_sql", "tree_sitter_sqlite"),
-        language_name="sql",
-    ),
-)
+from app.treesitter.language_specs import LANGUAGE_SPEC_BY_KEY, LANGUAGE_SPECS, TreeSitterLanguageSpec
+from app.treesitter.loader import available_language_keys, initialize_tree_sitter_runtime, language_module, tree_sitter_module
 
 _COMMON_MARKDOWN_BASENAMES = {
     "readme",
@@ -110,12 +27,11 @@ class TreeSitterLanguageRegistry:
     def __init__(self, *, app_root: Path | None = None) -> None:
         self._app_root = app_root if app_root is not None else resolve_app_root()
         self._query_dir = self._app_root / "app" / "treesitter" / "queries"
-        self._spec_by_extension: dict[str, _LanguageSpec] = {}
-        self._spec_by_key: dict[str, _LanguageSpec] = {}
+        self._spec_by_extension: dict[str, TreeSitterLanguageSpec] = {}
+        self._spec_by_key: dict[str, TreeSitterLanguageSpec] = dict(LANGUAGE_SPEC_BY_KEY)
         self._language_cache: dict[str, object] = {}
         self._query_cache: dict[str, str] = {}
-        for spec in _LANGUAGE_SPECS:
-            self._spec_by_key[spec.key] = spec
+        for spec in LANGUAGE_SPECS:
             for extension in spec.extensions:
                 self._spec_by_extension[extension] = spec
 
@@ -133,6 +49,12 @@ class TreeSitterLanguageRegistry:
             return None
         query_source = self._query_source_for_key(language_key)
         return (language_key, language, query_source)
+
+    def available_language_keys(self) -> tuple[str, ...]:
+        status = initialize_tree_sitter_runtime(self._app_root)
+        if not status.is_available:
+            return ()
+        return available_language_keys()
 
     def _resolve_language_key(self, *, file_path: str, sample_text: str) -> str | None:
         extension = Path(file_path).suffix.lower()
@@ -158,24 +80,25 @@ class TreeSitterLanguageRegistry:
         if not status.is_available:
             return None
         module = tree_sitter_module()
-        library = languages_library()
-        if module is None or library is None:
+        grammar_module = language_module(key)
+        if module is None or grammar_module is None:
             return None
         language_class = getattr(module, "Language", None)
         if language_class is None:
             return None
-        for symbol_name in spec.symbol_candidates:
-            if not hasattr(library, symbol_name):
-                continue
-            language_fn = getattr(library, symbol_name)
-            language_fn.restype = ctypes.c_void_p
-            language_ptr = int(language_fn())
-            if language_ptr == 0:
-                continue
-            language = language_class(language_ptr, spec.language_name)
-            self._language_cache[key] = language
-            return language
-        return None
+        language_fn = getattr(grammar_module, spec.language_callable_name, None)
+        if not callable(language_fn):
+            return None
+        language_handle = language_fn()
+        language_value = language_handle
+        if isinstance(language_handle, ctypes.c_void_p):
+            language_value = language_handle.value
+        try:
+            language = language_class(language_value, spec.language_name)
+        except TypeError:
+            language = language_class(language_value)
+        self._language_cache[key] = language
+        return language
 
     def _query_source_for_key(self, key: str) -> str:
         cached = self._query_cache.get(key)

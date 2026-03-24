@@ -214,6 +214,36 @@ def test_parse_editor_settings_snapshot_invalid_selected_linter_defaults_to_defa
     assert snapshot.selected_linter == "default"
 
 
+def test_parse_effective_editor_settings_snapshot_project_overrides_selected_linter() -> None:
+    global_payload = {
+        "schema_version": 1,
+        "linter": {
+            "selected_linter": constants.LINTER_PROVIDER_DEFAULT,
+            "enabled": True,
+            "rule_overrides": {},
+        },
+    }
+    project_payload = {
+        "schema_version": 1,
+        "linter": {"selected_linter": constants.LINTER_PROVIDER_PYFLAKES},
+    }
+    effective = parse_effective_editor_settings_snapshot(global_payload, project_payload)
+    assert effective.selected_linter == constants.LINTER_PROVIDER_PYFLAKES
+
+
+def test_parse_effective_editor_settings_snapshot_without_project_keeps_global_linter() -> None:
+    global_payload = {
+        "schema_version": 1,
+        "linter": {
+            "selected_linter": constants.LINTER_PROVIDER_PYFLAKES,
+            "enabled": True,
+            "rule_overrides": {},
+        },
+    }
+    effective = parse_effective_editor_settings_snapshot(global_payload, None)
+    assert effective.selected_linter == constants.LINTER_PROVIDER_PYFLAKES
+
+
 def test_parse_theme_mode_reads_explicit_dark() -> None:
     snapshot = parse_editor_settings_snapshot({"theme": {"mode": "dark"}})
     assert snapshot.theme_mode == "dark"

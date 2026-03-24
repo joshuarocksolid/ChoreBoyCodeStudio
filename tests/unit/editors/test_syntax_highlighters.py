@@ -13,10 +13,11 @@ from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
-from app.treesitter.loader import initialize_tree_sitter_runtime  # noqa: E402
+from app.treesitter.loader import available_language_keys as loader_available_language_keys, initialize_tree_sitter_runtime  # noqa: E402
 
 pytestmark = pytest.mark.unit
 _TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
+_AVAILABLE_LANGUAGE_KEYS = set(loader_available_language_keys()) if _TREE_SITTER_AVAILABLE else set()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -130,6 +131,8 @@ def test_python_tree_sitter_highlighter_formats_builtins_and_escapes() -> None:
 
 
 def test_javascript_tree_sitter_highlighter_formats_builtin_and_constants() -> None:
+    if "javascript" not in _AVAILABLE_LANGUAGE_KEYS:
+        pytest.skip("Optional javascript tree-sitter grammar not vendored.")
     source = "const enabled = true;\nfunction read(){ return this.value; }\n"
     document, highlighter = _render("/tmp/main.js", source, is_dark=False)
     assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
@@ -152,6 +155,8 @@ def test_yaml_tree_sitter_highlighter_formats_mapping_keys() -> None:
 
 
 def test_sql_tree_sitter_highlighter_formats_function_calls() -> None:
+    if "sql" not in _AVAILABLE_LANGUAGE_KEYS:
+        pytest.skip("Optional SQL tree-sitter grammar not vendored.")
     source = "SELECT COUNT(*) FROM items;\n"
     document, highlighter = _render("/tmp/query.sql", source, is_dark=False)
     assert highlighter.__class__.__name__ == "TreeSitterHighlighter"

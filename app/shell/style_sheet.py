@@ -1221,6 +1221,7 @@ QDialog#shell\\.settingsDialog QLineEdit {{
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;
+    min-height: 20px;
 }}
 QDialog#shell\\.settingsDialog QLineEdit:focus {{
     border-color: {tokens.accent};

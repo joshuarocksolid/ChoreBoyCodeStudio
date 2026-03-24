@@ -6,7 +6,7 @@ Run on the dev machine (any Python 3.6+):
 
 Produces (inside the artifacts directory):
     dist/choreboy_code_studio_installer_v{version}/   -- staging directory
-    dist/choreboy_code_studio_installer_v{version}.zip -- password-protected archive
+    dist/choreboy_code_studio_installer_v{version}.zip -- password-protected compressed archive
 
 Vendor files and dist output live in a sibling artifacts directory to keep
 large/binary files out of the editor workspace.  Override with CBCS_ARTIFACTS_DIR.
@@ -53,6 +53,8 @@ PRUNE_DIR_SUFFIXES = {
 
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
 CHOREBOY_STAGING_ROOT = "/home/default"
+INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
+ZIP_COMPRESSION_LEVEL = 9
 
 INSTALLER_DESKTOP_TEMPLATE = """\
 [Desktop Entry]
@@ -145,17 +147,35 @@ def _copytree_filtered(src: Path, dst: Path) -> None:
             shutil.copy2(str(entry), str(dst / entry.name))
 
 
+def archive_budget_bytes() -> int:
+    """Return the maximum allowed installer archive size."""
+    return INSTALLER_ARCHIVE_BUDGET_BYTES
+
+
+def is_archive_within_budget(size_bytes: int) -> bool:
+    """Return True when the installer archive fits within the email budget."""
+    return size_bytes <= archive_budget_bytes()
+
+
+def build_archive_zip_command(source_dir: Path, output_path: Path, password: str = "rsd") -> list[str]:
+    """Build the zip CLI command for the compressed installer archive."""
+    return [
+        "zip",
+        "-r",
+        f"-{ZIP_COMPRESSION_LEVEL}",
+        "-P",
+        password,
+        output_path.name,
+        source_dir.name,
+    ]
+
+
 def _make_zip(source_dir: Path, output_path: Path, password: str = "rsd") -> None:
-    """Create a password-protected, uncompressed zip via the ``zip`` CLI."""
+    """Create a password-protected, compressed zip via the ``zip`` CLI."""
     if output_path.exists():
         output_path.unlink()
     subprocess.run(
-        [
-            "zip", "-r", "-0",
-            "-P", password,
-            output_path.name,
-            source_dir.name,
-        ],
+        build_archive_zip_command(source_dir, output_path, password=password),
         cwd=str(source_dir.parent),
         check=True,
     )
@@ -223,11 +243,20 @@ def main() -> int:
     print(f"  Creating archive: {archive_path.name} ...")
     _make_zip(staging, archive_path)
 
-    archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
+    archive_size_bytes = archive_path.stat().st_size
+    archive_size_mb = archive_size_bytes / (1024 * 1024)
+    budget_mb = archive_budget_bytes() / (1024 * 1024)
     print()
     print(f"Done. Package ready at:")
     print(f"  Directory: {staging}")
     print(f"  Archive:   {archive_path} ({archive_size_mb:.1f} MB)")
+    print(f"  Budget:    {budget_mb:.1f} MB maximum for email delivery")
+    if not is_archive_within_budget(archive_size_bytes):
+        print(
+            f"  ERROR: Archive exceeds the email budget "
+            f"({archive_size_mb:.1f} MB > {budget_mb:.1f} MB)."
+        )
+        return 1
     return 0
 
 

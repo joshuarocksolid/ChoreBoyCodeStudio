@@ -13,19 +13,23 @@ from pathlib import Path
 from types import ModuleType
 
 from app.bootstrap.paths import resolve_app_root
+from app.treesitter.language_specs import DEFAULT_LANGUAGE_KEYS, LANGUAGE_SPECS, OPTIONAL_LANGUAGE_KEYS, TreeSitterLanguageSpec
 
 
 @dataclass(frozen=True)
 class TreeSitterRuntimeStatus:
     is_available: bool
     message: str
+    available_language_keys: tuple[str, ...] = ()
+    missing_default_language_keys: tuple[str, ...] = ()
+    skipped_optional_language_keys: tuple[str, ...] = ()
 
 
 _RUNTIME_INITIALIZED = False
 _RUNTIME_STATUS = TreeSitterRuntimeStatus(False, "not_initialized")
 _RUNTIME_TRACEBACK: str | None = None
 _TREE_SITTER_MODULE: ModuleType | None = None
-_LANGUAGES_LIBRARY: ctypes.CDLL | None = None
+_LANGUAGE_MODULES: dict[str, ModuleType] = {}
 _OPEN_FDS: list[int] = []
 
 
@@ -41,26 +45,26 @@ def tree_sitter_module() -> ModuleType | None:
     return _TREE_SITTER_MODULE
 
 
-def languages_library() -> ctypes.CDLL | None:
-    return _LANGUAGES_LIBRARY
+def language_module(language_key: str) -> ModuleType | None:
+    return _LANGUAGE_MODULES.get(language_key)
+
+
+def available_language_keys() -> tuple[str, ...]:
+    return tuple(sorted(_LANGUAGE_MODULES))
 
 
 def initialize_tree_sitter_runtime(app_root: Path | None = None) -> TreeSitterRuntimeStatus:
-    global _RUNTIME_INITIALIZED, _RUNTIME_STATUS, _RUNTIME_TRACEBACK, _TREE_SITTER_MODULE, _LANGUAGES_LIBRARY
+    global _RUNTIME_INITIALIZED, _RUNTIME_STATUS, _RUNTIME_TRACEBACK, _TREE_SITTER_MODULE, _LANGUAGE_MODULES
     if _RUNTIME_INITIALIZED:
         return _RUNTIME_STATUS
     try:
         root = app_root if app_root is not None else resolve_app_root()
         vendor_root = root / "vendor"
         tree_sitter_dir = vendor_root / "tree_sitter"
-        languages_dir = vendor_root / "tree_sitter_languages"
         binding_path = _resolve_binding_path(tree_sitter_dir)
-        languages_path = languages_dir / "languages.so"
 
         if not binding_path.exists():
             raise FileNotFoundError(f"missing tree-sitter binding shared object at {binding_path}")
-        if not languages_path.exists():
-            raise FileNotFoundError(f"missing tree-sitter languages shared object at {languages_path}")
 
         vendor_root_str = str(vendor_root)
         if vendor_root_str not in sys.path:
@@ -68,15 +72,48 @@ def initialize_tree_sitter_runtime(app_root: Path | None = None) -> TreeSitterRu
 
         _load_extension_module("tree_sitter._binding", binding_path, "tree_sitter_binding")
         _TREE_SITTER_MODULE = importlib.import_module("tree_sitter")
-        _LANGUAGES_LIBRARY = _load_shared_library(languages_path, "tree_sitter_languages")
+        loaded_language_modules: dict[str, ModuleType] = {}
+        missing_default_languages: list[str] = []
+        skipped_optional_languages: list[str] = []
+        for spec in LANGUAGE_SPECS:
+            try:
+                module = _load_language_module(spec, vendor_root)
+            except Exception as exc:
+                if spec.included_by_default:
+                    raise RuntimeError(
+                        f"failed to load bundled tree-sitter grammar '{spec.key}' from {spec.package_name}: {exc}"
+                    ) from exc
+                skipped_optional_languages.append(spec.key)
+                continue
+            if module is None:
+                if spec.included_by_default:
+                    missing_default_languages.append(spec.key)
+                continue
+            loaded_language_modules[spec.key] = module
+        if not loaded_language_modules:
+            raise FileNotFoundError(
+                f"no curated tree-sitter language packages found under {vendor_root}"
+            )
+        _LANGUAGE_MODULES = loaded_language_modules
+        available_keys = tuple(sorted(loaded_language_modules))
+        missing_default_keys = tuple(sorted(missing_default_languages))
+        skipped_optional_keys = tuple(sorted(skipped_optional_languages))
         _RUNTIME_STATUS = TreeSitterRuntimeStatus(
             True,
-            f"ready ({binding_path.name}, {languages_path.name})",
+            _build_runtime_message(
+                binding_name=binding_path.name,
+                available_language_keys=available_keys,
+                missing_default_language_keys=missing_default_keys,
+                skipped_optional_language_keys=skipped_optional_keys,
+            ),
+            available_language_keys=available_keys,
+            missing_default_language_keys=missing_default_keys,
+            skipped_optional_language_keys=skipped_optional_keys,
         )
         _RUNTIME_TRACEBACK = None
     except Exception as exc:
         _TREE_SITTER_MODULE = None
-        _LANGUAGES_LIBRARY = None
+        _LANGUAGE_MODULES = {}
         _RUNTIME_STATUS = TreeSitterRuntimeStatus(False, f"{exc.__class__.__name__}: {exc}")
         _RUNTIME_TRACEBACK = traceback.format_exc()
     _RUNTIME_INITIALIZED = True
@@ -84,11 +121,17 @@ def initialize_tree_sitter_runtime(app_root: Path | None = None) -> TreeSitterRu
 
 
 def _resolve_binding_path(tree_sitter_dir: Path) -> Path:
-    candidates = sorted(tree_sitter_dir.glob("_binding*.so"))
+    return _resolve_extension_path(tree_sitter_dir, preferred_stem="_binding")
+
+
+def _resolve_extension_path(package_dir: Path, *, preferred_stem: str) -> Path:
+    candidates = sorted(package_dir.glob(f"{preferred_stem}*.so"))
+    if not candidates:
+        candidates = sorted(package_dir.glob("*.so"))
     soabi = sysconfig.get_config_var("SOABI")
     if soabi:
-        preferred_name = f"_binding.{soabi}.so"
-        preferred_path = tree_sitter_dir / preferred_name
+        preferred_name = f"{preferred_stem}.{soabi}.so"
+        preferred_path = package_dir / preferred_name
         if preferred_path.exists():
             return preferred_path
     for candidate in candidates:
@@ -96,7 +139,51 @@ def _resolve_binding_path(tree_sitter_dir: Path) -> Path:
             return candidate
     if candidates:
         return candidates[0]
-    return tree_sitter_dir / "_binding.cpython-39-x86_64-linux-gnu.so"
+    return package_dir / f"{preferred_stem}.cpython-39-x86_64-linux-gnu.so"
+
+
+def _load_language_module(spec: TreeSitterLanguageSpec, vendor_root: Path) -> ModuleType | None:
+    package_dir = vendor_root / spec.package_name
+    if not package_dir.is_dir():
+        return None
+    binding_path = _resolve_extension_path(package_dir, preferred_stem="_binding")
+    if not binding_path.exists():
+        raise FileNotFoundError(f"missing grammar binding shared object at {binding_path}")
+    _load_extension_module(
+        f"{spec.package_name}._binding",
+        binding_path,
+        f"{spec.package_name}_binding",
+    )
+    module = importlib.import_module(spec.package_name)
+    if not callable(getattr(module, spec.language_callable_name, None)):
+        raise AttributeError(
+            f"{spec.package_name} does not export a callable {spec.language_callable_name}()"
+        )
+    return module
+
+
+def _build_runtime_message(
+    *,
+    binding_name: str,
+    available_language_keys: tuple[str, ...],
+    missing_default_language_keys: tuple[str, ...],
+    skipped_optional_language_keys: tuple[str, ...],
+) -> str:
+    default_loaded = [key for key in available_language_keys if key in DEFAULT_LANGUAGE_KEYS]
+    optional_loaded = [key for key in available_language_keys if key in OPTIONAL_LANGUAGE_KEYS]
+    parts = [
+        (
+            f"ready ({binding_name}; "
+            f"{len(default_loaded)}/{len(DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded)"
+        )
+    ]
+    if missing_default_language_keys:
+        parts.append(f"missing bundled: {', '.join(missing_default_language_keys)}")
+    if optional_loaded:
+        parts.append(f"optional installed: {', '.join(optional_loaded)}")
+    if skipped_optional_language_keys:
+        parts.append(f"optional skipped: {', '.join(skipped_optional_language_keys)}")
+    return "; ".join(parts)
 
 
 def _load_extension_module(module_name: str, shared_object_path: Path, label: str) -> ModuleType:
@@ -109,11 +196,6 @@ def _load_extension_module(module_name: str, shared_object_path: Path, label: st
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def _load_shared_library(shared_object_path: Path, label: str) -> ctypes.CDLL:
-    memfd_path = _write_memfd(shared_object_path, label)
-    return ctypes.CDLL(memfd_path)
 
 
 def _write_memfd(shared_object_path: Path, label: str) -> str:

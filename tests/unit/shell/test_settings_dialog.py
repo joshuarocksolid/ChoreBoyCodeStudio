@@ -8,7 +8,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QFont, QKeySequence
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -90,6 +90,37 @@ def test_settings_dialog_linter_toggle_controls_provider_and_rules() -> None:
     assert dialog._linter_table.isEnabled() is False
 
 
+def test_settings_dialog_shows_linter_scope_hint_when_global_differs_from_effective() -> None:
+    global_snap = EditorSettingsSnapshot(selected_linter="default")
+    project_snap = EditorSettingsSnapshot(selected_linter="pyflakes")
+    dialog = SettingsDialog(
+        global_snap,
+        project_snapshot=project_snap,
+        project_scope_available=True,
+    )
+    assert dialog._linter_provider_scope_hint is not None
+    assert "differs from global" in dialog._linter_provider_scope_hint.text()
+
+
+def test_settings_dialog_hides_linter_scope_hint_on_project_scope() -> None:
+    global_snap = EditorSettingsSnapshot(selected_linter="default")
+    project_snap = EditorSettingsSnapshot(selected_linter="pyflakes")
+    dialog = SettingsDialog(
+        global_snap,
+        project_snapshot=project_snap,
+        project_scope_available=True,
+        initial_scope=SETTINGS_SCOPE_PROJECT,
+    )
+    assert dialog._linter_provider_scope_hint is not None
+    assert dialog._linter_provider_scope_hint.isVisible() is False
+
+
+def test_settings_dialog_no_linter_scope_hint_when_providers_match() -> None:
+    snap = EditorSettingsSnapshot(selected_linter="pyflakes")
+    dialog = SettingsDialog(snap, project_snapshot=snap, project_scope_available=True)
+    assert dialog._linter_provider_scope_hint is None
+
+
 def test_settings_dialog_reset_all_keybindings_restores_defaults() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
     run_editor = dialog._shortcut_editors["shell.action.run.run"]
@@ -164,9 +195,58 @@ def test_settings_dialog_tab_bar_prevents_label_clipping() -> None:
 def test_settings_dialog_syntax_color_table_width_constraints() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
     header = dialog._syntax_color_table.horizontalHeader()
-    assert header.minimumSectionSize() >= 200
+    assert header.minimumSectionSize() < 100
+    for col in (1, 2, 3):
+        assert header.sectionResizeMode(col) == QHeaderView.Fixed
+
+    table = dialog._syntax_color_table
+    assert table.verticalHeader().minimumSectionSize() >= 28
+    assert table.rowHeight(0) >= 28
 
     for token_key, line_edit in dialog._syntax_color_inputs.items():
         assert line_edit.maximumWidth() == 90, (
             f"Color input for '{token_key}' should have maximumWidth 90"
         )
+
+    reset_btn = table.cellWidget(0, 3)
+    pick_btn = table.cellWidget(0, 2)
+    assert reset_btn is not None and pick_btn is not None
+    assert table.columnWidth(3) >= reset_btn.sizeHint().width()
+    assert table.columnWidth(2) >= pick_btn.sizeHint().width()
+
+
+def test_settings_dialog_keybindings_reset_column_accommodates_reset_button() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    table = dialog._shortcut_table
+    header = table.horizontalHeader()
+    assert header.sectionResizeMode(3) == QHeaderView.Fixed
+    reset_btn = table.cellWidget(0, 3)
+    assert reset_btn is not None
+    assert table.columnWidth(3) >= reset_btn.sizeHint().width()
+
+
+def test_settings_dialog_linter_severity_combo_has_minimum_width_for_longest_label() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    first_code = next(iter(dialog._lint_severity_inputs))
+    combo = dialog._lint_severity_inputs[first_code]
+    assert combo.minimumContentsLength() >= len("WARNING")
+    assert combo.minimumWidth() >= combo.sizeHint().width()
+    assert dialog._linter_table.columnWidth(3) >= combo.sizeHint().width()
+
+
+def test_settings_dialog_linter_reset_button_respects_size_hint_width() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    reset_btn = dialog._linter_table.cellWidget(0, 4)
+    assert reset_btn is not None
+    assert reset_btn.minimumWidth() >= reset_btn.sizeHint().width()
+
+
+def test_settings_dialog_footer_buttons_clear_standard_icons() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    assert dialog._ok_button is not None
+    assert dialog._ok_button.icon().isNull()
+    button_box = dialog.findChild(QDialogButtonBox)
+    assert button_box is not None
+    cancel_btn = button_box.button(QDialogButtonBox.Cancel)
+    assert cancel_btn is not None
+    assert cancel_btn.icon().isNull()

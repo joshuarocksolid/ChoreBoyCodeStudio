@@ -76,12 +76,16 @@ Pyright uses the `.venv-editor` stub directory (which symlinks to FreeCAD's site
 The `vendor/` directory is gitignored. Populate it with:
 
 ```bash
-pip3 install pyflakes==3.4.0 tree-sitter==0.21.3 tree-sitter-languages==1.10.2 \
+pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
+  tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
+  tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
+  tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
+  tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
   --target=vendor/ --python-version=3.11 --only-binary=:all: \
   --platform=manylinux_2_17_x86_64
 ```
 
-The `--python-version=3.11` and `--platform` flags ensure correct cp311 `.so` wheels matching FreeCAD's Python. See `vendor/README.md` for details.
+Optional extras are `tree-sitter-javascript==0.23.1` and `tree-sitter-sql==0.3.9`; do not add them unless you intentionally want the larger shipped archive. The `--python-version=3.11` and `--platform` flags ensure correct cp311 `.so` wheels matching FreeCAD's Python. See `vendor/README.md` for the full curated bundle contract and the Python 3.9 production guidance.
 
 ### Installing dev tools into FreeCAD's Python
 

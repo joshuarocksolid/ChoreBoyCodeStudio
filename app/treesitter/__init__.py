@@ -6,6 +6,7 @@ from app.treesitter.language_registry import (
 )
 from app.treesitter.loader import (
     TreeSitterRuntimeStatus,
+    available_language_keys,
     initialize_tree_sitter_runtime,
     runtime_status,
     runtime_traceback,
@@ -14,6 +15,7 @@ from app.treesitter.loader import (
 __all__ = [
     "TreeSitterLanguageRegistry",
     "TreeSitterRuntimeStatus",
+    "available_language_keys",
     "default_tree_sitter_language_registry",
     "initialize_tree_sitter_runtime",
     "runtime_status",

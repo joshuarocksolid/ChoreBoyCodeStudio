@@ -42,6 +42,12 @@ This produces:
 - `dist/ChoreBoyCodeStudio-v<version>/`
 - `dist/ChoreBoyCodeStudio-v<version>.zip`
 
+The `.zip` archive is the email/distribution artifact. It is intentionally:
+
+- password protected
+- compressed
+- enforced to stay at or below **15 MB**
+
 The staging directory contains:
 
 - `install_choreboy_code_studio.desktop`
@@ -117,6 +123,17 @@ That launcher:
 - hardcodes the final chosen install directory
 - launches `run_editor.py` from that exact location
 
+### Archive size gate
+
+`package.py` also acts as the release gate for the emailed installer archive:
+
+- it creates a compressed `.zip`
+- it measures the finished archive size
+- it fails packaging if the archive exceeds **15 MB**
+
+This is why the default vendored tree-sitter bundle stays Python-first and does
+not ship every optional grammar offline by default.
+
 ## Developer guidance
 
 When changing packaging/install behavior:
@@ -127,10 +144,12 @@ When changing packaging/install behavior:
   - final installed app location
 - keep user-facing copy explicit about `/home/default/`
 - keep user-facing copy explicit that the installed launcher hardcodes the chosen final path
+- preserve the compressed archive + 15 MB budget contract unless the product distribution strategy changes
 - if future work changes this contract, update:
   - `package.py`
   - `packaging/install.py`
   - `INSTALL.txt` generation
+  - `vendor/README.md`
   - this document
 
 ## Summary

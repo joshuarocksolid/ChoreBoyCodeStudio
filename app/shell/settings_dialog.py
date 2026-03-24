@@ -30,7 +30,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from PySide2.QtGui import QColor, QFont
+from PySide2.QtGui import QColor, QFont, QFontMetrics, QIcon
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
 
@@ -64,6 +64,9 @@ from app.core import constants
 from app.shell.style_sheet import build_settings_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.ui.segmented_control import SegmentedControl
+
+# Horizontal padding added to measured content/header width so table cells do not clip styled controls.
+_SETTINGS_TABLE_COLUMN_PAD = 16
 
 
 class SettingsDialog(QDialog):
@@ -125,6 +128,7 @@ class SettingsDialog(QDialog):
         self._intelligence_reset_to_global_btn: QPushButton | None = None
         self._linter_reset_to_global_btn: QPushButton | None = None
         self._file_excludes_reset_btn: QPushButton | None = None
+        self._linter_provider_scope_hint: QLabel | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
@@ -351,12 +355,10 @@ class SettingsDialog(QDialog):
         self._shortcut_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._shortcut_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._shortcut_table.setFocusPolicy(Qt.NoFocus)
+        self._shortcut_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._shortcut_table.verticalHeader().setVisible(False)
         header = self._shortcut_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         keybindings_layout.addWidget(self._shortcut_table, 1)
         self._populate_shortcut_table(snapshot)
 
@@ -383,19 +385,27 @@ class SettingsDialog(QDialog):
         self._syntax_color_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._syntax_color_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._syntax_color_table.setFocusPolicy(Qt.NoFocus)
+        self._syntax_color_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._syntax_color_table.verticalHeader().setVisible(False)
         syntax_header = self._syntax_color_table.horizontalHeader()
-        syntax_header.setMinimumSectionSize(200)
         syntax_header.setSectionResizeMode(0, QHeaderView.Stretch)
-        syntax_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        syntax_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        syntax_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         syntax_layout.addWidget(self._syntax_color_table, 1)
         self._populate_syntax_color_table(self._active_syntax_theme_key)
 
         linter_tab = QWidget(tabs)
         linter_layout = QVBoxLayout(linter_tab)
         tabs.addTab(linter_tab, "Linter")
+
+        if self._project_scope_available and project_snapshot is not None:
+            if snapshot.selected_linter != project_snapshot.selected_linter:
+                scope_hint = QLabel(
+                    "The effective linter for this project differs from global. "
+                    "Switch to Project scope to edit the provider used for this project."
+                )
+                scope_hint.setObjectName("shell.settingsDialog.linterProviderScopeHint")
+                scope_hint.setWordWrap(True)
+                self._linter_provider_scope_hint = scope_hint
+                linter_layout.addWidget(scope_hint)
 
         linter_controls = QGroupBox("Provider")
         linter_controls.setObjectName("shell.settingsDialog.linterProviderGroup")
@@ -420,13 +430,10 @@ class SettingsDialog(QDialog):
         self._linter_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._linter_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._linter_table.setFocusPolicy(Qt.NoFocus)
+        self._linter_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._linter_table.verticalHeader().setVisible(False)
         linter_header = self._linter_table.horizontalHeader()
-        linter_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         linter_header.setSectionResizeMode(1, QHeaderView.Stretch)
-        linter_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        linter_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        linter_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         linter_layout.addWidget(self._linter_table, 1)
         self._populate_linter_table()
         self._linter_reset_to_global_btn = QPushButton("Reset Linter Overrides to Global", linter_tab)
@@ -494,9 +501,11 @@ class SettingsDialog(QDialog):
         self._ok_button = buttons.button(QDialogButtonBox.Ok)
         if self._ok_button is not None:
             self._ok_button.setObjectName("shell.settingsDialog.okBtn")
+            self._ok_button.setIcon(QIcon())
         _cancel_button = buttons.button(QDialogButtonBox.Cancel)
         if _cancel_button is not None:
             _cancel_button.setObjectName("shell.settingsDialog.cancelBtn")
+            _cancel_button.setIcon(QIcon())
         normalized_initial_scope = initial_scope
         if normalized_initial_scope not in {SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT}:
             normalized_initial_scope = SETTINGS_SCOPE_GLOBAL
@@ -523,6 +532,62 @@ class SettingsDialog(QDialog):
             return None
         self._capture_active_scope_snapshot()
         return self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+
+    @staticmethod
+    def _settings_table_widget_preferred_width(widget: QWidget) -> int:
+        return max(
+            widget.sizeHint().width(),
+            widget.minimumSizeHint().width(),
+            widget.minimumWidth(),
+        )
+
+    def _settings_table_item_text_width(self, table: QTableWidget, item: QTableWidgetItem) -> int:
+        font = item.font()
+        if font.pixelSize() < 0 and font.pointSize() < 0:
+            font = table.font()
+        fm = QFontMetrics(font)
+        return fm.boundingRect(item.text()).width()
+
+    def _settings_table_column_width(self, table: QTableWidget, col: int) -> int:
+        header = table.horizontalHeader()
+        header_hint = header.sectionSizeFromContents(col).width()
+        max_w = 0
+        for row in range(table.rowCount()):
+            cell = table.cellWidget(row, col)
+            if cell is not None:
+                max_w = max(max_w, self._settings_table_widget_preferred_width(cell))
+                continue
+            item = table.item(row, col)
+            if item is not None:
+                max_w = max(max_w, self._settings_table_item_text_width(table, item))
+        return max(max_w, header_hint) + _SETTINGS_TABLE_COLUMN_PAD
+
+    def _finalize_keybindings_columns(self) -> None:
+        table = self._shortcut_table
+        header = table.horizontalHeader()
+        for col in (1, 2, 3):
+            width = self._settings_table_column_width(table, col)
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+            table.setColumnWidth(col, max(width, 64))
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+
+    def _finalize_linter_columns(self) -> None:
+        table = self._linter_table
+        header = table.horizontalHeader()
+        for col in (0, 2, 3, 4):
+            width = self._settings_table_column_width(table, col)
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+            table.setColumnWidth(col, max(width, 48))
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+
+    def _finalize_syntax_columns(self) -> None:
+        table = self._syntax_color_table
+        header = table.horizontalHeader()
+        for col in (1, 2, 3):
+            width = self._settings_table_column_width(table, col)
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+            table.setColumnWidth(col, max(width, 56))
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
 
     def _snapshot_from_controls(self) -> EditorSettingsSnapshot:
         """Build settings snapshot from current control values."""
@@ -683,6 +748,9 @@ class SettingsDialog(QDialog):
                 "Reset to Global" if is_project_scope else "Reset to Defaults"
             )
 
+        if self._linter_provider_scope_hint is not None:
+            self._linter_provider_scope_hint.setVisible(not is_project_scope)
+
         if self._tabs_widget is not None:
             if self._keybindings_tab_index is not None:
                 self._set_tab_visible(self._keybindings_tab_index, not is_project_scope)
@@ -762,6 +830,8 @@ class SettingsDialog(QDialog):
                 lambda _checked=False, action_id=command.action_id: self._handle_reset_shortcut(action_id)
             )
             self._shortcut_table.setCellWidget(row_index, 3, reset_button)
+
+        self._finalize_keybindings_columns()
 
     def _handle_reset_shortcut(self, action_id: str) -> None:
         editor = self._shortcut_editors.get(action_id)
@@ -885,6 +955,7 @@ class SettingsDialog(QDialog):
         for row_index, token in enumerate(SYNTAX_COLOR_TOKENS):
             self._syntax_color_row_by_token[token.key] = row_index
             label_item = QTableWidgetItem(f"{token.category} / {token.label}")
+            label_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             self._syntax_color_table.setItem(row_index, 0, label_item)
 
             color_container = QWidget(self._syntax_color_table)
@@ -923,6 +994,9 @@ class SettingsDialog(QDialog):
             )
             self._syntax_color_table.setCellWidget(row_index, 3, reset_button)
 
+        self._syntax_color_table.verticalHeader().setMinimumSectionSize(28)
+        self._syntax_color_table.resizeRowsToContents()
+        self._finalize_syntax_columns()
         self._refresh_syntax_validation()
 
     def _handle_syntax_theme_changed(self, _index: int) -> None:
@@ -1066,6 +1140,8 @@ class SettingsDialog(QDialog):
             severity_input.currentIndexChanged.connect(
                 lambda _idx, code=definition.code: self._handle_lint_severity_changed(code)
             )
+            severity_input.setMinimumContentsLength(len("WARNING"))
+            severity_input.setMinimumWidth(severity_input.sizeHint().width())
             self._linter_table.setCellWidget(row_index, 3, severity_input)
             self._lint_severity_inputs[definition.code] = severity_input
 
@@ -1073,7 +1149,10 @@ class SettingsDialog(QDialog):
             reset_button.clicked.connect(
                 lambda _checked=False, code=definition.code: self._handle_reset_lint_rule(code)
             )
+            reset_button.setMinimumWidth(reset_button.sizeHint().width())
             self._linter_table.setCellWidget(row_index, 4, reset_button)
+
+        self._finalize_linter_columns()
 
     def _handle_lint_enabled_changed(self, code: str) -> None:
         definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)

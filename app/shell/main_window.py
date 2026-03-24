@@ -781,9 +781,7 @@ class MainWindow(QMainWindow):
         return {code: dict(value) for code, value in snapshot.lint_rule_overrides.items()}
 
     def _load_selected_linter(self) -> str:
-        settings_payload = self._settings_service.load()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
-        return snapshot.selected_linter
+        return self._load_effective_editor_settings_snapshot().selected_linter
 
     def _configure_close_tab_shortcut(self) -> None:
         if self._close_tab_shortcut is None:
@@ -1830,6 +1828,8 @@ class MainWindow(QMainWindow):
         if previous_project_root is not None:
             self._persist_session_state(project_root=previous_project_root)
         self._loaded_project = loaded_project
+        self._lint_rule_overrides = self._load_lint_rule_overrides()
+        self._selected_linter = self._load_selected_linter()
         self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
         self.setWindowTitle(f"ChoreBoy Code Studio v{constants.APP_VERSION} — {loaded_project.metadata.name}")

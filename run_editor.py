@@ -105,7 +105,10 @@ def main() -> int:
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:
-            logger.info("Tree-sitter runtime initialized: %s", tree_sitter_status.message)
+            if getattr(tree_sitter_status, "missing_default_language_keys", ()):
+                logger.warning("Tree-sitter runtime initialized with missing bundled grammars: %s", tree_sitter_status.message)
+            else:
+                logger.info("Tree-sitter runtime initialized: %s", tree_sitter_status.message)
         else:
             logger.warning("Tree-sitter runtime unavailable: %s", tree_sitter_status.message)
             failure_traceback = runtime_traceback()

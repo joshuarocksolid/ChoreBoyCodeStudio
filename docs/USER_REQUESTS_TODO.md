@@ -9,6 +9,7 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 - `DONE` — implemented and validated
 - `IN PROGRESS` — currently being worked on
 - `TODO` — not started
+- `WON'T DO` — declined for core; recommended as plugin or external workflow
 
 ---
 
@@ -285,12 +286,10 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | WON'T DO |
 | **Request** | "Git idea via faxmail terminal." |
 | **Rationale** | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous. |
-| **Affected code/docs** | To be determined after scope clarification (possible touchpoints: run/debug UX docs, communication/release workflow docs, or terminal integration surfaces). |
-| **TASKS linkage** | Do not mirror into `docs/TASKS.md` until requested behavior is clarified. |
-| **Notes** | Needs clarification before implementation: exact user flow, whether this is outbound update sharing vs bidirectional collaboration, and whether behavior belongs inside the app UI or external terminal workflow. |
+| **Resolution** | Not planned for the core product. Recommended as a community plugin for users who want this functionality. The plugin architecture (request #4) provides the extension surface for this kind of niche workflow integration. |
 
 ---
 
@@ -312,7 +311,7 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | TODO |
+| **Status** | DONE |
 | **Requested by** | Clair Nolt (Ozark Timbers LLC) |
 | **Request** | Improve the Settings dialog so syntax token names are not chopped/clipped in the Syntax Colors table. |
 | **Rationale** | Truncated token labels make color customization harder and increase misconfiguration risk. |

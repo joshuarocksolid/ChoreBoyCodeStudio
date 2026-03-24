@@ -79,6 +79,7 @@ class SettingsService:
         return compute_effective_settings_payload(global_payload, project_payload)
 
     def load(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        """Load **global** settings only (not project-effective). Prefer `load_effective` when layering matters."""
         return self.load_global(force_refresh=force_refresh)
 
     def save(self, payload: Mapping[str, Any]) -> Path:

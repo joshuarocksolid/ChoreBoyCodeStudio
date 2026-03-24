@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from app.intelligence import diagnostics_service as diagnostics_service_module
 from app.intelligence.diagnostics_service import (
     DiagnosticSeverity,
     analyze_python_file,
@@ -567,3 +571,24 @@ def test_pyflakes_col_end_fallback_when_no_message_args(tmp_path: Path) -> None:
     assert diag is not None
     assert diag.col_start == 5
     assert diag.col_end == 6
+
+
+def test_pyflakes_import_error_logs_warning_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    diagnostics_service_module._pyflakes_import_warning_emitted = False
+    real_import = builtins.__import__
+
+    def guarded_import(name: str, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name == "pyflakes":
+            raise ImportError("no pyflakes")
+        return real_import(name, globals, locals, fromlist, level)
+
+    file_path = tmp_path / "m.py"
+    file_path.write_text("x = 1\n", encoding="utf-8")
+
+    with patch.object(builtins, "__import__", guarded_import):
+        with caplog.at_level(logging.WARNING):
+            analyze_python_file(str(file_path), selected_linter="pyflakes")
+            analyze_python_file(str(file_path), selected_linter="pyflakes")
+
+    warning_records = [r for r in caplog.records if "pyflakes" in r.getMessage().lower()]
+    assert len(warning_records) == 1

@@ -46,6 +46,28 @@ def test_distribution_installer_desktop_entry_uses_direct_apprun() -> None:
     assert "/bin/sh" not in desktop_entry
 
 
+def test_distribution_archive_budget_is_15_mb() -> None:
+    package_module = _load_module("distribution_package", "package.py")
+
+    assert package_module.archive_budget_bytes() == 15 * 1024 * 1024
+    assert package_module.is_archive_within_budget(15 * 1024 * 1024) is True
+    assert package_module.is_archive_within_budget((15 * 1024 * 1024) + 1) is False
+
+
+def test_distribution_archive_zip_command_uses_compression() -> None:
+    package_module = _load_module("distribution_package", "package.py")
+
+    command = package_module.build_archive_zip_command(
+        Path("/tmp/staging"),
+        Path("/tmp/archive.zip"),
+    )
+
+    assert "-9" in command
+    assert "-0" not in command
+    assert "archive.zip" in command
+    assert "staging" in command
+
+
 def test_installed_desktop_entry_hardcodes_selected_install_dir() -> None:
     installer_module = _load_module("distribution_installer", "packaging/install.py")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 from dataclasses import replace
 from dataclasses import dataclass
 from enum import Enum
@@ -17,6 +18,9 @@ from app.intelligence.lint_profile import (
     resolve_lint_rule_settings,
 )
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
+
+_logger = logging.getLogger(__name__)
+_pyflakes_import_warning_emitted = False
 
 # Defensive fallback: well-known Python 3.9 stdlib top-level module names.
 # Used when the runtime probe has not yet completed or failed, so that
@@ -493,10 +497,17 @@ def _pyflakes_diagnostics(source: str, file_path: Path) -> list[CodeDiagnostic]:
 
 
 def _create_pyflakes_checker(source: str, file_path: Path) -> Any | None:
+    global _pyflakes_import_warning_emitted
     _ensure_vendor_path_on_sys_path()
     try:
         from pyflakes import checker as pyflakes_checker  # type: ignore[import-not-found]
     except ImportError:
+        if not _pyflakes_import_warning_emitted:
+            _pyflakes_import_warning_emitted = True
+            _logger.warning(
+                "Pyflakes linter selected but pyflakes is not importable "
+                "(add vendor/pyflakes per docs or install pyflakes)."
+            )
         return None
     try:
         syntax_tree = ast.parse(source, filename=str(file_path))
