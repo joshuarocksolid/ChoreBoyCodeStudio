@@ -141,6 +141,7 @@ from app.shell.shortcut_preferences import (
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
+    filename_icon_map,
     folder_icon,
     folder_open_icon,
     new_file_icon,
@@ -269,7 +270,8 @@ class MainWindow(QMainWindow):
         self._explorer_new_folder_btn: QToolButton | None = None
         self._explorer_refresh_btn: QToolButton | None = None
         self._tree_file_icon = file_icon("#495057")
-        self._tree_file_icon_map = file_type_icon_map("#495057")
+        self._tree_file_icon_map = file_type_icon_map()
+        self._tree_filename_icon_map = filename_icon_map()
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
         self._tree_entrypoint_icon = icon_run("#16A34A")
@@ -547,6 +549,9 @@ class MainWindow(QMainWindow):
                 on_hover_info=self._handle_hover_info_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
                 on_show_outline=self._handle_show_outline_action,
+                on_set_language_mode=self._handle_set_language_mode_action,
+                on_clear_language_override=self._handle_clear_language_override_action,
+                on_inspect_token=self._handle_inspect_token_action,
                 on_headless_notes=self._handle_headless_notes_action,
                 on_help_load_example_project=self._handle_load_example_project_action,
                 on_help_open_app_log=self._handle_open_app_log_action,
@@ -731,7 +736,8 @@ class MainWindow(QMainWindow):
 
     def _apply_explorer_theme(self, tokens: ShellThemeTokens) -> None:
         self._tree_file_icon = file_icon(tokens.icon_primary)
-        self._tree_file_icon_map = file_type_icon_map(tokens.icon_primary)
+        self._tree_file_icon_map = file_type_icon_map()
+        self._tree_filename_icon_map = filename_icon_map()
         self._tree_folder_icon = folder_icon(tokens.icon_muted)
         self._tree_folder_open_icon = folder_open_icon(tokens.icon_muted)
         self._tree_entrypoint_icon = icon_run(tokens.debug_running_color)
@@ -1244,6 +1250,7 @@ class MainWindow(QMainWindow):
                 self,
                 tokens=tokens,
                 icon_map=self._tree_file_icon_map,
+                filename_icon_map=self._tree_filename_icon_map,
             )
             self._quick_open_dialog.file_preview_requested.connect(
                 lambda file_path: self._open_file_in_editor(file_path, preview=True)
@@ -1724,6 +1731,50 @@ class MainWindow(QMainWindow):
         self._problems_panel.set_results("Outline", result_items)
         self._update_problems_tab_title(self._problems_panel.problem_count())
         self._focus_problems_tab()
+
+    def _handle_set_language_mode_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        active_tab = self._editor_manager.active_tab()
+        if editor_widget is None or active_tab is None:
+            QMessageBox.warning(self, "Language Mode", "Open a file tab first.")
+            return
+        mode_items = [("auto", "Auto Detect")]
+        mode_items.extend(editor_widget.available_language_modes())
+        labels = [label for _key, label in mode_items]
+        current_key = editor_widget.language_override_key() or "auto"
+        current_index = next((index for index, (key, _label) in enumerate(mode_items) if key == current_key), 0)
+        selected_label, ok = QInputDialog.getItem(
+            self,
+            "Language Mode",
+            "Use syntax mode:",
+            labels,
+            current_index,
+            False,
+        )
+        if not ok:
+            return
+        selected_key = next((key for key, label in mode_items if label == selected_label), "auto")
+        if selected_key == "auto":
+            editor_widget.clear_language_override()
+        else:
+            editor_widget.set_language_override(selected_key)
+        self._update_editor_status_for_path(active_tab.file_path)
+
+    def _handle_clear_language_override_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        active_tab = self._editor_manager.active_tab()
+        if editor_widget is None or active_tab is None:
+            QMessageBox.warning(self, "Language Mode", "Open a file tab first.")
+            return
+        editor_widget.clear_language_override()
+        self._update_editor_status_for_path(active_tab.file_path)
+
+    def _handle_inspect_token_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Token Inspector", "Open a file tab first.")
+            return
+        QMessageBox.information(self, "Token Inspector", editor_widget.describe_token_under_cursor())
 
     def _handle_load_example_project_action(self) -> None:
         project_details = self._prompt_for_new_project_destination()
@@ -4141,8 +4192,12 @@ class MainWindow(QMainWindow):
         if node.is_directory:
             item.setIcon(0, self._tree_folder_icon)
         else:
-            ext = Path(node.absolute_path).suffix.lower()
-            item.setIcon(0, self._tree_file_icon_map.get(ext, self._tree_file_icon))
+            filename = Path(node.absolute_path).name.lower()
+            icon = self._tree_filename_icon_map.get(filename)
+            if icon is None:
+                ext = Path(node.absolute_path).suffix.lower()
+                icon = self._tree_file_icon_map.get(ext, self._tree_file_icon)
+            item.setIcon(0, icon)
             if (
                 self._loaded_project is not None
                 and node.relative_path == self._loaded_project.metadata.default_entry

@@ -776,22 +776,28 @@ Verify variable/stack inspection affordances in debug workflows.
 ## AT-32 — Syntax highlighting modernization and adaptive performance
 
 **Purpose:**  
-Verify modern lexical+semantic highlighting quality while preserving responsiveness under sustained edits and large files.
+Verify the tree-sitter highlighting pipeline delivers rich lexical/locals/injection coverage while preserving responsiveness under sustained edits and large files.
 
 **Preconditions:**  
 - project contains at least one medium Python file (~2,000 LOC) and one very large file (>250k chars)
+- project contains representative `.ui`, `pyproject.toml`, `.desktop`, HTML, and Markdown files
 - editor can switch between light and dark themes
 
 **Steps:**  
-1. Open the medium Python file and verify role-based highlighting (keywords, decorators, functions/methods, classes, parameters, imports).
-2. Type a short burst of edits (multiple quick keystrokes) and confirm semantic coloring updates without visible jitter/freeze.
-3. Open the large file and confirm adaptive mode reduces expensive overlays while keeping editing responsive.
-4. Switch light/dark theme with multiple editor tabs open and verify syntax readability remains consistent in both themes.
+1. Open the medium Python file and verify role-based highlighting for imports, decorators, async/await, annotations, constructor/type references, parameters, and local variable references.
+2. Open representative HTML and Markdown fixtures and verify embedded `<script>`, `<style>`, and fenced code blocks render with the injected language colors rather than a single markdown/html fallback color.
+3. Open `.ui`, `pyproject.toml`, and `.desktop` files and confirm they attach the expected XML, TOML, and INI/desktop highlighting modes.
+4. Use `Tools -> Inspect Token Under Cursor` on a highlighted symbol and confirm the dialog reports the language, node, capture, resolved token, and applied color. Then use `Tools -> Set Language Mode...` on a misdetected/unsupported file and confirm the override reattaches highlighting immediately.
+5. Type a short burst of edits and confirm role colors update without visible jitter/freeze.
+6. Open the large file and confirm adaptive mode limits query work while keeping editing responsive.
+7. Switch light/dark theme with multiple editor tabs open and verify syntax readability remains consistent in both themes.
 
 **Expected Result:**  
 - lexical tokens are stateful/consistent (including multiline constructs and modern Python syntax)
-- semantic token overlays are stable while typing and do not visibly lag behind active edits
-- large-file adaptive behavior keeps interaction smooth (no sustained UI stalls from highlighting overlays)
+- locals-aware semantic roles stay stable while typing because they are rendered through the same tree-sitter highlighter path, not a delayed overlay
+- injection regions inherit the embedded language grammar without breaking outer-document highlighting
+- unsupported config formats such as `.desktop` still receive the intended fallback highlighter instead of silently attaching a wrong grammar
+- large-file adaptive behavior keeps interaction smooth (no sustained UI stalls from highlighting queries)
 - light/dark themes both preserve readable contrast for lexical and semantic token categories
 
 ---

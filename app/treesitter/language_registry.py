@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import ctypes
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.bootstrap.paths import resolve_app_root
-from app.treesitter.language_specs import LANGUAGE_SPEC_BY_KEY, LANGUAGE_SPECS, TreeSitterLanguageSpec
+from app.treesitter.language_specs import (
+    LANGUAGE_SPEC_BY_INJECTION_NAME,
+    LANGUAGE_SPEC_BY_KEY,
+    LANGUAGE_SPECS,
+    TreeSitterLanguageSpec,
+)
 from app.treesitter.loader import available_language_keys, initialize_tree_sitter_runtime, language_module, tree_sitter_module
 
 _COMMON_MARKDOWN_BASENAMES = {
@@ -23,6 +29,16 @@ _PYTHON_LINE_PATTERN = re.compile(r"^\s*(?:def|class|async\s+def|from\s+\w+\s+im
 _DEFAULT_REGISTRY: TreeSitterLanguageRegistry | None = None
 
 
+@dataclass(frozen=True)
+class TreeSitterResolvedLanguage:
+    language_key: str
+    display_name: str
+    language: object
+    highlights_query_source: str
+    locals_query_source: str = ""
+    injections_query_source: str = ""
+
+
 class TreeSitterLanguageRegistry:
     def __init__(self, *, app_root: Path | None = None) -> None:
         self._app_root = app_root if app_root is not None else resolve_app_root()
@@ -30,7 +46,7 @@ class TreeSitterLanguageRegistry:
         self._spec_by_extension: dict[str, TreeSitterLanguageSpec] = {}
         self._spec_by_key: dict[str, TreeSitterLanguageSpec] = dict(LANGUAGE_SPEC_BY_KEY)
         self._language_cache: dict[str, object] = {}
-        self._query_cache: dict[str, str] = {}
+        self._query_cache: dict[tuple[str, str], str] = {}
         for spec in LANGUAGE_SPECS:
             for extension in spec.extensions:
                 self._spec_by_extension[extension] = spec
@@ -40,21 +56,64 @@ class TreeSitterLanguageRegistry:
         *,
         file_path: str,
         sample_text: str = "",
-    ) -> tuple[str, object, str] | None:
-        language_key = self._resolve_language_key(file_path=file_path, sample_text=sample_text)
+        override_language_key: str | None = None,
+    ) -> TreeSitterResolvedLanguage | None:
+        language_key = override_language_key or self._resolve_language_key(file_path=file_path, sample_text=sample_text)
         if language_key is None:
+            return None
+        return self.resolve_for_key(language_key)
+
+    def resolve_for_key(self, language_key: str) -> TreeSitterResolvedLanguage | None:
+        spec = self._spec_by_key.get(language_key)
+        if spec is None:
             return None
         language = self._language_for_key(language_key)
         if language is None:
             return None
-        query_source = self._query_source_for_key(language_key)
-        return (language_key, language, query_source)
+        return TreeSitterResolvedLanguage(
+            language_key=language_key,
+            display_name=spec.display_name,
+            language=language,
+            highlights_query_source=self._query_source_for_key(
+                language_key=language_key,
+                query_file=spec.highlights_query_file,
+            ),
+            locals_query_source=self._query_source_for_key(
+                language_key=language_key,
+                query_file=spec.locals_query_file,
+            ),
+            injections_query_source=self._query_source_for_key(
+                language_key=language_key,
+                query_file=spec.injections_query_file,
+            ),
+        )
+
+    def resolve_for_injection_name(self, language_name: str) -> TreeSitterResolvedLanguage | None:
+        normalized = language_name.strip().lower()
+        if not normalized:
+            return None
+        spec = LANGUAGE_SPEC_BY_INJECTION_NAME.get(normalized)
+        if spec is None:
+            return None
+        return self.resolve_for_key(spec.key)
 
     def available_language_keys(self) -> tuple[str, ...]:
         status = initialize_tree_sitter_runtime(self._app_root)
         if not status.is_available:
             return ()
         return available_language_keys()
+
+    def available_language_modes(self) -> list[tuple[str, str]]:
+        status = initialize_tree_sitter_runtime(self._app_root)
+        if not status.is_available:
+            return []
+        modes: list[tuple[str, str]] = []
+        available_keys = set(self.available_language_keys())
+        for spec in LANGUAGE_SPECS:
+            if spec.key not in available_keys:
+                continue
+            modes.append((spec.key, spec.display_name))
+        return modes
 
     def _resolve_language_key(self, *, file_path: str, sample_text: str) -> str | None:
         extension = Path(file_path).suffix.lower()
@@ -100,19 +159,19 @@ class TreeSitterLanguageRegistry:
         self._language_cache[key] = language
         return language
 
-    def _query_source_for_key(self, key: str) -> str:
-        cached = self._query_cache.get(key)
+    def _query_source_for_key(self, *, language_key: str, query_file: str) -> str:
+        if not query_file:
+            return ""
+        cache_key = (language_key, query_file)
+        cached = self._query_cache.get(cache_key)
         if cached is not None:
             return cached
-        spec = self._spec_by_key.get(key)
-        if spec is None:
-            return ""
-        query_path = self._query_dir / spec.query_file
+        query_path = self._query_dir / query_file
         if not query_path.exists():
-            self._query_cache[key] = ""
+            self._query_cache[cache_key] = ""
             return ""
         query_source = query_path.read_text(encoding="utf-8")
-        self._query_cache[key] = query_source
+        self._query_cache[cache_key] = query_source
         return query_source
 
     def _sniff_extension(self, *, file_path: str, sample_text: str) -> str | None:
@@ -150,8 +209,16 @@ class TreeSitterLanguageRegistry:
     def _looks_like_json(stripped: str) -> bool:
         if not stripped:
             return False
-        if stripped.startswith("{") or stripped.startswith("["):
-            return True
+        if stripped.startswith("{"):
+            remainder = stripped[1:].lstrip()
+            return remainder.startswith(('"', "}"))
+        if stripped.startswith("["):
+            remainder = stripped[1:].lstrip()
+            if not remainder:
+                return False
+            if remainder.startswith(("{", '"', "]")):
+                return True
+            return remainder[0] in "-0123456789tfn"
         if stripped.startswith('"') and ":" in stripped[:220]:
             return True
         return False

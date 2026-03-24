@@ -118,3 +118,39 @@ def test_notify_highlighter_viewport_lines_updates_window_for_large_modes() -> N
     viewport_lines = getattr(editor._highlighter, "_viewport_lines", (0, 0))
     assert viewport_lines[1] >= viewport_lines[0]
     assert viewport_lines != (0, 0)
+
+
+def test_language_override_can_force_xml_and_plain_text_modes() -> None:
+    if not _TREE_SITTER_AVAILABLE:
+        pytest.skip("Tree-sitter runtime unavailable in this environment.")
+    editor = CodeEditorWidget()
+    editor.setPlainText("<ui version=\"4.0\"></ui>\n")
+    editor.set_language_for_path("/tmp/layout.txt")
+    assert editor._highlighter is None
+
+    editor.set_language_override("xml")
+    assert editor._highlighter is not None
+    assert editor._highlighter.__class__.__name__ == "TreeSitterHighlighter"
+
+    editor.set_language_override("plain_text")
+    assert editor._highlighter is None
+
+    editor.clear_language_override()
+    assert editor._highlighter is None
+
+
+def test_describe_token_under_cursor_reports_semantic_token_details() -> None:
+    if not _TREE_SITTER_AVAILABLE:
+        pytest.skip("Tree-sitter runtime unavailable in this environment.")
+    editor = CodeEditorWidget()
+    editor.setPlainText("def build(value):\n    return value\n")
+    editor.set_language_for_path("/tmp/main.py")
+    cursor = editor.textCursor()
+    cursor.setPosition(editor.toPlainText().index("value", editor.toPlainText().index("return")))
+    editor.setTextCursor(cursor)
+
+    description = editor.describe_token_under_cursor()
+
+    assert "Language: Python (python)" in description
+    assert "Token: semantic_parameter" in description
+    assert "Origin: locals" in description

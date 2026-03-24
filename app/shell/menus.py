@@ -52,6 +52,9 @@ class MenuCallbacks:
     on_hover_info: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
+    on_set_language_mode: Callable[[], object] | None = None
+    on_clear_language_override: Callable[[], object] | None = None
+    on_inspect_token: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
     on_run_project: Callable[[], object] | None = None
@@ -715,6 +718,30 @@ def build_menu_stubs(
         "Show Current File Outline",
         enabled=True,
         callback=callback_registry.on_show_outline,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.setLanguageMode",
+        "Set Language Mode...",
+        enabled=True,
+        callback=callback_registry.on_set_language_mode,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.clearLanguageOverride",
+        "Clear Language Override",
+        enabled=True,
+        callback=callback_registry.on_clear_language_override,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.inspectToken",
+        "Inspect Token Under Cursor",
+        enabled=True,
+        callback=callback_registry.on_inspect_token,
     )
     _register_menu_action(
         tools_menu,

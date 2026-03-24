@@ -1031,15 +1031,13 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/editors/code_editor_widget.py`
   - `run_editor.py`
 
-### G19 — Syntax highlighting modernization (stateful + semantic overlay)
+### G19 — Syntax highlighting modernization (historical precursor)
 - Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
-- Objective: close the syntax-highlighting quality gap with stateful lexical highlighting, theme-tokenized syntax colors, bounded large-file behavior, and async semantic overlays.
+- Objective: close the initial syntax-highlighting quality gap with shared token taxonomy, theme-tokenized syntax colors, and bounded large-file behavior. The final shipped implementation later consolidated onto the tree-sitter-only renderer described in `G22`.
 - Scope:
   - shared syntax engine/token contract and language registry for editor highlighters
-  - stateful Python lexer with multiline string support and expanded token categories
-  - improved JSON/Markdown token precedence and fenced-block state handling
-  - semantic token spans computed off-UI-thread and applied with revision guards
+  - early lexical-quality upgrades for Python/JSON/Markdown and the theme-token palette
   - large-file safeguards for bracket matching/search overlay density
   - pure-Python vendoring decision gate executed; keep stdlib/stateful in-repo backend for now, revisit vendoring only if future benchmark deltas justify it
 - Primary files:
@@ -1061,14 +1059,14 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
 ### G20 — Syntax highlighting v2 hard cutover + perf gates
 - Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
-- Objective: finish modernization cutover with adaptive scheduling, expanded semantic taxonomy, viewport-aware overlay limits, and enforceable regression gates.
+- Objective: finish the modernization cutover with adaptive scheduling, expanded semantic taxonomy, viewport-aware limits, and enforceable regression gates. The final renderer no longer uses delayed semantic overlays; those roles now flow through the tree-sitter highlighter path.
 - Scope:
   - shared highlighting thresholds centralized in runtime settings/constants (`normal`/`reduced`/`lexical_only`)
-  - semantic pipeline debounce/coalescing with cancellation-aware extraction and `.pyw` / shebang parity
+  - `.pyw` / shebang parity and richer registry/sniff coverage
   - Python lexical v2 upgrades (soft keywords, f-string expression tokening, multiline signature parameters)
   - Markdown/JSON/registry modernization for richer edge handling and extensionless sniff coverage
   - theme taxonomy expansion for semantic method/variable/property parity in light+dark modes
-  - viewport-capped overlay application and no-op refresh guards in large buffers
+  - viewport-capped work and no-op refresh guards in large buffers
   - regression gates for lexical/semantic/theme-switch/adaptive-mode behavior + docs contract sync
 - Primary files:
   - `app/core/constants.py`
@@ -1168,26 +1166,28 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
 ### G22 — Tree-sitter syntax-highlighting hard cutover
 - Status: `DONE`
 - Release class: `RELEASE-CRITICAL`
-- Objective: replace regex-based lexical highlighters and ast-based semantic overlays with a single tree-sitter highlighting engine loaded through the memfd runtime path.
+- Objective: route editor highlighting through a single tree-sitter engine loaded via the memfd runtime path, with highlights/locals/injections query layers, token inspection, and manual language overrides where detection needs help.
 - Scope:
   - add startup tree-sitter runtime boot (`ExtensionFileLoader` for `_binding`, memfd `ctypes.CDLL` for `languages.so`)
-  - add tree-sitter language/query registry for 10 prioritized languages
+  - add tree-sitter language/query registry with `highlights`, `locals`, and `injections` assets
   - add tree-sitter `QSyntaxHighlighter` with incremental parse state (`tree.edit` + changed-range capture refresh)
-  - route all syntax highlighting through tree-sitter only (no regex fallback path)
-  - remove semantic token `ExtraSelection` overlay pipeline from editor shell flow
-  - delete legacy modules `syntax_python.py`, `syntax_json.py`, `syntax_markdown.py`, `semantic_tokens.py`
-  - update architecture/tasks docs for the new highlighting contract
+  - ship bundled Python/JSON/HTML/XML/CSS/Bash/Markdown/YAML/JavaScript/TOML grammars plus optional SQL
+  - cover `.ui` / `.qrc` through the XML grammar, `pyproject.toml` through TOML, and `.desktop` through the INI fallback path
+  - add embedded-language injections for HTML `<script>/<style>` and Markdown fenced code / HTML blocks
+  - add token inspection and manual language override tooling in the shell
+  - update architecture/tasks/acceptance docs for the shipped highlighting contract
 - Primary files:
   - `run_editor.py`
   - `app/editors/code_editor_widget.py`
+  - `app/editors/ini_highlighter.py`
   - `app/editors/syntax_registry.py`
   - `app/treesitter/loader.py`
   - `app/treesitter/language_registry.py`
   - `app/treesitter/highlighter.py`
   - `app/treesitter/queries/*.scm`
   - `vendor/tree_sitter/*`
-  - `vendor/tree_sitter_languages/*`
   - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
   - `docs/TASKS.md`
 
 ---

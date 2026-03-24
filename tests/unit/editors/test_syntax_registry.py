@@ -92,6 +92,33 @@ def test_registry_sniffs_extensionless_python_without_shebang() -> None:
     _assert_python_highlighter_shape(highlighter)
 
 
+def test_registry_supports_ui_extension_via_xml_grammar() -> None:
+    registry = default_syntax_highlighter_registry()
+    highlighter = registry.create_for_path(
+        file_path="/tmp/form.ui",
+        document=QTextDocument(),
+        is_dark=False,
+        sample_text="<ui version=\"4.0\"></ui>\n",
+    )
+    if _TREE_SITTER_AVAILABLE:
+        assert highlighter is not None
+        assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+        return
+    assert highlighter is None
+
+
+def test_registry_uses_ini_fallback_for_desktop_entries() -> None:
+    registry = default_syntax_highlighter_registry()
+    highlighter = registry.create_for_path(
+        file_path="/tmp/choreboy_code_studio.desktop",
+        document=QTextDocument(),
+        is_dark=False,
+        sample_text="[Desktop Entry]\nName=Code Studio\n",
+    )
+    assert highlighter is not None
+    assert highlighter.__class__.__name__ == "IniSyntaxHighlighter"
+
+
 def test_syntax_palette_includes_extended_semantic_keys() -> None:
     tokens = tokens_from_palette(QPalette(), force_mode="dark")
     palette = syntax_palette_from_tokens(tokens)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -13,6 +14,8 @@ from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
+from app.treesitter.highlighter import TreeSitterHighlighter  # noqa: E402
+from app.treesitter.language_registry import default_tree_sitter_language_registry  # noqa: E402
 from app.treesitter.loader import available_language_keys as loader_available_language_keys, initialize_tree_sitter_runtime  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -92,7 +95,7 @@ def test_markdown_tree_sitter_highlighter_formats_headings() -> None:
     source = "# Heading\nBody\n"
     document, highlighter = _render("/tmp/readme.md", source, is_dark=False)
     assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
-    heading_color = _color_at(document, 0, source.index("#"))
+    heading_color = _color_at(document, 0, source.index("Heading"))
     assert heading_color == DEFAULT_LIGHT_PALETTE["markdown_heading"].lower()
 
 
@@ -210,7 +213,7 @@ def test_python_tree_sitter_highlighter_repaints_shifted_lines_after_line_join()
     assert _color_at(document, 4, 4) == DEFAULT_LIGHT_PALETTE["builtin"].lower()
 
 
-def test_python_generic_identifiers_not_colored() -> None:
+def test_python_locals_color_parameter_references_without_capturing_every_identifier() -> None:
     line0 = "def build(value):"
     line1 = "    return value"
     source = f"{line0}\n{line1}\n"
@@ -219,7 +222,7 @@ def test_python_generic_identifiers_not_colored() -> None:
     keyword_color = _color_at(document, 0, 0)
     assert keyword_color == DEFAULT_LIGHT_PALETTE["keyword"].lower()
     value_usage_color = _color_at(document, 1, line1.index("value"))
-    assert value_usage_color is None
+    assert value_usage_color == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
 
 
 def test_python_freecad_macro_coloring() -> None:
@@ -236,19 +239,93 @@ def test_python_freecad_macro_coloring() -> None:
     import_kw = _color_at(document, 0, 0)
     assert import_kw == DEFAULT_LIGHT_PALETTE["keyword_import"].lower()
     freecad_standalone = _color_at(document, 0, lines[0].index("FreeCAD"))
-    assert freecad_standalone is None
+    assert freecad_standalone == DEFAULT_LIGHT_PALETTE["semantic_import"].lower()
     doc_lhs = _color_at(document, 1, 0)
-    assert doc_lhs is None
+    assert doc_lhs == DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
     new_document_call = _color_at(document, 1, lines[1].index("newDocument"))
     assert new_document_call == DEFAULT_LIGHT_PALETTE["semantic_method"].lower()
     string_color = _color_at(document, 1, lines[1].index("'Test'"))
     assert string_color == DEFAULT_LIGHT_PALETTE["string"].lower()
     box_standalone = _color_at(document, 3, 0)
-    assert box_standalone is None
+    assert box_standalone == DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
     length_prop = _color_at(document, 3, lines[3].index("Length"))
     assert length_prop == DEFAULT_LIGHT_PALETTE["semantic_property"].lower()
     print_builtin = _color_at(document, 4, 0)
     assert print_builtin == DEFAULT_LIGHT_PALETTE["builtin"].lower()
+
+
+def test_python_highlighter_formats_imports_annotations_async_and_locals() -> None:
+    line0 = "from datetime import datetime as dt"
+    line1 = ""
+    line2 = "async def build(value: datetime) -> datetime:"
+    line3 = "    current = dt.now()"
+    line4 = "    await work(value)"
+    line5 = "    return current"
+    source = "\n".join((line0, line1, line2, line3, line4, line5)) + "\n"
+    document, _highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert _color_at(document, 0, line0.index("datetime")) == DEFAULT_LIGHT_PALETTE["semantic_import"].lower()
+    assert _color_at(document, 2, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    assert _color_at(document, 2, line2.index("datetime")) == DEFAULT_LIGHT_PALETTE["semantic_class"].lower()
+    assert _color_at(document, 3, line3.index("current")) == DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
+    assert _color_at(document, 3, line3.index("dt")) == DEFAULT_LIGHT_PALETTE["semantic_import"].lower()
+    assert _color_at(document, 4, line4.index("await")) == DEFAULT_LIGHT_PALETTE["keyword_control"].lower()
+    assert _color_at(document, 4, line4.index("value")) == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
+
+
+def test_html_tree_sitter_injects_script_and_style_languages() -> None:
+    line0 = "<script>const answer = 1;</script>"
+    line1 = "<style>body{color:red;}</style>"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/index.html", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    assert _color_at(document, 0, line0.index("const")) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    assert _color_at(document, 1, line1.index("body")) == DEFAULT_LIGHT_PALETTE["class"].lower()
+    assert _color_at(document, 1, line1.index("color")) == DEFAULT_LIGHT_PALETTE["semantic_property"].lower()
+
+
+def test_markdown_tree_sitter_injects_fenced_python_code_blocks() -> None:
+    source = "```python\nprint(1)\n```\n"
+    document, highlighter = _render("/tmp/readme.md", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    assert _color_at(document, 1, 0) == DEFAULT_LIGHT_PALETTE["builtin"].lower()
+
+
+def test_toml_tree_sitter_highlighter_formats_keys_and_literals() -> None:
+    source = "[tool.demo]\nname = \"demo\"\nenabled = true\n"
+    document, highlighter = _render("/tmp/pyproject.toml", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    assert _color_at(document, 0, source.splitlines()[0].index("tool")) == DEFAULT_LIGHT_PALETTE["json_key"].lower()
+    assert _color_at(document, 1, 0) == DEFAULT_LIGHT_PALETTE["json_key"].lower()
+    assert _color_at(document, 2, source.splitlines()[2].index("true")) == DEFAULT_LIGHT_PALETTE["json_literal"].lower()
+
+
+def test_ini_fallback_highlighter_formats_desktop_entries() -> None:
+    source = "[Desktop Entry]\nName=ChoreBoy Code Studio\nTerminal=false\n"
+    document, highlighter = _render("/tmp/choreboy_code_studio.desktop", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "IniSyntaxHighlighter"
+    assert _color_at(document, 0, 1) == DEFAULT_LIGHT_PALETTE["class"].lower()
+    assert _color_at(document, 1, 0) == DEFAULT_LIGHT_PALETTE["json_key"].lower()
+    assert _color_at(document, 2, source.splitlines()[2].index("false")) == DEFAULT_LIGHT_PALETTE["json_literal"].lower()
+
+
+def test_python_invalid_locals_query_reports_diagnostic_without_losing_highlights() -> None:
+    source = "def build(value):\n    return value\n"
+    document = QTextDocument()
+    resolved = default_tree_sitter_language_registry().resolve_for_path(
+        file_path="/tmp/main.py",
+        sample_text=source,
+    )
+    assert resolved is not None
+    highlighter = TreeSitterHighlighter(
+        document,
+        resolved_language=replace(resolved, locals_query_source="("),
+        is_dark=False,
+    )
+    document.setPlainText(source)
+    highlighter.rehighlight()
+    QApplication.processEvents()
+    assert highlighter.query_diagnostics()
+    assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
 
 
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:

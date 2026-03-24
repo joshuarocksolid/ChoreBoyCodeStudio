@@ -94,6 +94,7 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
     window_any._quick_open_dialog = None
     window_any._editor_manager = None
     window_any._tree_file_icon_map = {}
+    window_any._tree_filename_icon_map = {}
     opened_paths: list[str] = []
     opened_with_preview: list[tuple[str, bool]] = []
     opened_at_line_with_preview: list[tuple[str, int, bool]] = []

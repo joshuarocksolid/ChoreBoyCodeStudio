@@ -20,6 +20,16 @@
 (call_expression function: (identifier) @function.call)
 (call_expression function: (member_expression property: (property_identifier) @method.call))
 
+((identifier) @constructor
+  (#match? @constructor "^[A-Z]"))
+
+([
+  (identifier)
+  (shorthand_property_identifier)
+  (shorthand_property_identifier_pattern)
+] @constant
+  (#match? @constant "^[A-Z_][A-Z\\d_]+$"))
+
 ["function" "class" "const" "let" "var" "new" "async"
  "static" "extends" "typeof" "instanceof" "void" "delete"
  "in" "of"] @keyword
@@ -41,4 +51,3 @@
  "=>" ] @operator
 
 (property_identifier) @property
-(identifier) @variable

@@ -10,20 +10,7 @@ from PySide2.QtCore import QByteArray, QSize
 from PySide2.QtGui import QIcon, QPixmap
 from PySide2.QtSvg import QSvgRenderer
 
-# Fixed accent colors for file type badges — chosen to be readable on both
-# light and dark backgrounds without depending on the active theme.
-_FILE_TYPE_BADGE_COLORS: dict[str, str] = {
-    ".py": "#3B82F6",
-    ".json": "#F59E0B",
-    ".md": "#8B5CF6",
-    ".markdown": "#8B5CF6",
-    ".sh": "#10B981",
-    ".bash": "#10B981",
-    ".zsh": "#10B981",
-    ".csv": "#059669",
-    ".txt": "#9CA3AF",
-    ".log": "#F97316",
-}
+from app.shell.file_type_icons import build_file_type_icon_map, build_filename_icon_map
 
 
 def _render_svg(svg_text: str, size: int = 16) -> QPixmap:
@@ -56,34 +43,18 @@ def file_icon(color: str) -> QIcon:
     return _icon_from_svg(svg)
 
 
-def file_type_icon(color: str, badge_color: str) -> QIcon:
-    """Document outline with a small colored square badge in the lower-right.
+def file_type_icon_map(primary_color: str = "") -> dict[str, QIcon]:
+    """Return extension -> QIcon mapping with distinctive per-type icons.
 
-    The badge color encodes the file type; the document outline uses the
-    theme's primary icon color so it stays readable in both light and dark mode.
+    Icons use fixed colors per file type (VS Code style) so *primary_color*
+    is accepted for call-site compatibility but not used.
     """
-    svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
-        f'<path d="M3 1h6l4 4v10H3V1z" fill="none" stroke="{color}" '
-        f'stroke-width="1.2" stroke-linejoin="round"/>'
-        f'<path d="M9 1v4h4" fill="none" stroke="{color}" '
-        f'stroke-width="1.2" stroke-linejoin="round"/>'
-        f'<rect x="9" y="9" width="3.5" height="3.5" rx="0.5" fill="{badge_color}"/>'
-        f"</svg>"
-    )
-    return _icon_from_svg(svg)
+    return build_file_type_icon_map()
 
 
-def file_type_icon_map(primary_color: str) -> dict[str, QIcon]:
-    """Build a mapping of file extension -> QIcon for all known file types.
-
-    Call once per theme change and cache the result; each icon is rendered
-    exactly once so repeated tree population is just a dict lookup per item.
-    """
-    return {
-        ext: file_type_icon(primary_color, badge_color)
-        for ext, badge_color in _FILE_TYPE_BADGE_COLORS.items()
-    }
+def filename_icon_map() -> dict[str, QIcon]:
+    """Return lowercase-filename -> QIcon mapping for special filenames."""
+    return build_filename_icon_map()
 
 
 def folder_icon(color: str) -> QIcon:

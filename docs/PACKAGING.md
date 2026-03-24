@@ -131,8 +131,10 @@ That launcher:
 - it measures the finished archive size
 - it fails packaging if the archive exceeds **15 MB**
 
-This is why the default vendored tree-sitter bundle stays Python-first and does
-not ship every optional grammar offline by default.
+This is why the default vendored tree-sitter bundle stays curated and does not
+ship every optional grammar offline by default. JavaScript and TOML are bundled
+because HTML/Markdown injections and `pyproject.toml` highlighting are
+product-critical, while lower-priority grammars such as SQL remain optional.
 
 ## Developer guidance
 

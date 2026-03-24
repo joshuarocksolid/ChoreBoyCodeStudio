@@ -323,6 +323,7 @@ choreboy_code_studio/
       __init__.py
       editor_tab.py
       editor_manager.py
+      ini_highlighter.py
       syntax_engine.py
       syntax_registry.py
       search_panel.py
@@ -334,14 +335,19 @@ choreboy_code_studio/
       highlighter.py
       queries/
         python.scm
+        python.locals.scm
         json.scm
         javascript.scm
+        javascript.locals.scm
         html.scm
+        html.injections.scm
         xml.scm
         css.scm
         bash.scm
         markdown.scm
+        markdown.injections.scm
         yaml.scm
+        toml.scm
         sql.scm
     project/
       __init__.py
@@ -599,12 +605,15 @@ Text editing behavior:
 * tabs
 * dirty state
 * syntax highlighting
-* tree-sitter-driven `QSyntaxHighlighter` pipeline (query captures mapped directly to `setFormat`)
-* language/query registry (extension + sniff based) for deterministic tree-sitter language resolution
+* tree-sitter-driven `QSyntaxHighlighter` pipeline with separate `highlights`, `locals`, and `injections` query layers
+* language/query registry (extension + sniff based) for deterministic tree-sitter language resolution, plus manual language override from the shell
 * incremental parse updates (`tree.edit` + `parser.parse(source, old_tree)`) with changed-range capture refresh
+* locals-aware semantic roles for parameters, imports, variables, classes, and constructors without reintroducing generic Python identifier coloring
+* embedded-language injections for HTML `<script>/<style>` blocks and Markdown fenced code / HTML blocks
 * adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
 * viewport-window query execution for large buffers (reduced + lexical_only modes)
 * no semantic `ExtraSelection` overlay pipeline in the editor path
+* token inspector action for capture/token debugging, plus `.desktop` / INI regex fallback when no practical tree-sitter wheel exists
 * line numbers and breakpoint gutter markers
 * search within file
 * quick open support

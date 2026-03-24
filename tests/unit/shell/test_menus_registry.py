@@ -39,3 +39,12 @@ def test_menu_registry_includes_top_level_shell_menu_ids(_ensure_qapp) -> None: 
     assert registry.menu("shell.menu.file.openRecent") is not None
     assert registry.menu("shell.menu.view.theme") is not None
 
+
+def test_tools_menu_registers_highlighting_actions(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    window = QMainWindow()
+    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+
+    assert registry.action("shell.action.tools.setLanguageMode") is not None
+    assert registry.action("shell.action.tools.clearLanguageOverride") is not None
+    assert registry.action("shell.action.tools.inspectToken") is not None
+

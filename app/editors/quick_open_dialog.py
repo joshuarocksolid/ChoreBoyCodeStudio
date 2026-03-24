@@ -65,10 +65,12 @@ class QuickOpenDelegate(QStyledItemDelegate):
         icon_map: Dict[str, QIcon],
         fallback_icon: QIcon,
         parent: Optional[QWidget] = None,
+        filename_icon_map: Optional[Dict[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self._tokens = tokens
         self._icon_map = icon_map
+        self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = fallback_icon
         self._item_model: Optional[_QuickOpenItemModel] = None
 
@@ -107,8 +109,10 @@ class QuickOpenDelegate(QStyledItemDelegate):
         filename = os.path.basename(relative_path)
         dir_path = os.path.dirname(relative_path)
 
-        ext = os.path.splitext(filename)[1].lower()
-        icon = self._icon_map.get(ext, self._fallback_icon)
+        icon = self._filename_icon_map.get(filename.lower())
+        if icon is None:
+            ext = os.path.splitext(filename)[1].lower()
+            icon = self._icon_map.get(ext, self._fallback_icon)
 
         rect = option.rect
         icon_y = rect.top() + (rect.height() - _ICON_SIZE) // 2
@@ -225,6 +229,7 @@ class QuickOpenDialog(QDialog):
         parent: Optional[QWidget] = None,
         tokens: Optional[ShellThemeTokens] = None,
         icon_map: Optional[Dict[str, QIcon]] = None,
+        filename_icon_map: Optional[Dict[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("shell.quickOpen")
@@ -243,6 +248,7 @@ class QuickOpenDialog(QDialog):
         )
         icon_color = self._tokens.icon_primary or self._tokens.text_muted
         self._icon_map = icon_map or {}
+        self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = file_icon(icon_color)
         self._item_data = _QuickOpenItemModel()
         self._build_ui()
@@ -287,6 +293,7 @@ class QuickOpenDialog(QDialog):
 
         self._delegate = QuickOpenDelegate(
             self._tokens, self._icon_map, self._fallback_icon, self._results_list,
+            filename_icon_map=self._filename_icon_map,
         )
         self._delegate.set_item_model(self._item_data)
         self._results_list.setItemDelegate(self._delegate)

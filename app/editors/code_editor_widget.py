@@ -71,6 +71,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self._logger = get_subsystem_logger("editors")
         self._metrics_logging_enabled = False
         self._active_file_path: str | None = None
+        self._language_override_key: str | None = None
         self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
         self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
         self._highlighting_lexical_only_threshold_chars = (
@@ -386,6 +387,7 @@ class CodeEditorWidget(QPlainTextEdit):
             is_dark=self._is_dark,
             syntax_palette=self._syntax_palette,
             sample_text="\n".join(sample_lines),
+            language_override_key=self._language_override_key,
         )
         self._apply_highlighter_runtime_policy()
         self._notify_highlighter_viewport_lines()
@@ -396,6 +398,58 @@ class CodeEditorWidget(QPlainTextEdit):
             elapsed_ms,
             warning_threshold_ms=LANGUAGE_ATTACH_WARNING_MS,
         )
+
+    def set_language_override(self, language_key: str | None) -> None:
+        normalized = None if language_key is None else language_key.strip() or None
+        if normalized == self._language_override_key:
+            return
+        self._language_override_key = normalized
+        if self._active_file_path is not None:
+            self.set_language_for_path(self._active_file_path)
+
+    def clear_language_override(self) -> None:
+        self.set_language_override(None)
+
+    def language_override_key(self) -> str | None:
+        return self._language_override_key
+
+    def active_language_key(self) -> str | None:
+        if self._highlighter is not None and hasattr(self._highlighter, "language_key"):
+            return self._highlighter.language_key()  # type: ignore[union-attr]
+        return self._language_override_key
+
+    def available_language_modes(self) -> list[tuple[str, str]]:
+        return self._syntax_registry.available_language_modes()
+
+    def describe_token_under_cursor(self) -> str:
+        cursor = self.textCursor()
+        block_number = cursor.blockNumber()
+        column = cursor.positionInBlock()
+        if self._highlighter is None:
+            lines = [
+                "Language: Plain Text",
+                "Engine: none",
+                f"Line: {block_number + 1}",
+                f"Column: {column + 1}",
+            ]
+            if self._language_override_key is not None:
+                lines.append(f"Override: {self._language_override_key}")
+            return "\n".join(lines)
+        if hasattr(self._highlighter, "describe_position"):
+            description = self._highlighter.describe_position(block_number, column)  # type: ignore[union-attr]
+        else:
+            language_key = self.active_language_key() or "plain_text"
+            description = "\n".join(
+                [
+                    f"Language: {language_key}",
+                    "Engine: unknown",
+                    f"Line: {block_number + 1}",
+                    f"Column: {column + 1}",
+                ]
+            )
+        if self._language_override_key is None:
+            return description
+        return f"{description}\nOverride: {self._language_override_key}"
 
     def set_editor_preferences(
         self,

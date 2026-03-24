@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.treesitter.language_registry import (
     TreeSitterLanguageRegistry,
+    TreeSitterResolvedLanguage,
     default_tree_sitter_language_registry,
 )
 from app.treesitter.loader import (
@@ -14,6 +15,7 @@ from app.treesitter.loader import (
 
 __all__ = [
     "TreeSitterLanguageRegistry",
+    "TreeSitterResolvedLanguage",
     "TreeSitterRuntimeStatus",
     "available_language_keys",
     "default_tree_sitter_language_registry",

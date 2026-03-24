@@ -44,7 +44,7 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
             module = ModuleType(spec.package_name)
             module.language = lambda: 11  # type: ignore[attr-defined]
             return module
-        if spec.key == "javascript":
+        if spec.key == "sql":
             raise RuntimeError("broken optional package")
         return None
 
@@ -56,17 +56,12 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
 
     assert status.is_available is True
     assert status.available_language_keys == ("json", "python")
-    assert status.missing_default_language_keys == (
-        "bash",
-        "css",
-        "html",
-        "markdown",
-        "xml",
-        "yaml",
+    assert status.missing_default_language_keys == tuple(
+        sorted(set(loader.DEFAULT_LANGUAGE_KEYS) - {"json", "python"})
     )
-    assert status.skipped_optional_language_keys == ("javascript",)
-    assert "2/8 bundled grammars loaded" in status.message
-    assert "optional skipped: javascript" in status.message
+    assert status.skipped_optional_language_keys == ("sql",)
+    assert f"2/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in status.message
+    assert "optional skipped: sql" in status.message
 
 
 def test_load_language_module_requires_language_callable(
@@ -90,12 +85,11 @@ def test_load_language_module_requires_language_callable(
 def test_runtime_message_reports_optional_languages() -> None:
     message = loader._build_runtime_message(
         binding_name="_binding.cpython-39-x86_64-linux-gnu.so",
-        available_language_keys=("bash", "javascript", "python"),
+        available_language_keys=("bash", "python", "sql", "toml"),
         missing_default_language_keys=("css",),
-        skipped_optional_language_keys=("sql",),
+        skipped_optional_language_keys=(),
     )
 
-    assert "2/8 bundled grammars loaded" in message
+    assert f"3/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in message
     assert "missing bundled: css" in message
-    assert "optional installed: javascript" in message
-    assert "optional skipped: sql" in message
+    assert "optional installed: sql" in message
