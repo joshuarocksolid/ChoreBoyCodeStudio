@@ -1293,7 +1293,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### I01 — Semantic contract and acceptance coverage
-- Status: `TODO`
+- Status: `DONE`
 - Objective: lock the architecture, backlog, and acceptance contract for trusted Python semantics before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`

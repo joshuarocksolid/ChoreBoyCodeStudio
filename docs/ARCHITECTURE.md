@@ -1170,7 +1170,28 @@ Refactors that claim semantic safety must use a trustable planner. Token replace
 and text-search fallbacks may still exist as explicit user workflows, but not as
 silent backups for semantic rename/reference operations.
 
-### 17.4.6 Buffer revision rule
+### 17.4.6 Rollout sequencing
+
+The semantic trust improvement is delivered through a sequenced slice plan:
+
+1. **Contract lock** — architecture, acceptance, and backlog alignment (I01).
+2. **Fixture corpus** — representative test projects and failing contract tests
+   that expose heuristic trust gaps (I02).
+3. **Runtime-parity spike** — Jedi/Rope validated under AppRun with no hidden
+   engine metadata paths (I03).
+4. **Facade hardening** — deterministic `sys.path`, typed confidence metadata,
+   explicit degradation states (I04).
+5. **Read-only cutover** — replace heuristic completion/definition/hover/signatures/
+   references with project-aware semantic queries (I05).
+6. **Rename cutover** — Rope-backed planner with grouped patch previews, rollback,
+   no token-replace fallback (I06).
+7. **Trust UX and performance** — inline confidence indicators, async/cancellable
+   completion, latency gates (I07).
+
+Each slice updates tests and documentation before proceeding. Slices may not
+silently merge heuristic and semantic results under the same feature label.
+
+### 17.4.7 Buffer revision rule
 
 Async editor results must be tied to the buffer revision they were requested from.
 
