@@ -1337,7 +1337,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: Jedi and Rope run under AppRun without hidden engine metadata paths, unsafe extension loading, or unsupported subprocess assumptions.
 
 ### I04 — Semantic facade and serialized worker
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce a facade, typed semantic result models, deterministic `sys.path` handling, and a serialized worker/session layer for Python semantics.
 - Primary files:
   - `app/intelligence/semantic_models.py`

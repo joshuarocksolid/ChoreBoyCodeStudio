@@ -202,6 +202,10 @@ class SemanticFacade:
     def apply_rename(self, plan: SemanticRenamePlan):
         return self._refactor_engine.apply_rename(plan)
 
+    def invalidate_project_cache(self, project_root: str | None = None) -> None:
+        """Clear cached Jedi projects so the next query rebuilds paths."""
+        self._jedi_engine.invalidate_project_cache(project_root)
+
 
 def _extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
     safe_cursor = max(0, min(cursor_position, len(source_text)))

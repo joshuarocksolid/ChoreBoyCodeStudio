@@ -266,9 +266,9 @@ class JediEngine:
         import jedi
 
         root = Path(normalized_root)
-        added_sys_path = []
+        added_sys_path: list[str] = []
         vendor_dir = root / "vendor"
-        if vendor_dir.exists():
+        if vendor_dir.is_dir():
             added_sys_path.append(str(vendor_dir.resolve()))
         project = jedi.Project(
             normalized_root,
@@ -278,6 +278,14 @@ class JediEngine:
         )
         self._project_cache[normalized_root] = project
         return project
+
+    def invalidate_project_cache(self, project_root: str | None = None) -> None:
+        """Clear cached Jedi project(s) so the next query rebuilds paths."""
+        if project_root is not None:
+            normalized = str(Path(project_root).expanduser().resolve())
+            self._project_cache.pop(normalized, None)
+        else:
+            self._project_cache.clear()
 
     def _ordered_definition_names(
         self,
