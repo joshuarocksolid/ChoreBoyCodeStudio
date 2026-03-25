@@ -463,6 +463,42 @@ def _append_issue(
     issues.append(issue)
 
 
+def check_manifest_consistency(*, project_root: str) -> list[RuntimeIssue]:
+    """Check that cbcs/dependencies.json entries are consistent with vendor/ state."""
+    from app.project.dependency_manifest import STATUS_ACTIVE, load_dependency_manifest
+
+    root = Path(project_root).expanduser().resolve()
+    manifest = load_dependency_manifest(project_root)
+    issues: list[RuntimeIssue] = []
+
+    for entry in manifest.active_entries():
+        if not entry.vendor_path:
+            continue
+        vendor_path = root / entry.vendor_path
+        if not vendor_path.exists():
+            issues.append(
+                RuntimeIssue(
+                    issue_id=f"package.dependency.manifest_missing_vendor.{entry.name}",
+                    workflow="package",
+                    severity="blocking",
+                    title=f"Dependency '{entry.name}' is in manifest but missing from vendor/",
+                    summary=(
+                        f"The dependency manifest lists '{entry.name}' as active, "
+                        f"but the vendored files at '{entry.vendor_path}' are missing."
+                    ),
+                    why_it_happened=(
+                        "The vendor directory may have been cleaned, or the dependency "
+                        "was removed from disk without updating the manifest."
+                    ),
+                    next_steps=[
+                        f"Re-add '{entry.name}' through the Add Dependency wizard.",
+                        "Or remove the entry from the dependency manifest.",
+                    ],
+                )
+            )
+    return issues
+
+
 def _build_summary(classification_counts: Counter[str], issues: list[RuntimeIssue]) -> str:
     if not classification_counts and not issues:
         return "No Python imports were discovered for package dependency audit."
