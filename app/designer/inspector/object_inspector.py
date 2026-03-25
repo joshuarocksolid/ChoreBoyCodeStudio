@@ -7,6 +7,7 @@ from PySide2.QtCore import QItemSelectionModel, Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import is_parent_drop_target
+from app.designer.canvas.guides import widget_icon_char
 from app.designer.canvas.selection_controller import SelectionController
 from app.designer.model import UIModel, WidgetNode
 
@@ -106,7 +107,9 @@ class ObjectInspector(QWidget):
             self._selection_controller.selection_set_changed.connect(self._handle_controller_selection_set_changed)
 
     def _build_item(self, widget: WidgetNode) -> QTreeWidgetItem:
-        label = f"{widget.object_name} : {widget.class_name}"
+        icon = widget_icon_char(widget.class_name)
+        prefix = f"{icon} " if icon else ""
+        label = f"{prefix}{widget.object_name} : {widget.class_name}"
         item = QTreeWidgetItem([label])
         item.setData(0, TREE_ROLE_OBJECT_NAME, widget.object_name)
         self._item_by_object_name[widget.object_name] = item
