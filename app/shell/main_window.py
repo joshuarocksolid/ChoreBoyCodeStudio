@@ -1981,12 +1981,18 @@ class MainWindow(QMainWindow):
             preview_body = "\n\n".join(chunk for chunk in preview_chunks if chunk)
             if len(plan.preview_patches) > 3:
                 preview_body += f"\n\n... and {len(plan.preview_patches) - 3} more file patch(es)"
+            confidence_text = ""
+            if plan.metadata and plan.metadata.confidence == "exact":
+                confidence_text = "Confidence: proven by semantic engine"
+            elif plan.metadata and plan.metadata.confidence == "approximate":
+                confidence_text = "Confidence: approximate — review changes carefully"
             confirm = QMessageBox.question(
                 self,
                 "Rename Preview",
                 (
                     f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'?\n"
-                    f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n\n"
+                    f"Occurrences: {len(plan.hits)} across {len(plan.touched_files)} file(s)\n"
+                    f"{confidence_text}\n\n"
                     f"{preview_body}"
                 ),
                 QMessageBox.Yes | QMessageBox.No,

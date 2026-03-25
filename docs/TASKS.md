@@ -1372,7 +1372,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: semantic read-only actions are correct on fixture projects, confidence/degradation states are explicit, and ambiguous definitions no longer silently choose the first result.
 
 ### I06 — Trusted rename planner and patch preview
-- Status: `TODO`
+- Status: `DONE`
 - Objective: hard-cut rename to a trusted project-wide planner with grouped patch previews, rollback, and no token-replace fallback.
 - Primary files:
   - `app/intelligence/refactor_service.py`
