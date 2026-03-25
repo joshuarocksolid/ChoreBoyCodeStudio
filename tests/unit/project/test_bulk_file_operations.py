@@ -11,8 +11,7 @@ from app.project.file_operations import copy_path, delete_path, duplicate_path, 
 pytestmark = pytest.mark.unit
 
 
-def test_bulk_delete_removes_all_targets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_DATA_HOME", str((tmp_path / "xdg_data").resolve()))
+def test_bulk_delete_removes_all_targets(tmp_path: Path) -> None:
     files = []
     for name in ("a.py", "b.py", "c.txt"):
         f = tmp_path / name
@@ -20,21 +19,20 @@ def test_bulk_delete_removes_all_targets(tmp_path: Path, monkeypatch: pytest.Mon
         files.append(f)
 
     for f in files:
-        result = delete_path(str(f))
+        result = delete_path(str(f), use_trash=False)
         assert result.success is True
 
     for f in files:
         assert not f.exists()
 
 
-def test_bulk_delete_reports_missing_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_DATA_HOME", str((tmp_path / "xdg_data").resolve()))
+def test_bulk_delete_reports_missing_target(tmp_path: Path) -> None:
     existing = tmp_path / "real.py"
     existing.write_text("x = 1\n", encoding="utf-8")
     missing = tmp_path / "ghost.py"
 
-    result_ok = delete_path(str(existing))
-    result_fail = delete_path(str(missing))
+    result_ok = delete_path(str(existing), use_trash=False)
+    result_fail = delete_path(str(missing), use_trash=False)
 
     assert result_ok.success is True
     assert result_fail.success is False
@@ -64,16 +62,15 @@ def test_bulk_duplicate_creates_copies_for_all(tmp_path: Path) -> None:
     assert destinations[1].name == "two.py.copy"
 
 
-def test_bulk_delete_directories_and_files_mixed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_DATA_HOME", str((tmp_path / "xdg_data").resolve()))
+def test_bulk_delete_directories_and_files_mixed(tmp_path: Path) -> None:
     file_a = tmp_path / "file.txt"
     file_a.write_text("content\n", encoding="utf-8")
     dir_b = tmp_path / "subdir"
     dir_b.mkdir()
     (dir_b / "nested.py").write_text("y = 2\n", encoding="utf-8")
 
-    assert delete_path(str(file_a)).success is True
-    assert delete_path(str(dir_b)).success is True
+    assert delete_path(str(file_a), use_trash=False).success is True
+    assert delete_path(str(dir_b), use_trash=False).success is True
 
     assert not file_a.exists()
     assert not dir_b.exists()

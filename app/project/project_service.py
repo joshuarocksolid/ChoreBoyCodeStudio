@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -21,9 +20,8 @@ from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_pa
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
-from app.persistence.atomic_write import atomic_write_text
 from app.project.file_excludes import should_exclude_name
-from app.project.project_manifest import build_default_project_manifest_payload, ensure_project_id
+from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
 
 _TOML_MODULE = _toml_module
 
@@ -63,7 +61,7 @@ def open_project(
     resolved_root = validate_project_structure(resolved_root)
     manifest_path = project_manifest_path(resolved_root)
 
-    metadata = ensure_project_id(manifest_path)
+    metadata = load_project_manifest(manifest_path)
 
     from app.project.file_excludes import compute_effective_excludes
     effective_excludes = compute_effective_excludes(
@@ -112,15 +110,6 @@ def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
             project_root=resolved_root,
             message="Project has canonical cbcs/project.json metadata.",
         )
-    if _is_shared_temp_root(resolved_root):
-        return ProjectRootAssessment(
-            state=ProjectRootState.INVALID,
-            project_root=resolved_root,
-            message=(
-                "Shared temporary root folders cannot be opened as projects. "
-                "Choose a specific project directory instead."
-            ),
-        )
 
     try:
         inferred_entry = _infer_default_entry_file(resolved_root)
@@ -131,19 +120,13 @@ def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
             message=f"Unable to inspect project files for Python entrypoints: {exc}",
         )
     if inferred_entry is None:
-        message = (
-            "Project metadata is missing and no runnable Python entry files were found. "
-            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
-        )
-        if not _contains_any_python_file(resolved_root):
-            message = (
-                "Project metadata is missing and no Python files were found. "
-                "Add a `.py` file (for example `main.py`) and try again."
-            )
         return ProjectRootAssessment(
             state=ProjectRootState.INVALID,
             project_root=resolved_root,
-            message=message,
+            message=(
+                "Project metadata is missing and no Python files were found. "
+                "Add a `.py` file (for example `main.py`) and try again."
+            ),
         )
 
     return ProjectRootAssessment(
@@ -202,7 +185,7 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         template="blank_project",
     )
     try:
-        atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as exc:
         raise AppValidationError(f"Unable to write project manifest: {exc}") from exc
 
@@ -211,7 +194,7 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         raise AppValidationError(f"Entry path exists but is not a file: {entry_path}")
     if not entry_path.exists():
         try:
-            atomic_write_text(entry_path, "# Project entrypoint.\n")
+            entry_path.write_text("# Project entrypoint.\n", encoding="utf-8")
         except OSError as exc:
             raise AppValidationError(f"Unable to write main.py: {exc}") from exc
 
@@ -259,6 +242,7 @@ def enumerate_project_entries(
 
     Policy for T07:
     - include both files and directories
+    - exclude `cbcs` metadata subtree from UI-facing project entries
     - keep stable lexical ordering by relative path
     """
     try:
@@ -286,20 +270,18 @@ def enumerate_project_entries(
         ) from error
 
     try:
-        root_text = str(resolved_root)
         for current_dir, dir_names, file_names in os.walk(
             resolved_root,
             topdown=True,
             onerror=_on_walk_error,
             followlinks=False,
         ):
-            current_relative_dir = os.path.relpath(current_dir, root_text)
-            if current_relative_dir == ".":
-                current_relative_dir = ""
+            current_path = Path(current_dir)
             _active_excludes = exclude_patterns or []
             dir_names[:] = sorted(
                 name for name in dir_names
-                if not should_exclude_name(name, _active_excludes)
+                if name != constants.PROJECT_META_DIRNAME
+                and not should_exclude_name(name, _active_excludes)
             )
             file_names = sorted(
                 name for name in file_names
@@ -307,21 +289,21 @@ def enumerate_project_entries(
             )
 
             for directory_name in dir_names:
+                directory_path = current_path / directory_name
                 entries.append(
-                    _build_project_entry_from_walk(
-                        current_dir=current_dir,
-                        current_relative_dir=current_relative_dir,
-                        entry_name=directory_name,
+                    _build_project_entry(
+                        path=directory_path,
+                        project_root=resolved_root,
                         is_directory=True,
                     )
                 )
 
             for file_name in file_names:
+                file_path = current_path / file_name
                 entries.append(
-                    _build_project_entry_from_walk(
-                        current_dir=current_dir,
-                        current_relative_dir=current_relative_dir,
-                        entry_name=file_name,
+                    _build_project_entry(
+                        path=file_path,
+                        project_root=resolved_root,
                         is_directory=False,
                     )
                 )
@@ -372,13 +354,6 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         )
     if cbcs_dir.is_dir() and manifest_path.is_file():
         return
-    if _is_shared_temp_root(project_root):
-        raise ProjectStructureValidationError(
-            "Shared temporary root folders cannot be opened as projects. "
-            "Choose a specific project directory instead.",
-            project_root=project_root,
-            manifest_path=manifest_path,
-        )
 
     try:
         inferred_entry = _infer_default_entry_file(project_root)
@@ -389,17 +364,9 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
         ) from exc
 
     if inferred_entry is None:
-        message = (
-            "Project metadata is missing and no runnable Python entry files were found. "
-            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
-        )
-        if not _contains_any_python_file(project_root):
-            message = (
-                "Project metadata is missing and no Python files were found. "
-                "Add a `.py` file (for example `main.py`) and try again."
-            )
         raise ProjectStructureValidationError(
-            message,
+            "Project metadata is missing and no Python files were found. "
+            "Add a `.py` file (for example `main.py`) and try again.",
             project_root=project_root,
             manifest_path=manifest_path,
         )
@@ -413,7 +380,7 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
 
     try:
         cbcs_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as exc:
         raise ProjectStructureValidationError(
             f"Unable to initialize project metadata at cbcs/project.json: {exc}",
@@ -436,7 +403,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     top_level_python_files = sorted(
         file_path.name
         for file_path in project_root.iterdir()
-        if file_path.is_file() and file_path.suffix == ".py" and file_path.name != "__init__.py"
+        if file_path.is_file() and file_path.suffix == ".py"
     )
     if top_level_python_files:
         return top_level_python_files[0]
@@ -448,7 +415,7 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
         current_path = Path(current_dir)
         dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-        python_files = sorted(name for name in file_names if name.endswith(".py") and name != "__init__.py")
+        python_files = sorted(name for name in file_names if name.endswith(".py"))
         if python_files:
             return (current_path / python_files[0]).relative_to(project_root).as_posix()
     return None
@@ -514,6 +481,9 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
         package_main = file_candidate / "__main__.py"
         if package_main.exists() and package_main.is_file():
             return package_main.relative_to(project_root).as_posix()
+        package_init = file_candidate / "__init__.py"
+        if package_init.exists() and package_init.is_file():
+            return package_init.relative_to(project_root).as_posix()
     return None
 
 
@@ -527,14 +497,6 @@ def _infer_recursive_package_main(project_root: Path) -> str | None:
     return None
 
 
-def _contains_any_python_file(project_root: Path) -> bool:
-    for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
-        dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-        if any(name.endswith(".py") for name in file_names):
-            return True
-    return False
-
-
 def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) -> ProjectFileEntry:
     relative_path = path.relative_to(project_root).as_posix()
     return ProjectFileEntry(
@@ -544,29 +506,8 @@ def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) 
     )
 
 
-def _build_project_entry_from_walk(
-    *,
-    current_dir: str,
-    current_relative_dir: str,
-    entry_name: str,
-    is_directory: bool,
-) -> ProjectFileEntry:
-    relative_path = entry_name if not current_relative_dir else f"{current_relative_dir}/{entry_name}"
-    absolute_path = os.path.join(current_dir, entry_name)
-    return ProjectFileEntry(
-        relative_path=relative_path,
-        absolute_path=absolute_path,
-        is_directory=is_directory,
-    )
-
-
 def _resolve_project_root(project_root: PathInput) -> Path:
     candidate = Path(project_root).expanduser()
     if not candidate.is_absolute():
         raise ValueError("project_root must be an absolute path.")
     return candidate.resolve()
-
-
-def _is_shared_temp_root(project_root: Path) -> bool:
-    temp_root = Path(tempfile.gettempdir()).expanduser().resolve()
-    return project_root == temp_root

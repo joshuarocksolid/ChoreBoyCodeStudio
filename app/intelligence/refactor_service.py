@@ -5,13 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.core import constants
-from app.intelligence.reference_service import ReferenceHit, extract_symbol_under_cursor
-from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, SemanticRenamePatch
-from app.persistence.atomic_write import atomic_write_text
-
-_FACADE_BY_PROJECT_ROOT: dict[str, SemanticFacade] = {}
+from app.intelligence.reference_service import ReferenceHit, extract_symbol_under_cursor, find_references
 
 
 @dataclass(frozen=True)
@@ -21,13 +15,9 @@ class RenamePlan:
     old_symbol: str
     new_symbol: str
     hits: list[ReferenceHit]
-    preview_patches: list[SemanticRenamePatch]
-    metadata: SemanticOperationMetadata | None = None
 
     @property
     def touched_files(self) -> list[str]:
-        if self.preview_patches:
-            return [patch.file_path for patch in self.preview_patches]
         return sorted({hit.file_path for hit in self.hits})
 
 
@@ -54,64 +44,56 @@ def plan_rename_symbol(
     if not new_symbol.isidentifier():
         return None
 
-    semantic_plan = _facade(project_root).plan_rename(
+    references = find_references(
         project_root=project_root,
         current_file_path=current_file_path,
         source_text=source_text,
         cursor_position=cursor_position,
-        new_symbol=new_symbol,
     )
-    if semantic_plan is None:
+    if not references.hits:
         return None
-    return RenamePlan(
-        old_symbol=semantic_plan.old_symbol or old_symbol,
-        new_symbol=semantic_plan.new_symbol,
-        hits=[
-            ReferenceHit(
-                symbol_name=hit.symbol_name,
-                file_path=hit.file_path,
-                line_number=hit.line_number,
-                column_number=hit.column_number,
-                line_text=hit.line_text,
-                is_definition=hit.is_definition,
-            )
-            for hit in semantic_plan.hits
-        ],
-        preview_patches=list(semantic_plan.preview_patches),
-        metadata=semantic_plan.metadata,
-    )
+    return RenamePlan(old_symbol=old_symbol, new_symbol=new_symbol, hits=references.hits)
 
 
 def apply_rename_plan(plan: RenamePlan) -> RenameApplyResult:
     """Apply planned rename edits across files with rollback on failure."""
     originals: dict[str, str] = {}
     updated_files: list[str] = []
+    updates_by_file: dict[str, list[ReferenceHit]] = {}
+    for hit in plan.hits:
+        updates_by_file.setdefault(hit.file_path, []).append(hit)
+
     try:
-        for patch in plan.preview_patches:
-            path = Path(patch.file_path).expanduser().resolve()
-            originals[patch.file_path] = path.read_text(encoding="utf-8")
-            atomic_write_text(path, patch.updated_content)
-            updated_files.append(patch.file_path)
+        for file_path, hits in updates_by_file.items():
+            path = Path(file_path).expanduser().resolve()
+            source = path.read_text(encoding="utf-8")
+            originals[file_path] = source
+            updated_source = _apply_hits_to_source(source, hits=hits, old_symbol=plan.old_symbol, new_symbol=plan.new_symbol)
+            if updated_source == source:
+                continue
+            path.write_text(updated_source, encoding="utf-8")
+            updated_files.append(file_path)
     except OSError:
         for file_path, payload in originals.items():
-            atomic_write_text(file_path, payload)
+            Path(file_path).write_text(payload, encoding="utf-8")
         raise
 
     return RenameApplyResult(changed_files=sorted(updated_files), changed_occurrences=len(plan.hits))
 
 
-def _facade(project_root: str) -> SemanticFacade:
-    normalized_root = str(Path(project_root).expanduser().resolve())
-    cached = _FACADE_BY_PROJECT_ROOT.get(normalized_root)
-    if cached is None:
-        cache_db_path = str(
-            (
-                Path(normalized_root)
-                / constants.PROJECT_META_DIRNAME
-                / constants.PROJECT_CACHE_DIRNAME
-                / "semantic.sqlite3"
-            ).resolve()
-        )
-        cached = SemanticFacade(cache_db_path=cache_db_path)
-        _FACADE_BY_PROJECT_ROOT[normalized_root] = cached
-    return cached
+def _apply_hits_to_source(source: str, *, hits: list[ReferenceHit], old_symbol: str, new_symbol: str) -> str:
+    lines = source.splitlines(keepends=True)
+    sorted_hits = sorted(hits, key=lambda hit: (hit.line_number, hit.column_number), reverse=True)
+    for hit in sorted_hits:
+        line_index = hit.line_number - 1
+        if line_index < 0 or line_index >= len(lines):
+            continue
+        line = lines[line_index]
+        start = hit.column_number
+        end = start + len(old_symbol)
+        if start < 0 or end > len(line):
+            continue
+        if line[start:end] != old_symbol:
+            continue
+        lines[line_index] = f"{line[:start]}{new_symbol}{line[end:]}"
+    return "".join(lines)

@@ -10,7 +10,6 @@ import pytest
 from app.core.errors import AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError
 from app.core.models import LoadedProject
 from app.project import project_service
-from app.project.project_manifest import PROJECT_ID_PREFIX
 from app.project.project_service import (
     ProjectRootState,
     assess_project_root,
@@ -44,19 +43,14 @@ def test_open_project_returns_loaded_project_for_valid_minimal_layout(tmp_path: 
     (project_root / "readme.md").write_text("# project alpha\n", encoding="utf-8")
 
     loaded_project = open_project(project_root)
-    manifest_payload = json.loads((project_root / "cbcs" / "project.json").read_text(encoding="utf-8"))
 
     assert isinstance(loaded_project, LoadedProject)
     assert loaded_project.project_root == str(project_root.resolve())
     assert loaded_project.manifest_path == str((project_root / "cbcs" / "project.json").resolve())
     assert loaded_project.metadata.name == "Project Alpha"
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
-    assert manifest_payload["project_id"] == loaded_project.metadata.project_id
     assert [entry.relative_path for entry in loaded_project.entries] == [
         "app",
         "app/main.py",
-        "cbcs",
-        "cbcs/project.json",
         "readme.md",
         "run.py",
     ]
@@ -94,7 +88,6 @@ def test_create_blank_project_writes_manifest_and_main_entrypoint(tmp_path: Path
     assert created_path == destination.resolve()
     assert (created_path / "main.py").exists()
     assert payload["name"] == "Blank Project"
-    assert payload["project_id"].startswith(PROJECT_ID_PREFIX)
     assert payload["default_entry"] == "main.py"
     assert payload["template"] == "blank_project"
 
@@ -121,9 +114,7 @@ def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) ->
 
     assert loaded_project.metadata.name == "project_without_cbcs"
     assert loaded_project.metadata.default_entry == "run.py"
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert manifest_path.exists()
-    assert payload["project_id"].startswith(PROJECT_ID_PREFIX)
     assert payload["template"] == "imported_external"
 
 
@@ -136,7 +127,6 @@ def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "main.py"
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert (project_root / "cbcs" / "project.json").exists()
 
 
@@ -171,50 +161,6 @@ def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
-
-
-def test_open_project_auto_initialize_skips_package_callable_pyproject_target(tmp_path: Path) -> None:
-    """Package-callable pyproject targets should not silently map to __init__.py."""
-    project_root = tmp_path / "pyproject_package_target_project"
-    (project_root / "src" / "my_app").mkdir(parents=True)
-    (project_root / "src" / "my_app" / "__init__.py").write_text(
-        "def main():\n    print('package main')\n",
-        encoding="utf-8",
-    )
-    (project_root / "pyproject.toml").write_text(
-        "[project]\n"
-        "name = \"my-app\"\n"
-        "[project.scripts]\n"
-        "my-app = \"my_app:main\"\n",
-        encoding="utf-8",
-    )
-    (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
-
-    loaded_project = open_project(project_root)
-
-    assert loaded_project.metadata.default_entry == "run.py"
-
-
-def test_open_project_auto_initialize_rejects_package_callable_pyproject_without_runnable_file(tmp_path: Path) -> None:
-    """Package-callable pyproject targets without runnable files should fail clearly."""
-    project_root = tmp_path / "pyproject_package_only_project"
-    (project_root / "src" / "my_app").mkdir(parents=True)
-    (project_root / "src" / "my_app" / "__init__.py").write_text(
-        "def main():\n    print('package main')\n",
-        encoding="utf-8",
-    )
-    (project_root / "pyproject.toml").write_text(
-        "[project]\n"
-        "name = \"my-app\"\n"
-        "[project.scripts]\n"
-        "my-app = \"my_app:main\"\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ProjectStructureValidationError) as exc_info:
-        open_project(project_root)
-
-    assert "no runnable Python entry files were found" in str(exc_info.value)
 
 
 def test_open_project_auto_initialize_skips_pyproject_inference_without_toml_parser(
@@ -333,39 +279,6 @@ def test_assess_project_root_returns_invalid_state_for_non_python_folder(tmp_pat
     assert "no Python files were found" in assessment.message
 
 
-def test_assess_project_root_rejects_shared_temp_root_even_with_python_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    shared_temp_root = tmp_path / "shared_tmp"
-    shared_temp_root.mkdir()
-    (shared_temp_root / "orphan.py").write_text("print('tmp')\n", encoding="utf-8")
-    monkeypatch.setattr(project_service.tempfile, "gettempdir", lambda: str(shared_temp_root))
-
-    assessment = assess_project_root(shared_temp_root)
-
-    assert assessment.state == ProjectRootState.INVALID
-    assert "Shared temporary root folders cannot be opened as projects" in assessment.message
-    with pytest.raises(ProjectStructureValidationError, match="Shared temporary root folders cannot be opened"):
-        open_project(shared_temp_root)
-
-
-def test_assess_project_root_allows_nested_project_inside_temp_root(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    shared_temp_root = tmp_path / "shared_tmp"
-    nested_project = shared_temp_root / "actual_project"
-    nested_project.mkdir(parents=True)
-    (nested_project / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    monkeypatch.setattr(project_service.tempfile, "gettempdir", lambda: str(shared_temp_root))
-
-    assessment = assess_project_root(nested_project)
-
-    assert assessment.state == ProjectRootState.IMPORTABLE
-    assert assessment.inferred_entry == "run.py"
-
-
 def test_validate_project_structure_rejects_missing_manifest_file(tmp_path: Path) -> None:
     """Structure validation should fail clearly when `cbcs/project.json` is missing."""
     project_root = tmp_path / "project_without_manifest"
@@ -391,8 +304,8 @@ def test_open_project_propagates_manifest_validation_error_with_path_context(tmp
     assert "Invalid JSON" in str(exc_info.value)
 
 
-def test_enumerate_project_entries_is_deterministic_and_includes_cbcs(tmp_path: Path) -> None:
-    """Enumeration should be stable across calls and include canonical cbcs metadata."""
+def test_enumerate_project_entries_is_deterministic_and_excludes_cbcs(tmp_path: Path) -> None:
+    """Enumeration should be stable across calls and skip internal metadata noise."""
     project_root = tmp_path / "project_tree"
     _write_valid_manifest(project_root, name="Project Tree")
     (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
@@ -411,35 +324,10 @@ def test_enumerate_project_entries_is_deterministic_and_includes_cbcs(tmp_path: 
         "app/main.py",
         "app/utils",
         "app/utils/helpers.py",
-        "cbcs",
-        "cbcs/project.json",
         "notes.txt",
         "run.py",
     ]
-
-
-def test_enumerate_project_entries_avoids_per_entry_resolve_calls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    project_root = tmp_path / "project_tree_perf"
-    _write_valid_manifest(project_root, name="Project Tree Perf")
-    (project_root / "app").mkdir()
-    (project_root / "app" / "main.py").write_text("print('main')\n", encoding="utf-8")
-    (project_root / "notes.txt").write_text("notes\n", encoding="utf-8")
-
-    original_resolve = Path.resolve
-    resolve_calls = {"count": 0}
-
-    def counting_resolve(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
-        resolve_calls["count"] += 1
-        return original_resolve(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "resolve", counting_resolve)
-
-    entries = enumerate_project_entries(project_root)
-
-    assert entries
-    assert resolve_calls["count"] <= 2
+    assert all(not entry.relative_path.startswith("cbcs") for entry in first)
 
 
 def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:
@@ -450,7 +338,6 @@ def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path
     loaded_project = project_service.open_project_and_track_recent(project_root, state_root=tmp_path / "state")
 
     assert loaded_project.project_root == str(project_root.resolve())
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert load_recent_projects(state_root=tmp_path / "state") == [str(project_root.resolve())]
 
 

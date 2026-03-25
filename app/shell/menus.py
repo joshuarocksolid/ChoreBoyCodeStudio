@@ -27,18 +27,17 @@ class MenuStubRegistry:
 class MenuCallbacks:
     """Optional callbacks that wire shell behavior to menu actions."""
 
+    on_new_form: Callable[[], object] | None = None
     on_new_project: Callable[[], object] | None = None
-    on_new_window: Callable[[], object] | None = None
     on_new_project_from_template: Callable[[], object] | None = None
     on_open_project: Callable[[], object] | None = None
-    on_open_file: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
-    on_toggle_auto_save: Callable[[bool], object] | None = None
     on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
-    on_open_global_history: Callable[[], object] | None = None
+    on_undo: Callable[[], object] | None = None
+    on_redo: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -51,23 +50,32 @@ class MenuCallbacks:
     on_go_to_definition: Callable[[], object] | None = None
     on_signature_help: Callable[[], object] | None = None
     on_hover_info: Callable[[], object] | None = None
+    on_designer_layout_horizontal: Callable[[], object] | None = None
+    on_designer_layout_vertical: Callable[[], object] | None = None
+    on_designer_layout_grid: Callable[[], object] | None = None
+    on_designer_layout_break: Callable[[], object] | None = None
+    on_designer_mode_widget: Callable[[], object] | None = None
+    on_designer_mode_signals_slots: Callable[[], object] | None = None
+    on_designer_mode_buddy: Callable[[], object] | None = None
+    on_designer_mode_tab_order: Callable[[], object] | None = None
+    on_designer_preview: Callable[[], object] | None = None
+    on_designer_check_compat: Callable[[], object] | None = None
+    on_designer_add_resource: Callable[[], object] | None = None
+    on_designer_promote_widget: Callable[[], object] | None = None
+    on_designer_format_ui_xml: Callable[[], object] | None = None
+    on_designer_save_component: Callable[[], object] | None = None
+    on_designer_insert_component: Callable[[], object] | None = None
+    on_designer_duplicate_selection: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
     on_show_outline: Callable[[], object] | None = None
-    on_set_language_mode: Callable[[], object] | None = None
-    on_clear_language_override: Callable[[], object] | None = None
-    on_inspect_token: Callable[[], object] | None = None
     on_run: Callable[[], object] | None = None
     on_debug: Callable[[], object] | None = None
-    on_run_project: Callable[[], object] | None = None
-    on_debug_project: Callable[[], object] | None = None
     on_run_pytest_project: Callable[[], object] | None = None
     on_run_pytest_current_file: Callable[[], object] | None = None
-    on_debug_pytest_current_file: Callable[[], object] | None = None
     on_run_with_config: Callable[[], object] | None = None
     on_manage_run_configs: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
-    on_rerun_last_debug_target: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
     on_pause_debug: Callable[[], object] | None = None
     on_step_over: Callable[[], object] | None = None
@@ -75,7 +83,6 @@ class MenuCallbacks:
     on_step_out: Callable[[], object] | None = None
     on_toggle_breakpoint: Callable[[], object] | None = None
     on_remove_all_breakpoints: Callable[[], object] | None = None
-    on_debug_exception_stops: Callable[[], object] | None = None
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_package_project: Callable[[], object] | None = None
@@ -87,20 +94,16 @@ class MenuCallbacks:
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None
     on_format_current_file: Callable[[], object] | None = None
-    on_organize_imports_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
-    on_open_plugin_manager: Callable[[], object] | None = None
     on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_refresh_runtime_modules: Callable[[], object] | None = None
-    on_runtime_center: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
     on_help_load_example_project: Callable[[], object] | None = None
     on_help_open_app_log: Callable[[], object] | None = None
     on_help_open_log_folder: Callable[[], object] | None = None
-    on_help_runtime_onboarding: Callable[[], object] | None = None
     on_help_getting_started: Callable[[], object] | None = None
     on_help_shortcuts: Callable[[], object] | None = None
     on_help_about: Callable[[], object] | None = None
@@ -147,9 +150,18 @@ def build_menu_stubs(
 
     file_menu = menu_bar.addMenu("&File")
     file_menu.setObjectName("shell.menu.file")
-    menus["shell.menu.file"] = file_menu
     if callback_registry.on_file_menu_about_to_show is not None:
         file_menu.aboutToShow.connect(callback_registry.on_file_menu_about_to_show)
+    _register_menu_action(
+        file_menu,
+        actions,
+        "designer.file.new_form",
+        "New Form...",
+        "Ctrl+Shift+N",
+        enabled=True,
+        callback=callback_registry.on_new_form,
+        shortcut_overrides=shortcut_overrides,
+    )
     _register_menu_action(
         file_menu,
         actions,
@@ -163,22 +175,11 @@ def build_menu_stubs(
     _register_menu_action(
         file_menu,
         actions,
-        "shell.action.file.newWindow",
-        "New Window",
-        "Ctrl+Shift+N",
-        enabled=True,
-        callback=callback_registry.on_new_window,
-        shortcut_overrides=shortcut_overrides,
-    )
-    _register_menu_action(
-        file_menu,
-        actions,
         "shell.action.file.newProjectFromTemplate",
         "New Project from Template...",
         enabled=True,
         callback=callback_registry.on_new_project_from_template,
     )
-    file_menu.addSeparator()
     _register_menu_action(
         file_menu,
         actions,
@@ -187,16 +188,6 @@ def build_menu_stubs(
         "Ctrl+O",
         enabled=True,
         callback=callback_registry.on_open_project,
-        shortcut_overrides=shortcut_overrides,
-    )
-    _register_menu_action(
-        file_menu,
-        actions,
-        "shell.action.file.openFile",
-        "Open File...",
-        "Ctrl+Shift+O",
-        enabled=True,
-        callback=callback_registry.on_open_file,
         shortcut_overrides=shortcut_overrides,
     )
     open_recent_menu = file_menu.addMenu("Open Recent")
@@ -216,22 +207,6 @@ def build_menu_stubs(
     if quick_open_action is not None:
         quick_open_action.setToolTip("Search project files by name and open the selected file.")
         quick_open_action.setStatusTip("Search project files by name and open the selected file.")
-    _register_menu_action(
-        file_menu,
-        actions,
-        "shell.action.file.globalHistory",
-        "Open Global History...",
-        enabled=True,
-        callback=callback_registry.on_open_global_history,
-    )
-    global_history_action = actions.get("shell.action.file.globalHistory")
-    if global_history_action is not None:
-        global_history_action.setToolTip(
-            "Search saved local-history entries across projects, including moved or deleted files."
-        )
-        global_history_action.setStatusTip(
-            "Search saved local-history entries across projects, including moved or deleted files."
-        )
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -254,18 +229,6 @@ def build_menu_stubs(
         callback=callback_registry.on_save_all,
         shortcut_overrides=shortcut_overrides,
     )
-
-    action_class = importlib.import_module("PySide2.QtWidgets").QAction
-    auto_save_action = action_class("Auto Save", file_menu)
-    auto_save_action.setObjectName("shell.action.file.autoSave")
-    auto_save_action.setCheckable(True)
-    auto_save_action.setChecked(False)
-    auto_save_action.setEnabled(True)
-    if callback_registry.on_toggle_auto_save is not None:
-        auto_save_action.toggled.connect(callback_registry.on_toggle_auto_save)
-    file_menu.addAction(auto_save_action)
-    actions["shell.action.file.autoSave"] = auto_save_action
-
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,
@@ -289,13 +252,28 @@ def build_menu_stubs(
 
     edit_menu = menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
-    menus["shell.menu.edit"] = edit_menu
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.undo", "Undo", "Ctrl+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.undo",
+        "Undo",
+        "Ctrl+Z",
+        enabled=True,
+        callback=callback_registry.on_undo,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
-        edit_menu, actions, "shell.action.edit.redo", "Redo", "Ctrl+Shift+Z", shortcut_overrides=shortcut_overrides
+        edit_menu,
+        actions,
+        "shell.action.edit.redo",
+        "Redo",
+        "Ctrl+Shift+Z",
+        enabled=True,
+        callback=callback_registry.on_redo,
+        shortcut_overrides=shortcut_overrides,
     )
+    if quick_open_action is not None:
+        edit_menu.addAction(quick_open_action)
     edit_menu.addSeparator()
     _register_menu_action(
         edit_menu,
@@ -412,60 +390,207 @@ def build_menu_stubs(
         actions,
         "shell.action.edit.hoverInfo",
         "Show Hover Info",
-        "Ctrl+Shift+I",
+        "Ctrl+K",
         enabled=True,
         callback=callback_registry.on_hover_info,
         shortcut_overrides=shortcut_overrides,
     )
 
+    form_menu = menu_bar.addMenu("&Form")
+    form_menu.setObjectName("designer.menu.form")
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.preview",
+        "Preview Form",
+        "Ctrl+R",
+        enabled=True,
+        callback=callback_registry.on_designer_preview,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.check_compat",
+        "Run Compatibility Check",
+        "Ctrl+Shift+R",
+        enabled=True,
+        callback=callback_registry.on_designer_check_compat,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.add_resource",
+        "Add Resource (.qrc)...",
+        enabled=True,
+        callback=callback_registry.on_designer_add_resource,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.promote_widget",
+        "Promote Selected Widget...",
+        enabled=True,
+        callback=callback_registry.on_designer_promote_widget,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.format_ui_xml",
+        "Format UI XML",
+        "Ctrl+Alt+Shift+F",
+        enabled=True,
+        callback=callback_registry.on_designer_format_ui_xml,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.save_component",
+        "Save Selection as Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_save_component,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.insert_component",
+        "Insert Component...",
+        "",
+        enabled=True,
+        callback=callback_registry.on_designer_insert_component,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        form_menu,
+        actions,
+        "designer.form.duplicate_selection",
+        "Duplicate Selection",
+        "Ctrl+D",
+        enabled=True,
+        callback=callback_registry.on_designer_duplicate_selection,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    layout_menu = menu_bar.addMenu("&Layout")
+    layout_menu.setObjectName("designer.menu.layout")
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.horizontal",
+        "Lay Out Horizontally",
+        "Ctrl+1",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_horizontal,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.vertical",
+        "Lay Out Vertically",
+        "Ctrl+2",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_vertical,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.grid",
+        "Lay Out in a Grid",
+        "Ctrl+3",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_grid,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.break",
+        "Break Layout",
+        "Ctrl+0",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_break,
+        shortcut_overrides=shortcut_overrides,
+    )
+
+    mode_menu = menu_bar.addMenu("&Mode")
+    mode_menu.setObjectName("designer.menu.mode")
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.widget",
+        "Widget Editing Mode",
+        "F3",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_widget,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.signals_slots",
+        "Signals/Slots Mode",
+        "F4",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_signals_slots,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.buddy",
+        "Buddy Mode",
+        "F5",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_buddy,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        mode_menu,
+        actions,
+        "designer.mode.tab_order",
+        "Tab Order Mode",
+        "F6",
+        enabled=True,
+        callback=callback_registry.on_designer_mode_tab_order,
+        shortcut_overrides=shortcut_overrides,
+    )
+
     run_menu = menu_bar.addMenu("&Run")
     run_menu.setObjectName("shell.menu.run")
-    menus["shell.menu.run"] = run_menu
     _register_menu_action(
         run_menu,
         actions,
         "shell.action.run.run",
-        "Run Active File",
+        "Run",
         "F5",
         callback=callback_registry.on_run,
         shortcut_overrides=shortcut_overrides,
     )
     run_action = actions.get("shell.action.run.run")
     if run_action is not None:
-        run_action.setToolTip("Run the currently active file. Output appears in the Run Log tab.")
-        run_action.setStatusTip("Run the currently active file. Output appears in the Run Log tab.")
+        run_action.setToolTip("Run the project entry script. Output appears in the Run Log tab.")
+        run_action.setStatusTip("Run the project entry script. Output appears in the Run Log tab.")
     _register_menu_action(
         run_menu,
         actions,
         "shell.action.run.debug",
-        "Debug Active File",
+        "Debug",
         "Ctrl+F5",
         callback=callback_registry.on_debug,
         shortcut_overrides=shortcut_overrides,
     )
     debug_action = actions.get("shell.action.run.debug")
     if debug_action is not None:
-        debug_action.setToolTip("Debug the currently active file. Output appears in Run Log and Debug tabs.")
-        debug_action.setStatusTip("Debug the currently active file. Output appears in Run Log and Debug tabs.")
-    _register_menu_action(
-        run_menu,
-        actions,
-        "shell.action.run.runProject",
-        "Run Project",
-        "Shift+F5",
-        callback=callback_registry.on_run_project,
-        shortcut_overrides=shortcut_overrides,
-    )
-    _register_menu_action(
-        run_menu,
-        actions,
-        "shell.action.run.debugProject",
-        "Debug Project",
-        "Ctrl+Shift+F5",
-        callback=callback_registry.on_debug_project,
-        shortcut_overrides=shortcut_overrides,
-    )
-    run_menu.addSeparator()
+        debug_action.setToolTip("Start a debug session. Output appears in Run Log and Debug tabs.")
+        debug_action.setStatusTip("Start a debug session. Output appears in Run Log and Debug tabs.")
     _register_menu_action(
         run_menu,
         actions,
@@ -487,15 +612,6 @@ def build_menu_stubs(
     _register_menu_action(
         run_menu,
         actions,
-        "shell.action.run.debugPytestCurrentFile",
-        "Debug Current Test",
-        "Ctrl+Alt+Shift+T",
-        callback=callback_registry.on_debug_pytest_current_file,
-        shortcut_overrides=shortcut_overrides,
-    )
-    _register_menu_action(
-        run_menu,
-        actions,
         "shell.action.run.runWithConfig",
         "Run With Configuration...",
         callback=callback_registry.on_run_with_config,
@@ -512,7 +628,7 @@ def build_menu_stubs(
         actions,
         "shell.action.run.stop",
         "Stop",
-        "Shift+F2",
+        "Shift+F5",
         callback=callback_registry.on_stop,
         shortcut_overrides=shortcut_overrides,
     )
@@ -521,17 +637,8 @@ def build_menu_stubs(
         actions,
         "shell.action.run.restart",
         "Restart",
-        "Ctrl+Shift+F2",
+        "Ctrl+Shift+F5",
         callback=callback_registry.on_restart,
-        shortcut_overrides=shortcut_overrides,
-    )
-    _register_menu_action(
-        run_menu,
-        actions,
-        "shell.action.run.rerunLastDebugTarget",
-        "Rerun Last Debug Target",
-        "Ctrl+Shift+F6",
-        callback=callback_registry.on_rerun_last_debug_target,
         shortcut_overrides=shortcut_overrides,
     )
     run_menu.addSeparator()
@@ -596,13 +703,6 @@ def build_menu_stubs(
         "Remove All Breakpoints",
         callback=callback_registry.on_remove_all_breakpoints,
     )
-    _register_menu_action(
-        run_menu,
-        actions,
-        "shell.action.run.debugExceptionStops",
-        "Exception Stop Settings...",
-        callback=callback_registry.on_debug_exception_stops,
-    )
     run_menu.addSeparator()
     _register_menu_action(
         run_menu,
@@ -636,7 +736,6 @@ def build_menu_stubs(
 
     view_menu = menu_bar.addMenu("&View")
     view_menu.setObjectName("shell.menu.view")
-    menus["shell.menu.view"] = view_menu
     _register_menu_action(
         view_menu,
         actions,
@@ -701,16 +800,6 @@ def build_menu_stubs(
 
     tools_menu = menu_bar.addMenu("&Tools")
     tools_menu.setObjectName("shell.menu.tools")
-    menus["shell.menu.tools"] = tools_menu
-    _register_menu_action(
-        tools_menu,
-        actions,
-        "shell.action.tools.pluginManager",
-        "Plugin Manager...",
-        enabled=True,
-        callback=callback_registry.on_open_plugin_manager,
-    )
-    tools_menu.addSeparator()
     _register_menu_action(
         tools_menu,
         actions,
@@ -718,14 +807,6 @@ def build_menu_stubs(
         "Format Current File",
         enabled=True,
         callback=callback_registry.on_format_current_file,
-    )
-    _register_menu_action(
-        tools_menu,
-        actions,
-        "shell.action.tools.organizeImportsCurrentFile",
-        "Organize Imports",
-        enabled=True,
-        callback=callback_registry.on_organize_imports_current_file,
     )
     _register_menu_action(
         tools_menu,
@@ -778,38 +859,6 @@ def build_menu_stubs(
     _register_menu_action(
         tools_menu,
         actions,
-        "shell.action.tools.setLanguageMode",
-        "Set Language Mode...",
-        enabled=True,
-        callback=callback_registry.on_set_language_mode,
-    )
-    _register_menu_action(
-        tools_menu,
-        actions,
-        "shell.action.tools.clearLanguageOverride",
-        "Clear Language Override",
-        enabled=True,
-        callback=callback_registry.on_clear_language_override,
-    )
-    _register_menu_action(
-        tools_menu,
-        actions,
-        "shell.action.tools.inspectToken",
-        "Inspect Token Under Cursor",
-        enabled=True,
-        callback=callback_registry.on_inspect_token,
-    )
-    _register_menu_action(
-        tools_menu,
-        actions,
-        "shell.action.tools.runtimeCenter",
-        "Runtime Center...",
-        enabled=True,
-        callback=callback_registry.on_runtime_center,
-    )
-    _register_menu_action(
-        tools_menu,
-        actions,
         "shell.action.tools.projectHealthCheck",
         "Project Health Check",
         enabled=True,
@@ -834,7 +883,6 @@ def build_menu_stubs(
 
     help_menu = menu_bar.addMenu("&Help")
     help_menu.setObjectName("shell.menu.help")
-    menus["shell.menu.help"] = help_menu
     _register_menu_action(
         help_menu,
         actions,
@@ -864,14 +912,6 @@ def build_menu_stubs(
     _register_menu_action(
         help_menu,
         actions,
-        "shell.action.help.runtimeOnboarding",
-        "Runtime Onboarding...",
-        enabled=True,
-        callback=callback_registry.on_help_runtime_onboarding,
-    )
-    _register_menu_action(
-        help_menu,
-        actions,
         "shell.action.help.gettingStarted",
         "Getting Started",
         enabled=True,
@@ -897,7 +937,7 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
-    for m in (file_menu, open_recent_menu, edit_menu, run_menu,
+    for m in (file_menu, open_recent_menu, edit_menu, form_menu, layout_menu, mode_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)
 

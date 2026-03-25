@@ -24,10 +24,6 @@ class CompletionItem:
     kind: CompletionKind
     detail: str = ""
     source_file_path: str | None = None
-    engine: str = ""
-    source: str = ""
-    confidence: str = ""
-    semantic_kind: str = ""
 
 
 @dataclass(frozen=True)

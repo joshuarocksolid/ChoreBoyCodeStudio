@@ -2,26 +2,47 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any
+import re
+from typing import Any, Optional
 
 from PySide2.QtGui import QTextDocument
 
-from app.editors.ini_highlighter import IniSyntaxHighlighter
 from app.editors.syntax_engine import SyntaxPalette
-from app.treesitter.highlighter import TreeSitterHighlighter
-from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
+from app.editors.syntax_json import JsonSyntaxHighlighter
+from app.editors.syntax_markdown import MarkdownSyntaxHighlighter
+from app.editors.syntax_python import PythonSyntaxHighlighter
 
-_DEFAULT_REGISTRY: SyntaxHighlighterRegistry | None = None
-_INI_LANGUAGE_KEY = "ini"
-_PLAIN_TEXT_LANGUAGE_KEY = "plain_text"
-_INI_EXTENSIONS = {".desktop", ".ini", ".cfg", ".conf", ".service"}
+# Keep this alias Python 3.9-safe. Runtime-evaluated ``Mapping[...] | None`` can
+# fail under older runtimes when not protected as a postponed annotation.
+HighlighterFactory = Callable[[QTextDocument, bool, Optional[Mapping[str, str]]], object]
+_COMMON_MARKDOWN_BASENAMES = {
+    "readme",
+    "changelog",
+    "changes",
+    "history",
+    "license",
+    "copying",
+    "contributing",
+    "authors",
+}
+_COMMON_PYTHON_BASENAMES = {"sconstruct", "sconscript", "wscript", "conanfile"}
+_PYTHON_LINE_PATTERN = re.compile(r"^\s*(?:def|class|async\s+def|from\s+\w+\s+import|import\s+\w+)\b")
 
 
 class SyntaxHighlighterRegistry:
+    """Maps file extensions/language hints to highlighter factories."""
+
     def __init__(self) -> None:
-        self._language_registry = default_tree_sitter_language_registry()
+        self._factories_by_extension: dict[str, HighlighterFactory] = {}
+
+    def register(self, extensions: Iterable[str], factory: HighlighterFactory) -> None:
+        for extension in extensions:
+            key = extension.lower()
+            if not key.startswith("."):
+                key = f".{key}"
+            self._factories_by_extension[key] = factory
 
     def create_for_path(
         self,
@@ -31,69 +52,15 @@ class SyntaxHighlighterRegistry:
         is_dark: bool,
         syntax_palette: Mapping[str, str] | None = None,
         sample_text: str = "",
-        language_override_key: str | None = None,
     ) -> object | None:
-        if language_override_key == _PLAIN_TEXT_LANGUAGE_KEY:
-            return None
-        if language_override_key == _INI_LANGUAGE_KEY:
-            return IniSyntaxHighlighter(
-                document,
-                is_dark=is_dark,
-                syntax_palette=dict(syntax_palette or {}),
-            )
-        resolved = self._language_registry.resolve_for_path(
-            file_path=file_path,
-            sample_text=sample_text,
-            override_language_key=language_override_key,
-        )
-        if resolved is not None:
-            return self._create_tree_sitter_highlighter(
-                resolved=resolved,
-                document=document,
-                is_dark=is_dark,
-                syntax_palette=syntax_palette,
-            )
-        if self._looks_like_ini(file_path):
-            return IniSyntaxHighlighter(
-                document,
-                is_dark=is_dark,
-                syntax_palette=dict(syntax_palette or {}),
-            )
-        return None
-
-    def available_language_modes(self) -> list[tuple[str, str]]:
-        modes = [(_PLAIN_TEXT_LANGUAGE_KEY, "Plain Text"), (_INI_LANGUAGE_KEY, "INI / Desktop Entry")]
-        modes.extend(self._language_registry.available_language_modes())
-        return modes
-
-    @staticmethod
-    def language_mode_label(language_key: str | None) -> str:
-        if language_key in {None, "", _PLAIN_TEXT_LANGUAGE_KEY}:
-            return "Plain Text"
-        if language_key == _INI_LANGUAGE_KEY:
-            return "INI / Desktop Entry"
-        assert language_key is not None
-        return language_key.replace("_", " ").title()
-
-    def _create_tree_sitter_highlighter(
-        self,
-        *,
-        resolved: TreeSitterResolvedLanguage,
-        document: QTextDocument,
-        is_dark: bool,
-        syntax_palette: Mapping[str, str] | None,
-    ) -> TreeSitterHighlighter:
-        return TreeSitterHighlighter(
-            document,
-            resolved_language=resolved,
-            is_dark=is_dark,
-            syntax_palette=dict(syntax_palette or {}),
-        )
-
-    @staticmethod
-    def _looks_like_ini(file_path: str) -> bool:
         extension = Path(file_path).suffix.lower()
-        return extension in _INI_EXTENSIONS
+        factory = self._factories_by_extension.get(extension)
+        if factory is None:
+            sniffed_extension = self._sniff_extension(file_path=file_path, sample_text=sample_text)
+            factory = self._factories_by_extension.get(sniffed_extension) if sniffed_extension else None
+        if factory is None:
+            return None
+        return factory(document, is_dark, syntax_palette)
 
     @staticmethod
     def apply_theme(
@@ -101,35 +68,103 @@ class SyntaxHighlighterRegistry:
         *,
         is_dark: bool,
         syntax_palette: Mapping[str, str] | None = None,
-        rehighlight: bool = True,
     ) -> None:
         if highlighter is None:
             return
         if hasattr(highlighter, "set_theme_palette"):
-            highlighter.set_theme_palette(  # type: ignore[union-attr]
-                syntax_palette,
-                is_dark=is_dark,
-                rehighlight=rehighlight,
-            )
+            highlighter.set_theme_palette(syntax_palette, is_dark=is_dark)  # type: ignore[union-attr]
             return
         if hasattr(highlighter, "set_dark_mode"):
-            highlighter.set_dark_mode(is_dark, rehighlight=rehighlight)  # type: ignore[union-attr]
+            highlighter.set_dark_mode(is_dark)  # type: ignore[union-attr]
+
+    def _sniff_extension(self, *, file_path: str, sample_text: str) -> str | None:
+        if sample_text:
+            stripped = sample_text.lstrip()
+            first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
+            lower_first = first_line.lower()
+            if first_line.startswith("#!") and "python" in lower_first:
+                return ".py"
+            if self._looks_like_json(stripped):
+                return ".json"
+            if self._looks_like_markdown(stripped):
+                return ".md"
+            if self._looks_like_python(stripped):
+                return ".py"
+        path_obj = Path(file_path)
+        if path_obj.suffix:
+            return None
+        basename = path_obj.name.lower()
+        if basename in _COMMON_MARKDOWN_BASENAMES:
+            return ".md"
+        if basename in _COMMON_PYTHON_BASENAMES:
+            return ".py"
+        return None
+
+    @staticmethod
+    def _looks_like_json(stripped: str) -> bool:
+        if not stripped:
+            return False
+        if stripped.startswith("{") or stripped.startswith("["):
+            return True
+        if stripped.startswith('"') and ":" in stripped[:220]:
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_markdown(stripped: str) -> bool:
+        if not stripped:
+            return False
+        first_line = stripped.splitlines()[0] if stripped.splitlines() else ""
+        if first_line.startswith(("#", "```", "~~~", "> ", "- ", "* ")):
+            return True
+        if re.match(r"^\d+[.)]\s+\S", first_line):
+            return True
+        if "[" in first_line and "](" in first_line:
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_python(stripped: str) -> bool:
+        if not stripped:
+            return False
+        for line in stripped.splitlines()[:10]:
+            if _PYTHON_LINE_PATTERN.match(line):
+                return True
+        return False
+
+
+def _python_factory(document: QTextDocument, is_dark: bool, syntax_palette: Mapping[str, str] | None) -> object:
+    return PythonSyntaxHighlighter(document, is_dark=is_dark, syntax_palette=syntax_palette)
+
+
+def _json_factory(document: QTextDocument, is_dark: bool, syntax_palette: Mapping[str, str] | None) -> object:
+    return JsonSyntaxHighlighter(document, is_dark=is_dark, syntax_palette=syntax_palette)
+
+
+def _markdown_factory(document: QTextDocument, is_dark: bool, syntax_palette: Mapping[str, str] | None) -> object:
+    return MarkdownSyntaxHighlighter(document, is_dark=is_dark, syntax_palette=syntax_palette)
+
+
+_DEFAULT_REGISTRY: SyntaxHighlighterRegistry | None = None
 
 
 def default_syntax_highlighter_registry() -> SyntaxHighlighterRegistry:
+    """Return lazily-initialized default syntax highlighter registry."""
     global _DEFAULT_REGISTRY
     if _DEFAULT_REGISTRY is None:
-        _DEFAULT_REGISTRY = SyntaxHighlighterRegistry()
+        registry = SyntaxHighlighterRegistry()
+        registry.register({".py", ".pyw", ".pyi"}, _python_factory)
+        registry.register({".json", ".jsonc", ".json5"}, _json_factory)
+        registry.register({".md", ".markdown", ".mdx", ".mkd"}, _markdown_factory)
+        _DEFAULT_REGISTRY = registry
     return _DEFAULT_REGISTRY
 
 
 def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
+    """Build syntax palette mapping from shell tokens."""
     return {
         "keyword": tokens.syntax_keyword,
-        "keyword_control": tokens.syntax_keyword_control,
-        "keyword_import": tokens.syntax_keyword_import,
         "builtin": tokens.syntax_builtin,
-        "escape": tokens.syntax_escape,
         "string": tokens.syntax_string,
         "comment": tokens.syntax_comment,
         "number": tokens.syntax_number,
@@ -143,7 +178,6 @@ def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
         "json_literal": tokens.syntax_json_literal,
         "markdown_heading": tokens.syntax_markdown_heading,
         "markdown_emphasis": tokens.syntax_markdown_emphasis,
-        "markdown_strong": tokens.syntax_markdown_strong,
         "markdown_code": tokens.syntax_markdown_code,
         "semantic_function": tokens.syntax_semantic_function,
         "semantic_method": tokens.syntax_semantic_method,

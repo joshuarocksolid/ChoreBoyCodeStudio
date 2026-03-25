@@ -1,14 +1,4 @@
-"""Python import rewrite helpers for file moves and renames.
-
-This module intentionally stays narrow:
-- deterministic move/rename rewrite previews only
-- no general organize-imports behavior
-- no claim of semantic proof beyond the current text rewrite contract
-
-Longer term, the trusted-semantics/refactor lane should replace this regex path
-with structural import rewrites. The Black/isort organize-imports flow lives in
-`app.python_tools`, not here.
-"""
+"""Python import rewrite helpers for file moves and renames."""
 
 from __future__ import annotations
 
@@ -17,7 +7,6 @@ from pathlib import Path
 import re
 
 from app.core import constants
-from app.persistence.atomic_write import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -63,11 +52,11 @@ def apply_import_rewrites(previews: list[ImportRewritePreview]) -> list[str]:
         for preview in previews:
             target = Path(preview.file_path).expanduser().resolve()
             original_payloads[preview.file_path] = target.read_text(encoding="utf-8")
-            atomic_write_text(target, preview.updated_content)
+            target.write_text(preview.updated_content, encoding="utf-8")
             updated_paths.append(preview.file_path)
     except OSError:
         for file_path, payload in original_payloads.items():
-            atomic_write_text(file_path, payload)
+            Path(file_path).write_text(payload, encoding="utf-8")
         raise
     return updated_paths
 

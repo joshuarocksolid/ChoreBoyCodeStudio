@@ -1,9 +1,4 @@
-"""Quick-fix planning and application for diagnostics.
-
-Import-related fixes here intentionally remain narrow, explicit quick fixes.
-They are not the general organize-imports engine and they are not a substitute
-for future structural cleanup in the trusted-semantics lane.
-"""
+"""Quick-fix planning and application for diagnostics."""
 
 from __future__ import annotations
 
@@ -14,7 +9,6 @@ import re
 
 from app.core import constants
 from app.intelligence.diagnostics_service import CodeDiagnostic
-from app.persistence.atomic_write import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -49,9 +43,6 @@ def plan_safe_fixes_for_file(
             continue
         expected_line = _line_text_at(source_lines, diagnostic.line_number)
         if diagnostic.code in {"PY220", "PY221"}:
-            # Keep unused/duplicate import removal line-scoped for now. Broader
-            # import cleanup belongs to the structural semantics roadmap, not
-            # this quick-fix lane.
             title_prefix = "Remove unused import" if diagnostic.code == "PY220" else "Remove duplicate import"
             fix = QuickFix(
                 title=f"{title_prefix} at line {diagnostic.line_number}",
@@ -184,7 +175,7 @@ def _apply_file_fixes(
             changed += 1
     if changed:
         _record_file_snapshot(path, snapshots=snapshots, snapshot_order=snapshot_order)
-        atomic_write_text(path, "".join(lines))
+        path.write_text("".join(lines), encoding="utf-8")
     return changed
 
 
@@ -208,7 +199,7 @@ def _apply_create_module_fix(
         created_directories=created_directories,
     )
     _record_file_snapshot(target, snapshots=snapshots, snapshot_order=snapshot_order)
-    atomic_write_text(target, '"""Auto-created module from quick-fix."""\n')
+    target.write_text('"""Auto-created module from quick-fix."""\n', encoding="utf-8")
     return 1
 
 
@@ -227,7 +218,7 @@ def _ensure_package_inits(
         init_path = current / "__init__.py"
         if not init_path.exists():
             _record_file_snapshot(init_path, snapshots=snapshots, snapshot_order=snapshot_order)
-            atomic_write_text(init_path, "")
+            init_path.write_text("", encoding="utf-8")
         parent = current.parent
         if parent == current:
             break
@@ -351,7 +342,7 @@ def _rollback_quick_fix_changes(
                     path.unlink()
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(path, original_content)
+            path.write_text(original_content, encoding="utf-8")
         except OSError:
             continue
     for directory in reversed(created_directories):

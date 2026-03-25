@@ -42,7 +42,4 @@ choreboy_code_studio_state/
 **/cbcs/logs/
 **/cbcs/cache/
 
-# Vendored dependencies (see vendor/README.md for setup)
-vendor/*
-!vendor/README.md
-
+django_probe/

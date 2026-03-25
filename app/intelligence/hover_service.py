@@ -8,11 +8,7 @@ from dataclasses import dataclass
 import inspect
 from pathlib import Path
 
-from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
 from app.intelligence.navigation_service import lookup_definition_with_cache
-
-_FACADE_BY_CACHE_DB_PATH: dict[str, SemanticFacade] = {}
 
 
 @dataclass(frozen=True)
@@ -25,7 +21,6 @@ class HoverInfo:
     line_number: int | None
     doc_summary: str
     source: str
-    metadata: SemanticOperationMetadata | None = None
 
 
 def resolve_hover_info(
@@ -37,27 +32,6 @@ def resolve_hover_info(
     cache_db_path: str | None,
 ) -> HoverInfo | None:
     """Resolve hover details for the symbol under cursor."""
-    if project_root and cache_db_path:
-        try:
-            semantic_hover = _facade(cache_db_path).resolve_hover_info(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            )
-        except Exception:
-            semantic_hover = None
-        if semantic_hover is not None and not semantic_hover.metadata.unsupported_reason:
-            return HoverInfo(
-                symbol_name=semantic_hover.symbol_name,
-                symbol_kind=semantic_hover.symbol_kind,
-                file_path=semantic_hover.file_path,
-                line_number=semantic_hover.line_number,
-                doc_summary=semantic_hover.doc_summary,
-                source=semantic_hover.metadata.source,
-                metadata=semantic_hover.metadata,
-            )
-
     symbol_name = _extract_symbol_under_cursor(source_text, cursor_position)
     if not symbol_name:
         return None
@@ -72,7 +46,6 @@ def resolve_hover_info(
             line_number=line_number,
             doc_summary=doc_summary,
             source="current_file",
-            metadata=approximate_metadata("ast_hover", source="approximate", fallback_reason="current_file_ast"),
         )
 
     if project_root and cache_db_path:
@@ -92,7 +65,6 @@ def resolve_hover_info(
                 line_number=line_number,
                 doc_summary=doc_summary,
                 source="project_index",
-                metadata=approximate_metadata("project_index", source="approximate", fallback_reason="index_lookup"),
             )
 
     builtin_hover = _resolve_builtin_hover(symbol_name)
@@ -174,7 +146,6 @@ def _resolve_builtin_hover(symbol_name: str) -> HoverInfo | None:
         line_number=None,
         doc_summary=_doc_summary(doc),
         source="builtin",
-        metadata=approximate_metadata("builtin", source="builtin", fallback_reason="builtin_lookup"),
     )
 
 
@@ -205,12 +176,3 @@ def _parse_source_with_recovery(source_text: str) -> ast.AST | None:
 
 def _is_symbol_character(character: str) -> bool:
     return character.isalnum() or character == "_"
-
-
-def _facade(cache_db_path: str) -> SemanticFacade:
-    normalized_cache_path = str(Path(cache_db_path).expanduser().resolve())
-    cached = _FACADE_BY_CACHE_DB_PATH.get(normalized_cache_path)
-    if cached is None:
-        cached = SemanticFacade(cache_db_path=normalized_cache_path)
-        _FACADE_BY_CACHE_DB_PATH[normalized_cache_path] = cached
-    return cached

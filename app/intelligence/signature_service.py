@@ -6,12 +6,7 @@ import ast
 import builtins
 from dataclasses import dataclass
 import inspect
-from pathlib import Path
 
-from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
-
-_FACADE_BY_CACHE_DB_PATH: dict[str, SemanticFacade] = {}
 
 @dataclass(frozen=True)
 class CallContext:
@@ -30,7 +25,6 @@ class SignatureHelp:
     argument_index: int
     doc_summary: str = ""
     source: str = "project"
-    metadata: SemanticOperationMetadata | None = None
 
 
 def parse_call_context(source_text: str, cursor_position: int) -> CallContext | None:
@@ -51,35 +45,8 @@ def parse_call_context(source_text: str, cursor_position: int) -> CallContext | 
     return CallContext(callable_name=callable_name, argument_index=argument_index)
 
 
-def resolve_signature_help(
-    source_text: str,
-    cursor_position: int,
-    *,
-    current_file_path: str | None = None,
-    project_root: str | None = None,
-    cache_db_path: str | None = None,
-) -> SignatureHelp | None:
+def resolve_signature_help(source_text: str, cursor_position: int) -> SignatureHelp | None:
     """Resolve signature-help data for cursor context."""
-    if current_file_path and project_root and cache_db_path:
-        try:
-            semantic_result = _facade(cache_db_path).resolve_signature_help(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            )
-        except Exception:
-            semantic_result = None
-        if semantic_result is not None:
-            return SignatureHelp(
-                callable_name=semantic_result.callable_name,
-                signature_text=semantic_result.signature_text,
-                argument_index=semantic_result.argument_index,
-                doc_summary=semantic_result.doc_summary,
-                source=semantic_result.metadata.source,
-                metadata=semantic_result.metadata,
-            )
-
     context = parse_call_context(source_text, cursor_position)
     if context is None:
         return None
@@ -94,7 +61,6 @@ def resolve_signature_help(
             argument_index=context.argument_index,
             doc_summary=_extract_doc_summary_from_source(source_text, symbol_name),
             source="project",
-            metadata=approximate_metadata("ast_signature", source="approximate", fallback_reason="current_file_ast"),
         )
 
     builtin_signature = _resolve_builtin_signature(symbol_name)
@@ -105,7 +71,6 @@ def resolve_signature_help(
             argument_index=context.argument_index,
             doc_summary=_resolve_builtin_doc_summary(symbol_name),
             source="builtin",
-            metadata=approximate_metadata("builtin", source="builtin", fallback_reason="builtin_lookup"),
         )
     return None
 
@@ -252,12 +217,3 @@ def _parse_source_with_recovery(source_text: str) -> ast.AST | None:
         except SyntaxError:
             continue
     return None
-
-
-def _facade(cache_db_path: str) -> SemanticFacade:
-    normalized_cache_path = str(Path(cache_db_path).expanduser().resolve())
-    cached = _FACADE_BY_CACHE_DB_PATH.get(normalized_cache_path)
-    if cached is None:
-        cached = SemanticFacade(cache_db_path=normalized_cache_path)
-        _FACADE_BY_CACHE_DB_PATH[normalized_cache_path] = cached
-    return cached

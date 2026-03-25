@@ -2,7 +2,6 @@
 
 from pathlib import Path
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 
@@ -47,6 +46,52 @@ def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.M
     result = capability_probe.check_pyside2_availability()
     assert result.check_id == "pyside2_import"
     assert result.is_available is True
+
+
+def test_check_qtuitools_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should succeed when module and QUiLoader exist."""
+
+    class _QtUiToolsModule:
+        QUiLoader = object()
+
+    def fake_import(module_name: str) -> object:
+        assert module_name == "PySide2.QtUiTools"
+        return _QtUiToolsModule()
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is True
+    assert result.details["class"] == "QUiLoader"
+
+
+def test_check_qtuitools_availability_reports_missing_quiloader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should fail when QUiLoader attribute is missing."""
+
+    class _QtUiToolsModule:
+        pass
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", lambda _module_name: _QtUiToolsModule())
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is False
+    assert "QUiLoader is unavailable" in result.message
+
+
+def test_check_qtuitools_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QtUiTools check should fail clearly when import raises."""
+
+    def fake_import(_module_name: str) -> object:
+        raise ImportError("QtUiTools missing")
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
+
+    result = capability_probe.check_qtuitools_availability()
+    assert result.check_id == "qtuitools_import"
+    assert result.is_available is False
+    assert "QtUiTools missing" in result.message
 
 
 def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,37 +215,6 @@ def test_check_writable_temp_path_uses_namespaced_temp_root(tmp_path: Path) -> N
     assert result.details["path"] == str((tmp_path / "temp").resolve())
 
 
-def test_check_python_tooling_runtime_reports_versions_when_ready(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        capability_probe,
-        "initialize_python_tooling_runtime",
-        lambda: SimpleNamespace(
-            is_available=True,
-            vendor_root=Path("/tmp/vendor"),
-            black_available=True,
-            isort_available=True,
-            tomli_available=True,
-            message="ready",
-        ),
-    )
-    monkeypatch.setattr(
-        capability_probe,
-        "import_python_tooling_modules",
-        lambda: (
-            type("BlackModule", (), {"__version__": "25.11.0"})(),
-            type("IsortModule", (), {"__version__": "6.1.0"})(),
-            type("TomliModule", (), {"__version__": "2.3.0"})(),
-        ),
-    )
-
-    result = capability_probe.check_python_tooling_runtime()
-    assert result.check_id == capability_probe.PYTHON_TOOLING_RUNTIME_CHECK_ID
-    assert result.is_available is True
-    assert result.details["black_version"] == "25.11.0"
-    assert result.details["isort_version"] == "6.1.0"
-    assert result.details["tomli_version"] == "2.3.0"
-
-
 def test_run_startup_capability_probe_returns_structured_failures_instead_of_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -223,6 +237,11 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
     )
     monkeypatch.setattr(
         capability_probe,
+        "check_qtuitools_availability",
+        lambda: CapabilityCheckResult("qtuitools_import", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
         "check_freecad_availability",
         lambda: CapabilityCheckResult("freecad_import", True, "ok"),
     )
@@ -235,11 +254,6 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
         capability_probe,
         "check_writable_temp_path",
         lambda temp_root=None: CapabilityCheckResult("temp_root_writable", True, "ok"),
-    )
-    monkeypatch.setattr(
-        capability_probe,
-        "check_python_tooling_runtime",
-        lambda: CapabilityCheckResult("python_tooling_runtime", True, "ok"),
     )
 
     report = capability_probe.run_startup_capability_probe()

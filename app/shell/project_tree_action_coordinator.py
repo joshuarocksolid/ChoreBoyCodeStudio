@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
@@ -31,9 +31,8 @@ class ProjectTreeActionCoordinator(Generic[W]):
         apply_breakpoints_to_widget: Callable[[W, set[int]], None],
         update_widget_language: Callable[[W, str], None],
         maybe_rewrite_imports: Callable[[str, str], None],
+        prune_semantic_state: Callable[[], None],
         reload_project: Callable[[], None],
-        record_deleted_path: Optional[Callable[[str], None]] = None,
-        remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
     ) -> None:
         self._project_tree_controller = project_tree_controller
         self._editor_widgets_by_path = editor_widgets_by_path
@@ -48,39 +47,26 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._apply_breakpoints_to_widget = apply_breakpoints_to_widget
         self._update_widget_language = update_widget_language
         self._maybe_rewrite_imports = maybe_rewrite_imports
+        self._prune_semantic_state = prune_semantic_state
         self._reload_project = reload_project
-        self._record_deleted_path = record_deleted_path
-        self._remap_file_lineage = remap_file_lineage
 
-    def handle_new_file(self, destination_directory: str, file_name: str) -> Optional[str]:
-        validated_name = self._validate_child_name(file_name)
-        if validated_name is None:
-            return "File name cannot include path separators."
-        result = create_file(str(Path(destination_directory) / validated_name))
+    def handle_new_file(self, destination_directory: str, file_name: str) -> str | None:
+        result = create_file(str(Path(destination_directory) / file_name))
         if not result.success:
             return result.message
         self._reload_project()
         return None
 
-    def handle_new_folder(self, destination_directory: str, folder_name: str) -> Optional[str]:
-        validated_name = self._validate_child_name(folder_name)
-        if validated_name is None:
-            return "Folder name cannot include path separators."
-        result = create_directory(str(Path(destination_directory) / validated_name))
+    def handle_new_folder(self, destination_directory: str, folder_name: str) -> str | None:
+        result = create_directory(str(Path(destination_directory) / folder_name))
         if not result.success:
             return result.message
         self._reload_project()
         return None
 
-    def handle_rename(self, source_path: str, new_name: str) -> Optional[str]:
+    def handle_rename(self, source_path: str, new_name: str) -> str | None:
         source = Path(source_path)
-        validated_name = self._validate_child_name(new_name)
-        if validated_name is None:
-            return "New name cannot include path separators."
-        try:
-            destination = source.with_name(validated_name)
-        except ValueError as exc:
-            return f"Invalid name: {exc}"
+        destination = source.with_name(new_name)
         result = rename_path(str(source), str(destination))
         if not result.success:
             return result.message
@@ -88,7 +74,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_delete(self, target_path: str) -> Optional[str]:
+    def handle_delete(self, target_path: str) -> str | None:
         result = delete_path(target_path)
         if not result.success:
             return result.message
@@ -96,25 +82,23 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_duplicate(self, source_path: str) -> Optional[str]:
+    def handle_duplicate(self, source_path: str) -> str | None:
         result = duplicate_path(source_path)
         if not result.success:
             return result.message
         self._reload_project()
         return None
 
-    def handle_bulk_delete(self, paths: list[str]) -> tuple[list[str], list[str]]:
+    def handle_bulk_delete(self, paths: list[str]) -> list[str]:
         failed: list[str] = []
-        deleted_paths: list[str] = []
         for target_path in paths:
             result = delete_path(target_path)
             if result.success:
                 self.close_deleted_editor_paths(target_path)
-                deleted_paths.append(target_path)
             else:
                 failed.append(f"{Path(target_path).name}: {result.message}")
         self._reload_project()
-        return failed, deleted_paths
+        return failed
 
     def handle_bulk_duplicate(self, paths: list[str]) -> list[str]:
         failed: list[str] = []
@@ -140,21 +124,13 @@ class ProjectTreeActionCoordinator(Generic[W]):
             source = Path(clipboard_path).resolve()
             destination = dest_dir / source.name
             if clipboard_cut:
-                try:
-                    result = move_path(str(source), str(destination))
-                except OSError as exc:
-                    failed.append(f"{source.name}: {exc}")
-                    continue
+                result = move_path(str(source), str(destination))
                 if result.success:
                     self.apply_path_move_updates(str(source), str(destination))
                 else:
                     failed.append(f"{source.name}: {result.message}")
             else:
-                try:
-                    result = copy_path(str(source), str(destination))
-                except OSError as exc:
-                    failed.append(f"{source.name}: {exc}")
-                    continue
+                result = copy_path(str(source), str(destination))
                 if not result.success:
                     failed.append(f"{source.name}: {result.message}")
         next_clipboard_paths = [] if clipboard_cut else list(clipboard_paths)
@@ -162,24 +138,12 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return (failed, next_clipboard_paths, next_clipboard_cut)
 
-    def handle_drop_move(self, source_path: str, target_path: str) -> Optional[str]:
+    def handle_drop_move(self, source_path: str, target_path: str) -> str | None:
         source = Path(source_path).resolve()
         target = Path(target_path).resolve()
         destination_directory = target if target.is_dir() else target.parent
         destination = destination_directory / source.name
-        if source == destination:
-            return "Cannot move item onto itself."
-        if source.is_dir():
-            try:
-                destination.relative_to(source)
-            except ValueError:
-                pass
-            else:
-                return "Cannot move a folder into itself."
-        try:
-            result = move_path(str(source), str(destination))
-        except OSError as exc:
-            return str(exc)
+        result = move_path(str(source), str(destination))
         if not result.success:
             return result.message
         self.apply_path_move_updates(str(source), str(destination))
@@ -196,7 +160,6 @@ class ProjectTreeActionCoordinator(Generic[W]):
             close_editor_file=self._close_editor_file,
             breakpoints_by_file=self._breakpoints_by_file,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
-            record_deleted_path=self._record_deleted_path,
         )
 
     def apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
@@ -212,18 +175,5 @@ class ProjectTreeActionCoordinator(Generic[W]):
             update_widget_language=self._update_widget_language,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
             maybe_rewrite_imports=self._maybe_rewrite_imports,
-            remap_file_lineage=self._remap_file_lineage,
         )
-
-    @staticmethod
-    def _validate_child_name(name: str) -> Optional[str]:
-        normalized = name.strip()
-        if not normalized:
-            return None
-        if normalized in {".", ".."}:
-            return None
-        if "/" in normalized or "\\" in normalized:
-            return None
-        if Path(normalized).name != normalized:
-            return None
-        return normalized
+        self._prune_semantic_state()

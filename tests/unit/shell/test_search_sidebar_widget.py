@@ -154,22 +154,6 @@ class TestSearchSidebarWidget:
         assert len(signals) == 1
         assert signals[0] == ("/proj/src/main.py", 10)
 
-    def test_preview_file_at_line_signal(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        widget = SearchSidebarWidget()
-        signals: list[tuple] = []
-        widget.preview_file_at_line.connect(lambda path, line: signals.append((path, line)))
-
-        widget._pending_results = [
-            SearchMatch("src/main.py", "/proj/src/main.py", 11, "hello world", 0, 5),
-        ]
-        widget._apply_search_results()
-        file_item = widget._results_tree.topLevelItem(0)
-        assert file_item is not None
-        line_item = file_item.child(0)
-        assert line_item is not None
-        widget._on_result_clicked(line_item)
-        assert signals == [("/proj/src/main.py", 11)]
-
     def test_file_items_have_data_roles(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()
         widget._pending_results = [

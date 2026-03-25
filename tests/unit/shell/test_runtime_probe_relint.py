@@ -23,7 +23,6 @@ def _make_window_with_open_files(file_paths: list[str]) -> tuple[MainWindow, lis
         fp: SimpleNamespace(toPlainText=lambda: "")
         for fp in file_paths
     }
-    window_any._workspace_controller = SimpleNamespace(open_editor_paths=lambda: list(file_paths))
     window_any._diagnostics_enabled = True
     window_any._diagnostics_realtime = True
 

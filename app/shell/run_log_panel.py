@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PySide2.QtCore import Signal
 from PySide2.QtGui import QColor, QFont, QPalette, QTextCharFormat, QTextCursor
@@ -60,7 +60,7 @@ def _classify_line(line: str, in_traceback: bool) -> tuple[str, bool]:
 class RunLogPanel(QWidget):
     """Run Log panel with a metadata toolbar and rich-text output area."""
 
-    open_log_requested: Any = Signal(str)
+    open_log_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -118,7 +118,7 @@ class RunLogPanel(QWidget):
         self._text = QTextEdit(self)
         self._text.setObjectName("shell.bottom.runLog.textArea")
         self._text.setReadOnly(True)
-        self._text.setLineWrapMode(QTextEdit.WidgetWidth)
+        self._text.setLineWrapMode(QTextEdit.NoWrap)
         mono = QFont("Monospace", 10)
         mono.setStyleHint(QFont.Monospace)
         self._text.setFont(mono)
@@ -164,7 +164,7 @@ class RunLogPanel(QWidget):
 
             cursor = self._text.textCursor()
             cursor.movePosition(QTextCursor.End)
-            if cursor.position() > 0:
+            if self._text.toPlainText():
                 cursor.insertText("\n")
             cursor.insertText(display, fmt)
 

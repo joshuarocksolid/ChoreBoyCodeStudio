@@ -90,30 +90,3 @@ def test_console_model_2000_line_burst_under_500ms(tmp_path: Path) -> None:
 
     assert len(model.lines()) == 2000
     assert elapsed <= 0.5
-
-
-def test_run_log_panel_append_scales_near_linearly() -> None:
-    """Run log appends should avoid quadratic growth as history increases."""
-    pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-
-    from PySide2.QtWidgets import QApplication
-
-    from app.shell.run_log_panel import RunLogPanel
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-
-    def _append_lines(count: int) -> float:
-        panel = RunLogPanel()
-        start = time.perf_counter()
-        for index in range(count):
-            panel.append_live_line(f"line {index}\n", stream="stdout")
-        return time.perf_counter() - start
-
-    small_elapsed = _append_lines(2_000)
-    large_elapsed = _append_lines(10_000)
-    growth_ratio = large_elapsed / max(small_elapsed, 1e-9)
-
-    # 5x more lines should remain in roughly linear territory.
-    assert growth_ratio <= 8.0

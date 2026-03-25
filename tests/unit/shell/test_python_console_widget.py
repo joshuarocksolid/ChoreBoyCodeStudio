@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
-from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent  # noqa: E402
+from PySide2.QtCore import Qt  # noqa: E402
+from PySide2.QtGui import QColor, QFont, QKeyEvent  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
@@ -113,10 +111,6 @@ class TestSessionActivation:
         widget.set_session_active(False)
         widget.set_session_active(True)
         assert len(widget.history) == 1
-
-    def test_set_history_replaces_existing_entries(self, widget: PythonConsoleWidget) -> None:
-        widget.set_history(["a = 1", "b = 2"])
-        assert widget.history_snapshot() == ["a = 1", "b = 2"]
 
 
 # ---------------------------------------------------------------------------
@@ -233,27 +227,6 @@ class TestHistoryNavigation:
         text = _get_plain_text(active_widget)
         assert text.endswith(_PROMPT)
 
-    def test_ctrl_r_opens_history_picker_and_replaces_input(
-        self,
-        active_widget: PythonConsoleWidget,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        _type_text(active_widget, "first_cmd")
-        _press(active_widget, Qt.Key_Return)
-        _type_text(active_widget, "second_cmd")
-        _press(active_widget, Qt.Key_Return)
-
-        monkeypatch.setattr(
-            "app.shell.python_console_widget.QInputDialog.getItem",
-            lambda *_args, **_kwargs: ("first_cmd", True),
-        )
-        # Send the Ctrl modifier via direct event to trigger history picker.
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_R, Qt.ControlModifier, "r")
-        QApplication.sendEvent(active_widget, event)
-
-        text = _get_plain_text(active_widget)
-        assert text.endswith(_PROMPT + "first_cmd")
-
 
 # ---------------------------------------------------------------------------
 # Output appending
@@ -295,104 +268,6 @@ class TestOutputAppending:
         text = _get_plain_text(active_widget)
         assert "[system] Session finished" in text
         assert text.endswith(_PROMPT)
-
-
-class TestDragAndDropExecution:
-    def test_console_accepts_drops(self, widget: PythonConsoleWidget) -> None:
-        assert widget.acceptDrops() is True
-
-    def test_drop_python_file_emits_execution_command(
-        self,
-        active_widget: PythonConsoleWidget,
-        tmp_path: Path,
-    ) -> None:
-        script_path = tmp_path / "drop_target.py"
-        script_path.write_text("print('ok')\n", encoding="utf-8")
-        submitted: list[str] = []
-        active_widget.input_submitted.connect(submitted.append)
-
-        handled = active_widget._handle_dropped_local_path(str(script_path))
-
-        assert handled is True
-        assert submitted == [f"import runpy; runpy.run_path({repr(str(script_path.resolve()))}, run_name='__main__')"]
-        assert "Executing dropped file" in _get_plain_text(active_widget)
-
-    def test_drop_non_python_file_appends_actionable_warning(
-        self,
-        active_widget: PythonConsoleWidget,
-        tmp_path: Path,
-    ) -> None:
-        txt_path = tmp_path / "notes.txt"
-        txt_path.write_text("hello", encoding="utf-8")
-
-        handled = active_widget._handle_dropped_local_path(str(txt_path))
-
-        assert handled is False
-        assert "is not a Python file" in _get_plain_text(active_widget)
-
-    def test_drag_enter_accepts_url_mime_data(
-        self,
-        active_widget: PythonConsoleWidget,
-        tmp_path: Path,
-    ) -> None:
-        script = tmp_path / "from_tree.py"
-        script.write_text("x = 1\n", encoding="utf-8")
-
-        mime = QMimeData()
-        mime.setUrls([QUrl.fromLocalFile(str(script))])
-        event = QDragEnterEvent(
-            QPoint(10, 10),
-            Qt.CopyAction,
-            mime,
-            Qt.LeftButton,
-            Qt.NoModifier,
-        )
-        active_widget.dragEnterEvent(event)
-
-        assert event.isAccepted()
-
-    def test_drag_enter_rejects_mime_without_urls(
-        self,
-        active_widget: PythonConsoleWidget,
-    ) -> None:
-        mime = QMimeData()
-        mime.setData("application/x-qabstractitemmodeldatalist", b"\x00")
-        event = QDragEnterEvent(
-            QPoint(10, 10),
-            Qt.CopyAction,
-            mime,
-            Qt.LeftButton,
-            Qt.NoModifier,
-        )
-        active_widget.dragEnterEvent(event)
-
-        assert not event.isAccepted()
-
-    def test_drop_event_with_url_executes_python_file(
-        self,
-        active_widget: PythonConsoleWidget,
-        tmp_path: Path,
-    ) -> None:
-        script = tmp_path / "tree_drop.py"
-        script.write_text("print('tree')\n", encoding="utf-8")
-        submitted: list[str] = []
-        active_widget.input_submitted.connect(submitted.append)
-
-        mime = QMimeData()
-        mime.setUrls([QUrl.fromLocalFile(str(script))])
-        drop = QDropEvent(
-            QPoint(10, 10),
-            Qt.CopyAction,
-            mime,
-            Qt.LeftButton,
-            Qt.NoModifier,
-        )
-        active_widget.dropEvent(drop)
-
-        assert drop.isAccepted()
-        assert len(submitted) == 1
-        assert "runpy.run_path" in submitted[0]
-        assert "Executing dropped file" in _get_plain_text(active_widget)
 
 
 # ---------------------------------------------------------------------------

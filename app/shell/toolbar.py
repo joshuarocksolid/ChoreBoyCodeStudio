@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, List
+from typing import Any, List
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
@@ -19,8 +19,6 @@ from app.shell.toolbar_icons import build_toolbar_icon
 _GROUP_1_IDS = (
     "shell.action.run.run",
     "shell.action.run.debug",
-    "shell.action.run.runProject",
-    "shell.action.run.debugProject",
     "shell.action.run.stop",
     "shell.action.run.restart",
 )
@@ -41,8 +39,6 @@ _GROUP_RIGHT_IDS = (
 _ACTION_ID_TO_OBJ_SUFFIX: dict[str, str] = {
     "shell.action.run.run": "run",
     "shell.action.run.debug": "debug",
-    "shell.action.run.runProject": "runProject",
-    "shell.action.run.debugProject": "debugProject",
     "shell.action.run.stop": "stop",
     "shell.action.run.restart": "restart",
     "shell.action.run.continue": "continue",
@@ -58,12 +54,7 @@ _ACTION_ID_TO_OBJ_SUFFIX: dict[str, str] = {
 class RunToolbarWidget(QWidget):
     """Compact run/debug toolbar intended to sit above the editor area."""
 
-    def __init__(
-        self,
-        menu_registry: MenuStubRegistry,
-        parent: QWidget | None = None,
-        on_target_summary_clicked: Callable[[], object] | None = None,
-    ) -> None:
+    def __init__(self, menu_registry: MenuStubRegistry, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.toolbar.runDebug")
 
@@ -92,18 +83,6 @@ class RunToolbarWidget(QWidget):
             if btn is not None:
                 self._group2_buttons.append(btn)
                 layout.addWidget(btn)
-
-        self._target_summary_button = QToolButton(self)
-        self._target_summary_button.setObjectName("shell.toolbar.btn.runTarget")
-        self._target_summary_button.setCursor(Qt.PointingHandCursor)
-        self._target_summary_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self._target_summary_button.setAutoRaise(False)
-        self._target_summary_button.setText("Targets: open a file or project")
-        self._target_summary_button.setToolTip("Shows what Run, Run Project, and the active named configuration will do.")
-        self._target_summary_button.setEnabled(False)
-        if on_target_summary_clicked is not None:
-            self._target_summary_button.clicked.connect(on_target_summary_clicked)
-        layout.addWidget(self._target_summary_button, 0)
 
         layout.addStretch(1)
 
@@ -145,22 +124,12 @@ class RunToolbarWidget(QWidget):
         any_visible = any(b.isVisible() for b in self._group2_buttons)
         self._separator.setVisible(any_visible)
 
-    def set_target_summary(self, text: str, *, tooltip: str, enabled: bool) -> None:
-        self._target_summary_button.setText(text)
-        self._target_summary_button.setToolTip(tooltip)
-        self._target_summary_button.setEnabled(enabled)
-
 
 def build_run_toolbar_widget(
     menu_registry: MenuStubRegistry | None,
     parent: QWidget | None = None,
-    on_target_summary_clicked: Callable[[], object] | None = None,
 ) -> RunToolbarWidget | None:
     """Factory: build toolbar widget or return None if registry unavailable."""
     if menu_registry is None:
         return None
-    return RunToolbarWidget(
-        menu_registry,
-        parent=parent,
-        on_target_summary_clicked=on_target_summary_clicked,
-    )
+    return RunToolbarWidget(menu_registry, parent=parent)

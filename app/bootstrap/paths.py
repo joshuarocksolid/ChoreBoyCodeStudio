@@ -31,11 +31,6 @@ def global_recent_projects_path(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
 
 
-def global_python_console_history_path(state_root: Optional[PathInput] = None) -> Path:
-    """Return persisted Python console history file path."""
-    return _global_state_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
-
-
 def global_logs_dir(state_root: Optional[PathInput] = None) -> Path:
     """Return the global logs directory path."""
     return _global_state_child(constants.GLOBAL_LOGS_DIRNAME, state_root)
@@ -46,74 +41,9 @@ def global_cache_dir(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_CACHE_DIRNAME, state_root)
 
 
-def global_history_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global local-history directory path."""
-    return _global_state_child(constants.GLOBAL_HISTORY_DIRNAME, state_root)
-
-
-def global_history_index_path(state_root: Optional[PathInput] = None) -> Path:
-    """Return the SQLite metadata index path for local history."""
-    return global_history_dir(state_root) / constants.GLOBAL_HISTORY_INDEX_FILENAME
-
-
-def global_history_blobs_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the content-addressed blob directory for local history."""
-    return global_history_dir(state_root) / constants.GLOBAL_HISTORY_BLOBS_DIRNAME
-
-
 def global_crash_reports_dir(state_root: Optional[PathInput] = None) -> Path:
     """Return the global crash reports directory path."""
     return _global_state_child(constants.GLOBAL_CRASH_REPORTS_DIRNAME, state_root)
-
-
-def global_trash_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global trash directory path."""
-    return _global_state_child(constants.GLOBAL_TRASH_DIRNAME, state_root)
-
-
-def global_trash_files_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global trash-files directory path."""
-    return global_trash_dir(state_root) / constants.GLOBAL_TRASH_FILES_DIRNAME
-
-
-def global_trash_info_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global trash-metadata directory path."""
-    return global_trash_dir(state_root) / constants.GLOBAL_TRASH_INFO_DIRNAME
-
-
-def global_plugins_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global plugins state directory path."""
-    return _global_state_child(constants.PLUGINS_STATE_DIRNAME, state_root)
-
-
-def global_plugins_installed_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global installed-plugins directory path."""
-    return global_plugins_dir(state_root) / constants.PLUGINS_INSTALLED_DIRNAME
-
-
-def global_plugins_logs_dir(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global plugin logs directory path."""
-    return global_plugins_dir(state_root) / constants.PLUGINS_LOGS_DIRNAME
-
-
-def global_plugins_registry_path(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global plugin registry file path."""
-    return global_plugins_dir(state_root) / constants.PLUGINS_REGISTRY_FILENAME
-
-
-def global_plugins_trust_path(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global plugin trust-state file path."""
-    return global_plugins_dir(state_root) / constants.PLUGINS_TRUST_FILENAME
-
-
-def bundled_plugins_root() -> Path:
-    """Return the repository-bundled plugin directory path."""
-    return resolve_app_root() / constants.BUNDLED_PLUGINS_DIRNAME
-
-
-def plugin_install_dir(plugin_id: str, version: str, state_root: Optional[PathInput] = None) -> Path:
-    """Return install directory for one plugin version."""
-    return global_plugins_installed_dir(state_root) / _safe_path_component(plugin_id, "plugin_id") / _safe_path_component(version, "version")
 
 
 def global_state_db_path(state_root: Optional[PathInput] = None) -> Path:
@@ -158,21 +88,6 @@ def project_manifest_path(project_root: PathInput) -> Path:
     return project_cbcs_dir(project_root) / constants.PROJECT_MANIFEST_FILENAME
 
 
-def project_package_config_path(project_root: PathInput) -> Path:
-    """Return the canonical per-project packaging config path."""
-    return project_cbcs_dir(project_root) / constants.PROJECT_PACKAGE_CONFIG_FILENAME
-
-
-def project_plugins_path(project_root: PathInput) -> Path:
-    """Return the canonical per-project plugin policy path."""
-    return project_cbcs_dir(project_root) / constants.PROJECT_PLUGINS_FILENAME
-
-
-def project_settings_path(project_root: PathInput) -> Path:
-    """Return the canonical per-project settings path."""
-    return project_cbcs_dir(project_root) / constants.PROJECT_SETTINGS_FILENAME
-
-
 def project_runs_dir(project_root: PathInput) -> Path:
     """Return the per-project runs metadata directory path."""
     return project_cbcs_dir(project_root) / constants.PROJECT_RUNS_DIRNAME
@@ -210,14 +125,3 @@ def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:
     if not candidate.is_absolute():
         raise ValueError(f"{field_name} must be an absolute path")
     return candidate.resolve()
-
-
-def _safe_path_component(value: str, field_name: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError(f"{field_name} must be a non-empty string")
-    if normalized in {".", ".."}:
-        raise ValueError(f"{field_name} cannot be '.' or '..'")
-    if "/" in normalized or "\\" in normalized:
-        raise ValueError(f"{field_name} cannot contain path separators")
-    return normalized

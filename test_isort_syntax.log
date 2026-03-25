@@ -1,9 +1,0 @@
-============================= test session starts ==============================
-platform linux -- Python 3.11.13, pytest-9.0.2, pluggy-1.6.0 -- /opt/freecad/usr/bin/freecad
-cachedir: .pytest_cache
-rootdir: /home/joshua/Documents/ChoreBoyCodeStudio
-configfile: pyproject.toml
-plugins: xdist-3.8.0
-collecting ... collected 3 items / 2 deselected / 1 selected
-
-tests/unit/python_tools/test_isort_adapter.py::test_organize_imports_reports_syntax_errors_without_mutating_source FAILED [100%]Loading IntellaQuote module...

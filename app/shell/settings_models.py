@@ -7,9 +7,7 @@ from typing import Any, Mapping
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
-from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.intelligence.lint_profile import parse_lint_rule_overrides
-from app.persistence.settings_store import compute_effective_settings_payload, filter_project_settings_payload
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS, parse_global_exclude_patterns
 from app.shell.shortcut_preferences import parse_shortcut_overrides
 from app.shell.syntax_color_preferences import (
@@ -30,11 +28,8 @@ class EditorSettingsSnapshot:
     indent_size: int = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
     detect_indentation_from_file: bool = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
     format_on_save: bool = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
-    organize_imports_on_save: bool = constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_DEFAULT
     trim_trailing_whitespace_on_save: bool = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
     insert_final_newline_on_save: bool = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
-    enable_preview: bool = constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT
-    auto_save: bool = constants.UI_EDITOR_AUTO_SAVE_DEFAULT
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
     completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
@@ -56,35 +51,22 @@ class EditorSettingsSnapshot:
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
     auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
-    selected_linter: str = constants.LINTER_PROVIDER_DEFAULT
     shortcut_overrides: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_light: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
     lint_rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     file_exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
-    local_history_max_checkpoints_per_file: int = constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_DEFAULT
-    local_history_retention_days: int = constants.UI_LOCAL_HISTORY_RETENTION_DAYS_DEFAULT
-    local_history_max_tracked_file_bytes: int = constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_DEFAULT
-    local_history_exclude_patterns: list[str] = field(
-        default_factory=lambda: list(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_DEFAULT)
-    )
 
 
 @dataclass(frozen=True)
 class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
-    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool]
+    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool]
     completion_preferences: tuple[bool, bool, int]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
     intelligence_runtime_settings: IntelligenceRuntimeSettings
-    local_history_retention_policy: LocalHistoryRetentionPolicy
-
-
-SETTINGS_SCOPE_GLOBAL = "global"
-SETTINGS_SCOPE_PROJECT = "project"
-SETTINGS_SCOPES: tuple[str, str] = (SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT)
 
 
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
@@ -95,9 +77,6 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     intelligence_settings = settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
     if not isinstance(intelligence_settings, dict):
         intelligence_settings = {}
-    linter_settings = settings_payload.get(constants.UI_LINTER_SETTINGS_KEY, {})
-    if not isinstance(linter_settings, dict):
-        linter_settings = {}
     runtime_settings = parse_intelligence_runtime_settings(settings_payload)
     shortcut_overrides = parse_shortcut_overrides(settings_payload)
     syntax_color_overrides = parse_syntax_color_overrides(settings_payload)
@@ -109,9 +88,6 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     output_settings = settings_payload.get(constants.UI_OUTPUT_SETTINGS_KEY, {})
     if not isinstance(output_settings, dict):
         output_settings = {}
-    local_history_settings = settings_payload.get(constants.UI_LOCAL_HISTORY_SETTINGS_KEY, {})
-    if not isinstance(local_history_settings, dict):
-        local_history_settings = {}
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
@@ -145,10 +121,6 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         editor_settings.get(constants.UI_EDITOR_FORMAT_ON_SAVE_KEY),
         default=constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
     )
-    organize_imports_on_save = _coerce_bool(
-        editor_settings.get(constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_KEY),
-        default=constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_DEFAULT,
-    )
     trim_trailing_whitespace_on_save = _coerce_bool(
         editor_settings.get(constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY),
         default=constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
@@ -156,32 +128,6 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     insert_final_newline_on_save = _coerce_bool(
         editor_settings.get(constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY),
         default=constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT,
-    )
-    enable_preview = _coerce_bool(
-        editor_settings.get(constants.UI_EDITOR_ENABLE_PREVIEW_KEY),
-        default=constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT,
-    )
-    auto_save = _coerce_bool(
-        editor_settings.get(constants.UI_EDITOR_AUTO_SAVE_KEY),
-        default=constants.UI_EDITOR_AUTO_SAVE_DEFAULT,
-    )
-
-    diagnostics_enabled = _coerce_bool(
-        intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
-        default=constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
-    )
-    linter_enabled_override = linter_settings.get(constants.UI_LINTER_ENABLED_KEY)
-    if isinstance(linter_enabled_override, bool):
-        diagnostics_enabled = linter_enabled_override
-
-    selected_linter_raw = linter_settings.get(
-        constants.UI_LINTER_SELECTED_LINTER_KEY,
-        constants.LINTER_PROVIDER_DEFAULT,
-    )
-    selected_linter = (
-        str(selected_linter_raw)
-        if str(selected_linter_raw) in constants.LINTER_PROVIDERS
-        else constants.LINTER_PROVIDER_DEFAULT
     )
 
     return EditorSettingsSnapshot(
@@ -192,11 +138,8 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         indent_size=indent_size,
         detect_indentation_from_file=detect_indentation_from_file,
         format_on_save=format_on_save,
-        organize_imports_on_save=organize_imports_on_save,
         trim_trailing_whitespace_on_save=trim_trailing_whitespace_on_save,
         insert_final_newline_on_save=insert_final_newline_on_save,
-        enable_preview=enable_preview,
-        auto_save=auto_save,
         completion_enabled=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY),
             default=constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
@@ -210,7 +153,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             default=constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
             minimum=1,
         ),
-        diagnostics_enabled=diagnostics_enabled,
+        diagnostics_enabled=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY),
+            default=constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT,
+        ),
         diagnostics_realtime=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY),
             default=constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT,
@@ -239,31 +185,11 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_KEY),
             default=constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT,
         ),
-        selected_linter=selected_linter,
         shortcut_overrides=shortcut_overrides,
         syntax_color_overrides_light=syntax_color_overrides.get(THEME_LIGHT, {}),
         syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
         lint_rule_overrides=lint_rule_overrides,
         file_exclude_patterns=file_exclude_patterns,
-        local_history_max_checkpoints_per_file=_coerce_int(
-            local_history_settings.get(constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_KEY),
-            default=constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_DEFAULT,
-            minimum=1,
-        ),
-        local_history_retention_days=_coerce_int(
-            local_history_settings.get(constants.UI_LOCAL_HISTORY_RETENTION_DAYS_KEY),
-            default=constants.UI_LOCAL_HISTORY_RETENTION_DAYS_DEFAULT,
-            minimum=1,
-        ),
-        local_history_max_tracked_file_bytes=_coerce_int(
-            local_history_settings.get(constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_KEY),
-            default=constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_DEFAULT,
-            minimum=1,
-        ),
-        local_history_exclude_patterns=_normalize_pattern_list(
-            local_history_settings.get(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_KEY),
-            default=list(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_DEFAULT),
-        ),
     )
 
 
@@ -279,11 +205,8 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.indent_size,
             snapshot.detect_indentation_from_file,
             snapshot.format_on_save,
-            snapshot.organize_imports_on_save,
             snapshot.trim_trailing_whitespace_on_save,
             snapshot.insert_final_newline_on_save,
-            snapshot.enable_preview,
-            snapshot.auto_save,
         ),
         completion_preferences=(
             snapshot.completion_enabled,
@@ -309,37 +232,7 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             highlighting_reduced_threshold_chars=snapshot.highlighting_reduced_threshold_chars,
             highlighting_lexical_only_threshold_chars=snapshot.highlighting_lexical_only_threshold_chars,
         ),
-        local_history_retention_policy=LocalHistoryRetentionPolicy(
-            max_checkpoints_per_file=snapshot.local_history_max_checkpoints_per_file,
-            retention_days=snapshot.local_history_retention_days,
-            max_tracked_file_bytes=snapshot.local_history_max_tracked_file_bytes,
-            excluded_glob_patterns=tuple(snapshot.local_history_exclude_patterns),
-        ),
     )
-
-
-def parse_effective_editor_settings_snapshot(
-    global_settings_payload: Mapping[str, Any],
-    project_settings_payload: Mapping[str, Any] | None = None,
-) -> EditorSettingsSnapshot:
-    """Parse layered effective settings into an editor snapshot."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
-        project_settings_payload,
-    )
-    return parse_editor_settings_snapshot(effective_payload)
-
-
-def parse_effective_main_window_settings(
-    global_settings_payload: Mapping[str, Any],
-    project_settings_payload: Mapping[str, Any] | None = None,
-) -> MainWindowSettingsSnapshot:
-    """Parse layered effective settings into main-window runtime preferences."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
-        project_settings_payload,
-    )
-    return parse_main_window_settings(effective_payload)
 
 
 def merge_theme_mode(settings_payload: Mapping[str, Any], theme_mode: str) -> dict[str, Any]:
@@ -385,11 +278,8 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_INDENT_SIZE_KEY: max(1, int(snapshot.indent_size)),
         constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: bool(snapshot.detect_indentation_from_file),
         constants.UI_EDITOR_FORMAT_ON_SAVE_KEY: bool(snapshot.format_on_save),
-        constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_KEY: bool(snapshot.organize_imports_on_save),
         constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY: bool(snapshot.trim_trailing_whitespace_on_save),
         constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: bool(snapshot.insert_final_newline_on_save),
-        constants.UI_EDITOR_ENABLE_PREVIEW_KEY: bool(snapshot.enable_preview),
-        constants.UI_EDITOR_AUTO_SAVE_KEY: bool(snapshot.auto_save),
     }
     merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = {
         constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),
@@ -440,87 +330,12 @@ def merge_editor_settings_snapshot(
         constants.UI_SYNTAX_COLORS_DARK_KEY: _normalize_string_map(snapshot.syntax_color_overrides_dark),
     }
     merged[constants.UI_LINTER_SETTINGS_KEY] = {
-        constants.UI_LINTER_ENABLED_KEY: bool(snapshot.diagnostics_enabled),
-        constants.UI_LINTER_SELECTED_LINTER_KEY: (
-            snapshot.selected_linter
-            if snapshot.selected_linter in constants.LINTER_PROVIDERS
-            else constants.LINTER_PROVIDER_DEFAULT
-        ),
         constants.UI_LINTER_RULE_OVERRIDES_KEY: _normalize_lint_rule_override_map(snapshot.lint_rule_overrides),
     }
     merged[constants.UI_FILE_EXCLUDES_SETTINGS_KEY] = {
         constants.UI_FILE_EXCLUDES_PATTERNS_KEY: list(snapshot.file_exclude_patterns),
     }
-    merged[constants.UI_LOCAL_HISTORY_SETTINGS_KEY] = {
-        constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_KEY: max(
-            1, int(snapshot.local_history_max_checkpoints_per_file)
-        ),
-        constants.UI_LOCAL_HISTORY_RETENTION_DAYS_KEY: max(1, int(snapshot.local_history_retention_days)),
-        constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_KEY: max(
-            1, int(snapshot.local_history_max_tracked_file_bytes)
-        ),
-        constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_KEY: list(snapshot.local_history_exclude_patterns),
-    }
     return merged
-
-
-def merge_editor_settings_snapshot_for_scope(
-    *,
-    scope: str,
-    global_settings_payload: Mapping[str, Any],
-    project_settings_payload: Mapping[str, Any],
-    snapshot: EditorSettingsSnapshot,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Merge settings snapshot into the selected scope payload(s)."""
-    normalized_scope = scope if scope in SETTINGS_SCOPES else SETTINGS_SCOPE_GLOBAL
-    if normalized_scope == SETTINGS_SCOPE_GLOBAL:
-        return (
-            merge_editor_settings_snapshot(global_settings_payload, snapshot),
-            filter_project_settings_payload(project_settings_payload),
-        )
-
-    global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
-    global_overridable_payload = _extract_project_overridable_payload(
-        merge_editor_settings_snapshot({}, global_snapshot)
-    )
-    desired_overridable_payload = _extract_project_overridable_payload(
-        merge_editor_settings_snapshot({}, snapshot)
-    )
-    override_payload = _diff_mapping_payload(
-        desired_overridable_payload,
-        global_overridable_payload,
-    )
-    base_project_payload = filter_project_settings_payload(project_settings_payload)
-    merged_project_payload = _merge_project_scope_overrides(
-        base_project_payload,
-        override_payload,
-    )
-    return (dict(global_settings_payload), merged_project_payload)
-
-
-def has_project_override(project_settings_payload: Mapping[str, Any], *key_path: str) -> bool:
-    """Return True when a project override exists for the key path."""
-    if not key_path:
-        return False
-    current: Any = project_settings_payload
-    for key in key_path:
-        if not isinstance(current, Mapping) or key not in current:
-            return False
-        current = current.get(key)
-    return True
-
-
-def remove_project_override(
-    project_settings_payload: Mapping[str, Any],
-    *key_path: str,
-) -> dict[str, Any]:
-    """Return payload copy with one project override path removed."""
-    payload = filter_project_settings_payload(project_settings_payload)
-    if not key_path:
-        return payload
-
-    _remove_nested_key(payload, list(key_path))
-    return filter_project_settings_payload(payload)
 
 
 def _coerce_bool(value: Any, *, default: bool) -> bool:
@@ -531,19 +346,6 @@ def _coerce_int(value: Any, *, default: int, minimum: int) -> int:
     if not isinstance(value, int):
         return default
     return max(minimum, value)
-
-
-def _normalize_pattern_list(value: Any, *, default: list[str]) -> list[str]:
-    if not isinstance(value, list):
-        return list(default)
-    normalized: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            continue
-        pattern = item.strip()
-        if pattern:
-            normalized.append(pattern)
-    return normalized
 
 
 def _normalize_string_map(payload: Mapping[str, Any]) -> dict[str, str]:
@@ -570,65 +372,3 @@ def _normalize_lint_rule_override_map(payload: Mapping[str, Any]) -> dict[str, d
         if normalized_override:
             normalized[code] = normalized_override
     return normalized
-
-
-def _extract_project_overridable_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    extracted: dict[str, Any] = {}
-    for key in constants.PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS:
-        value = payload.get(key)
-        if isinstance(value, Mapping):
-            extracted[key] = dict(value)
-    return extracted
-
-
-def _diff_mapping_payload(
-    desired_payload: Mapping[str, Any],
-    baseline_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    diff: dict[str, Any] = {}
-    for key, desired_value in desired_payload.items():
-        baseline_value = baseline_payload.get(key)
-        if isinstance(desired_value, Mapping) and isinstance(baseline_value, Mapping):
-            child_diff = _diff_mapping_payload(desired_value, baseline_value)
-            if child_diff:
-                diff[key] = child_diff
-            continue
-        if desired_value != baseline_value:
-            diff[key] = desired_value
-    return diff
-
-
-def _merge_project_scope_overrides(
-    base_project_payload: Mapping[str, Any],
-    override_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    schema_version_raw = base_project_payload.get("schema_version", 1)
-    if isinstance(schema_version_raw, int) and not isinstance(schema_version_raw, bool) and schema_version_raw > 0:
-        schema_version = schema_version_raw
-    else:
-        schema_version = 1
-    merged: dict[str, Any] = {
-        "schema_version": schema_version,
-    }
-    for key in constants.PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS:
-        value = override_payload.get(key)
-        if isinstance(value, Mapping) and value:
-            merged[key] = dict(value)
-    return filter_project_settings_payload(merged)
-
-
-def _remove_nested_key(payload: dict[str, Any], key_path: list[str]) -> None:
-    if not key_path:
-        return
-    key = key_path[0]
-    if key not in payload:
-        return
-    if len(key_path) == 1:
-        payload.pop(key, None)
-        return
-    child = payload.get(key)
-    if not isinstance(child, dict):
-        return
-    _remove_nested_key(child, key_path[1:])
-    if not child:
-        payload.pop(key, None)

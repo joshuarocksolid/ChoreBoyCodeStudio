@@ -20,64 +20,56 @@ class TokenStyle:
 
 
 DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
-    "keyword": "#0000FF",
-    "keyword_control": "#AF00DB",
-    "keyword_import": "#AF00DB",
-    "builtin": "#267F99",
-    "escape": "#EE0000",
-    "string": "#A31515",
-    "comment": "#008000",
-    "number": "#098658",
-    "function": "#795E26",
-    "class": "#267F99",
-    "decorator": "#795E26",
-    "operator": "#000000",
-    "punctuation": "#000000",
-    "parameter": "#001080",
-    "json_key": "#0451A5",
-    "json_literal": "#0000FF",
-    "markdown_heading": "#800000",
-    "markdown_emphasis": "#800000",
-    "markdown_strong": "#800000",
-    "markdown_code": "#800000",
-    "semantic_function": "#795E26",
-    "semantic_method": "#795E26",
-    "semantic_class": "#267F99",
-    "semantic_parameter": "#001080",
-    "semantic_import": "#001080",
-    "semantic_variable": "#001080",
-    "semantic_property": "#001080",
-    "semantic_constant": "#0070C1",
+    "keyword": "#5B63FF",
+    "builtin": "#0C8C64",
+    "string": "#C73E0A",
+    "comment": "#6C757D",
+    "number": "#6741D9",
+    "function": "#1C7ED6",
+    "class": "#1864AB",
+    "decorator": "#9C36B5",
+    "operator": "#495057",
+    "punctuation": "#495057",
+    "parameter": "#2B8A3E",
+    "json_key": "#1971C2",
+    "json_literal": "#2B8A3E",
+    "markdown_heading": "#0B7285",
+    "markdown_emphasis": "#5F3DC4",
+    "markdown_code": "#C73E0A",
+    "semantic_function": "#1C7ED6",
+    "semantic_method": "#1971C2",
+    "semantic_class": "#1864AB",
+    "semantic_parameter": "#2B8A3E",
+    "semantic_import": "#9C36B5",
+    "semantic_variable": "#2F9E44",
+    "semantic_property": "#1A73E8",
+    "semantic_constant": "#C97A00",
 }
 DEFAULT_DARK_PALETTE: SyntaxPalette = {
-    "keyword": "#569CD6",
-    "keyword_control": "#C586C0",
-    "keyword_import": "#C586C0",
-    "builtin": "#4EC9B0",
-    "escape": "#D7BA7D",
-    "string": "#CE9178",
-    "comment": "#6A9955",
-    "number": "#B5CEA8",
-    "function": "#DCDCAA",
-    "class": "#4EC9B0",
-    "decorator": "#DCDCAA",
-    "operator": "#D4D4D4",
-    "punctuation": "#D4D4D4",
-    "parameter": "#9CDCFE",
-    "json_key": "#9CDCFE",
-    "json_literal": "#569CD6",
-    "markdown_heading": "#569CD6",
-    "markdown_emphasis": "#569CD6",
-    "markdown_strong": "#569CD6",
-    "markdown_code": "#CE9178",
-    "semantic_function": "#DCDCAA",
-    "semantic_method": "#DCDCAA",
-    "semantic_class": "#4EC9B0",
-    "semantic_parameter": "#9CDCFE",
-    "semantic_import": "#9CDCFE",
-    "semantic_variable": "#9CDCFE",
-    "semantic_property": "#9CDCFE",
-    "semantic_constant": "#4FC1FF",
+    "keyword": "#7EA8FF",
+    "builtin": "#3CC68A",
+    "string": "#FF8C5A",
+    "comment": "#8B949E",
+    "number": "#B18CFF",
+    "function": "#79C0FF",
+    "class": "#A5D6FF",
+    "decorator": "#D2A8FF",
+    "operator": "#C9D1D9",
+    "punctuation": "#C9D1D9",
+    "parameter": "#56D364",
+    "json_key": "#6CB6FF",
+    "json_literal": "#56D364",
+    "markdown_heading": "#3BC9DB",
+    "markdown_emphasis": "#B197FC",
+    "markdown_code": "#FF8C5A",
+    "semantic_function": "#79C0FF",
+    "semantic_method": "#8CC8FF",
+    "semantic_class": "#A5D6FF",
+    "semantic_parameter": "#56D364",
+    "semantic_import": "#D2A8FF",
+    "semantic_variable": "#7EE787",
+    "semantic_property": "#5CC8FF",
+    "semantic_constant": "#FFD580",
 }
 
 
@@ -109,16 +101,15 @@ class ThemedSyntaxHighlighter(QSyntaxHighlighter):
         self._formats: dict[str, QTextCharFormat] = {}
         self._rebuild_formats()
 
-    def set_dark_mode(self, is_dark: bool, *, rehighlight: bool = True) -> None:
+    def set_dark_mode(self, is_dark: bool) -> None:
         """Compatibility API used by existing editor theme application."""
-        self.set_theme_palette(None, is_dark=is_dark, rehighlight=rehighlight)
+        self.set_theme_palette(None, is_dark=is_dark)
 
     def set_theme_palette(
         self,
         syntax_palette: Mapping[str, str] | None,
         *,
         is_dark: bool | None = None,
-        rehighlight: bool = True,
     ) -> None:
         """Apply syntax palette overrides and trigger rehighlight when changed."""
         target_mode = self._is_dark if is_dark is None else is_dark
@@ -128,8 +119,7 @@ class ThemedSyntaxHighlighter(QSyntaxHighlighter):
         self._is_dark = target_mode
         self._palette = palette
         self._rebuild_formats()
-        if rehighlight:
-            self.rehighlight()
+        self.rehighlight()
 
     def _rebuild_formats(self) -> None:
         self._formats.clear()

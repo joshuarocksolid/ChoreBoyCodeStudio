@@ -1,40 +1,7 @@
 {
-  "pythonVersion": "3.9",
-  "verboseOutput": true,
-  "include": [
-    "app"
-  ],
-  "executionEnvironments": [
-    {
-      "root": "app",
-      "extraPaths": [
-        ".",
-        "vendor",
-        "/opt/freecad/usr/lib/python3.11/site-packages"
-      ]
-    }
-  ],
-  "exclude": [
-    ".git",
-    ".venv",
-    ".venv-editor",
-    "vendor",
-    "node_modules",
-    "build",
-    "dist",
-    ".cache",
-    "squashfs-root",
-    "docs",
-    "manual",
-    ".cursor",
-    "example_projects",
-    "packaging",
-    "templates",
-    "**/__pycache__",
-    "**/.pytest_cache",
-    "**/.mypy_cache",
-    "**/.ruff_cache",
-    "**/.tox",
-    "**/.nox"
-  ]
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv-editor",
+  "include": ["app", "tests"],
+  "exclude": [".venv-editor", ".venv", "squashfs-root", "__pycache__"]
 }

@@ -2,40 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping, NoReturn, Optional
-import uuid
+from typing import Any, Mapping, Optional
 
 from app.bootstrap.paths import PathInput
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
-from app.persistence.atomic_write import atomic_write_text
 
 PROJECT_METADATA_SCHEMA_VERSION = 1
-PROJECT_ID_PREFIX = "proj_"
-_UNKNOWN_LEGACY_PROJECT_ID = f"{PROJECT_ID_PREFIX}legacy_unknown"
 
 
 def build_default_project_manifest_payload(
     *,
     project_name: str,
-    project_id: Optional[str] = None,
     default_entry: str = "main.py",
-    default_argv: Optional[list[str]] = None,
+    default_argv: list[str] | None = None,
     working_directory: str = ".",
     template: str = "utility_script",
-    run_configs: Optional[list[dict[str, Any]]] = None,
-    env_overrides: Optional[Mapping[str, str]] = None,
+    run_configs: list[dict[str, Any]] | None = None,
+    env_overrides: Mapping[str, str] | None = None,
     project_notes: str = "",
-    exclude_patterns: Optional[list[str]] = None,
+    exclude_patterns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build a canonical manifest payload for new/imported projects."""
     if not _is_non_empty_string(project_name):
         raise ValueError("project_name must be a non-empty string.")
-    normalized_project_id = generate_project_id() if project_id is None else _validate_project_id(project_id)
     if not _is_non_empty_string(default_entry):
         raise ValueError("default_entry must be a non-empty string.")
     if default_argv is not None and (
@@ -74,7 +66,6 @@ def build_default_project_manifest_payload(
 
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,
-        project_id=normalized_project_id,
         name=project_name.strip(),
         default_entry=default_entry.strip(),
         default_argv=[] if default_argv is None else list(default_argv),
@@ -109,57 +100,6 @@ def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
     return parse_project_manifest(payload, manifest_path=path)
 
 
-def save_project_manifest(manifest_path: PathInput, metadata: ProjectMetadata) -> None:
-    """Persist canonical project metadata payload to disk."""
-    path = Path(manifest_path).expanduser().resolve()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(path, json.dumps(metadata.to_dict(), indent=2, sort_keys=True) + "\n")
-    except OSError as exc:
-        _raise_validation_error(f"Unable to write manifest file: {exc}", manifest_path=path)
-
-
-def set_project_default_entry(manifest_path: PathInput, *, default_entry: str) -> ProjectMetadata:
-    """Update `default_entry` and persist the updated manifest metadata."""
-    normalized_entry = default_entry.strip()
-    if not normalized_entry:
-        raise ValueError("default_entry must be a non-empty string.")
-    metadata = load_project_manifest(manifest_path)
-    updated_metadata = replace(metadata, default_entry=normalized_entry)
-    save_project_manifest(manifest_path, updated_metadata)
-    return updated_metadata
-
-
-def ensure_project_id(manifest_path: PathInput) -> ProjectMetadata:
-    """Backfill a persistent project id when legacy manifests omit it."""
-    path = Path(manifest_path).expanduser().resolve()
-    metadata = load_project_manifest(path)
-    if manifest_declares_project_id(path):
-        return metadata
-
-    updated_metadata = replace(metadata, project_id=generate_project_id())
-    try:
-        save_project_manifest(path, updated_metadata)
-    except ProjectManifestValidationError:
-        return metadata
-    return updated_metadata
-
-
-def generate_project_id() -> str:
-    """Return a new persistent project identifier."""
-    return f"{PROJECT_ID_PREFIX}{uuid.uuid4().hex}"
-
-
-def manifest_declares_project_id(manifest_path: PathInput) -> bool:
-    """Return True when the manifest explicitly stores a project id."""
-    path = Path(manifest_path).expanduser().resolve()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return False
-    return isinstance(payload, dict) and _is_valid_project_id(payload.get("project_id"))
-
-
 def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[PathInput] = None) -> ProjectMetadata:
     """Validate a manifest payload and normalize it into `ProjectMetadata`."""
     resolved_path = None if manifest_path is None else Path(manifest_path).expanduser().resolve()
@@ -179,12 +119,6 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     name = _require_field(payload, "name", manifest_path=resolved_path)
     if not _is_non_empty_string(name):
         _raise_validation_error("name must be a non-empty string.", field="name", manifest_path=resolved_path)
-
-    raw_project_id = payload.get("project_id")
-    if raw_project_id is None:
-        project_id = _legacy_project_id_for_manifest(resolved_path)
-    else:
-        project_id = _validate_project_id(raw_project_id, manifest_path=resolved_path)
 
     default_entry = _read_optional_non_empty_string(
         payload,
@@ -282,7 +216,6 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
 
     return ProjectMetadata(
         schema_version=schema_version,
-        project_id=project_id,
         name=name,
         default_entry=default_entry,
         default_argv=normalized_default_argv,
@@ -322,36 +255,10 @@ def _is_non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _is_valid_project_id(value: Any) -> bool:
-    if not isinstance(value, str):
-        return False
-    normalized = value.strip()
-    if not normalized.startswith(PROJECT_ID_PREFIX):
-        return False
-    suffix = normalized[len(PROJECT_ID_PREFIX):]
-    if not suffix:
-        return False
-    return all(character.islower() or character.isdigit() or character == "_" for character in suffix)
-
-
-def _validate_project_id(value: Any, *, manifest_path: Optional[Path] = None) -> str:
-    if not _is_valid_project_id(value):
-        _raise_validation_error("project_id must be a non-empty identifier starting with proj_.", field="project_id", manifest_path=manifest_path)
-    return value.strip()
-
-
-def _legacy_project_id_for_manifest(manifest_path: Optional[Path]) -> str:
-    if manifest_path is None:
-        return _UNKNOWN_LEGACY_PROJECT_ID
-    project_root = manifest_path.parent.parent
-    digest = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:16]
-    return f"{PROJECT_ID_PREFIX}path_{digest}"
-
-
 def _raise_validation_error(
     message: str,
     *,
     field: Optional[str] = None,
     manifest_path: Optional[Path] = None,
-) -> NoReturn:
+) -> None:
     raise ProjectManifestValidationError(message, field=field, manifest_path=manifest_path)

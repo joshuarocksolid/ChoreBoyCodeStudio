@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import pytest
 
 from app.intelligence.code_actions import QuickFix, apply_quick_fixes, plan_safe_fixes_for_file
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
-from app.persistence.atomic_write import atomic_write_text
 
 pytestmark = pytest.mark.unit
 
@@ -232,16 +230,16 @@ def test_apply_quick_fixes_rolls_back_file_edits_on_write_failure(
         ),
     ]
 
+    original_write_text = Path.write_text
     failure_state = {"pending": True}
 
-    def flaky_atomic_write(path: Union[Path, str], data: str, *, encoding: str = "utf-8") -> Path:
-        resolved = Path(path).expanduser().resolve()
-        if resolved == file_b.resolve() and failure_state["pending"]:
+    def flaky_write_text(self: Path, data: str, encoding: str = "utf-8", errors=None, newline=None) -> int:  # type: ignore[no-untyped-def]
+        if self.resolve() == file_b.resolve() and failure_state["pending"]:
             failure_state["pending"] = False
             raise OSError("simulated write failure")
-        return atomic_write_text(resolved, data, encoding=encoding)
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
 
-    monkeypatch.setattr("app.intelligence.code_actions.atomic_write_text", flaky_atomic_write)
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
 
     with pytest.raises(OSError, match="simulated write failure"):
         apply_quick_fixes(fixes)
@@ -273,16 +271,16 @@ def test_apply_quick_fixes_rolls_back_created_module_files_on_failure(
     target_module = project_root / "missing" / "module.py"
     target_init = project_root / "missing" / "__init__.py"
 
+    original_write_text = Path.write_text
     failure_state = {"pending": True}
 
-    def flaky_atomic_write(path: Union[Path, str], data: str, *, encoding: str = "utf-8") -> Path:
-        resolved = Path(path).expanduser().resolve()
-        if resolved == target_module.resolve() and failure_state["pending"]:
+    def flaky_write_text(self: Path, data: str, encoding: str = "utf-8", errors=None, newline=None) -> int:  # type: ignore[no-untyped-def]
+        if self.resolve() == target_module.resolve() and failure_state["pending"]:
             failure_state["pending"] = False
             raise OSError("simulated create-module failure")
-        return atomic_write_text(resolved, data, encoding=encoding)
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
 
-    monkeypatch.setattr("app.intelligence.code_actions.atomic_write_text", flaky_atomic_write)
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
 
     with pytest.raises(OSError, match="simulated create-module failure"):
         apply_quick_fixes(fixes)

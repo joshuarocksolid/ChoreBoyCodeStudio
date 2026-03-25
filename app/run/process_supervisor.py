@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 import signal
 import subprocess
 import threading
-from typing import IO, Callable, Literal, Mapping, Sequence
+from typing import IO, Callable, Literal, Mapping
 
 from app.core.errors import RunLifecycleError
 
@@ -18,20 +17,12 @@ ProcessState = Literal["idle", "running", "stopping", "exited"]
 class ProcessEvent:
     """Event emitted by process supervisor during run lifecycle."""
 
-    event_type: Literal["output", "exit", "state", "debug"]
+    event_type: Literal["output", "exit", "state"]
     stream: Literal["stdout", "stderr"] | None = None
     text: str | None = None
     return_code: int | None = None
     state: ProcessState | None = None
     terminated_by_user: bool = False
-    payload: object | None = None
-
-
-@dataclass
-class _ProcessResources:
-    reader_threads: list[threading.Thread]
-    reader_streams: list[IO[str]]
-    cleaned: bool = False
 
 
 class ProcessSupervisor:
@@ -43,8 +34,10 @@ class ProcessSupervisor:
         self._state: ProcessState = "idle"
         self._terminated_by_user = False
         self._lock = threading.RLock()
-        self._process_resources: dict[int, _ProcessResources] = {}
+        self._reader_threads: list[threading.Thread] = []
+        self._reader_streams: list[IO[str]] = []
         self._waiter_thread: threading.Thread | None = None
+        self._resources_cleaned = True
 
     @property
     def state(self) -> ProcessState:
@@ -77,20 +70,19 @@ class ProcessSupervisor:
                     stderr=subprocess.PIPE,
                     text=True,
                     bufsize=1,
-                    start_new_session=True,
                 )
             except OSError as exc:
                 raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
 
             self._process = process
             self._terminated_by_user = False
-            self._process_resources[process.pid] = _ProcessResources(reader_threads=[], reader_streams=[])
+            self._resources_cleaned = False
             self._state = "running"
             state_event = self._build_state_event("running")
             process_id = process.pid
 
         self._emit_event(state_event)
-        self._start_reader_threads(process=process)
+        self._start_reader_threads(process)
         self._start_waiter_thread(process)
         return process_id
 
@@ -114,40 +106,11 @@ class ProcessSupervisor:
 
         self._emit_event(state_event)
 
-        try:
-            pgid = os.getpgid(process.pid)
-        except OSError:
-            pgid = None
-
-        if pgid is not None:
-            try:
-                os.killpg(pgid, signal.SIGTERM)
-            except OSError:
-                try:
-                    process.terminate()
-                except OSError:
-                    pass
-        else:
-            try:
-                process.terminate()
-            except OSError:
-                pass
+        process.terminate()
         try:
             process.wait(timeout=terminate_timeout_seconds)
         except subprocess.TimeoutExpired:
-            if pgid is not None:
-                try:
-                    os.killpg(pgid, signal.SIGKILL)
-                except OSError:
-                    try:
-                        process.kill()
-                    except OSError:
-                        pass
-            else:
-                try:
-                    process.kill()
-                except OSError:
-                    pass
+            process.kill()
             process.wait()
         self._cleanup_process_resources(process)
         self._join_waiter_thread()
@@ -179,32 +142,20 @@ class ProcessSupervisor:
         except OSError as exc:
             raise RunLifecycleError(f"Failed to write to runner stdin: {exc}") from exc
 
-    def _start_reader_threads(self, *, process: subprocess.Popen[str]) -> None:
-        with self._lock:
-            resources = self._process_resources.get(process.pid)
-        if resources is None:
-            return
-        reader_threads: list[threading.Thread] = []
-        reader_streams: list[IO[str]] = []
+    def _start_reader_threads(self, process: subprocess.Popen[str]) -> None:
+        self._reader_threads = []
+        self._reader_streams = []
         for stream_name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
             if stream is None:
                 continue
-            reader_streams.append(stream)
+            self._reader_streams.append(stream)
             reader = threading.Thread(
                 target=self._read_stream,
                 args=(stream_name, stream),
                 daemon=True,
             )
-            reader_threads.append(reader)
+            self._reader_threads.append(reader)
             reader.start()
-        with self._lock:
-            current_resources = self._process_resources.get(process.pid)
-            if current_resources is None:
-                self._join_reader_threads(reader_threads, timeout_seconds=0.2)
-                self._close_streams(reader_streams)
-                return
-            current_resources.reader_threads.extend(reader_threads)
-            current_resources.reader_streams.extend(reader_streams)
 
     def _start_waiter_thread(self, process: subprocess.Popen[str]) -> None:
         self._waiter_thread = threading.Thread(target=self._wait_for_exit, args=(process,), daemon=True)
@@ -235,9 +186,9 @@ class ProcessSupervisor:
     def _wait_for_exit(self, process: subprocess.Popen[str]) -> None:
         return_code = process.wait()
         self._cleanup_process_resources(process)
+        state_event: ProcessEvent
+        exit_event: ProcessEvent
         with self._lock:
-            if self._process is not process:
-                return
             self._process = None
             self._waiter_thread = None
             self._state = "exited"
@@ -260,20 +211,30 @@ class ProcessSupervisor:
 
     def _cleanup_process_resources(self, process: subprocess.Popen[str]) -> None:
         with self._lock:
-            resources = self._process_resources.get(process.pid)
-            if resources is None or resources.cleaned:
+            if self._resources_cleaned:
                 return
-            resources.cleaned = True
-            reader_threads = list(resources.reader_threads)
-            reader_streams = list(resources.reader_streams)
+            self._resources_cleaned = True
+            reader_threads = list(self._reader_threads)
+            reader_streams = list(self._reader_streams)
+            self._reader_threads = []
+            self._reader_streams = []
 
         self._join_reader_threads(reader_threads, timeout_seconds=0.2)
 
-        self._close_streams([*reader_streams, process.stdout, process.stderr, process.stdin])
+        seen_stream_ids: set[int] = set()
+        for stream in [*reader_streams, process.stdout, process.stderr, process.stdin]:
+            if stream is None:
+                continue
+            stream_id = id(stream)
+            if stream_id in seen_stream_ids:
+                continue
+            seen_stream_ids.add(stream_id)
+            try:
+                stream.close()
+            except OSError:
+                pass
 
         self._join_reader_threads(reader_threads, timeout_seconds=0.2)
-        with self._lock:
-            self._process_resources.pop(process.pid, None)
 
     def _join_reader_threads(self, threads: list[threading.Thread], *, timeout_seconds: float) -> None:
         current_thread = threading.current_thread()
@@ -299,18 +260,3 @@ class ProcessSupervisor:
         except Exception:
             # Event callbacks are observer side-effects; never crash supervisor threads.
             return
-
-    @staticmethod
-    def _close_streams(streams: Sequence[IO[str] | None]) -> None:
-        seen_stream_ids: set[int] = set()
-        for stream in streams:
-            if stream is None:
-                continue
-            stream_id = id(stream)
-            if stream_id in seen_stream_ids:
-                continue
-            seen_stream_ids.add(stream_id)
-            try:
-                stream.close()
-            except OSError:
-                pass

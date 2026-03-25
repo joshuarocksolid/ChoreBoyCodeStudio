@@ -10,7 +10,6 @@ import pytest
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
-from app.debug.debug_models import DebugExceptionPolicy, DebugSourceMap
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_manifest import load_run_manifest
 from app.run.run_service import (
@@ -19,6 +18,7 @@ from app.run.run_service import (
     build_run_log_path,
     build_run_manifest_path,
     generate_run_id,
+    resolve_runtime_executable,
 )
 
 pytestmark = pytest.mark.unit
@@ -53,6 +53,36 @@ def test_build_run_log_path_uses_project_logs_contract(tmp_path: Path) -> None:
     log_path = build_run_log_path(project_root, run_id)
 
     assert log_path == project_root / "cbcs" / "logs" / f"run_{run_id}.log"
+
+
+def test_resolve_runtime_executable_prefers_explicit_config(tmp_path: Path) -> None:
+    """Configured runtime path should override automatic resolution."""
+    custom_runtime = tmp_path / "custom_runtime"
+    custom_runtime.write_text("", encoding="utf-8")
+
+    assert resolve_runtime_executable(str(custom_runtime)) == str(custom_runtime.resolve())
+
+
+def test_resolve_runtime_executable_falls_back_to_python_when_apprun_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When AppRun path is missing in cloud dev env, fallback should use current python."""
+    monkeypatch.setattr("app.run.run_service.constants.APP_RUN_PATH", "/path/that/does/not/exist")
+    assert resolve_runtime_executable(None) == sys.executable
+
+
+def test_build_runner_command_for_apprun_bootstraps_runner_parent_path(tmp_path: Path) -> None:
+    """AppRun command payload should include repo path so `app` imports resolve."""
+    runner_boot = tmp_path / "run_runner.py"
+    runner_boot.write_text("print('stub')\n", encoding="utf-8")
+    service = RunService(runtime_executable="/opt/freecad/AppRun", runner_boot_path=str(runner_boot))
+
+    command = service._build_runner_command("/tmp/run_manifest.json")
+
+    assert command[0] == "/opt/freecad/AppRun"
+    assert command[1] == "-c"
+    payload = command[2]
+    assert "sys.path.insert(0" in payload
+    assert str(tmp_path.resolve()) in payload
+    assert "runpy.run_path" in payload
 
 
 def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,91 +181,8 @@ def test_start_run_supports_projectless_repl_with_home_working_directory(
     assert "/repl/logs/" in session.log_file_path
 
 
-def test_start_run_supports_projectless_script_with_explicit_entry(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    state_root = tmp_path / "state"
-    script_path = tmp_path / "snippet.py"
-    script_path.write_text("print('snippet')\n", encoding="utf-8")
-    service = RunService(
-        runtime_executable=sys.executable,
-        runner_boot_path=str(tmp_path / "run_runner.py"),
-        state_root=str(state_root.resolve()),
-    )
-    launch_context: dict[str, str] = {}
-
-    def _capture_start(_command: list[str], *, cwd: str, env) -> None:  # type: ignore[no-untyped-def]
-        launch_context["cwd"] = cwd
-
-    monkeypatch.setattr(service.supervisor, "start", _capture_start)
-
-    session = service.start_run(None, mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=str(script_path))
-    manifest = load_run_manifest(session.manifest_path)
-
-    assert manifest.mode == constants.RUN_MODE_PYTHON_SCRIPT
-    assert manifest.entry_file == str(script_path.resolve())
-    assert manifest.project_root == str(script_path.parent.resolve())
-    assert manifest.working_directory == str(script_path.parent.resolve())
-    assert launch_context["cwd"] == str(script_path.parent.resolve())
-
-
-def test_start_run_python_debug_writes_transport_policy_and_source_maps(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project_root = tmp_path / "project"
-    project_root.mkdir(parents=True)
-    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
-    loaded_project = LoadedProject(
-        project_root=str(project_root.resolve()),
-        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
-        metadata=ProjectMetadata(
-            schema_version=1,
-            name="demo",
-            default_entry="run.py",
-        ),
-        entries=[],
-    )
-    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
-    monkeypatch.setattr(service.supervisor, "start", lambda *args, **kwargs: None)
-
-    session = service.start_run(
-        loaded_project,
-        mode=constants.RUN_MODE_PYTHON_DEBUG,
-        debug_exception_policy=DebugExceptionPolicy(
-            stop_on_uncaught_exceptions=False,
-            stop_on_raised_exceptions=True,
-        ),
-        source_maps=[
-            DebugSourceMap(
-                runtime_path=str((project_root / "cbcs" / "temp.py").resolve()),
-                source_path=str((project_root / "run.py").resolve()),
-            )
-        ],
-    )
-    manifest = load_run_manifest(session.manifest_path)
-
-    assert manifest.mode == constants.RUN_MODE_PYTHON_DEBUG
-    assert manifest.debug_transport is not None
-    assert manifest.debug_transport.protocol
-    assert manifest.debug_transport.host == "127.0.0.1"
-    assert manifest.debug_transport.port > 0
-    assert manifest.debug_exception_policy == DebugExceptionPolicy(
-        stop_on_uncaught_exceptions=False,
-        stop_on_raised_exceptions=True,
-    )
-    assert manifest.source_maps == [
-        DebugSourceMap(
-            runtime_path=str((project_root / "cbcs" / "temp.py").resolve()),
-            source_path=str((project_root / "run.py").resolve()),
-        )
-    ]
-    service._close_debug_transport_server()  # noqa: SLF001 - avoid leaking a listener in unit tests
-
-
-def test_forward_debug_message_tracks_pause_and_resume_events(tmp_path: Path) -> None:
-    """Structured debug events should update pause state deterministically."""
+def test_forward_event_tracks_debug_pause_and_resume_markers(tmp_path: Path) -> None:
+    """Debug protocol output markers should update pause state deterministically."""
     captured_events: list[ProcessEvent] = []
     service = RunService(
         on_event=captured_events.append,
@@ -243,16 +190,16 @@ def test_forward_debug_message_tracks_pause_and_resume_events(tmp_path: Path) ->
         runner_boot_path=str(tmp_path / "run_runner.py"),
     )
 
-    service._forward_debug_message(  # noqa: SLF001 - characterization test for private coordination logic
-        {"kind": "event", "event": "stopped", "body": {"message": "Paused at breakpoint."}}
+    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
+        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_PAUSED__\n")
     )
     assert service.is_debug_paused is True
 
-    service._forward_debug_message(  # noqa: SLF001 - characterization test for private coordination logic
-        {"kind": "event", "event": "continued", "body": {"message": "Debug execution running."}}
+    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
+        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_RUNNING__\n")
     )
     assert service.is_debug_paused is False
-    assert [event.event_type for event in captured_events] == ["debug", "debug"]
+    assert [event.event_type for event in captured_events] == ["output", "output"]
 
 
 def test_forward_event_exit_clears_active_session_state(tmp_path: Path) -> None:

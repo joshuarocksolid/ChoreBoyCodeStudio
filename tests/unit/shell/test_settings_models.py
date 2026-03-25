@@ -4,21 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.core import constants
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
-    SETTINGS_SCOPE_GLOBAL,
-    SETTINGS_SCOPE_PROJECT,
-    has_project_override,
     merge_import_update_policy,
-    merge_editor_settings_snapshot_for_scope,
     merge_last_project_path,
     merge_editor_settings_snapshot,
     merge_theme_mode,
     parse_editor_settings_snapshot,
-    parse_effective_editor_settings_snapshot,
     parse_main_window_settings,
-    remove_project_override,
 )
 
 pytestmark = pytest.mark.unit
@@ -33,11 +26,8 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.indent_style == "spaces"
     assert snapshot.detect_indentation_from_file is True
     assert snapshot.format_on_save is False
-    assert snapshot.organize_imports_on_save is False
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
-    assert snapshot.enable_preview is True
-    assert snapshot.auto_save is False
     assert snapshot.completion_enabled is True
     assert snapshot.completion_auto_trigger is False
     assert snapshot.diagnostics_enabled is True
@@ -51,15 +41,10 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.theme_mode == "system"
     assert snapshot.auto_open_console_on_run_output is True
     assert snapshot.auto_open_problems_on_run_failure is True
-    assert snapshot.selected_linter == "default"
     assert snapshot.shortcut_overrides == {}
     assert snapshot.syntax_color_overrides_light == {}
     assert snapshot.syntax_color_overrides_dark == {}
     assert snapshot.lint_rule_overrides == {}
-    assert snapshot.local_history_max_checkpoints_per_file == 50
-    assert snapshot.local_history_retention_days == 30
-    assert snapshot.local_history_max_tracked_file_bytes == 1_000_000
-    assert snapshot.local_history_exclude_patterns == []
 
 
 def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
@@ -73,10 +58,8 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "indent_size": 1,
                 "detect_indentation_from_file": False,
                 "format_on_save": True,
-                "organize_imports_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
-                "enable_preview": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -108,17 +91,9 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "dark": {"keyword": "#654321"},
             },
             "linter": {
-                "enabled": False,
-                "selected_linter": "pyflakes",
                 "rule_overrides": {
                     "PY220": {"enabled": False, "severity": "info"},
                 }
-            },
-            "local_history": {
-                "max_checkpoints_per_file": 12,
-                "retention_days": 45,
-                "max_tracked_file_bytes": 4096,
-                "exclude_patterns": ["*.bin", "exports/*.json"],
             },
         }
     )
@@ -130,10 +105,8 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.indent_size == 1
     assert snapshot.detect_indentation_from_file is False
     assert snapshot.format_on_save is True
-    assert snapshot.organize_imports_on_save is True
     assert snapshot.trim_trailing_whitespace_on_save is False
     assert snapshot.insert_final_newline_on_save is False
-    assert snapshot.enable_preview is False
     assert snapshot.completion_enabled is False
     assert snapshot.completion_auto_trigger is False
     assert snapshot.completion_min_chars == 3
@@ -150,15 +123,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.highlighting_lexical_only_threshold_chars == 480000
     assert snapshot.auto_open_console_on_run_output is False
     assert snapshot.auto_open_problems_on_run_failure is False
-    assert snapshot.selected_linter == "pyflakes"
     assert snapshot.shortcut_overrides == {"shell.action.run.run": "Ctrl+R"}
     assert snapshot.syntax_color_overrides_light == {"keyword": "#123456"}
     assert snapshot.syntax_color_overrides_dark == {"keyword": "#654321"}
     assert snapshot.lint_rule_overrides == {"PY220": {"enabled": False, "severity": "info"}}
-    assert snapshot.local_history_max_checkpoints_per_file == 12
-    assert snapshot.local_history_retention_days == 45
-    assert snapshot.local_history_max_tracked_file_bytes == 4096
-    assert snapshot.local_history_exclude_patterns == ["*.bin", "exports/*.json"]
 
 
 def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() -> None:
@@ -170,10 +138,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         indent_size=1,
         detect_indentation_from_file=False,
         format_on_save=True,
-        organize_imports_on_save=True,
         trim_trailing_whitespace_on_save=False,
         insert_final_newline_on_save=False,
-        enable_preview=False,
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
@@ -190,15 +156,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         highlighting_lexical_only_threshold_chars=500000,
         auto_open_console_on_run_output=False,
         auto_open_problems_on_run_failure=False,
-        selected_linter="pyflakes",
         shortcut_overrides={"shell.action.run.run": "Ctrl+R"},
         syntax_color_overrides_light={"keyword": "#123456"},
         syntax_color_overrides_dark={"keyword": "#654321"},
         lint_rule_overrides={"PY220": {"enabled": False, "severity": "info"}},
-        local_history_max_checkpoints_per_file=12,
-        local_history_retention_days=45,
-        local_history_max_tracked_file_bytes=4096,
-        local_history_exclude_patterns=["*.bin", "exports/*.json"],
     )
     merged = merge_editor_settings_snapshot({"schema_version": 1}, snapshot)
 
@@ -207,10 +168,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["indent_style"] == "tabs"
     assert merged["editor"]["detect_indentation_from_file"] is False
     assert merged["editor"]["format_on_save"] is True
-    assert merged["editor"]["organize_imports_on_save"] is True
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
-    assert merged["editor"]["enable_preview"] is False
     assert merged["intelligence"]["enable_completion"] is False
     assert merged["intelligence"]["enable_diagnostics"] is False
     assert merged["intelligence"]["diagnostics_realtime"] is False
@@ -227,48 +186,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["keybindings"]["overrides"] == {"shell.action.run.run": "Ctrl+R"}
     assert merged["syntax_colors"]["light"] == {"keyword": "#123456"}
     assert merged["syntax_colors"]["dark"] == {"keyword": "#654321"}
-    assert merged["linter"]["enabled"] is False
-    assert merged["linter"]["selected_linter"] == "pyflakes"
     assert merged["linter"]["rule_overrides"] == {"PY220": {"enabled": False, "severity": "info"}}
-    assert merged["local_history"]["max_checkpoints_per_file"] == 12
-    assert merged["local_history"]["retention_days"] == 45
-    assert merged["local_history"]["max_tracked_file_bytes"] == 4096
-    assert merged["local_history"]["exclude_patterns"] == ["*.bin", "exports/*.json"]
-
-
-def test_parse_editor_settings_snapshot_invalid_selected_linter_defaults_to_default() -> None:
-    snapshot = parse_editor_settings_snapshot({"linter": {"selected_linter": "unknown"}})
-    assert snapshot.selected_linter == "default"
-
-
-def test_parse_effective_editor_settings_snapshot_project_overrides_selected_linter() -> None:
-    global_payload = {
-        "schema_version": 1,
-        "linter": {
-            "selected_linter": constants.LINTER_PROVIDER_DEFAULT,
-            "enabled": True,
-            "rule_overrides": {},
-        },
-    }
-    project_payload = {
-        "schema_version": 1,
-        "linter": {"selected_linter": constants.LINTER_PROVIDER_PYFLAKES},
-    }
-    effective = parse_effective_editor_settings_snapshot(global_payload, project_payload)
-    assert effective.selected_linter == constants.LINTER_PROVIDER_PYFLAKES
-
-
-def test_parse_effective_editor_settings_snapshot_without_project_keeps_global_linter() -> None:
-    global_payload = {
-        "schema_version": 1,
-        "linter": {
-            "selected_linter": constants.LINTER_PROVIDER_PYFLAKES,
-            "enabled": True,
-            "rule_overrides": {},
-        },
-    }
-    effective = parse_effective_editor_settings_snapshot(global_payload, None)
-    assert effective.selected_linter == constants.LINTER_PROVIDER_PYFLAKES
 
 
 def test_parse_theme_mode_reads_explicit_dark() -> None:
@@ -384,10 +302,8 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
                 "indent_size": 2,
                 "detect_indentation_from_file": False,
                 "format_on_save": True,
-                "organize_imports_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
-                "enable_preview": False,
             },
             "intelligence": {
                 "enable_completion": False,
@@ -412,20 +328,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         }
     )
 
-    assert grouped.editor_preferences == (
-        6,
-        13,
-        "Fira Code",
-        "tabs",
-        2,
-        False,
-        True,
-        True,
-        False,
-        False,
-        False,
-        False,
-    )
+    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False)
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
     assert grouped.output_preferences == (False, False)
@@ -452,178 +355,3 @@ def test_merge_import_update_policy_defaults_blank_value() -> None:
 def test_merge_last_project_path_sets_project_root_key() -> None:
     merged = merge_last_project_path({}, "/tmp/project")
     assert merged["last_project_path"] == "/tmp/project"
-
-
-def test_parse_effective_editor_settings_snapshot_applies_project_overrides() -> None:
-    global_payload = {
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
-            constants.UI_EDITOR_FONT_SIZE_KEY: 12,
-        },
-        constants.UI_THEME_SETTINGS_KEY: {
-            constants.UI_THEME_MODE_KEY: "dark",
-        },
-    }
-    project_payload = {
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
-        },
-        constants.UI_THEME_SETTINGS_KEY: {
-            constants.UI_THEME_MODE_KEY: "light",
-        },
-    }
-
-    snapshot = parse_effective_editor_settings_snapshot(global_payload, project_payload)
-
-    assert snapshot.tab_width == 2
-    assert snapshot.font_size == 12
-    assert snapshot.theme_mode == "dark"
-
-
-def test_merge_editor_settings_snapshot_for_scope_global_updates_global_only() -> None:
-    global_payload = {
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
-        },
-    }
-    project_payload = {
-        "schema_version": 1,
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
-        },
-    }
-    updated_snapshot = EditorSettingsSnapshot(tab_width=6)
-
-    merged_global, merged_project = merge_editor_settings_snapshot_for_scope(
-        scope=SETTINGS_SCOPE_GLOBAL,
-        global_settings_payload=global_payload,
-        project_settings_payload=project_payload,
-        snapshot=updated_snapshot,
-    )
-
-    assert merged_global[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 6
-    assert merged_project == project_payload
-
-
-def test_merge_editor_settings_snapshot_for_scope_project_persists_only_diffs() -> None:
-    global_payload = {
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
-            constants.UI_EDITOR_FONT_SIZE_KEY: 11,
-        },
-        constants.UI_OUTPUT_SETTINGS_KEY: {
-            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: True,
-        },
-        constants.UI_THEME_SETTINGS_KEY: {
-            constants.UI_THEME_MODE_KEY: constants.UI_THEME_MODE_DARK,
-        },
-    }
-    project_payload = {"schema_version": 1}
-    updated_snapshot = EditorSettingsSnapshot(
-        tab_width=2,
-        font_size=11,
-        auto_open_console_on_run_output=False,
-        theme_mode=constants.UI_THEME_MODE_LIGHT,
-    )
-
-    merged_global, merged_project = merge_editor_settings_snapshot_for_scope(
-        scope=SETTINGS_SCOPE_PROJECT,
-        global_settings_payload=global_payload,
-        project_settings_payload=project_payload,
-        snapshot=updated_snapshot,
-    )
-
-    assert merged_global == global_payload
-    assert merged_project == {
-        "schema_version": 1,
-        constants.UI_EDITOR_SETTINGS_KEY: {
-            constants.UI_EDITOR_TAB_WIDTH_KEY: 2,
-        },
-        constants.UI_OUTPUT_SETTINGS_KEY: {
-            constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: False,
-        },
-    }
-    assert constants.UI_THEME_SETTINGS_KEY not in merged_project
-
-
-def test_has_project_override_and_remove_project_override_manage_nested_paths() -> None:
-    payload = {
-        "schema_version": 1,
-        constants.UI_INTELLIGENCE_SETTINGS_KEY: {
-            constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: False,
-            constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY: 3,
-        },
-    }
-    assert has_project_override(
-        payload,
-        constants.UI_INTELLIGENCE_SETTINGS_KEY,
-        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
-    ) is True
-
-    updated = remove_project_override(
-        payload,
-        constants.UI_INTELLIGENCE_SETTINGS_KEY,
-        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
-    )
-
-    assert has_project_override(
-        updated,
-        constants.UI_INTELLIGENCE_SETTINGS_KEY,
-        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY,
-    ) is False
-    assert has_project_override(
-        updated,
-        constants.UI_INTELLIGENCE_SETTINGS_KEY,
-        constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY,
-    ) is True
-
-
-# --- auto_save tests ---
-
-
-def test_parse_auto_save_defaults_to_false() -> None:
-    snapshot = parse_editor_settings_snapshot({})
-    assert snapshot.auto_save is False
-
-
-def test_parse_auto_save_reads_explicit_true() -> None:
-    snapshot = parse_editor_settings_snapshot({"editor": {"auto_save": True}})
-    assert snapshot.auto_save is True
-
-
-def test_parse_auto_save_ignores_non_bool_value() -> None:
-    snapshot = parse_editor_settings_snapshot({"editor": {"auto_save": "yes"}})
-    assert snapshot.auto_save is False
-
-
-def test_merge_auto_save_round_trip() -> None:
-    for value in (True, False):
-        snapshot = EditorSettingsSnapshot(auto_save=value)
-        merged = merge_editor_settings_snapshot({}, snapshot)
-        assert merged["editor"]["auto_save"] is value
-        restored = parse_editor_settings_snapshot(merged)
-        assert restored.auto_save is value
-
-
-def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
-    grouped = parse_main_window_settings({"editor": {"auto_save": True}})
-    assert grouped.editor_preferences[-1] is True
-
-
-def test_parse_main_window_settings_includes_local_history_policy() -> None:
-    grouped = parse_main_window_settings(
-        {
-            "local_history": {
-                "max_checkpoints_per_file": 9,
-                "retention_days": 21,
-                "max_tracked_file_bytes": 8192,
-                "exclude_patterns": ["*.cache"],
-            }
-        }
-    )
-
-    policy = grouped.local_history_retention_policy
-    assert policy.max_checkpoints_per_file == 9
-    assert policy.retention_days == 21
-    assert policy.max_tracked_file_bytes == 8192
-    assert policy.excluded_glob_patterns == ("*.cache",)

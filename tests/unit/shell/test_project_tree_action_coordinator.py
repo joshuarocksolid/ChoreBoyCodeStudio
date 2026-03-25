@@ -16,12 +16,10 @@ pytestmark = pytest.mark.unit
 class _FakeWidget:
     released: bool = False
 
-    def set_breakpoints(self, breakpoints: set[int]) -> None:
-        _ = breakpoints
+    def set_breakpoints(self, _breakpoints: set[int]) -> None:
         return
 
-    def set_language_for_path(self, file_path: str) -> None:
-        _ = file_path
+    def set_language_for_path(self, _file_path: str) -> None:
         return
 
     def deleteLater(self) -> None:  # noqa: N802
@@ -32,20 +30,12 @@ class _FakeProjectTreeController:
     def __init__(self) -> None:
         self.close_calls: list[str] = []
         self.move_calls: list[tuple[str, str]] = []
-        self.deleted_records: list[str] = []
-        self.lineage_remaps: list[dict[str, str]] = []
 
     def close_deleted_editor_paths(self, deleted_path: str, **_kwargs) -> None:  # type: ignore[no-untyped-def]
         self.close_calls.append(deleted_path)
-        record_deleted_path = _kwargs.get("record_deleted_path")
-        if record_deleted_path is not None:
-            record_deleted_path(deleted_path)
 
     def apply_path_move_updates(self, source_path: str, destination_path: str, **_kwargs) -> None:  # type: ignore[no-untyped-def]
         self.move_calls.append((source_path, destination_path))
-        remap_file_lineage = _kwargs.get("remap_file_lineage")
-        if remap_file_lineage is not None:
-            remap_file_lineage({source_path: destination_path})
 
 
 def _coordinator(
@@ -67,9 +57,8 @@ def _coordinator(
         apply_breakpoints_to_widget=lambda _widget, _bps: None,
         update_widget_language=lambda _widget, _path: None,
         maybe_rewrite_imports=lambda _src, _dst: None,
+        prune_semantic_state=lambda: None,
         reload_project=lambda: reloaded.append(True),
-        record_deleted_path=fake_tree_controller.deleted_records.append,
-        remap_file_lineage=fake_tree_controller.lineage_remaps.append,
     )
     return coordinator, reloaded
 
@@ -86,7 +75,6 @@ def test_handle_rename_applies_path_move_updates_and_reloads(monkeypatch: pytest
 
     assert error is None
     assert tree_controller.move_calls == [("/tmp/project/old.py", "/tmp/project/new.py")]
-    assert tree_controller.lineage_remaps == [{"/tmp/project/old.py": "/tmp/project/new.py"}]
     assert reloaded == [True]
 
 
@@ -101,11 +89,9 @@ def test_handle_bulk_delete_collects_failures_and_still_reloads(monkeypatch: pyt
 
     monkeypatch.setattr("app.shell.project_tree_action_coordinator.delete_path", _delete)
 
-    failures, deleted_paths = coordinator.handle_bulk_delete(["/tmp/project/good.py", "/tmp/project/bad.py"])
+    failures = coordinator.handle_bulk_delete(["/tmp/project/good.py", "/tmp/project/bad.py"])
 
     assert tree_controller.close_calls == ["/tmp/project/good.py"]
-    assert tree_controller.deleted_records == ["/tmp/project/good.py"]
-    assert deleted_paths == ["/tmp/project/good.py"]
     assert failures == ["bad.py: permission denied"]
     assert reloaded == [True]
 
@@ -131,62 +117,3 @@ def test_handle_paste_cut_applies_moves_and_clears_clipboard(monkeypatch: pytest
         ("/tmp/project/a.py", "/tmp/project/dest/a.py"),
         ("/tmp/project/b.py", "/tmp/project/dest/b.py"),
     ]
-    assert tree_controller.lineage_remaps == [
-        {"/tmp/project/a.py": "/tmp/project/dest/a.py"},
-        {"/tmp/project/b.py": "/tmp/project/dest/b.py"},
-    ]
-
-
-def test_handle_new_file_rejects_path_separators() -> None:
-    tree_controller = _FakeProjectTreeController()
-    coordinator, reloaded = _coordinator(tree_controller)
-
-    error = coordinator.handle_new_file("/tmp/project", "../escape.py")
-
-    assert error == "File name cannot include path separators."
-    assert reloaded == []
-
-
-def test_handle_rename_rejects_path_separators() -> None:
-    tree_controller = _FakeProjectTreeController()
-    coordinator, reloaded = _coordinator(tree_controller)
-
-    error = coordinator.handle_rename("/tmp/project/old.py", "../new.py")
-
-    assert error == "New name cannot include path separators."
-    assert tree_controller.move_calls == []
-    assert reloaded == []
-
-
-def test_handle_drop_move_rejects_folder_move_into_itself(tmp_path) -> None:
-    tree_controller = _FakeProjectTreeController()
-    coordinator, reloaded = _coordinator(tree_controller)
-    source = tmp_path / "folder"
-    child = source / "child"
-    child.mkdir(parents=True)
-
-    error = coordinator.handle_drop_move(str(source), str(child))
-
-    assert error == "Cannot move a folder into itself."
-    assert tree_controller.move_calls == []
-    assert reloaded == []
-
-
-def test_handle_drop_move_returns_oserror_message(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    tree_controller = _FakeProjectTreeController()
-    coordinator, reloaded = _coordinator(tree_controller)
-    source = tmp_path / "project" / "a.py"
-    target_dir = tmp_path / "project" / "target"
-    target_dir.mkdir(parents=True)
-    source.write_text("print('x')\n", encoding="utf-8")
-
-    def _raise_oserror(_source: str, _destination: str) -> FileOperationResult:
-        raise OSError("permission denied")
-
-    monkeypatch.setattr("app.shell.project_tree_action_coordinator.move_path", _raise_oserror)
-
-    error = coordinator.handle_drop_move(str(source), str(target_dir))
-
-    assert error == "permission denied"
-    assert tree_controller.move_calls == []
-    assert reloaded == []

@@ -257,9 +257,8 @@ class SearchResultDelegate(QStyledItemDelegate):
 class SearchSidebarWidget(QWidget):
     """Sidebar panel for project-wide search and replace."""
 
-    preview_file_at_line: Any = Signal(str, int)
-    open_file_at_line: Any = Signal(str, int)
-    _apply_results_requested: Any = Signal()
+    open_file_at_line = Signal(str, int)
+    _apply_results_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -445,7 +444,7 @@ class SearchSidebarWidget(QWidget):
         self._results_tree.setIndentation(16)
         self._results_tree.setAlternatingRowColors(True)
         self._results_tree.itemActivated.connect(self._on_result_activated)
-        self._results_tree.itemClicked.connect(self._on_result_clicked)
+        self._results_tree.itemClicked.connect(self._on_result_activated)
         self._results_tree.itemDoubleClicked.connect(self._on_result_activated)
 
         self._delegate = SearchResultDelegate(self._results_tree)
@@ -632,12 +631,6 @@ class SearchSidebarWidget(QWidget):
         self._clear_btn.setVisible(False)
         self._no_results_label.setVisible(False)
         self._results_tree.setVisible(True)
-
-    def _on_result_clicked(self, item: QTreeWidgetItem, column: int = 0) -> None:
-        abs_path = item.data(0, ROLE_ABS_PATH)
-        line_number = item.data(0, ROLE_LINE_NUMBER)
-        if abs_path and line_number:
-            self.preview_file_at_line.emit(str(abs_path), int(line_number))
 
     def _on_result_activated(self, item: QTreeWidgetItem, column: int = 0) -> None:
         abs_path = item.data(0, ROLE_ABS_PATH)

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import ast
-import logging
 from dataclasses import replace
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-import sys
 from typing import Any, Mapping
 
 from app.core import constants
@@ -17,13 +15,7 @@ from app.intelligence.lint_profile import (
     LINT_SEVERITY_INFO,
     resolve_lint_rule_settings,
 )
-from app.intelligence.runtime_import_probe import (
-    is_runtime_module_importable,
-    probe_runtime_module_importability,
-)
-
-_logger = logging.getLogger(__name__)
-_pyflakes_import_warning_emitted = False
+from app.intelligence.runtime_import_probe import is_runtime_module_importable
 
 # Defensive fallback: well-known Python 3.9 stdlib top-level module names.
 # Used when the runtime probe has not yet completed or failed, so that
@@ -72,7 +64,6 @@ _STDLIB_FALLBACK: frozenset[str] = frozenset({
     "xml", "xmlrpc",
     "zipfile", "zipimport", "zlib", "zoneinfo",
 })
-_COMPILED_EXTENSION_SUFFIXES = (".so", ".pyd", ".dll", ".dylib")
 
 
 @dataclass(frozen=True)
@@ -82,18 +73,6 @@ class ImportDiagnostic:
     file_path: str
     line_number: int
     message: str
-
-
-@dataclass(frozen=True)
-class ImportExplanation:
-    """Structured explanation for an unresolved import."""
-
-    module_name: str
-    kind: str
-    summary: str
-    why_it_happened: str
-    next_steps: list[str]
-    evidence: dict[str, Any]
 
 
 class DiagnosticSeverity(str, Enum):
@@ -162,7 +141,6 @@ def analyze_python_file(
     source: str | None = None,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
-    selected_linter: str = constants.LINTER_PROVIDER_DEFAULT,
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[CodeDiagnostic]:
     """Run focused diagnostics for one Python file.
@@ -183,8 +161,7 @@ def analyze_python_file(
         syntax_tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
         col_start = (int(exc.offset) - 1) if exc.offset is not None else None
-        raw_end_offset = getattr(exc, "end_offset", None)
-        col_end = (int(raw_end_offset) - 1) if isinstance(raw_end_offset, int) else None
+        col_end = (int(exc.end_offset) - 1) if getattr(exc, "end_offset", None) is not None else None
         diagnostics.append(
             CodeDiagnostic(
                 code="PY100",
@@ -198,23 +175,19 @@ def analyze_python_file(
         )
         return diagnostics
 
-    provider = _normalize_linter_provider(selected_linter)
-    if provider == constants.LINTER_PROVIDER_PYFLAKES:
-        diagnostics.extend(_pyflakes_diagnostics(source, path))
-    else:
-        diagnostics.extend(_duplicate_definition_diagnostics(syntax_tree, path))
-        diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
-        diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
-        diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
-        if project_root:
-            diagnostics.extend(
-                _unresolved_import_diagnostics(
-                    Path(project_root).expanduser().resolve(), path, syntax_tree,
-                    known_runtime_modules=known_runtime_modules,
-                    allow_runtime_import_probe=allow_runtime_import_probe,
-                    lint_rule_overrides=lint_rule_overrides,
-                )
+    diagnostics.extend(_duplicate_definition_diagnostics(syntax_tree, path))
+    diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
+    diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
+    diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
+    if project_root:
+        diagnostics.extend(
+            _unresolved_import_diagnostics(
+                Path(project_root).expanduser().resolve(), path, syntax_tree,
+                known_runtime_modules=known_runtime_modules,
+                allow_runtime_import_probe=allow_runtime_import_probe,
+                lint_rule_overrides=lint_rule_overrides,
             )
+        )
     diagnostics = _apply_lint_rule_profile(diagnostics, lint_rule_overrides)
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
     return diagnostics
@@ -287,139 +260,6 @@ def _is_import_resolvable(
     if allow_runtime_import_probe and is_runtime_module_importable(top_level):
         return True
     return False
-
-
-def explain_unresolved_import(
-    project_root: str,
-    module_name: str,
-    *,
-    known_runtime_modules: frozenset[str] | None = None,
-    allow_runtime_import_probe: bool = False,
-) -> ImportExplanation:
-    """Classify an unresolved import into a user-facing explanation."""
-    root = Path(project_root).expanduser().resolve()
-    vendor_root = root / "vendor"
-    top_level = module_name.split(".")[0].strip()
-    probe_result = None
-    if allow_runtime_import_probe and top_level:
-        probe_result = probe_runtime_module_importability(top_level)
-
-    project_prefix_exists = _module_path_prefix_exists(root, module_name)
-    vendor_prefix_exists = _module_path_prefix_exists(vendor_root, module_name)
-    compiled_extension_candidate = _has_compiled_extension_candidate(root, top_level) or _has_compiled_extension_candidate(
-        vendor_root,
-        top_level,
-    )
-    evidence = {
-        "module_name": module_name,
-        "top_level": top_level,
-        "project_prefix_exists": project_prefix_exists,
-        "vendor_prefix_exists": vendor_prefix_exists,
-        "vendor_dir_exists": vendor_root.exists(),
-        "compiled_extension_candidate": compiled_extension_candidate,
-    }
-    if probe_result is not None:
-        evidence["runtime_probe_reason"] = probe_result.failure_reason
-        evidence["runtime_probe_detail"] = probe_result.detail
-        evidence["runtime_path"] = probe_result.runtime_path
-
-    if project_prefix_exists:
-        return ImportExplanation(
-            module_name=module_name,
-            kind="project_module_missing",
-            summary=f"Project module path is incomplete or missing: {module_name}",
-            why_it_happened=(
-                "The import points at code that should live inside the project tree, but the full module path cannot be resolved from the current files."
-            ),
-            next_steps=[
-                "Check the module/package file names inside the project.",
-                "Add missing `__init__.py` files where package imports are expected.",
-                "Update the import path if the module was moved or renamed.",
-            ],
-            evidence=evidence,
-        )
-
-    if compiled_extension_candidate:
-        return ImportExplanation(
-            module_name=module_name,
-            kind="compiled_extension_unknown",
-            summary=f"Compiled dependency may not be compatible with the runtime: {module_name}",
-            why_it_happened=(
-                "The import name matches a compiled extension candidate, and compiled modules can fail on ChoreBoy when the Python/AppRun build does not match."
-            ),
-            next_steps=[
-                "Prefer a pure-Python dependency when possible.",
-                "If this must be compiled, verify it targets the same runtime and Python ABI as the shipped AppRun environment.",
-                "Re-run import analysis after replacing or rebuilding the dependency.",
-            ],
-            evidence=evidence,
-        )
-
-    if (
-        probe_result is not None
-        and not probe_result.is_importable
-        and probe_result.failure_reason == "import_error"
-        and _looks_like_runtime_specific_module(top_level)
-    ):
-        return ImportExplanation(
-            module_name=module_name,
-            kind="runtime_module_unavailable",
-            summary=f"Module is not available in the shipped runtime: {module_name}",
-            why_it_happened=(
-                "The editor checked the top-level import in the target runtime process and it did not import successfully there."
-            ),
-            next_steps=[
-                "Do not assume this module exists just because it imports on another machine or Python install.",
-                "Vendor the dependency under `vendor/` if the workflow allows it.",
-                "Or change the code to use modules known to exist in the AppRun runtime.",
-            ],
-            evidence=evidence,
-        )
-
-    return ImportExplanation(
-        module_name=module_name,
-        kind="vendored_dependency_missing",
-        summary=f"Dependency is not present in the project or vendored runtime: {module_name}",
-        why_it_happened=(
-            "The import is not resolved from project files, vendored dependencies, or known runtime modules."
-        ),
-        next_steps=[
-            "Vendor the dependency under `vendor/` if it is a third-party package.",
-            "If it should be part of the project, add the missing module/package files under the project root.",
-            "Re-run import analysis after updating the project or vendored dependency tree.",
-        ],
-        evidence=evidence,
-    )
-
-
-def _module_path_prefix_exists(base: Path, module_name: str) -> bool:
-    if not base.exists():
-        return False
-    probe_base = base
-    for part in [segment for segment in module_name.split(".") if segment.strip()]:
-        if (probe_base / f"{part}.py").exists() or (probe_base / part).exists():
-            return True
-        probe_base = probe_base / part
-    return False
-
-
-def _has_compiled_extension_candidate(base: Path, top_level: str) -> bool:
-    if not top_level or not base.exists():
-        return False
-    for suffix in _COMPILED_EXTENSION_SUFFIXES:
-        if any(base.glob(f"{top_level}*{suffix}")):
-            return True
-        if any((base / top_level).glob(f"*{suffix}")):
-            return True
-    return False
-
-
-def _looks_like_runtime_specific_module(top_level: str) -> bool:
-    if not top_level:
-        return False
-    if top_level[0].isupper():
-        return True
-    return top_level.startswith("PySide")
 
 
 def _unresolved_import_diagnostics(
@@ -626,92 +466,3 @@ def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
     if value == LINT_SEVERITY_INFO:
         return DiagnosticSeverity.INFO
     return DiagnosticSeverity.WARNING
-
-
-def _normalize_linter_provider(selected_linter: str) -> str:
-    if selected_linter == constants.LINTER_PROVIDER_PYFLAKES:
-        return constants.LINTER_PROVIDER_PYFLAKES
-    return constants.LINTER_PROVIDER_DEFAULT
-
-
-def _pyflakes_diagnostics(source: str, file_path: Path) -> list[CodeDiagnostic]:
-    checker = _create_pyflakes_checker(source, file_path)
-    if checker is None:
-        return []
-    diagnostics: list[CodeDiagnostic] = []
-    for message in getattr(checker, "messages", []):
-        diagnostic = _diagnostic_from_pyflakes_message(message, file_path)
-        if diagnostic is not None:
-            diagnostics.append(diagnostic)
-    return diagnostics
-
-
-def _create_pyflakes_checker(source: str, file_path: Path) -> Any | None:
-    global _pyflakes_import_warning_emitted
-    _ensure_vendor_path_on_sys_path()
-    try:
-        from pyflakes import checker as pyflakes_checker  # type: ignore[import-not-found]
-    except ImportError:
-        if not _pyflakes_import_warning_emitted:
-            _pyflakes_import_warning_emitted = True
-            _logger.warning(
-                "Pyflakes linter selected but pyflakes is not importable "
-                "(add vendor/pyflakes per docs or install pyflakes)."
-            )
-        return None
-    try:
-        syntax_tree = ast.parse(source, filename=str(file_path))
-    except SyntaxError:
-        return None
-    return pyflakes_checker.Checker(syntax_tree, str(file_path))
-
-
-def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiagnostic | None:
-    message_type = type(message).__name__
-    code = "PY399"
-    severity = DiagnosticSeverity.WARNING
-    if message_type == "UndefinedName":
-        code = "PY301"
-        severity = DiagnosticSeverity.ERROR
-    elif message_type == "UndefinedLocal":
-        code = "PY302"
-        severity = DiagnosticSeverity.ERROR
-    elif message_type == "RedefinedWhileUnused":
-        code = "PY303"
-    elif message_type == "ImportShadowedByLoopVar":
-        code = "PY304"
-    elif message_type == "ImportStarUsed":
-        code = "PY305"
-    elif message_type == "UnusedImport":
-        code = "PY220"
-
-    line_number = int(getattr(message, "lineno", 1))
-    col_start_value = getattr(message, "col", None)
-    col_start = int(col_start_value) if col_start_value is not None else None
-    col_end = None
-    if col_start is not None:
-        message_args = getattr(message, "message_args", ())
-        if message_args and isinstance(message_args[0], str):
-            col_end = col_start + len(message_args[0])
-        else:
-            col_end = col_start + 1
-    raw_text = str(message)
-    text = raw_text.strip()
-    if not text:
-        return None
-    return CodeDiagnostic(
-        code=code,
-        severity=severity,
-        file_path=str(file_path),
-        line_number=max(1, line_number),
-        message=text,
-        col_start=col_start,
-        col_end=col_end,
-    )
-
-
-def _ensure_vendor_path_on_sys_path() -> None:
-    vendor_dir = Path(__file__).resolve().parents[2] / "vendor"
-    vendor_text = str(vendor_dir)
-    if vendor_text not in sys.path:
-        sys.path.insert(0, vendor_text)

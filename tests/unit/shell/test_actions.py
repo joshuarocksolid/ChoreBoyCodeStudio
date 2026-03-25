@@ -12,8 +12,6 @@ def test_map_run_action_state_without_project_disables_run_and_stop() -> None:
     state = map_run_action_state(has_project=False, is_running=False)
     assert state.run_enabled is False
     assert state.debug_enabled is False
-    assert state.run_project_enabled is False
-    assert state.debug_project_enabled is False
     assert state.stop_enabled is False
     assert state.pause_enabled is False
     assert state.python_console_enabled is True
@@ -24,8 +22,6 @@ def test_map_run_action_state_while_running_disables_run_enables_stop() -> None:
     state = map_run_action_state(has_project=True, is_running=True)
     assert state.run_enabled is False
     assert state.debug_enabled is False
-    assert state.run_project_enabled is False
-    assert state.debug_project_enabled is False
     assert state.stop_enabled is True
     assert state.pause_enabled is False
     assert state.step_over_enabled is False
@@ -36,8 +32,6 @@ def test_map_run_action_state_running_without_project_allows_stop_only() -> None
     state = map_run_action_state(has_project=False, is_running=True)
     assert state.run_enabled is False
     assert state.debug_enabled is False
-    assert state.run_project_enabled is False
-    assert state.debug_project_enabled is False
     assert state.stop_enabled is True
     assert state.python_console_enabled is True
 
@@ -47,20 +41,9 @@ def test_map_run_action_state_idle_project_enables_run_only() -> None:
     state = map_run_action_state(has_project=True, is_running=False)
     assert state.run_enabled is True
     assert state.debug_enabled is True
-    assert state.run_project_enabled is True
-    assert state.debug_project_enabled is True
     assert state.stop_enabled is False
     assert state.pause_enabled is False
     assert state.python_console_enabled is True
-
-
-def test_map_run_action_state_without_project_enables_active_file_run_commands() -> None:
-    state = map_run_action_state(has_project=False, has_active_file=True, is_running=False)
-    assert state.run_enabled is True
-    assert state.debug_enabled is True
-    assert state.run_project_enabled is False
-    assert state.debug_project_enabled is False
-    assert state.package_enabled is False
 
 
 def test_map_run_action_state_paused_debug_enables_step_controls() -> None:

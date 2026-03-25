@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import pytest
 
-from app.persistence.atomic_write import atomic_write_text
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
 
 pytestmark = pytest.mark.unit
@@ -81,15 +79,17 @@ def test_apply_rename_plan_rolls_back_on_write_failure(tmp_path: Path, monkeypat
 
     original_helper = helper.read_text(encoding="utf-8")
     original_main = main.read_text(encoding="utf-8")
+    original_write_text = Path.write_text
+    failing_target = str(main.resolve())
     call_count = {"count": 0}
 
-    def flaky_atomic_write(path: Union[Path, str], data: str, *, encoding: str = "utf-8") -> Path:
+    def flaky_write_text(self: Path, data: str, *args, **kwargs):  # type: ignore[no-untyped-def]
         call_count["count"] += 1
-        if call_count["count"] == 2:
+        if str(self.resolve()) == failing_target and call_count["count"] == 2:
             raise OSError("simulated write failure")
-        return atomic_write_text(path, data, encoding=encoding)
+        return original_write_text(self, data, *args, **kwargs)
 
-    monkeypatch.setattr("app.intelligence.refactor_service.atomic_write_text", flaky_atomic_write)
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
 
     with pytest.raises(OSError):
         apply_rename_plan(plan)

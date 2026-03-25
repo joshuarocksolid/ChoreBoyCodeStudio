@@ -45,8 +45,7 @@ def test_open_plain_python_folder_auto_initializes_manifest(tmp_path: Path) -> N
     assert payload["template"] == "imported_external"
     assert payload["default_entry"] == "run.py"
     assert loaded_project.metadata.default_entry == "run.py"
-    assert any(entry.relative_path == "cbcs" for entry in loaded_project.entries)
-    assert any(entry.relative_path == "cbcs/project.json" for entry in loaded_project.entries)
+    assert all(not entry.relative_path.startswith("cbcs") for entry in loaded_project.entries)
 
 
 def test_open_plain_python_folder_infers_entry_from_pyproject_scripts(tmp_path: Path) -> None:
@@ -65,41 +64,6 @@ def test_open_plain_python_folder_infers_entry_from_pyproject_scripts(tmp_path: 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "src/demo_pkg/cli.py"
-
-
-def test_open_plain_python_folder_ignores_package_callable_pyproject_target_when_fallback_exists(tmp_path: Path) -> None:
-    """Package-callable script targets should fall back to a runnable file instead of __init__.py."""
-    project_root = tmp_path / "pyproject_package_target_project"
-    (project_root / "src" / "demo_pkg").mkdir(parents=True)
-    (project_root / "src" / "demo_pkg" / "__init__.py").write_text(
-        "def main():\n    print('PACKAGE_MAIN')\n",
-        encoding="utf-8",
-    )
-    (project_root / "run.py").write_text("print('RUN_FALLBACK_OK')\n", encoding="utf-8")
-    (project_root / "pyproject.toml").write_text(
-        "[project]\n"
-        "name = \"demo\"\n"
-        "[project.scripts]\n"
-        "demo = \"demo_pkg:main\"\n",
-        encoding="utf-8",
-    )
-
-    loaded_project = open_project(project_root)
-
-    assert loaded_project.metadata.default_entry == "run.py"
-
-    events: list[ProcessEvent] = []
-    run_service = RunService(
-        on_event=events.append,
-        runtime_executable=sys.executable,
-        runner_boot_path=_runner_boot_path(),
-    )
-    run_service.start_run(loaded_project)
-
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
-    assert "RUN_FALLBACK_OK" in combined_output
-    assert "PACKAGE_MAIN" not in combined_output
 
 
 def test_auto_initialized_project_runs_successfully(tmp_path: Path) -> None:

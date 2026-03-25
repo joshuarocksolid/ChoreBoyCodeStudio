@@ -7,8 +7,6 @@ from typing import Mapping
 
 from PySide2.QtGui import QColor, QPalette
 
-from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
-
 
 @dataclass(frozen=True)
 class ShellThemeTokens:
@@ -40,10 +38,7 @@ class ShellThemeTokens:
     diag_warning_color: str = ""
     diag_info_color: str = ""
     syntax_keyword: str = ""
-    syntax_keyword_control: str = ""
-    syntax_keyword_import: str = ""
     syntax_builtin: str = ""
-    syntax_escape: str = ""
     syntax_string: str = ""
     syntax_comment: str = ""
     syntax_number: str = ""
@@ -57,7 +52,6 @@ class ShellThemeTokens:
     syntax_json_literal: str = ""
     syntax_markdown_heading: str = ""
     syntax_markdown_emphasis: str = ""
-    syntax_markdown_strong: str = ""
     syntax_markdown_code: str = ""
     syntax_semantic_function: str = ""
     syntax_semantic_method: str = ""
@@ -67,8 +61,6 @@ class ShellThemeTokens:
     syntax_semantic_variable: str = ""
     syntax_semantic_property: str = ""
     syntax_semantic_constant: str = ""
-    tab_close_icon_path: str = ""
-    tab_close_icon_hover_path: str = ""
 
 
 def tokens_from_palette(
@@ -89,12 +81,6 @@ def tokens_from_palette(
     else:
         window_color = palette.color(QPalette.Window)
         is_dark = prefer_dark or window_color.lightness() < 128
-    sp = DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE
-    syntax_kwargs = {
-        field_name: sp[token_key]
-        for token_key, field_name in _SYNTAX_OVERRIDE_FIELD_MAP.items()
-        if token_key in sp
-    }
     if is_dark:
         return ShellThemeTokens(
             window_bg="#1F2428",
@@ -124,7 +110,30 @@ def tokens_from_palette(
             diag_error_color="#FF6B6B",
             diag_warning_color="#E5A100",
             diag_info_color="#5B8CFF",
-            **syntax_kwargs,
+            syntax_keyword="#7EA8FF",
+            syntax_builtin="#3CC68A",
+            syntax_string="#FF8C5A",
+            syntax_comment="#8B949E",
+            syntax_number="#B18CFF",
+            syntax_function="#79C0FF",
+            syntax_class="#A5D6FF",
+            syntax_decorator="#D2A8FF",
+            syntax_operator="#C9D1D9",
+            syntax_punctuation="#C9D1D9",
+            syntax_parameter="#56D364",
+            syntax_json_key="#6CB6FF",
+            syntax_json_literal="#56D364",
+            syntax_markdown_heading="#3BC9DB",
+            syntax_markdown_emphasis="#B197FC",
+            syntax_markdown_code="#FF8C5A",
+            syntax_semantic_function="#79C0FF",
+            syntax_semantic_method="#8CC8FF",
+            syntax_semantic_class="#A5D6FF",
+            syntax_semantic_parameter="#56D364",
+            syntax_semantic_import="#D2A8FF",
+            syntax_semantic_variable="#7EE787",
+            syntax_semantic_property="#5CC8FF",
+            syntax_semantic_constant="#FFD580",
         )
     return ShellThemeTokens(
         window_bg="#F8F9FA",
@@ -154,7 +163,30 @@ def tokens_from_palette(
         diag_error_color="#E03131",
         diag_warning_color="#D97706",
         diag_info_color="#3366FF",
-        **syntax_kwargs,
+        syntax_keyword="#5B63FF",
+        syntax_builtin="#0C8C64",
+        syntax_string="#C73E0A",
+        syntax_comment="#6C757D",
+        syntax_number="#6741D9",
+        syntax_function="#1C7ED6",
+        syntax_class="#1864AB",
+        syntax_decorator="#9C36B5",
+        syntax_operator="#495057",
+        syntax_punctuation="#495057",
+        syntax_parameter="#2B8A3E",
+        syntax_json_key="#1971C2",
+        syntax_json_literal="#2B8A3E",
+        syntax_markdown_heading="#0B7285",
+        syntax_markdown_emphasis="#5F3DC4",
+        syntax_markdown_code="#C73E0A",
+        syntax_semantic_function="#1C7ED6",
+        syntax_semantic_method="#1971C2",
+        syntax_semantic_class="#1864AB",
+        syntax_semantic_parameter="#2B8A3E",
+        syntax_semantic_import="#9C36B5",
+        syntax_semantic_variable="#2F9E44",
+        syntax_semantic_property="#1A73E8",
+        syntax_semantic_constant="#C97A00",
     )
 
 
@@ -164,10 +196,7 @@ def to_qcolor(hex_color: str) -> QColor:
 
 _SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
     "keyword": "syntax_keyword",
-    "keyword_control": "syntax_keyword_control",
-    "keyword_import": "syntax_keyword_import",
     "builtin": "syntax_builtin",
-    "escape": "syntax_escape",
     "string": "syntax_string",
     "comment": "syntax_comment",
     "number": "syntax_number",
@@ -181,7 +210,6 @@ _SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
     "json_literal": "syntax_json_literal",
     "markdown_heading": "syntax_markdown_heading",
     "markdown_emphasis": "syntax_markdown_emphasis",
-    "markdown_strong": "syntax_markdown_strong",
     "markdown_code": "syntax_markdown_code",
     "semantic_function": "syntax_semantic_function",
     "semantic_method": "syntax_semantic_method",

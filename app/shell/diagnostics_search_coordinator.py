@@ -22,7 +22,7 @@ class DiagnosticsOrchestrator:
         get_pending_realtime_file_path: Callable[[], str | None],
         start_realtime_timer: Callable[[], None],
         get_active_tab_file_path: Callable[[], str | None],
-        render_lint_for_file: Callable[..., None],
+        render_lint_for_file: Callable[[str, str], None],
         get_open_editor_paths: Callable[[], list[str]],
         render_merged_problems_panel: Callable[[], None],
         set_known_runtime_modules: Callable[[frozenset[str]], None],

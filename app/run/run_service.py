@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import os
 from pathlib import Path
+import sys
 import uuid
 from typing import Callable
 
@@ -13,16 +15,15 @@ from app.bootstrap.paths import (
     ensure_directory,
     project_logs_dir,
     project_runs_dir,
+    resolve_app_root,
     resolve_global_state_root,
 )
 from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.core.models import LoadedProject
-from app.debug.debug_breakpoints import build_breakpoint
-from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
-from app.debug.debug_transport import DebugTransportServer
-from app.run.host_process_manager import HostProcessManager
+from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.runner_command_builder import build_runner_command
 from app.run.run_manifest import RunManifest, save_run_manifest
 
 
@@ -51,20 +52,17 @@ class RunService:
         state_root: PathInput | None = None,
     ) -> None:
         self._on_event = on_event
+        self._runtime_executable = runtime_executable
+        self._runner_boot_path = str((Path(runner_boot_path).expanduser().resolve()) if runner_boot_path else resolve_app_root() / "run_runner.py")
         self._now_factory = now_factory or datetime.now
         self._state_root = state_root
-        self._host_manager = HostProcessManager(
-            on_event=self._forward_event,
-            runtime_executable=runtime_executable,
-            runner_boot_path=runner_boot_path,
-        )
+        self._supervisor = ProcessSupervisor(on_event=self._forward_event)
         self._current_session: RunSession | None = None
         self._is_debug_paused = False
-        self._debug_transport_server: DebugTransportServer | None = None
 
     @property
     def supervisor(self) -> ProcessSupervisor:
-        return self._host_manager.supervisor
+        return self._supervisor
 
     @property
     def current_session(self) -> RunSession | None:
@@ -87,9 +85,7 @@ class RunService:
         argv: list[str] | None = None,
         working_directory: str | None = None,
         env_overrides: dict[str, str] | None = None,
-        breakpoints: list[DebugBreakpoint] | list[dict[str, object]] | None = None,
-        debug_exception_policy: DebugExceptionPolicy | None = None,
-        source_maps: list[DebugSourceMap] | None = None,
+        breakpoints: list[dict[str, int | str]] | None = None,
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
         run_id = generate_run_id(now=self._now_factory())
@@ -100,32 +96,18 @@ class RunService:
         )
 
         if loaded_project is None:
-            if run_mode == constants.RUN_MODE_PYTHON_REPL:
-                resolved_project_root = build_repl_context_root(state_root=self._state_root)
-                entry = entry_file or "__repl__.py"
-                arguments = [] if argv is None else list(argv)
-                home_directory = Path.home().expanduser().resolve()
-                configured_working_directory = working_directory or str(home_directory)
-                working_directory_candidate = Path(configured_working_directory).expanduser()
-                if working_directory_candidate.is_absolute():
-                    resolved_working_directory = working_directory_candidate.resolve()
-                else:
-                    resolved_working_directory = (home_directory / working_directory_candidate).resolve()
+            if run_mode != constants.RUN_MODE_PYTHON_REPL:
+                raise RunLifecycleError("Open a project before running code.")
+            resolved_project_root = build_repl_context_root(state_root=self._state_root)
+            entry = entry_file or "__repl__.py"
+            arguments = [] if argv is None else list(argv)
+            home_directory = Path.home().expanduser().resolve()
+            configured_working_directory = working_directory or str(home_directory)
+            working_directory_candidate = Path(configured_working_directory).expanduser()
+            if working_directory_candidate.is_absolute():
+                resolved_working_directory = working_directory_candidate.resolve()
             else:
-                if entry_file is None:
-                    raise RunLifecycleError("Provide a file entry before running without a project.")
-                resolved_entry = Path(entry_file).expanduser().resolve()
-                if not resolved_entry.exists() or not resolved_entry.is_file():
-                    raise RunLifecycleError(f"Entry file not found: {resolved_entry}")
-                resolved_project_root = resolved_entry.parent
-                entry = str(resolved_entry)
-                arguments = [] if argv is None else list(argv)
-                configured_working_directory = working_directory or str(resolved_entry.parent)
-                working_directory_candidate = Path(configured_working_directory).expanduser()
-                if working_directory_candidate.is_absolute():
-                    resolved_working_directory = working_directory_candidate.resolve()
-                else:
-                    resolved_working_directory = (resolved_entry.parent / working_directory_candidate).resolve()
+                resolved_working_directory = (home_directory / working_directory_candidate).resolve()
             manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
             log_path = build_repl_log_path(run_id, state_root=self._state_root)
             merged_env_overrides = {} if env_overrides is None else dict(env_overrides)
@@ -143,17 +125,7 @@ class RunService:
                 merged_env_overrides.update(env_overrides)
             launch_cwd = str(resolved_project_root)
 
-        normalized_breakpoints = self._normalize_breakpoints(breakpoints)
-        normalized_exception_policy = debug_exception_policy or DebugExceptionPolicy()
-        normalized_source_maps = [] if source_maps is None else list(source_maps)
-        debug_transport = None
-        if run_mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._close_debug_transport_server()
-            self._debug_transport_server = DebugTransportServer(
-                on_message=self._forward_debug_message,
-                on_error=self._forward_debug_transport_error,
-            )
-            debug_transport = self._debug_transport_server.start()
+        normalized_breakpoints = [] if breakpoints is None else list(breakpoints)
         ensure_directory(Path(manifest_path).parent)
         ensure_directory(Path(log_path).parent)
 
@@ -170,20 +142,11 @@ class RunService:
             env=merged_env_overrides,
             timestamp=timestamp,
             breakpoints=normalized_breakpoints,
-            debug_transport=debug_transport,
-            debug_exception_policy=normalized_exception_policy,
-            source_maps=normalized_source_maps,
         )
         save_run_manifest(manifest_path, manifest)
 
-        try:
-            self._host_manager.start_manifest(
-                manifest_path=str(manifest_path),
-                cwd=launch_cwd,
-            )
-        except Exception:
-            self._close_debug_transport_server()
-            raise
+        command = self._build_runner_command(str(manifest_path))
+        self._supervisor.start(command, cwd=launch_cwd, env=os.environ.copy())
         self._current_session = RunSession(
             run_id=run_id,
             manifest_path=str(manifest_path),
@@ -197,100 +160,38 @@ class RunService:
 
     def stop_run(self) -> int | None:
         """Stop active run process if running."""
-        return self._host_manager.stop()
+        return self._supervisor.stop()
 
     def pause_run(self) -> bool:
         """Interrupt active run process to enter paused/debug interaction."""
-        if self.is_debug_mode:
-            self.send_debug_command("pause")
-            return True
-        return self._host_manager.pause()
+        return self._supervisor.pause()
 
     def send_input(self, text: str) -> None:
         """Send stdin input to active runner process."""
-        self._host_manager.send_input(text)
+        self._supervisor.send_input(text)
 
-    def send_debug_command(self, command_name: str, arguments: dict[str, object] | None = None) -> str:
-        """Send one structured debug command over the dedicated transport."""
-
-        if not self.is_debug_mode:
-            raise RunLifecycleError("No active debug session is running.")
-        if self._debug_transport_server is None:
-            raise RunLifecycleError("Debug transport is not available.")
-        try:
-            return self._debug_transport_server.send_command(command_name, arguments)
-        except Exception as exc:
-            raise RunLifecycleError("Failed to send debug command: %s" % (exc,)) from exc
+    def _build_runner_command(self, manifest_path: str) -> list[str]:
+        runtime_executable = resolve_runtime_executable(self._runtime_executable)
+        return build_runner_command(
+            runtime_executable=runtime_executable,
+            runner_boot_path=self._runner_boot_path,
+            manifest_path=manifest_path,
+        )
 
     def _forward_event(self, event: ProcessEvent) -> None:
+        if event.event_type == "output" and event.text:
+            parsed_event = parse_debug_output_line(event.text)
+            if parsed_event is not None:
+                if parsed_event.event_type == "paused":
+                    self._is_debug_paused = True
+                elif parsed_event.event_type == "running":
+                    self._is_debug_paused = False
         if event.event_type == "exit":
             self._current_session = None
             self._is_debug_paused = False
-            self._close_debug_transport_server()
         if self._on_event is None:
             return
         self._on_event(event)
-
-    def _forward_debug_message(self, message: dict[str, object]) -> None:
-        kind = str(message.get("kind", "")).strip()
-        if kind == "event":
-            event_name = str(message.get("event", "")).strip()
-            if event_name == "stopped":
-                self._is_debug_paused = True
-            elif event_name in {"continued", "session_ready", "session_ended"}:
-                self._is_debug_paused = False
-        if self._on_event is None:
-            return
-        self._on_event(ProcessEvent(event_type="debug", payload=dict(message)))
-
-    def _forward_debug_transport_error(self, message: str) -> None:
-        self._is_debug_paused = False
-        if self._on_event is not None:
-            self._on_event(
-                ProcessEvent(
-                    event_type="debug",
-                    payload={
-                        "kind": "event",
-                        "event": "session_ended",
-                        "body": {"message": str(message)},
-                    },
-                )
-            )
-            self._on_event(ProcessEvent(event_type="output", stream="stderr", text="[debug] %s\n" % (message,)))
-
-    def _close_debug_transport_server(self) -> None:
-        transport_server = self._debug_transport_server
-        self._debug_transport_server = None
-        if transport_server is not None:
-            transport_server.close()
-
-    @staticmethod
-    def _normalize_breakpoints(
-        raw_breakpoints: list[DebugBreakpoint] | list[dict[str, object]] | None,
-    ) -> list[DebugBreakpoint]:
-        if raw_breakpoints is None:
-            return []
-        normalized: list[DebugBreakpoint] = []
-        for entry in raw_breakpoints:
-            if isinstance(entry, DebugBreakpoint):
-                normalized.append(entry)
-                continue
-            file_path = entry.get("file_path")
-            line_number = entry.get("line_number")
-            hit_condition = entry.get("hit_condition")
-            if not isinstance(file_path, str) or not isinstance(line_number, int):
-                continue
-            normalized.append(
-                build_breakpoint(
-                    file_path=file_path,
-                    line_number=line_number,
-                    breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
-                    enabled=bool(entry.get("enabled", True)),
-                    condition=str(entry.get("condition", "")).strip(),
-                    hit_condition=int(hit_condition) if isinstance(hit_condition, int) else None,
-                )
-            )
-        return normalized
 
 
 def generate_run_id(*, now: datetime | None = None) -> str:
@@ -327,3 +228,14 @@ def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> 
     """Build projectless REPL log path under global state."""
     logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
     return logs_directory / f"run_{run_id}.log"
+
+
+def resolve_runtime_executable(configured_runtime: str | None) -> str:
+    """Resolve runtime executable path used to spawn runner process."""
+    if configured_runtime:
+        return str(Path(configured_runtime).expanduser().resolve())
+
+    default_runtime = Path(constants.APP_RUN_PATH)
+    if default_runtime.exists():
+        return str(default_runtime.resolve())
+    return sys.executable

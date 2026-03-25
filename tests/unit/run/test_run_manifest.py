@@ -8,7 +8,6 @@ import pytest
 
 from app.core import constants
 from app.core.errors import RunManifestValidationError
-from app.debug.debug_breakpoints import build_breakpoint
 from app.run.run_manifest import RunManifest, load_run_manifest, parse_run_manifest, save_run_manifest
 
 pytestmark = pytest.mark.unit
@@ -27,12 +26,7 @@ def test_run_manifest_round_trip_save_and_load(tmp_path: Path) -> None:
         argv=["--foo", "bar"],
         env={"ENV_A": "1"},
         timestamp="2026-03-01T01:01:01",
-        breakpoints=[
-            build_breakpoint(
-                file_path=str((tmp_path / "project" / "run.py").resolve()),
-                line_number=3,
-            )
-        ],
+        breakpoints=[{"file_path": str((tmp_path / "project" / "run.py").resolve()), "line_number": 3}],
     )
     manifest_path = tmp_path / "manifest.json"
     save_run_manifest(manifest_path, manifest)

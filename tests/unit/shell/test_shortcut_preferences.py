@@ -9,7 +9,6 @@ from app.shell.shortcut_preferences import (
     close_tab_shortcut_id,
     default_shortcut_map,
     find_shortcut_conflicts,
-    keep_preview_open_shortcut_id,
     parse_shortcut_overrides,
 )
 
@@ -18,17 +17,26 @@ pytestmark = pytest.mark.unit
 
 def test_default_shortcut_map_contains_known_command_ids() -> None:
     defaults = default_shortcut_map()
+    assert defaults["designer.file.new_form"] == "Ctrl+Shift+N"
+    assert defaults["designer.layout.horizontal"] == "Ctrl+1"
+    assert defaults["designer.layout.vertical"] == "Ctrl+2"
+    assert defaults["designer.layout.grid"] == "Ctrl+3"
+    assert defaults["designer.layout.break"] == "Ctrl+0"
+    assert defaults["designer.form.preview"] == "Ctrl+R"
+    assert defaults["designer.form.check_compat"] == "Ctrl+Shift+R"
+    assert defaults["designer.form.add_resource"] == ""
+    assert defaults["designer.form.promote_widget"] == ""
+    assert defaults["designer.form.format_ui_xml"] == "Ctrl+Alt+Shift+F"
+    assert defaults["designer.form.save_component"] == ""
+    assert defaults["designer.form.insert_component"] == ""
+    assert defaults["designer.form.duplicate_selection"] == "Ctrl+D"
+    assert defaults["designer.mode.widget"] == "F3"
+    assert defaults["designer.mode.signals_slots"] == "F4"
+    assert defaults["designer.mode.buddy"] == "F5"
+    assert defaults["designer.mode.tab_order"] == "F6"
     assert defaults["shell.action.run.run"] == "F5"
-    assert defaults["shell.action.run.debug"] == "Ctrl+F5"
-    assert defaults["shell.action.run.runProject"] == "Shift+F5"
-    assert defaults["shell.action.run.debugProject"] == "Ctrl+Shift+F5"
-    assert defaults["shell.action.run.stop"] == "Shift+F2"
-    assert defaults["shell.action.run.restart"] == "Ctrl+Shift+F2"
-    assert defaults["shell.action.edit.hoverInfo"] == "Ctrl+Shift+I"
-    assert defaults["shell.action.file.newWindow"] == "Ctrl+Shift+N"
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
-    assert defaults[keep_preview_open_shortcut_id()] == "Ctrl+K, Enter"
 
 
 def test_parse_shortcut_overrides_accepts_known_ids_and_discards_unknowns() -> None:

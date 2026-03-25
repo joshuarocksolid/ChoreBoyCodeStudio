@@ -72,19 +72,6 @@ def test_sqlite_symbol_index_file_fingerprints_round_trip(tmp_path: Path) -> Non
     assert file_a not in index.lookup_file_fingerprints(project_root)
 
 
-def test_sqlite_symbol_index_lists_indexed_python_files(tmp_path: Path) -> None:
-    db_path = tmp_path / "state" / "index.sqlite3"
-    index = SQLiteSymbolIndex(str(db_path))
-    project_root = str((tmp_path / "project").resolve())
-    file_a = "/tmp/project/a.py"
-    file_b = "/tmp/project/b.py"
-    readme = "/tmp/project/README.md"
-
-    index.upsert_file_fingerprints(project_root, {file_a: (10, 100), file_b: (20, 200), readme: (30, 300)})
-
-    assert index.list_indexed_python_files(project_root) == [file_a, file_b]
-
-
 def test_sqlite_symbol_index_search_by_prefix_is_case_insensitive(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "index.sqlite3"
     index = SQLiteSymbolIndex(str(db_path))

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
-from PySide2.QtCore import QUrl, Qt, Signal
-from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from PySide2.QtCore import Qt
+from PySide2.QtWidgets import QAbstractItemView, QTreeWidget
 
 
 class ProjectTreeWidget(QTreeWidget):
     """QTreeWidget extension that delegates drag/drop file moves to callback."""
-
-    deleteRequested: Any = Signal()
 
     def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
@@ -26,26 +23,8 @@ class ProjectTreeWidget(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            self.deleteRequested.emit()
-            return
-        super().keyPressEvent(event)
-
     def set_drop_callback(self, callback: Callable[[str, str], bool] | None) -> None:
         self._drop_callback = callback
-
-    def mimeData(self, items: list[QTreeWidgetItem]) -> "QMimeData":  # type: ignore[override]  # noqa: N802
-        """Include ``file://`` URLs so other widgets (e.g. the console) can accept tree drags."""
-        data = super().mimeData(items)
-        urls = []
-        for item in items:
-            path = str(item.data(0, 256) or "")
-            if path:
-                urls.append(QUrl.fromLocalFile(path))
-        if urls:
-            data.setUrls(urls)
-        return data
 
     def startDrag(self, supportedActions) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         current = self.currentItem()

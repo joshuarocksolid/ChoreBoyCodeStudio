@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Callable
 
-from PySide2.QtCore import QObject, Qt, Signal
+from PySide2.QtCore import QObject, Qt, Signal, Slot
 
 
 class MainThreadDispatcher(QObject):
     """Dispatch callbacks to run asynchronously on the owning Qt thread."""
 
-    _dispatch_requested: Any = Signal(object)
+    _dispatch_requested: Signal = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -20,6 +20,7 @@ class MainThreadDispatcher(QObject):
         """Queue *callback* to run on the dispatcher thread."""
         self._dispatch_requested.emit(callback)
 
+    @Slot(object)
     def _execute_callback(self, callback: object) -> None:
         if callable(callback):
             callback()

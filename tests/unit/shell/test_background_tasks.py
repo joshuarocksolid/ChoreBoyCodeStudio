@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from app.shell.background_tasks import GeneralTaskScheduler
+from app.shell.background_tasks import BackgroundTaskRunner
 
 pytestmark = pytest.mark.unit
 
@@ -15,25 +15,23 @@ pytestmark = pytest.mark.unit
 def test_background_task_runner_dispatches_success_callback() -> None:
     seen: list[int] = []
     done = threading.Event()
-    runner = GeneralTaskScheduler(dispatch_to_main_thread=lambda callback: callback())
-    try:
-        runner.run(
-            key="health",
-            task=lambda _cancel: 42,
-            on_success=lambda result: (seen.append(result), done.set()),
-        )
+    runner = BackgroundTaskRunner(dispatch_to_main_thread=lambda callback: callback())
 
-        assert done.wait(timeout=1.0)
-        assert seen == [42]
-    finally:
-        runner.shutdown(wait=False)
+    runner.run(
+        key="health",
+        task=lambda _cancel: 42,
+        on_success=lambda result: (seen.append(result), done.set()),
+    )
+
+    assert done.wait(timeout=1.0)
+    assert seen == [42]
 
 
 def test_background_task_runner_cancels_previous_task_for_same_key() -> None:
     seen: list[int] = []
     done = threading.Event()
     gate = threading.Event()
-    runner = GeneralTaskScheduler(dispatch_to_main_thread=lambda callback: callback())
+    runner = BackgroundTaskRunner(dispatch_to_main_thread=lambda callback: callback())
 
     def slow_task(cancel_event: threading.Event) -> int:
         gate.wait(timeout=1.0)
@@ -41,34 +39,29 @@ def test_background_task_runner_cancels_previous_task_for_same_key() -> None:
             return -1
         return 1
 
-    try:
-        runner.run(key="search", task=slow_task, on_success=lambda result: seen.append(result))
-        runner.run(
-            key="search",
-            task=lambda _cancel: 2,
-            on_success=lambda result: (seen.append(result), done.set()),
-        )
+    runner.run(key="search", task=slow_task, on_success=lambda result: seen.append(result))
+    runner.run(
+        key="search",
+        task=lambda _cancel: 2,
+        on_success=lambda result: (seen.append(result), done.set()),
+    )
 
-        gate.set()
-        assert done.wait(timeout=1.0)
-        time.sleep(0.05)
-        assert seen == [2]
-    finally:
-        runner.shutdown(wait=False)
+    gate.set()
+    assert done.wait(timeout=1.0)
+    time.sleep(0.05)
+    assert seen == [2]
 
 
 def test_background_task_runner_routes_errors() -> None:
     errors: list[str] = []
     done = threading.Event()
-    runner = GeneralTaskScheduler(dispatch_to_main_thread=lambda callback: callback())
-    try:
-        runner.run(
-            key="bundle",
-            task=lambda _cancel: (_ for _ in ()).throw(RuntimeError("boom")),
-            on_error=lambda exc: (errors.append(str(exc)), done.set()),
-        )
+    runner = BackgroundTaskRunner(dispatch_to_main_thread=lambda callback: callback())
 
-        assert done.wait(timeout=1.0)
-        assert errors == ["boom"]
-    finally:
-        runner.shutdown(wait=False)
+    runner.run(
+        key="bundle",
+        task=lambda _cancel: (_ for _ in ()).throw(RuntimeError("boom")),
+        on_error=lambda exc: (errors.append(str(exc)), done.set()),
+    )
+
+    assert done.wait(timeout=1.0)
+    assert errors == ["boom"]

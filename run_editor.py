@@ -1,6 +1,5 @@
 """Editor entrypoint with logging-aware startup handling."""
 
-import faulthandler
 import logging
 import importlib
 import sys
@@ -9,7 +8,6 @@ from typing import Any, Optional
 from app.bootstrap.capability_probe import run_startup_capability_probe
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.core.models import CapabilityProbeReport
-from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
 
@@ -58,37 +56,12 @@ def _log_capability_probe_results(logger: logging.Logger, report: CapabilityProb
         logger.warning("Capability check failed [%s]: %s", check.check_id, check.message)
 
 
-def _install_unhandled_exception_hook(logger: logging.Logger) -> None:
-    previous_hook = sys.excepthook
-
-    def _hook(exc_type, exc_value, exc_traceback) -> None:
-        logger.critical(
-            "Unhandled exception in editor process.",
-            exc_info=(exc_type, exc_value, exc_traceback),
-        )
-        try:
-            previous_hook(exc_type, exc_value, exc_traceback)
-        except Exception:
-            pass
-
-    sys.excepthook = _hook
-
-
-def _enable_fault_handler(logger: logging.Logger) -> None:
-    try:
-        faulthandler.enable()
-    except Exception:
-        logger.warning("Failed to enable faulthandler.", exc_info=True)
-
-
 def main() -> int:
     """Initialize logging first, then run editor startup safely."""
     global _LAST_STARTUP_CAPABILITY_REPORT
     logging_result = configure_app_logging()
 
     logger = get_subsystem_logger("editor")
-    _enable_fault_handler(logger)
-    _install_unhandled_exception_hook(logger)
 
     for warning in logging_result.warnings:
         logger.warning(warning)
@@ -103,17 +76,6 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
-        tree_sitter_status = initialize_tree_sitter_runtime()
-        if tree_sitter_status.is_available:
-            if getattr(tree_sitter_status, "missing_default_language_keys", ()):
-                logger.warning("Tree-sitter runtime initialized with missing bundled grammars: %s", tree_sitter_status.message)
-            else:
-                logger.info("Tree-sitter runtime initialized: %s", tree_sitter_status.message)
-        else:
-            logger.warning("Tree-sitter runtime unavailable: %s", tree_sitter_status.message)
-            failure_traceback = runtime_traceback()
-            if failure_traceback:
-                logger.debug("Tree-sitter initialization traceback:\n%s", failure_traceback)
 
         logger.info("Editor startup initialized.")
         return _start_editor()

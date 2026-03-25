@@ -19,9 +19,7 @@ def reset_app_logger() -> Iterator[None]:
     """Ensure each test starts with a clean app logger."""
     app_logger = logging.getLogger(constants.APP_LOGGER_NAMESPACE)
     _clear_handlers(app_logger)
-    logging_setup._set_active_log_path(None)
     yield
-    logging_setup._set_active_log_path(None)
     _clear_handlers(app_logger)
 
 
@@ -159,35 +157,6 @@ def test_warnings_contain_actionable_paths(tmp_path: Path) -> None:
     result = logging_setup.configure_app_logging(state_root=tmp_path / "state")
 
     assert any(str(blocker) in w for w in result.warnings)
-
-
-def test_get_active_log_path_returns_fallback_when_primary_unwritable(tmp_path: Path) -> None:
-    blocker = tmp_path / "state" / constants.GLOBAL_LOGS_DIRNAME
-    blocker.parent.mkdir(parents=True)
-    blocker.write_text("I am a file blocking mkdir")
-
-    result = logging_setup.configure_app_logging(state_root=tmp_path / "state")
-
-    assert result.tier == logging_setup.TIER_FALLBACK
-    active_log_path = logging_setup.get_active_log_path(state_root=tmp_path / "state")
-    assert active_log_path == result.log_path
-
-
-def test_get_active_log_path_ignores_active_log_from_different_state_root(tmp_path: Path) -> None:
-    first_state_root = tmp_path / "state_one"
-    second_state_root = tmp_path / "state_two"
-
-    first_result = logging_setup.configure_app_logging(state_root=first_state_root)
-    assert first_result.log_path is not None
-    first_result.log_path.write_text("state one log\n", encoding="utf-8")
-
-    second_expected = logging_setup.global_app_log_path(second_state_root)
-    second_expected.parent.mkdir(parents=True, exist_ok=True)
-    second_expected.write_text("state two log\n", encoding="utf-8")
-
-    active_for_second = logging_setup.get_active_log_path(state_root=second_state_root)
-
-    assert active_for_second == second_expected
 
 
 # --- Helpers ---

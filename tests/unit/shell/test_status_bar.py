@@ -6,7 +6,6 @@ from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.status_bar import (
     format_diagnostics_counts,
     map_editor_status_view,
-    map_python_tooling_status_view,
     map_run_status_view,
     map_startup_report_to_status,
 )
@@ -38,8 +37,8 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
     assert status.details == "All startup capability checks passed."
 
 
-def test_map_startup_report_to_status_includes_issue_titles() -> None:
-    """Failing checks should surface human-readable issue titles."""
+def test_map_startup_report_to_status_includes_failed_check_ids() -> None:
+    """Failing checks should remain explicit and actionable."""
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
@@ -51,16 +50,18 @@ def test_map_startup_report_to_status_includes_issue_titles() -> None:
     status = map_startup_report_to_status(report)
     assert status.severity == "warning"
     assert status.text == "Startup: Runtime issues (1/3 checks)"
-    assert (
-        status.details
-        == "2 issue(s): FreeCAD backend import is unavailable; Global log folder is not writable"
-    )
+    assert status.details == "Failed checks: freecad_import, global_logs_writable"
 
 
 def test_map_editor_status_view_formats_active_file_coordinates() -> None:
     """Active editor telemetry should include file, coordinates, and dirty state."""
     view = map_editor_status_view("main.py", 12, 4, is_dirty=True)
     assert view.text == "Editor: main.py | Ln 12, Col 4 | modified"
+
+
+def test_map_editor_status_view_includes_mode_label_when_present() -> None:
+    view = map_editor_status_view("form.ui", 1, 1, is_dirty=False, mode_label="Signals/Slots")
+    assert view.text == "Editor: form.ui | Ln 1, Col 1 | Mode Signals/Slots | saved"
 
 
 def test_map_editor_status_view_handles_missing_file() -> None:
@@ -105,20 +106,3 @@ def test_map_run_status_view_defaults_to_idle_for_unknown_state() -> None:
     view = map_run_status_view("mystery")
     assert view.severity == "idle"
     assert view.text == "Run: idle"
-
-
-def test_map_python_tooling_status_view_handles_ready_pyproject_state() -> None:
-    view = map_python_tooling_status_view(
-        runtime_available=True,
-        config_state="pyproject",
-        config_path="/tmp/project/pyproject.toml",
-    )
-    assert view.severity == "ok"
-    assert view.text == "Python: tools ready | pyproject"
-    assert "/tmp/project/pyproject.toml" in view.details
-
-
-def test_map_python_tooling_status_view_handles_unavailable_runtime() -> None:
-    view = map_python_tooling_status_view(runtime_available=False, config_state="defaults")
-    assert view.severity == "warning"
-    assert view.text == "Python: tools unavailable"

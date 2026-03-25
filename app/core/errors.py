@@ -73,7 +73,3 @@ class RunManifestValidationError(AppValidationError):
 
 class RunLifecycleError(AppValidationError):
     """Raised when run lifecycle actions fail (launch/stop/state)."""
-
-
-class PluginManifestValidationError(AppValidationError):
-    """Raised when plugin manifest validation fails."""

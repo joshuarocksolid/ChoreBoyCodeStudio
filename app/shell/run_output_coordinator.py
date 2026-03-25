@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Callable, Mapping
+from typing import Callable
 
 from app.core import constants
 from app.debug.debug_session import DebugSession
-from app.run.exit_status import describe_exit_code
 from app.run.problem_parser import ProblemEntry
 from app.run.process_supervisor import ProcessEvent
 
@@ -60,49 +59,42 @@ class RunOutputCoordinator:
 
         active_mode = self._get_active_session_mode()
 
-        if event.event_type == "debug":
-            payload = event.payload
-            if isinstance(payload, Mapping):
-                self._get_debug_session().apply_protocol_message(payload)
-                message = self._extract_debug_status_line(payload)
-                if message:
-                    self._append_debug_output_line(message)
-                self._apply_debug_inspector_event()
-                self._refresh_run_action_states()
-            return
-
         if event.event_type == "output":
             stream = event.stream or "stdout"
             text = event.text or ""
+            parsed_debug_event = self._get_debug_session().ingest_output_line(text)
+            if parsed_debug_event is not None and parsed_debug_event.event_type in {"paused", "running", "stack"}:
+                if parsed_debug_event.message:
+                    self._append_debug_output_line(f"[debug] {parsed_debug_event.message}")
+                self._apply_debug_inspector_event()
+                self._refresh_run_action_states()
+                return
+
             self._append_output_tail(text)
             self._append_console_line(text, stream)
+            if self._auto_open_console_on_run_output_enabled():
+                self._focus_run_log_tab()
+            if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
+                for line in text.rstrip().splitlines():
+                    self._append_debug_output_line(line)
             return
 
         if event.event_type == "exit":
             return_code = event.return_code
-            exit_detail = describe_exit_code(return_code)
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._get_debug_session().mark_exited()
                 self._apply_debug_inspector_event()
             if event.terminated_by_user:
-                self._append_console_line(f"Run terminated by user ({exit_detail}).\n", "system")
-                session_line = f"[system] Session terminated ({exit_detail})."
+                self._append_console_line(f"Run terminated by user (code={return_code}).\n", "system")
+                session_line = f"[system] Session terminated (code={return_code})."
                 self._set_run_status("terminated", return_code)
             else:
-                if return_code is not None and return_code < 0:
-                    self._append_console_line(
-                        f"Run terminated by {exit_detail} -- possible crash in native code.\n",
-                        "stderr",
-                    )
-                    session_line = f"[system] Session terminated by {exit_detail}."
-                    self._set_run_status("failed", return_code)
+                self._append_console_line(f"Run finished (code={return_code}).\n", "system")
+                session_line = f"[system] Session finished (code={return_code})."
+                if return_code == constants.RUN_EXIT_SUCCESS:
+                    self._set_run_status("success", return_code)
                 else:
-                    self._append_console_line(f"Run finished ({exit_detail}).\n", "system")
-                    session_line = f"[system] Session finished ({exit_detail})."
-                    if return_code == constants.RUN_EXIT_SUCCESS:
-                        self._set_run_status("success", return_code)
-                    else:
-                        self._set_run_status("failed", return_code)
+                    self._set_run_status("failed", return_code)
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:
                 self._append_debug_output_line(session_line)
             self._set_debug_command_input_enabled(False)
@@ -122,26 +114,5 @@ class RunOutputCoordinator:
 
         if event.event_type == "state":
             if event.state in {"running", "stopping"}:
-                self._set_run_status(event.state, None)
+                self._set_run_status(event.state)
             self._refresh_run_action_states()
-
-    @staticmethod
-    def _extract_debug_status_line(payload: Mapping[str, object]) -> str:
-        kind = str(payload.get("kind", "")).strip()
-        if kind == "event":
-            event_name = str(payload.get("event", "")).strip()
-            body = payload.get("body")
-            if isinstance(body, Mapping):
-                message = str(body.get("message", "")).strip()
-            else:
-                message = ""
-            if event_name in {"session_ready", "stopped", "continued", "session_ended"} and message:
-                return "[debug] %s" % (message,)
-            return ""
-        if kind == "response":
-            success = bool(payload.get("success", False))
-            if success:
-                return ""
-            error_message = str(payload.get("error_message", "")).strip()
-            return "[debug] %s" % (error_message,) if error_message else ""
-        return ""

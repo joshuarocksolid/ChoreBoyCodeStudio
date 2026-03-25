@@ -35,19 +35,8 @@ def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:
     assert paths.global_logs_dir(state_root) == state_root / constants.GLOBAL_LOGS_DIRNAME
     assert paths.global_cache_dir(state_root) == state_root / constants.GLOBAL_CACHE_DIRNAME
     assert paths.global_crash_reports_dir(state_root) == state_root / constants.GLOBAL_CRASH_REPORTS_DIRNAME
-    assert paths.global_trash_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME
-    assert paths.global_trash_files_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME / constants.GLOBAL_TRASH_FILES_DIRNAME
-    assert paths.global_trash_info_dir(state_root) == state_root / constants.GLOBAL_TRASH_DIRNAME / constants.GLOBAL_TRASH_INFO_DIRNAME
     assert paths.global_state_db_path(state_root) == state_root / constants.GLOBAL_STATE_DB_FILENAME
     assert paths.global_app_log_path(state_root) == state_root / constants.GLOBAL_LOGS_DIRNAME / constants.APP_LOG_FILENAME
-
-
-def test_plugin_install_dir_rejects_path_traversal_components(tmp_path: Path) -> None:
-    state_root = tmp_path / constants.GLOBAL_STATE_DIRNAME
-    with pytest.raises(ValueError):
-        paths.plugin_install_dir("../../escape", "1.0.0", state_root)
-    with pytest.raises(ValueError):
-        paths.plugin_install_dir("acme.demo", "../1.0.0", state_root)
 
 
 def test_resolve_temp_root_is_absolute_and_namespaced() -> None:
@@ -61,7 +50,6 @@ def test_project_helpers_compose_expected_paths(tmp_path: Path) -> None:
     project_root = tmp_path / "project_alpha"
     assert paths.project_cbcs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME
     assert paths.project_manifest_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
-    assert paths.project_settings_path(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_SETTINGS_FILENAME
     assert paths.project_runs_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_RUNS_DIRNAME
     assert paths.project_cache_dir(project_root) == project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME
 

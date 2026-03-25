@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from datetime import datetime
 
-from app.bootstrap.paths import PathInput
-from app.filesystem.trash import move_path_to_trash
 from app.project.file_operation_models import FileOperationResult
 
 
@@ -80,26 +79,22 @@ def copy_path(source_path: str, destination_path: str) -> FileOperationResult:
     )
 
 
-def delete_path(
-    target_path: str,
-    *,
-    use_trash: bool = True,
-    state_root: PathInput | None = None,
-) -> FileOperationResult:
+def delete_path(target_path: str, *, use_trash: bool = True) -> FileOperationResult:
     target = Path(target_path).expanduser().resolve()
     if not target.exists():
         return FileOperationResult(success=False, message=f"Path does not exist: {target}")
     if use_trash:
         try:
-            trash_result = move_path_to_trash(target, state_root=state_root)
+            trash_path = _move_to_user_trash(target)
             return FileOperationResult(
                 success=True,
                 message="Path moved to trash.",
                 source_path=str(target),
-                destination_path=trash_result.destination_path,
+                destination_path=str(trash_path),
             )
-        except OSError as exc:
-            return FileOperationResult(success=False, message=f"Could not move path to trash: {exc}")
+        except OSError:
+            # Fall back to permanent delete for constrained environments.
+            pass
     if target.is_dir():
         shutil.rmtree(target)
     else:
@@ -123,3 +118,14 @@ def _next_duplicate_path(source: Path) -> Path:
         if not candidate.exists():
             return candidate
     raise RuntimeError(f"Unable to allocate duplicate name for {source}")
+
+
+def _move_to_user_trash(target: Path) -> Path:
+    trash_root = Path.home() / ".local" / "share" / "Trash" / "files"
+    trash_root.mkdir(parents=True, exist_ok=True)
+    candidate = trash_root / target.name
+    if candidate.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        candidate = trash_root / f"{target.name}.{timestamp}"
+    shutil.move(str(target), str(candidate))
+    return candidate

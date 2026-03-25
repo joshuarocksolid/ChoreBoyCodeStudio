@@ -9,14 +9,10 @@ the end of the current input line.
 from __future__ import annotations
 
 import code
-from pathlib import Path
-from typing import Any, cast
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import (
     QColor,
-    QDragEnterEvent,
-    QDropEvent,
     QFont,
     QFontDatabase,
     QKeyEvent,
@@ -24,7 +20,7 @@ from PySide2.QtGui import (
     QTextCharFormat,
     QTextCursor,
 )
-from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
+from PySide2.QtWidgets import QMenu, QTextEdit
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -50,9 +46,9 @@ class PythonConsoleWidget(QTextEdit):
         Emitted when the user presses Ctrl+C without a text selection.
     """
 
-    input_submitted: Any = Signal(str)
-    interrupt_requested: Any = Signal()
-    restart_requested: Any = Signal()
+    input_submitted: Signal = Signal(str)
+    interrupt_requested: Signal = Signal()
+    restart_requested: Signal = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -86,9 +82,7 @@ class PythonConsoleWidget(QTextEdit):
         self.setReadOnly(False)
         self.setUndoRedoEnabled(False)
         self.setLineWrapMode(QTextEdit.WidgetWidth)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setAcceptRichText(False)
-        self.setAcceptDrops(True)
         self.setCursorWidth(2)
 
         font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
@@ -219,10 +213,6 @@ class PythonConsoleWidget(QTextEdit):
             super().keyPressEvent(event)
             return
 
-        if key == Qt.Key_R and mods == _ctrl:
-            self._show_history_search_picker()
-            return
-
         # Clipboard paste — allow, but protect the prompt boundary afterwards.
         if key == Qt.Key_V and mods == _ctrl:
             cursor = self.textCursor()
@@ -295,37 +285,10 @@ class PythonConsoleWidget(QTextEdit):
         menu: QMenu = self.createStandardContextMenu()
         menu.addSeparator()
         clear_action = menu.addAction("Clear Console")
-        assert clear_action is not None
         clear_action.triggered.connect(self.clear_console)
         restart_action = menu.addAction("Restart Python Console")
-        assert restart_action is not None
         restart_action.triggered.connect(self.restart_requested.emit)
         menu.exec_(event.globalPos())
-
-    def dragEnterEvent(self, e: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
-        mime_data = e.mimeData()
-        if mime_data is None or not mime_data.hasUrls():
-            e.ignore()
-            return
-        local_files = [url for url in mime_data.urls() if url.isLocalFile()]
-        if not local_files:
-            e.ignore()
-            return
-        e.acceptProposedAction()
-
-    def dropEvent(self, e: QDropEvent) -> None:  # noqa: N802 - Qt signature
-        mime_data = e.mimeData()
-        if mime_data is None or not mime_data.hasUrls():
-            e.ignore()
-            return
-        local_paths = [url.toLocalFile() for url in mime_data.urls() if url.isLocalFile()]
-        if not local_paths:
-            e.ignore()
-            return
-        if self._handle_dropped_local_path(local_paths[0]):
-            e.acceptProposedAction()
-            return
-        e.ignore()
 
     # ------------------------------------------------------------------
     # Submission and history
@@ -412,29 +375,6 @@ class PythonConsoleWidget(QTextEdit):
         self.setTextCursor(cursor)
         self.setCurrentCharFormat(default_fmt)
         self._scroll_to_bottom()
-
-    def _handle_dropped_local_path(self, local_path: str) -> bool:
-        path = Path(local_path).expanduser().resolve()
-        if not path.exists() or not path.is_file():
-            self.append_output(
-                f"[system] Drop ignored: file not found: {path}\n",
-                "system",
-            )
-            return False
-        if path.suffix.lower() != ".py":
-            self.append_output(
-                f"[system] Drop ignored: '{path.name}' is not a Python file.\n",
-                "system",
-            )
-            return False
-        command = self._command_for_dropped_file(path)
-        self.append_output(f"[system] Executing dropped file: {path}\n", "system")
-        self._replace_input(command)
-        self._submit()
-        return True
-
-    def _command_for_dropped_file(self, path: Path) -> str:
-        return f"import runpy; runpy.run_path({repr(str(path))}, run_name='__main__')"
 
     def _render_startup_hint(self) -> None:
         """Display a brief startup message while the REPL process launches."""
@@ -523,37 +463,6 @@ class PythonConsoleWidget(QTextEdit):
     def history(self) -> list[str]:
         return list(self._history)
 
-    def history_snapshot(self) -> list[str]:
-        return list(self._history)
-
-    def set_history(self, entries: list[str]) -> None:
-        normalized = [entry for entry in entries if isinstance(entry, str) and entry.strip()]
-        if len(normalized) > _MAX_HISTORY:
-            normalized = normalized[-_MAX_HISTORY:]
-        self._history = normalized
-        self._history_index = len(self._history)
-
-    def _show_history_search_picker(self) -> None:
-        if not self._history:
-            return
-        current_query = self._get_input_text().strip().lower()
-        candidates = list(reversed(self._history))
-        if current_query:
-            filtered = [entry for entry in candidates if current_query in entry.lower()]
-            if filtered:
-                candidates = filtered
-        selected, accepted = QInputDialog.getItem(
-            self,
-            "Console History",
-            "Select command:",
-            candidates,
-            0,
-            False,
-        )
-        if not accepted or not selected:
-            return
-        self._replace_input(str(selected))
-
 
 def _is_source_complete(source: str) -> bool:
     """Return True when *source* forms a complete Python REPL block."""
@@ -577,6 +486,4 @@ def _is_traceback_context(text: str) -> bool:
 
 def _enum_int(value: object) -> int:
     enum_value = getattr(value, "value", value)
-    if isinstance(enum_value, int):
-        return int(enum_value)
-    return int(cast(Any, enum_value))
+    return int(enum_value)

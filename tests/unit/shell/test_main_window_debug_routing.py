@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import queue
 from types import SimpleNamespace
 from typing import Any, cast
@@ -124,14 +123,6 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     window_any._append_console_line = (
         lambda text, stream="stdout": console_lines.append((text, stream))
     )
-    window_any._active_run_session_info = None
-    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
-    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
-        apply=lambda process_event: (
-            window_any._append_console_line(process_event.text or "", stream=process_event.stream or "stdout"),
-            window_any._append_debug_output_line((process_event.text or "").rstrip()),
-        )
-    )
 
     event = ProcessEvent(event_type="output", stream="stdout", text="hello-debug\n")
     MainWindow._apply_run_event(window, event)
@@ -160,14 +151,6 @@ def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
     run_log_widget = object()
     window_any._run_log_panel = run_log_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({run_log_widget: 2})
-    window_any._active_run_session_info = None
-    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
-    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
-        apply=lambda process_event: (
-            window_any._append_console_line(process_event.text or "", stream=process_event.stream or "stdout"),
-            window_any._bottom_tabs_widget.setCurrentIndex(2),
-        )
-    )
 
     event = ProcessEvent(event_type="output", stream="stdout", text="hello\n")
     MainWindow._apply_run_event(window, event)
@@ -201,36 +184,11 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
     problems_widget = object()
     window_any._problems_panel = problems_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({problems_widget: 3})
-    window_any._active_run_session_info = None
-    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
-    window_any._get_run_output_coordinator = lambda: SimpleNamespace(
-        apply=lambda process_event: (
-            window_any._finalize_run_log(process_event.return_code),
-            window_any._update_problems_from_output(),
-            window_any._bottom_tabs_widget.setCurrentIndex(3),
-        )
-    )
 
     event = ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False)
     MainWindow._apply_run_event(window, event)
 
     assert window_any._bottom_tabs_widget.current_index == 3
-
-
-def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._active_run_session_info = None
-    window_any._active_transient_entry_file_path = "/tmp/transient.py"
-    deleted: list[str] = []
-    window_any._delete_transient_entry_file = deleted.append
-    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
-    window_any._get_run_output_coordinator = lambda: SimpleNamespace(apply=lambda _event: None)
-
-    MainWindow._apply_run_event(window, ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False))
-
-    assert deleted == ["/tmp/transient.py"]
-    assert window_any._active_transient_entry_file_path is None
 
 
 def test_start_session_in_debug_enables_debug_input() -> None:
@@ -248,79 +206,12 @@ def test_start_session_in_debug_enables_debug_input() -> None:
     window_any._auto_open_console_on_run_output = False
     window_any._set_run_status = lambda _status: None
     window_any._is_shutting_down = False
-    window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
 
     started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
     debug_panel = cast(_FakeDebugPanel, window_any._debug_panel)
 
     assert started is True
     assert debug_panel.enabled_calls == [True]
-
-
-def test_handle_debug_pytest_current_file_action_starts_debug_test_session(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
-    project_root.mkdir(parents=True)
-    run_tests_path = project_root / "run_tests.py"
-    run_tests_path.write_text("print('tests')\n", encoding="utf-8")
-    test_file = project_root / "tests_sample.py"
-    test_file.write_text("def test_sample():\n    assert True\n", encoding="utf-8")
-
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    start_calls: list[dict[str, object]] = []
-    policy = SimpleNamespace(name="policy")
-    window_any._loaded_project = SimpleNamespace(project_root=str(project_root.resolve()))
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(file_path=str(test_file.resolve()))
-    )
-    window_any._build_debug_breakpoints_for_launch = lambda: ["bp"]
-    window_any._debug_exception_policy = policy
-    window_any._last_debug_target = None
-    window_any._start_session = lambda **kwargs: start_calls.append(kwargs) or True
-
-    MainWindow._handle_debug_pytest_current_file_action(window)
-
-    assert len(start_calls) == 1
-    assert start_calls[0]["mode"] == constants.RUN_MODE_PYTHON_DEBUG
-    assert start_calls[0]["entry_file"] == str(run_tests_path)
-    assert start_calls[0]["argv"] == ["-q", "--import-mode=importlib", str(test_file.resolve())]
-    assert start_calls[0]["breakpoints"] == ["bp"]
-    assert start_calls[0]["debug_exception_policy"] is policy
-    assert window_any._last_debug_target == {
-        "kind": "current_test",
-        "target_path": str(test_file.resolve()),
-    }
-
-
-def test_handle_rerun_last_debug_target_replays_project_debug() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    calls: list[str] = []
-    window_any._last_debug_target = {"kind": "project"}
-    window_any._handle_debug_project_action = lambda: calls.append("project")
-
-    MainWindow._handle_rerun_last_debug_target_action(window)
-
-    assert calls == ["project"]
-
-
-def test_handle_rerun_last_debug_target_replays_current_test_debug() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    calls: list[tuple[str, object]] = []
-    window_any._last_debug_target = {"kind": "current_test", "target_path": "/tmp/project/test_sample.py"}
-    window_any._open_file_in_editor = lambda file_path, preview=False: calls.append(("open", file_path)) or True
-    window_any._editor_tabs_widget = SimpleNamespace(setCurrentIndex=lambda index: calls.append(("tab", index)))
-    window_any._tab_index_for_path = lambda _file_path: 2
-    window_any._handle_debug_pytest_current_file_action = lambda: calls.append(("debug", "current_test"))
-
-    MainWindow._handle_rerun_last_debug_target_action(window)
-
-    assert calls == [
-        ("open", "/tmp/project/test_sample.py"),
-        ("tab", 2),
-        ("debug", "current_test"),
-    ]
 
 
 def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -414,44 +305,16 @@ def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation
     assert open_calls == []
 
 
-def test_handle_debug_navigate_preview_ignores_non_project_file() -> None:
+def test_handle_debug_navigate_ignores_non_project_file() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
     open_calls: list[tuple[str, int | None]] = []
     window_any._open_file_at_line = lambda file_path, line_number: open_calls.append((file_path, line_number))
 
-    MainWindow._handle_debug_navigate_preview(window, "/tmp/ide/app/shell/main_window.py", 99)
+    MainWindow._handle_debug_navigate(window, "/tmp/ide/app/shell/main_window.py", 99)
 
     assert open_calls == []
-
-
-def test_handle_debug_navigate_preview_opens_project_file_as_preview() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
-    open_calls: list[tuple[str, int | None, bool]] = []
-    window_any._open_file_at_line = (
-        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
-    )
-
-    MainWindow._handle_debug_navigate_preview(window, "/tmp/project/app/main.py", 17)
-
-    assert open_calls == [("/tmp/project/app/main.py", 17, True)]
-
-
-def test_handle_debug_navigate_permanent_opens_project_file_as_permanent() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
-    open_calls: list[tuple[str, int | None, bool]] = []
-    window_any._open_file_at_line = (
-        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
-    )
-
-    MainWindow._handle_debug_navigate_permanent(window, "/tmp/project/app/main.py", 18)
-
-    assert open_calls == [("/tmp/project/app/main.py", 18, False)]
 
 
 def test_enqueue_run_event_ignored_while_shutting_down() -> None:

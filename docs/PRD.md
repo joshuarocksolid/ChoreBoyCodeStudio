@@ -20,24 +20,21 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
    * persistent log file
    * crash popup with full traceback
-   * breakpoint-driven debug flow with stack, variable, watch, and exception inspection inside the app
-     The log/traceback model is still the fallback safety net and must remain first-class.
+     This is your proven model and must be first-class. 
 4. **Safe + predictable** on ChoreBoy: no system installs required; everything ships as a folder under Home and runs reliably.
 
 ### Secondary goals
 
 * Lightweight “IDE” features: search, go-to line, basic linting, format-on-save (optional).
 * Easy backup/export to USB (fits how ChoreBoy users already manage data).  
-* Modular plugin model so advanced users can extend behavior without bloating core workflows.
 
 ---
 
 ## 3) Non-goals (v1)
 
-* Full VSCode/IntelliJ parity (LSP breadth, advanced refactors, remote debugging, git integrations).
+* Full VSCode/IntelliJ parity (LSP, refactors, debugging breakpoints, git integrations).
 * Installing packages system-wide, or depending on OS packages not shipped with FreeCAD.
 * Internet-based workflows (ChoreBoy is LAN-only; no general internet). 
-* Internet marketplace and publisher-signing dependency for plugin installation.
 
 ---
 
@@ -94,14 +91,6 @@ Why this is optimal on ChoreBoy:
 * Runner streams stdout/stderr back to Code Studio (pipe or file tail).
 * Runner streams stdout/stderr back to Code Studio via pipes.
 
-### Plugin execution pipeline (v1)
-
-* Plugins are discovered from local filesystem packages.
-* Declarative plugin contributions are validated before activation.
-* Runtime plugin code executes in a dedicated plugin host process.
-* The editor communicates with runtime plugins through explicit IPC contracts.
-* Plugin host failures do not terminate the editor process.
-
 ---
 
 # 7) Information Architecture & UI Layout
@@ -122,7 +111,7 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 
 * Open folder
 * New file / New folder
-* Rename / Move to Trash (with confirmations)
+* Rename / Delete (with confirmations)
 * “Reveal in File Manager” (important for ChoreBoy habits)
 
 ### Center: Editor
@@ -262,18 +251,13 @@ myapp/
 ## Where settings live
 
 * Global settings: `~/choreboy_code_studio_state/settings.json` (or under Home)
-* Per-project settings overrides: `<project>/cbcs/settings.json`
-* Per-project metadata: `<project>/cbcs/project.json`
+* Per-project: `<project>/cbcs/project.json`
 
 ## What settings include
 
 * recent projects list
 * editor preferences (font size, tab width)
 * run configs
-* scoped settings layering:
-  * `defaults -> global settings.json -> project cbcs/settings.json`
-  * global-only settings stay machine/user specific (`theme`, `syntax_colors`, `keybindings`, `ui_layout`, `last_project_path`, import-update policy)
-  * project-overridable settings include editor/intelligence/linter/file-excludes/output preferences
 * optional: file index cache (SQLite)
 
 SQLite is available and proven; use it for indexing/search speed if needed. 
@@ -328,15 +312,6 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 * Export project to USB / Zip project
 * “Support bundle” generator
 * Help pages tailored to headless FreeCAD constraints 
-
-## Milestone 4 — Plugin Platform (v1 + phase 2)
-
-* Plugin manifest schema and compatibility validation
-* Plugin manager UI (install/enable/disable/remove)
-* Runtime plugin host process with crash isolation
-* Declarative contribution points (commands/menus/keybindings/hooks)
-* Safe-mode startup and plugin failure quarantine
-* Phase 2: per-project plugin overrides and pinning
 
 ---
 

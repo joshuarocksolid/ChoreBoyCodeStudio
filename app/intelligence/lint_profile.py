@@ -68,42 +68,6 @@ LINT_RULE_DEFINITIONS: tuple[LintRuleDefinition, ...] = (
         default_enabled=True,
         default_severity=LINT_SEVERITY_INFO,
     ),
-    LintRuleDefinition(
-        code="PY301",
-        title="Undefined name (Pyflakes)",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_ERROR,
-    ),
-    LintRuleDefinition(
-        code="PY302",
-        title="Undefined local (Pyflakes)",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_ERROR,
-    ),
-    LintRuleDefinition(
-        code="PY303",
-        title="Redefined while unused (Pyflakes)",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_WARNING,
-    ),
-    LintRuleDefinition(
-        code="PY304",
-        title="Import shadowed by loop variable (Pyflakes)",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_WARNING,
-    ),
-    LintRuleDefinition(
-        code="PY305",
-        title="Import * used (Pyflakes)",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_WARNING,
-    ),
-    LintRuleDefinition(
-        code="PY399",
-        title="Other Pyflakes diagnostic",
-        default_enabled=True,
-        default_severity=LINT_SEVERITY_WARNING,
-    ),
 )
 
 _DEFINITIONS_BY_CODE: dict[str, LintRuleDefinition] = {

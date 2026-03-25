@@ -8,10 +8,6 @@ from pathlib import Path
 import tokenize
 
 from app.core import constants
-from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
-
-_FACADE_BY_PROJECT_ROOT: dict[str, SemanticFacade] = {}
 
 
 @dataclass(frozen=True)
@@ -32,7 +28,6 @@ class ReferenceSearchResult:
 
     symbol_name: str
     hits: list[ReferenceHit]
-    metadata: SemanticOperationMetadata | None = None
 
     @property
     def found(self) -> bool:
@@ -49,36 +44,26 @@ def find_references(
     """Find symbol references across project Python files."""
     symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
     if not symbol_name:
-        return ReferenceSearchResult(symbol_name="", hits=[], metadata=None)
+        return ReferenceSearchResult(symbol_name="", hits=[])
 
-    try:
-        semantic_result = _facade(project_root).find_references(
-            project_root=project_root,
-            current_file_path=current_file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
+    root = Path(project_root).expanduser().resolve()
+    if not root.exists():
+        return ReferenceSearchResult(symbol_name=symbol_name, hits=[])
+
+    definition_positions = _collect_definition_positions(root, symbol_name=symbol_name)
+    hits: list[ReferenceHit] = []
+    for file_path in sorted(root.rglob("*.py")):
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
+            continue
+        hits.extend(
+            _collect_references_from_file(
+                file_path=file_path.resolve(),
+                symbol_name=symbol_name,
+                definition_positions=definition_positions,
+            )
         )
-    except Exception:
-        semantic_result = None
-
-    if semantic_result is not None and (semantic_result.found or semantic_result.metadata.unsupported_reason):
-        return ReferenceSearchResult(
-            symbol_name=semantic_result.symbol_name,
-            hits=[
-                ReferenceHit(
-                    symbol_name=hit.symbol_name,
-                    file_path=hit.file_path,
-                    line_number=hit.line_number,
-                    column_number=hit.column_number,
-                    line_text=hit.line_text,
-                    is_definition=hit.is_definition,
-                )
-                for hit in semantic_result.hits
-            ],
-            metadata=semantic_result.metadata,
-        )
-
-    return _find_references_heuristic(project_root=project_root, source_text=source_text, cursor_position=cursor_position)
+    hits.sort(key=lambda item: (item.file_path, item.line_number, item.column_number))
+    return ReferenceSearchResult(symbol_name=symbol_name, hits=hits)
 
 
 def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
@@ -96,41 +81,20 @@ def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
     return symbol
 
 
-def _find_references_heuristic(
-    *,
-    project_root: str,
-    source_text: str,
-    cursor_position: int,
-) -> ReferenceSearchResult:
-    symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
-    if not symbol_name:
-        return ReferenceSearchResult(symbol_name="", hits=[], metadata=None)
-
-    root = Path(project_root).expanduser().resolve()
-    if not root.exists():
-        return ReferenceSearchResult(
-            symbol_name=symbol_name,
-            hits=[],
-            metadata=approximate_metadata("token_scan", source="approximate", fallback_reason="missing_project_root"),
-        )
-
-    hits: list[ReferenceHit] = []
-    for file_path in _iter_python_files(root):
-        hits.extend(_collect_references_from_file(file_path=file_path, symbol_name=symbol_name))
-    hits.sort(key=lambda item: (item.file_path, item.line_number, item.column_number))
-    return ReferenceSearchResult(
-        symbol_name=symbol_name,
-        hits=hits,
-        metadata=approximate_metadata("token_scan", source="approximate", fallback_reason="heuristic_lookup"),
-    )
+def _collect_definition_positions(project_root: Path, *, symbol_name: str) -> set[tuple[str, int, int]]:
+    positions: set[tuple[str, int, int]] = set()
+    for file_path in sorted(project_root.rglob("*.py")):
+        if constants.PROJECT_META_DIRNAME in file_path.parts:
+            continue
+        positions.update(_collect_file_definitions(file_path.resolve(), symbol_name=symbol_name))
+    return positions
 
 
-def _collect_file_definitions(
-    file_path: Path,
-    *,
-    source: str,
-    symbol_name: str,
-) -> set[tuple[str, int, int]]:
+def _collect_file_definitions(file_path: Path, *, symbol_name: str) -> set[tuple[str, int, int]]:
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
     try:
         syntax_tree = ast.parse(source)
     except SyntaxError:
@@ -138,31 +102,30 @@ def _collect_file_definitions(
 
     source_lines = source.splitlines()
     positions: set[tuple[str, int, int]] = set()
-    file_path_text = str(file_path)
     for node in ast.walk(syntax_tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == symbol_name:
             column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-            positions.add((file_path_text, int(node.lineno), column))
+            positions.add((str(file_path), int(node.lineno), column))
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == symbol_name:
-                    positions.add((file_path_text, int(target.lineno), int(target.col_offset)))
+                    positions.add((str(file_path), int(target.lineno), int(target.col_offset)))
         elif isinstance(node, ast.AnnAssign):
             target = node.target
             if isinstance(target, ast.Name) and target.id == symbol_name:
-                positions.add((file_path_text, int(target.lineno), int(target.col_offset)))
+                positions.add((str(file_path), int(target.lineno), int(target.col_offset)))
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 alias_name = alias.asname or alias.name.split(".")[0]
                 if alias_name == symbol_name:
                     column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-                    positions.add((file_path_text, int(node.lineno), column))
+                    positions.add((str(file_path), int(node.lineno), column))
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 alias_name = alias.asname or alias.name
                 if alias_name == symbol_name:
                     column = _line_symbol_column(source_lines, int(node.lineno), symbol_name)
-                    positions.add((file_path_text, int(node.lineno), column))
+                    positions.add((str(file_path), int(node.lineno), column))
     return positions
 
 
@@ -170,17 +133,13 @@ def _collect_references_from_file(
     *,
     file_path: Path,
     symbol_name: str,
+    definition_positions: set[tuple[str, int, int]],
 ) -> list[ReferenceHit]:
     try:
         source = file_path.read_text(encoding="utf-8")
     except OSError:
         return []
 
-    definition_positions = _collect_file_definitions(
-        file_path,
-        source=source,
-        symbol_name=symbol_name,
-    )
     line_lookup = source.splitlines()
     hits: list[ReferenceHit] = []
     try:
@@ -188,17 +147,16 @@ def _collect_references_from_file(
     except (tokenize.TokenError, IndentationError):
         return []
 
-    file_path_text = str(file_path)
     for token in token_stream:
         if token.type != tokenize.NAME or token.string != symbol_name:
             continue
         line_number, column = token.start
         line_text = line_lookup[line_number - 1] if 0 < line_number <= len(line_lookup) else ""
-        position_key = (file_path_text, int(line_number), int(column))
+        position_key = (str(file_path), int(line_number), int(column))
         hits.append(
             ReferenceHit(
                 symbol_name=symbol_name,
-                file_path=file_path_text,
+                file_path=str(file_path),
                 line_number=int(line_number),
                 column_number=int(column),
                 line_text=line_text.strip(),
@@ -206,14 +164,6 @@ def _collect_references_from_file(
             )
         )
     return hits
-
-
-def _iter_python_files(project_root: Path) -> list[Path]:
-    return [
-        file_path
-        for file_path in sorted(project_root.rglob("*.py"))
-        if constants.PROJECT_META_DIRNAME not in file_path.parts
-    ]
 
 
 def _is_symbol_character(character: str) -> bool:
@@ -228,13 +178,3 @@ def _line_symbol_column(source_lines: list[str], line_number: int, symbol_name: 
     if column < 0:
         return 0
     return column
-
-
-def _facade(project_root: str) -> SemanticFacade:
-    normalized_root = str(Path(project_root).expanduser().resolve())
-    cached = _FACADE_BY_PROJECT_ROOT.get(normalized_root)
-    if cached is None:
-        cache_db_path = str((Path(normalized_root) / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME / "semantic.sqlite3").resolve())
-        cached = SemanticFacade(cache_db_path=cache_db_path)
-        _FACADE_BY_PROJECT_ROOT[normalized_root] = cached
-    return cached

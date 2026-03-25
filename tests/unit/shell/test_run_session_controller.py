@@ -49,8 +49,6 @@ class _FakeRunService:
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
     ) -> RunSession:
         self.supervisor._running = True
         self.is_debug_mode = mode == constants.RUN_MODE_PYTHON_DEBUG
@@ -88,8 +86,6 @@ def _menu_registry() -> MenuStubRegistry:
     actions = {
         "shell.action.run.run": _FakeAction(),
         "shell.action.run.debug": _FakeAction(),
-        "shell.action.run.runProject": _FakeAction(),
-        "shell.action.run.debugProject": _FakeAction(),
         "shell.action.run.stop": _FakeAction(),
         "shell.action.run.restart": _FakeAction(),
         "shell.action.run.continue": _FakeAction(),
@@ -114,8 +110,6 @@ def test_start_session_requires_loaded_project() -> None:
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=False,
         save_all=lambda: True,
         before_start=lambda: None,
@@ -138,8 +132,6 @@ def test_start_session_rejects_repl_without_loaded_project() -> None:
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=True,
         save_all=lambda: True,
         before_start=lambda: None,
@@ -149,29 +141,6 @@ def test_start_session_rejects_repl_without_loaded_project() -> None:
     assert result.started is False
     assert result.failure_reason == RunSessionStartFailureReason.NO_PROJECT
     assert result.error_message == "Open a project before running code."
-
-
-def test_start_session_allows_projectless_script_with_explicit_entry() -> None:
-    controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
-    result = controller.start_session(
-        loaded_project=None,
-        mode=constants.RUN_MODE_PYTHON_SCRIPT,
-        entry_file="/tmp/snippet.py",
-        argv=None,
-        working_directory=None,
-        env_overrides=None,
-        breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
-        skip_save=True,
-        save_all=lambda: False,
-        before_start=lambda: None,
-        append_console_line=lambda _text, _stream: None,
-        append_python_console_line=lambda _text: None,
-    )
-    assert result.started is True
-    assert result.failure_reason is None
-    assert result.session is not None
 
 
 def test_start_session_success_updates_active_mode_and_returns_session() -> None:
@@ -185,8 +154,6 @@ def test_start_session_success_updates_active_mode_and_returns_session() -> None
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=True,
         save_all=lambda: True,
         before_start=lambda: lines.append("prepared"),
@@ -215,8 +182,6 @@ def test_start_session_returns_already_running_reason_when_supervisor_active() -
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=True,
         save_all=lambda: True,
         before_start=lambda: None,
@@ -240,8 +205,6 @@ def test_start_session_returns_save_failed_reason_when_save_all_fails() -> None:
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=False,
         save_all=lambda: False,
         before_start=lambda: None,
@@ -270,8 +233,6 @@ def test_start_session_returns_start_exception_reason_when_run_service_raises() 
         working_directory=None,
         env_overrides=None,
         breakpoints=None,
-        debug_exception_policy=None,
-        source_maps=None,
         skip_save=True,
         save_all=lambda: True,
         before_start=lambda: None,
@@ -292,16 +253,13 @@ def test_refresh_action_states_updates_run_action_enablement() -> None:
 
     controller.refresh_action_states(registry, has_project=False)
     assert registry.action("shell.action.run.run").enabled is False
-    assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.pythonConsole").enabled is True
 
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is True
-    assert registry.action("shell.action.run.debugProject").enabled is True
     assert registry.action("shell.action.run.stop").enabled is False
 
     run_service.supervisor._running = True
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is False
-    assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.stop").enabled is True

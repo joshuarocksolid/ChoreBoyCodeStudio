@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from PySide2.QtCore import QModelIndex, QRect, QSize, Qt, Signal
 from PySide2.QtGui import (
@@ -65,12 +65,10 @@ class QuickOpenDelegate(QStyledItemDelegate):
         icon_map: Dict[str, QIcon],
         fallback_icon: QIcon,
         parent: Optional[QWidget] = None,
-        filename_icon_map: Optional[Dict[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self._tokens = tokens
         self._icon_map = icon_map
-        self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = fallback_icon
         self._item_model: Optional[_QuickOpenItemModel] = None
 
@@ -109,10 +107,8 @@ class QuickOpenDelegate(QStyledItemDelegate):
         filename = os.path.basename(relative_path)
         dir_path = os.path.dirname(relative_path)
 
-        icon = self._filename_icon_map.get(filename.lower())
-        if icon is None:
-            ext = os.path.splitext(filename)[1].lower()
-            icon = self._icon_map.get(ext, self._fallback_icon)
+        ext = os.path.splitext(filename)[1].lower()
+        icon = self._icon_map.get(ext, self._fallback_icon)
 
         rect = option.rect
         icon_y = rect.top() + (rect.height() - _ICON_SIZE) // 2
@@ -219,17 +215,14 @@ class QuickOpenDelegate(QStyledItemDelegate):
 class QuickOpenDialog(QDialog):
     """Floating overlay for fuzzy file-by-name search (Ctrl+P)."""
 
-    file_preview_requested: Any = Signal(str)
-    file_selected: Any = Signal(str)
-    file_preview_at_line_requested: Any = Signal(str, int)
-    file_selected_at_line: Any = Signal(str, int)
+    file_selected = Signal(str)
+    file_selected_at_line = Signal(str, int)
 
     def __init__(
         self,
         parent: Optional[QWidget] = None,
         tokens: Optional[ShellThemeTokens] = None,
         icon_map: Optional[Dict[str, QIcon]] = None,
-        filename_icon_map: Optional[Dict[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("shell.quickOpen")
@@ -248,7 +241,6 @@ class QuickOpenDialog(QDialog):
         )
         icon_color = self._tokens.icon_primary or self._tokens.text_muted
         self._icon_map = icon_map or {}
-        self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = file_icon(icon_color)
         self._item_data = _QuickOpenItemModel()
         self._build_ui()
@@ -293,11 +285,9 @@ class QuickOpenDialog(QDialog):
 
         self._delegate = QuickOpenDelegate(
             self._tokens, self._icon_map, self._fallback_icon, self._results_list,
-            filename_icon_map=self._filename_icon_map,
         )
         self._delegate.set_item_model(self._item_data)
         self._results_list.setItemDelegate(self._delegate)
-        self._results_list.clicked.connect(self._on_item_preview)
         self._results_list.doubleClicked.connect(self._on_item_activated)
 
         self._empty_label = QLabel("No matching files")
@@ -338,8 +328,7 @@ class QuickOpenDialog(QDialog):
                 self.move(global_pos.x() + x, global_pos.y() + y)
         self.show()
 
-    def keyPressEvent(self, arg__1: QKeyEvent) -> None:  # noqa: N802
-        event = arg__1
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key_Escape:
             self.hide()
             event.accept()
@@ -414,16 +403,6 @@ class QuickOpenDialog(QDialog):
             else:
                 self.file_selected.emit(path)
             self.hide()
-
-    def _on_item_preview(self, index: QModelIndex) -> None:
-        row = index.row()
-        if 0 <= row < len(self._item_data.items):
-            path = self._item_data.items[row].candidate.absolute_path
-            _, line = self._parse_query_and_line()
-            if line is not None:
-                self.file_preview_at_line_requested.emit(path, line)
-            else:
-                self.file_preview_requested.emit(path)
 
     def _accept_current(self) -> None:
         idx = self._results_list.currentIndex()

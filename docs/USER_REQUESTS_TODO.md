@@ -9,7 +9,6 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 - `DONE` — implemented and validated
 - `IN PROGRESS` — currently being worked on
 - `TODO` — not started
-- `WON'T DO` — declined for core; recommended as plugin or external workflow
 
 ---
 
@@ -21,7 +20,7 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 |-------|-------|
 | **Status** | DONE |
 | **Request** | Main window should maximize on startup (e.g. `window.showMaximized()` instead of `window.show()`). |
-| **Location** | `run_editor.py` line 23 |
+| **Location** | `run_editor.py` line 25 |
 | **Notes** | Implemented: `window.showMaximized()` in `_start_editor()`. |
 
 ---
@@ -30,9 +29,9 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | DONE |
+| **Status** | TODO |
 | **Request** | Allow users to pick/customize the colors used by the syntax highlighter. |
-| **Notes** | Implemented: 23 configurable tokens with independent light/dark overrides. "Syntax Colors" tab in Settings dialog (`app/shell/settings_dialog.py`) with per-token color picker, hex validation, and reset. Token definitions in `app/shell/syntax_color_preferences.py`; theme application via `app/shell/theme_tokens.py` and `app/editors/syntax_registry.py`. Persisted in `settings.json` under `syntax_colors.light` / `syntax_colors.dark`. |
+| **Notes** | User would like control over editor color scheme. |
 
 ---
 
@@ -40,14 +39,14 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | DONE |
+| **Status** | TODO |
 | **Request** | Allow users to customize keyboard shortcuts. |
 | **Key examples (LibrePy-like)** | |
 | | Ctrl+D — duplicate line |
 | | Ctrl+B — delete line |
 | | Ctrl+/ — toggle comment |
 | | Tab — indent (user could learn to use instead of Ctrl+I) |
-| **Notes** | Implemented: "Keybindings" tab in Settings dialog (`app/shell/settings_dialog.py`) with search, per-shortcut editing, conflict detection, and "Reset All". Shortcut model and defaults in `app/shell/shortcut_preferences.py`; runtime application via `_load_shortcut_overrides()` and `_apply_shortcut_overrides_runtime()` in `app/shell/main_window.py`. Persisted in `settings.json` under `keybindings.overrides`. |
+| **Notes** | User finds Ctrl+/ for comments harder with one hand; prefers shortcuts that match LibrePy workflow. Customization would let users adapt to their preferences. |
 
 ---
 
@@ -55,310 +54,12 @@ Backlog of feature requests from users. Tracked separately from the main `docs/T
 
 | Field | Value |
 |-------|-------|
-| **Status** | DONE |
+| **Status** | TODO |
 | **Requested by** | Marcus Zimmerman |
 | **Request** | Build the IDE with a modular plugin system so technically-inclined users can create and share their own extensions, rather than merging niche features into the core product. |
 | **Rationale** | Keeps the core product focused on what benefits the majority (≥ 50%) of users. Minority-interest features ship as optional plugins instead of cluttering the mainline. User cites Classic Accounting as an example where a plugin model from the start would have let businesses build custom flows without bloating the base product. |
 | **Trade-offs noted by requester** | Requires exposing stable internal APIs/hooks for plugin authors; maintaining backward compatibility with those APIs is ongoing work. |
-| **Notes** | Implemented plugin platform with runtime code plugins in isolated host process, offline installer/uninstaller/registry, declarative command/menu/event-hook contributions, Plugin Manager UI (install/enable/disable/export), safe mode toggle, runtime trust prompt, and failure quarantine auto-disable. Per-project plugin pinning remains intentionally deferred to phase 2. |
-
----
-
-### 5. Global + per-project JSON settings
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Add a two-layer settings model: a **global** `settings.json` (user-wide defaults) and a **per-project** `settings.json` (project-specific overrides that travel with the project folder). The Settings dialog should clearly show which scope the user is editing. The per-project file enables sharing editor conventions between users by copying or versioning the project folder. |
-| **File locations** | Global: `~/choreboy_code_studio_state/settings.json` (already exists). Project: `<project>/cbcs/settings.json` (new). Both use the same JSON schema. |
-| **Layering** | `hardcoded defaults → global settings.json → project cbcs/settings.json → effective settings`. Merge is per-key within each section (not whole-section replacement), so a project file with `{"editor": {"tab_width": 2}}` overrides only `tab_width` while all other editor keys inherit from global. |
-| **Project-overridable settings** | `editor.*` (tab_width, indent_style, indent_size, font_size, font_family, format_on_save, detect_indentation_from_file, trim_trailing_whitespace_on_save, insert_final_newline_on_save), `intelligence.*` (completion, diagnostics, highlighting thresholds), `linter.*` (rule_overrides), `file_excludes.*` (patterns), `output.*` (auto_open_console_on_run_output, auto_open_problems_on_run_failure). |
-| **Global-only settings** | `theme.*` (mode), `syntax_colors.*`, `keybindings.*`, `ui_layout.*`, `last_project_path`, `python_import_update_policy` — these are personal/machine-specific and not shareable per-project. |
-| **Settings dialog UX** | Scope selector (Global / Project) at the top. Global scope edits the global file (current behavior). Project scope shows only project-overridable settings; inherited values shown as placeholder/dimmed; each override gets a "Reset to Global" action. Banner explaining: "Project settings override global settings for this project. Other users who open this project will inherit these settings." Project scope disabled when no project is open. |
-| **Project tree visibility** | `cbcs/` remains visible in the project tree, including `cbcs/settings.json` and `cbcs/project.json`. |
-| **Status bar** | When project settings are active, the status bar shows an indicator to make it clear the effective settings differ from global defaults. |
-| **Affected code** | `app/core/constants.py` (project settings constants + overridable key set), `app/bootstrap/paths.py` (project settings path helper), `app/persistence/settings_store.py` (project load/save/filter + effective layering merge), `app/persistence/settings_service.py` (global/project/effective settings APIs), `app/shell/settings_models.py` (scope-aware merge helpers), `app/shell/settings_dialog.py` (scope selector, project-scope reset-to-global controls), `app/shell/main_window.py` (load project settings on open, recompute effective settings, status indicator), `app/project/file_excludes.py` (project-scope pattern parsing). |
-| **Notes** | Implemented scoped settings layering and UI controls. Added per-project settings persistence at `cbcs/settings.json`, scope-aware merge helpers, settings dialog scope selector (Global/Project), project-scope reset-to-global actions, and status bar project-override indicator. |
-
----
-
-### 6. FreeCAD-style column-0 comment toggle
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Change comment toggle (`Ctrl+/` or equivalent) to use FreeCAD macro editor-style column-0 commenting: toggling ON places `#` at column 0 regardless of indentation (e.g. `    code()` becomes `#    code()`); toggling OFF only removes `#` from column 0, leaving indented comments untouched (e.g. `    # note` is preserved). Any line even partially selected is included in the toggle. |
-| **Rationale** | Lets users distinguish "commented-out code" (column-0 `#`) from "reminder/note comments" (indented `#`). Selecting a mixed block and toggling will only affect the commented-out code lines, leaving notes intact. |
-| **Implemented in** | `app/editors/text_editing.py` — `toggle_comment_lines()` prepends `#` at column 0 (not at indentation level). Called from `app/editors/code_editor_widget.py` `toggle_comment_selection()`. |
-| **Notes** | Cross-references request #3 (keyboard shortcut customization) — the toggle comment shortcut is one of the listed shortcuts there. |
-
----
-
-### 7. Console drag-and-drop support
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Ervin N. Newswanger |
-| **Request** | Enable drag-and-drop onto the Python console widget. Currently dragging a file into the console only pastes the file path as text rather than executing or inserting the file contents. |
-| **Implemented in** | `app/shell/python_console_widget.py` — `setAcceptDrops(True)`, `dragEnterEvent()` (filters local `.py` files), `dropEvent()` (extracts paths), and `_handle_dropped_local_path()` (executes dropped `.py` files via `runpy.run_path()` in the REPL). `app/project/project_tree_widget.py` — `mimeData()` override embeds `file://` URLs so drags from the project tree are accepted by the console. |
-| **Notes** | Drop behavior: `.py` files are executed in the console REPL session. Drags from the project tree and external file managers are both supported. |
-
----
-
-### 8. Run unsaved code via tempfile
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Ervin N. Newswanger |
-| **Request** | Allow running unsaved code from an editor tab without requiring a saved file or project setup. Use Python's `tempfile` module to write the editor buffer to a temporary file and execute it through the runner. Handy for testing code snippets quickly without creating a full project. |
-| **Implemented in** | `app/shell/main_window.py` — `_write_transient_entry_file()` writes the editor buffer to a `tempfile.NamedTemporaryFile`, `_start_active_file_session()` detects dirty tabs and routes through the transient path with `skip_save=True`, `_delete_transient_entry_file()` cleans up afterward. `app/shell/run_session_controller.py` — `start_session()` accepts `skip_save` flag and supports projectless runs when `entry_file` is provided. |
-| **Notes** | Unsaved buffers and projectless files can both be run. The temp file is cleaned up after the run session completes. |
-
----
-
-### 9. Relocatable installation (relative paths)
-
-| Field | Value |
-|-------|-------|
-| **Status** | TODO |
-| **Requested by** | (anonymous), Reuben Shirk (relayed by Kevin Hoover) |
-| **Request** | All internal paths should be relative so the application can be moved out of the home directory into any user-chosen location. Only the `.desktop` launcher file should need updating when the install folder changes. |
-| **Rationale** | Users with busy home directories want to keep the app in a dedicated programming folder without path breakage. Currently some paths are anchored to `~/`, forcing a home-directory install. |
-| **Affected code** | `app/core/constants.py` defines `GLOBAL_STATE_DIRNAME` and path helpers; `run_editor.py` and `dev_launch_editor.py` resolve the app root; `.desktop` file references an absolute install path. Any code that expands `~` or assumes a home-directory base needs auditing. |
-| **Notes** | Related to the existing hidden-folder constraint (`.cursor/rules/no_hidden_folders.mdc`). A full audit of path resolution across the codebase would be the first step. |
-
----
-
-### 10. Semantic highlighting colors stop rendering in large files (dark mode)
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | Syntax highlighting colors "run out" around line 630 in dark mode when editing a large Python file (650+ lines). Switching to light mode appeared to fix the issue. |
-| **Resolution** | Resolved by the tree-sitter hard cutover. Highlighting is now applied directly through `QSyntaxHighlighter.setFormat()` from tree-sitter query captures, not semantic `ExtraSelection` overlays. |
-| **Why this fixes it** | The old failure mode was an overlay-cap issue (`MAX_SEMANTIC_SELECTIONS_PER_REFRESH`) combined with stale viewport prioritization. The new pipeline has no semantic overlay cap and updates visible-window captures through the tree-sitter highlighter policy. |
-| **Implemented in** | `app/treesitter/highlighter.py`, `app/editors/code_editor_widget.py`, `app/editors/syntax_registry.py`, `run_editor.py` |
-
----
-
-### 11. "Run" option in file tree right-click context menu
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Add a "Run" option to the existing right-click context menu on the project file tree. When a file is right-clicked, the context menu (which already has New File, Rename, Delete, Duplicate, Copy, Cut, Paste, Copy Path, etc.) should also include a "Run" action that executes the selected file through the runner. |
-| **Affected code** | `app/shell/main_window.py` — `_show_single_item_context_menu()` (line 3374) builds the existing `QMenu`. Add a "Run" action to this menu (for non-directory files, ideally `.py` only). When chosen, call `self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=absolute_path)` which already accepts an `entry_file` parameter (line 1991). |
-| **Notes** | Implemented: file-tree context menu now includes **Run** for Python files and routes execution through the existing run session path. Verified in smoke test report group 22 (#11). |
-
----
-
-### 12. Run/Debug active file and explicit project entry point management
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Three related changes: **(A)** Run (F5) and Debug (Ctrl+F5) should execute the file currently open and focused in the editor, not the project's `default_entry`. Currently `default_entry` is inferred at project-open time (often the alphabetically first `.py` file), so editing `probe6` and clicking Debug runs `probe1`. **(B)** Add separate "Run Project" (Shift+F5) and "Debug Project" (Ctrl+Shift+F5) actions that always run from the project entry point. **(C)** Let users explicitly set the project entry point via a "Set as Entry Point" right-click option in the file tree. The entry point file should be visually distinguished with bold text and a play-icon badge. |
-| **Affected code** | `app/shell/main_window.py` — `_handle_run_action`, `_handle_debug_action`, `_build_tree_item`, `_show_single_item_context_menu`. `app/shell/menus.py` — new Run Project / Debug Project menu actions. `app/shell/toolbar.py` — new toolbar buttons. `app/shell/toolbar_icons.py` — new icons. `app/shell/actions.py` — new enabled-state fields. `app/shell/icon_provider.py` — entry-point file icon. `app/run/run_service.py` — entry resolution (no changes needed, already supports `entry_file` override). |
-| **Notes** | Implemented: F5/Ctrl+F5 run/debug active file, Shift+F5/Ctrl+Shift+F5 run/debug project entry, and **Set as Entry Point** updates `cbcs/project.json` with visual tree indicator. Verified in smoke test report group 22 (#12). |
-
----
-
-### 13. Auto-indent on Enter (FreeCAD-style)
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | When pressing Enter to create a new line, the cursor should land at the correct indentation level instead of column 0. FreeCAD's macro editor does this — the new line inherits the indentation of the previous line, and ideally increases indent after block-opening statements (`if …:`, `def …:`, `for …:`, `class …:`, etc.). |
-| **Implemented in** | `app/editors/code_editor_widget.py` — `keyPressEvent()` intercepts Enter/Return and calls `_insert_newline_with_auto_indent()`, which computes the correct indentation via `next_line_indentation()` from `app/editors/text_editing.py`. New lines inherit the current line's indentation and increase indent after block-opening `:` statements. |
-
----
-
-### 14. Gracefully handle deleted entry file
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | When the configured entry file (e.g. `default_entry` in `cbcs/project.json`) is deleted or missing from disk, the editor should detect this gracefully and prompt the user to select a new entry file rather than failing silently or crashing. |
-| **Affected code** | `app/shell/main_window.py` (entry file resolution and run invocation), `app/run/run_service.py` / `app/run/execution_context.py` (entry path existence check), `app/project/project_service.py` (project metadata loading). |
-| **Notes** | Implemented: run/debug now detects missing entry file at launch time, prompts for replacement `.py`, and persists the updated entry point. Verified in smoke test report group 22 (#14). |
-
----
-
-### 15. "New Window" action in File menu
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Add a "New Window" action to the File menu (like VS Code's `Ctrl+Shift+N`) that launches a fresh, independent editor instance so the user can quickly open a separate project in a new window. |
-| **Affected code** | `app/shell/menus.py` — add a `shell.action.file.newWindow` action to the File menu (between "New Project from Template" and "Open Project", or after "Open Recent" — matching VS Code's placement). Add an `on_new_window` callback to `MenuCallbacks`. `app/shell/main_window.py` — implement the callback that spawns a new editor process. The mechanism should mirror `dev_launch_editor.py`'s `build_apprun_command()` + `subprocess.Popen(..., start_new_session=True)` pattern, launching a detached AppRun child running `run_editor.py`. `app/shell/shortcut_preferences.py` — register a default shortcut (e.g. `Ctrl+Shift+N`). |
-| **Notes** | Implemented: **File > New Window** and `Ctrl+Shift+N` launch a detached, independent editor process. Verified in smoke test report group 22 (#15). |
-
----
-
-### 16. Preview tabs (VS Code-style single-click preview mode)
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Implement VS Code-style "preview mode" for editor tabs. **Single-clicking** a file in the project tree opens it in a **preview tab** whose title renders in *italics*. Only one preview tab exists at a time — single-clicking a different file replaces the preview tab's content instead of opening a new tab. **Double-clicking** a file in the tree opens it as a **permanent tab** (non-italic title, must be explicitly closed). A preview tab **promotes to permanent** when the user: (a) double-clicks the tab header, (b) edits the file (any content-modifying keystroke), or (c) uses an explicit "keep open" shortcut (VS Code uses `Ctrl+K Enter`). An optional setting (`editor.enable_preview`) should allow disabling preview mode entirely, in which case all opens behave as permanent. |
-| **Implemented behavior** | Preview semantics now apply across all requested surfaces: **Project Tree**, **Quick Open**, **Search**, **Problems**, **Debug navigation**, and **Run Log open-log action**. Shared invariant: only one preview tab exists at a time; opening another preview replaces the current preview tab. Promotion triggers: tab-header double-click, first content-modifying edit, and explicit keep-open shortcut. |
-| **Implemented in** | `app/editors/editor_tab.py` (`is_preview`, `promote()`), `app/editors/editor_manager.py` (single-preview slot + replacement/promotion contracts), `app/shell/main_window.py` (preview/permanent routing, tab presentation refresh, keep-open shortcut, tree click debounce), `app/editors/quick_open_dialog.py` (preview vs permanent signals), `app/shell/search_sidebar_widget.py`, `app/shell/problems_panel.py`, `app/shell/debug_panel_widget.py`, `app/core/constants.py` + `app/shell/settings_models.py` + `app/shell/settings_dialog.py` (`editor.enable_preview`), `app/shell/shortcut_preferences.py` (`shell.shortcut.keepPreviewOpen`). |
-| **Notes** | `editor.enable_preview` defaults to `true`. Disabling it immediately promotes any active preview tab and forces all future opens to permanent behavior. Tab styling uses custom tab-bar rendering to keep preview italics compatible with existing close-button and dirty-state (`*`) indicators. |
-
----
-
-### 17. Automatic file tree refresh on filesystem changes
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | The project file tree should update automatically when files or directories are added, removed, or renamed outside the editor (e.g. from a terminal, file manager, or the runner creating output files). Currently the tree only refreshes when the user manually clicks the "Refresh Explorer" button or after an internal operation (rename, delete, new file, etc.). External changes should be detected and reflected without user intervention. |
-| **Implemented in** | `app/shell/main_window.py` — the 1-second `QTimer` poll (`_external_change_poll_timer`) was extended to compare a project tree structure signature (`_scan_project_tree_signature()`) against the last-known state (`_project_tree_structure_signature`). When the signature changes (files added, removed, or renamed externally), `_reload_current_project()` is called automatically with `preserve_state=True` to maintain expansion and selection state. The "Refresh Explorer" button remains as a manual fallback. |
-| **Implementation approach** | Option B (debounced periodic poll) was chosen. The poll compares the project entry list on each tick and triggers a full tree rebuild on diff. Up to 1 second of latency for external changes, but no platform edge cases or file-descriptor costs. |
-| **Notes** | The refresh preserves tree expansion state and current selection via `_populate_project_tree(preserve_state=True)`. Tab content staleness for open files is handled separately by the same poll via `stale_open_paths()`. |
-
----
-
-### 18. JRXML editor support (syntax highlighting and validation)
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Add syntax highlighting and validation for `.jrxml` (JasperReports XML) files opened in ChoreBoy Code Studio. JRXML files are XML-based report definitions used by the `jasper_bridge` library (see `docs/JASPER_BRIDGE_PLAN.md`). Syntax highlighting should treat them as XML with awareness of JasperReports-specific elements and attributes. Validation could check well-formedness and flag common JRXML authoring mistakes. |
-| **Resolution** | `.jrxml` is now registered in the tree-sitter language registry under the XML path. Files open with tree-sitter syntax highlighting through the shared highlighter pipeline. |
-| **Implemented in** | `app/treesitter/language_registry.py` (`.jrxml` extension mapping), `app/treesitter/queries/xml.scm`, `app/editors/syntax_registry.py` |
-| **Notes** | Syntax support is complete in-editor. JRXML domain validation rules remain a separate optional enhancement. |
-
----
-
-### 19. Bottom tab auto-switching on Run is disruptive
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | When the user clicks Run, the active bottom-panel tab is force-switched to Run Log (on start and on every output chunk) and potentially to Problems (on failure). If the user is watching content on another tab (e.g. Python Console or Debug), this is disruptive — the tab they were monitoring gets yanked away. The per-chunk tab stealing is the most aggressive behavior: switching on every output event means the tab keeps jumping back even if the user manually navigates away mid-run. |
-| **Resolution** | The per-output-chunk tab switching was removed. `RunOutputCoordinator.apply()` no longer calls `focus_run_log_tab` on each `output` event — it only appends text. Tab switching now happens once at run start in `_start_session()` (controlled by the `auto_open_console_on_run_output` setting) and once after pytest completion in `_handle_pytest_run_result()`. Users can navigate away from the Run Log tab mid-run without it snapping back. |
-| **Implemented in** | `app/shell/run_output_coordinator.py` (output handler only appends, no tab switch), `app/shell/main_window.py` (`_start_session()` switches once at start). |
-| **Notes** | The existing `auto_open_console_on_run_output` and `auto_open_problems_on_run_failure` settings remain as on/off controls for the initial switch behavior. |
-
----
-
-### 20. Python console command history persistence across sessions
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | The Python Console's command history is purely in-memory and lost when the app closes. History should persist across sessions so users can recall previous commands after restarting. Additionally, provide an easy way to browse, search, and re-run previous commands beyond sequential Up/Down arrow recall. |
-| **Implemented in** | `app/shell/python_console_history.py` — `load_python_console_history()` and `save_python_console_history()` handle JSON serialization to the global state directory. `app/shell/main_window.py` — `_restore_python_console_history()` loads history on startup, `_persist_python_console_history()` saves on shutdown (called from `closeEvent`). `app/shell/python_console_widget.py` — `set_history()` accepts restored entries. |
-| **Notes** | Sub-feature (A) — history persistence — is complete. Sub-feature (B) — interactive history search/browse UI (e.g. Ctrl+R) — remains a potential future enhancement. |
-
----
-
-### 21. Refresh Explorer resets folder expansion state
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Request** | Clicking the "Refresh Explorer" button (or any action that triggers a project tree reload) expands all top-level folders, discarding the user's current collapse/expand state. The user has to manually re-collapse folders every time. |
-| **Implemented in** | `app/shell/main_window.py` — `_populate_project_tree()` accepts `preserve_state=True`, which calls `_capture_project_tree_state()` before clearing the tree (records expanded and selected relative paths) and `_restore_project_tree_state()` after rebuilding. `_reload_current_project()` and the Refresh Explorer button both pass `preserve_state=True`. Top-level directories are only expanded by default on initial project open, not on refresh. |
-
----
-
-### 22. Ship incremental updates in email-ready batches
-
-| Field | Value |
-|-------|-------|
-| **Status** | TODO |
-| **Requested by** | Joe Miller |
-| **Request** | Ship incremental updates so progress can be shared by email in small, clear batches. |
-| **Rationale** | Stakeholders need frequent progress snapshots that are easy to forward without reading full backlog/changelog context. |
-| **Affected code/docs** | `docs/USER_REQUESTS_TODO.md`, `docs/TASKS.md`, `docs/SMOKE_TEST_REPORT.md` (process/evidence alignment for incremental status mail-outs). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` once the reporting cadence/format is scoped (likely `RELEASE-CRITICAL` docs/process slice). |
-| **Notes** | Define a repeatable update packet format (What shipped / What changed / What is next / Known risks), include evidence links per batch, and keep each update concise enough for direct email use. |
-
----
-
-### 23. "Git idea via faxmail terminal" intake
-
-| Field | Value |
-|-------|-------|
-| **Status** | WON'T DO |
-| **Request** | "Git idea via faxmail terminal." |
-| **Rationale** | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous. |
-| **Resolution** | Not planned for the core product. Recommended as a community plugin for users who want this functionality. The plugin architecture (request #4) provides the extension surface for this kind of niche workflow integration. |
-
----
-
-### 24. Syntax coloring appears incorrect for FreeCAD macro workflow
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | Syntax coloring still appears wrong/"pretty colorful" while editing a FreeCAD macro with GUI/object operations. |
-| **Root cause** | Two issues in the tree-sitter highlighting pipeline: **(A)** The `(identifier) @variable` catch-all in `python.scm` colored every unmatched identifier as `semantic_variable`, flooding FreeCAD macro code with bright cyan text. **(B)** The `(parameter (identifier) @parameter)` query pattern referenced a non-existent `parameter` node type in the tree-sitter Python grammar; tree-sitter treated it as a catch-all, coloring ALL identifiers as parameters regardless of context. Both captures mapped to the same `#9CDCFE` color in dark mode, producing the "pretty colorful" effect. |
-| **Resolution** | Removed `variable` and `variable.def` entries from `_CAPTURE_TOKEN_MAP` so generic identifiers revert to default text color. Fixed the query pattern from `(parameter ...)` to `(parameters ...)` (the actual grammar node type) so only function signature parameters are colored. Restructured capture processing flow so `_apply_capture_overrides` runs even for unmapped captures, preserving `self`/`cls` → `builtin` coloring. Added `.fcmacro` extension to the Python language spec for direct FreeCAD macro file support. |
-| **Implemented in** | `app/treesitter/highlighter.py` (token map + capture flow), `app/treesitter/queries/python.scm` (parameter query fix), `app/treesitter/language_registry.py` (`.fcmacro` extension). |
-| **Notes** | Keywords, strings, numbers, comments, function/class definitions, method calls, properties, decorators, and builtin calls remain correctly colored. Only generic/unrecognized identifiers lost coloring, matching v0.1 behavior. The "Semantic Variable" token in Settings > Syntax Colors has no visible effect after this change. Related: request #27 (undefined identifier coloring) remains a separate enhancement. |
-
----
-
-### 25. Settings dialog chops syntax token names
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | Improve the Settings dialog so syntax token names are not chopped/clipped in the Syntax Colors table. |
-| **Rationale** | Truncated token labels make color customization harder and increase misconfiguration risk. |
-| **Affected code** | `app/shell/settings_dialog.py` (header resize policy and table layout), `app/shell/style_sheet.py` (table spacing/padding that affects available width), `tests/unit/shell/test_settings_dialog.py` (missing layout-regression coverage). |
-| **TASKS linkage** | Mirror into `docs/TASKS.md` as a UI polish slice when width/elision behavior and acceptance criteria are finalized. |
-| **Notes** | Likely tied to current section resize modes where non-label columns consume content width. Validate final behavior in both light and dark themes per UI theme compatibility rule. |
-
----
-
-### 26. FreeCAD macro debug guidance for active-file workflow
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | Clarify how to use "Debug Active File" for FreeCAD macro-style files and whether broad `try/except` wrapping is required. |
-| **Rationale** | Users need reliable debugging guidance for macro work without suppressing useful errors. |
-| **Affected code/docs** | `app/shell/main_window.py` (active-file run/debug `.py` gating), `docs/manual/chapters/06_run_debug_console.md` (run/debug guidance), `app/runner/runner_main.py` + `app/run/problem_parser.py` (traceback/problem surfacing), `app/runner/debug_runner.py` (debug breakpoint behavior). |
-| **Notes** | By design: CBCS Run/Debug executes Python headless — FreeCAD macros that use the GUI (`ActiveDocument`, `Part`, `Gui`) should be run directly in FreeCAD's macro editor, not in CBCS. No code changes needed; current behavior is correct. Broad `try/except` wrapping is not recommended. |
-
----
-
-### 27. Undefined identifiers not colored differently from variables
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Clair Nolt (Ozark Timbers LLC) |
-| **Request** | Undefined identifiers (e.g. `nothing` in `test3 = nothing`) are not colored differently; they use the same variable/parameter color as defined names. |
-| **Root cause** | Tree-sitter highlighting is lexical only; it has no semantic name resolution. The Python query catch-all `(identifier) @variable` applied to all identifiers regardless of whether they are defined. |
-| **Resolution** | Resolved by request #24 (macro syntax coloring fix): the `variable` and `variable.def` entries were removed from `_CAPTURE_TOKEN_MAP` in `app/treesitter/highlighter.py`, so the catch-all `(identifier) @variable` capture no longer maps to any color. Generic identifiers — both defined and undefined — now render in default text color, matching v0.1 behavior. Undefined names are still flagged by pyflakes (PY301) with squiggly underlines and Problems panel entries. |
-| **Additional fix** | Pyflakes diagnostic column spans (`col_end`) were widened to cover the full identifier name instead of just 1 character, using `message.message_args` to extract the symbol name length. This improves squiggle underline accuracy for all pyflakes-backed diagnostics (PY301, PY220, PY302, PY303, etc.). |
-| **Implemented in** | `app/treesitter/highlighter.py` (catch-all token unmapping, via request #24), `app/intelligence/diagnostics_service.py` (`_diagnostic_from_pyflakes_message` col_end fix). |
-
----
-
-### 28. File Open dialog start directory
-
-| Field | Value |
-|-------|-------|
-| **Status** | DONE |
-| **Requested by** | Jason Rissler (Sunrise Circuits) |
-| **Request** | File > Open File should open the dialog in the folder of the file currently being edited, not project root or home. Useful when editing files outside the project (e.g. bash scripts in another folder). |
-| **Current behavior (before fix)** | Project root if project loaded, else home. |
-| **Proposed behavior** | 3-tier fallback: (1) active file's parent dir if an editor tab with a saved file path is active, (2) project root if project loaded, (3) home. |
-| **Research** | Atom defaults to active file's directory; VS Code users requested same (issues #151722, #151668). |
-| **Implemented in** | `app/shell/main_window.py` — `_handle_open_file_action()` uses active tab path, then project root, then home. File filter extended with Shell Scripts (*.sh *.bash) for discoverability. |
+| **Notes** | Large architectural decision — would need a formal design pass (plugin lifecycle, hook points, sandboxing, distribution mechanism) before implementation. Worth revisiting once the core MVP feature set is solid. |
 
 ---
 

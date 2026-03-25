@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
-from typing import Mapping
 
 import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
+from app.debug.debug_event_protocol import parse_debug_output_line
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.core import constants
 
-pytestmark = [pytest.mark.integration, pytest.mark.runtime_parity]
+pytestmark = pytest.mark.integration
 
 
 def _wait_until(predicate, timeout_seconds: float = 5.0) -> bool:
@@ -138,29 +138,8 @@ def test_run_service_projectless_python_repl_uses_home_cwd_and_executes_multilin
     assert "0\n1" in output_text
 
 
-def test_run_service_projectless_script_executes_explicit_entry_file(tmp_path: Path) -> None:
-    """Projectless script mode should execute a provided absolute entry file."""
-    script_path = tmp_path / "snippet.py"
-    script_path.write_text("print('PROJECTLESS_SCRIPT_OK')\n", encoding="utf-8")
-    events: list[ProcessEvent] = []
-    service = RunService(
-        on_event=events.append,
-        runtime_executable=None,
-        runner_boot_path=str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve()),
-        state_root=str((tmp_path / "state").resolve()),
-    )
-
-    session = service.start_run(None, mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=str(script_path.resolve()))
-    assert Path(session.manifest_path).exists()
-
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
-    output_text = "".join(event.text or "" for event in events if event.event_type == "output")
-    assert "PROJECTLESS_SCRIPT_OK" in output_text
-
-
 def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) -> None:
-    """Debug mode should pause on configured breakpoint and resume via structured command."""
+    """Debug mode should pause on configured breakpoint and resume via stdin command."""
     project_root = tmp_path / "project"
     (project_root / "cbcs").mkdir(parents=True)
     script_path = project_root / "run.py"
@@ -180,50 +159,27 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
         breakpoints=[{"file_path": str(script_path.resolve()), "line_number": 2}],
     )
     assert _wait_until(lambda: service.supervisor.is_running())
-    assert _wait_until(lambda: service.is_debug_paused, timeout_seconds=12.0)
+    assert _wait_until(lambda: service.is_debug_paused, timeout_seconds=8.0)
 
-    def _breakpoint_pause_frame() -> tuple[Path, int] | None:
+    def _first_paused_frame() -> tuple[Path, int] | None:
         for event in events:
-            if event.event_type != "debug" or not isinstance(event.payload, Mapping):
+            if event.event_type != "output" or not event.text:
                 continue
-            if event.payload.get("kind") != "event" or event.payload.get("event") != "stopped":
+            parsed_event = parse_debug_output_line(event.text)
+            if parsed_event is None or parsed_event.event_type != "paused" or not parsed_event.frames:
                 continue
-            body = event.payload.get("body")
-            if not isinstance(body, Mapping):
-                continue
-            frames = body.get("frames", [])
-            if not isinstance(frames, list):
-                continue
-            for frame in frames:
-                if not isinstance(frame, Mapping):
-                    continue
-                file_path = frame.get("file_path")
-                line_number = frame.get("line_number")
-                if (
-                    isinstance(file_path, str)
-                    and isinstance(line_number, int)
-                    and Path(file_path).resolve() == script_path.resolve()
-                    and line_number == 2
-                ):
-                    return (Path(file_path).resolve(), line_number)
+            frame = parsed_event.frames[0]
+            return (Path(frame.file_path).resolve(), frame.line_number)
         return None
 
-    if _breakpoint_pause_frame() is None:
-        service.send_debug_command("continue")
-    assert _wait_until(lambda: _breakpoint_pause_frame() is not None, timeout_seconds=12.0)
-    first_paused_frame = _breakpoint_pause_frame()
+    assert _wait_until(lambda: _first_paused_frame() is not None, timeout_seconds=8.0)
+    first_paused_frame = _first_paused_frame()
     assert first_paused_frame is not None
     assert first_paused_frame[0] == script_path.resolve()
     assert first_paused_frame[1] == 2
 
-    service.send_debug_command("continue")
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=15.0)
+    service.send_input("continue\n")
+    assert _wait_until(lambda: any(event.event_type == "exit" for event in events), timeout_seconds=8.0)
     assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
-    assert any(
-        event.event_type == "debug"
-        and isinstance(event.payload, Mapping)
-        and event.payload.get("kind") == "event"
-        and event.payload.get("event") == "stopped"
-        for event in events
-    )
+    assert any(event.event_type == "output" and "__CB_DEBUG_PAUSED__" in (event.text or "") for event in events)
     assert service.is_debug_paused is False

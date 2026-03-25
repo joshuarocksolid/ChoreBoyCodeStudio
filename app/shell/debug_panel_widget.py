@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List, Set
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import QFont, QFontDatabase
@@ -25,24 +25,12 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from app.debug.debug_models import (
-    DebugBreakpoint,
-    DebugExecutionState,
-    DebugFrame,
-    DebugScope,
-    DebugSessionState,
-    DebugThread,
-    DebugWatchResult,
-    DebugVariable,
-)
+from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState, DebugVariable
 
 
 _ROLE_FILE_PATH = Qt.UserRole + 1
 _ROLE_LINE_NUMBER = Qt.UserRole + 2
 _ROLE_IS_CURRENT_FRAME = Qt.UserRole + 3
-_ROLE_FRAME_ID = Qt.UserRole + 4
-_ROLE_VARIABLE_REFERENCE = Qt.UserRole + 5
-_ROLE_BREAKPOINT_ENABLED = Qt.UserRole + 6
 
 
 class _SectionHeader(QWidget):
@@ -84,9 +72,9 @@ class _SectionHeader(QWidget):
 class _StatusHeader(QWidget):
     """Status bar across the top of the debug panel showing execution state."""
 
-    refresh_stack_clicked: Any = Signal()
-    refresh_locals_clicked: Any = Signal()
-    clear_clicked: Any = Signal()
+    refresh_stack_clicked = Signal()
+    refresh_locals_clicked = Signal()
+    clear_clicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -174,17 +162,12 @@ def _mono_font() -> QFont:
 class DebugPanelWidget(QWidget):
     """Self-contained debug panel with splitter layout and tree views."""
 
-    navigate_requested: Any = Signal(str, int)
-    navigate_permanent_requested: Any = Signal(str, int)
-    frame_selected_requested: Any = Signal(int)
-    variable_expand_requested: Any = Signal(int)
-    watch_evaluate_requested: Any = Signal(str)
-    breakpoint_remove_requested: Any = Signal(str, int)
-    breakpoint_toggle_requested: Any = Signal(str, int, bool)
-    breakpoint_edit_requested: Any = Signal(str, int)
-    refresh_stack_requested: Any = Signal()
-    refresh_locals_requested: Any = Signal()
-    command_submitted: Any = Signal(str)
+    navigate_requested = Signal(str, int)
+    watch_evaluate_requested = Signal(str)
+    breakpoint_remove_requested = Signal(str, int)
+    refresh_stack_requested = Signal()
+    refresh_locals_requested = Signal()
+    command_submitted = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -210,10 +193,6 @@ class DebugPanelWidget(QWidget):
         left_splitter.setChildrenCollapsible(True)
         left_splitter.setHandleWidth(1)
 
-        self._threads_header = _SectionHeader("THREADS")
-        self._threads_tree = self._build_threads_tree()
-        left_splitter.addWidget(_make_section(self._threads_header, self._threads_tree))
-
         self._stack_header = _SectionHeader("CALL STACK")
         self._stack_tree = self._build_stack_tree()
         left_splitter.addWidget(_make_section(self._stack_header, self._stack_tree))
@@ -224,9 +203,8 @@ class DebugPanelWidget(QWidget):
         self._bp_tree = self._build_breakpoints_tree()
         left_splitter.addWidget(_make_section(self._bp_header, self._bp_tree))
 
-        left_splitter.setStretchFactor(0, 1)
-        left_splitter.setStretchFactor(1, 3)
-        left_splitter.setStretchFactor(2, 2)
+        left_splitter.setStretchFactor(0, 3)
+        left_splitter.setStretchFactor(1, 2)
         main_splitter.addWidget(left_splitter)
 
         self._vars_header = _SectionHeader("VARIABLES")
@@ -255,26 +233,10 @@ class DebugPanelWidget(QWidget):
         main_splitter.setStretchFactor(2, 3)
         root_layout.addWidget(main_splitter, 1)
 
-        self._breakpoints: list[DebugBreakpoint] = []
-        self._loaded_variable_references: set[int] = set()
-        self._expanded_variable_references: set[int] = set()
-        self._syncing_breakpoint_tree = False
-        self._last_auto_eval_key: tuple[str, int, str] | None = None
+        self._breakpoints_by_file: Dict[str, Set[int]] = {}
         self.set_command_input_enabled(False)
 
     # -- Tree builders --------------------------------------------------------
-
-    def _build_threads_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
-        tree.setObjectName("shell.debug.threadsTree")
-        tree.setHeaderLabels(["Thread"])
-        tree.setRootIsDecorated(False)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().hide()
-        tree.setIndentation(0)
-        return tree
 
     def _build_stack_tree(self) -> QTreeWidget:
         tree = QTreeWidget()
@@ -289,7 +251,6 @@ class DebugPanelWidget(QWidget):
         tree.header().resizeSection(0, 140)
         tree.setIndentation(0)
         tree.itemClicked.connect(self._on_stack_item_clicked)
-        tree.itemDoubleClicked.connect(self._on_stack_item_double_clicked)
         return tree
 
     def _build_variables_tree(self) -> QTreeWidget:
@@ -304,27 +265,21 @@ class DebugPanelWidget(QWidget):
         tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
         tree.header().resizeSection(0, 120)
         tree.setIndentation(12)
-        tree.itemExpanded.connect(self._on_variable_item_expanded)
-        tree.itemCollapsed.connect(self._on_variable_item_collapsed)
         return tree
 
     def _build_breakpoints_tree(self) -> QTreeWidget:
         tree = QTreeWidget()
         tree.setObjectName("shell.debug.breakpointsTree")
-        tree.setHeaderLabels(["Breakpoint", "Status"])
+        tree.setHeaderLabels(["Breakpoint"])
         tree.setRootIsDecorated(False)
         tree.setSelectionMode(QAbstractItemView.SingleSelection)
         tree.setAlternatingRowColors(True)
         tree.setFont(_mono_font())
-        tree.header().setStretchLastSection(True)
-        tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
-        tree.header().resizeSection(0, 180)
+        tree.header().hide()
         tree.setIndentation(0)
         tree.setContextMenuPolicy(Qt.CustomContextMenu)
         tree.customContextMenuRequested.connect(self._on_bp_context_menu)
         tree.itemClicked.connect(self._on_bp_item_clicked)
-        tree.itemDoubleClicked.connect(self._on_bp_item_double_clicked)
-        tree.itemChanged.connect(self._on_bp_item_changed)
         return tree
 
     def _build_watch_section(self) -> tuple[QTreeWidget, QLineEdit, QWidget]:
@@ -394,14 +349,14 @@ class DebugPanelWidget(QWidget):
 
         command_input = QLineEdit(input_row)
         command_input.setObjectName("shell.debug.commandInput")
-        command_input.setPlaceholderText("Evaluate in selected frame...")
+        command_input.setPlaceholderText("Enter pdb command...")
         command_input.returnPressed.connect(self._handle_submit_command)
         input_layout.addWidget(command_input, 1)
 
         send_btn = QToolButton(input_row)
         send_btn.setObjectName("shell.debug.sectionBtn")
-        send_btn.setText("Eval")
-        send_btn.setToolTip("Evaluate in selected debug frame")
+        send_btn.setText("Send")
+        send_btn.setToolTip("Send command to debugger")
         send_btn.setCursor(Qt.PointingHandCursor)
         send_btn.clicked.connect(self._handle_submit_command)
         input_layout.addWidget(send_btn)
@@ -416,28 +371,22 @@ class DebugPanelWidget(QWidget):
     def update_from_state(self, state: DebugSessionState) -> None:
         """Refresh stack, variables, and status from debug session state."""
         location = ""
-        selected_frame = state.selected_frame
-        if selected_frame is not None:
-            location = f"{Path(selected_frame.file_path).name}:{selected_frame.line_number} in {selected_frame.function_name}"
+        if state.frames:
+            top = state.frames[0]
+            location = f"{Path(top.file_path).name}:{top.line_number} in {top.function_name}"
 
         self._status_header.update_state(state.execution_state, location)
-        self._refresh_threads(state.threads)
-        self._refresh_stack(state.frames, selected_frame_id=state.selected_frame_id)
-        self._refresh_variables(state.scopes, state.variables_by_reference)
-        self._refresh_watch_values(state.watch_results)
+        self._refresh_stack(state.frames)
+        self._refresh_variables(state.variables)
 
-        auto_eval_key = (state.execution_state.value, state.selected_frame_id, state.last_message)
-        if state.execution_state == DebugExecutionState.PAUSED and auto_eval_key != self._last_auto_eval_key:
+        if state.execution_state == DebugExecutionState.PAUSED:
             self._auto_evaluate_watches()
-            self._last_auto_eval_key = auto_eval_key
-        elif state.execution_state != DebugExecutionState.PAUSED:
-            self._last_auto_eval_key = None
 
     def append_output(self, text: str) -> None:
         self._output_widget.appendPlainText(text)
 
-    def set_breakpoints(self, breakpoints: List[DebugBreakpoint]) -> None:
-        self._breakpoints = list(breakpoints)
+    def set_breakpoints(self, breakpoints_by_file: Dict[str, Set[int]]) -> None:
+        self._breakpoints_by_file = {fp: set(lines) for fp, lines in breakpoints_by_file.items()}
         self._refresh_breakpoints()
 
     def watch_expressions(self) -> List[str]:
@@ -462,17 +411,10 @@ class DebugPanelWidget(QWidget):
 
     def clear_all(self) -> None:
         self._output_widget.clear()
-        self._threads_tree.clear()
         self._stack_tree.clear()
         self._vars_tree.clear()
-        self._watch_tree.clear()
-        self._loaded_variable_references.clear()
-        self._expanded_variable_references.clear()
-        self._last_auto_eval_key = None
-        self._threads_header.set_count(0)
         self._stack_header.set_count(0)
         self._vars_header.set_count(0)
-        self._watch_header.set_count(0)
         self._status_header.update_state(DebugExecutionState.IDLE)
 
     def set_command_input_enabled(self, enabled: bool) -> None:
@@ -481,31 +423,17 @@ class DebugPanelWidget(QWidget):
 
     # -- Internal refresh helpers ---------------------------------------------
 
-    def _refresh_threads(self, threads: List[DebugThread]) -> None:
-        self._threads_tree.clear()
-        self._threads_header.set_count(len(threads))
-        for thread in threads:
-            item = QTreeWidgetItem()
-            label = thread.name if thread.name else "Thread"
-            if thread.is_current:
-                label = "%s (current)" % (label,)
-            item.setText(0, label)
-            item.setToolTip(0, "thread_id=%s" % (thread.thread_id,))
-            self._threads_tree.addTopLevelItem(item)
-
-    def _refresh_stack(self, frames: List[DebugFrame], *, selected_frame_id: int) -> None:
+    def _refresh_stack(self, frames: List[DebugFrame]) -> None:
         self._stack_tree.clear()
         self._stack_header.set_count(len(frames))
-        for index, frame in enumerate(frames):
+        for idx, frame in enumerate(frames):
             item = QTreeWidgetItem()
             item.setText(0, frame.function_name)
             item.setText(1, f"{Path(frame.file_path).name}:{frame.line_number}")
             item.setData(0, _ROLE_FILE_PATH, frame.file_path)
             item.setData(0, _ROLE_LINE_NUMBER, frame.line_number)
-            item.setData(0, _ROLE_FRAME_ID, frame.frame_id)
-            is_selected = frame.frame_id == selected_frame_id or (selected_frame_id <= 0 and index == 0)
-            item.setData(0, _ROLE_IS_CURRENT_FRAME, is_selected)
-            if is_selected:
+            item.setData(0, _ROLE_IS_CURRENT_FRAME, idx == 0)
+            if idx == 0:
                 bold_font = self._stack_tree.font()
                 bold_font.setBold(True)
                 item.setFont(0, bold_font)
@@ -514,111 +442,102 @@ class DebugPanelWidget(QWidget):
             item.setToolTip(1, frame.file_path)
             self._stack_tree.addTopLevelItem(item)
 
-    def _refresh_variables(
-        self,
-        scopes: List[DebugScope],
-        variables_by_reference: Dict[int, List[DebugVariable]],
-    ) -> None:
-        self._loaded_variable_references = set(int(reference) for reference in variables_by_reference.keys())
+    def _refresh_variables(self, variables: List[DebugVariable]) -> None:
         self._vars_tree.clear()
-        total = 0
-        for scope in scopes:
-            scope_item = QTreeWidgetItem()
-            scope_item.setText(0, scope.name)
-            scope_item.setText(1, "")
-            scope_item.setData(0, _ROLE_VARIABLE_REFERENCE, scope.variables_reference)
-            scope_item.setFirstColumnSpanned(False)
-            scope_item.setExpanded(True)
-            self._vars_tree.addTopLevelItem(scope_item)
-            variables = variables_by_reference.get(scope.variables_reference, [])
-            total += len(variables)
-            for variable in variables:
-                scope_item.addChild(self._build_variable_item(variable, variables_by_reference))
-        self._vars_header.set_count(total)
+        self._vars_header.set_count(len(variables))
+        for var in variables:
+            item = QTreeWidgetItem()
+            item.setText(0, var.name)
+            value = var.value_repr
+            item.setText(1, value)
+            item.setToolTip(1, value)
+            self._try_expand_variable(item, value)
+            self._vars_tree.addTopLevelItem(item)
 
-    def _build_variable_item(
-        self,
-        variable: DebugVariable,
-        variables_by_reference: Dict[int, List[DebugVariable]],
-    ) -> QTreeWidgetItem:
-        item = QTreeWidgetItem()
-        item.setText(0, variable.name)
-        item.setText(1, variable.value_repr)
-        item.setToolTip(1, variable.value_repr)
-        item.setData(0, _ROLE_VARIABLE_REFERENCE, variable.variables_reference)
-        if variable.type_name:
-            item.setToolTip(0, variable.type_name)
-        if variable.variables_reference > 0:
-            loaded_children = variables_by_reference.get(variable.variables_reference, [])
-            if loaded_children:
-                for child in loaded_children:
-                    item.addChild(self._build_variable_item(child, variables_by_reference))
-                if variable.variables_reference in self._expanded_variable_references:
-                    item.setExpanded(True)
-            else:
-                placeholder = QTreeWidgetItem()
-                placeholder.setText(0, "Expand to load")
-                placeholder.setText(1, "")
-                item.addChild(placeholder)
-        return item
+    def _try_expand_variable(self, parent_item: QTreeWidgetItem, value_repr: str) -> None:
+        """Add child nodes for dict/list-like values when parseable."""
+        stripped = value_repr.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            self._expand_dict_repr(parent_item, stripped)
+        elif stripped.startswith("[") and stripped.endswith("]"):
+            self._expand_list_repr(parent_item, stripped)
 
-    def _refresh_watch_values(self, watch_results: Dict[str, DebugWatchResult]) -> None:
-        for index in range(self._watch_tree.topLevelItemCount()):
-            item = self._watch_tree.topLevelItem(index)
-            expression = item.text(0).strip()
-            result = watch_results.get(expression)
-            if result is None:
-                continue
-            if result.error_message:
-                item.setText(1, result.error_message)
+    def _expand_dict_repr(self, parent_item: QTreeWidgetItem, repr_str: str) -> None:
+        inner = repr_str[1:-1].strip()
+        if not inner or len(inner) > 2000:
+            return
+        pairs = self._split_top_level(inner)
+        if len(pairs) <= 1:
+            return
+        for pair in pairs:
+            colon_idx = pair.find(":")
+            if colon_idx == -1:
+                colon_idx = pair.find("=")
+            if colon_idx != -1:
+                key = pair[:colon_idx].strip()
+                val = pair[colon_idx + 1:].strip()
+                child = QTreeWidgetItem()
+                child.setText(0, key)
+                child.setText(1, val)
+                child.setToolTip(1, val)
+                parent_item.addChild(child)
+
+    def _expand_list_repr(self, parent_item: QTreeWidgetItem, repr_str: str) -> None:
+        inner = repr_str[1:-1].strip()
+        if not inner or len(inner) > 2000:
+            return
+        items = self._split_top_level(inner)
+        if len(items) <= 1:
+            return
+        for idx, val in enumerate(items):
+            child = QTreeWidgetItem()
+            child.setText(0, f"[{idx}]")
+            child.setText(1, val.strip())
+            child.setToolTip(1, val.strip())
+            parent_item.addChild(child)
+
+    @staticmethod
+    def _split_top_level(text: str) -> List[str]:
+        """Split on commas that are not inside brackets/braces/parens."""
+        parts: List[str] = []
+        depth = 0
+        current: List[str] = []
+        for ch in text:
+            if ch in "({[":
+                depth += 1
+            elif ch in ")}]":
+                depth = max(0, depth - 1)
+            if ch == "," and depth == 0:
+                parts.append("".join(current))
+                current = []
             else:
-                item.setText(1, result.value_repr)
-            item.setToolTip(1, item.text(1))
+                current.append(ch)
+        if current:
+            parts.append("".join(current))
+        return parts
 
     def _refresh_breakpoints(self) -> None:
-        self._syncing_breakpoint_tree = True
-        try:
-            self._bp_tree.clear()
-            self._bp_header.set_count(len(self._breakpoints))
-            for breakpoint in self._breakpoints:
+        self._bp_tree.clear()
+        total = 0
+        for file_path in sorted(self._breakpoints_by_file.keys()):
+            for line_number in sorted(self._breakpoints_by_file[file_path]):
                 item = QTreeWidgetItem()
-                label = f"{Path(breakpoint.file_path).name}:{breakpoint.line_number}"
-                detail_parts: List[str] = []
-                if breakpoint.condition:
-                    detail_parts.append("cond")
-                if breakpoint.hit_condition is not None:
-                    detail_parts.append("hit %s" % (breakpoint.hit_condition,))
-                if detail_parts:
-                    label = "%s [%s]" % (label, ", ".join(detail_parts))
-                item.setText(0, label)
-                item.setText(1, "Verified" if breakpoint.verified else breakpoint.verification_message or "Pending")
-                item.setCheckState(0, Qt.Checked if breakpoint.enabled else Qt.Unchecked)
-                item.setData(0, _ROLE_FILE_PATH, breakpoint.file_path)
-                item.setData(0, _ROLE_LINE_NUMBER, breakpoint.line_number)
-                item.setData(0, _ROLE_BREAKPOINT_ENABLED, breakpoint.enabled)
-                item.setToolTip(0, f"{breakpoint.file_path}:{breakpoint.line_number}")
-                if breakpoint.verification_message:
-                    item.setToolTip(1, breakpoint.verification_message)
+                item.setText(0, f"{Path(file_path).name}:{line_number}")
+                item.setCheckState(0, Qt.Checked)
+                item.setData(0, _ROLE_FILE_PATH, file_path)
+                item.setData(0, _ROLE_LINE_NUMBER, line_number)
+                item.setToolTip(0, f"{file_path}:{line_number}")
                 self._bp_tree.addTopLevelItem(item)
-        finally:
-            self._syncing_breakpoint_tree = False
+                total += 1
+        self._bp_header.set_count(total)
 
     # -- Slots ----------------------------------------------------------------
 
     def _on_stack_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         file_path = item.data(0, _ROLE_FILE_PATH)
         line_number = item.data(0, _ROLE_LINE_NUMBER)
-        frame_id = item.data(0, _ROLE_FRAME_ID)
-        if frame_id is not None:
-            self.frame_selected_requested.emit(int(frame_id))
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
-
-    def _on_stack_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
-        if file_path and line_number is not None:
-            self.navigate_permanent_requested.emit(file_path, int(line_number))
 
     def _on_bp_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         file_path = item.data(0, _ROLE_FILE_PATH)
@@ -626,28 +545,17 @@ class DebugPanelWidget(QWidget):
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
 
-    def _on_bp_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
-        if file_path and line_number is not None:
-            self.navigate_permanent_requested.emit(file_path, int(line_number))
-
     def _on_bp_context_menu(self, pos) -> None:  # type: ignore[no-untyped-def]
         item = self._bp_tree.itemAt(pos)
         if item is None:
             return
         menu = QMenu(self._bp_tree)
-        edit_action = QAction("Edit Breakpoint...", menu)
         remove_action = QAction("Remove Breakpoint", menu)
         file_path = item.data(0, _ROLE_FILE_PATH)
         line_number = item.data(0, _ROLE_LINE_NUMBER)
-        edit_action.triggered.connect(
-            lambda: self._edit_breakpoint(file_path, line_number)
-        )
         remove_action.triggered.connect(
             lambda: self._remove_breakpoint(file_path, line_number)
         )
-        menu.addAction(edit_action)
         menu.addAction(remove_action)
         menu.exec_(self._bp_tree.viewport().mapToGlobal(pos))
 
@@ -655,22 +563,10 @@ class DebugPanelWidget(QWidget):
         if file_path and line_number is not None:
             self.breakpoint_remove_requested.emit(file_path, int(line_number))
 
-    def _edit_breakpoint(self, file_path: str | None, line_number: int | None) -> None:
-        if file_path and line_number is not None:
-            self.breakpoint_edit_requested.emit(file_path, int(line_number))
-
-    def _on_bp_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
-        if self._syncing_breakpoint_tree or column != 0:
-            return
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
-        enabled = item.checkState(0) == Qt.Checked
-        if file_path and line_number is not None:
-            self.breakpoint_toggle_requested.emit(file_path, int(line_number), enabled)
-
     def _handle_clear_all_breakpoints(self) -> None:
-        for breakpoint in list(self._breakpoints):
-            self.breakpoint_remove_requested.emit(breakpoint.file_path, breakpoint.line_number)
+        for file_path in list(self._breakpoints_by_file.keys()):
+            for line_number in list(self._breakpoints_by_file.get(file_path, set())):
+                self.breakpoint_remove_requested.emit(file_path, line_number)
 
     def _handle_add_watch(self) -> None:
         expression = self._watch_input.text().strip()
@@ -720,26 +616,6 @@ class DebugPanelWidget(QWidget):
     def _auto_evaluate_watches(self) -> None:
         for expr in self.watch_expressions():
             self.watch_evaluate_requested.emit(expr)
-
-    def _on_variable_item_expanded(self, item: QTreeWidgetItem) -> None:
-        variables_reference = item.data(0, _ROLE_VARIABLE_REFERENCE)
-        if variables_reference is None:
-            return
-        reference = int(variables_reference)
-        if reference <= 0:
-            return
-        self._expanded_variable_references.add(reference)
-        if reference not in self._loaded_variable_references:
-            self.variable_expand_requested.emit(reference)
-
-    def _on_variable_item_collapsed(self, item: QTreeWidgetItem) -> None:
-        variables_reference = item.data(0, _ROLE_VARIABLE_REFERENCE)
-        if variables_reference is None:
-            return
-        reference = int(variables_reference)
-        if reference <= 0:
-            return
-        self._expanded_variable_references.discard(reference)
 
     def _handle_clear(self) -> None:
         self.clear_output()

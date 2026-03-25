@@ -1,9 +1,8 @@
-"""Bounded keyed background scheduler for shell actions."""
+"""Lightweight keyed background task runner for shell actions."""
 
 from __future__ import annotations
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
@@ -14,22 +13,13 @@ SuccessCallback = Callable[[T], None]
 ErrorCallback = Callable[[Exception], None]
 
 
-class GeneralTaskScheduler:
-    """Runs keyed background tasks on a reusable bounded thread pool."""
+class BackgroundTaskRunner:
+    """Runs keyed background tasks and marshals completion callbacks to UI thread."""
 
-    def __init__(
-        self,
-        *,
-        dispatch_to_main_thread: DispatchToMainThread,
-        max_workers: int = 4,
-    ) -> None:
+    def __init__(self, *, dispatch_to_main_thread: DispatchToMainThread) -> None:
         self._dispatch_to_main_thread = dispatch_to_main_thread
         self._lock = threading.RLock()
         self._active_cancellations: dict[str, threading.Event] = {}
-        self._executor = ThreadPoolExecutor(
-            max_workers=max(1, max_workers),
-            thread_name_prefix="shell-task",
-        )
 
     def run(
         self,
@@ -54,7 +44,7 @@ class GeneralTaskScheduler:
                 return
             self._dispatch_to_main_thread(lambda: self._handle_success(key, cancellation, result, on_success))
 
-        self._executor.submit(worker)
+        threading.Thread(target=worker, daemon=True).start()
 
     def cancel(self, key: str) -> None:
         with self._lock:
@@ -67,11 +57,6 @@ class GeneralTaskScheduler:
             keys = list(self._active_cancellations.keys())
         for key in keys:
             self.cancel(key)
-
-    def shutdown(self, *, wait: bool = False) -> None:
-        """Cancel outstanding work and stop accepting new tasks."""
-        self.cancel_all()
-        self._executor.shutdown(wait=wait, cancel_futures=False)
 
     def _handle_success(
         self,
@@ -104,5 +89,3 @@ class GeneralTaskScheduler:
                 return False
             self._active_cancellations.pop(key, None)
             return True
-
-

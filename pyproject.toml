@@ -1,8 +1,6 @@
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --import-mode=importlib"
-# Requires pytest-timeout (install into the AppRun site-packages for run_tests.py).
-timeout = 300
+addopts = "-ra"
 testpaths = ["tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]
@@ -14,8 +12,4 @@ markers = [
     "integration: multi-component tests with filesystem/subprocess boundaries",
     "runtime_parity: tests requiring /opt/freecad/AppRun or equivalent runtime",
     "manual_acceptance: links automated coverage to manual acceptance workflows",
-]
-# Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
-filterwarnings = [
-    "ignore::DeprecationWarning:rope.base.project",
 ]
