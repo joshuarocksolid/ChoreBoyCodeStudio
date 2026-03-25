@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton
+from PySide2.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QToolButton
 
 from app.designer.model import WidgetNode
 from app.designer.properties import IconPickerField, PropertyEditorController
@@ -54,11 +54,11 @@ def test_property_panel_disables_reset_for_object_name() -> None:
     resets: list[tuple[str, str]] = []
     panel.property_reset_requested.connect(lambda obj, prop: resets.append((obj, prop)))
 
-    object_name_reset = panel.findChild(QPushButton, "designer.property.reset.objectName")
+    object_name_reset = panel.findChild(QToolButton, "designer.property.reset.objectName")
     assert object_name_reset is not None
     assert object_name_reset.isEnabled() is False
 
-    text_reset = panel.findChild(QPushButton, "designer.property.reset.text")
+    text_reset = panel.findChild(QToolButton, "designer.property.reset.text")
     assert text_reset is not None
     text_reset.click()
     assert resets == [("pushButton", "text")]
