@@ -1705,7 +1705,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### L01 — Local history contract and acceptance cutover docs
-- Status: `TODO`
+- Status: `DONE`
 - Objective: define the local-history architecture, safety model, retention rules, and acceptance contract before feature code lands.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1719,7 +1719,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo explicitly documents local-history storage location, draft-vs-checkpoint semantics, restore-to-buffer rules, lineage behavior, and user-visible acceptance scenarios.
 
 ### L02 — Atomic source save foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: harden file writes with one atomic text-write path before durable history depends on save correctness.
 - Primary files:
   - `app/persistence/atomic_write.py`
@@ -1736,7 +1736,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: editor save, save-all, and auto-save-to-file share one atomic write primitive and only clear dirty state after the real file write succeeds.
 
 ### L03 — Project identity and file-lineage foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add stable project identity and logical file lineage so history survives move/rename/delete flows.
 - Primary files:
   - `app/project/project_manifest.py`
@@ -1753,7 +1753,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: projects expose a stable identity, app-driven path changes update logical history lineage, and deleted resources can still be referenced by history metadata.
 
 ### L04 — Unified local history store and legacy draft migration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the one-draft JSON store with a unified local-history substrate backed by SQLite metadata and content-addressed blobs, while migrating existing drafts forward safely.
 - Primary files:
   - `app/persistence/history_models.py`
@@ -1771,7 +1771,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: drafts and checkpoints share one history backend, legacy autosave entries migrate on access, and retention metadata exists without hidden paths.
 
 ### L05 — Checkpoint capture integration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create durable history checkpoints for save, reload, refactor, quick-fix, import-rewrite, and delete workflows.
 - Primary files:
   - `app/shell/main_window.py`
@@ -1788,7 +1788,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: all high-value editor write paths emit labeled, bounded history checkpoints and grouped multi-file operations are recorded as one transaction.
 
 ### L06 — Draft recovery compare/restore UX
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the yes/no draft prompt with a reviewable compare-and-restore workflow that restores into the buffer first.
 - Primary files:
   - `app/shell/main_window.py`
@@ -1803,7 +1803,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: crash recovery offers compare/restore choices, restores do not silently overwrite disk, and editor context remains trustworthy after restore-to-buffer.
 
 ### L07 — Per-file local history dialog
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship a first-class timeline and diff viewer for the active file with compare and restore actions.
 - Primary files:
   - `app/shell/local_history_dialog.py`
@@ -1819,7 +1819,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: users can browse a file timeline, inspect lazy-loaded diffs, compare revisions, and restore a chosen revision into the live buffer.
 
 ### L08 — Global history restore and deleted-file recovery
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add global search/picker flows for history entries whose live files were renamed, moved, or deleted.
 - Primary files:
   - `app/shell/history_restore_picker.py`
@@ -1834,7 +1834,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: deleted or moved files can be found from global history and restored through an explicit, understandable workflow.
 
 ### L09 — Local history settings, retention, and validation hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: finish settings, pruning, theme safety, performance gates, runtime-parity checks, and supportability coverage for shipping the feature confidently.
 - Primary files:
   - `app/core/constants.py`
