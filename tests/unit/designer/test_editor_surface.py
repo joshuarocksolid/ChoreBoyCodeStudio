@@ -392,7 +392,7 @@ def test_editor_surface_signals_mode_switches_to_connections_tab(tmp_path: Path)
 
     surface = DesignerEditorSurface(str(ui_file.resolve()))
     assert surface.set_mode("signals_slots") is True
-    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Connections"  # type: ignore[attr-defined]
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Signals"  # type: ignore[attr-defined]
 
 
 def test_editor_surface_signals_mode_selection_gesture_creates_connection(tmp_path: Path) -> None:
@@ -439,7 +439,7 @@ def test_editor_surface_tab_order_mode_switches_to_tab_order_tab(tmp_path: Path)
 
     surface = DesignerEditorSurface(str(ui_file.resolve()))
     assert surface.set_mode("tab_order") is True
-    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Tab Order"  # type: ignore[attr-defined]
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Tab \u2195"  # type: ignore[attr-defined]
 
 
 def test_editor_surface_tab_order_changes_are_undoable(tmp_path: Path) -> None:
@@ -507,7 +507,7 @@ def test_editor_surface_buddy_mode_switches_to_buddy_tab(tmp_path: Path) -> None
 
     surface = DesignerEditorSurface(str(ui_file.resolve()))
     assert surface.set_mode("buddy") is True
-    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Buddies"  # type: ignore[attr-defined]
+    assert surface._inspector_tabs.tabText(surface._inspector_tabs.currentIndex()) == "Buddy"  # type: ignore[attr-defined]
 
 
 def test_editor_surface_buddy_assignment_is_undoable(tmp_path: Path) -> None:
