@@ -1,6 +1,31 @@
-"""Grid-snapping helpers for canvas placement ergonomics."""
+"""Grid-snapping helpers and display utilities for canvas ergonomics."""
 
 from __future__ import annotations
+
+# Lightweight icon characters for widget types in tree displays.
+_WIDGET_ICON_CHARS: dict[str, str] = {
+    "QWidget": "\u25A1",      # □
+    "QDialog": "\u25A1",      # □
+    "QMainWindow": "\u25A1",  # □
+    "QFrame": "\u25A0",       # ■
+    "QGroupBox": "\u25A3",    # ▣
+    "QTabWidget": "\u2630",   # ☰
+    "QScrollArea": "\u2B13",  # ⬓
+    "QLineEdit": "\u270E",    # ✎
+    "QTextEdit": "\u2263",    # ≣
+    "QComboBox": "\u25BE",    # ▾
+    "QCheckBox": "\u2611",    # ☑
+    "QRadioButton": "\u25C9", # ◉
+    "QLabel": "\u24C1",       # Ⓛ
+    "QPushButton": "\u25B6",  # ▶
+    "QToolButton": "\u25B6",  # ▶
+    "QSpacerItem": "\u2B0C",  # ⬌
+}
+
+
+def widget_icon_char(class_name: str) -> str:
+    """Return a Unicode icon character for the given widget class, or empty string."""
+    return _WIDGET_ICON_CHARS.get(class_name, "")
 
 
 def snap_to_grid(value: int, grid_size: int) -> int:

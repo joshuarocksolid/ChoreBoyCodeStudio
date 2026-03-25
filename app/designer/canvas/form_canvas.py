@@ -6,7 +6,7 @@ from PySide2.QtCore import QItemSelectionModel, Qt
 from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import can_insert_widget
-from app.designer.canvas.guides import default_snapped_geometry
+from app.designer.canvas.guides import default_snapped_geometry, widget_icon_char
 from app.designer.canvas.selection_controller import SelectionController
 from app.designer.model import LayoutItem, PropertyValue, SpacerItem, UIModel, WidgetNode
 from app.designer.palette import default_widget_palette_registry
@@ -21,6 +21,7 @@ class FormCanvas(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.canvas")
         self._model: UIModel | None = None
         self._selection_controller: SelectionController | None = None
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
@@ -31,10 +32,15 @@ class FormCanvas(QWidget):
 
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-        self._hint_label = QLabel("Drag widgets from the palette onto this canvas.", self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        header = QLabel("FORM STRUCTURE", self)
+        header.setObjectName("designer.canvas.headerLabel")
+        layout.addWidget(header)
+        self._hint_label = QLabel("Drag widgets from the palette to add them", self)
+        self._hint_label.setObjectName("designer.canvas.hintLabel")
         self._canvas_tree = QTreeWidget(self)
+        self._canvas_tree.setObjectName("designer.canvas.tree")
         self._canvas_tree.setHeaderHidden(True)
         self._canvas_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._canvas_tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
@@ -174,7 +180,9 @@ class FormCanvas(QWidget):
         root_item.setExpanded(True)
 
     def _build_tree_item(self, widget: WidgetNode) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([f"{widget.object_name} : {widget.class_name}"])
+        icon = widget_icon_char(widget.class_name)
+        prefix = f"{icon} " if icon else ""
+        item = QTreeWidgetItem([f"{prefix}{widget.object_name} : {widget.class_name}"])
         item.setData(0, TREE_ROLE_OBJECT_NAME, widget.object_name)
         self._item_by_object_name[widget.object_name] = item
         for child in widget.children:

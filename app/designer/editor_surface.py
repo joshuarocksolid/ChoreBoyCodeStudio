@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from PySide2.QtCore import Qt, Signal
+from PySide2.QtCore import Qt, QTimer, Signal
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import (
     QHBoxLayout,
@@ -155,8 +155,7 @@ class DesignerEditorSurface(QWidget):
         try:
             ui_xml = self.serialize_to_ui_string()
         except Exception as exc:
-            self._error_label.setText(f"Preview failed: {exc}")
-            self._error_label.setVisible(True)
+            self._show_status(f"Preview failed: {exc}", "error")
             return False
         if self._model is not None and requires_isolated_preview(self._model):
             decision = build_preview_safety_decision(self._model)
@@ -166,17 +165,14 @@ class DesignerEditorSurface(QWidget):
                 custom_widgets=preview_registry_from_model(self._model),
             )
             if not result.is_compatible:
-                self._error_label.setText(f"{decision.message} {result.message}")
-                self._error_label.setVisible(True)
+                self._show_status(f"{decision.message} {result.message}", "warning")
                 return False
-            self._error_label.setText(f"{decision.message} Isolated preview probe passed.")
-            self._error_label.setVisible(True)
+            self._show_status(f"{decision.message} Isolated preview probe passed.", "success")
             return True
         try:
             preview_widget = load_widget_from_ui_xml(ui_xml)
         except Exception as exc:
-            self._error_label.setText(f"Preview failed: {exc}")
-            self._error_label.setVisible(True)
+            self._show_status(f"Preview failed: {exc}", "error")
             return False
         configure_preview_widget(preview_widget, window_title=f"Preview — {Path(self._file_path).name}")
         preview_widget.show()
@@ -224,7 +220,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(
@@ -259,7 +255,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         self._refresh_validation_issues()
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._command_stack.push(
             SnapshotCommand(
                 description="format ui xml",
@@ -284,12 +280,10 @@ class DesignerEditorSurface(QWidget):
                 widget=target,
             )
         except (OSError, ValueError) as exc:
-            self._error_label.setText(str(exc))
-            self._error_label.setVisible(True)
+            self._show_status(str(exc), "error")
             return False
         self._refresh_component_panel()
-        self._error_label.setText(f"Component '{component_name}' saved.")
-        self._error_label.setVisible(True)
+        self._show_status(f"Component '{component_name}' saved.", "success", auto_dismiss=True)
         return True
 
     def available_component_names(self) -> list[str]:
@@ -312,8 +306,7 @@ class DesignerEditorSurface(QWidget):
                 existing_object_names=self._model.collect_object_names(),
             )
         except (OSError, ValueError) as exc:
-            self._error_label.setText(str(exc))
-            self._error_label.setVisible(True)
+            self._show_status(str(exc), "error")
             return False
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
@@ -322,7 +315,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         self._selection_controller.set_selected_object_name(inserted_widget.object_name)
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return False
@@ -369,7 +362,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         self._selection_controller.set_selected_object_name(duplicate.object_name)
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return False
@@ -414,7 +407,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return False
@@ -441,17 +434,22 @@ class DesignerEditorSurface(QWidget):
         self._mode_buttons: dict[str, QToolButton] = {}
         for mode_def in DESIGNER_MODE_DEFINITIONS:
             button = QToolButton(self._mode_bar)
+            button.setObjectName(f"designer.modeBar.btn.{mode_def.mode_id}")
             button.setCheckable(True)
-            button.setText(f"{mode_def.display_name} ({mode_def.shortcut})")
+            label = f"{mode_def.icon_char} {mode_def.display_name}" if mode_def.icon_char else mode_def.display_name
+            button.setText(label)
+            button.setToolTip(mode_def.tooltip or f"{mode_def.display_name} ({mode_def.shortcut})")
             button.clicked.connect(lambda _checked=False, mode_id=mode_def.mode_id: self.set_mode(mode_id))
             self._mode_buttons[mode_def.mode_id] = button
             mode_layout.addWidget(button)
         mode_layout.addStretch(1)
         self._mode_status_label = QLabel("", self._mode_bar)
+        self._mode_status_label.setObjectName("designer.modeBar.statusLabel")
         mode_layout.addWidget(self._mode_status_label, 0)
         root_layout.addWidget(self._mode_bar, 0)
 
         self._splitter = QSplitter(self)
+        self._splitter.setObjectName("designer.surface.splitter")
         self._splitter.setChildrenCollapsible(False)
         root_layout.addWidget(self._splitter, 1)
 
@@ -460,6 +458,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas = FormCanvas(self._splitter)
         self._canvas.set_selection_controller(self._selection_controller)
         self._inspector_tabs = QTabWidget(self._splitter)
+        self._inspector_tabs.setObjectName("designer.surface.inspectorTabs")
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
         self._object_inspector.set_reparent_callback(self._handle_inspector_reparent_request)
@@ -478,12 +477,12 @@ class DesignerEditorSurface(QWidget):
         self._component_library_panel = ComponentLibraryPanel(self._inspector_tabs)
         self._component_library_panel.insert_requested.connect(self.insert_component)
         self._component_library_panel.refresh_requested.connect(self._refresh_component_panel)
-        self._inspector_tabs.addTab(self._object_inspector, "Object Inspector")
-        self._inspector_tabs.addTab(self._property_panel, "Property Editor")
-        self._inspector_tabs.addTab(self._connection_panel, "Connections")
-        self._inspector_tabs.addTab(self._tab_order_panel, "Tab Order")
-        self._inspector_tabs.addTab(self._buddy_panel, "Buddies")
-        self._inspector_tabs.addTab(self._component_library_panel, "Components")
+        self._inspector_tabs.addTab(self._object_inspector, "Inspector")
+        self._inspector_tabs.addTab(self._property_panel, "Properties")
+        self._inspector_tabs.addTab(self._connection_panel, "Signals")
+        self._inspector_tabs.addTab(self._tab_order_panel, "Tab \u2195")
+        self._inspector_tabs.addTab(self._buddy_panel, "Buddy")
+        self._inspector_tabs.addTab(self._component_library_panel, "Library")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
         self._splitter.addWidget(self._inspector_tabs)
@@ -491,6 +490,8 @@ class DesignerEditorSurface(QWidget):
 
         self._validation_list = QListWidget(self)
         self._validation_list.setObjectName("designer.surface.validationList")
+        self._validation_list.itemClicked.connect(self._handle_validation_item_clicked)
+        self._validation_list.setVisible(False)
         root_layout.addWidget(self._validation_list, 0)
 
         self._error_label = QLabel("", self)
@@ -504,8 +505,7 @@ class DesignerEditorSurface(QWidget):
         try:
             model = read_ui_file(self._file_path)
         except (OSError, ValueError) as exc:
-            self._error_label.setText(f"Failed to load UI file: {exc}")
-            self._error_label.setVisible(True)
+            self._show_status(f"Failed to load UI file: {exc}", "error")
             return
         self._model = model
         self._canvas.load_model(model)
@@ -539,9 +539,32 @@ class DesignerEditorSurface(QWidget):
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
         if self._model is None:
+            self._validation_list.setVisible(False)
             return
-        for issue in build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint):
-            self._validation_list.addItem(f"[{issue.severity}] {issue.code} — {issue.message}")
+        issues = build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint)
+        if not issues:
+            self._validation_list.setVisible(False)
+            return
+        severity_icons = {"error": "\u274C", "warning": "\u26A0"}
+        for issue in issues:
+            icon = severity_icons.get(issue.severity, "\u2139")
+            from PySide2.QtWidgets import QListWidgetItem
+
+            item = QListWidgetItem(f"{icon}  {issue.code} \u2014 {issue.message}")
+            item.setData(Qt.UserRole, issue.object_name)
+            item.setToolTip(f"Click to select: {issue.object_name}" if issue.object_name else "")
+            self._validation_list.addItem(item)
+        self._validation_list.setVisible(True)
+
+    def _handle_validation_item_clicked(self, item: object) -> None:
+        """Select the widget referenced by a validation issue."""
+        from PySide2.QtWidgets import QListWidgetItem
+
+        if not isinstance(item, QListWidgetItem):
+            return
+        object_name = item.data(Qt.UserRole)
+        if object_name and self._selection_controller is not None:
+            self._selection_controller.set_selected_object_name(str(object_name))
 
     def _handle_property_edited(self, object_name: str, property_name: str, value: object) -> None:
         self._apply_property_mutation(
@@ -574,8 +597,7 @@ class DesignerEditorSurface(QWidget):
         if property_name == "objectName" and operation == "set" and isinstance(value, str):
             duplicate = self._model.root_widget.find_by_object_name(value)
             if duplicate is not None and duplicate is not widget:
-                self._error_label.setText("Object name must be unique.")
-                self._error_label.setVisible(True)
+                self._show_status("Object name must be unique.", "error")
                 self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
                 return
         before_xml = self.serialize_to_ui_string()
@@ -587,11 +609,10 @@ class DesignerEditorSurface(QWidget):
             else:
                 self._property_editor.reset_property(widget, property_name)
         except (ValueError, TypeError) as exc:
-            self._error_label.setText(str(exc))
-            self._error_label.setVisible(True)
+            self._show_status(str(exc), "error")
             self._property_panel.bind_widget(widget, self._property_editor.field_definitions_for_widget(widget))
             return
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
@@ -627,12 +648,11 @@ class DesignerEditorSurface(QWidget):
         )
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
-            self._error_label.setText("Connection already exists.")
-            self._error_label.setVisible(True)
+            self._show_status("Connection already exists.", "warning")
             return
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._command_stack.push(
             SnapshotCommand(
                 description="add connection",
@@ -668,7 +688,7 @@ class DesignerEditorSurface(QWidget):
         self._model.connections.pop(index)
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._command_stack.push(
             SnapshotCommand(
                 description="remove connection",
@@ -684,8 +704,7 @@ class DesignerEditorSurface(QWidget):
         if index < 0 or index >= len(self._model.connections):
             return
         if not value.strip():
-            self._error_label.setText("Connection fields cannot be empty.")
-            self._error_label.setVisible(True)
+            self._show_status("Connection fields cannot be empty.", "error")
             self._connection_panel.bind_connections(self._model.connections)
             return
         from dataclasses import replace
@@ -696,7 +715,7 @@ class DesignerEditorSurface(QWidget):
         self._model.connections[index] = updated_connection
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return
@@ -720,7 +739,7 @@ class DesignerEditorSurface(QWidget):
         before_xml = self.serialize_to_ui_string()
         self._model.tab_stops = filtered
         self._refresh_tab_order_panel()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return
@@ -747,7 +766,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         self._refresh_validation_issues()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return
@@ -765,10 +784,9 @@ class DesignerEditorSurface(QWidget):
             return
         before_xml = self.serialize_to_ui_string()
         if not self._canvas.insert_widget_by_class_name(class_name):
-            self._error_label.setText("Widget insertion is not allowed for the selected parent.")
-            self._error_label.setVisible(True)
+            self._show_status("Widget insertion is not allowed for the selected parent.", "error")
             return
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
@@ -796,7 +814,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
-        self._error_label.setVisible(False)
+        self._hide_status()
         after_xml = self.serialize_to_ui_string()
         if before_xml == after_xml:
             return True
@@ -813,8 +831,7 @@ class DesignerEditorSurface(QWidget):
     def _handle_inspector_reparent_rejected(self, message: str) -> None:
         if not message:
             return
-        self._error_label.setText(message)
-        self._error_label.setVisible(True)
+        self._show_status(message, "error")
 
     def apply_layout_to_selection(self, layout_class_name: str) -> bool:
         """Apply layout to selected widget (or root when none selected)."""
@@ -833,10 +850,9 @@ class DesignerEditorSurface(QWidget):
         try:
             apply_layout_to_widget(target, layout_class_name, layout_object_name=layout_object_name)
         except ValueError as exc:
-            self._error_label.setText(str(exc))
-            self._error_label.setVisible(True)
+            self._show_status(str(exc), "error")
             return False
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
@@ -870,7 +886,7 @@ class DesignerEditorSurface(QWidget):
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
-        self._error_label.setVisible(False)
+        self._hide_status()
         self._command_stack.push(
             SnapshotCommand(
                 description="break layout",
@@ -937,6 +953,30 @@ class DesignerEditorSurface(QWidget):
             snapped["y"] = snap_to_grid(y_value, self._snap_grid_size) if self._snap_to_grid else y_value
         return snapped
 
+    def _show_status(self, message: str, severity: str = "info", auto_dismiss: bool = False) -> None:
+        """Show a severity-aware status message on the error/status label.
+
+        Severity values: "error", "warning", "info", "success".
+        Auto-dismiss hides info/success messages after a short delay.
+        """
+        self._error_label.setText(message)
+        self._error_label.setProperty("severity", severity)
+        self._error_label.style().unpolish(self._error_label)
+        self._error_label.style().polish(self._error_label)
+        self._error_label.setVisible(True)
+        if auto_dismiss and severity in ("info", "success"):
+            QTimer.singleShot(5000, self._dismiss_status)
+
+    def _dismiss_status(self) -> None:
+        """Hide the status label if it's showing an auto-dismissible message."""
+        severity = self._error_label.property("severity")
+        if severity in ("info", "success"):
+            self._error_label.setVisible(False)
+
+    def _hide_status(self) -> None:
+        """Hide the status label."""
+        self._error_label.setVisible(False)
+
     def _set_dirty(self, is_dirty: bool) -> None:
         if self._is_dirty == is_dirty:
             return
@@ -986,8 +1026,10 @@ class DesignerEditorSurface(QWidget):
             return
         if self._pending_connection_source is None:
             self._pending_connection_source = object_name
-            self._error_label.setText(f"Signals mode: source selected ({object_name}). Select a target widget.")
-            self._error_label.setVisible(True)
+            self._show_status(
+                f"Signals mode: source selected ({object_name}). Select a target widget.",
+                "info",
+            )
             return
         if self._pending_connection_source == object_name:
             return
@@ -1001,11 +1043,9 @@ class DesignerEditorSurface(QWidget):
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         if before_xml == after_xml:
-            self._error_label.setText("Signals mode: identical connection already exists.")
-            self._error_label.setVisible(True)
+            self._show_status("Signals mode: identical connection already exists.", "warning")
             return
-        self._error_label.setText("Signals mode: connection created.")
-        self._error_label.setVisible(True)
+        self._show_status("Signals mode: connection created.", "success", auto_dismiss=True)
         self._command_stack.push(
             SnapshotCommand(
                 description="connect widgets",
@@ -1033,8 +1073,7 @@ class DesignerEditorSurface(QWidget):
         self._model.tab_stops = current_order
         self._refresh_tab_order_panel()
         self._refresh_validation_issues()
-        self._error_label.setText(f"Tab Order mode: '{object_name}' moved to end of focus chain.")
-        self._error_label.setVisible(True)
+        self._show_status(f"Tab Order mode: '{object_name}' moved to end of focus chain.", "info")
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(
@@ -1055,8 +1094,10 @@ class DesignerEditorSurface(QWidget):
             return
         if selected.class_name == "QLabel":
             self._pending_buddy_source_label = object_name
-            self._error_label.setText(f"Buddy mode: label selected ({object_name}). Select buddy control.")
-            self._error_label.setVisible(True)
+            self._show_status(
+                f"Buddy mode: label selected ({object_name}). Select buddy control.",
+                "info",
+            )
             return
         pending_label = self._pending_buddy_source_label
         if not pending_label or pending_label == object_name:
@@ -1071,8 +1112,11 @@ class DesignerEditorSurface(QWidget):
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         self._refresh_validation_issues()
-        self._error_label.setText(f"Buddy mode: assigned '{pending_label}' → '{object_name}'.")
-        self._error_label.setVisible(True)
+        self._show_status(
+            f"Buddy mode: assigned '{pending_label}' → '{object_name}'.",
+            "success",
+            auto_dismiss=True,
+        )
         after_xml = self.serialize_to_ui_string()
         self._command_stack.push(
             SnapshotCommand(

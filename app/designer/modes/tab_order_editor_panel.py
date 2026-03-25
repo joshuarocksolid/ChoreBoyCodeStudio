@@ -21,15 +21,20 @@ class TabOrderEditorPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.tabOrder.panel")
         self._summary_label = QLabel("No tab stops configured.", self)
+        self._summary_label.setObjectName("designer.tabOrder.summary")
         self._list = QListWidget(self)
         self._list.setObjectName("designer.tabOrder.list")
 
         self._move_up_button = QPushButton("Move Up", self)
+        self._move_up_button.setObjectName("designer.tabOrder.btn.moveUp")
         self._move_up_button.clicked.connect(self._move_selected_up)
         self._move_down_button = QPushButton("Move Down", self)
+        self._move_down_button.setObjectName("designer.tabOrder.btn.moveDown")
         self._move_down_button.clicked.connect(self._move_selected_down)
         self._reset_button = QPushButton("Reset to Traversal Order", self)
+        self._reset_button.setObjectName("designer.tabOrder.btn.reset")
         self._reset_button.clicked.connect(self._emit_current_order)
 
         button_row = QHBoxLayout()

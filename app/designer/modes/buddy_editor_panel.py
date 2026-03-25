@@ -22,8 +22,10 @@ class BuddyEditorPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.buddy.panel")
         self._is_populating = False
         self._summary_label = QLabel("No label buddy assignments available.", self)
+        self._summary_label.setObjectName("designer.buddy.summary")
         self._table = QTableWidget(0, 2, self)
         self._table.setObjectName("designer.buddy.table")
         self._table.setHorizontalHeaderLabels(["Label", "Buddy"])

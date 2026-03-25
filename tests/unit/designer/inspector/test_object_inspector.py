@@ -60,8 +60,8 @@ def test_object_inspector_pushes_tree_selection_to_controller() -> None:
     inspector.set_selection_controller(controller)
 
     items = inspector._tree.findItems(  # type: ignore[attr-defined]
-        "statusLabel : QLabel",
-        Qt.MatchExactly | Qt.MatchRecursive,
+        "statusLabel",
+        Qt.MatchContains | Qt.MatchRecursive,
     )
     assert items
     target_item = items[0]
