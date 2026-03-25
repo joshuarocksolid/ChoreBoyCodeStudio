@@ -38,6 +38,7 @@ def test_project_structure_constant_values() -> None:
         constants.UI_INTELLIGENCE_SETTINGS_KEY,
         constants.UI_LINTER_SETTINGS_KEY,
         constants.UI_FILE_EXCLUDES_SETTINGS_KEY,
+        constants.UI_LOCAL_HISTORY_SETTINGS_KEY,
         constants.UI_OUTPUT_SETTINGS_KEY,
     )
     assert constants.RUN_MANIFEST_FILENAME_PREFIX == "run_manifest_"

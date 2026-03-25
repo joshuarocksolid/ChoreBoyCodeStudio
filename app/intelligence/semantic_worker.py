@@ -14,6 +14,7 @@ class _QueuedSemanticTask:
     task: Callable[[], object]
     on_success: Callable[[object], None] | None
     on_error: Callable[[Exception], None] | None
+    dispatch_on_main_thread: bool = True
 
 
 class SemanticWorker:
@@ -34,6 +35,7 @@ class SemanticWorker:
         task: Callable[[], object],
         on_success: Optional[Callable[[object], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
+        dispatch_on_main_thread: bool = True,
     ) -> None:
         """Queue a task, replacing any previous queued result for the same key."""
         with self._lock:
@@ -46,8 +48,36 @@ class SemanticWorker:
                 task=task,
                 on_success=on_success,
                 on_error=on_error,
+                dispatch_on_main_thread=dispatch_on_main_thread,
             )
         )
+
+    def call(self, *, key: str, task: Callable[[], object], timeout_seconds: float = 5.0) -> object:
+        """Run a task on the semantic thread and block until it completes."""
+        done = threading.Event()
+        result_holder: dict[str, object] = {}
+
+        def on_success(result: object) -> None:
+            result_holder["result"] = result
+            done.set()
+
+        def on_error(exc: Exception) -> None:
+            result_holder["error"] = exc
+            done.set()
+
+        self.submit(
+            key=key,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+            dispatch_on_main_thread=False,
+        )
+        if not done.wait(timeout_seconds):
+            raise TimeoutError("Semantic worker call timed out.")
+        error = result_holder.get("error")
+        if isinstance(error, Exception):
+            raise error
+        return result_holder.get("result")
 
     def cancel_all(self) -> None:
         """Invalidate all queued tasks."""
@@ -71,10 +101,16 @@ class SemanticWorker:
                 result = queued.task()
             except Exception as exc:
                 if queued.on_error is not None and self._is_current(queued.key, queued.generation):
-                    self._dispatch_to_main_thread(lambda exc=exc, callback=queued.on_error: callback(exc))
+                    if queued.dispatch_on_main_thread:
+                        self._dispatch_to_main_thread(lambda exc=exc, callback=queued.on_error: callback(exc))
+                    else:
+                        queued.on_error(exc)
                 continue
             if queued.on_success is not None and self._is_current(queued.key, queued.generation):
-                self._dispatch_to_main_thread(lambda result=result, callback=queued.on_success: callback(result))
+                if queued.dispatch_on_main_thread:
+                    self._dispatch_to_main_thread(lambda result=result, callback=queued.on_success: callback(result))
+                else:
+                    queued.on_success(result)
 
     def _is_current(self, key: str, generation: int) -> bool:
         with self._lock:

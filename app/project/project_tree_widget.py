@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from PySide2.QtCore import QUrl, Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
@@ -11,7 +12,7 @@ from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 class ProjectTreeWidget(QTreeWidget):
     """QTreeWidget extension that delegates drag/drop file moves to callback."""
 
-    deleteRequested = Signal()
+    deleteRequested: Any = Signal()
 
     def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)

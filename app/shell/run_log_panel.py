@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide2.QtCore import Signal
 from PySide2.QtGui import QColor, QFont, QPalette, QTextCharFormat, QTextCursor
@@ -60,7 +60,7 @@ def _classify_line(line: str, in_traceback: bool) -> tuple[str, bool]:
 class RunLogPanel(QWidget):
     """Run Log panel with a metadata toolbar and rich-text output area."""
 
-    open_log_requested = Signal(str)
+    open_log_requested: Any = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

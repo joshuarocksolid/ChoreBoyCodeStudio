@@ -109,15 +109,16 @@ class ThemedSyntaxHighlighter(QSyntaxHighlighter):
         self._formats: dict[str, QTextCharFormat] = {}
         self._rebuild_formats()
 
-    def set_dark_mode(self, is_dark: bool) -> None:
+    def set_dark_mode(self, is_dark: bool, *, rehighlight: bool = True) -> None:
         """Compatibility API used by existing editor theme application."""
-        self.set_theme_palette(None, is_dark=is_dark)
+        self.set_theme_palette(None, is_dark=is_dark, rehighlight=rehighlight)
 
     def set_theme_palette(
         self,
         syntax_palette: Mapping[str, str] | None,
         *,
         is_dark: bool | None = None,
+        rehighlight: bool = True,
     ) -> None:
         """Apply syntax palette overrides and trigger rehighlight when changed."""
         target_mode = self._is_dark if is_dark is None else is_dark
@@ -127,7 +128,8 @@ class ThemedSyntaxHighlighter(QSyntaxHighlighter):
         self._is_dark = target_mode
         self._palette = palette
         self._rebuild_formats()
-        self.rehighlight()
+        if rehighlight:
+            self.rehighlight()
 
     def _rebuild_formats(self) -> None:
         self._formats.clear()

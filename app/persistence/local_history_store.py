@@ -279,7 +279,10 @@ class LocalHistoryStore:
                     transaction_id,
                 ),
             )
-            revision_id = int(cursor.lastrowid)
+            row_id = cursor.lastrowid
+            if row_id is None:
+                raise RuntimeError("sqlite did not return a revision id for the inserted checkpoint")
+            revision_id = int(row_id)
             self._prune_file_checkpoints(connection, file_record.file_key)
             connection.commit()
 

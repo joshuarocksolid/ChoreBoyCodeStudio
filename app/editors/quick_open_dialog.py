@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide2.QtCore import QModelIndex, QRect, QSize, Qt, Signal
 from PySide2.QtGui import (
@@ -219,10 +219,10 @@ class QuickOpenDelegate(QStyledItemDelegate):
 class QuickOpenDialog(QDialog):
     """Floating overlay for fuzzy file-by-name search (Ctrl+P)."""
 
-    file_preview_requested = Signal(str)
-    file_selected = Signal(str)
-    file_preview_at_line_requested = Signal(str, int)
-    file_selected_at_line = Signal(str, int)
+    file_preview_requested: Any = Signal(str)
+    file_selected: Any = Signal(str)
+    file_preview_at_line_requested: Any = Signal(str, int)
+    file_selected_at_line: Any = Signal(str, int)
 
     def __init__(
         self,
@@ -338,7 +338,8 @@ class QuickOpenDialog(QDialog):
                 self.move(global_pos.x() + x, global_pos.y() + y)
         self.show()
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+    def keyPressEvent(self, arg__1: QKeyEvent) -> None:  # noqa: N802
+        event = arg__1
         if event.key() == Qt.Key_Escape:
             self.hide()
             event.accept()

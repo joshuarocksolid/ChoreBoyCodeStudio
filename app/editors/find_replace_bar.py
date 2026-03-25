@@ -31,12 +31,12 @@ class FindOptions:
 class FindReplaceBar(QWidget):
     """Inline find/replace bar that sits above the editor content."""
 
-    find_requested = Signal(str, FindOptions)
-    find_next_requested = Signal()
-    find_previous_requested = Signal()
-    replace_requested = Signal(str)
-    replace_all_requested = Signal(str)
-    close_requested = Signal()
+    find_requested: Any = Signal(str, FindOptions)
+    find_next_requested: Any = Signal()
+    find_previous_requested: Any = Signal()
+    replace_requested: Any = Signal(str)
+    replace_all_requested: Any = Signal(str)
+    close_requested: Any = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

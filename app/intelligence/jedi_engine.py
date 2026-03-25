@@ -225,15 +225,14 @@ class JediEngine:
             if not completion_name:
                 continue
             symbol_kind = str(getattr(completion, "type", "symbol"))
+            module_path = getattr(completion, "module_path", None)
             items.append(
                 CompletionItem(
                     label=completion_name,
                     insert_text=completion_name,
                     kind=_completion_kind_from_name(completion),
                     detail=_completion_detail(completion),
-                    source_file_path=None
-                    if getattr(completion, "module_path", None) is None
-                    else str(Path(completion.module_path).resolve()),
+                    source_file_path=None if module_path is None else str(Path(module_path).resolve()),
                     engine="jedi",
                     source="semantic",
                     confidence="exact",

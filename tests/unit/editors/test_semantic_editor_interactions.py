@@ -115,11 +115,45 @@ def test_tooltip_event_uses_hover_provider_when_no_diagnostic(editor: CodeEditor
     editor.set_hover_provider(lambda _source, _position: "Symbol: alpha")
     event = QHelpEvent(QEvent.ToolTip, editor.cursorRect().center(), editor.mapToGlobal(editor.cursorRect().center()))
 
-    with patch("app.editors.code_editor_widget.QToolTip.showText") as show_text:
+    with patch("app.editors.code_editor_diagnostics.QToolTip.showText") as show_text:
         handled = editor.event(event)
 
     assert handled is True
     show_text.assert_called_once()
+
+
+def test_typing_open_paren_uses_async_signature_requester_when_available(editor: CodeEditorWidget) -> None:
+    calls: list[tuple[str, int, int]] = []
+    editor.set_signature_help_requester(
+        lambda source, position, generation: calls.append((source, position, generation))
+    )
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_ParenLeft, Qt.NoModifier, "(")
+
+    editor.keyPressEvent(event)
+
+    assert calls == [("alpha(", 6, 1)]
+
+
+def test_tooltip_event_uses_async_hover_requester_when_available(editor: CodeEditorWidget) -> None:
+    calls: list[tuple[str, int, int]] = []
+    editor.set_hover_requester(lambda source, position, generation: calls.append((source, position, generation)))
+    event = QHelpEvent(QEvent.ToolTip, editor.cursorRect().center(), editor.mapToGlobal(editor.cursorRect().center()))
+
+    handled = editor.event(event)
+
+    assert handled is True
+    assert calls == [("alpha", 5, 1)]
+
+
+def test_show_calltip_for_stale_signature_request_is_ignored(editor: CodeEditorWidget) -> None:
+    editor.set_signature_help_requester(lambda *_args: None)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_ParenLeft, Qt.NoModifier, "(")
+    editor.keyPressEvent(event)
+
+    with patch.object(editor, "show_calltip") as show_calltip:
+        editor.show_calltip_for_request(request_generation=2, text="helper(alpha)")
+
+    show_calltip.assert_not_called()
 
 
 def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWidget) -> None:
@@ -138,3 +172,33 @@ def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWid
     editor.apply_theme(_DARK_TOKENS)
     assert editor._is_dark is True
     editor.show_calltip("Symbol: alpha")
+
+
+def test_apply_theme_defers_hidden_editor_rehighlight_until_show(editor: CodeEditorWidget) -> None:
+    class _FakeHighlighter:
+        def __init__(self) -> None:
+            self.rehighlight_calls = 0
+            self.theme_calls: list[bool] = []
+
+        def set_theme_palette(self, _palette, *, is_dark=None, rehighlight: bool = True) -> None:
+            self.theme_calls.append(rehighlight)
+
+        def rehighlight(self) -> None:
+            self.rehighlight_calls += 1
+
+    fake_highlighter = _FakeHighlighter()
+    editor._highlighter = fake_highlighter
+
+    assert editor.isVisible() is False
+
+    editor.apply_theme(_DARK_TOKENS)
+
+    assert fake_highlighter.theme_calls == [False]
+    assert fake_highlighter.rehighlight_calls == 0
+    assert editor._syntax_theme_refresh_pending is True
+
+    editor.show()
+    QApplication.processEvents()
+
+    assert fake_highlighter.rehighlight_calls == 1
+    assert editor._syntax_theme_refresh_pending is False

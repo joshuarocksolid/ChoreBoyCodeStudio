@@ -277,6 +277,7 @@ class RunService:
                 continue
             file_path = entry.get("file_path")
             line_number = entry.get("line_number")
+            hit_condition = entry.get("hit_condition")
             if not isinstance(file_path, str) or not isinstance(line_number, int):
                 continue
             normalized.append(
@@ -286,7 +287,7 @@ class RunService:
                     breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
                     enabled=bool(entry.get("enabled", True)),
                     condition=str(entry.get("condition", "")).strip(),
-                    hit_condition=int(entry["hit_condition"]) if isinstance(entry.get("hit_condition"), int) else None,
+                    hit_condition=int(hit_condition) if isinstance(hit_condition, int) else None,
                 )
             )
         return normalized

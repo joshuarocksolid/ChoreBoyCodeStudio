@@ -13,27 +13,12 @@ from app.shell.main_window import MainWindow
 pytestmark = pytest.mark.unit
 
 
-class _FakeSemanticWorker:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def submit(self, **kwargs: Any) -> None:
-        self.calls.append(kwargs)
-
-
-class _FakeSemanticFacade:
+class _FakeIntelligenceController:
     def __init__(self) -> None:
         self.lookup_definition_calls: list[dict[str, Any]] = []
-        self.lookup_definition_result: object = SimpleNamespace(
-            found=False,
-            symbol_name="helper_task",
-            locations=[],
-            metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
-        )
 
-    def lookup_definition(self, **kwargs: Any) -> object:
+    def request_lookup_definition(self, **kwargs: Any) -> None:
         self.lookup_definition_calls.append(kwargs)
-        return self.lookup_definition_result
 
 
 def _build_window() -> MainWindow:
@@ -48,8 +33,7 @@ def _build_window() -> MainWindow:
         show_calltip=lambda _text: None,
     )
     window_any._active_editor_widget = lambda: editor_widget
-    window_any._semantic_worker = _FakeSemanticWorker()
-    window_any._semantic_facade = _FakeSemanticFacade()
+    window_any._intelligence_controller = _FakeIntelligenceController()
     window_any._open_file_at_line = lambda *_args, **_kwargs: None
     return window
 
@@ -60,21 +44,14 @@ def test_handle_go_to_definition_action_dispatches_semantic_task() -> None:
 
     MainWindow._handle_go_to_definition_action(window)
 
-    assert len(window_any._semantic_worker.calls) == 1
-    worker_call = window_any._semantic_worker.calls[0]
-    assert worker_call["key"] == "go_to_definition"
-
-    result = worker_call["task"]()
-
-    assert result is window_any._semantic_facade.lookup_definition_result
-    assert window_any._semantic_facade.lookup_definition_calls == [
-        {
-            "project_root": "/tmp/project",
-            "current_file_path": "/tmp/project/main.py",
-            "source_text": "from helper import helper_task\nvalue = helper_task()\n",
-            "cursor_position": 40,
-        }
-    ]
+    assert len(window_any._intelligence_controller.lookup_definition_calls) == 1
+    lookup_call = window_any._intelligence_controller.lookup_definition_calls[0]
+    assert lookup_call["project_root"] == "/tmp/project"
+    assert lookup_call["current_file_path"] == "/tmp/project/main.py"
+    assert lookup_call["source_text"] == "from helper import helper_task\nvalue = helper_task()\n"
+    assert lookup_call["cursor_position"] == 40
+    assert callable(lookup_call["on_success"])
+    assert callable(lookup_call["on_error"])
 
 
 def test_handle_go_to_definition_action_uses_target_chooser(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,24 +59,24 @@ def test_handle_go_to_definition_action_uses_target_chooser(monkeypatch: pytest.
     window_any = cast(Any, window)
     opened: list[tuple[str, int]] = []
     window_any._open_file_at_line = lambda file_path, line_number: opened.append((file_path, line_number))
-    window_any._semantic_facade.lookup_definition_result = SimpleNamespace(
-        found=True,
-        symbol_name="helper_task",
-        locations=[
-            SimpleNamespace(file_path="/tmp/project/a.py", line_number=3, symbol_kind="function"),
-            SimpleNamespace(file_path="/tmp/project/b.py", line_number=8, symbol_kind="function"),
-        ],
-        metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
-    )
     monkeypatch.setattr(
         "app.shell.main_window.QInputDialog.getItem",
         lambda *_args, **_kwargs: ("b.py:8 (function)", True),
     )
 
     MainWindow._handle_go_to_definition_action(window)
-    worker_call = window_any._semantic_worker.calls[0]
-
-    worker_call["on_success"](window_any._semantic_facade.lookup_definition_result)
+    lookup_call = window_any._intelligence_controller.lookup_definition_calls[0]
+    lookup_call["on_success"](
+        SimpleNamespace(
+            found=True,
+            symbol_name="helper_task",
+            locations=[
+                SimpleNamespace(file_path="/tmp/project/a.py", line_number=3, symbol_kind="function"),
+                SimpleNamespace(file_path="/tmp/project/b.py", line_number=8, symbol_kind="function"),
+            ],
+            metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
+        )
+    )
 
     assert opened == [("/tmp/project/b.py", 8)]
 

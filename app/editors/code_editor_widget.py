@@ -2,34 +2,27 @@
 
 from __future__ import annotations
 
-import re
 import time
 from collections.abc import Callable
 from typing import Any, cast
 
-from PySide2.QtCore import QEvent, QPoint, QPointF, QRect, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QKeyEvent, QPainter, QPolygonF, QTextCharFormat, QTextCursor, QTextFormat
-from PySide2.QtWidgets import QApplication, QCompleter, QPlainTextEdit, QTextEdit, QToolTip, QWidget
+from PySide2.QtCore import QPoint, QPointF, QRect, QSize, QStringListModel, Qt
+from PySide2.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
+from PySide2.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
+from app.editors.code_editor_diagnostics import CodeEditorDiagnosticsMixin
+from app.editors.code_editor_editing import CodeEditorEditingMixin
+from app.editors.code_editor_search import CodeEditorSearchMixin
+from app.editors.code_editor_semantics import CodeEditorSemanticsMixin
 from app.editors.editor_overlay_policy import (
     effective_highlighting_mode,
     is_large_document,
     visible_document_window,
 )
-from app.editors.find_replace_bar import FindOptions
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
-from app.editors.text_editing import (
-    indent_lines,
-    map_offset_through_text_change,
-    next_line_indentation,
-    outdent_lines,
-    smart_backspace_columns,
-    toggle_comment_lines,
-)
 from app.intelligence.completion_models import CompletionItem
-from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.intelligence.latency_tracker import RollingLatencyTracker
 from app.shell.theme_tokens import ShellThemeTokens
@@ -64,7 +57,13 @@ class _LineNumberArea(QWidget):
         self._editor.toggle_breakpoint_at_y(event.pos().y())
 
 
-class CodeEditorWidget(QPlainTextEdit):
+class CodeEditorWidget(
+    CodeEditorDiagnosticsMixin,
+    CodeEditorSemanticsMixin,
+    CodeEditorSearchMixin,
+    CodeEditorEditingMixin,
+    QPlainTextEdit,
+):
     """QPlainTextEdit extension with common developer QoL affordances."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -88,6 +87,7 @@ class CodeEditorWidget(QPlainTextEdit):
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._highlighter: object | None = None
+        self._syntax_theme_refresh_pending = False
         self._syntax_registry = default_syntax_highlighter_registry()
         self._syntax_palette: dict[str, str] = {}
         self._tab_width = DEFAULT_TAB_WIDTH
@@ -98,11 +98,16 @@ class CodeEditorWidget(QPlainTextEdit):
         self._completion_requester: Callable[[str, str, int, bool, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
         self._hover_provider: Callable[[str, int], str | None] | None = None
+        self._hover_requester: Callable[[str, int, int], None] | None = None
         self._signature_help_provider: Callable[[str, int], str | None] | None = None
+        self._signature_help_requester: Callable[[str, int, int], None] | None = None
         self._completion_enabled = True
         self._completion_auto_trigger = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
         self._completion_request_generation = 0
+        self._hover_request_generation = 0
+        self._hover_request_global_pos: QPoint | None = None
+        self._signature_help_request_generation = 0
         self._completion_items_by_label: dict[str, CompletionItem] = {}
         self._completion_model = QStringListModel(self)
         self._completion_popup = QCompleter(self._completion_model, self)
@@ -176,11 +181,14 @@ class CodeEditorWidget(QPlainTextEdit):
         self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
+        rehighlight_syntax = self.isVisible()
         self._syntax_registry.apply_theme(
             self._highlighter,
             is_dark=tokens.is_dark,
             syntax_palette=self._syntax_palette,
+            rehighlight=rehighlight_syntax,
         )
+        self._syntax_theme_refresh_pending = self._highlighter is not None and not rehighlight_syntax
         self._apply_highlighter_runtime_policy()
         self._notify_highlighter_viewport_lines()
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -276,93 +284,6 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def clear_debug_execution_line(self) -> None:
         self.set_debug_execution_line(None)
-
-    # ------------------------------------------------------------------
-    # Diagnostics API (squiggly underlines, gutter markers, hover)
-    # ------------------------------------------------------------------
-
-    def set_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
-        """Apply diagnostics: build squiggly underlines, gutter markers, and hover ranges."""
-        self._diagnostic_selections.clear()
-        self._diagnostic_lines.clear()
-        self._diagnostic_ranges.clear()
-
-        _SEVERITY_PRIORITY = {DiagnosticSeverity.ERROR: 0, DiagnosticSeverity.WARNING: 1, DiagnosticSeverity.INFO: 2}
-
-        doc = self.document()
-        for diag in diagnostics:
-            color = self._diag_color_for_severity(diag.severity)
-            block = doc.findBlockByNumber(diag.line_number - 1)
-            if not block.isValid():
-                continue
-
-            block_start = block.position()
-            line_text = block.text()
-
-            if diag.col_start is not None and diag.col_end is not None:
-                start_pos = block_start + diag.col_start
-                end_pos = block_start + diag.col_end
-            else:
-                stripped = line_text.lstrip()
-                leading = len(line_text) - len(stripped)
-                start_pos = block_start + leading
-                end_pos = block_start + len(line_text)
-
-            if start_pos >= end_pos:
-                end_pos = block_start + max(len(line_text), 1)
-
-            sel = cast(Any, QTextEdit.ExtraSelection())
-            sel.format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
-            sel.format.setUnderlineColor(color)
-            cursor = QTextCursor(doc)
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
-            sel.cursor = cursor
-            self._diagnostic_selections.append(sel)
-
-            tooltip = f"[{diag.code}] {diag.message}"
-            self._diagnostic_ranges.append((start_pos, end_pos, tooltip))
-
-            cur_severity = self._diagnostic_lines.get(diag.line_number)
-            if cur_severity is None or _SEVERITY_PRIORITY.get(diag.severity, 2) < _SEVERITY_PRIORITY.get(cur_severity, 2):
-                self._diagnostic_lines[diag.line_number] = diag.severity
-
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-        self._line_number_area.update()
-
-    def clear_diagnostics(self) -> None:
-        self._diagnostic_selections.clear()
-        self._diagnostic_lines.clear()
-        self._diagnostic_ranges.clear()
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-        self._line_number_area.update()
-
-    def _diag_color_for_severity(self, severity: DiagnosticSeverity) -> QColor:
-        if severity == DiagnosticSeverity.ERROR:
-            return self._diag_error_color
-        if severity == DiagnosticSeverity.WARNING:
-            return self._diag_warning_color
-        return self._diag_info_color
-
-    def event(self, ev: QEvent) -> bool:  # type: ignore[override]
-        if ev.type() == QEvent.ToolTip:
-            pos = ev.pos()  # type: ignore[union-attr]
-            cursor = self.cursorForPosition(pos)
-            cursor_pos = cursor.position()
-            for start, end, tooltip in self._diagnostic_ranges:
-                if start <= cursor_pos < end:
-                    QToolTip.showText(ev.globalPos(), tooltip, self)  # type: ignore[union-attr]
-                    return True
-            if self._hover_provider is not None:
-                hover_text = self._hover_provider(self.toPlainText(), cursor_pos)
-                if hover_text:
-                    QToolTip.showText(ev.globalPos(), hover_text, self)  # type: ignore[union-attr]
-                    return True
-            QToolTip.hideText()
-            return True
-        return super().event(ev)
 
     def toggle_breakpoint_at_y(self, y_coordinate: int) -> None:
         block = self.firstVisibleBlock()
@@ -480,141 +401,6 @@ class CodeEditorWidget(QPlainTextEdit):
         self.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * self._tab_width)
 
-    def set_completion_provider(self, provider: Callable[[str, str, int, bool], list[CompletionItem]] | None) -> None:
-        """Attach completion provider callback invoked during editor typing."""
-        self._completion_provider = provider
-
-    def set_completion_requester(self, requester: Callable[[str, str, int, bool, int], None] | None) -> None:
-        """Attach asynchronous completion requester callback."""
-        self._completion_requester = requester
-
-    def set_completion_accepted_callback(self, callback: Callable[[CompletionItem], None] | None) -> None:
-        """Attach callback invoked when completion item is accepted."""
-        self._completion_accepted_callback = callback
-
-    def set_hover_provider(self, provider: Callable[[str, int], str | None] | None) -> None:
-        """Attach hover provider used by tooltip interactions."""
-        self._hover_provider = provider
-
-    def set_signature_help_provider(self, provider: Callable[[str, int], str | None] | None) -> None:
-        """Attach signature-help provider used by inline calltips."""
-        self._signature_help_provider = provider
-
-    def set_completion_preferences(self, *, enabled: bool, auto_trigger: bool, min_chars: int) -> None:
-        """Apply completion behavior preferences."""
-        self._completion_enabled = enabled
-        self._completion_auto_trigger = auto_trigger
-        self._completion_min_chars = max(1, min_chars)
-        if not enabled:
-            self._completion_popup.popup().hide()
-
-    def trigger_completion(self, *, manual: bool, force_empty_prefix: bool = False) -> None:
-        """Request and display completion candidates at current cursor location."""
-        if not self._completion_enabled:
-            return
-        source_text = self.toPlainText()
-        cursor_position = self.textCursor().position()
-        prefix = extract_completion_prefix(source_text, cursor_position)
-        if not force_empty_prefix and not manual and len(prefix) < self._completion_min_chars:
-            self._completion_popup.popup().hide()
-            return
-
-        if self._completion_requester is not None:
-            self._completion_request_generation += 1
-            request_generation = self._completion_request_generation
-            self._completion_popup.popup().hide()
-            self._completion_requester(
-                prefix,
-                source_text,
-                cursor_position,
-                manual or force_empty_prefix,
-                request_generation,
-            )
-            return
-
-        if self._completion_provider is None:
-            return
-        items = self._completion_provider(prefix, source_text, cursor_position, manual or force_empty_prefix)
-        if not items:
-            self._completion_popup.popup().hide()
-            return
-        self._show_completion_items(items, prefix=prefix)
-
-    def show_completion_items_for_request(
-        self,
-        *,
-        request_generation: int,
-        prefix: str,
-        items: list[CompletionItem],
-    ) -> None:
-        """Apply asynchronous completion results if still current."""
-        if request_generation != self._completion_request_generation:
-            return
-        if not items:
-            self._completion_popup.popup().hide()
-            return
-        self._show_completion_items(items, prefix=prefix)
-
-    def show_calltip(self, text: str | None) -> None:
-        """Show or hide inline calltip near the cursor."""
-        if not text:
-            QToolTip.hideText()
-            return
-        QToolTip.showText(self.mapToGlobal(self.cursorRect().bottomRight()), text, self)
-
-    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
-        if self._handle_completion_popup_navigation(e):
-            return
-
-        if e.key() == Qt.Key_Space and e.modifiers() & Qt.ControlModifier:
-            self.trigger_completion(manual=True)
-            e.accept()
-            return
-
-        if e.key() == Qt.Key_Tab and not e.modifiers():
-            self.indent_selection()
-            e.accept()
-            return
-        if e.key() == Qt.Key_Backtab:
-            self.outdent_selection()
-            e.accept()
-            return
-        if e.key() == Qt.Key_Backspace and not e.modifiers():
-            if self._handle_smart_backspace():
-                e.accept()
-                return
-        if e.key() in {Qt.Key_Return, Qt.Key_Enter} and not (e.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
-            self._insert_newline_with_auto_indent()
-            e.accept()
-            return
-
-        super().keyPressEvent(e)
-        if not self._completion_enabled or not self._completion_auto_trigger:
-            if e.text() in {"(", ","}:
-                self._show_signature_help()
-            elif e.text() == ")":
-                QToolTip.hideText()
-            return
-
-        inserted_text = e.text()
-        if inserted_text in {"(", ","}:
-            self._show_signature_help()
-        elif inserted_text == ")":
-            QToolTip.hideText()
-        if inserted_text == ".":
-            self.trigger_completion(manual=True, force_empty_prefix=True)
-            return
-        if inserted_text and (inserted_text.isalnum() or inserted_text == "_"):
-            self.trigger_completion(manual=False)
-            return
-        if self._completion_popup.popup().isVisible():
-            self._completion_popup.popup().hide()
-
-    def _show_signature_help(self) -> None:
-        if self._signature_help_provider is None:
-            return
-        self.show_calltip(self._signature_help_provider(self.toPlainText(), self.textCursor().position()))
-
     _ICON_ZONE_WIDTH = 20
 
     def line_number_area_width(self) -> int:
@@ -637,6 +423,15 @@ class CodeEditorWidget(QPlainTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+        self._notify_highlighter_viewport_lines()
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().showEvent(event)
+        if not self._syntax_theme_refresh_pending or self._highlighter is None:
+            return
+        if hasattr(self._highlighter, "rehighlight"):
+            self._highlighter.rehighlight()  # type: ignore[union-attr]
+        self._syntax_theme_refresh_pending = False
         self._notify_highlighter_viewport_lines()
 
     def paint_line_number_area(self, event) -> None:
@@ -725,165 +520,6 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def selected_text(self) -> str:
         return self.textCursor().selectedText().replace("\u2029", "\n")
-
-    # ------------------------------------------------------------------
-    # Search API
-    # ------------------------------------------------------------------
-
-    def highlight_all_matches(self, query: str, options: FindOptions) -> int:
-        """Highlight all matches and return total count. Sets current index to -1."""
-        self._search_selections.clear()
-        self._search_match_positions.clear()
-        self._search_current_index = -1
-
-        if not query:
-            self._refresh_extra_selections()
-            return 0
-
-        pattern = self._compile_search_pattern(query, options)
-        if pattern is None:
-            self._refresh_extra_selections()
-            return 0
-
-        text = self.toPlainText()
-        for m in pattern.finditer(text):
-            start, end = m.start(), m.end()
-            self._search_match_positions.append((start, end))
-            sel = self._make_match_selection(start, end, is_current=False)
-            self._search_selections.append(sel)
-
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-        return len(self._search_match_positions)
-
-    def find_next(self) -> tuple[int, int]:
-        """Move to the next match. Returns (current_1indexed, total)."""
-        total = len(self._search_match_positions)
-        if total == 0:
-            return (0, 0)
-
-        cursor_pos = self.textCursor().position()
-        next_idx = 0
-        for i, (start, _end) in enumerate(self._search_match_positions):
-            if start >= cursor_pos:
-                next_idx = i
-                break
-        else:
-            next_idx = 0
-
-        self._go_to_match(next_idx)
-        return (self._search_current_index + 1, total)
-
-    def find_previous(self) -> tuple[int, int]:
-        """Move to previous match. Returns (current_1indexed, total)."""
-        total = len(self._search_match_positions)
-        if total == 0:
-            return (0, 0)
-
-        cursor_pos = self.textCursor().position()
-        cursor_sel_start = self.textCursor().selectionStart()
-        prev_idx = total - 1
-        for i in range(total - 1, -1, -1):
-            start, _end = self._search_match_positions[i]
-            if start < cursor_sel_start:
-                prev_idx = i
-                break
-        else:
-            prev_idx = total - 1
-
-        self._go_to_match(prev_idx)
-        return (self._search_current_index + 1, total)
-
-    def replace_current_match(self, replacement: str, query: str, options: FindOptions) -> tuple[int, int]:
-        """Replace the current match and move to next. Returns (current_1indexed, total)."""
-        if self._search_current_index < 0 or not self._search_match_positions:
-            return self.find_next()
-
-        start, end = self._search_match_positions[self._search_current_index]
-        cursor = self.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.KeepAnchor)
-        cursor.insertText(replacement)
-        self.setTextCursor(cursor)
-
-        total = self.highlight_all_matches(query, options)
-        if total == 0:
-            return (0, 0)
-        return self.find_next()
-
-    def replace_all_matches(self, query: str, replacement: str, options: FindOptions) -> int:
-        """Replace all matches. Returns count of replacements made."""
-        if not self._search_match_positions:
-            return 0
-
-        cursor = self.textCursor()
-        cursor.beginEditBlock()
-        offset = 0
-        count = 0
-        for start, end in self._search_match_positions:
-            adj_start = start + offset
-            adj_end = end + offset
-            cursor.setPosition(adj_start)
-            cursor.setPosition(adj_end, QTextCursor.KeepAnchor)
-            cursor.insertText(replacement)
-            offset += len(replacement) - (end - start)
-            count += 1
-        cursor.endEditBlock()
-        self.setTextCursor(cursor)
-
-        self.highlight_all_matches(query, options)
-        return count
-
-    def clear_search_highlights(self) -> None:
-        """Remove all search highlights."""
-        self._search_selections.clear()
-        self._search_match_positions.clear()
-        self._search_current_index = -1
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-
-    def _go_to_match(self, index: int) -> None:
-        if index < 0 or index >= len(self._search_match_positions):
-            return
-
-        self._search_current_index = index
-        start, end = self._search_match_positions[index]
-
-        self._search_selections = []
-        for i, (s, e) in enumerate(self._search_match_positions):
-            sel = self._make_match_selection(s, e, is_current=(i == index))
-            self._search_selections.append(sel)
-        self._mark_overlay_cache_dirty()
-        self._refresh_extra_selections()
-
-        cursor = self.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.KeepAnchor)
-        self.setTextCursor(cursor)
-        self.centerCursor()
-
-    def _make_match_selection(self, start: int, end: int, *, is_current: bool) -> QTextEdit.ExtraSelection:
-        sel = cast(Any, QTextEdit.ExtraSelection())
-        color = self._search_current_match_bg if is_current else self._search_match_bg
-        sel.format.setBackground(color)
-        cursor = QTextCursor(self.document())
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.KeepAnchor)
-        sel.cursor = cursor
-        return sel
-
-    @staticmethod
-    def _compile_search_pattern(query: str, options: FindOptions) -> re.Pattern[str] | None:
-        flags = 0 if options.case_sensitive else re.IGNORECASE
-        if options.regex:
-            try:
-                return re.compile(query, flags)
-            except re.error:
-                return None
-        escaped = re.escape(query)
-        if options.whole_word:
-            escaped = rf"\b{escaped}\b"
-        return re.compile(escaped, flags)
 
     def _refresh_extra_selections(self) -> None:
         """Rebuild ExtraSelections with cached non-cursor overlays."""
@@ -1041,180 +677,6 @@ class CodeEditorWidget(QPlainTextEdit):
                 snapshot.p95_ms,
                 snapshot.max_ms,
             )
-
-    def indent_selection(self) -> None:
-        selected = self.textCursor().selectedText()
-        if not selected:
-            self.insertPlainText(self._indent_text())
-            return
-        updated = indent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
-        self._replace_selected_text(updated)
-
-    def outdent_selection(self) -> None:
-        selected = self.textCursor().selectedText()
-        if not selected:
-            return
-        updated = outdent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
-        self._replace_selected_text(updated)
-
-    def toggle_comment_selection(self) -> None:
-        cursor = self.textCursor()
-        if cursor.hasSelection():
-            cursor = self._expand_selection_to_full_lines(cursor)
-        else:
-            cursor.select(QTextCursor.LineUnderCursor)
-        selected = cursor.selectedText()
-        updated = toggle_comment_lines(selected.replace("\u2029", "\n"), comment_prefix=self._comment_prefix)
-        cursor.insertText(updated)
-        self.setTextCursor(cursor)
-
-    def _expand_selection_to_full_lines(self, cursor: QTextCursor) -> QTextCursor:
-        start = cursor.selectionStart()
-        end = cursor.selectionEnd()
-        document = self.document()
-        start_block = document.findBlock(start)
-        end_lookup_position = end - 1 if end > start else end
-        end_block = document.findBlock(max(0, end_lookup_position))
-        expanded_cursor = QTextCursor(document)
-        expanded_cursor.setPosition(start_block.position())
-        end_position = max(expanded_cursor.position(), end_block.position() + max(0, end_block.length() - 1))
-        expanded_cursor.setPosition(end_position, QTextCursor.KeepAnchor)
-        return expanded_cursor
-
-    def _replace_selected_text(self, replacement_text: str) -> None:
-        cursor = self.textCursor()
-        if not cursor.hasSelection():
-            cursor.select(QTextCursor.LineUnderCursor)
-        cursor.insertText(replacement_text)
-        self.setTextCursor(cursor)
-
-    def replace_document_text(self, replacement_text: str) -> bool:
-        """Replace the full document in one undo step while preserving editor context."""
-        original_text = self.toPlainText()
-        if replacement_text == original_text:
-            return False
-
-        cursor = self.textCursor()
-        original_anchor = cursor.anchor()
-        original_position = cursor.position()
-        vertical_scroll = self.verticalScrollBar().value()
-        horizontal_scroll = self.horizontalScrollBar().value()
-        mapped_anchor = map_offset_through_text_change(original_text, replacement_text, original_anchor)
-        mapped_position = map_offset_through_text_change(original_text, replacement_text, original_position)
-
-        edit_cursor = QTextCursor(self.document())
-        edit_cursor.beginEditBlock()
-        edit_cursor.select(QTextCursor.Document)
-        edit_cursor.insertText(replacement_text)
-        edit_cursor.endEditBlock()
-
-        restored_cursor = QTextCursor(self.document())
-        restored_cursor.setPosition(mapped_anchor)
-        move_mode = QTextCursor.MoveAnchor if mapped_anchor == mapped_position else QTextCursor.KeepAnchor
-        restored_cursor.setPosition(mapped_position, move_mode)
-        self.setTextCursor(restored_cursor)
-        self.verticalScrollBar().setValue(min(vertical_scroll, self.verticalScrollBar().maximum()))
-        self.horizontalScrollBar().setValue(min(horizontal_scroll, self.horizontalScrollBar().maximum()))
-        return True
-
-    def _handle_smart_backspace(self) -> bool:
-        cursor = self.textCursor()
-        if cursor.hasSelection():
-            return False
-        remove_count = smart_backspace_columns(
-            cursor.block().text(),
-            cursor.positionInBlock(),
-            indent_text=self._indent_text(),
-        )
-        if remove_count <= 0:
-            return False
-        cursor.beginEditBlock()
-        for _ in range(remove_count):
-            cursor.deletePreviousChar()
-        cursor.endEditBlock()
-        self.setTextCursor(cursor)
-        return True
-
-    def _insert_newline_with_auto_indent(self) -> None:
-        cursor = self.textCursor()
-        if cursor.hasSelection():
-            cursor.removeSelectedText()
-        line_prefix = cursor.block().text()[: cursor.positionInBlock()]
-        indent = next_line_indentation(line_prefix, indent_text=self._indent_text())
-        cursor.beginEditBlock()
-        cursor.insertText(f"\n{indent}")
-        cursor.endEditBlock()
-        self.setTextCursor(cursor)
-
-    def _indent_text(self) -> str:
-        if self._indent_style == "tabs":
-            return "\t"
-        return " " * self._indent_size
-
-    def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
-        popup = self._completion_popup.popup()
-        if not popup.isVisible():
-            return False
-
-        if event.key() in {Qt.Key_Escape}:
-            popup.hide()
-            event.accept()
-            return True
-
-        if event.key() in {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab}:
-            current_index = popup.currentIndex()
-            if current_index.isValid():
-                selected_label = current_index.data(0)
-                if selected_label is not None:
-                    self._insert_completion_from_label(str(selected_label))
-            popup.hide()
-            event.accept()
-            return True
-
-        if event.key() in {Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End}:
-            QApplication.sendEvent(popup, event)
-            return True
-
-        return False
-
-    def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
-        labels: list[str] = []
-        mapped_items: dict[str, CompletionItem] = {}
-        for item in items:
-            display_label = item.label if not item.detail else f"{item.label} — {item.detail}"
-            if display_label in mapped_items:
-                display_label = f"{display_label} ({item.kind.value})"
-            labels.append(display_label)
-            mapped_items[display_label] = item
-
-        if not labels:
-            self._completion_popup.popup().hide()
-            return
-
-        self._completion_items_by_label = mapped_items
-        self._completion_model.setStringList(labels)
-        self._completion_popup.setCompletionPrefix(prefix)
-        popup = self._completion_popup.popup()
-        popup.setCurrentIndex(self._completion_model.index(0, 0))
-        rect = self.cursorRect()
-        rect.setWidth(max(240, popup.sizeHintForColumn(0) + 24))
-        self._completion_popup.complete(rect)
-
-    def _insert_completion_from_label(self, display_label: object) -> None:
-        normalized_label = str(display_label)
-        completion_item = self._completion_items_by_label.get(normalized_label)
-        if completion_item is None:
-            return
-
-        cursor = self.textCursor()
-        current_prefix = extract_completion_prefix(self.toPlainText(), cursor.position())
-        if current_prefix:
-            cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(current_prefix))
-            cursor.removeSelectedText()
-        cursor.insertText(completion_item.insert_text)
-        self.setTextCursor(cursor)
-        if self._completion_accepted_callback is not None:
-            self._completion_accepted_callback(completion_item)
 
     def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]:
         if self._is_large_document():

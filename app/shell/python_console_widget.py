@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import code
 from pathlib import Path
+from typing import Any, cast
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import (
@@ -49,9 +50,9 @@ class PythonConsoleWidget(QTextEdit):
         Emitted when the user presses Ctrl+C without a text selection.
     """
 
-    input_submitted: Signal = Signal(str)
-    interrupt_requested: Signal = Signal()
-    restart_requested: Signal = Signal()
+    input_submitted: Any = Signal(str)
+    interrupt_requested: Any = Signal()
+    restart_requested: Any = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -294,35 +295,37 @@ class PythonConsoleWidget(QTextEdit):
         menu: QMenu = self.createStandardContextMenu()
         menu.addSeparator()
         clear_action = menu.addAction("Clear Console")
+        assert clear_action is not None
         clear_action.triggered.connect(self.clear_console)
         restart_action = menu.addAction("Restart Python Console")
+        assert restart_action is not None
         restart_action.triggered.connect(self.restart_requested.emit)
         menu.exec_(event.globalPos())
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
-        mime_data = event.mimeData()
+    def dragEnterEvent(self, e: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
+        mime_data = e.mimeData()
         if mime_data is None or not mime_data.hasUrls():
-            event.ignore()
+            e.ignore()
             return
         local_files = [url for url in mime_data.urls() if url.isLocalFile()]
         if not local_files:
-            event.ignore()
+            e.ignore()
             return
-        event.acceptProposedAction()
+        e.acceptProposedAction()
 
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 - Qt signature
-        mime_data = event.mimeData()
+    def dropEvent(self, e: QDropEvent) -> None:  # noqa: N802 - Qt signature
+        mime_data = e.mimeData()
         if mime_data is None or not mime_data.hasUrls():
-            event.ignore()
+            e.ignore()
             return
         local_paths = [url.toLocalFile() for url in mime_data.urls() if url.isLocalFile()]
         if not local_paths:
-            event.ignore()
+            e.ignore()
             return
         if self._handle_dropped_local_path(local_paths[0]):
-            event.acceptProposedAction()
+            e.acceptProposedAction()
             return
-        event.ignore()
+        e.ignore()
 
     # ------------------------------------------------------------------
     # Submission and history
@@ -574,4 +577,6 @@ def _is_traceback_context(text: str) -> bool:
 
 def _enum_int(value: object) -> int:
     enum_value = getattr(value, "value", value)
-    return int(enum_value)
+    if isinstance(enum_value, int):
+        return int(enum_value)
+    return int(cast(Any, enum_value))

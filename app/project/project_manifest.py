@@ -6,7 +6,7 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, NoReturn, Optional
 import uuid
 
 from app.bootstrap.paths import PathInput
@@ -353,5 +353,5 @@ def _raise_validation_error(
     *,
     field: Optional[str] = None,
     manifest_path: Optional[Path] = None,
-) -> None:
+) -> NoReturn:
     raise ProjectManifestValidationError(message, field=field, manifest_path=manifest_path)

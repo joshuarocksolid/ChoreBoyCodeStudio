@@ -29,11 +29,19 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     return app
 
 
+def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
+    window._is_shutting_down = True
+    window._begin_shutdown_teardown()
+    window._stop_active_run_before_close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _ensure_qapplication(monkeypatch)
+    app = _ensure_qapplication(monkeypatch)
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
 
@@ -84,4 +92,4 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     assert restored_tab.current_content == "print('recovered')\n"
     assert restored_tab.is_dirty is True
     assert file_path.exists() is False
-    window.deleteLater()
+    _dispose_window(window, app)

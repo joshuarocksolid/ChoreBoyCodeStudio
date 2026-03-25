@@ -7,7 +7,7 @@ import queue
 import sys
 import threading
 from types import FrameType, TracebackType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, cast
 
 from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
@@ -82,7 +82,7 @@ class _RunnerDebugHost:
         }
         self._frame_registry: dict[int, FrameType] = {}
         self._object_registry: dict[int, object] = {}
-        self._selected_frame_id = 0
+        self._selected_frame_id: int = 0
         self._paused = False
         self._transport_failed = False
         self._last_exception_identity = 0
@@ -299,7 +299,7 @@ class _RunnerDebugHost:
 
     def _handle_evaluate(self, *, command_id: str, arguments: Mapping[str, object]) -> None:
         expression = str(arguments.get("expression", "")).strip()
-        frame_id = _parse_int(arguments.get("frame_id")) or self._selected_frame_id
+        frame_id = _parse_int(arguments.get("frame_id")) or int(self._selected_frame_id)
         frame = self._frame_registry.get(frame_id)
         if not expression:
             self._transport.send_message(
@@ -403,7 +403,7 @@ class _RunnerDebugHost:
         self._reset_pause_state()
         thread_id = threading.get_ident()
         frames = self._collect_frame_chain(frame, thread_id=thread_id)
-        self._selected_frame_id = frames[0]["frame_id"] if frames else 0
+        self._selected_frame_id = _parse_int(frames[0]["frame_id"]) if frames else 0
         scopes, scope_variables = self._build_scope_payloads(frame)
         return {
             "reason": reason,
@@ -438,7 +438,7 @@ class _RunnerDebugHost:
                     "function_name": str(frame.f_code.co_name),
                 }
             )
-        self._selected_frame_id = frame_payloads[0]["frame_id"] if frame_payloads else 0  # type: ignore[index]
+        self._selected_frame_id = _parse_int(frame_payloads[0]["frame_id"]) if frame_payloads else 0
         scopes, scope_variables = self._build_scope_payloads(frames[0])
         return {
             "reason": "exception",
@@ -667,7 +667,11 @@ def run_debug_session(manifest: RunManifest, entry_callable: Callable[[str], Non
     host.connect()
     threading.settrace(host.debugger.trace_dispatch)
     host.debugger.reset()
-    host.debugger._set_stopinfo(None, None, -1)  # noqa: SLF001 - keep tracing active without first-line stop
+    cast(Any, host.debugger)._set_stopinfo(  # noqa: SLF001 - keep tracing active without first-line stop
+        None,
+        None,
+        -1,
+    )
     try:
         sys.settrace(host.debugger.trace_dispatch)
         entry_callable(entry_script_path)

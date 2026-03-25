@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 
 from PySide2.QtGui import QTextDocument
 
@@ -327,7 +327,7 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
         if not query_source.strip():
             return None
         try:
-            return self._language.query(query_source)
+            return cast(Any, self._language).query(query_source)
         except Exception:  # pragma: no cover - exercised through diagnostics-facing tests
             import traceback
 
@@ -791,6 +791,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             )
             for node, capture_name in captures:
                 token_name = self._resolve_token_name(capture_name)
+                if token_name is None:
+                    continue
                 token_name = self._apply_capture_overrides(
                     capture_name=capture_name,
                     token_name=token_name,

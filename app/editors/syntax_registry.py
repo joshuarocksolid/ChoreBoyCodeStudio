@@ -72,6 +72,7 @@ class SyntaxHighlighterRegistry:
             return "Plain Text"
         if language_key == _INI_LANGUAGE_KEY:
             return "INI / Desktop Entry"
+        assert language_key is not None
         return language_key.replace("_", " ").title()
 
     def _create_tree_sitter_highlighter(
@@ -100,14 +101,19 @@ class SyntaxHighlighterRegistry:
         *,
         is_dark: bool,
         syntax_palette: Mapping[str, str] | None = None,
+        rehighlight: bool = True,
     ) -> None:
         if highlighter is None:
             return
         if hasattr(highlighter, "set_theme_palette"):
-            highlighter.set_theme_palette(syntax_palette, is_dark=is_dark)  # type: ignore[union-attr]
+            highlighter.set_theme_palette(  # type: ignore[union-attr]
+                syntax_palette,
+                is_dark=is_dark,
+                rehighlight=rehighlight,
+            )
             return
         if hasattr(highlighter, "set_dark_mode"):
-            highlighter.set_dark_mode(is_dark)  # type: ignore[union-attr]
+            highlighter.set_dark_mode(is_dark, rehighlight=rehighlight)  # type: ignore[union-attr]
 
 
 def default_syntax_highlighter_registry() -> SyntaxHighlighterRegistry:

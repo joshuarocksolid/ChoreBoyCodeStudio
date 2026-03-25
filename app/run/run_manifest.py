@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Mapping, NoReturn, cast
 
 from app.core import constants
 from app.core.errors import RunManifestValidationError
@@ -212,7 +212,12 @@ def _require_absolute_path(payload: dict[str, Any], field: str, *, manifest_path
     return str(candidate.resolve())
 
 
-def _raise_manifest_error(message: str, *, field: str | None = None, manifest_path: Path | None = None) -> None:
+def _raise_manifest_error(
+    message: str,
+    *,
+    field: str | None = None,
+    manifest_path: Path | None = None,
+) -> NoReturn:
     raise RunManifestValidationError(message, field=field, manifest_path=manifest_path)
 
 

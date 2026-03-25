@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from PySide2.QtCore import Signal
 from PySide2.QtWidgets import QHBoxLayout, QPushButton, QStyle, QWidget
 
@@ -14,7 +16,7 @@ class SegmentedControl(QWidget):
     be selected.
     """
 
-    selection_changed = Signal(str)
+    selection_changed: Any = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

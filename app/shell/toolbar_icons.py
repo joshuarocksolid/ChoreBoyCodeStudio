@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 import tempfile
 
 from PySide2.QtCore import QPointF, QRectF, Qt
@@ -282,7 +283,7 @@ def generate_tab_close_icon(color: str, path: str) -> str:
     p.drawLine(margin, margin, size - margin, size - margin)
     p.drawLine(size - margin, margin, margin, size - margin)
     p.end()
-    pm.save(path, "PNG")
+    pm.save(path, cast(Any, "PNG"))
     return path
 
 

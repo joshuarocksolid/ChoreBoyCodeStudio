@@ -69,6 +69,16 @@ def test_semantic_worker_runs_tasks_serially() -> None:
     assert order == ["first-start", "first-end", "second-start"]
 
 
+def test_semantic_worker_call_runs_task_on_worker_thread() -> None:
+    worker = SemanticWorker(dispatch_to_main_thread=lambda callback: callback())
+    try:
+        result = worker.call(key="hover_sync", task=lambda: "hover-result")
+    finally:
+        worker.shutdown()
+
+    assert result == "hover-result"
+
+
 def _blocked_result(release_event: threading.Event, value: str) -> str:
     release_event.wait(timeout=1.0)
     return value

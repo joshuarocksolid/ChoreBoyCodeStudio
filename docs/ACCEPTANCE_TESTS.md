@@ -1707,7 +1707,34 @@ Verify that local-history workflows are usable in both themes and do not introdu
 
 ---
 
-## 13. Minimum MVP Gate
+## 13. Editor Architecture Hygiene Validation
+
+## AT-72 — Architecture hygiene gate stays green
+
+**Purpose:**  
+Verify that the editor-architecture hardening slice remains reliable, responsive, and aligned with the repo's documented validation truth.
+
+**Preconditions:**  
+- architecture hygiene phase is implemented
+- medium semantic fixture project is available
+- editor can switch between light and dark themes
+
+**Steps:**  
+1. Run the architecture-focused automated validation lanes documented in `docs/TESTS.md`.
+2. Open the semantic fixture project and trigger completion, hover, signature help, find references, and rename preview while editing the active buffer.
+3. Switch between light and dark themes.
+4. Revisit the Settings dialog, search sidebar, help dialog, and semantic editor surfaces after the theme switch.
+
+**Expected Result:**  
+- the documented automated validation lanes pass
+- stale diagnostics or semantic results do not overwrite newer buffer state after edits
+- semantic/background work remains responsive without visible UI-thread freezes
+- shell, settings, and editor surfaces remain readable in both light and dark themes
+- documented runtime/tooling expectations match the shipped implementation, including Python 3.9 source-compatibility expectations
+
+---
+
+## 14. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -1730,7 +1757,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 14. Completion Rule
+## 15. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -1744,7 +1771,7 @@ A feature is complete only when:
 
 ---
 
-## 15. Maintenance Rules
+## 16. Maintenance Rules
 
 Update this file when:
 

@@ -39,6 +39,10 @@ def _build_window_stub() -> MainWindow:
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: None)
     window_any._background_tasks = _FakeBackgroundTasks()
+    window_any._workspace_controller = SimpleNamespace(
+        buffer_revision=lambda _path: 1,
+        open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()),
+    )
     window_any._push_diagnostics_to_editor = lambda *_args, **_kwargs: None
     window_any._update_tab_diagnostic_indicator = lambda *_args, **_kwargs: None
     window_any._render_merged_problems_panel = lambda: None
@@ -103,3 +107,25 @@ def test_lint_all_open_files_disables_runtime_probe(monkeypatch: pytest.MonkeyPa
         background_call["task"](threading.Event())
 
     assert captured == [False, False]
+
+
+def test_render_lint_drops_stale_results_for_changed_buffer() -> None:
+    window = _build_window_stub()
+    window_any = cast(Any, window)
+    editor_widget = SimpleNamespace(toPlainText=lambda: "print('a')\n")
+    window_any._editor_widgets_by_path = {"/tmp/main.py": editor_widget}
+    applied: list[tuple[str, list[object]]] = []
+    revisions = {"current": 1}
+    window_any._workspace_controller = SimpleNamespace(
+        buffer_revision=lambda _path: revisions["current"],
+        open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()),
+    )
+    window_any._apply_lint_diagnostics_result = lambda file_path, diagnostics: applied.append((file_path, diagnostics))
+
+    MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="save")
+    background_call = window_any._background_tasks.calls[0]
+
+    revisions["current"] = 2
+    background_call["on_success"](["diagnostic"])
+
+    assert applied == []

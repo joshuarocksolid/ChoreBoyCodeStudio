@@ -309,11 +309,12 @@ class PluginManagerDialog(QDialog):
         if not destination_dir:
             return
         try:
+            state_root = None if self._state_root is None else str(self._state_root)
             archive_path = export_installed_plugin(
                 plugin_id,
                 version,
                 output_directory=destination_dir,
-                state_root=self._state_root,
+                state_root=state_root,
             )
         except Exception as exc:
             QMessageBox.warning(self, "Plugin Export Failed", str(exc))

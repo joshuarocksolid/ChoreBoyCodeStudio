@@ -7,7 +7,7 @@ import os
 import signal
 import subprocess
 import threading
-from typing import IO, Callable, Literal, Mapping
+from typing import IO, Callable, Literal, Mapping, Sequence
 
 from app.core.errors import RunLifecycleError
 
@@ -301,7 +301,7 @@ class ProcessSupervisor:
             return
 
     @staticmethod
-    def _close_streams(streams: list[IO[str] | None]) -> None:
+    def _close_streams(streams: Sequence[IO[str] | None]) -> None:
         seen_stream_ids: set[int] = set()
         for stream in streams:
             if stream is None:

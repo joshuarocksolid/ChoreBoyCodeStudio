@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, NoReturn
 
 from app.core.errors import PluginManifestValidationError
 from app.plugins.models import PluginEngineConstraints, PluginManifest
@@ -268,5 +268,5 @@ def _raise_error(
     *,
     field: str | None = None,
     manifest_path: Path | None = None,
-) -> None:
+) -> NoReturn:
     raise PluginManifestValidationError(message, field=field, manifest_path=manifest_path)

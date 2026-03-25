@@ -8,6 +8,8 @@ through QSvgRenderer.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide2.QtCore import QByteArray, QRect, QSize, Qt
 from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide2.QtSvg import QSvgRenderer
@@ -337,7 +339,7 @@ def _desktop_icon() -> QIcon:
 # Extension -> icon builder mapping
 # ---------------------------------------------------------------------------
 
-_EXT_ICON_BUILDERS: dict[str, object] = {
+_EXT_ICON_BUILDERS: dict[str, Callable[[], QIcon]] = {
     # Python
     ".py": _python_icon,
     ".pyw": _python_icon,
@@ -425,7 +427,7 @@ _EXT_ICON_BUILDERS: dict[str, object] = {
 # Filename -> icon builder mapping  (keys are lowercase)
 # ---------------------------------------------------------------------------
 
-_FILENAME_ICON_BUILDERS: dict[str, object] = {
+_FILENAME_ICON_BUILDERS: dict[str, Callable[[], QIcon]] = {
     "dockerfile": _dockerfile_icon,
     "docker-compose.yml": _dockerfile_icon,
     "docker-compose.yaml": _dockerfile_icon,

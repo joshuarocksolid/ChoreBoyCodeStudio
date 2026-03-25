@@ -1,8 +1,18 @@
 {
-  "pythonVersion": "3.11",
+  "pythonVersion": "3.9",
   "verboseOutput": true,
   "include": [
     "app"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "app",
+      "extraPaths": [
+        ".",
+        "vendor",
+        "/opt/freecad/usr/lib/python3.11/site-packages"
+      ]
+    }
   ],
   "exclude": [
     ".git",

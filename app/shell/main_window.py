@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from typing import Any, Callable, Mapping, Optional, TypeVar
+from typing import Any, Callable, Mapping, Optional, TypeVar, cast
 
 from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QMouseEvent
@@ -67,18 +67,12 @@ from app.intelligence.cache_controls import (
     should_refresh_index_after_save,
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
-from app.intelligence.hover_service import resolve_hover_info
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
-from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
-from app.intelligence.reference_service import find_references
-from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
-from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.signature_service import resolve_signature_help
-from app.intelligence.semantic_worker import SemanticWorker
+from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
-from app.intelligence.completion_service import CompletionRequest, CompletionService
+from app.intelligence.completion_service import CompletionRequest
 from app.editors.editor_manager import EditorManager, OpenedTabResult
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -139,6 +133,7 @@ from app.shell.local_history_dialog import DraftRecoveryDialog, LocalHistoryDial
 from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
+    EditorSettingsSnapshot,
     MainWindowSettingsSnapshot,
     merge_import_update_policy,
     merge_editor_settings_snapshot_for_scope,
@@ -202,7 +197,7 @@ from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import create_blank_project, enumerate_project_entries, open_project
 from app.project.project_manifest import set_project_default_entry
 from app.project.recent_projects import load_recent_projects
-from app.shell.background_tasks import BackgroundTaskRunner
+from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.action_registry import ShellActionRegistry
 from app.shell.command_broker import CommandBroker
@@ -223,6 +218,8 @@ from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
 from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
+from app.shell.editor_intelligence_controller import EditorIntelligenceController
+from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
 from app.shell.help_controller import ShellHelpController
@@ -237,6 +234,7 @@ TREE_ROLE_RELATIVE_PATH = 258
 EVENT_QUEUE_BATCH_LIMIT = 200
 PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
 ShellEventT = TypeVar("ShellEventT")
+ReplEvent = tuple[str, object, object]
 
 
 class _MiddleClickTabBar(QTabBar):
@@ -263,7 +261,7 @@ class _MiddleClickTabBar(QTabBar):
             return
         super().mouseDoubleClickEvent(arg__1)
 
-    def paintEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt signature
+    def paintEvent(self, arg__1: QEvent) -> None:  # noqa: N802 - Qt signature
         painter = QStylePainter(self)
         option = QStyleOptionTab()
         for index in range(self.count()):
@@ -280,7 +278,7 @@ class _MiddleClickTabBar(QTabBar):
             painter.drawControl(QStyle.CE_TabBarTabLabel, option)
             if is_preview:
                 painter.restore()
-        event.accept()
+        arg__1.accept()
 
 
 class MainWindow(QMainWindow):
@@ -362,8 +360,9 @@ class MainWindow(QMainWindow):
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._project_tree_structure_signature: tuple[str, ...] | None = None
+        self._workspace_controller = EditorWorkspaceController()
         self._editor_manager = EditorManager()
-        self._editor_widgets_by_path: dict[str, CodeEditorWidget] = {}
+        self._editor_widgets_by_path = self._workspace_controller.editor_widgets_by_path
         self._breakpoints_by_file: dict[str, set[int]] = {}
         self._breakpoint_specs_by_key: dict[tuple[str, int], DebugBreakpoint] = {}
         self._debug_exception_policy = DebugExceptionPolicy()
@@ -421,11 +420,6 @@ class MainWindow(QMainWindow):
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
-        self._semantic_facade = SemanticFacade(cache_db_path=self._symbol_cache_db_path, state_root=self._state_root)
-        self._completion_service = CompletionService(
-            cache_db_path=self._symbol_cache_db_path,
-            semantic_facade=self._semantic_facade,
-        )
         self._local_history_store = LocalHistoryStore(
             state_root=self._state_root,
             retention_policy=self._local_history_retention_policy,
@@ -465,7 +459,7 @@ class MainWindow(QMainWindow):
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
         self._run_config_controller = RunConfigController()
-        self._repl_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
+        self._repl_event_queue: queue.Queue[ReplEvent] = queue.Queue()
         self._repl_manager = ReplSessionManager(
             on_output=self._enqueue_repl_output,
             on_session_ended=self._enqueue_repl_ended,
@@ -475,10 +469,17 @@ class MainWindow(QMainWindow):
         self._template_service = TemplateService()
         self._example_project_service = ExampleProjectService()
         self._main_thread_dispatcher = MainThreadDispatcher(self)
-        self._background_tasks = BackgroundTaskRunner(
+        self._semantic_session = SemanticSession(
+            dispatch_to_main_thread=self._dispatch_to_main_thread,
+            cache_db_path=self._symbol_cache_db_path,
+            state_root=self._state_root,
+        )
+        self._intelligence_controller = EditorIntelligenceController(
+            semantic_session=self._semantic_session,
+        )
+        self._background_tasks = GeneralTaskScheduler(
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
-        self._semantic_worker = SemanticWorker(dispatch_to_main_thread=self._dispatch_to_main_thread)
         self._logger = get_subsystem_logger("shell")
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
             diagnostics_enabled=lambda: self._diagnostics_enabled,
@@ -488,11 +489,15 @@ class MainWindow(QMainWindow):
             ),
             get_pending_realtime_file_path=lambda: self._pending_realtime_lint_file_path,
             start_realtime_timer=self._realtime_lint_timer.start,
-            get_active_tab_file_path=lambda: None
-            if self._editor_manager.active_tab() is None
-            else self._editor_manager.active_tab().file_path,
-            render_lint_for_file=self._render_lint_diagnostics_for_file,
-            get_open_editor_paths=lambda: list(self._editor_widgets_by_path.keys()),
+            get_active_tab_file_path=lambda: cast(
+                str | None,
+                getattr(self._editor_manager.active_tab(), "file_path", None),
+            ),
+            render_lint_for_file=lambda file_path, trigger: self._render_lint_diagnostics_for_file(
+                file_path,
+                trigger=trigger,
+            ),
+            get_open_editor_paths=self._workspace_controller.open_editor_paths,
             render_merged_problems_panel=self._render_merged_problems_panel,
             set_known_runtime_modules=lambda modules: setattr(self, "_known_runtime_modules", modules),
             run_background_task=self._background_tasks.run,
@@ -651,12 +656,23 @@ class MainWindow(QMainWindow):
         self._external_change_poll_timer.setInterval(1000)
         self._external_change_poll_timer.timeout.connect(self._poll_external_file_changes)
         self._external_change_poll_timer.start()
-        QTimer.singleShot(0, self._try_restore_last_project)
-        QTimer.singleShot(100, self._auto_start_repl)
-        QTimer.singleShot(200, self._start_runtime_module_probe)
+        self._restore_project_timer = QTimer(self)
+        self._restore_project_timer.setSingleShot(True)
+        self._restore_project_timer.timeout.connect(self._try_restore_last_project)
+        self._restore_project_timer.start(0)
+        self._auto_start_repl_timer = QTimer(self)
+        self._auto_start_repl_timer.setSingleShot(True)
+        self._auto_start_repl_timer.timeout.connect(self._auto_start_repl)
+        self._auto_start_repl_timer.start(100)
+        self._runtime_probe_timer = QTimer(self)
+        self._runtime_probe_timer.setSingleShot(True)
+        self._runtime_probe_timer.timeout.connect(self._start_runtime_module_probe)
+        self._runtime_probe_timer.start(200)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
+        if self._is_shutting_down or self._loaded_project is not None:
+            return
         try:
             settings = self._settings_service.load_global()
         except Exception:
@@ -1559,15 +1575,9 @@ class MainWindow(QMainWindow):
         current_file_path = active_tab.file_path
         source_text = editor_widget.toPlainText()
         cursor_position = editor_widget.textCursor().position()
+        started_at = time.perf_counter()
 
-        def task() -> object:  # type: ignore[no-untyped-def]
-            started_at = time.perf_counter()
-            result = self._semantic_facade.find_references(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            )
+        def on_success(result) -> None:  # type: ignore[no-untyped-def]
             if self._intelligence_runtime_settings.metrics_logging_enabled:
                 elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 if elapsed_ms > 1200.0:
@@ -1586,9 +1596,6 @@ class MainWindow(QMainWindow):
                         elapsed_ms,
                         len(result.hits),
                     )
-            return result
-
-        def on_success(result) -> None:  # type: ignore[no-untyped-def]
             if not result.symbol_name:
                 QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
                 return
@@ -1624,9 +1631,11 @@ class MainWindow(QMainWindow):
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Find References", f"Reference search failed: {exc}")
 
-        self._semantic_worker.submit(
-            key="find_references",
-            task=task,
+        self._intelligence_controller.request_find_references(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
             on_success=on_success,
             on_error=on_error,
         )
@@ -1662,16 +1671,9 @@ class MainWindow(QMainWindow):
         current_file_path = active_tab.file_path
         source_text = editor_widget.toPlainText()
         cursor_position = editor_widget.textCursor().position()
+        started_at = time.perf_counter()
 
-        def task() -> object:  # type: ignore[no-untyped-def]
-            started_at = time.perf_counter()
-            plan = self._semantic_facade.plan_rename(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                new_symbol=new_symbol,
-            )
+        def on_success(plan) -> None:  # type: ignore[no-untyped-def]
             if self._intelligence_runtime_settings.metrics_logging_enabled:
                 elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 hit_count = 0 if plan is None else len(plan.hits)
@@ -1693,9 +1695,6 @@ class MainWindow(QMainWindow):
                         elapsed_ms,
                         hit_count,
                     )
-            return plan
-
-        def on_success(plan) -> None:  # type: ignore[no-untyped-def]
             if plan is None or not plan.preview_patches:
                 QMessageBox.information(
                     self,
@@ -1722,31 +1721,38 @@ class MainWindow(QMainWindow):
             if confirm != QMessageBox.Yes:
                 return
 
-            try:
-                result = self._semantic_facade.apply_rename(plan)
-            except OSError as exc:
-                QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
-                return
+            def on_apply_success(result) -> None:  # type: ignore[no-untyped-def]
+                self._record_local_history_transaction(
+                    {patch.file_path: patch.updated_content for patch in plan.preview_patches},
+                    source="semantic_rename",
+                    label=f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'",
+                )
+                self._refresh_open_tabs_from_disk(result.changed_files)
+                self._reload_current_project()
+                QMessageBox.information(
+                    self,
+                    "Rename Symbol",
+                    f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+                )
 
-            self._record_local_history_transaction(
-                {patch.file_path: patch.updated_content for patch in plan.preview_patches},
-                source="semantic_rename",
-                label=f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'",
-            )
-            self._refresh_open_tabs_from_disk(result.changed_files)
-            self._reload_current_project()
-            QMessageBox.information(
-                self,
-                "Rename Symbol",
-                f"Renamed {result.changed_occurrences} occurrence(s) across {len(result.changed_files)} file(s).",
+            def on_apply_error(exc: Exception) -> None:
+                QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
+
+            self._intelligence_controller.request_apply_rename(
+                plan=plan,
+                on_success=on_apply_success,
+                on_error=on_apply_error,
             )
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Rename Symbol", f"Rename planning failed: {exc}")
 
-        self._semantic_worker.submit(
-            key="rename_symbol",
-            task=task,
+        self._intelligence_controller.request_rename_plan(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            new_symbol=new_symbol,
             on_success=on_success,
             on_error=on_error,
         )
@@ -1769,14 +1775,6 @@ class MainWindow(QMainWindow):
         source_text = editor_widget.toPlainText()
         cursor_position = editor_widget.textCursor().position()
 
-        def task() -> object:  # type: ignore[no-untyped-def]
-            return self._semantic_facade.lookup_definition(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            )
-
         def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
             if not lookup.found:
                 if lookup.metadata.unsupported_reason:
@@ -1791,12 +1789,20 @@ class MainWindow(QMainWindow):
             location = self._choose_definition_location(lookup.locations)
             if location is None:
                 return
-            self._open_file_at_line(location.file_path, location.line_number)
+            selected_location = cast(Any, location)
+            self._open_file_at_line(str(selected_location.file_path), int(selected_location.line_number))
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
 
-        self._semantic_worker.submit(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
+        self._intelligence_controller.request_lookup_definition(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_signature_help_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -1867,23 +1873,12 @@ class MainWindow(QMainWindow):
         cursor_position: int,
     ) -> str | None:
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        signature = self._semantic_facade.resolve_signature_help(
+        return self._intelligence_controller.build_inline_signature_text(
             project_root=project_root,
             current_file_path=file_path,
             source_text=source_text,
             cursor_position=cursor_position,
         )
-        if signature is None:
-            return None
-        details = [
-            signature.signature_text,
-            f"Active parameter index: {signature.argument_index}",
-            f"Source: {signature.source}",
-            f"Confidence: {signature.metadata.confidence}",
-        ]
-        if signature.doc_summary:
-            details.insert(1, f"Doc: {signature.doc_summary}")
-        return "\n".join(details)
 
     def _build_inline_hover_text(
         self,
@@ -1893,27 +1888,86 @@ class MainWindow(QMainWindow):
         cursor_position: int,
     ) -> str | None:
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        hover_info = self._semantic_facade.resolve_hover_info(
+        return self._intelligence_controller.build_inline_hover_text(
             project_root=project_root,
             current_file_path=file_path,
             source_text=source_text,
             cursor_position=cursor_position,
         )
-        if hover_info is None:
-            return None
 
-        details = [f"Symbol: {hover_info.symbol_name}", f"Kind: {hover_info.symbol_kind}"]
-        if hover_info.file_path:
-            details.append(f"File: {hover_info.file_path}")
-        if hover_info.line_number is not None:
-            details.append(f"Line: {hover_info.line_number}")
-        if hover_info.doc_summary:
-            details.append(f"Doc: {hover_info.doc_summary}")
-        details.append(f"Source: {hover_info.source}")
-        details.append(f"Confidence: {hover_info.metadata.confidence}")
-        if hover_info.metadata.unsupported_reason:
-            details.append(f"Reason: {hover_info.metadata.unsupported_reason}")
-        return "\n".join(details)
+    def _format_inline_signature_text(self, signature) -> str | None:  # type: ignore[no-untyped-def]
+        return self._intelligence_controller.format_inline_signature_text(signature)
+
+    def _format_inline_hover_text(self, hover_info) -> str | None:  # type: ignore[no-untyped-def]
+        return self._intelligence_controller.format_inline_hover_text(hover_info)
+
+    def _request_inline_signature_text_async(
+        self,
+        *,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        source_text: str,
+        cursor_position: int,
+        request_generation: int,
+    ) -> None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            generation, signature = payload
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if active_widget is not editor_widget:
+                return
+            editor_widget.show_calltip_for_request(
+                request_generation=generation,
+                text=self._format_inline_signature_text(signature),
+            )
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Signature-help request failed for %s: %s", file_path, exc)
+
+        self._intelligence_controller.request_signature_help(
+            project_root=project_root,
+            current_file_path=file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _request_inline_hover_text_async(
+        self,
+        *,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        source_text: str,
+        cursor_position: int,
+        request_generation: int,
+    ) -> None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            generation, hover_info = payload
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if active_widget is not editor_widget:
+                return
+            editor_widget.show_hover_text_for_request(
+                request_generation=generation,
+                text=self._format_inline_hover_text(hover_info),
+            )
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Hover request failed for %s: %s", file_path, exc)
+
+        self._intelligence_controller.request_hover_info(
+            project_root=project_root,
+            current_file_path=file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -3261,9 +3315,9 @@ class MainWindow(QMainWindow):
         )
         if not result.started:
             if result.failure_reason == RunSessionStartFailureReason.NO_PROJECT:
-                QMessageBox.warning(self, "Run unavailable", result.error_message)
+                QMessageBox.warning(self, "Run unavailable", result.error_message or "No project is loaded.")
             elif result.failure_reason == RunSessionStartFailureReason.SAVE_FAILED:
-                QMessageBox.warning(self, "Run cancelled", result.error_message)
+                QMessageBox.warning(self, "Run cancelled", result.error_message or "Save was cancelled.")
             elif result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING:
                 pass
             elif result.error_message:
@@ -3636,6 +3690,7 @@ class MainWindow(QMainWindow):
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         editor_widget = self._editor_widgets_by_path.get(file_path)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
+        buffer_revision = None if editor_widget is None else self._editor_buffer_revision(file_path)
         allow_runtime_import_probe = trigger == "manual"
         key = f"lint::{file_path}"
 
@@ -3651,6 +3706,15 @@ class MainWindow(QMainWindow):
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if editor_widget is not None and active_widget is not editor_widget:
+                return
+            if buffer_revision is not None and self._editor_buffer_revision(file_path) != buffer_revision:
+                self._logger.info(
+                    "Dropped stale diagnostics result for %s due to buffer revision change.",
+                    file_path,
+                )
+                return
             if self._intelligence_runtime_settings.metrics_logging_enabled:
                 elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 if elapsed_ms > 180.0:
@@ -3686,7 +3750,7 @@ class MainWindow(QMainWindow):
         if not self._diagnostics_enabled:
             return
         scheduled_any = False
-        for file_path in list(self._editor_widgets_by_path.keys()):
+        for file_path in self._workspace_controller.open_editor_paths():
             if not file_path.lower().endswith(".py"):
                 continue
             scheduled_any = True
@@ -3888,7 +3952,7 @@ class MainWindow(QMainWindow):
         if orchestrator is not None:
             orchestrator.relint_open_python_files()
             return
-        for file_path in self._editor_widgets_by_path.keys():
+        for file_path in self._workspace_controller.open_editor_paths():
             if file_path.lower().endswith(".py"):
                 self._render_lint_diagnostics_for_file(file_path, trigger="tab_change")
         self._render_merged_problems_panel()
@@ -4415,7 +4479,7 @@ class MainWindow(QMainWindow):
             focus_problems_tab=self._focus_problems_tab,
             set_debug_command_input_enabled=lambda enabled: (
                 self._debug_panel.set_command_input_enabled(enabled)
-                if getattr(self, "_debug_panel", None) is not None
+                if self._debug_panel is not None
                 else None
             ),
             finalize_run_log=self._finalize_run_log,
@@ -4651,11 +4715,18 @@ class MainWindow(QMainWindow):
             self._run_event_timer.stop()
         if hasattr(self, "_external_change_poll_timer"):
             self._external_change_poll_timer.stop()
+        if hasattr(self, "_restore_project_timer"):
+            self._restore_project_timer.stop()
+        if hasattr(self, "_auto_start_repl_timer"):
+            self._auto_start_repl_timer.stop()
+        if hasattr(self, "_runtime_probe_timer"):
+            self._runtime_probe_timer.stop()
         self._drain_run_event_queue()
         self._background_tasks.cancel_all()
-        if hasattr(self, "_semantic_worker"):
-            self._semantic_worker.cancel_all()
-            self._semantic_worker.shutdown()
+        self._background_tasks.shutdown(wait=False)
+        if hasattr(self, "_semantic_session"):
+            self._intelligence_controller.cancel_all()
+            self._intelligence_controller.shutdown()
         if self._active_search_worker is not None and self._active_search_worker.is_running():
             self._active_search_worker.cancel()
         self._active_search_worker = None
@@ -5221,11 +5292,14 @@ class MainWindow(QMainWindow):
         ):
             menu.addSeparator()
             run_file_action = menu.addAction("Run")
+            assert run_file_action is not None
             run_file_action.setEnabled(not self._run_service.supervisor.is_running())
             set_entry_point_action = menu.addAction("Set as Entry Point")
+            assert set_entry_point_action is not None
             if relative_path == self._loaded_project.metadata.default_entry:
                 set_entry_point_action.setEnabled(False)
 
+        assert paste_action is not None
         paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
         chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
         if chosen is None:
@@ -5288,6 +5362,7 @@ class MainWindow(QMainWindow):
         copy_path_action = menu.addAction("Copy Paths")
         copy_relative_path_action = menu.addAction("Copy Relative Paths")
 
+        assert paste_action is not None
         paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
         chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
         if chosen is None:
@@ -5597,19 +5672,6 @@ class MainWindow(QMainWindow):
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
 
-        def completion_provider(
-            _prefix: str,
-            source_text: str,
-            cursor_position: int,
-            manual_trigger: bool,
-        ) -> list[CompletionItem]:
-            return self._request_editor_completions(
-                file_path=tab_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                manual_trigger=manual_trigger,
-            )
-
         def completion_requester(
             prefix: str,
             source_text: str,
@@ -5627,18 +5689,22 @@ class MainWindow(QMainWindow):
                 request_generation=request_generation,
             )
 
-        def hover_provider(source_text: str, cursor_position: int) -> str | None:
-            return self._build_inline_hover_text(
+        def hover_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
+            self._request_inline_hover_text_async(
                 file_path=tab_file_path,
+                editor_widget=editor_widget,
                 source_text=source_text,
                 cursor_position=cursor_position,
+                request_generation=request_generation,
             )
 
-        def signature_provider(source_text: str, cursor_position: int) -> str | None:
-            return self._build_inline_signature_text(
+        def signature_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
+            self._request_inline_signature_text_async(
                 file_path=tab_file_path,
+                editor_widget=editor_widget,
                 source_text=source_text,
                 cursor_position=cursor_position,
+                request_generation=request_generation,
             )
 
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
@@ -5651,18 +5717,17 @@ class MainWindow(QMainWindow):
             self._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
         def on_completion_accepted(item: CompletionItem) -> None:
-            self._completion_service.record_acceptance(item)
+            self._intelligence_controller.record_completion_acceptance(item)
 
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
-        editor_widget.set_completion_provider(completion_provider)
         editor_widget.set_completion_requester(completion_requester)
         editor_widget.set_completion_accepted_callback(on_completion_accepted)
-        editor_widget.set_hover_provider(hover_provider)
-        editor_widget.set_signature_help_provider(signature_provider)
+        editor_widget.set_hover_requester(hover_requester)
+        editor_widget.set_signature_help_requester(signature_requester)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
-        self._editor_widgets_by_path[opened_result.tab.file_path] = editor_widget
+        self._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
 
         tab_index = self._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -5711,7 +5776,7 @@ class MainWindow(QMainWindow):
         if tab_index < 0:
             return
         self._editor_tabs_widget.removeTab(tab_index)
-        widget = self._editor_widgets_by_path.pop(file_path, None)
+        widget = self._workspace_controller.pop_editor(file_path)
         if widget is not None:
             self._release_editor_widget(widget)
         self._refresh_save_action_states()
@@ -5753,6 +5818,7 @@ class MainWindow(QMainWindow):
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         if self._editor_manager.get_tab(file_path) is None:
             return
+        self._advance_editor_buffer_revision(file_path)
         tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
         if tab_state.is_preview and tab_state.is_dirty:
             self._promote_preview_tab(file_path)
@@ -5808,6 +5874,12 @@ class MainWindow(QMainWindow):
             return None
         return self._editor_widgets_by_path.get(active_tab.file_path)
 
+    def _advance_editor_buffer_revision(self, file_path: str) -> int:
+        return self._workspace_controller.advance_buffer_revision(file_path)
+
+    def _editor_buffer_revision(self, file_path: str) -> int | None:
+        return self._workspace_controller.buffer_revision(file_path)
+
     def _request_editor_completions(
         self,
         *,
@@ -5826,7 +5898,7 @@ class MainWindow(QMainWindow):
             min_prefix_chars=self._completion_min_chars,
             max_results=100,
         )
-        completions = list(self._completion_service.complete(request))
+        completions = self._intelligence_controller.complete_blocking(request=request)
         if self._intelligence_runtime_settings.metrics_logging_enabled:
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
             if elapsed_ms > 150.0:
@@ -5856,20 +5928,38 @@ class MainWindow(QMainWindow):
         manual_trigger: bool,
         request_generation: int,
     ) -> None:
-        def task() -> tuple[int, str, list[CompletionItem]]:  # type: ignore[no-untyped-def]
-            completions = self._request_editor_completions(
-                file_path=file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                manual_trigger=manual_trigger,
-            )
-            return (request_generation, prefix, completions)
+        started_at = time.perf_counter()
+        request = CompletionRequest(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=file_path,
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            trigger_is_manual=manual_trigger,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+        )
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, completion_prefix, completions = payload
             active_widget = self._editor_widgets_by_path.get(file_path)
             if active_widget is not editor_widget:
                 return
+            if self._intelligence_runtime_settings.metrics_logging_enabled:
+                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                if elapsed_ms > 150.0:
+                    self._logger.warning(
+                        "Completion latency warning: file=%s elapsed_ms=%.2f count=%s",
+                        file_path,
+                        elapsed_ms,
+                        len(completions),
+                    )
+                else:
+                    self._logger.info(
+                        "Completion telemetry: file=%s elapsed_ms=%.2f count=%s",
+                        file_path,
+                        elapsed_ms,
+                        len(completions),
+                    )
             editor_widget.show_completion_items_for_request(
                 request_generation=generation,
                 prefix=completion_prefix,
@@ -5879,9 +5969,10 @@ class MainWindow(QMainWindow):
         def on_error(exc: Exception) -> None:
             self._logger.warning("Async completion request failed for %s: %s", file_path, exc)
 
-        self._semantic_worker.submit(
-            key=f"completion:{file_path}",
-            task=task,
+        self._intelligence_controller.request_completion(
+            request=request,
+            prefix=prefix,
+            request_generation=request_generation,
             on_success=on_success,
             on_error=on_error,
         )
@@ -5960,7 +6051,7 @@ class MainWindow(QMainWindow):
                     return
 
         self._editor_tabs_widget.removeTab(tab_index)
-        widget = self._editor_widgets_by_path.pop(file_path, None)
+        widget = self._workspace_controller.pop_editor(file_path)
         if widget is not None:
             self._release_editor_widget(widget)
         self._editor_manager.close_file(file_path)
@@ -5987,7 +6078,7 @@ class MainWindow(QMainWindow):
         self._pending_autosave_payloads.clear()
         self._pending_realtime_lint_file_path = None
         self._clear_debug_execution_indicator()
-        self._editor_widgets_by_path.clear()
+        self._workspace_controller.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
@@ -6072,6 +6163,7 @@ class MainWindow(QMainWindow):
             editor_widget.blockSignals(True)
             editor_widget.setPlainText(refreshed)
             editor_widget.blockSignals(False)
+            self._advance_editor_buffer_revision(file_path)
             self._apply_detected_indentation_for_widget(file_path, editor_widget, refreshed)
             updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
             updated_tab.mark_saved(last_known_mtime=self._editor_manager.current_disk_mtime(file_path))
@@ -6226,9 +6318,13 @@ class MainWindow(QMainWindow):
         self._autosave_timer.start()
 
     def _schedule_realtime_lint(self, file_path: str) -> None:
+        if self._is_shutting_down:
+            return
         self._diagnostics_orchestrator.schedule_realtime_lint(file_path)
 
     def _run_scheduled_realtime_lint(self) -> None:
+        if self._is_shutting_down:
+            return
         self._diagnostics_orchestrator.run_scheduled_realtime_lint()
 
     def _flush_pending_autosaves(self) -> None:

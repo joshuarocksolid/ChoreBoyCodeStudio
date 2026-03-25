@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 
 from PySide2.QtCore import QUrl
 from PySide2.QtGui import QDesktopServices
@@ -13,6 +14,9 @@ from app.core import constants
 from app.shell.shortcut_preferences import SHORTCUT_COMMANDS
 from app.ui.help.help_dialog import show_help_file, show_help_markdown
 
+if TYPE_CHECKING:
+    from app.shell.theme_tokens import ShellThemeTokens
+
 
 class ShellHelpController:
     """Coordinates Help menu actions and log visibility helpers."""
@@ -21,7 +25,7 @@ class ShellHelpController:
         self,
         *,
         state_root: str | None,
-        resolve_theme_tokens: Callable[[], object],
+        resolve_theme_tokens: Callable[[], ShellThemeTokens],
         reveal_path_in_file_manager: Callable[[str], None],
         get_effective_shortcuts: Callable[[], Mapping[str, str]],
     ) -> None:

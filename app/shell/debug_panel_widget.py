@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import QFont, QFontDatabase
@@ -84,9 +84,9 @@ class _SectionHeader(QWidget):
 class _StatusHeader(QWidget):
     """Status bar across the top of the debug panel showing execution state."""
 
-    refresh_stack_clicked = Signal()
-    refresh_locals_clicked = Signal()
-    clear_clicked = Signal()
+    refresh_stack_clicked: Any = Signal()
+    refresh_locals_clicked: Any = Signal()
+    clear_clicked: Any = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -174,17 +174,17 @@ def _mono_font() -> QFont:
 class DebugPanelWidget(QWidget):
     """Self-contained debug panel with splitter layout and tree views."""
 
-    navigate_requested = Signal(str, int)
-    navigate_permanent_requested = Signal(str, int)
-    frame_selected_requested = Signal(int)
-    variable_expand_requested = Signal(int)
-    watch_evaluate_requested = Signal(str)
-    breakpoint_remove_requested = Signal(str, int)
-    breakpoint_toggle_requested = Signal(str, int, bool)
-    breakpoint_edit_requested = Signal(str, int)
-    refresh_stack_requested = Signal()
-    refresh_locals_requested = Signal()
-    command_submitted = Signal(str)
+    navigate_requested: Any = Signal(str, int)
+    navigate_permanent_requested: Any = Signal(str, int)
+    frame_selected_requested: Any = Signal(int)
+    variable_expand_requested: Any = Signal(int)
+    watch_evaluate_requested: Any = Signal(str)
+    breakpoint_remove_requested: Any = Signal(str, int)
+    breakpoint_toggle_requested: Any = Signal(str, int, bool)
+    breakpoint_edit_requested: Any = Signal(str, int)
+    refresh_stack_requested: Any = Signal()
+    refresh_locals_requested: Any = Signal()
+    command_submitted: Any = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

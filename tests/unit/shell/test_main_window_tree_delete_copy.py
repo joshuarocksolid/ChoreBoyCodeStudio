@@ -41,8 +41,11 @@ def test_tree_bulk_delete_failure_warning_uses_move_to_trash_title(monkeypatch: 
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._project_tree_action_coordinator = SimpleNamespace(
-        handle_bulk_delete=lambda _paths: ["one.py: permission denied"]
+        handle_bulk_delete=lambda _paths: (["one.py: permission denied"], [])
     )
+    window_any._capture_text_history_snapshots = lambda _paths: []
+    window_any._record_local_history_transaction = lambda *_args, **_kwargs: None
+    window_any._filter_snapshots_for_paths = lambda snapshots, _paths: snapshots
 
     prompts: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []

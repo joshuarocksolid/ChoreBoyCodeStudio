@@ -257,9 +257,9 @@ class SearchResultDelegate(QStyledItemDelegate):
 class SearchSidebarWidget(QWidget):
     """Sidebar panel for project-wide search and replace."""
 
-    preview_file_at_line = Signal(str, int)
-    open_file_at_line = Signal(str, int)
-    _apply_results_requested = Signal()
+    preview_file_at_line: Any = Signal(str, int)
+    open_file_at_line: Any = Signal(str, int)
+    _apply_results_requested: Any = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

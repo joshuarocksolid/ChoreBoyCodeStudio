@@ -4,7 +4,7 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 import time
-from typing import Optional
+from typing import Any, Optional, cast
 
 from app.persistence.atomic_write import atomic_write_text
 from app.intelligence.refactor_runtime import initialize_refactor_runtime
@@ -46,7 +46,7 @@ class RopeRefactorEngine:
         except ValueError as exc:
             raise ValueError(f"Rename target must be inside project root: {current_file_path}") from exc
 
-        project = Project(str(root), ropefolder=None)
+        project = Project(str(root), ropefolder=cast(Any, None))
         try:
             resource = project.get_file(resource_path)
             rename = Rename(project, resource, cursor_position)

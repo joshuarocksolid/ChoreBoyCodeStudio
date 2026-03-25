@@ -38,7 +38,7 @@ python3 run_tests.py -v --import-mode=importlib
 - `--import-mode=importlib` is required because test directories lack `__init__.py` and have duplicate file names across `tests/unit/` and `tests/integration/`.
 - `QT_QPA_PLATFORM=offscreen` is set automatically by `run_tests.py`.
 - The `runtime_parity` test passes because AppRun is installed at the expected path.
-- There is one pre-existing test failure: `test_handle_drop_move_returns_oserror_message`.
+- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1189 passed, 1 skipped` (the skipped test requires the optional SQL tree-sitter grammar bundle).
 
 To run a subset:
 
@@ -66,10 +66,10 @@ Requires `DISPLAY` (available as `:1` in Cloud). The status bar should show "Run
 ### Type checking (pyright)
 
 ```bash
-pyright
+npx pyright
 ```
 
-Pyright uses the `.venv-editor` stub directory (which symlinks to FreeCAD's site-packages) for import resolution. The `pyrightconfig.json` is already configured. All remaining errors (~460) are pre-existing PySide2 type-stub issues, not code bugs. Zero `reportMissingImports` errors.
+`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages`. Latest checkpoint: `npx pyright` -> `0 errors, 0 warnings, 0 informations`.
 
 ### Vendored dependencies
 
@@ -100,7 +100,7 @@ This is necessary because `run_tests.py` imports pytest from within the AppRun p
 ### Key caveats
 
 - **No `.venv`**: do not create a virtualenv. Everything runs through `/opt/freecad/AppRun`.
-- `.venv-editor` is a thin stub directory used **only** by pyright for import resolution — it is not a real Python environment and nothing should be run from it.
+- `.venv-editor` may exist as legacy editor tooling scaffolding, but it is not a real Python environment and nothing should be run from it.
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).

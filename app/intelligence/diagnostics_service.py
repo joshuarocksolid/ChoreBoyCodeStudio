@@ -167,7 +167,8 @@ def analyze_python_file(
         syntax_tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
         col_start = (int(exc.offset) - 1) if exc.offset is not None else None
-        col_end = (int(exc.end_offset) - 1) if getattr(exc, "end_offset", None) is not None else None
+        raw_end_offset = getattr(exc, "end_offset", None)
+        col_end = (int(raw_end_offset) - 1) if isinstance(raw_end_offset, int) else None
         diagnostics.append(
             CodeDiagnostic(
                 code="PY100",

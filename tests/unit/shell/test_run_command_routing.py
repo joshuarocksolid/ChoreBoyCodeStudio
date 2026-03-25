@@ -11,6 +11,8 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
+from app.debug.debug_breakpoints import build_breakpoint
+from app.debug.debug_models import DebugExceptionPolicy, DebugSourceMap
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.unit
@@ -43,10 +45,12 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
     window_any._editor_manager = SimpleNamespace(
         active_tab=lambda: SimpleNamespace(file_path="/tmp/project/debug.py", is_dirty=False, current_content="")
     )
-    window_any._breakpoints_by_file = {
-        "/tmp/project/debug.py": {9, 2},
-        "/tmp/project/other.py": {1},
-    }
+    window_any._all_breakpoints = lambda: [
+        build_breakpoint("/tmp/project/debug.py", 2),
+        build_breakpoint("/tmp/project/debug.py", 9),
+        build_breakpoint("/tmp/project/other.py", 1),
+    ]
+    window_any._debug_exception_policy = DebugExceptionPolicy()
 
     calls: list[dict[str, object]] = []
     window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
@@ -57,10 +61,13 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
     assert len(calls) == 1
     assert calls[0]["mode"] == constants.RUN_MODE_PYTHON_DEBUG
     assert calls[0]["entry_file"] == str(Path("/tmp/project/debug.py").expanduser().resolve())
-    assert calls[0]["breakpoints"] == [
-        {"file_path": "/tmp/project/debug.py", "line_number": 2},
-        {"file_path": "/tmp/project/debug.py", "line_number": 9},
-        {"file_path": "/tmp/project/other.py", "line_number": 1},
+    assert [
+        (breakpoint.file_path, breakpoint.line_number)
+        for breakpoint in cast(list[Any], calls[0]["breakpoints"])
+    ] == [
+        ("/tmp/project/debug.py", 2),
+        ("/tmp/project/debug.py", 9),
+        ("/tmp/project/other.py", 1),
     ]
 
 
@@ -146,14 +153,15 @@ def test_start_active_file_session_uses_transient_file_for_dirty_buffer() -> Non
     started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     assert started is True
-    assert calls == [
-        {
-            "mode": constants.RUN_MODE_PYTHON_SCRIPT,
-            "entry_file": "/tmp/transient.py",
-            "breakpoints": None,
-            "skip_save": True,
-        }
+    assert len(calls) == 1
+    assert calls[0]["mode"] == constants.RUN_MODE_PYTHON_SCRIPT
+    assert calls[0]["entry_file"] == "/tmp/transient.py"
+    assert calls[0]["breakpoints"] is None
+    assert calls[0]["debug_exception_policy"] is None
+    assert calls[0]["source_maps"] == [
+        DebugSourceMap(runtime_path="/tmp/transient.py", source_path="/tmp/project/dirty.py")
     ]
+    assert calls[0]["skip_save"] is True
     assert deleted == []
     assert window_any._active_transient_entry_file_path == "/tmp/transient.py"
 
@@ -192,10 +200,12 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
             current_content="print('dirty')\n",
         )
     )
-    window_any._breakpoints_by_file = {
-        "/tmp/project/dirty.py": {9, 2},
-        "/tmp/project/other.py": {1},
-    }
+    window_any._all_breakpoints = lambda: [
+        build_breakpoint("/tmp/project/dirty.py", 2),
+        build_breakpoint("/tmp/project/dirty.py", 9),
+        build_breakpoint("/tmp/project/other.py", 1),
+    ]
+    window_any._debug_exception_policy = DebugExceptionPolicy()
     window_any._active_transient_entry_file_path = None
     window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
     deleted: list[str] = []
@@ -206,17 +216,17 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
     started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG)
 
     assert started is True
-    assert calls == [
-        {
-            "mode": constants.RUN_MODE_PYTHON_DEBUG,
-            "entry_file": "/tmp/transient.py",
-            "breakpoints": [
-                {"file_path": "/tmp/transient.py", "line_number": 2},
-                {"file_path": "/tmp/transient.py", "line_number": 9},
-                {"file_path": "/tmp/project/other.py", "line_number": 1},
-            ],
-            "skip_save": True,
-        }
+    assert len(calls) == 1
+    assert calls[0]["mode"] == constants.RUN_MODE_PYTHON_DEBUG
+    assert calls[0]["entry_file"] == "/tmp/transient.py"
+    assert calls[0]["skip_save"] is True
+    assert [
+        (breakpoint.file_path, breakpoint.line_number)
+        for breakpoint in cast(list[Any], calls[0]["breakpoints"])
+    ] == [
+        ("/tmp/transient.py", 2),
+        ("/tmp/transient.py", 9),
+        ("/tmp/project/other.py", 1),
     ]
     assert deleted == []
     assert window_any._active_transient_entry_file_path == "/tmp/transient.py"

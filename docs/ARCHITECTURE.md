@@ -210,6 +210,17 @@ For v1, background tasks should remain simple and in-process where possible. Exa
 
 If a background job proves expensive, it can later be moved to a dedicated worker process. That should be a future optimization, not an MVP requirement.
 
+Current editor architecture uses two explicit in-process worker lanes instead of ad-hoc
+threads:
+
+* `GeneralTaskScheduler` for bounded keyed shell work such as linting and other blocking
+  coordination tasks
+* `SemanticSession` over `SemanticWorker` for all semantic-engine ownership and request
+  serialization
+
+This keeps shell work cancellable, avoids duplicated thread ownership of semantic engines,
+and makes shutdown behavior explicit.
+
 ---
 
 ## 7. Launch and Bootstrap Strategy
@@ -337,13 +348,26 @@ choreboy_code_studio/
     shell/
       __init__.py
       main_window.py
+      background_tasks.py
+      main_thread_dispatcher.py
       menus.py
       actions.py
       status_bar.py
+      style_sheet.py
+      style_sheet_sections.py
+      settings_dialog.py
+      settings_dialog_sections.py
+      editor_workspace_controller.py
+      editor_intelligence_controller.py
       local_history_dialog.py
       history_restore_picker.py
     editors/
       __init__.py
+      code_editor_widget.py
+      code_editor_semantics.py
+      code_editor_search.py
+      code_editor_editing.py
+      code_editor_diagnostics.py
       editor_tab.py
       editor_manager.py
       ini_highlighter.py
@@ -629,7 +653,10 @@ domain orchestration to focused shell controllers:
 * `project_controller` for open/recent project flows
 * `run_session_controller` for run/debug/repl lifecycle control wiring
 * `project_tree_controller` for tree move/delete/remap side effects
+* `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
+* `editor_intelligence_controller` for semantic request routing and inline result formatting
 * `background_tasks` for keyed off-UI-thread task execution and replacement
+* `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
 
 Key shell responsibilities include:
 
@@ -637,11 +664,14 @@ Key shell responsibilities include:
 * split-pane layout persistence and reset behavior
 * project-tree context action wiring
 * bottom-pane composition (console, Python console, problems, debug inspector, run log)
+* owning the worker/controller graph without becoming the implementation home for each workflow
 
 ## 12.4 `editors`
 
 Text editing behavior:
 
+* `CodeEditorWidget` composed from focused mixins for semantics, search, editing transforms,
+  and diagnostics overlays
 * tabs
 * dirty state
 * syntax highlighting
@@ -1109,6 +1139,14 @@ thread-safety constraints, Python semantic work should run through a dedicated,
 serialized worker/session model per project rather than ad-hoc parallel background
 threads.
 
+The concrete contract is:
+
+* `SemanticSession` owns the semantic facade and completion service
+* `SemanticWorker` is the only thread allowed to touch that owned semantic state
+* async and blocking semantic helpers both flow through that same worker so hover,
+  signature help, completion, definition, references, and rename planning share one
+  ownership model
+
 ### 17.4.4 Safety rules
 
 Read-only semantic queries must never execute arbitrary user code in the editor
@@ -1126,6 +1164,17 @@ constraints:
 Refactors that claim semantic safety must use a trustable planner. Token replacement
 and text-search fallbacks may still exist as explicit user workflows, but not as
 silent backups for semantic rename/reference operations.
+
+### 17.4.6 Buffer revision rule
+
+Async editor results must be tied to the buffer revision they were requested from.
+
+That means:
+
+* editor-owned buffer revisions advance on every meaningful document replacement/edit
+* diagnostics and semantic callbacks must verify the current revision before applying UI
+  state
+* stale results are dropped instead of overwriting newer editor state
 
 ## 17.5 Real Python formatting and import management
 
@@ -1530,6 +1579,34 @@ into the live editor buffer first and require an explicit save to update the
 source file on disk.
 **Why:** this preserves user trust, keeps undo/cursor context intact, and avoids
 silent destructive overwrites during recovery.
+
+## AD-015: `MainWindow` stays a composition root
+
+**Decision:** keep `MainWindow` responsible for wiring controllers, views, and
+cross-cutting services, while moving workflow logic into focused shell/editor modules.
+**Why:** section 8 of the next-level editor analysis identified shell sprawl as a
+direct drag on reliability and future feature velocity.
+
+## AD-016: Single-owner semantic session
+
+**Decision:** semantic engines and completion orchestration live behind one
+project-scoped `SemanticSession`/`SemanticWorker` ownership model.
+**Why:** trusted semantic libraries need unsaved-buffer context, deterministic
+serialization, and explicit shutdown without competing thread ownership.
+
+## AD-017: Bounded keyed background scheduler
+
+**Decision:** generic shell background work uses a reusable bounded scheduler with
+keyed cancellation/replacement semantics instead of ad-hoc thread spawning.
+**Why:** this keeps UI-facing background work diagnosable, cancellable, and less
+likely to accumulate leaked or duplicated threads.
+
+## AD-018: Revision-gated async UI updates
+
+**Decision:** diagnostics and asynchronous editor-intelligence results must be
+validated against the current buffer revision before mutating editor UI state.
+**Why:** stale async results are a correctness bug in an editor; dropping them is
+safer than racing newer buffer state.
 
 ---
 

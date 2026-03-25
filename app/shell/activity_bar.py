@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from PySide2.QtCore import QSize, Qt, Signal
 from PySide2.QtGui import QIcon
 from PySide2.QtWidgets import QToolButton, QVBoxLayout, QWidget
@@ -10,7 +12,7 @@ from PySide2.QtWidgets import QToolButton, QVBoxLayout, QWidget
 class ActivityBar(QWidget):
     """Narrow vertical icon strip for switching sidebar views."""
 
-    view_changed = Signal(str)
+    view_changed: Any = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

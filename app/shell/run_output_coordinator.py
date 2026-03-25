@@ -122,7 +122,7 @@ class RunOutputCoordinator:
 
         if event.event_type == "state":
             if event.state in {"running", "stopping"}:
-                self._set_run_status(event.state)
+                self._set_run_status(event.state, None)
             self._refresh_run_action_states()
 
     @staticmethod

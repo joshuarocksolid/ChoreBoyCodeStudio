@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtWidgets import (
@@ -22,9 +22,9 @@ from PySide2.QtWidgets import (
 class WelcomeWidget(QWidget):
     """Landing page with New/Open buttons and a searchable project history."""
 
-    new_project_requested = Signal()
-    open_project_requested = Signal()
-    project_selected = Signal(str)
+    new_project_requested: Any = Signal()
+    open_project_requested: Any = Signal()
+    project_selected: Any = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)

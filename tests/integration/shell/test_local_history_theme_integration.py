@@ -29,11 +29,19 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     return app
 
 
+def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
+    window._is_shutting_down = True
+    window._begin_shutdown_teardown()
+    window._stop_active_run_before_close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_local_history_dialogs_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _ensure_qapplication(monkeypatch)
+    app = _ensure_qapplication(monkeypatch)
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -77,4 +85,4 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
         assert window._history_restore_picker_dialog._search_input is not None
 
     assert len(opened_history_dialogs) == 2
-    window.deleteLater()
+    _dispose_window(window, app)

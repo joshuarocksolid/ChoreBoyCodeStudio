@@ -1854,3 +1854,143 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `L04`, `L05`, `L06`, `L07`, `L08`
 - Done when: retention and exclusion controls are configurable, history pruning remains bounded, support diagnostics include history context when appropriate, and the local-history UI is validated for theme safety and responsiveness.
 
+---
+
+## 21) Phase M — Editor architecture hygiene
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase turns section 8 of `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md` into an
+explicit implementation track. The goal is to keep future editor work reliable and
+fast by reducing shell complexity, centralizing semantic ownership, and making the
+repo's test/runtime/tooling truth explicit.
+
+### M01 — Contract and acceptance sync for architecture hygiene
+- Status: `DONE`
+- Objective: make the architecture-hygiene phase explicit across backlog, architecture, acceptance, and validation docs.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/TESTS.md`
+  - `AGENTS.md`
+- Automated test layer: `unit`
+- Validation method: doc review plus explicit linkage to `AT-72`
+- Acceptance linkage: `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: the repo documents the composition-root rule, worker/scheduler ownership, validation gate, and future contributors can find the architecture-hygiene phase without relying on external planning artifacts.
+
+### M02 — Truthful validation baseline and Python 3.9 tooling alignment
+- Status: `DONE`
+- Objective: align `pyrightconfig.json`, test commands, and agent guidance with the real runtime/support contract.
+- Primary files:
+  - `pyrightconfig.json`
+  - `docs/TESTS.md`
+  - `AGENTS.md`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `pyright` plus the architecture-focused automated suites documented in `docs/TESTS.md`
+- Acceptance linkage: `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M01`
+- Done when: Python 3.9 is the documented and configured source-compatibility target, stale known-failure notes are removed, and the latest validation checkpoint is recorded truthfully.
+
+### M03 — Single-owner semantic session and worker cutover
+- Status: `DONE`
+- Objective: route editor semantic work through one owned semantic session instead of mixed shell-thread access.
+- Primary files:
+  - `app/intelligence/semantic_session.py`
+  - `app/intelligence/semantic_worker.py`
+  - `app/shell/editor_intelligence_controller.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/intelligence/test_semantic_session.py`
+  - `tests/unit/intelligence/test_semantic_worker.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_semantic_worker.py tests/unit/intelligence/test_semantic_session.py`
+- Acceptance linkage: `AT-45`, `AT-47`, `AT-49`, `AT-50`, `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M01`
+- Done when: completion, hover, signature help, definitions, references, and rename planning all route through one session/worker ownership model with explicit shutdown and cancellation.
+
+### M04 — Bounded general scheduler and stale-result guards
+- Status: `DONE`
+- Objective: replace ad-hoc shell threads with a reusable bounded scheduler and prevent stale async diagnostics/results from mutating newer buffers.
+- Primary files:
+  - `app/shell/background_tasks.py`
+  - `app/shell/editor_workspace_controller.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_background_tasks.py`
+  - `tests/unit/shell/test_main_window_lint_probe_policy.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_background_tasks.py tests/unit/shell/test_main_window_lint_probe_policy.py`
+- Acceptance linkage: `AT-51`, `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M03`
+- Done when: keyed shell background work uses the bounded scheduler, cancellation/replacement is explicit, and stale diagnostics or semantic payloads are dropped via buffer revision checks.
+
+### M05 — `MainWindow` composition-root decomposition
+- Status: `DONE`
+- Objective: move editor workflow ownership into focused controllers so `MainWindow` coordinates instead of hosting deep implementation logic.
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/shell/editor_workspace_controller.py`
+  - `app/shell/editor_intelligence_controller.py`
+  - `tests/unit/shell/test_main_window_semantic_navigation_actions.py`
+  - `tests/unit/shell/test_main_window_reference_rename_actions.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_main_window_semantic_navigation_actions.py tests/unit/shell/test_main_window_reference_rename_actions.py`
+- Acceptance linkage: `AT-45`, `AT-49`, `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M03`, `M04`
+- Done when: editor-workspace ownership and semantic routing live behind focused controllers and `MainWindow` remains the composition root for those seams.
+
+### M06 — Large UI module splitting without UX regression
+- Status: `DONE`
+- Objective: split `CodeEditorWidget`, `SettingsDialog`, and stylesheet builders by reason to change while preserving existing UX and theme behavior.
+- Primary files:
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/code_editor_semantics.py`
+  - `app/editors/code_editor_search.py`
+  - `app/editors/code_editor_editing.py`
+  - `app/editors/code_editor_diagnostics.py`
+  - `app/shell/settings_dialog.py`
+  - `app/shell/settings_dialog_sections.py`
+  - `app/shell/style_sheet.py`
+  - `app/shell/style_sheet_sections.py`
+  - `tests/unit/editors/test_semantic_editor_interactions.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/editors/test_semantic_editor_interactions.py`
+- Acceptance linkage: `AT-35`, `AT-36`, `AT-43`, `AT-51`, `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M04`, `M05`
+- Done when: editor/search/diagnostics/semantic UI logic, settings-tab construction, and stylesheet builders are decomposed into focused modules without breaking light/dark usability.
+
+### M07 — Hard cutover of transitional legacy paths
+- Status: `DONE`
+- Objective: remove short-lived compatibility shims so the new scheduler/controller/session path is the only supported editor-architecture lane.
+- Primary files:
+  - `app/shell/background_tasks.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_background_tasks.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_background_tasks.py tests/unit/shell/test_main_window_semantic_navigation_actions.py tests/unit/shell/test_main_window_reference_rename_actions.py`
+- Acceptance linkage: `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M04`, `M05`, `M06`
+- Done when: transitional aliases are removed and future editor work only targets the bounded scheduler plus controller/session architecture.
+
+### M08 — Validation gates before future editor feature phases
+- Status: `DONE`
+- Objective: make unit, integration, runtime-parity, performance, theme, and static-analysis validation a required gate before future editor-intelligence feature work proceeds.
+- Primary files:
+  - `docs/TESTS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `AGENTS.md`
+  - focused tests under `tests/unit/`, `tests/integration/`, and `tests/runtime_parity/`
+- Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: run the full architecture-hygiene command set documented in `docs/TESTS.md`, then execute `AT-72`
+- Acceptance linkage: `AT-72`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `M01`, `M02`, `M03`, `M04`, `M05`, `M06`, `M07`
+- Done when: the repo contains a repeatable validation gate covering architecture-focused automated suites plus light/dark manual confirmation for the touched shell/editor surfaces.
+

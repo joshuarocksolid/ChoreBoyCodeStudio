@@ -47,14 +47,16 @@ def _make_clear_helper() -> object:
 
 def _ensure_line_buffering() -> None:
     """Force line buffering on stdout/stderr to guarantee pipe delivery."""
-    if hasattr(sys.stdout, "reconfigure"):
+    stdout_reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(stdout_reconfigure):
         try:
-            sys.stdout.reconfigure(line_buffering=True)
+            stdout_reconfigure(line_buffering=True)
         except Exception:
             pass
-    if hasattr(sys.stderr, "reconfigure"):
+    stderr_reconfigure = getattr(sys.stderr, "reconfigure", None)
+    if callable(stderr_reconfigure):
         try:
-            sys.stderr.reconfigure(line_buffering=True)
+            stderr_reconfigure(line_buffering=True)
         except Exception:
             pass
 

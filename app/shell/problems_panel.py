@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide2.QtCore import QPoint, Qt, Signal
 from PySide2.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
@@ -219,9 +219,9 @@ class _FilterToggle(QToolButton):
 class ProblemsPanel(QWidget):
     """VS Code-style problems panel with grouped tree and filter toolbar."""
 
-    item_preview_requested = Signal(str, int)
-    item_activated = Signal(str, int)
-    context_menu_requested = Signal(str, str)
+    item_preview_requested: Any = Signal(str, int)
+    item_activated: Any = Signal(str, int)
+    context_menu_requested: Any = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
