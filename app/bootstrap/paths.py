@@ -153,6 +153,11 @@ def project_manifest_path(project_root: PathInput) -> Path:
     return project_cbcs_dir(project_root) / constants.PROJECT_MANIFEST_FILENAME
 
 
+def project_package_config_path(project_root: PathInput) -> Path:
+    """Return the canonical per-project packaging config path."""
+    return project_cbcs_dir(project_root) / constants.PROJECT_PACKAGE_CONFIG_FILENAME
+
+
 def project_settings_path(project_root: PathInput) -> Path:
     """Return the canonical per-project settings path."""
     return project_cbcs_dir(project_root) / constants.PROJECT_SETTINGS_FILENAME

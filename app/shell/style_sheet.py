@@ -17,6 +17,7 @@ from app.shell.style_sheet_sections import (
     shell_section_find_bar,
     shell_section_help_dialog,
     shell_section_main_window_menus,
+    shell_section_package_wizard,
     shell_section_problems_panel,
     shell_section_quick_open,
     shell_section_run_log_panel,
@@ -48,6 +49,7 @@ def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
         + shell_section_search_sidebar(tokens)
         + shell_section_help_dialog(tokens)
         + shell_section_runtime_center_dialog(tokens)
+        + shell_section_package_wizard(tokens)
     )
 
 

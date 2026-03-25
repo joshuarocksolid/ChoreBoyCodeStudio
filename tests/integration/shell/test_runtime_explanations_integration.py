@@ -8,8 +8,9 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QDialog
 
+from app.packaging.models import PACKAGE_PROFILE_INSTALLABLE
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.integration
@@ -105,25 +106,40 @@ def test_packaging_preflight_opens_runtime_center_before_export(
     window = MainWindow(state_root=str(tmp_path.resolve()))
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
+    class _FakeWizard:
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            self.output_dir = str(tmp_path / "exports")
+            self.selected_profile = PACKAGE_PROFILE_INSTALLABLE
+            self._package_config = kwargs["package_config"]
+
+        def exec_(self) -> int:
+            return QDialog.Accepted
+
+        def build_package_config(self):  # type: ignore[no-untyped-def]
+            return self._package_config
+
     opened_dialogs: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "app.shell.main_window.choose_existing_directory",
-        lambda *_args, **_kwargs: str(tmp_path / "exports"),
-    )
+    monkeypatch.setattr("app.shell.main_window.PackageProjectWizard", _FakeWizard)
     monkeypatch.setattr(
         window,
         "_open_runtime_center_dialog",
         lambda *, title="Runtime Center", report=None: opened_dialogs.append({"title": title, "report": report}),
     )
-    monkeypatch.setattr(
-        "app.shell.main_window.package_project",
-        lambda **_kwargs: pytest.fail("package_project should not run when preflight blocks packaging"),
-    )
+
+    def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
+        _ = key
+        try:
+            on_success(task(None))
+        except Exception as exc:  # pragma: no cover - defensive path
+            on_error(exc)
+
+    monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
 
     window._handle_package_project_action()
 
     assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Packaging Preflight"
+    assert opened_dialogs[0]["title"] == "Packaging Failed"
     report = opened_dialogs[0]["report"]
     assert report is not None
-    assert [issue.issue_id for issue in report.issues] == ["package.entry_invalid"]
+    issue_ids = [issue.issue_id for issue in report.issues]
+    assert "package.entry_invalid" in issue_ids

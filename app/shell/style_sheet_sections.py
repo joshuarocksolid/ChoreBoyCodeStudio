@@ -1215,6 +1215,64 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
 """
 
 
+def shell_section_package_wizard(tokens: ShellThemeTokens) -> str:
+    return f"""/* -- Package wizard ------------------------------------------------------ */
+QWizard#shell\\.packageWizard {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+}}
+QWizard#shell\\.packageWizard QLabel {{
+    color: {tokens.text_primary};
+}}
+QWizard#shell\\.packageWizard QGroupBox {{
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 12px 10px 10px 10px;
+    background: {tokens.panel_bg};
+}}
+QWizard#shell\\.packageWizard QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: {tokens.text_muted};
+}}
+QWizard#shell\\.packageWizard QLineEdit,
+QWizard#shell\\.packageWizard QTextEdit,
+QWizard#shell\\.packageWizard QComboBox {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 6px 8px;
+}}
+QWizard#shell\\.packageWizard QLineEdit:focus,
+QWizard#shell\\.packageWizard QTextEdit:focus,
+QWizard#shell\\.packageWizard QComboBox:focus {{
+    border-color: {tokens.accent};
+}}
+QWizard#shell\\.packageWizard QPushButton {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QWizard#shell\\.packageWizard QPushButton:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+QWizard#shell\\.packageWizard QPushButton:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QWizard#shell\\.packageWizard QCheckBox {{
+    color: {tokens.text_primary};
+}}
+"""
+
+
 def settings_section_dialog_and_tabs(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Dialog -------------------------------------------------------------- */
 QDialog#shell\\.settingsDialog {{

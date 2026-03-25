@@ -4,7 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core.models import LoadedProject, RuntimeIssue, WorkflowPreflightResult
-from app.packaging.packager import _paths_overlap, _resolve_entry_path, _should_exclude, sanitize_project_name
+from app.packaging.layout import (
+    paths_overlap as _paths_overlap,
+    resolve_entry_path as _resolve_entry_path,
+    sanitize_project_name,
+    should_exclude_relative_path as _should_exclude,
+)
 
 
 def build_run_preflight(

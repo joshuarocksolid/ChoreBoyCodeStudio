@@ -1905,7 +1905,97 @@ Verify that the richer onboarding/runtime UI remains usable in both themes and d
 
 ---
 
-## 15. Minimum MVP Gate
+## 15. Packaging and Distribution Validation
+
+## AT-81 — Installable packaging wizard exports a validated artifact
+
+**Purpose:**  
+Verify that project packaging now defaults to an installable, manifest-driven export instead of a raw folder copy.
+
+**Preconditions:**  
+- packaging wizard is implemented
+- a valid project is available
+
+**Steps:**  
+1. Open `Run > Package Project...`.
+2. Choose the `installable` profile and an output folder outside the live project.
+3. Review package metadata and finish the export.
+4. Inspect the generated package folder.
+
+**Expected Result:**  
+- the workflow presents a packaging wizard rather than a one-shot folder picker
+- the export contains installer/runtime files, generated docs, `package_manifest.json`, and `package_report.json`
+- the package report captures validation and dependency-audit output
+- the live project is not modified except for packaging metadata intentionally written to `cbcs/package.json`
+
+---
+
+## AT-82 — Installable package installer supports launcher publishing and upgrades
+
+**Purpose:**  
+Verify that installable packages have a clear, supportable install/upgrade story on ChoreBoy.
+
+**Preconditions:**  
+- installable package export exists
+- the target machine can run FreeCAD AppRun
+
+**Steps:**  
+1. Copy the installable package to `/home/default/`.
+2. Run the installer launcher and install the package.
+3. Re-run a newer version of the same package and choose a side-by-side or replacement-style install.
+4. Review launcher publishing and older-version cleanup behavior.
+
+**Expected Result:**  
+- the installer verifies package contents before copying files
+- the installed launcher hardcodes the final install directory
+- the installer can publish an application-menu launcher and optional Desktop shortcut
+- later installs can detect older versions of the same package and offer cleanup without relying on hidden app-owned metadata
+
+---
+
+## AT-83 — Portable packaging stays explicit and AppRun-compatible
+
+**Purpose:**  
+Verify that portable packaging remains available only with a clear, explicit launcher contract.
+
+**Preconditions:**  
+- portable profile is implemented
+- a valid project is available
+
+**Steps:**  
+1. Export a project using the `portable` profile.
+2. Inspect the generated launcher and packaged files.
+3. Launch the portable package on the real AppRun runtime while keeping the `.desktop` file beside the export contents.
+
+**Expected Result:**  
+- the portable launcher uses a spec-compliant shell wrapper to hand package-root context into AppRun
+- the launcher resolves package root from the desktop-file location rather than a hardcoded install path
+- docs and UI clearly explain that portable mode requires the launcher to stay with the package contents
+
+---
+
+## AT-84 — Packaging surfaces stay readable and responsive in both themes
+
+**Purpose:**  
+Verify that the new packaging wizard/report surfaces stay usable and do not regress shell responsiveness.
+
+**Preconditions:**  
+- packaging wizard/report UI is implemented
+- editor can switch between light and dark themes
+
+**Steps:**  
+1. Open the packaging wizard in light mode and review its form fields, descriptions, and actions.
+2. Repeat in dark mode.
+3. Run a normal package export and observe validation/report handling.
+
+**Expected Result:**  
+- labels, inputs, warnings, and actions remain readable in both themes
+- packaging validation/export still runs on the background-task lane instead of freezing the UI
+- success and failure flows both explain what happened and where to find the generated package/report
+
+---
+
+## 16. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -1928,7 +2018,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 16. Completion Rule
+## 17. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -1942,7 +2032,7 @@ A feature is complete only when:
 
 ---
 
-## 17. Maintenance Rules
+## 18. Maintenance Rules
 
 Update this file when:
 

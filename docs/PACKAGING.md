@@ -1,172 +1,255 @@
-# ChoreBoy Code Studio Packaging and Installer Workflow
+# Packaging and Distribution Contract
 
 ## Purpose
 
-This document explains the **ChoreBoy-specific** packaging and installation flow for
-**ChoreBoy Code Studio itself**.
+This document defines the supported packaging contract for both:
 
-This is intentionally different from a generic Linux desktop app install.
-ChoreBoy Code Studio targets the locked-down ChoreBoy environment, so the installer
-and launcher behavior are designed around that reality.
+1. distributing **ChoreBoy Code Studio itself**
+2. exporting **user projects packaged from inside Code Studio**
 
-## Two different "packaging" flows in this repo
+The goal is not generic Linux packaging. The goal is a reliable, AppRun-native,
+offline-first distribution model that fits ChoreBoy's real constraints:
 
-There are two separate concepts that are easy to confuse:
+- the guaranteed runtime is `/opt/freecad/AppRun`
+- writable locations may be `noexec`
+- hidden folders are unreliable for project/app-owned state
+- users should not need a terminal
 
-1. **Product distribution packaging** — packaging **ChoreBoy Code Studio itself**
-   so it can be copied to a ChoreBoy and installed.
-   - entrypoints/files:
-     - `package.py`
-     - `packaging/install.py`
+## Supported Profiles
 
-2. **In-app project packaging** — packaging a **user project created inside Code Studio**
-   for export/share.
-   - entrypoint/file:
-     - `app/packaging/packager.py`
+Two profiles exist in the shared packaging substrate:
 
-When this document says **installer** or **package**, it refers to the first flow:
-shipping Code Studio itself.
+1. `installable`
+2. `portable`
 
-## Distribution packaging flow
+`installable` is the supported default.
 
-### Developer-side build
+`portable` remains a stricter, decision-gated profile:
 
-On the development machine, run:
+- it relies on the `.desktop` file staying beside the packaged files
+- it does not publish menu/Desktop launchers automatically
+- when portability is more important than convenience, it is acceptable
+- when reliability and upgrades matter most, use `installable`
 
-```bash
-python3 package.py
-```
+## Shared Metadata Contract
 
-This produces:
+### Project-side metadata
 
-- `dist/ChoreBoyCodeStudio-v<version>/`
-- `dist/ChoreBoyCodeStudio-v<version>.zip`
+Project packaging metadata lives in:
 
-The `.zip` archive is the email/distribution artifact. It is intentionally:
+- `cbcs/package.json`
 
-- password protected
-- compressed
-- enforced to stay at or below **15 MB**
+This is intentionally separate from:
 
-The staging directory contains:
+- `cbcs/project.json`
 
-- `install_choreboy_code_studio.desktop`
-- `installer/install.py`
-- `payload/` with the application files to copy
+`cbcs/project.json` remains the runtime/editor project manifest.
+`cbcs/package.json` stores packaging-specific data such as:
+
+- `package_id`
+- `display_name`
+- `version`
+- `description`
+- packaging entry-file override
+- optional icon path
+
+### Exported artifact metadata
+
+Every exported package writes:
+
+- `package_manifest.json`
+- `package_report.json`
+- `README.txt`
 - `INSTALL.txt`
 
-## ChoreBoy user install contract
+`package_manifest.json` is the machine-readable source of truth for:
 
-The supported install workflow is:
+- package kind (`product` or `project`)
+- profile (`installable` or `portable`)
+- stable `package_id`
+- version and display name
+- launcher contract
+- entry-file path inside the installed/package root
+- checksum list for artifact verification
 
-1. Copy the entire packaged folder into **`/home/default/`** on the ChoreBoy.
-2. Keep the folder contents together.
-   - Do **not** separate `install_choreboy_code_studio.desktop` from the rest of the installer folder.
-   - The installer launcher locates `installer/install.py` relative to its own file location.
-3. Launch `install_choreboy_code_studio.desktop` from that copied folder.
-4. In the installer wizard, choose the **final install directory** where the Code Studio files should live.
-5. The installer copies `payload/` into that chosen location.
-6. The installer writes:
-   - the application-menu entry in `~/.local/share/applications/`
-   - and optionally a Desktop shortcut
+`package_report.json` captures editor-side validation/audit output for supportability.
 
-## Important launcher behavior
+### Installed package marker
 
-The **installed** launcher is expected to **hardcode the chosen final install directory**.
+Installable packages write a visible install marker into the final install root:
 
-That is deliberate.
+- `cbcs_installed_package.json`
 
-Why:
+This marker exists so later installs can detect older versions of the same package
+without relying on hidden cache or registry directories owned by Code Studio.
 
-- ChoreBoy is a known, constrained target environment.
-- The installer’s job is to turn a copied staging folder into a stable installed app.
-- The installed launcher should point at the exact chosen location for the app files.
+## Shared Artifact Layout
 
-### Consequence
+### Installable packages
 
-If the installed Code Studio folder is moved later, the launcher will point at the old path.
+Installable packages use a shared folder layout:
 
-The supported recovery is:
+```text
+<package_root>/
+  install_<name>.desktop
+  installer/
+    install.py
+  payload/
+    ...
+  package_manifest.json
+  package_report.json
+  README.txt
+  INSTALL.txt
+```
 
-- **rerun the installer** and choose the new location
+For project exports, `payload/` contains:
 
-## Why `/home/default/` matters
+- `app_files/` with packaged project files
 
-On ChoreBoy, `/home/default/` is the normal user-home location and the expected place for
-copied USB-delivered installer folders.
+For the product installer, `payload/` contains:
 
-The distribution package is designed around that workflow:
+- the application files for Code Studio itself
 
-- copy package into `/home/default/`
-- run installer from there
-- choose final app location
+### Portable packages
 
-This is not meant to be a fully relocatable, arbitrary-folder, arbitrary-shortcut install model.
+Portable packages use:
 
-## Source of truth in code
+```text
+<package_root>/
+  <name>.desktop
+  app_files/
+    ...
+  package_manifest.json
+  package_report.json
+  README.txt
+  INSTALL.txt
+```
 
-### Installer package launcher
+## Installer Contract
 
-`package.py` generates `install_choreboy_code_studio.desktop`.
+The shared standalone installer is:
 
-That launcher uses the launcher file’s location to find the bundled installer code:
+- `packaging/install.py`
 
-- relative launcher lookup is correct **for the copied installer package**
-- this is why the copied installer folder must stay intact
+It is copied into installable package artifacts and runs on the target through AppRun.
 
-### Installed app launcher
+The installer must:
 
-`packaging/install.py` writes the installed `.desktop` entry.
+- load `package_manifest.json`
+- verify checksums before copying files
+- perform a staged copy before switching the final install directory
+- write the installed launcher into the final install root
+- optionally publish an application-menu launcher
+- optionally publish a Desktop shortcut
+- detect older installs of the same `package_id`
+- allow side-by-side installs and optional cleanup of older versions
 
-That launcher:
+The installed launcher is expected to hardcode the chosen final install directory.
 
-- hardcodes the final chosen install directory
-- launches `run_editor.py` from that exact location
+That is deliberate. If the installed folder moves later, the supported recovery path is:
 
-### Archive size gate
+- rerun the installer so the launcher points at the new location
 
-`package.py` also acts as the release gate for the emailed installer archive:
+## Product Distribution Flow
 
-- it creates a compressed `.zip`
-- it measures the finished archive size
-- it fails packaging if the archive exceeds **15 MB**
+Developer-side build entrypoint:
 
-This is why the default vendored tree-sitter bundle stays curated and does not
-ship every optional grammar offline by default. JavaScript and TOML are bundled
-because HTML/Markdown injections and `pyproject.toml` highlighting are
-product-critical, while lower-priority grammars such as SQL remain optional.
+- `package.py`
 
-The same budget now also applies to the Python formatting/import-management
-stack. The shipped offline bundle includes `black`, `isort`, and `tomli`, and
-the formatter path is expected to stay in-process and Python-3.9-compatible.
-Any future additions to that lane should be evaluated against the archive-size
-gate before release.
+Supported behavior:
 
-## Developer guidance
+1. build a manifest-driven installable package for Code Studio itself
+2. produce a staging directory under:
+   - `CBCS_ARTIFACTS_DIR/dist/choreboy_code_studio_installer_v<version>/`
+3. produce a compressed password-protected archive:
+   - `CBCS_ARTIFACTS_DIR/dist/choreboy_code_studio_installer_v<version>.zip`
+4. enforce the product archive budget:
+   - **15 MB maximum**
 
-When changing packaging/install behavior:
+The product archive budget applies to Code Studio distribution only.
+It does **not** define the size budget for user-project packages.
 
-- do not describe the installer as a generic relocatable Linux app installer
-- preserve the distinction between:
-  - installer package location
-  - final installed app location
-- keep user-facing copy explicit about `/home/default/`
-- keep user-facing copy explicit that the installed launcher hardcodes the chosen final path
-- preserve the compressed archive + 15 MB budget contract unless the product distribution strategy changes
-- treat `black`/`isort`/`tomli` as part of the supported vendored runtime, and
-  keep `black` on the pure-Python install path when refreshing the bundle
-- if future work changes this contract, update:
-  - `package.py`
-  - `packaging/install.py`
-  - `INSTALL.txt` generation
-  - `vendor/README.md`
-  - this document
+## In-App Project Packaging Flow
+
+Editor entrypoint:
+
+- `Run > Package Project...`
+
+Supported behavior:
+
+1. open a packaging wizard
+2. select `installable` or `portable`
+3. review/edit `cbcs/package.json` metadata
+4. run validation + dependency audit
+5. export a manifest-driven artifact
+6. show the resulting package/report paths
+
+Validation covers:
+
+- entry-file safety
+- output overlap with the live project
+- hidden/excluded paths
+- package metadata completeness
+- dependency audit against project files, `vendor/`, and AppRun
+- direct subprocess assumptions that are likely unsafe on ChoreBoy
+
+Packaging excludes transient/support content such as:
+
+- `cbcs/runs/`
+- `cbcs/logs/`
+- `cbcs/cache/`
+- `__pycache__/`
+- hidden dot-folders
+- `.pyc` files
+
+## Launcher Rules
+
+### Installable launcher rule
+
+Installed launchers:
+
+- use direct AppRun bootstrap
+- do not use `/bin/sh`
+- hardcode the final chosen install directory
+
+### Portable launcher rule
+
+Portable launchers:
+
+- use a spec-compliant `/bin/sh -c ... %k` wrapper to pass launcher location into AppRun
+- pass `%k` as a separate desktop-file argument
+- resolve package root from the launcher path before execing AppRun
+- must not hide `%k` inside the quoted Python command body passed to AppRun
+
+## ChoreBoy Staging Rule
+
+Installable packages are designed around the ChoreBoy copy-and-launch workflow:
+
+1. copy the whole installer package into `/home/default/`
+2. keep the installer folder together
+3. run the installer launcher from there
+4. choose the final install directory
+
+The installer warns when the staging package is not under `/home/default/`.
+
+## Source of Truth Files
+
+When packaging behavior changes, update the matching source files together:
+
+- `package.py`
+- `packaging/install.py`
+- `app/packaging/`
+- `app/ui/help/packaging_backup.md`
+- `docs/manual/chapters/09_packaging_backup.md`
+- `docs/ACCEPTANCE_TESTS.md`
+- `docs/TASKS.md`
+- `docs/ARCHITECTURE.md`
+- `vendor/README.md` when the product archive budget or shipped vendor bundle changes
 
 ## Summary
 
 The supported mental model is:
 
-- **Installer package**: copied into `/home/default/`, kept together, launched from there
-- **Installed app**: copied wherever the user chooses, with launcher hardcoded to that chosen path
-
-That is the intended ChoreBoy-specific packaging contract.
+- **installable**: validated, installer-grade, upgrade-aware, AppRun-native
+- **portable**: lighter-weight, still AppRun-native, but stricter about launcher placement
+- **product distribution** and **project export** now share the same manifest/installer contract instead of drifting separately

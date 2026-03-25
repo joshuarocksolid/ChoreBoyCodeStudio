@@ -1486,9 +1486,12 @@ Critical contracts should be testable without bringing up the full editor UI whe
 The following should have explicit version numbers:
 
 * `cbcs/project.json`
+* `cbcs/package.json`
 * run manifest
 * support bundle format
 * template format
+* distribution package manifest
+* installed package marker
 
 ## 23.2 Migration policy
 
@@ -1669,6 +1672,18 @@ likely to accumulate leaked or duplicated threads.
 validated against the current buffer revision before mutating editor UI state.
 **Why:** stale async results are a correctness bug in an editor; dropping them is
 safer than racing newer buffer state.
+
+## AD-019: Packaging is manifest-driven with installable as the default profile
+
+**Decision:** product distribution and in-app project exports share one
+manifest-driven packaging substrate. Project-side packaging metadata lives in
+`cbcs/package.json`, installable packages are the supported default, and portable
+packages remain a stricter profile that resolves package root from the launcher
+location.
+**Why:** ChoreBoy packaging has to stay AppRun-native, supportable, and explicit
+about upgrade/install behavior under `noexec`, offline-first, and no-terminal
+constraints. A shared manifest/installer contract is safer than letting product
+and project packaging drift independently.
 
 ---
 

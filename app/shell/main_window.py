@@ -101,6 +101,7 @@ from app.run.runtime_launch import (
     resolve_runtime_executable,
 )
 from app.shell.run_log_panel import RunInfo, RunLogPanel
+from app.packaging.config import resolve_project_package_config
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
 from app.plugins.contributions import DeclarativeContributionManager
@@ -122,7 +123,7 @@ from app.support.runtime_explainer import (
     explain_runtime_message,
     merge_runtime_issue_reports,
 )
-from app.support.preflight import build_package_preflight, build_run_preflight
+from app.support.preflight import build_run_preflight
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.examples.example_project_service import ExampleProjectService
@@ -173,6 +174,7 @@ from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
+from app.shell.package_wizard_dialog import PackageProjectWizard
 from app.shell.python_console_history import load_python_console_history, save_python_console_history
 from app.shell.runtime_center_dialog import RuntimeCenterDialog
 from app.shell.search_sidebar_widget import SearchSidebarWidget
@@ -4648,78 +4650,95 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Package unavailable", "Open a project before packaging.")
             return
         project_root = self._loaded_project.project_root
-        project_name = self._loaded_project.metadata.name
-        entry_file = self._loaded_project.metadata.default_entry
-        output_dir = choose_existing_directory(self, "Choose Package Output Folder", str(Path.home()))
-        if not output_dir:
+        project_metadata = self._loaded_project.metadata
+        try:
+            package_config = resolve_project_package_config(
+                project_root=project_root,
+                project_metadata=project_metadata,
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Package Project",
+                f"Unable to load cbcs/package.json:\n{exc}",
+            )
             return
-        preflight_result = build_package_preflight(
+        wizard = PackageProjectWizard(
             project_root=project_root,
-            project_name=project_name,
-            entry_file=entry_file,
-            output_dir=output_dir,
+            project_metadata=project_metadata,
+            package_config=package_config,
+            parent=self,
         )
-        if not preflight_result.is_ready:
-            self._latest_package_issue_report = RuntimeIssueReport(
-                workflow="package",
-                issues=list(preflight_result.issues),
-            )
-            self._latest_runtime_issue_report = self._build_runtime_issue_report()
-            self._open_runtime_center_dialog(
-                title="Packaging Preflight",
-                report=self._latest_package_issue_report,
-            )
+        if wizard.exec_() != QDialog.Accepted:
             return
+        output_dir = wizard.output_dir
+        selected_profile = wizard.selected_profile
+        reviewed_package_config = wizard.build_package_config()
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return package_project(
                 project_root=project_root,
-                project_name=project_name,
-                entry_file=entry_file,
+                project_name=project_metadata.name,
+                entry_file=project_metadata.default_entry,
                 output_dir=output_dir,
+                profile=selected_profile,
+                package_config=reviewed_package_config,
+                project_metadata=project_metadata,
+                known_runtime_modules=self._known_runtime_modules,
             )
 
         def on_success(result) -> None:  # type: ignore[no-untyped-def]
+            self._latest_package_issue_report = result.validation.issue_report
+            self._latest_runtime_issue_report = self._build_runtime_issue_report()
             if result.success:
-                self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
-                self._latest_runtime_issue_report = self._build_runtime_issue_report()
                 QMessageBox.information(
                     self,
                     "Package created",
-                    f"Project packaged to:\n{result.output_path}\n\n"
-                    f"Created artifacts:\n"
-                    f"- {result.desktop_name}\n"
-                    f"- {result.project_folder_name}/ with your packaged source files\n\n"
-                    f"Place the .desktop file on ~/Desktop/ or in\n"
-                    f"~/.local/share/applications/ for a launcher shortcut.",
+                    f"Project packaged to:\n{result.artifact_root}\n\n"
+                    f"Generated files:\n"
+                    f"- package_manifest.json\n"
+                    f"- package_report.json\n"
+                    f"- {Path(result.readme_path).name}\n"
+                    f"- {Path(result.install_notes_path).name}\n"
+                    + (
+                        f"- {Path(result.launcher_path).name}\n"
+                        if result.launcher_path
+                        else ""
+                    ),
                 )
+                if result.validation.issue_report.issues:
+                    self._open_runtime_center_dialog(
+                        title="Packaging Report",
+                        report=result.validation.issue_report,
+                    )
             else:
-                self._latest_package_issue_report = RuntimeIssueReport(
-                    workflow="package",
-                    issues=[
-                        RuntimeIssue(
-                            issue_id="package.export_failed",
-                            workflow="package",
-                            severity="blocking",
-                            title="Packaging failed",
-                            summary=result.error or "Packaging failed unexpectedly.",
-                            why_it_happened=(
-                                "The export step encountered a filesystem or packaging problem after the initial preflight checks."
-                            ),
-                            next_steps=[
-                                "Review the packaging error details.",
-                                "Choose a different output location if the destination may be restricted or stale.",
-                                "Re-run packaging after fixing the reported issue.",
-                            ],
-                            help_topic="packaging_backup",
-                            evidence={
-                                "output_path": result.output_path,
-                                "desktop_name": result.desktop_name,
-                            },
-                        )
-                    ],
-                )
-                self._latest_runtime_issue_report = self._build_runtime_issue_report()
+                if not result.validation.issue_report.issues:
+                    self._latest_package_issue_report = RuntimeIssueReport(
+                        workflow="package",
+                        issues=[
+                            RuntimeIssue(
+                                issue_id="package.export_failed",
+                                workflow="package",
+                                severity="blocking",
+                                title="Packaging failed",
+                                summary=result.error or "Packaging failed unexpectedly.",
+                                why_it_happened=(
+                                    "The export step encountered a filesystem or packaging problem after the initial validation checks."
+                                ),
+                                next_steps=[
+                                    "Review the packaging error details.",
+                                    "Choose a different output location if the destination may be restricted or stale.",
+                                    "Re-run packaging after fixing the reported issue.",
+                                ],
+                                help_topic="packaging_backup",
+                                evidence={
+                                    "artifact_root": result.artifact_root,
+                                    "profile": result.profile,
+                                },
+                            )
+                        ],
+                    )
+                    self._latest_runtime_issue_report = self._build_runtime_issue_report()
                 self._open_runtime_center_dialog(
                     title="Packaging Failed",
                     report=self._latest_package_issue_report,

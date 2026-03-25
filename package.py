@@ -1,39 +1,41 @@
 #!/usr/bin/env python3
-"""Package ChoreBoy Code Studio for distribution.
-
-Run on the dev machine (any Python 3.6+):
-    python3 package.py
-
-Produces (inside the artifacts directory):
-    dist/choreboy_code_studio_installer_v{version}/   -- staging directory
-    dist/choreboy_code_studio_installer_v{version}.zip -- password-protected compressed archive
-
-Vendor files and dist output live in a sibling artifacts directory to keep
-large/binary files out of the editor workspace.  Override with CBCS_ARTIFACTS_DIR.
-"""
+"""Package ChoreBoy Code Studio for distribution."""
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent
-
-ARTIFACTS_DIR = Path(
-    os.environ.get("CBCS_ARTIFACTS_DIR", "")
-    or str(REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts")
+from app.core import constants
+from app.packaging.desktop_builder import (
+    build_installable_install_text,
+    build_installable_readme_text,
+    build_installer_package_launcher,
+)
+from app.packaging.installer_manifest import (
+    apply_checksums_to_manifest,
+    build_artifact_checksums,
+    create_distribution_manifest,
+    save_distribution_manifest,
+)
+from app.packaging.layout import build_installer_launcher_filename
+from app.packaging.models import (
+    LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+    PACKAGE_ARTIFACT_MANIFEST_FILENAME,
+    PACKAGE_ARTIFACT_REPORT_FILENAME,
+    PACKAGE_KIND_PRODUCT,
+    PACKAGE_PROFILE_INSTALLABLE,
 )
 
-INCLUDE_DIRS = [
-    "app",
-    "templates",
-    "example_projects",
-]
+REPO_ROOT = Path(__file__).resolve().parent
+ARTIFACTS_DIR = Path(os.environ.get("CBCS_ARTIFACTS_DIR", "") or str(REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts"))
 
+INCLUDE_DIRS = ["app", "templates", "example_projects"]
 INCLUDE_FILES = [
     "run_editor.py",
     "run_runner.py",
@@ -41,124 +43,86 @@ INCLUDE_FILES = [
     "launcher.py",
     "LICENSE",
 ]
-
-PRUNE_DIR_NAMES = {
-    "__pycache__",
-    ".pyc",
-}
-
-PRUNE_DIR_SUFFIXES = {
-    ".dist-info",
-}
-
+PRUNE_DIR_NAMES = {"__pycache__", ".pyc"}
+PRUNE_DIR_SUFFIXES = {".dist-info"}
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
 CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
 ZIP_COMPRESSION_LEVEL = 9
+ARCHIVE_PASSWORD = os.environ.get("CBCS_PACKAGE_ZIP_PASSWORD", "rsd")
 
-INSTALLER_DESKTOP_TEMPLATE = """\
-[Desktop Entry]
-Type=Application
-Version=1.0
-Name=Install ChoreBoy Code Studio
-Comment=Install ChoreBoy Code Studio on this system
-Terminal=false
-Categories=Utility;
 
-Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='{staging_path}';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root,'installer','install.py'),run_name='__main__')"
-"""
-
-INSTALL_TXT = """\
-ChoreBoy Code Studio - Installation Instructions
-=================================================
-
-1. Copy this entire folder into `/home/default/` on the ChoreBoy.
-
-2. Keep the entire folder together.
-   Do not move `install_choreboy_code_studio.desktop` away from the
-   rest of this installer folder.
-
-3. Open this copied folder from `/home/default/` in the ChoreBoy
-   file manager.
-
-4. Right-click the "install_choreboy_code_studio.desktop" file
-   and select "Allow Launching" (you only need to do this once).
-
-5. Double-click "install_choreboy_code_studio.desktop" to start
-   the installer.
-
-6. Follow the on-screen wizard to choose where the Code Studio files
-   should live on disk.
-
-7. The installer writes the application-menu entry (and optional
-   desktop shortcut) to hardcode the chosen installation directory.
-
-8. If you later move the installed Code Studio folder, rerun this
-   installer so the launcher points at the new location.
-
-9. Once installed, launch ChoreBoy Code Studio from your
-   application menu or desktop shortcut.
-
-10. After a successful install, you can delete this installer
-   folder from your Home Folder.
-"""
+def build_product_manifest(*, version: str, staging_parent: str = CHOREBOY_STAGING_ROOT):
+    return create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PRODUCT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="choreboy_code_studio",
+        display_name="ChoreBoy Code Studio",
+        version=version,
+        description="Project-first editor + runner for constrained systems.",
+        entry_relative_path="run_editor.py",
+        icon_relative_path="app/ui/icons/Python_Icon.png",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+        default_install_base=CHOREBOY_STAGING_ROOT,
+        default_install_dirname=f"choreboy_code_studio_v{version}",
+        staging_parent=staging_parent,
+        app_run_path=constants.APP_RUN_PATH,
+        write_menu_entry=True,
+        write_desktop_shortcut=False,
+    )
 
 
 def build_installer_desktop_entry(staging_path: str) -> str:
-    """Return the launcher used to start the bundled installer."""
-    return INSTALLER_DESKTOP_TEMPLATE.format(staging_path=staging_path)
+    manifest = build_product_manifest(version=_read_version(), staging_parent=str(Path(staging_path).parent))
+    return build_installer_package_launcher(
+        manifest=manifest,
+        package_root_name=Path(staging_path).name,
+    )
 
 
 def build_install_instructions() -> str:
-    """Return human instructions shipped with the installer package."""
-    return INSTALL_TXT
+    manifest = build_product_manifest(version=_read_version())
+    return build_installable_install_text(
+        manifest=manifest,
+        installer_launcher_filename=build_installer_launcher_filename(manifest.display_name),
+    )
 
 
 def _read_version() -> str:
-    constants = REPO_ROOT / "app" / "core" / "constants.py"
-    text = constants.read_text(encoding="utf-8")
+    constants_path = REPO_ROOT / "app" / "core" / "constants.py"
+    text = constants_path.read_text(encoding="utf-8")
     match = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
-    if not match:
-        print("WARNING: Could not parse APP_VERSION, defaulting to 'dev'")
-        return "dev"
-    return match.group(1)
+    return match.group(1) if match else "dev"
 
 
 def _should_prune_dir(name: str) -> bool:
     if name in PRUNE_DIR_NAMES:
         return True
-    for suffix in PRUNE_DIR_SUFFIXES:
-        if name.endswith(suffix):
-            return True
-    return False
+    return any(name.endswith(suffix) for suffix in PRUNE_DIR_SUFFIXES)
 
 
 def _copytree_filtered(src: Path, dst: Path) -> None:
-    """Copy a directory tree, skipping pruned dirs and .pyc files."""
     dst.mkdir(parents=True, exist_ok=True)
     for entry in sorted(src.iterdir()):
         if entry.is_dir():
             if _should_prune_dir(entry.name):
                 continue
             _copytree_filtered(entry, dst / entry.name)
-        else:
-            if entry.suffix == ".pyc":
-                continue
-            shutil.copy2(str(entry), str(dst / entry.name))
+            continue
+        if entry.suffix == ".pyc":
+            continue
+        shutil.copy2(str(entry), str(dst / entry.name))
 
 
 def archive_budget_bytes() -> int:
-    """Return the maximum allowed installer archive size."""
     return INSTALLER_ARCHIVE_BUDGET_BYTES
 
 
 def is_archive_within_budget(size_bytes: int) -> bool:
-    """Return True when the installer archive fits within the email budget."""
     return size_bytes <= archive_budget_bytes()
 
 
-def build_archive_zip_command(source_dir: Path, output_path: Path, password: str = "rsd") -> list[str]:
-    """Build the zip CLI command for the compressed installer archive."""
+def build_archive_zip_command(source_dir: Path, output_path: Path, password: str = ARCHIVE_PASSWORD) -> list[str]:
     return [
         "zip",
         "-r",
@@ -170,8 +134,7 @@ def build_archive_zip_command(source_dir: Path, output_path: Path, password: str
     ]
 
 
-def _make_zip(source_dir: Path, output_path: Path, password: str = "rsd") -> None:
-    """Create a password-protected, compressed zip via the ``zip`` CLI."""
+def _make_zip(source_dir: Path, output_path: Path, password: str = ARCHIVE_PASSWORD) -> None:
     if output_path.exists():
         output_path.unlink()
     subprocess.run(
@@ -181,81 +144,108 @@ def _make_zip(source_dir: Path, output_path: Path, password: str = "rsd") -> Non
     )
 
 
+def _write_product_report(*, report_path: Path, manifest, archive_path: Path, archive_size_bytes: int) -> None:
+    report_payload = {
+        "package_kind": manifest.package_kind,
+        "profile": manifest.profile,
+        "package_id": manifest.package_id,
+        "display_name": manifest.display_name,
+        "version": manifest.version,
+        "archive_path": str(archive_path),
+        "archive_size_bytes": archive_size_bytes,
+        "archive_budget_bytes": archive_budget_bytes(),
+    }
+    report_path.write_text(json.dumps(report_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     version = _read_version()
+    manifest = build_product_manifest(version=version)
     package_name = f"choreboy_code_studio_installer_v{version}"
+    installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
 
     dist_dir = ARTIFACTS_DIR / "dist"
     staging = dist_dir / package_name
-
     if staging.exists():
-        print(f"Removing previous staging directory: {staging}")
         shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
 
-    staging.mkdir(parents=True)
-    print(f"Packaging {package_name} ...")
-
-    payload_dir = staging / "payload"
-    payload_dir.mkdir()
+    payload_dir = staging / manifest.payload_dirname
+    payload_dir.mkdir(parents=True, exist_ok=True)
 
     for dir_name in INCLUDE_DIRS:
         src = REPO_ROOT / dir_name
         if not src.is_dir():
-            print(f"  WARNING: directory not found, skipping: {dir_name}")
+            print(f"WARNING: missing include dir: {dir_name}")
             continue
-        print(f"  Copying payload/{dir_name}/ ...")
         _copytree_filtered(src, payload_dir / dir_name)
 
     vendor_src = ARTIFACTS_DIR / "vendor"
     if not vendor_src.is_dir():
-        print(f"  ERROR: vendor directory not found at {vendor_src}")
-        print("  Set CBCS_ARTIFACTS_DIR or place vendor/ in the artifacts directory.")
+        print(f"ERROR: vendor directory not found at {vendor_src}")
+        print("Set CBCS_ARTIFACTS_DIR or place vendor/ in the artifacts directory.")
         return 1
-    print(f"  Copying payload/vendor/ (from {vendor_src}) ...")
     _copytree_filtered(vendor_src, payload_dir / "vendor")
 
     for file_name in INCLUDE_FILES:
         src = REPO_ROOT / file_name
         if not src.is_file():
-            print(f"  WARNING: file not found, skipping: {file_name}")
+            print(f"WARNING: missing include file: {file_name}")
             continue
-        print(f"  Copying payload/{file_name}")
         shutil.copy2(str(src), str(payload_dir / file_name))
 
-    installer_dir = staging / "installer"
-    installer_dir.mkdir()
-    print("  Copying installer/install.py ...")
-    if not INSTALLER_SOURCE.is_file():
-        print(f"  ERROR: installer not found at {INSTALLER_SOURCE}")
-        return 1
+    installer_dir = staging / manifest.installer_dirname
+    installer_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(INSTALLER_SOURCE), str(installer_dir / "install.py"))
 
-    print("  Generating install_choreboy_code_studio.desktop ...")
-    staging_path = f"{CHOREBOY_STAGING_ROOT}/{package_name}"
-    desktop_path = staging / "install_choreboy_code_studio.desktop"
-    desktop_path.write_text(build_installer_desktop_entry(staging_path), encoding="utf-8")
-    desktop_path.chmod(desktop_path.stat().st_mode | 0o755)
+    installer_launcher_path = staging / installer_launcher_filename
+    installer_launcher_path.write_text(
+        build_installer_package_launcher(manifest=manifest, package_root_name=package_name),
+        encoding="utf-8",
+    )
+    installer_launcher_path.chmod(installer_launcher_path.stat().st_mode | 0o755)
 
-    print("  Generating INSTALL.txt ...")
-    (staging / "INSTALL.txt").write_text(build_install_instructions(), encoding="utf-8")
+    (staging / manifest.readme_filename).write_text(
+        build_installable_readme_text(
+            manifest=manifest,
+            installer_launcher_filename=installer_launcher_filename,
+        ),
+        encoding="utf-8",
+    )
+    (staging / manifest.install_notes_filename).write_text(
+        build_installable_install_text(
+            manifest=manifest,
+            installer_launcher_filename=installer_launcher_filename,
+        ),
+        encoding="utf-8",
+    )
+
+    report_path = staging / PACKAGE_ARTIFACT_REPORT_FILENAME
+    report_path.write_text("{}", encoding="utf-8")
+    checksums = build_artifact_checksums(
+        staging,
+        skip_relative_paths=(PACKAGE_ARTIFACT_MANIFEST_FILENAME, PACKAGE_ARTIFACT_REPORT_FILENAME),
+    )
+    manifest = apply_checksums_to_manifest(manifest, checksums)
+    save_distribution_manifest(staging / PACKAGE_ARTIFACT_MANIFEST_FILENAME, manifest)
 
     archive_path = dist_dir / f"{package_name}.zip"
-    print(f"  Creating archive: {archive_path.name} ...")
     _make_zip(staging, archive_path)
-
     archive_size_bytes = archive_path.stat().st_size
+    _write_product_report(
+        report_path=report_path,
+        manifest=manifest,
+        archive_path=archive_path,
+        archive_size_bytes=archive_size_bytes,
+    )
+
     archive_size_mb = archive_size_bytes / (1024 * 1024)
     budget_mb = archive_budget_bytes() / (1024 * 1024)
-    print()
-    print(f"Done. Package ready at:")
-    print(f"  Directory: {staging}")
-    print(f"  Archive:   {archive_path} ({archive_size_mb:.1f} MB)")
-    print(f"  Budget:    {budget_mb:.1f} MB maximum for email delivery")
+    print(f"Directory: {staging}")
+    print(f"Archive:   {archive_path} ({archive_size_mb:.1f} MB)")
+    print(f"Budget:    {budget_mb:.1f} MB maximum for email delivery")
     if not is_archive_within_budget(archive_size_bytes):
-        print(
-            f"  ERROR: Archive exceeds the email budget "
-            f"({archive_size_mb:.1f} MB > {budget_mb:.1f} MB)."
-        )
+        print(f"ERROR: Archive exceeds the email budget ({archive_size_mb:.1f} MB > {budget_mb:.1f} MB).")
         return 1
     return 0
 

@@ -2148,3 +2148,131 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Depends on: `N03`, `N04`, `N05`, `N06`, `N07`
 - Done when: the runtime-explanation feature set has passing automated evidence, theme-safe manual validation, and no noticeable regression in startup or routine shell responsiveness.
 
+---
+
+## 23) Phase O — Packaging and Distribution Polish
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase turns section 10 of `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md` into an
+explicit implementation track. The goal is to make packaging/export a validated,
+manifest-driven, AppRun-native distribution workflow with a clear install/upgrade
+story for both Code Studio itself and packaged user projects.
+
+### O01 — Packaging profiles, metadata contract, and docs cutover
+- Status: `DONE`
+- Objective: define the shared packaging contract, supported profiles, and user-facing packaging docs before deeper implementation layers land.
+- Primary files:
+  - `docs/PACKAGING.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/manual/chapters/09_packaging_backup.md`
+  - `app/ui/help/packaging_backup.md`
+- Automated test layer: `unit` (docs-adjacent contract tests land in follow-on slices, not here)
+- Validation method: doc review plus follow-on slices explicitly linking to `AT-81` through `AT-84`
+- Acceptance linkage: `AT-81`, `AT-82`, `AT-83`, `AT-84`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: `installable` vs `portable`, `cbcs/package.json`, package manifests, install markers, and ChoreBoy staging/install language are consistent across architecture, backlog, manual, and help sources.
+
+### O02 — Shared packaging substrate and artifact manifests
+- Status: `DONE`
+- Objective: split project packaging into focused modules for config, validation, dependency audit, desktop generation, artifact building, and installer manifests.
+- Primary files:
+  - `app/packaging/models.py`
+  - `app/packaging/config.py`
+  - `app/packaging/layout.py`
+  - `app/packaging/validator.py`
+  - `app/packaging/dependency_audit.py`
+  - `app/packaging/desktop_builder.py`
+  - `app/packaging/installer_manifest.py`
+  - `app/packaging/artifact_builder.py`
+  - `app/packaging/packager.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_package_config.py tests/unit/packaging/test_dependency_audit.py tests/unit/packaging/test_packager.py tests/integration/packaging/test_project_packaging_workflow.py`
+- Acceptance linkage: `AT-81`, `AT-82`, `AT-83`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O01`
+- Done when: project packaging emits shared manifests/reports/docs and product/project packaging stop inventing separate launcher/metadata shapes.
+
+### O03 — Preflight validation and dependency audit
+- Status: `DONE`
+- Objective: catch packaging blockers before export and explain dependency/runtime issues in ChoreBoy-aware terms.
+- Primary files:
+  - `app/support/preflight.py`
+  - `app/packaging/validator.py`
+  - `app/packaging/dependency_audit.py`
+  - `tests/unit/support/test_preflight.py`
+  - `tests/unit/packaging/test_dependency_audit.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/support/test_preflight.py tests/unit/packaging/test_dependency_audit.py`
+- Acceptance linkage: `AT-81`, `AT-83`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O01`, `O02`
+- Done when: package metadata, output overlap, entry-file validity, hidden/excluded paths, native-extension risk, and direct subprocess assumptions are surfaced before confusing export failures.
+
+### O04 — Packaging wizard and installable project package flow
+- Status: `DONE`
+- Objective: replace one-shot export with a wizard-driven packaging workflow and make installable packages the supported default.
+- Primary files:
+  - `app/shell/package_wizard_dialog.py`
+  - `app/shell/main_window.py`
+  - `app/shell/style_sheet.py`
+  - `app/shell/style_sheet_sections.py`
+  - `app/packaging/packager.py`
+  - `tests/unit/packaging/test_packager.py`
+  - `tests/integration/packaging/test_project_packaging_workflow.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_packager.py tests/integration/packaging/test_project_packaging_workflow.py`
+- Acceptance linkage: `AT-81`, `AT-84`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O02`, `O03`
+- Done when: users can choose a profile, review package metadata, export an installable artifact by default, and inspect the generated manifest/report/docs afterward.
+
+### O05 — Portable profile runtime gate
+- Status: `DONE`
+- Objective: keep portable packaging explicit, tested, and separate from the installer-grade contract.
+- Primary files:
+  - `app/packaging/desktop_builder.py`
+  - `app/packaging/validator.py`
+  - `tests/runtime_parity/packaging/test_launcher_profiles_runtime.py`
+- Automated test layer: `runtime_parity`, `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/packaging/test_launcher_profiles_runtime.py tests/unit/packaging/test_packager.py`
+- Acceptance linkage: `AT-83`, `AT-84`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O02`, `O03`
+- Done when: portable launchers use `%k` as a separate desktop-file argument, their bootstrap logic has AppRun runtime-parity coverage, and UX/docs make the profile trade-offs explicit.
+
+### O06 — Product packaging convergence on the shared installer contract
+- Status: `DONE`
+- Objective: make Code Studio product packaging use the same manifest/installer contract as project packages without losing the 15 MB archive gate.
+- Primary files:
+  - `package.py`
+  - `packaging/install.py`
+  - `docs/PACKAGING.md`
+  - `vendor/README.md`
+  - `tests/unit/packaging/test_distribution_installer.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_distribution_installer.py`
+- Acceptance linkage: `AT-82`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O01`, `O02`
+- Done when: product packaging writes the shared manifest/docs/layout, the standalone installer publishes menu/Desktop launchers consistently, and the product zip budget remains enforced separately from project exports.
+
+### O07 — Packaging validation gates
+- Status: `DONE`
+- Objective: add explicit automated and manual validation gates for packaging/distribution before rollout.
+- Primary files:
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/TASKS.md`
+  - `tests/unit/packaging/`
+  - `tests/integration/packaging/`
+  - `tests/runtime_parity/packaging/`
+- Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/ tests/integration/packaging/ tests/runtime_parity/packaging/`
+- Acceptance linkage: `AT-81`, `AT-82`, `AT-83`, `AT-84`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O02`, `O03`, `O04`, `O05`, `O06`
+- Done when: packaging/distribution is a first-class validated phase with explicit unit, integration, runtime-parity, and manual acceptance coverage.
+
