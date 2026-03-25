@@ -1574,7 +1574,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### K01 — Debugger contract and acceptance cutover docs
-- Status: `TODO`
+- Status: `DONE`
 - Objective: document the north-star debugger architecture, engine decision gate, and acceptance bar before replacing the current `pdb` text bridge.
 - Primary files:
   - `docs/PRD.md`
@@ -1590,7 +1590,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo states that debugger control is structured, stdout/stderr are not the steady-state debug protocol, and the engine decision gate is explicit.
 
 ### K02 — Runtime-parity debugger engine spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate the AppRun-safe debugger engine choice against subprocess restrictions, dirty-buffer remap, watch evaluation, exception stops, and thread behavior.
 - Primary files:
   - `tests/runtime_parity/debug/**`
@@ -1604,7 +1604,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo has passing runtime evidence for the chosen engine and a written rejection reason for the losing approach.
 
 ### K03 — Engine-neutral debug manifest and session contracts
-- Status: `TODO`
+- Status: `DONE`
 - Objective: expand run/debug manifests, breakpoint models, exception policy, and session state so shell logic no longer depends on raw `pdb` commands.
 - Primary files:
   - `app/run/run_manifest.py`
@@ -1620,7 +1620,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: debug sessions are described with typed structured contracts for transport, breakpoints, exception policy, and selected-frame inspection.
 
 ### K04 — Dedicated debug transport cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: move debugger traffic onto a dedicated control transport and remove stdout-marker parsing from the steady-state path.
 - Primary files:
   - `app/debug/debug_transport.py`
@@ -1636,7 +1636,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: user stdout/stderr no longer doubles as the active debugger control protocol and disconnect/failure states are explicit.
 
 ### K05 — Runner debugger engine replacement
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the CLI-style `MarkedPdb` loop with the chosen structured engine and support verified breakpoints, conditions, hit thresholds, and exception stops.
 - Primary files:
   - `app/runner/debug_runner.py`
@@ -1652,7 +1652,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: structured pause/continue/step/breakpoint/exception flows work without raw `pdb` command strings.
 
 ### K06 — Debug inspector overhaul
-- Status: `TODO`
+- Status: `DONE`
 - Objective: rebuild the Debug panel around threads, selected frames, scope-aware variables, lazy expansion, bounded previews, and watch results.
 - Primary files:
   - `app/debug/debug_models.py`
@@ -1667,7 +1667,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: paused state is represented as selected thread/frame/scope data with lazy variable loading and clear watch/error states.
 
 ### K07 — End-user debug workflow surface
-- Status: `TODO`
+- Status: `DONE`
 - Objective: finish workflow-level UX for debug current file/project/test, rerun last target, breakpoint properties, exception policy, and dirty-buffer source remap.
 - Primary files:
   - `app/shell/menus.py`
@@ -1683,7 +1683,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the visible run/debug surface supports the full planned workflows without asking users to type raw debugger commands.
 
 ### K08 — Debug reliability, performance, and supportability hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add the final test, latency, theme, and support-bundle coverage needed to ship the richer debugger safely.
 - Primary files:
   - `tests/unit/debug/**`
