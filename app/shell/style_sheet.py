@@ -1016,4 +1016,516 @@ QPushButton#shell\\.helpDialog\\.closeBtn:hover {{
 QPushButton#shell\\.helpDialog\\.closeBtn:pressed {{
     background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
 }}
+/* ===================================================================== */
+/* -- Designer surface -------------------------------------------------- */
+/* ===================================================================== */
+/* -- Mode bar ---------------------------------------------------------- */
+QWidget#designer\\.surface\\.modeBar {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QToolButton[objectName^="designer.modeBar.btn"] {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QToolButton[objectName^="designer.modeBar.btn"]:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton[objectName^="designer.modeBar.btn"]:checked {{
+    background: {"#1E3A5F" if tokens.is_dark else "#D0E2FF"};
+    color: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QToolButton[objectName^="designer.modeBar.btn"]:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QLabel#designer\\.modeBar\\.statusLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 8px;
+}}
+/* -- Palette panel ----------------------------------------------------- */
+QWidget#designer\\.palette\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QTreeWidget#designer\\.palette\\.tree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    border-top: 1px solid {tokens.border};
+    outline: none;
+    font-size: 12px;
+}}
+QTreeWidget#designer\\.palette\\.tree::item {{
+    padding: 3px 4px;
+}}
+QTreeWidget#designer\\.palette\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#designer\\.palette\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#designer\\.palette\\.tree::branch {{
+    background: transparent;
+}}
+QLineEdit#designer\\.palette\\.filterInput {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+}}
+QLineEdit#designer\\.palette\\.filterInput:focus {{
+    border-color: {tokens.accent};
+}}
+/* -- Canvas area ------------------------------------------------------- */
+QWidget#designer\\.canvas {{
+    background: {tokens.editor_bg};
+}}
+QLabel#designer\\.canvas\\.hintLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    padding: 4px 8px;
+}}
+QLabel#designer\\.canvas\\.headerLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: bold;
+    padding: 4px 8px;
+    letter-spacing: 0.5px;
+}}
+QTreeWidget#designer\\.canvas\\.tree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+    font-size: 12px;
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTreeWidget#designer\\.canvas\\.tree::item {{
+    padding: 3px 6px;
+}}
+QTreeWidget#designer\\.canvas\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#designer\\.canvas\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#designer\\.canvas\\.tree::branch {{
+    background: transparent;
+}}
+/* -- Object inspector -------------------------------------------------- */
+QWidget#designer\\.inspector {{
+    background: {tokens.panel_bg};
+}}
+QTreeWidget#designer\\.inspector\\.tree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+    font-size: 12px;
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTreeWidget#designer\\.inspector\\.tree::item {{
+    padding: 3px 6px;
+}}
+QTreeWidget#designer\\.inspector\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#designer\\.inspector\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#designer\\.inspector\\.tree::branch {{
+    background: transparent;
+}}
+/* -- Property editor --------------------------------------------------- */
+QWidget#designer\\.property\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.property\\.header {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+    font-weight: bold;
+    background: {tokens.editor_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 6px 10px;
+}}
+QWidget#designer\\.property\\.formHost {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.property\\.groupHeader {{
+    color: {tokens.text_muted};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 8px 0 2px 0;
+    border-bottom: 1px solid {tokens.border};
+}}
+QPushButton[objectName^="designer.property.reset"] {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: 1px solid {tokens.border};
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    max-width: 40px;
+}}
+QPushButton[objectName^="designer.property.reset"]:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+    border-color: {tokens.text_muted};
+}}
+QPushButton[objectName^="designer.property.reset"]:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+/* -- Connections panel ------------------------------------------------- */
+QWidget#designer\\.connections\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.connections\\.summary {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QTableWidget#designer\\.connections\\.table {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    outline: none;
+    font-size: 12px;
+    gridline-color: {tokens.border};
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTableWidget#designer\\.connections\\.table::item {{
+    padding: 3px 6px;
+}}
+QTableWidget#designer\\.connections\\.table::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTableWidget#designer\\.connections\\.table::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTableWidget#designer\\.connections\\.table QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    border-right: 1px solid {tokens.border};
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+/* -- Tab order panel --------------------------------------------------- */
+QWidget#designer\\.tabOrder\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.tabOrder\\.summary {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QListWidget#designer\\.tabOrder\\.list {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    outline: none;
+    font-size: 12px;
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QListWidget#designer\\.tabOrder\\.list::item {{
+    padding: 4px 8px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListWidget#designer\\.tabOrder\\.list::item:last {{
+    border-bottom: none;
+}}
+QListWidget#designer\\.tabOrder\\.list::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListWidget#designer\\.tabOrder\\.list::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+/* -- Buddy panel ------------------------------------------------------- */
+QWidget#designer\\.buddy\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.buddy\\.summary {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QTableWidget#designer\\.buddy\\.table {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    outline: none;
+    font-size: 12px;
+    gridline-color: {tokens.border};
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTableWidget#designer\\.buddy\\.table::item {{
+    padding: 3px 6px;
+}}
+QTableWidget#designer\\.buddy\\.table::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTableWidget#designer\\.buddy\\.table::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTableWidget#designer\\.buddy\\.table QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    border-right: 1px solid {tokens.border};
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+/* -- Components panel -------------------------------------------------- */
+QWidget#designer\\.components\\.panel {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.components\\.summary {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QListWidget#designer\\.components\\.list {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    outline: none;
+    font-size: 12px;
+}}
+QListWidget#designer\\.components\\.list::item {{
+    padding: 4px 8px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListWidget#designer\\.components\\.list::item:last {{
+    border-bottom: none;
+}}
+QListWidget#designer\\.components\\.list::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListWidget#designer\\.components\\.list::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+/* -- Validation list --------------------------------------------------- */
+QListWidget#designer\\.surface\\.validationList {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-left: none;
+    border-right: none;
+    outline: none;
+    font-size: 11px;
+    max-height: 100px;
+}}
+QListWidget#designer\\.surface\\.validationList::item {{
+    padding: 3px 8px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListWidget#designer\\.surface\\.validationList::item:last {{
+    border-bottom: none;
+}}
+QListWidget#designer\\.surface\\.validationList::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListWidget#designer\\.surface\\.validationList::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+/* -- Error / status label ---------------------------------------------- */
+QLabel#designer\\.surface\\.errorLabel {{
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 0px;
+}}
+QLabel#designer\\.surface\\.errorLabel[severity="error"] {{
+    background: {"#3D1B1B" if tokens.is_dark else "#FEE2E2"};
+    color: {"#F87171" if tokens.is_dark else "#B91C1C"};
+    border-left: 3px solid {tokens.diag_error_color};
+}}
+QLabel#designer\\.surface\\.errorLabel[severity="warning"] {{
+    background: {"#3D2E0A" if tokens.is_dark else "#FEF3C7"};
+    color: {"#FBBF24" if tokens.is_dark else "#B45309"};
+    border-left: 3px solid {tokens.diag_warning_color};
+}}
+QLabel#designer\\.surface\\.errorLabel[severity="info"] {{
+    background: {"#1B2A4A" if tokens.is_dark else "#E8EEFF"};
+    color: {"#7EA8FF" if tokens.is_dark else "#2952CC"};
+    border-left: 3px solid {tokens.accent};
+}}
+QLabel#designer\\.surface\\.errorLabel[severity="success"] {{
+    background: {"#1B3D1B" if tokens.is_dark else "#E6F4EA"};
+    color: {"#4ADE80" if tokens.is_dark else "#15803D"};
+    border-left: 3px solid {tokens.debug_running_color};
+}}
+/* -- Designer action buttons (primary) --------------------------------- */
+QPushButton#designer\\.connections\\.btn\\.add,
+QPushButton#designer\\.components\\.btn\\.insert {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#designer\\.connections\\.btn\\.add:hover,
+QPushButton#designer\\.components\\.btn\\.insert:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+}}
+QPushButton#designer\\.connections\\.btn\\.add:pressed,
+QPushButton#designer\\.components\\.btn\\.insert:pressed {{
+    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+}}
+/* -- Designer action buttons (secondary) ------------------------------- */
+QPushButton#designer\\.tabOrder\\.btn\\.moveUp,
+QPushButton#designer\\.tabOrder\\.btn\\.moveDown,
+QPushButton#designer\\.tabOrder\\.btn\\.reset,
+QPushButton#designer\\.components\\.btn\\.refresh,
+QPushButton#designer\\.iconPicker\\.btn\\.browse {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#designer\\.tabOrder\\.btn\\.moveUp:hover,
+QPushButton#designer\\.tabOrder\\.btn\\.moveDown:hover,
+QPushButton#designer\\.tabOrder\\.btn\\.reset:hover,
+QPushButton#designer\\.components\\.btn\\.refresh:hover,
+QPushButton#designer\\.iconPicker\\.btn\\.browse:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QPushButton#designer\\.tabOrder\\.btn\\.moveUp:pressed,
+QPushButton#designer\\.tabOrder\\.btn\\.moveDown:pressed,
+QPushButton#designer\\.tabOrder\\.btn\\.reset:pressed,
+QPushButton#designer\\.components\\.btn\\.refresh:pressed,
+QPushButton#designer\\.iconPicker\\.btn\\.browse:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+/* -- Designer action buttons (destructive) ----------------------------- */
+QPushButton#designer\\.connections\\.btn\\.remove {{
+    background: {"#3D1B1B" if tokens.is_dark else "#FEE2E2"};
+    color: {"#F87171" if tokens.is_dark else "#B91C1C"};
+    border: none;
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#designer\\.connections\\.btn\\.remove:hover {{
+    background: {"#502222" if tokens.is_dark else "#FECACA"};
+}}
+QPushButton#designer\\.connections\\.btn\\.remove:pressed {{
+    background: {"#642A2A" if tokens.is_dark else "#FCA5A5"};
+}}
+/* -- Designer splitter ------------------------------------------------- */
+QSplitter#designer\\.surface\\.splitter::handle {{
+    background: {tokens.border};
+    width: 1px;
+}}
+/* -- Designer inspector tabs ------------------------------------------- */
+QTabWidget#designer\\.surface\\.inspectorTabs > QTabBar::tab {{
+    padding: 5px 8px;
+    font-size: 11px;
+}}
+/* -- New Form dialog --------------------------------------------------- */
+QDialog#designer\\.newForm {{
+    background: {tokens.panel_bg};
+}}
+QLabel#designer\\.newForm\\.title {{
+    font-size: 16px;
+    font-weight: 700;
+    color: {tokens.text_primary};
+    padding-bottom: 8px;
+}}
+QLabel#designer\\.newForm\\.fieldLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLineEdit#designer\\.newForm\\.className,
+QLineEdit#designer\\.newForm\\.fileName {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}}
+QLineEdit#designer\\.newForm\\.className:focus,
+QLineEdit#designer\\.newForm\\.fileName:focus {{
+    border-color: {tokens.accent};
+}}
+QComboBox#designer\\.newForm\\.baseWidget {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}}
+QLabel#designer\\.newForm\\.description {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    background: {tokens.editor_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 8px 10px;
+}}
+QPushButton#designer\\.newForm\\.btn\\.create {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 24px;
+    font-size: 13px;
+    font-weight: 600;
+}}
+QPushButton#designer\\.newForm\\.btn\\.create:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+}}
+QPushButton#designer\\.newForm\\.btn\\.create:pressed {{
+    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+}}
+QPushButton#designer\\.newForm\\.btn\\.cancel {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 8px 24px;
+    font-size: 13px;
+    font-weight: 600;
+}}
+QPushButton#designer\\.newForm\\.btn\\.cancel:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.text_muted};
+}}
+QPushButton#designer\\.newForm\\.btn\\.cancel:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
 """
