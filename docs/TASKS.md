@@ -1322,7 +1322,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: fixtures cover import graphs, shadowing, `vendor/`, syntax-broken buffers, runtime imports, and dynamic-code degradation, with failing tests proving the gap.
 
 ### I03 — AppRun semantic-engine compatibility spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate Jedi and Rope in the real AppRun path with visible cache policy, no hidden-folder writes, and safe in-process configuration.
 - Primary files:
   - `app/intelligence/jedi_runtime.py`
