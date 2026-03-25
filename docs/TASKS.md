@@ -1354,7 +1354,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: shell/editor callers depend on the facade contract, and semantic work no longer relies on ad-hoc concurrent background calls.
 
 ### I05 — Read-only semantic cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace heuristic completion, definition, hover, signature help, and references with project-aware semantic queries while preserving unsaved-buffer support.
 - Primary files:
   - `app/intelligence/navigation_service.py`
