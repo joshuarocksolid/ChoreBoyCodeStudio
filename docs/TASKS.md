@@ -1293,7 +1293,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### I01 — Semantic contract and acceptance coverage
-- Status: `TODO`
+- Status: `DONE`
 - Objective: lock the architecture, backlog, and acceptance contract for trusted Python semantics before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1307,7 +1307,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: semantic layering, safety rules, rollout slices, and acceptance scenarios are all explicitly documented and traceable.
 
 ### I02 — Semantic fixture corpus and failing contract tests
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create representative fixture projects and failing tests that expose the current heuristic trust gaps before the engine cutover.
 - Primary files:
   - `tests/fixtures/semantic/**`
@@ -1322,7 +1322,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: fixtures cover import graphs, shadowing, `vendor/`, syntax-broken buffers, runtime imports, and dynamic-code degradation, with failing tests proving the gap.
 
 ### I03 — AppRun semantic-engine compatibility spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate Jedi and Rope in the real AppRun path with visible cache policy, no hidden-folder writes, and safe in-process configuration.
 - Primary files:
   - `app/intelligence/jedi_runtime.py`
@@ -1337,7 +1337,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: Jedi and Rope run under AppRun without hidden engine metadata paths, unsafe extension loading, or unsupported subprocess assumptions.
 
 ### I04 — Semantic facade and serialized worker
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce a facade, typed semantic result models, deterministic `sys.path` handling, and a serialized worker/session layer for Python semantics.
 - Primary files:
   - `app/intelligence/semantic_models.py`
@@ -1354,7 +1354,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: shell/editor callers depend on the facade contract, and semantic work no longer relies on ad-hoc concurrent background calls.
 
 ### I05 — Read-only semantic cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace heuristic completion, definition, hover, signature help, and references with project-aware semantic queries while preserving unsaved-buffer support.
 - Primary files:
   - `app/intelligence/navigation_service.py`
@@ -1372,7 +1372,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: semantic read-only actions are correct on fixture projects, confidence/degradation states are explicit, and ambiguous definitions no longer silently choose the first result.
 
 ### I06 — Trusted rename planner and patch preview
-- Status: `TODO`
+- Status: `DONE`
 - Objective: hard-cut rename to a trusted project-wide planner with grouped patch previews, rollback, and no token-replace fallback.
 - Primary files:
   - `app/intelligence/refactor_service.py`
@@ -1389,7 +1389,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: rename preview/apply is semantic, grouped by patch, rollback-safe, and blocked when safe proof is unavailable.
 
 ### I07 — Trust UX, async completion, and performance hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship inline/editor-driven trust UX, async semantic completion, theme-safe states, and measured cold/warm performance gates.
 - Primary files:
   - `app/editors/code_editor_widget.py`
@@ -1412,7 +1412,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### J01 — Formatting/import-management contract and acceptance coverage
-- Status: `TODO`
+- Status: `DONE`
 - Objective: lock the in-process, project-local `pyproject.toml` contract for Python formatting and import management before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1426,7 +1426,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the formatter/import stack rules, configuration boundaries, rollout slices, and acceptance coverage are all explicit and traceable.
 
 ### J02 — Fixture corpus and failing format/import tests
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add representative fixture projects and failing tests for `pyproject.toml` handling, Python-version-aware import grouping, comment preservation, broken buffers, and editor text-apply behavior before the adapter cutover.
 - Primary files:
   - `tests/fixtures/formatting/**`
@@ -1441,7 +1441,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: fixtures cover `src/` projects, `__future__` imports, relative imports, comments, syntax-broken buffers, and Python-3.9-sensitive stdlib classification, with failing tests demonstrating the current gap.
 
 ### J03 — AppRun formatter/import compatibility spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate Black, isort, and TOML parsing in the real AppRun path with visible-path behavior, package-size discipline, and no formatter CLI dependency.
 - Primary files:
   - `vendor/README.md`
@@ -1456,7 +1456,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the chosen Black/isort/tomli stack runs under AppRun without hidden cache/config paths, unsupported subprocess assumptions, or installer-budget regressions.
 
 ### J04 — Python tooling layer and config resolver
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce a dedicated Python tooling layer with explicit config resolution, typed result models, and vendored dependency bootstrap helpers.
 - Primary files:
   - `app/python_tools/config.py`
@@ -1473,7 +1473,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: callers can request Python formatting/import actions through one focused service layer with explicit config and failure-state metadata.
 
 ### J05 — Editor text-apply helper for full-buffer transforms
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add a document-apply helper that lets formatter/import actions replace full buffers without destroying practical undo/cursor trust.
 - Primary files:
   - `app/editors/code_editor_widget.py`
@@ -1487,7 +1487,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: formatter/import callers can apply full-document changes through a tested helper rather than raw `setPlainText(...)` replacement.
 
 ### J06 — Manual Python format command cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace whitespace-only Python formatting with a Black-backed manual format action while preserving non-Python fallback behavior.
 - Primary files:
   - `app/editors/formatting_service.py`
@@ -1502,7 +1502,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: manual format on Python uses the Black-backed path with explicit failure classification, and non-Python files still use deterministic hygiene formatting.
 
 ### J07 — Manual organize-imports command
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add a dedicated Python-only organize-imports command using isort with Black-compatible output and Python-target-aware import grouping.
 - Primary files:
   - `app/python_tools/isort_adapter.py`
@@ -1518,7 +1518,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: organize-imports is a separate, trustworthy command that preserves comments/futures ordering and does not reuse unsafe quick-fix line deletion.
 
 ### J08 — Save pipeline hardening and settings
-- Status: `TODO`
+- Status: `DONE`
 - Objective: upgrade save-time Python formatting/import organization with explicit settings, failure resilience, and measurable guardrails.
 - Primary files:
   - `app/core/constants.py`
@@ -1536,7 +1536,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: save-time organize+format ordering is explicit, settings are layered correctly, failures do not block save, and large-file guardrails are enforced.
 
 ### J09 — Formatter/import readiness surfaces
-- Status: `TODO`
+- Status: `DONE`
 - Objective: expose formatter/import readiness and project-local configuration detection through existing capability and settings/status seams.
 - Primary files:
   - `app/bootstrap/capability_probe.py`
@@ -1553,7 +1553,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: users can see whether Black/isort are available and whether project-local formatting/import configuration was detected, without adding a second style editor UI.
 
 ### J10 — Structural import-management follow-on alignment
-- Status: `TODO`
+- Status: `DONE`
 - Objective: define the post-phase cutover from regex import rewrites and unsafe unused-import cleanup toward structural tooling aligned with trusted semantics.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1574,7 +1574,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### K01 — Debugger contract and acceptance cutover docs
-- Status: `TODO`
+- Status: `DONE`
 - Objective: document the north-star debugger architecture, engine decision gate, and acceptance bar before replacing the current `pdb` text bridge.
 - Primary files:
   - `docs/PRD.md`
@@ -1590,7 +1590,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo states that debugger control is structured, stdout/stderr are not the steady-state debug protocol, and the engine decision gate is explicit.
 
 ### K02 — Runtime-parity debugger engine spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate the AppRun-safe debugger engine choice against subprocess restrictions, dirty-buffer remap, watch evaluation, exception stops, and thread behavior.
 - Primary files:
   - `tests/runtime_parity/debug/**`
@@ -1604,7 +1604,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo has passing runtime evidence for the chosen engine and a written rejection reason for the losing approach.
 
 ### K03 — Engine-neutral debug manifest and session contracts
-- Status: `TODO`
+- Status: `DONE`
 - Objective: expand run/debug manifests, breakpoint models, exception policy, and session state so shell logic no longer depends on raw `pdb` commands.
 - Primary files:
   - `app/run/run_manifest.py`
@@ -1620,7 +1620,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: debug sessions are described with typed structured contracts for transport, breakpoints, exception policy, and selected-frame inspection.
 
 ### K04 — Dedicated debug transport cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: move debugger traffic onto a dedicated control transport and remove stdout-marker parsing from the steady-state path.
 - Primary files:
   - `app/debug/debug_transport.py`
@@ -1636,7 +1636,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: user stdout/stderr no longer doubles as the active debugger control protocol and disconnect/failure states are explicit.
 
 ### K05 — Runner debugger engine replacement
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the CLI-style `MarkedPdb` loop with the chosen structured engine and support verified breakpoints, conditions, hit thresholds, and exception stops.
 - Primary files:
   - `app/runner/debug_runner.py`
@@ -1652,7 +1652,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: structured pause/continue/step/breakpoint/exception flows work without raw `pdb` command strings.
 
 ### K06 — Debug inspector overhaul
-- Status: `TODO`
+- Status: `DONE`
 - Objective: rebuild the Debug panel around threads, selected frames, scope-aware variables, lazy expansion, bounded previews, and watch results.
 - Primary files:
   - `app/debug/debug_models.py`
@@ -1667,7 +1667,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: paused state is represented as selected thread/frame/scope data with lazy variable loading and clear watch/error states.
 
 ### K07 — End-user debug workflow surface
-- Status: `TODO`
+- Status: `DONE`
 - Objective: finish workflow-level UX for debug current file/project/test, rerun last target, breakpoint properties, exception policy, and dirty-buffer source remap.
 - Primary files:
   - `app/shell/menus.py`
@@ -1683,7 +1683,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the visible run/debug surface supports the full planned workflows without asking users to type raw debugger commands.
 
 ### K08 — Debug reliability, performance, and supportability hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add the final test, latency, theme, and support-bundle coverage needed to ship the richer debugger safely.
 - Primary files:
   - `tests/unit/debug/**`
@@ -1705,7 +1705,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### L01 — Local history contract and acceptance cutover docs
-- Status: `TODO`
+- Status: `DONE`
 - Objective: define the local-history architecture, safety model, retention rules, and acceptance contract before feature code lands.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1719,7 +1719,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the repo explicitly documents local-history storage location, draft-vs-checkpoint semantics, restore-to-buffer rules, lineage behavior, and user-visible acceptance scenarios.
 
 ### L02 — Atomic source save foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: harden file writes with one atomic text-write path before durable history depends on save correctness.
 - Primary files:
   - `app/persistence/atomic_write.py`
@@ -1736,7 +1736,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: editor save, save-all, and auto-save-to-file share one atomic write primitive and only clear dirty state after the real file write succeeds.
 
 ### L03 — Project identity and file-lineage foundation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add stable project identity and logical file lineage so history survives move/rename/delete flows.
 - Primary files:
   - `app/project/project_manifest.py`
@@ -1753,7 +1753,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: projects expose a stable identity, app-driven path changes update logical history lineage, and deleted resources can still be referenced by history metadata.
 
 ### L04 — Unified local history store and legacy draft migration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the one-draft JSON store with a unified local-history substrate backed by SQLite metadata and content-addressed blobs, while migrating existing drafts forward safely.
 - Primary files:
   - `app/persistence/history_models.py`
@@ -1771,7 +1771,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: drafts and checkpoints share one history backend, legacy autosave entries migrate on access, and retention metadata exists without hidden paths.
 
 ### L05 — Checkpoint capture integration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create durable history checkpoints for save, reload, refactor, quick-fix, import-rewrite, and delete workflows.
 - Primary files:
   - `app/shell/main_window.py`
@@ -1788,7 +1788,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: all high-value editor write paths emit labeled, bounded history checkpoints and grouped multi-file operations are recorded as one transaction.
 
 ### L06 — Draft recovery compare/restore UX
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace the yes/no draft prompt with a reviewable compare-and-restore workflow that restores into the buffer first.
 - Primary files:
   - `app/shell/main_window.py`
@@ -1803,7 +1803,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: crash recovery offers compare/restore choices, restores do not silently overwrite disk, and editor context remains trustworthy after restore-to-buffer.
 
 ### L07 — Per-file local history dialog
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship a first-class timeline and diff viewer for the active file with compare and restore actions.
 - Primary files:
   - `app/shell/local_history_dialog.py`
@@ -1819,7 +1819,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: users can browse a file timeline, inspect lazy-loaded diffs, compare revisions, and restore a chosen revision into the live buffer.
 
 ### L08 — Global history restore and deleted-file recovery
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add global search/picker flows for history entries whose live files were renamed, moved, or deleted.
 - Primary files:
   - `app/shell/history_restore_picker.py`
@@ -1834,7 +1834,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: deleted or moved files can be found from global history and restored through an explicit, understandable workflow.
 
 ### L09 — Local history settings, retention, and validation hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: finish settings, pruning, theme safety, performance gates, runtime-parity checks, and supportability coverage for shipping the feature confidently.
 - Primary files:
   - `app/core/constants.py`
@@ -2006,7 +2006,7 @@ its constrained runtime, active run target, recovery paths, and packaging/export
 behavior without requiring terminal knowledge or trial-and-error.
 
 ### N01 — Contract and acceptance cutover for runtime explanation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: document the runtime-onboarding architecture, backlog slices, and acceptance bar before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -2026,7 +2026,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: runtime-explanation ownership, rollout slices, and acceptance scenarios are explicit, and user-facing onboarding copy no longer contradicts shipped shortcuts or startup wording.
 
 ### N02 — Structured runtime explanation models and preflight core
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce machine-readable explanation models, issue classification, and editor-side preflight rules on top of existing probes/diagnostics.
 - Primary files:
   - `app/core/models.py`
@@ -2043,7 +2043,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: the same issue/preflight objects can feed status summaries, drill-down UI, workflow guards, and support-bundle artifacts without duplicated rule logic.
 
 ### N03 — Runtime Center shell surface and status-bar drill-down
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace terse startup/health summaries with a reusable drill-down surface for runtime and project explanation.
 - Primary files:
   - `app/shell/status_bar.py`
@@ -2060,7 +2060,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: startup status, project health, and support-oriented next steps are accessible through one structured runtime surface instead of scattered one-shot message boxes.
 
 ### N04 — First-run checklist and welcome/help integration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make onboarding re-openable and discoverable even when recent projects auto-load.
 - Primary files:
   - `app/shell/welcome_widget.py`
@@ -2076,7 +2076,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: first-run guidance remains easy to reach from welcome and Help surfaces, and recent-project auto-load no longer hides onboarding.
 
 ### N05 — Run-target clarity and run preflight
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make active file vs project vs named configuration explicit before execution and catch obvious non-code blockers without launching the runner.
 - Primary files:
   - `app/project/run_configs.py`
@@ -2093,7 +2093,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: users can see the active run target/configuration before execution, and invalid run metadata fails through clear preflight messaging rather than runner trial-and-error.
 
 ### N06 — Contextual import, headless, and packaging explainers
-- Status: `TODO`
+- Status: `DONE`
 - Objective: attach deterministic ChoreBoy-aware explanations to the common failure modes called out in the strategy analysis.
 - Primary files:
   - `app/intelligence/diagnostics_service.py`
@@ -2112,7 +2112,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: common import/headless/package failures yield consistent, actionable guidance without requiring terminal access or arbitrary code execution in the editor.
 
 ### N07 — Support-bundle explanation snapshot and help-source cleanup
-- Status: `TODO`
+- Status: `DONE`
 - Objective: package the same runtime explanation facts into support artifacts and reduce duplicated help/shortcut sources.
 - Primary files:
   - `app/support/support_bundle.py`
@@ -2130,7 +2130,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: support bundles include machine-readable runtime explanation data and help/manual/runtime-center wording no longer drifts from live shortcuts or workflow behavior.
 
 ### N08 — Runtime-parity, theme, and responsiveness hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate that the richer onboarding/runtime surfaces remain fast, theme-safe, and truthful on AppRun-sensitive paths.
 - Primary files:
   - `app/bootstrap/capability_probe.py`
@@ -2462,4 +2462,205 @@ todo ids.
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `P01`, `P07`, `P08`, `P09`
 - Done when: workflow-plugin behavior has unit/integration/runtime-parity/manual coverage, sample plugins live in-tree, and author docs define a stable compatibility/deprecation story.
+
+---
+
+## 32) Phase Q — ChoreBoy-Native Dependency Management
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase addresses the #1 strategic gap from `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md`:
+a terminal-free dependency lifecycle for adding, inspecting, classifying, removing, and
+packaging third-party libraries in a locked-down, no-terminal environment.
+
+### Q01 — Dependency management contract and acceptance coverage
+- Status: `DONE`
+- Objective: define the dependency lifecycle architecture, project-local manifest contract, and acceptance bar.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent; contract tests land in follow-on slices)
+- Validation method: doc review plus subsequent slices linking to `AT-90` through `AT-95`
+- Acceptance linkage: `AT-90`, `AT-91`, `AT-92`, `AT-93`, `AT-94`, `AT-95`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: dependency manifest schema, lifecycle architecture, and acceptance scenarios are explicitly documented and traceable.
+
+### Q02 — Project dependency manifest and audit integration
+- Status: `DONE`
+- Objective: introduce a `cbcs/dependencies.json` manifest that tracks third-party library decisions and integrates with existing `dependency_audit.py`.
+- Primary files:
+  - `app/project/dependency_manifest.py`
+  - `app/packaging/dependency_audit.py`
+  - `app/project/project_service.py`
+  - `app/core/models.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_manifest.py`
+- Acceptance linkage: `AT-90`, `AT-91`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q01`
+- Done when: manifest persists dependency decisions and audit reads them.
+
+### Q03 — Dependency ingestion helpers
+- Status: `DONE`
+- Objective: build terminal-free helpers for ingesting local wheels, zip files, and vendored folders into `vendor/`.
+- Primary files:
+  - `app/project/dependency_ingest.py`
+  - `app/project/dependency_manifest.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_ingest.py`
+- Acceptance linkage: `AT-91`, `AT-92`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`
+- Done when: all ingestion methods work without terminal access.
+
+### Q04 — Add Dependency wizard dialog
+- Status: `DONE`
+- Objective: build a GUI wizard for adding dependencies through file picker with classification preview and manifest update.
+- Primary files:
+  - `app/shell/dependency_wizard_dialog.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_dependency_wizard_dialog.py`
+- Acceptance linkage: `AT-91`, `AT-92`, `AT-93`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q03`
+- Done when: users can add a dependency without terminal access.
+
+### Q05 — Dependency inspector and remove/re-audit flows
+- Status: `DONE`
+- Objective: build UI for inspecting installed dependencies, removing them, and re-running audit.
+- Primary files:
+  - `app/shell/dependency_panel.py`
+  - `app/project/dependency_manifest.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_manifest.py tests/unit/shell/test_dependency_panel.py`
+- Acceptance linkage: `AT-93`, `AT-94`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q03`
+- Done when: full lifecycle (add, inspect, trust, remove, re-audit) works without terminal.
+
+### Q06 — Dependency-aware packaging and onboarding integration
+- Status: `DONE`
+- Objective: connect dependency manifest to packaging validation, onboarding, and runtime explanation.
+- Primary files:
+  - `app/packaging/dependency_audit.py`
+  - `app/packaging/packager.py`
+  - `app/support/runtime_explainer.py`
+  - `app/shell/welcome_widget.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_dependency_audit.py tests/integration/packaging/`
+- Acceptance linkage: `AT-90`, `AT-94`, `AT-95`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q05`
+- Done when: dependencies are a first-class part of the project lifecycle from add to package.
+
+---
+
+## 33) Phase R — First-Class Testing Workflow
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase addresses the #3 strategic gap from `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md`:
+a discoverable test explorer with run-current-test, rerun-failed, debug-failed, and
+persistent results on top of the existing `test_runner_service.py`.
+
+### R01 — Testing workflow contract and acceptance coverage
+- Status: `DONE`
+- Objective: define the testing architecture, acceptance bar, and UI expectations.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent; contract tests land in follow-on slices)
+- Validation method: doc review plus subsequent slices linking to `AT-96` through `AT-101`
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`, `AT-99`, `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: test explorer model, run scopes, and acceptance scenarios are explicitly documented.
+
+### R02 — Test discovery and collection model
+- Status: `DONE`
+- Objective: build pytest-based test discovery that collects file/class/test nodes into a tree model.
+- Primary files:
+  - `app/run/test_discovery_service.py`
+  - `app/run/test_runner_service.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_discovery_service.py`
+- Acceptance linkage: `AT-96`, `AT-97`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R01`
+- Done when: test nodes are discoverable and structured for UI consumption.
+
+### R03 — Test explorer panel
+- Status: `DONE`
+- Objective: build a tree-view test explorer showing discovered tests with run/debug actions per node.
+- Primary files:
+  - `app/shell/test_explorer_panel.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_test_explorer_panel.py`
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`
+- Done when: users can see, navigate, and run tests from a visual explorer.
+
+### R04 — Run current test / current file tests
+- Status: `DONE`
+- Objective: add caret-level "Run This Test" and file-level "Run File Tests" targeting.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `app/shell/actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-98`, `AT-99`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`
+- Done when: users can run the specific test their cursor is in.
+
+### R05 — Rerun-failed and debug-failed-test loops
+- Status: `DONE`
+- Objective: add rerun-failed-only workflow and tight debug follow-up from test failures.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/test_explorer_panel.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-99`, `AT-100`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`, `R03`
+- Done when: users can rerun only failures and jump into debugging a failed test.
+
+### R06 — Test result integration and status persistence
+- Status: `DONE`
+- Objective: persist test results across sessions and integrate with Problems pane and editor gutters.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/problems_panel.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`, `R04`
+- Done when: test results survive session restart and feed into multiple UI surfaces.
+
+### R07 — Test workflow hardening and documentation
+- Status: `DONE`
+- Objective: final test coverage, performance gates, theme validation, and user-facing docs.
+- Primary files:
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/manual/chapters/`
+- Automated test layer: `unit`, `integration`, `manual_acceptance`
+- Validation method: full test suite pass plus manual light/dark validation
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`, `AT-99`, `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R01`..`R06`
+- Done when: testing workflow has automated evidence, theme-safe validation, and user docs.
 

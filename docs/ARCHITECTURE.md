@@ -1170,7 +1170,28 @@ Refactors that claim semantic safety must use a trustable planner. Token replace
 and text-search fallbacks may still exist as explicit user workflows, but not as
 silent backups for semantic rename/reference operations.
 
-### 17.4.6 Buffer revision rule
+### 17.4.6 Rollout sequencing
+
+The semantic trust improvement is delivered through a sequenced slice plan:
+
+1. **Contract lock** — architecture, acceptance, and backlog alignment (I01).
+2. **Fixture corpus** — representative test projects and failing contract tests
+   that expose heuristic trust gaps (I02).
+3. **Runtime-parity spike** — Jedi/Rope validated under AppRun with no hidden
+   engine metadata paths (I03).
+4. **Facade hardening** — deterministic `sys.path`, typed confidence metadata,
+   explicit degradation states (I04).
+5. **Read-only cutover** — replace heuristic completion/definition/hover/signatures/
+   references with project-aware semantic queries (I05).
+6. **Rename cutover** — Rope-backed planner with grouped patch previews, rollback,
+   no token-replace fallback (I06).
+7. **Trust UX and performance** — inline confidence indicators, async/cancellable
+   completion, latency gates (I07).
+
+Each slice updates tests and documentation before proceeding. Slices may not
+silently merge heuristic and semantic results under the same feature label.
+
+### 17.4.7 Buffer revision rule
 
 Async editor results must be tied to the buffer revision they were requested from.
 
@@ -1576,6 +1597,80 @@ The first end-to-end slice should prove the core value of the product:
 If this slice works well, the platform is real.
 
 Everything else should build on top of this slice.
+
+---
+
+## 25a. ChoreBoy-Native Dependency Management
+
+In a no-terminal environment, dependency lifecycle must be fully GUI-driven.
+
+### 25a.1 Project dependency manifest
+
+Each project tracks third-party dependency decisions in a visible manifest:
+
+```text
+<project>/cbcs/dependencies.json
+```
+
+Schema fields per entry:
+
+* `name` — package name
+* `version` — declared or detected version
+* `source` — ingestion source type (`wheel`, `zip`, `folder`, `runtime`)
+* `classification` — `pure_python`, `native_extension`, or `runtime`
+* `status` — `active` or `removed`
+* `added_at` — ISO timestamp
+
+### 25a.2 Ingestion workflow
+
+The "Add Dependency" wizard accepts:
+
+* `.whl` files — extracted into `vendor/`
+* `.zip` files containing Python packages — extracted into `vendor/`
+* folders — copied into `vendor/`
+
+Classification runs at ingestion time, detecting compiled extensions and flagging
+ChoreBoy compatibility risks.
+
+### 25a.3 Safety rules
+
+* all dependency paths use visible (non-dot-prefixed) directories
+* ingestion never modifies system paths or global state
+* native-extension packages require explicit user acknowledgment
+* the manifest is the source of truth for packaging validation
+
+### 25a.4 Packaging integration
+
+The packaging workflow reads `cbcs/dependencies.json` to validate that vendored
+dependencies are present and consistent before export.
+
+---
+
+## 25b. First-Class Testing Workflow
+
+### 25b.1 Test discovery model
+
+Test discovery uses `pytest --collect-only -q` to build a tree of test items
+with file/class/function hierarchy and pytest node IDs for targeted execution.
+
+### 25b.2 Run scopes
+
+* **Run All Tests** — project-wide pytest execution
+* **Run File Tests** — pytest execution scoped to one test file
+* **Run Test at Cursor** — pytest execution for one test function using node ID
+* **Rerun Failed** — re-execute only previously failed test node IDs
+* **Debug Failed Test** — launch the first failed test under debug mode
+
+### 25b.3 Test explorer panel
+
+The test explorer is a tree view in the left sidebar showing discovered tests.
+Each node shows last-run status (pass/fail/skip/not-run). Context menu provides
+Run and Debug actions per node.
+
+### 25b.4 Result persistence
+
+Test results are persisted per project and restored on session reload.
+Failures feed into the Problems pane with jump-to-source.
 
 ---
 

@@ -45,6 +45,48 @@ def run_pytest_project(project_root: str, *, timeout_seconds: int = 300) -> Pyte
     return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
 
 
+def run_pytest_node(project_root: str, node_id: str, *, timeout_seconds: int = 300) -> PytestRunResult:
+    """Run pytest for a specific node ID (e.g. tests/test_foo.py::test_bar)."""
+    normalized_root = str(Path(project_root).expanduser().resolve())
+    command = _build_pytest_command(project_root=normalized_root, pytest_args=["-v", node_id])
+    return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
+def run_pytest_failed(project_root: str, failed_node_ids: list[str], *, timeout_seconds: int = 300) -> PytestRunResult:
+    """Re-run only the specified failed test node IDs."""
+    normalized_root = str(Path(project_root).expanduser().resolve())
+    command = _build_pytest_command(project_root=normalized_root, pytest_args=["-v"] + failed_node_ids)
+    return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
+def identify_test_at_cursor(source_text: str, cursor_line: int) -> str | None:
+    """Identify the enclosing test function name at the given line (1-based).
+
+    Returns the function name (e.g. 'test_foo') or None if cursor is not inside a test.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source_text)
+    except SyntaxError:
+        return None
+
+    best_match: str | None = None
+    best_start = -1
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("test_") and not node.name.startswith("test"):
+                continue
+            end_line = getattr(node, "end_lineno", None) or node.lineno + 100
+            if node.lineno <= cursor_line <= end_line:
+                if node.lineno > best_start:
+                    best_match = node.name
+                    best_start = node.lineno
+
+    return best_match
+
+
 def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: int = 300) -> PytestRunResult:
     """Run pytest for one target path relative to project root."""
     normalized_root = str(Path(project_root).expanduser().resolve())

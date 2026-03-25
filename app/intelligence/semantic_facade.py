@@ -175,13 +175,18 @@ class SemanticFacade:
         if not references.found:
             raise ValueError("No semantic references found; symbol may be unresolved or dynamic.")
 
-        plan = self._refactor_engine.plan_rename(
-            project_root=project_root,
-            current_file_path=current_file_path,
-            cursor_position=cursor_position,
-            new_symbol=new_symbol,
-            reference_hits=references.hits,
-        )
+        try:
+            plan = self._refactor_engine.plan_rename(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                cursor_position=cursor_position,
+                new_symbol=new_symbol,
+                reference_hits=references.hits,
+            )
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(f"Semantic rename could not prove a safe rename plan: {exc}") from exc
         if plan is None:
             raise ValueError("Semantic rename could not prove a safe rename plan.")
         if plan.old_symbol == old_symbol:
@@ -196,6 +201,10 @@ class SemanticFacade:
 
     def apply_rename(self, plan: SemanticRenamePlan):
         return self._refactor_engine.apply_rename(plan)
+
+    def invalidate_project_cache(self, project_root: str | None = None) -> None:
+        """Clear cached Jedi projects so the next query rebuilds paths."""
+        self._jedi_engine.invalidate_project_cache(project_root)
 
 
 def _extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
