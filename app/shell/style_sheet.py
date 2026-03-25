@@ -1180,21 +1180,20 @@ QLabel#designer\\.property\\.groupHeader {{
     padding: 8px 0 2px 0;
     border-bottom: 1px solid {tokens.border};
 }}
-QPushButton[objectName^="designer.property.reset"] {{
+QToolButton[objectName^="designer.property.reset"] {{
     background: transparent;
     color: {tokens.text_muted};
-    border: 1px solid {tokens.border};
+    border: 1px solid transparent;
     border-radius: 3px;
-    padding: 2px 6px;
-    font-size: 10px;
-    max-width: 40px;
+    font-size: 12px;
+    font-weight: bold;
 }}
-QPushButton[objectName^="designer.property.reset"]:hover {{
+QToolButton[objectName^="designer.property.reset"]:hover {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
-    border-color: {tokens.text_muted};
+    border-color: {tokens.border};
 }}
-QPushButton[objectName^="designer.property.reset"]:pressed {{
+QToolButton[objectName^="designer.property.reset"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
 /* -- Connections panel ------------------------------------------------- */
