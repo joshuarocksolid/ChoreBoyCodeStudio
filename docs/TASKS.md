@@ -1412,7 +1412,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 Release class default for this phase: `RELEASE-CRITICAL`
 
 ### J01 — Formatting/import-management contract and acceptance coverage
-- Status: `TODO`
+- Status: `DONE`
 - Objective: lock the in-process, project-local `pyproject.toml` contract for Python formatting and import management before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -1426,7 +1426,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the formatter/import stack rules, configuration boundaries, rollout slices, and acceptance coverage are all explicit and traceable.
 
 ### J02 — Fixture corpus and failing format/import tests
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add representative fixture projects and failing tests for `pyproject.toml` handling, Python-version-aware import grouping, comment preservation, broken buffers, and editor text-apply behavior before the adapter cutover.
 - Primary files:
   - `tests/fixtures/formatting/**`
@@ -1441,7 +1441,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: fixtures cover `src/` projects, `__future__` imports, relative imports, comments, syntax-broken buffers, and Python-3.9-sensitive stdlib classification, with failing tests demonstrating the current gap.
 
 ### J03 — AppRun formatter/import compatibility spike
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate Black, isort, and TOML parsing in the real AppRun path with visible-path behavior, package-size discipline, and no formatter CLI dependency.
 - Primary files:
   - `vendor/README.md`
@@ -1456,7 +1456,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: the chosen Black/isort/tomli stack runs under AppRun without hidden cache/config paths, unsupported subprocess assumptions, or installer-budget regressions.
 
 ### J04 — Python tooling layer and config resolver
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce a dedicated Python tooling layer with explicit config resolution, typed result models, and vendored dependency bootstrap helpers.
 - Primary files:
   - `app/python_tools/config.py`
@@ -1473,7 +1473,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: callers can request Python formatting/import actions through one focused service layer with explicit config and failure-state metadata.
 
 ### J05 — Editor text-apply helper for full-buffer transforms
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add a document-apply helper that lets formatter/import actions replace full buffers without destroying practical undo/cursor trust.
 - Primary files:
   - `app/editors/code_editor_widget.py`
@@ -1487,7 +1487,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: formatter/import callers can apply full-document changes through a tested helper rather than raw `setPlainText(...)` replacement.
 
 ### J06 — Manual Python format command cutover
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace whitespace-only Python formatting with a Black-backed manual format action while preserving non-Python fallback behavior.
 - Primary files:
   - `app/editors/formatting_service.py`
@@ -1502,7 +1502,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: manual format on Python uses the Black-backed path with explicit failure classification, and non-Python files still use deterministic hygiene formatting.
 
 ### J07 — Manual organize-imports command
-- Status: `TODO`
+- Status: `DONE`
 - Objective: add a dedicated Python-only organize-imports command using isort with Black-compatible output and Python-target-aware import grouping.
 - Primary files:
   - `app/python_tools/isort_adapter.py`
@@ -1518,7 +1518,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: organize-imports is a separate, trustworthy command that preserves comments/futures ordering and does not reuse unsafe quick-fix line deletion.
 
 ### J08 — Save pipeline hardening and settings
-- Status: `TODO`
+- Status: `DONE`
 - Objective: upgrade save-time Python formatting/import organization with explicit settings, failure resilience, and measurable guardrails.
 - Primary files:
   - `app/core/constants.py`
@@ -1536,7 +1536,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: save-time organize+format ordering is explicit, settings are layered correctly, failures do not block save, and large-file guardrails are enforced.
 
 ### J09 — Formatter/import readiness surfaces
-- Status: `TODO`
+- Status: `DONE`
 - Objective: expose formatter/import readiness and project-local configuration detection through existing capability and settings/status seams.
 - Primary files:
   - `app/bootstrap/capability_probe.py`
@@ -1553,7 +1553,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: users can see whether Black/isort are available and whether project-local formatting/import configuration was detected, without adding a second style editor UI.
 
 ### J10 — Structural import-management follow-on alignment
-- Status: `TODO`
+- Status: `DONE`
 - Objective: define the post-phase cutover from regex import rewrites and unsafe unused-import cleanup toward structural tooling aligned with trusted semantics.
 - Primary files:
   - `docs/ARCHITECTURE.md`
