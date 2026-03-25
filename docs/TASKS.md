@@ -2463,3 +2463,204 @@ todo ids.
 - Depends on: `P01`, `P07`, `P08`, `P09`
 - Done when: workflow-plugin behavior has unit/integration/runtime-parity/manual coverage, sample plugins live in-tree, and author docs define a stable compatibility/deprecation story.
 
+---
+
+## 32) Phase Q — ChoreBoy-Native Dependency Management
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase addresses the #1 strategic gap from `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md`:
+a terminal-free dependency lifecycle for adding, inspecting, classifying, removing, and
+packaging third-party libraries in a locked-down, no-terminal environment.
+
+### Q01 — Dependency management contract and acceptance coverage
+- Status: `DONE`
+- Objective: define the dependency lifecycle architecture, project-local manifest contract, and acceptance bar.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent; contract tests land in follow-on slices)
+- Validation method: doc review plus subsequent slices linking to `AT-90` through `AT-95`
+- Acceptance linkage: `AT-90`, `AT-91`, `AT-92`, `AT-93`, `AT-94`, `AT-95`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: dependency manifest schema, lifecycle architecture, and acceptance scenarios are explicitly documented and traceable.
+
+### Q02 — Project dependency manifest and audit integration
+- Status: `DONE`
+- Objective: introduce a `cbcs/dependencies.json` manifest that tracks third-party library decisions and integrates with existing `dependency_audit.py`.
+- Primary files:
+  - `app/project/dependency_manifest.py`
+  - `app/packaging/dependency_audit.py`
+  - `app/project/project_service.py`
+  - `app/core/models.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_manifest.py`
+- Acceptance linkage: `AT-90`, `AT-91`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q01`
+- Done when: manifest persists dependency decisions and audit reads them.
+
+### Q03 — Dependency ingestion helpers
+- Status: `DONE`
+- Objective: build terminal-free helpers for ingesting local wheels, zip files, and vendored folders into `vendor/`.
+- Primary files:
+  - `app/project/dependency_ingest.py`
+  - `app/project/dependency_manifest.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_ingest.py`
+- Acceptance linkage: `AT-91`, `AT-92`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`
+- Done when: all ingestion methods work without terminal access.
+
+### Q04 — Add Dependency wizard dialog
+- Status: `DONE`
+- Objective: build a GUI wizard for adding dependencies through file picker with classification preview and manifest update.
+- Primary files:
+  - `app/shell/dependency_wizard_dialog.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_dependency_wizard_dialog.py`
+- Acceptance linkage: `AT-91`, `AT-92`, `AT-93`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q03`
+- Done when: users can add a dependency without terminal access.
+
+### Q05 — Dependency inspector and remove/re-audit flows
+- Status: `DONE`
+- Objective: build UI for inspecting installed dependencies, removing them, and re-running audit.
+- Primary files:
+  - `app/shell/dependency_panel.py`
+  - `app/project/dependency_manifest.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_dependency_manifest.py tests/unit/shell/test_dependency_panel.py`
+- Acceptance linkage: `AT-93`, `AT-94`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q03`
+- Done when: full lifecycle (add, inspect, trust, remove, re-audit) works without terminal.
+
+### Q06 — Dependency-aware packaging and onboarding integration
+- Status: `DONE`
+- Objective: connect dependency manifest to packaging validation, onboarding, and runtime explanation.
+- Primary files:
+  - `app/packaging/dependency_audit.py`
+  - `app/packaging/packager.py`
+  - `app/support/runtime_explainer.py`
+  - `app/shell/welcome_widget.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_dependency_audit.py tests/integration/packaging/`
+- Acceptance linkage: `AT-90`, `AT-94`, `AT-95`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `Q02`, `Q05`
+- Done when: dependencies are a first-class part of the project lifecycle from add to package.
+
+---
+
+## 33) Phase R — First-Class Testing Workflow
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase addresses the #3 strategic gap from `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md`:
+a discoverable test explorer with run-current-test, rerun-failed, debug-failed, and
+persistent results on top of the existing `test_runner_service.py`.
+
+### R01 — Testing workflow contract and acceptance coverage
+- Status: `DONE`
+- Objective: define the testing architecture, acceptance bar, and UI expectations.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent; contract tests land in follow-on slices)
+- Validation method: doc review plus subsequent slices linking to `AT-96` through `AT-101`
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`, `AT-99`, `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: test explorer model, run scopes, and acceptance scenarios are explicitly documented.
+
+### R02 — Test discovery and collection model
+- Status: `DONE`
+- Objective: build pytest-based test discovery that collects file/class/test nodes into a tree model.
+- Primary files:
+  - `app/run/test_discovery_service.py`
+  - `app/run/test_runner_service.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_discovery_service.py`
+- Acceptance linkage: `AT-96`, `AT-97`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R01`
+- Done when: test nodes are discoverable and structured for UI consumption.
+
+### R03 — Test explorer panel
+- Status: `DONE`
+- Objective: build a tree-view test explorer showing discovered tests with run/debug actions per node.
+- Primary files:
+  - `app/shell/test_explorer_panel.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_test_explorer_panel.py`
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`
+- Done when: users can see, navigate, and run tests from a visual explorer.
+
+### R04 — Run current test / current file tests
+- Status: `DONE`
+- Objective: add caret-level "Run This Test" and file-level "Run File Tests" targeting.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `app/shell/actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-98`, `AT-99`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`
+- Done when: users can run the specific test their cursor is in.
+
+### R05 — Rerun-failed and debug-failed-test loops
+- Status: `DONE`
+- Objective: add rerun-failed-only workflow and tight debug follow-up from test failures.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/test_explorer_panel.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-99`, `AT-100`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`, `R03`
+- Done when: users can rerun only failures and jump into debugging a failed test.
+
+### R06 — Test result integration and status persistence
+- Status: `DONE`
+- Objective: persist test results across sessions and integrate with Problems pane and editor gutters.
+- Primary files:
+  - `app/run/test_runner_service.py`
+  - `app/shell/problems_panel.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R02`, `R04`
+- Done when: test results survive session restart and feed into multiple UI surfaces.
+
+### R07 — Test workflow hardening and documentation
+- Status: `DONE`
+- Objective: final test coverage, performance gates, theme validation, and user-facing docs.
+- Primary files:
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/manual/chapters/`
+- Automated test layer: `unit`, `integration`, `manual_acceptance`
+- Validation method: full test suite pass plus manual light/dark validation
+- Acceptance linkage: `AT-96`, `AT-97`, `AT-98`, `AT-99`, `AT-100`, `AT-101`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `R01`..`R06`
+- Done when: testing workflow has automated evidence, theme-safe validation, and user docs.
+

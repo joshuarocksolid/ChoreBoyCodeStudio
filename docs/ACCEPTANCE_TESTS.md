@@ -2105,6 +2105,245 @@ Verify that the new packaging wizard/report surfaces stay usable and do not regr
 
 ---
 
+## 15a. ChoreBoy-Native Dependency Management Acceptance Tests
+
+## AT-90 — Project dependency manifest tracks library decisions
+
+**Purpose:**  
+Verify that the project-local `cbcs/dependencies.json` manifest persists dependency metadata visibly.
+
+**Preconditions:**  
+- a project is open
+
+**Steps:**  
+1. Add a vendored dependency through the Add Dependency wizard.
+2. Inspect `cbcs/dependencies.json`.
+3. Remove the dependency and inspect the manifest again.
+
+**Expected Result:**  
+- the manifest is a human-readable JSON file under `cbcs/`
+- each entry records name, version, source, classification, and status
+- removed dependencies are marked as removed rather than silently deleted
+- the manifest is visible in the project tree
+
+---
+
+## AT-91 — Add Dependency wizard ingests local packages without a terminal
+
+**Purpose:**  
+Verify that users can add Python packages from local files without terminal access.
+
+**Preconditions:**  
+- a project is open
+- a local `.whl`, `.zip`, or folder containing a Python package is available
+
+**Steps:**  
+1. Open the Add Dependency wizard from the Tools menu.
+2. Select a local wheel file.
+3. Review the classification preview (pure-Python vs native extension).
+4. Confirm the ingestion.
+5. Verify the package appears in `vendor/` and the manifest.
+
+**Expected Result:**  
+- the wizard accepts `.whl`, `.zip`, and folder sources
+- classification correctly identifies pure-Python vs native-extension packages
+- native-extension packages show a ChoreBoy compatibility warning
+- the package is extracted into `vendor/` at a visible path
+- the manifest is updated with the new dependency
+
+---
+
+## AT-92 — Dependency classification warns about native extensions
+
+**Purpose:**  
+Verify that native-extension dependencies are flagged with ChoreBoy-specific warnings.
+
+**Preconditions:**  
+- a package containing compiled `.so` or `.pyd` files is available
+
+**Steps:**  
+1. Attempt to add the native-extension package through the wizard.
+2. Review the classification preview.
+
+**Expected Result:**  
+- the classification clearly identifies the package as containing native extensions
+- a ChoreBoy-specific warning explains the compatibility risk
+- the user can still proceed with an explicit acknowledgment
+
+---
+
+## AT-93 — Dependency inspector shows installed dependencies with metadata
+
+**Purpose:**  
+Verify that the dependency inspector surfaces all project dependencies with actionable metadata.
+
+**Preconditions:**  
+- a project with at least one managed dependency is open
+
+**Steps:**  
+1. Open the dependency inspector from the Tools menu or Runtime Center.
+2. Review the dependency list.
+
+**Expected Result:**  
+- each dependency shows name, version, classification, and source
+- active and removed dependencies are distinguishable
+- the inspector provides remove and re-audit actions
+
+---
+
+## AT-94 — Dependency removal updates manifest and optionally cleans vendor
+
+**Purpose:**  
+Verify that removing a dependency updates the manifest and optionally cleans the vendor directory.
+
+**Preconditions:**  
+- a project with a managed dependency is open
+
+**Steps:**  
+1. Select a dependency in the inspector.
+2. Remove it.
+3. Inspect the manifest and vendor directory.
+
+**Expected Result:**  
+- the manifest marks the dependency as removed
+- the user is offered the option to delete the vendor files
+- the vendor directory is cleaned if the user confirms
+
+---
+
+## AT-95 — Packaging validates dependency manifest completeness
+
+**Purpose:**  
+Verify that the packaging workflow uses the dependency manifest to validate export completeness.
+
+**Preconditions:**  
+- a project with managed dependencies is open
+
+**Steps:**  
+1. Remove a dependency from vendor but leave it in the manifest.
+2. Run the packaging wizard.
+
+**Expected Result:**  
+- the packaging preflight reports the missing vendor files
+- the user sees actionable guidance about resolving the dependency gap
+- import diagnostics link to the Add Dependency workflow for unresolved imports
+
+---
+
+## 15b. First-Class Testing Workflow Acceptance Tests
+
+## AT-96 — Test explorer discovers and displays project tests
+
+**Purpose:**  
+Verify that the test explorer discovers pytest-compatible tests and displays them in a tree.
+
+**Preconditions:**  
+- a project with pytest-compatible test files is open
+
+**Steps:**  
+1. Open the test explorer panel.
+2. Inspect the discovered test tree.
+
+**Expected Result:**  
+- test files, classes, and functions are organized in a hierarchy
+- each node shows its last-run status (pass/fail/not-run)
+- the tree refreshes when test files are saved
+
+---
+
+## AT-97 — Test explorer runs selected tests
+
+**Purpose:**  
+Verify that users can run individual tests, test files, or all tests from the explorer.
+
+**Preconditions:**  
+- a project with discovered tests is open
+
+**Steps:**  
+1. Right-click a test function and select Run.
+2. Right-click a test file and select Run.
+3. Click "Run All Tests."
+
+**Expected Result:**  
+- targeted tests execute correctly
+- results update in the explorer tree
+- failures appear in the Problems pane with jump-to-source
+
+---
+
+## AT-98 — Run current test targets the test at cursor
+
+**Purpose:**  
+Verify that "Run Test at Cursor" identifies and executes the enclosing test function.
+
+**Preconditions:**  
+- a test file is open with the cursor inside a test function
+
+**Steps:**  
+1. Place cursor inside a test function.
+2. Invoke "Run Test at Cursor."
+
+**Expected Result:**  
+- only the targeted test runs
+- the result is displayed in the console and test explorer
+
+---
+
+## AT-99 — Rerun failed tests and debug failed test
+
+**Purpose:**  
+Verify that rerun-failed and debug-failed-test workflows work correctly.
+
+**Preconditions:**  
+- a test run has completed with at least one failure
+
+**Steps:**  
+1. Click "Rerun Failed."
+2. Click "Debug Failed Test."
+
+**Expected Result:**  
+- rerun-failed executes only the previously failed tests
+- debug-failed-test launches the failed test under debug mode
+- both workflows respect the test explorer's failure tracking
+
+---
+
+## AT-100 — Test results persist across sessions
+
+**Purpose:**  
+Verify that test results survive editor restart.
+
+**Preconditions:**  
+- a test run has completed
+
+**Steps:**  
+1. Close and reopen the editor.
+2. Open the test explorer.
+
+**Expected Result:**  
+- last-run results are restored from persistent storage
+- the test explorer shows the cached pass/fail/skip status
+
+---
+
+## AT-101 — Test explorer stays readable in both themes
+
+**Purpose:**  
+Verify that the test explorer UI remains usable in light and dark mode.
+
+**Preconditions:**  
+- test explorer is open with test results
+
+**Steps:**  
+1. Switch to light mode and inspect the explorer.
+2. Switch to dark mode and inspect the explorer.
+
+**Expected Result:**  
+- pass/fail/skip indicators are readable in both themes
+- selected, hovered, and disabled states maintain contrast
+
+---
+
 ## 16. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
