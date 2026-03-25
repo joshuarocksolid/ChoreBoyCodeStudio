@@ -1389,7 +1389,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: rename preview/apply is semantic, grouped by patch, rollback-safe, and blocked when safe proof is unavailable.
 
 ### I07 — Trust UX, async completion, and performance hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: ship inline/editor-driven trust UX, async semantic completion, theme-safe states, and measured cold/warm performance gates.
 - Primary files:
   - `app/editors/code_editor_widget.py`
