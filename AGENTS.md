@@ -73,19 +73,24 @@ npx pyright
 
 ### Vendored dependencies
 
-The `vendor/` directory is gitignored. Populate it with:
+The `vendor/` directory is gitignored. If it exists as a dangling symlink (from local dev), remove it first (`rm vendor`). Populate it with:
 
 ```bash
+mkdir -p vendor
 pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
   tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
   tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
   tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
   tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
+  tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
+  jedi parso "black==24.10.0" isort tomli rope \
   --target=vendor/ --python-version=3.11 --only-binary=:all: \
   --platform=manylinux_2_17_x86_64
 ```
 
-Optional extras are `tree-sitter-javascript==0.23.1` and `tree-sitter-sql==0.3.9`; do not add them unless you intentionally want the larger shipped archive. The `--python-version=3.11` and `--platform` flags ensure correct cp311 `.so` wheels matching FreeCAD's Python. See `vendor/README.md` for the full curated bundle contract and the Python 3.9 production guidance.
+**Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable.
+
+The `--python-version=3.11` and `--platform` flags ensure correct cp311 `.so` wheels matching FreeCAD's Python. See `vendor/README.md` for the full curated bundle contract and the Python 3.9 production guidance.
 
 ### Installing dev tools into FreeCAD's Python
 
@@ -103,4 +108,6 @@ This is necessary because `run_tests.py` imports pytest from within the AppRun p
 - `.venv-editor` may exist as legacy editor tooling scaffolding, but it is not a real Python environment and nothing should be run from it.
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
+- **Integration test hangs:** The full test suite (`tests/integration/`) may hang on subprocess-based tests (plugin host lifecycle, runner process tests). Running `tests/unit/` alone completes reliably. If the full suite hangs, kill the process and run unit and integration tests separately.
+- **`vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).
