@@ -490,6 +490,8 @@ class DesignerEditorSurface(QWidget):
 
         self._validation_list = QListWidget(self)
         self._validation_list.setObjectName("designer.surface.validationList")
+        self._validation_list.itemClicked.connect(self._handle_validation_item_clicked)
+        self._validation_list.setVisible(False)
         root_layout.addWidget(self._validation_list, 0)
 
         self._error_label = QLabel("", self)
@@ -537,9 +539,32 @@ class DesignerEditorSurface(QWidget):
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
         if self._model is None:
+            self._validation_list.setVisible(False)
             return
-        for issue in build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint):
-            self._validation_list.addItem(f"[{issue.severity}] {issue.code} — {issue.message}")
+        issues = build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint)
+        if not issues:
+            self._validation_list.setVisible(False)
+            return
+        severity_icons = {"error": "\u274C", "warning": "\u26A0"}
+        for issue in issues:
+            icon = severity_icons.get(issue.severity, "\u2139")
+            from PySide2.QtWidgets import QListWidgetItem
+
+            item = QListWidgetItem(f"{icon}  {issue.code} \u2014 {issue.message}")
+            item.setData(Qt.UserRole, issue.object_name)
+            item.setToolTip(f"Click to select: {issue.object_name}" if issue.object_name else "")
+            self._validation_list.addItem(item)
+        self._validation_list.setVisible(True)
+
+    def _handle_validation_item_clicked(self, item: object) -> None:
+        """Select the widget referenced by a validation issue."""
+        from PySide2.QtWidgets import QListWidgetItem
+
+        if not isinstance(item, QListWidgetItem):
+            return
+        object_name = item.data(Qt.UserRole)
+        if object_name and self._selection_controller is not None:
+            self._selection_controller.set_selected_object_name(str(object_name))
 
     def _handle_property_edited(self, object_name: str, property_name: str, value: object) -> None:
         self._apply_property_mutation(
