@@ -58,6 +58,26 @@ python3 run_tests.py -v --import-mode=importlib tests/integration
 python3 run_tests.py -v --import-mode=importlib tests/integration/performance
 ```
 
+Fast local feedback:
+
+```bash
+python3 testing/run_test_shard.py unit
+python3 testing/run_test_shard.py unit -- -k test_project_service
+```
+
+Named shards for local or CI-style parallel jobs:
+
+```bash
+python3 testing/run_test_shard.py unit
+python3 testing/run_test_shard.py integration
+python3 testing/run_test_shard.py performance
+python3 testing/run_test_shard.py runtime_parity
+```
+
+- `integration` intentionally excludes `tests/integration/performance` so timing-sensitive checks can stay in their own serial lane.
+- `performance` should remain a dedicated serial invocation because those tests assert wall-clock thresholds.
+- `--workers <count>` is available for targeted experiments through `CBCS_PYTEST_WORKERS`, for example `python3 testing/run_test_shard.py unit --workers 4`, but serial shards remain the default.
+
 Run static analysis:
 
 ```bash
@@ -96,3 +116,23 @@ At latest validation checkpoint:
 - `python3 run_tests.py -q --import-mode=importlib` -> **1189 passed, 1 skipped** (`tests/unit/editors/test_syntax_highlighters.py` skips when the optional SQL tree-sitter grammar is not vendored)
 - `npx pyright` -> **0 errors, 0 warnings, 0 informations**
 - `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need light/dark validation.
+
+## 10) Test speed notes
+
+Speed audit measurements captured on 2026-03-25 on the local dev host showed:
+
+- full suite wall time at roughly **156s** on the current branch
+- `tests/unit` dropping from roughly **79s** to **25s** after trimming an oversized syntax-highlighting fixture
+- `tests/integration` at roughly **75s**, with `tests/integration/performance` accounting for about **35s** of that total
+- `tests/runtime_parity` at roughly **4s**
+
+The same audit also piloted `pytest-xdist`, which is already available in the AppRun runtime:
+
+- `tests/unit` with `CBCS_PYTEST_WORKERS=4` did not finish within **133s**, which was substantially slower than the **25s** serial shard
+- `tests/integration --ignore=tests/integration/performance` with `CBCS_PYTEST_WORKERS=2` did not finish within **70s**, which was already slower than the roughly **40s** serial non-performance portion
+
+Recommendation:
+
+- prefer shard-level parallelism first (`unit`, `integration`, `performance`, `runtime_parity`)
+- keep `pytest-xdist` opt-in only for targeted experiments on narrowly scoped subsets
+- keep `tests/integration/performance` in its own serial lane

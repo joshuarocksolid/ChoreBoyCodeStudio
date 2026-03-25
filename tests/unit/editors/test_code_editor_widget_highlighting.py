@@ -51,7 +51,12 @@ def test_language_detection_uses_tree_sitter_for_json() -> None:
 
 def test_large_documents_skip_bracket_matching_scan() -> None:
     editor = CodeEditorWidget()
-    editor.setPlainText("(\n" + ("line = 1\n" * 30_000) + ")\n")
+    editor.set_highlighting_policy(
+        adaptive_mode=constants.HIGHLIGHTING_MODE_NORMAL,
+        reduced_threshold_chars=10_000,
+        lexical_only_threshold_chars=500_000,
+    )
+    editor.setPlainText("(\n" + ("line = 1\n" * 1_200) + ")\n")
     cursor = editor.textCursor()
     cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
@@ -61,12 +66,12 @@ def test_large_documents_skip_bracket_matching_scan() -> None:
 
 def test_reduced_mode_activates_when_document_crosses_threshold() -> None:
     editor = CodeEditorWidget()
-    editor.setPlainText("value = 1\n" * 40_000)
     editor.set_highlighting_policy(
         adaptive_mode=constants.HIGHLIGHTING_MODE_NORMAL,
         reduced_threshold_chars=10_000,
         lexical_only_threshold_chars=500_000,
     )
+    editor.setPlainText("value = 1\n" * 1_100)
     assert editor._effective_highlighting_mode() == constants.HIGHLIGHTING_MODE_REDUCED
 
 
@@ -84,7 +89,13 @@ def test_lexical_only_mode_can_be_forced() -> None:
 
 def test_large_documents_cap_overlay_decorations_to_viewport_budget() -> None:
     editor = CodeEditorWidget()
-    editor.setPlainText("value = 1\n" * 40_000)
+    editor.set_highlighting_policy(
+        adaptive_mode=constants.HIGHLIGHTING_MODE_NORMAL,
+        reduced_threshold_chars=10_000,
+        lexical_only_threshold_chars=500_000,
+    )
+    editor.setPlainText("value = 1\n" * 1_100)
+    assert editor._is_large_document() is True
     diagnostics = [
         CodeDiagnostic(
             code="T001",
@@ -93,7 +104,7 @@ def test_large_documents_cap_overlay_decorations_to_viewport_budget() -> None:
             line_number=index + 1,
             message="warning",
         )
-        for index in range(3_000)
+        for index in range(1_100)
     ]
     editor.set_diagnostics(diagnostics)
     editor.highlight_all_matches("value", FindOptions())
@@ -106,13 +117,13 @@ def test_notify_highlighter_viewport_lines_updates_window_for_large_modes() -> N
         pytest.skip("Tree-sitter runtime unavailable in this environment.")
     editor = CodeEditorWidget()
     editor.resize(800, 500)
-    editor.setPlainText("line\n" * 5_000)
-    editor.set_language_for_path("/tmp/main.py")
     editor.set_highlighting_policy(
         adaptive_mode=constants.HIGHLIGHTING_MODE_REDUCED,
         reduced_threshold_chars=10_000,
         lexical_only_threshold_chars=500_000,
     )
+    editor.setPlainText("line\n" * 400)
+    editor.set_language_for_path("/tmp/main.py")
     editor._notify_highlighter_viewport_lines()
     assert editor._highlighter is not None
     viewport_lines = getattr(editor._highlighter, "_viewport_lines", (0, 0))
