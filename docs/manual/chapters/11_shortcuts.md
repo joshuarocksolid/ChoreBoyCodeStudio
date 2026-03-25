@@ -6,6 +6,9 @@ You can customize them in:
 
 `File > Settings... > Keybindings`
 
+The in-app `Help > Keyboard Shortcuts` page shows your current assignments.
+This chapter lists the default shortcuts shipped with Code Studio.
+
 ## Core editing and project shortcuts
 
 - `Ctrl+N` — New Project

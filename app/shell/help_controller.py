@@ -69,6 +69,9 @@ class ShellHelpController:
     def show_headless_notes(self, *, parent: QWidget) -> None:
         self._show_help_file("FreeCAD Headless Notes", "headless_notes.md", parent=parent)
 
+    def show_packaging_backup(self, *, parent: QWidget) -> None:
+        self._show_help_file("Packaging, Sharing, and Backup", "packaging_backup.md", parent=parent)
+
     def show_about(self, *, parent: QWidget) -> None:
         QMessageBox.information(
             parent,

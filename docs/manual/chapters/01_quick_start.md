@@ -16,6 +16,8 @@ Look for a startup message like:
 - `Startup: Runtime ready (x/x checks)` (best case), or
 - `Startup: Runtime issues (x/x checks)` (still usable, but you should run health checks soon).
 
+If you need the details behind that status, click it or open `Tools > Runtime Center...`.
+
 ## Step 2 — Open or create a project
 
 Choose one:
@@ -24,6 +26,8 @@ Choose one:
 - `File > New Project...` to create a project from a template.
 
 If this is your first time, use **Utility Script** template.
+
+You can reopen the first-run checklist any time from `Help > Runtime Onboarding...`.
 
 ![Figure 2 — New Project dialog with template options](../screenshots/manual_02_new_project_dialog.png)
 
@@ -47,6 +51,7 @@ You should see the tab’s modified marker clear after save.
 ## Step 5 — Run your code
 
 Press `F5` for **Run Active File**.
+Use `Shift+F5` for **Run Project** when you want the project's default entry.
 
 Output appears in the **Run Log** panel at the bottom.
 

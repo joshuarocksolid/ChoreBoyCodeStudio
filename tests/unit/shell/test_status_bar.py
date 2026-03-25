@@ -38,8 +38,8 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
     assert status.details == "All startup capability checks passed."
 
 
-def test_map_startup_report_to_status_includes_failed_check_ids() -> None:
-    """Failing checks should remain explicit and actionable."""
+def test_map_startup_report_to_status_includes_issue_titles() -> None:
+    """Failing checks should surface human-readable issue titles."""
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
@@ -51,7 +51,10 @@ def test_map_startup_report_to_status_includes_failed_check_ids() -> None:
     status = map_startup_report_to_status(report)
     assert status.severity == "warning"
     assert status.text == "Startup: Runtime issues (1/3 checks)"
-    assert status.details == "Failed checks: freecad_import, global_logs_writable"
+    assert (
+        status.details
+        == "2 issue(s): FreeCAD backend import is unavailable; Global log folder is not writable"
+    )
 
 
 def test_map_editor_status_view_formats_active_file_coordinates() -> None:

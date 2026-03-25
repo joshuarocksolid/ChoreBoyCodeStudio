@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+_RUNTIME_SEVERITY_ORDER = {
+    "clear": 0,
+    "advisory": 1,
+    "degraded": 2,
+    "blocking": 3,
+}
+
+
 @dataclass(frozen=True)
 class CapabilityCheckResult:
     """Structured result for a single runtime capability check."""
@@ -59,6 +67,117 @@ class CapabilityProbeReport:
             "available_count": self.available_count,
             "total_count": self.total_count,
             "failed_check_ids": self.failed_check_ids,
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeIssue:
+    """Structured explanation item for runtime, project, run, or packaging state."""
+
+    issue_id: str
+    workflow: str
+    severity: str
+    title: str
+    summary: str
+    why_it_happened: str
+    next_steps: list[str] = field(default_factory=list)
+    help_topic: str | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_blocking(self) -> bool:
+        return self.severity == "blocking"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "issue_id": self.issue_id,
+            "workflow": self.workflow,
+            "severity": self.severity,
+            "title": self.title,
+            "summary": self.summary,
+            "why_it_happened": self.why_it_happened,
+            "next_steps": list(self.next_steps),
+            "help_topic": self.help_topic,
+            "evidence": dict(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeIssueReport:
+    """Aggregate report of structured runtime issues."""
+
+    workflow: str
+    issues: list[RuntimeIssue]
+
+    @property
+    def total_count(self) -> int:
+        return len(self.issues)
+
+    @property
+    def blocking_count(self) -> int:
+        return sum(1 for issue in self.issues if issue.severity == "blocking")
+
+    @property
+    def degraded_count(self) -> int:
+        return sum(1 for issue in self.issues if issue.severity == "degraded")
+
+    @property
+    def advisory_count(self) -> int:
+        return sum(1 for issue in self.issues if issue.severity == "advisory")
+
+    @property
+    def is_clear(self) -> bool:
+        return not self.issues
+
+    @property
+    def highest_severity(self) -> str:
+        if not self.issues:
+            return "clear"
+        return max(
+            (issue.severity for issue in self.issues),
+            key=lambda severity: _RUNTIME_SEVERITY_ORDER.get(severity, 0),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workflow": self.workflow,
+            "total_count": self.total_count,
+            "blocking_count": self.blocking_count,
+            "degraded_count": self.degraded_count,
+            "advisory_count": self.advisory_count,
+            "highest_severity": self.highest_severity,
+            "issues": [issue.to_dict() for issue in self.issues],
+        }
+
+
+@dataclass(frozen=True)
+class WorkflowPreflightResult:
+    """Editor-side preflight result for a workflow before launch/export."""
+
+    workflow: str
+    issues: list[RuntimeIssue]
+    summary: str
+
+    @property
+    def is_ready(self) -> bool:
+        return not any(issue.is_blocking for issue in self.issues)
+
+    @property
+    def highest_severity(self) -> str:
+        if not self.issues:
+            return "clear"
+        return max(
+            (issue.severity for issue in self.issues),
+            key=lambda severity: _RUNTIME_SEVERITY_ORDER.get(severity, 0),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workflow": self.workflow,
+            "is_ready": self.is_ready,
+            "summary": self.summary,
+            "highest_severity": self.highest_severity,
+            "issues": [issue.to_dict() for issue in self.issues],
         }
 
 

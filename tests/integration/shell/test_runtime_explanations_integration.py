@@ -1,0 +1,129 @@
+"""Integration tests for contextual runtime explanations."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
+from PySide2.QtWidgets import QApplication
+
+from app.shell.main_window import MainWindow
+
+pytestmark = pytest.mark.integration
+
+
+def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+
+def _write_project(project_root: Path, *, source_text: str, default_entry: str = "run.py") -> None:
+    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
+    (project_root / default_entry).write_text(source_text, encoding="utf-8")
+    (project_root / "cbcs" / "project.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "name": "Runtime Project",
+                "default_entry": default_entry,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ = _ensure_qapplication(monkeypatch)
+    project_root = tmp_path / "project"
+    _write_project(project_root, source_text="import totally_fake\n")
+
+    window = MainWindow(state_root=str(tmp_path.resolve()))
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+
+    opened_dialogs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        window,
+        "_open_runtime_center_dialog",
+        lambda *, title="Runtime Center", report=None: opened_dialogs.append({"title": title, "report": report}),
+    )
+
+    def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
+        _ = key
+        _ = on_error
+        on_success(task(None))
+
+    monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
+    window._handle_analyze_imports_action()
+
+    assert len(opened_dialogs) == 1
+    assert opened_dialogs[0]["title"] == "Import Analysis"
+    report = opened_dialogs[0]["report"]
+    assert report is not None
+    assert report.issues
+    assert report.issues[0].issue_id.startswith("import.vendored_dependency_missing")
+
+
+def test_headless_runtime_signature_updates_latest_run_issue_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ = _ensure_qapplication(monkeypatch)
+    window = MainWindow(state_root=str(tmp_path.resolve()))
+    window._active_run_output_tail.append("Traceback...\nCannot load Gui module in console application\n")
+
+    problems = window._update_problems_from_output()
+
+    assert problems == []
+    assert [issue.issue_id for issue in window._latest_run_issue_report.issues] == [
+        "runtime.freecad_gui_module_in_headless_run"
+    ]
+
+
+def test_packaging_preflight_opens_runtime_center_before_export(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ = _ensure_qapplication(monkeypatch)
+    project_root = tmp_path / "project"
+    _write_project(project_root, source_text="print('ok')\n", default_entry="run.py")
+    manifest_path = project_root / "cbcs" / "project.json"
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_payload["default_entry"] = "missing.py"
+    manifest_path.write_text(json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8")
+
+    window = MainWindow(state_root=str(tmp_path.resolve()))
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+
+    opened_dialogs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.choose_existing_directory",
+        lambda *_args, **_kwargs: str(tmp_path / "exports"),
+    )
+    monkeypatch.setattr(
+        window,
+        "_open_runtime_center_dialog",
+        lambda *, title="Runtime Center", report=None: opened_dialogs.append({"title": title, "report": report}),
+    )
+    monkeypatch.setattr(
+        "app.shell.main_window.package_project",
+        lambda **_kwargs: pytest.fail("package_project should not run when preflight blocks packaging"),
+    )
+
+    window._handle_package_project_action()
+
+    assert len(opened_dialogs) == 1
+    assert opened_dialogs[0]["title"] == "Packaging Preflight"
+    report = opened_dialogs[0]["report"]
+    assert report is not None
+    assert [issue.issue_id for issue in report.issues] == ["package.entry_invalid"]

@@ -33,6 +33,8 @@ def test_initial_state_shows_empty_label(widget: WelcomeWidget) -> None:
     """With no projects the empty-state label should be visible."""
     assert widget._empty_label.isVisible()
     assert not widget._project_list.isVisible()
+    assert widget._onboarding_card.isVisible()
+    assert widget._project_health_btn.isEnabled() is False
 
 
 def test_set_recent_projects_populates_list(widget: WelcomeWidget) -> None:
@@ -108,6 +110,41 @@ def test_open_project_signal(widget: WelcomeWidget) -> None:
     widget.open_project_requested.connect(lambda: emitted.__setitem__("value", True))
     widget._open_project_btn.click()
     assert emitted["value"] is True
+
+
+def test_runtime_summary_and_project_health_state_are_updateable(widget: WelcomeWidget) -> None:
+    widget.set_runtime_summary("Startup: Runtime ready (7/7 checks)", "All checks passed.")
+    widget.set_project_health_available(True)
+
+    assert widget._runtime_summary_label.text() == "Startup: Runtime ready (7/7 checks)"
+    assert widget._runtime_summary_label.toolTip() == "All checks passed."
+    assert widget._project_health_btn.isEnabled() is True
+
+
+def test_onboarding_action_signals_emit(widget: WelcomeWidget) -> None:
+    emitted: list[str] = []
+    widget.runtime_center_requested.connect(lambda: emitted.append("runtime_center"))
+    widget.getting_started_requested.connect(lambda: emitted.append("getting_started"))
+    widget.example_project_requested.connect(lambda: emitted.append("example_project"))
+    widget.headless_notes_requested.connect(lambda: emitted.append("headless_notes"))
+    widget.dismiss_onboarding_requested.connect(lambda: emitted.append("dismiss"))
+    widget.complete_onboarding_requested.connect(lambda: emitted.append("complete"))
+
+    widget._runtime_center_btn.click()
+    widget._getting_started_btn.click()
+    widget._example_project_btn.click()
+    widget._headless_notes_btn.click()
+    widget._dismiss_onboarding_btn.click()
+    widget._complete_onboarding_btn.click()
+
+    assert emitted == [
+        "runtime_center",
+        "getting_started",
+        "example_project",
+        "headless_notes",
+        "dismiss",
+        "complete",
+    ]
 
 
 def test_double_click_emits_project_selected(widget: WelcomeWidget) -> None:

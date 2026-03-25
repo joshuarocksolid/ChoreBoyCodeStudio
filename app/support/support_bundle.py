@@ -10,6 +10,7 @@ import zipfile
 
 from app.bootstrap.logging_setup import get_active_log_path
 from app.bootstrap.paths import PathInput, global_history_index_path, project_manifest_path
+from app.core.models import RuntimeIssueReport
 from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
 from app.project.project_manifest import load_project_manifest
@@ -21,6 +22,7 @@ def build_support_bundle(
     project_root: PathInput,
     *,
     diagnostics_report: ProjectHealthReport | None = None,
+    runtime_issue_report: RuntimeIssueReport | None = None,
     state_root: PathInput | None = None,
     destination_dir: PathInput | None = None,
     last_run_log_path: PathInput | None = None,
@@ -53,6 +55,11 @@ def build_support_bundle(
             archive.write(run_log_file, arcname=f"project_logs/{run_log_file.name}")
         if diagnostics_report is not None:
             archive.writestr("diagnostics/project_health.json", json.dumps(diagnostics_report.to_dict(), indent=2, sort_keys=True))
+        if runtime_issue_report is not None:
+            archive.writestr(
+                "diagnostics/runtime_explanations.json",
+                json.dumps(runtime_issue_report.to_dict(), indent=2, sort_keys=True),
+            )
         history_diagnostics = _build_local_history_diagnostics(resolved_project_root, state_root=state_root)
         if history_diagnostics is not None:
             archive.writestr("diagnostics/local_history.json", json.dumps(history_diagnostics, indent=2, sort_keys=True))

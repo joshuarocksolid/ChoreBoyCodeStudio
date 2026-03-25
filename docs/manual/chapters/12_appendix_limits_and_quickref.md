@@ -47,8 +47,9 @@ Do not remove:
 
 1. Check Run Log
 2. Check Problems panel
-3. Run Project Health Check
-4. Generate Support Bundle if needed
+3. Open Runtime Center
+4. Run Project Health Check
+5. Generate Support Bundle if needed
 
 ## Most used commands
 

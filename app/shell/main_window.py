@@ -44,8 +44,7 @@ from app.bootstrap.paths import global_cache_dir, global_python_console_history_
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectManifestValidationError
-from app.core.models import CapabilityProbeReport
-from app.core.models import LoadedProject
+from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssue, RuntimeIssueReport
 from app.debug.debug_breakpoints import build_breakpoint, breakpoint_key
 from app.debug.debug_command_service import (
     continue_command,
@@ -114,6 +113,16 @@ from app.plugins.registry_store import (
 from app.plugins.runtime_manager import PluginRuntimeManager
 from app.plugins.security_policy import merge_plugin_safe_mode, plugin_safe_mode_enabled
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
+from app.support.runtime_explainer import (
+    HELP_TOPIC_GETTING_STARTED,
+    HELP_TOPIC_HEADLESS_NOTES,
+    build_import_issue_report,
+    build_project_health_issue_report,
+    build_startup_issue_report,
+    explain_runtime_message,
+    merge_runtime_issue_reports,
+)
+from app.support.preflight import build_package_preflight, build_run_preflight
 from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.examples.example_project_service import ExampleProjectService
@@ -165,12 +174,14 @@ from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_i
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.python_console_history import load_python_console_history, save_python_console_history
+from app.shell.runtime_center_dialog import RuntimeCenterDialog
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.shell.toolbar_icons import ensure_tab_close_icons
 from app.project.project_tree import build_project_tree
 from app.project.run_configs import (
+    RunConfiguration,
     env_overrides_to_text,
 )
 from app.project.project_tree_widget import ProjectTreeWidget
@@ -223,7 +234,11 @@ from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
 from app.shell.help_controller import ShellHelpController
-from app.shell.status_bar import ShellStatusBarController, create_shell_status_bar
+from app.shell.status_bar import (
+    ShellStatusBarController,
+    create_shell_status_bar,
+    map_startup_report_to_status,
+)
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
@@ -319,6 +334,10 @@ class MainWindow(QMainWindow):
         self._state_root = state_root
         self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
+        (
+            self._runtime_onboarding_dismissed,
+            self._runtime_onboarding_completed,
+        ) = self._load_runtime_onboarding_state()
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
@@ -351,6 +370,7 @@ class MainWindow(QMainWindow):
             on_runtime_command_failure=self._record_plugin_runtime_failure,
         )
         self._status_controller: ShellStatusBarController | None = None
+        self._startup_report: CapabilityProbeReport | None = startup_report
         self._toolbar = None
         self._top_splitter: QSplitter | None = None
         self._vertical_splitter: QSplitter | None = None
@@ -455,10 +475,16 @@ class MainWindow(QMainWindow):
         self._is_shutting_down = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
+        self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
+        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
+        self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
+        self._latest_run_issue_ids: tuple[str, ...] = ()
+        self._latest_runtime_issue_report: RuntimeIssueReport = self._build_runtime_issue_report()
         self._run_output_coordinator: RunOutputCoordinator | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
         self._run_config_controller = RunConfigController()
+        self._active_named_run_config_name: str | None = None
         self._repl_event_queue: queue.Queue[ReplEvent] = queue.Queue()
         self._repl_manager = ReplSessionManager(
             on_output=self._enqueue_repl_output,
@@ -587,6 +613,7 @@ class MainWindow(QMainWindow):
                 on_open_plugin_manager=self._handle_open_plugin_manager_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_refresh_runtime_modules=self._handle_refresh_runtime_modules_action,
+                on_runtime_center=self._handle_runtime_center_action,
                 on_project_health_check=self._handle_project_health_check_action,
                 on_generate_support_bundle=self._handle_generate_support_bundle_action,
                 on_package_project=self._handle_package_project_action,
@@ -615,6 +642,7 @@ class MainWindow(QMainWindow):
                 on_help_load_example_project=self._handle_load_example_project_action,
                 on_help_open_app_log=self._handle_open_app_log_action,
                 on_help_open_log_folder=self._handle_open_log_folder_action,
+                on_help_runtime_onboarding=self._handle_runtime_onboarding_action,
                 on_help_getting_started=self._handle_getting_started_action,
                 on_help_shortcuts=self._handle_shortcuts_action,
                 on_help_about=self._handle_about_action,
@@ -626,9 +654,16 @@ class MainWindow(QMainWindow):
                 menu_registry=self._menu_registry,
                 command_broker=self._command_broker,
             )
-        self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
+        self._status_controller = create_shell_status_bar(
+            self,
+            startup_report=startup_report,
+            on_startup_activated=self._handle_runtime_center_action,
+        )
         self._refresh_python_tooling_status()
-        self._toolbar = build_run_toolbar_widget(self._menu_registry)
+        self._toolbar = build_run_toolbar_widget(
+            self._menu_registry,
+            on_target_summary_clicked=self._handle_manage_run_configurations_action,
+        )
         if self._toolbar is not None:
             center_panel = self.findChild(QWidget, "shell.centerPanel")
             if center_panel is not None:
@@ -683,13 +718,217 @@ class MainWindow(QMainWindow):
         project_root = Path(last_path.strip())
         if not project_root.is_dir() or not (project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME).is_file():
             return
-        self._open_project_by_path(str(project_root))
+        opened = self._open_project_by_path(str(project_root))
+        if opened and self._should_show_runtime_onboarding():
+            QTimer.singleShot(0, self._handle_runtime_onboarding_action)
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
+        self._startup_report = report
+        self._latest_runtime_issue_report = self._build_runtime_issue_report()
+        self._refresh_welcome_project_list()
         if self._status_controller is None:
             return
         self._status_controller.set_startup_report(report)
+
+    def _build_runtime_issue_report(self) -> RuntimeIssueReport:
+        reports: list[RuntimeIssueReport] = []
+        startup_issues = (
+            build_startup_issue_report(self._startup_report)
+            if self._startup_report is not None
+            else RuntimeIssueReport(workflow="startup", issues=[])
+        )
+        reports.append(startup_issues)
+        if self._latest_health_report is not None:
+            reports.append(build_project_health_issue_report(self._latest_health_report))
+        if self._latest_import_issue_report.issues:
+            reports.append(self._latest_import_issue_report)
+        if self._latest_run_issue_report.issues:
+            reports.append(self._latest_run_issue_report)
+        if self._latest_package_issue_report.issues:
+            reports.append(self._latest_package_issue_report)
+        return merge_runtime_issue_reports(*reports, workflow="runtime_center")
+
+    def _open_runtime_help_topic(self, topic_id: str) -> None:
+        if topic_id == HELP_TOPIC_HEADLESS_NOTES:
+            self._handle_headless_notes_action()
+            return
+        if topic_id == "packaging_backup":
+            self._help_controller.show_packaging_backup(parent=self)
+            return
+        if topic_id == HELP_TOPIC_GETTING_STARTED:
+            self._handle_getting_started_action()
+            return
+        self._handle_getting_started_action()
+
+    def _open_runtime_center_dialog(
+        self,
+        *,
+        title: str = "Runtime Center",
+        report: RuntimeIssueReport | None = None,
+    ) -> None:
+        dialog = RuntimeCenterDialog(
+            title=title,
+            report=report or self._latest_runtime_issue_report,
+            tokens=self._resolve_theme_tokens(),
+            open_help_topic=self._open_runtime_help_topic,
+            parent=self,
+        )
+        dialog.exec_()
+
+    def _handle_runtime_center_action(self) -> None:
+        self._latest_runtime_issue_report = self._build_runtime_issue_report()
+        self._open_runtime_center_dialog()
+
+    def _load_runtime_onboarding_state(self) -> tuple[bool, bool]:
+        try:
+            settings_payload = self._settings_service.load_global()
+        except Exception:
+            return False, False
+        onboarding_payload = settings_payload.get(constants.UI_ONBOARDING_SETTINGS_KEY)
+        if not isinstance(onboarding_payload, Mapping):
+            return False, False
+        return (
+            bool(onboarding_payload.get(constants.UI_ONBOARDING_RUNTIME_GUIDE_DISMISSED_KEY, False)),
+            bool(onboarding_payload.get(constants.UI_ONBOARDING_RUNTIME_GUIDE_COMPLETED_KEY, False)),
+        )
+
+    def _should_show_runtime_onboarding(self) -> bool:
+        return not self._runtime_onboarding_dismissed and not self._runtime_onboarding_completed
+
+    def _persist_runtime_onboarding_state(self, *, dismissed: bool | None = None, completed: bool | None = None) -> None:
+        if dismissed is not None:
+            self._runtime_onboarding_dismissed = dismissed
+        if completed is not None:
+            self._runtime_onboarding_completed = completed
+        try:
+            self._settings_service.update_global(
+                lambda settings: self._merge_runtime_onboarding_settings(
+                    settings,
+                    dismissed=self._runtime_onboarding_dismissed,
+                    completed=self._runtime_onboarding_completed,
+                )
+            )
+        except Exception as exc:
+            self._logger.warning("Failed to persist runtime onboarding state: %s", exc)
+        self._refresh_welcome_project_list()
+
+    def _merge_runtime_onboarding_settings(
+        self,
+        settings: Mapping[str, Any],
+        *,
+        dismissed: bool,
+        completed: bool,
+    ) -> dict[str, Any]:
+        updated = dict(settings)
+        existing = settings.get(constants.UI_ONBOARDING_SETTINGS_KEY)
+        onboarding_payload = dict(existing) if isinstance(existing, Mapping) else {}
+        onboarding_payload[constants.UI_ONBOARDING_RUNTIME_GUIDE_DISMISSED_KEY] = dismissed
+        onboarding_payload[constants.UI_ONBOARDING_RUNTIME_GUIDE_COMPLETED_KEY] = completed
+        updated[constants.UI_ONBOARDING_SETTINGS_KEY] = onboarding_payload
+        return updated
+
+    def _refresh_welcome_widget_state(
+        self,
+        widget: WelcomeWidget,
+        *,
+        force_show_onboarding: bool = False,
+    ) -> None:
+        try:
+            recent_paths = load_recent_projects(state_root=self._state_root)
+        except Exception:
+            recent_paths = []
+        widget.set_recent_projects(recent_paths)
+        startup_status = map_startup_report_to_status(self._startup_report)
+        widget.set_runtime_summary(startup_status.text, startup_status.details)
+        widget.set_project_health_available(self._loaded_project is not None)
+        widget.set_onboarding_visible(force_show_onboarding or self._should_show_runtime_onboarding())
+
+    def _connect_welcome_widget_actions(
+        self,
+        widget: WelcomeWidget,
+        *,
+        close_after_action: Callable[[], None] | None = None,
+    ) -> None:
+        widget.new_project_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_new_project_action, close_after_action)
+        )
+        widget.open_project_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_open_project_action, close_after_action)
+        )
+        widget.project_selected.connect(
+            lambda project_path: self._handle_welcome_project_selected(project_path, close_after_action)
+        )
+        widget.runtime_center_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_runtime_center_action, close_after_action)
+        )
+        widget.getting_started_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_getting_started_action, close_after_action)
+        )
+        widget.project_health_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_project_health_check_action, close_after_action)
+        )
+        widget.example_project_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_load_example_project_action, close_after_action)
+        )
+        widget.headless_notes_requested.connect(
+            lambda: self._invoke_welcome_action(self._handle_headless_notes_action, close_after_action)
+        )
+        widget.dismiss_onboarding_requested.connect(
+            lambda: self._handle_runtime_onboarding_dismiss_action(close_after_action=close_after_action)
+        )
+        widget.complete_onboarding_requested.connect(
+            lambda: self._handle_runtime_onboarding_complete_action(close_after_action=close_after_action)
+        )
+
+    def _invoke_welcome_action(
+        self,
+        action: Callable[[], None],
+        close_after_action: Callable[[], None] | None = None,
+    ) -> None:
+        if close_after_action is not None:
+            close_after_action()
+        action()
+
+    def _handle_welcome_project_selected(
+        self,
+        project_path: str,
+        close_after_action: Callable[[], None] | None = None,
+    ) -> None:
+        opened = self._open_project_by_path(project_path)
+        if opened and close_after_action is not None:
+            close_after_action()
+
+    def _handle_runtime_onboarding_dismiss_action(
+        self,
+        *,
+        close_after_action: Callable[[], None] | None = None,
+    ) -> None:
+        self._persist_runtime_onboarding_state(dismissed=True, completed=False)
+        if close_after_action is not None:
+            close_after_action()
+
+    def _handle_runtime_onboarding_complete_action(
+        self,
+        *,
+        close_after_action: Callable[[], None] | None = None,
+    ) -> None:
+        self._persist_runtime_onboarding_state(dismissed=False, completed=True)
+        if close_after_action is not None:
+            close_after_action()
+
+    def _handle_runtime_onboarding_action(self) -> None:
+        dialog = QDialog(self)
+        dialog.setObjectName("shell.runtimeOnboardingDialog")
+        dialog.setWindowTitle("Runtime Onboarding")
+        dialog.resize(760, 720)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        onboarding_widget = WelcomeWidget(dialog)
+        self._connect_welcome_widget_actions(onboarding_widget, close_after_action=dialog.accept)
+        self._refresh_welcome_widget_state(onboarding_widget, force_show_onboarding=True)
+        layout.addWidget(onboarding_widget)
+        dialog.exec_()
 
     def set_project_placeholder(self, project_text: str) -> None:
         """Extension seam for T09/T10 project-shell wiring."""
@@ -2012,6 +2251,18 @@ class MainWindow(QMainWindow):
             self._problems_panel.set_diagnostics(import_diags)
             self._update_problems_tab_title(self._problems_panel.problem_count())
             self._focus_problems_tab()
+            self._latest_import_issue_report = build_import_issue_report(
+                project_root,
+                diagnostics,
+                known_runtime_modules=known_modules,
+                allow_runtime_import_probe=True,
+            )
+            self._latest_runtime_issue_report = self._build_runtime_issue_report()
+            if self._latest_import_issue_report.issues:
+                self._open_runtime_center_dialog(
+                    title="Import Analysis",
+                    report=self._latest_import_issue_report,
+                )
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Analyze Imports", f"Import analysis failed: {exc}")
@@ -2151,11 +2402,7 @@ class MainWindow(QMainWindow):
     def _refresh_welcome_project_list(self) -> None:
         if self._welcome_widget is None:
             return
-        try:
-            recent_paths = load_recent_projects(state_root=self._state_root)
-        except Exception:
-            recent_paths = []
-        self._welcome_widget.set_recent_projects(recent_paths)
+        self._refresh_welcome_widget_state(self._welcome_widget)
 
     def _show_welcome_screen(self) -> None:
         """Switch the center stack back to the welcome page."""
@@ -2185,6 +2432,13 @@ class MainWindow(QMainWindow):
         if previous_project_root is not None:
             self._persist_session_state(project_root=previous_project_root)
         self._loaded_project = loaded_project
+        self._latest_health_report = None
+        self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
+        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
+        self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
+        self._latest_run_issue_ids = ()
+        self._latest_runtime_issue_report = self._build_runtime_issue_report()
+        self._active_named_run_config_name = None
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._refresh_python_tooling_status()
@@ -2781,6 +3035,95 @@ class MainWindow(QMainWindow):
         if save_all_action is not None:
             save_all_action.setEnabled(has_dirty_tabs)
 
+    def _resolve_active_named_run_config(self) -> RunConfiguration | None:
+        loaded_project = self._loaded_project
+        active_name = self._active_named_run_config_name
+        if loaded_project is None or not active_name:
+            return None
+        configs = self._run_config_controller.load_configs(loaded_project)
+        for config in configs:
+            if config.name == active_name:
+                return config
+        self._active_named_run_config_name = None
+        return None
+
+    def _update_run_target_summary(self) -> None:
+        toolbar = self._toolbar
+        if toolbar is None or not hasattr(toolbar, "set_target_summary"):
+            return
+        active_tab = self._editor_manager.active_tab()
+        active_file_label = "open a Python file"
+        active_file_detail = "F5 Run needs an open Python file."
+        if active_tab is not None:
+            active_file_path = Path(active_tab.file_path).expanduser().resolve()
+            if active_file_path.suffix.lower() == ".py":
+                active_file_label = active_file_path.name
+                active_file_detail = str(active_file_path)
+                if active_tab.is_dirty:
+                    active_file_detail += " (dirty buffer runs through a transient file)"
+            else:
+                active_file_label = f"{active_file_path.name} (not Python)"
+                active_file_detail = f"{active_file_path}\nOpen a Python file before using F5 Run."
+
+        project_label = "open project"
+        project_detail = "Shift+F5 Run Project needs an open project."
+        if self._loaded_project is not None:
+            project_label = self._loaded_project.metadata.default_entry
+            project_detail = (
+                f"Project root: {self._loaded_project.project_root}\n"
+                f"Default entry: {self._loaded_project.metadata.default_entry}\n"
+                f"Project working directory: {self._loaded_project.metadata.working_directory or '.'}"
+            )
+
+        active_config = self._resolve_active_named_run_config()
+        config_label = "none"
+        config_detail = "No named run configuration is currently selected."
+        if active_config is not None:
+            config_label = active_config.name
+            config_detail = (
+                f"Name: {active_config.name}\n"
+                f"Entry: {active_config.entry_file}\n"
+                f"Working directory: {active_config.working_directory or '.'}\n"
+                f"Env overrides: {env_overrides_to_text(active_config.env_overrides) or '(none)'}"
+            )
+
+        summary_text = f"Targets: F5 {active_file_label} | Shift+F5 {project_label} | Config {config_label}"
+        summary_tooltip = (
+            f"F5 Run: {active_file_detail}\n\n"
+            f"Shift+F5 Run Project:\n{project_detail}\n\n"
+            f"Active named configuration:\n{config_detail}\n\n"
+            "Click to manage run configurations."
+        )
+        toolbar.set_target_summary(
+            summary_text,
+            tooltip=summary_tooltip,
+            enabled=self._loaded_project is not None,
+        )
+
+    def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
+        report = RuntimeIssueReport(workflow="run", issues=list(issues))
+        self._open_runtime_center_dialog(title=title, report=report)
+        self._append_console_line(summary, stream="system")
+
+    def _ensure_run_preflight_ready(
+        self,
+        *,
+        title: str,
+        entry_file: str,
+        working_directory: str | None = None,
+        config_name: str | None = None,
+    ) -> bool:
+        result = build_run_preflight(
+            loaded_project=self._loaded_project,
+            entry_file=entry_file,
+            working_directory=working_directory,
+            config_name=config_name,
+        )
+        if result.is_ready:
+            return True
+        self._show_run_preflight_result(title, result.summary, result.issues)
+        return False
+
     def _handle_run_action(self) -> bool:
         return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
@@ -2791,11 +3134,15 @@ class MainWindow(QMainWindow):
         entry_file = self._resolve_project_entry_for_project_run()
         if entry_file is None:
             return False
+        if not self._ensure_run_preflight_ready(title="Run Project", entry_file=entry_file):
+            return False
         return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=entry_file)
 
     def _handle_debug_project_action(self) -> bool:
         entry_file = self._resolve_project_entry_for_project_run()
         if entry_file is None:
+            return False
+        if not self._ensure_run_preflight_ready(title="Debug Project", entry_file=entry_file):
             return False
         started = self._start_session(
             mode=constants.RUN_MODE_PYTHON_DEBUG,
@@ -2876,17 +3223,7 @@ class MainWindow(QMainWindow):
         if loaded_project is None:
             QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return None
-        project_root = Path(loaded_project.project_root).expanduser().resolve()
-        default_entry = loaded_project.metadata.default_entry
-        default_entry_path = (project_root / default_entry).resolve()
-        if default_entry_path.exists() and default_entry_path.is_file():
-            return default_entry
-        replacement_entry = self._prompt_for_project_entry_replacement(default_entry)
-        if replacement_entry is None:
-            return None
-        if not self._set_project_entry_point(replacement_entry):
-            return None
-        return replacement_entry
+        return loaded_project.metadata.default_entry
 
     def _prompt_for_project_entry_replacement(self, missing_entry: str) -> str | None:
         loaded_project = self._loaded_project
@@ -3110,6 +3447,15 @@ class MainWindow(QMainWindow):
         if selected_config is None:
             QMessageBox.warning(self, "Run With Configuration", "Selected configuration could not be resolved.")
             return
+        self._active_named_run_config_name = selected_config.name
+        self._refresh_run_action_states()
+        if not self._ensure_run_preflight_ready(
+            title=f"Run Configuration: {selected_config.name}",
+            entry_file=selected_config.entry_file,
+            working_directory=selected_config.working_directory,
+            config_name=selected_config.name,
+        ):
+            return
         self._start_session(
             mode=constants.RUN_MODE_PYTHON_SCRIPT,
             entry_file=selected_config.entry_file,
@@ -3167,7 +3513,10 @@ class MainWindow(QMainWindow):
                 except AppValidationError as exc:
                     QMessageBox.warning(self, "Manage Run Configurations", str(exc))
                     return
+                if self._active_named_run_config_name == selected_config.name:
+                    self._active_named_run_config_name = None
                 self._reload_current_project()
+                self._refresh_run_action_states()
                 QMessageBox.information(
                     self,
                     "Manage Run Configurations",
@@ -3244,6 +3593,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Manage Run Configurations", str(exc))
             return
         self._reload_current_project()
+        self._active_named_run_config_name = updated_config.name
+        self._refresh_run_action_states()
         QMessageBox.information(
             self,
             "Manage Run Configurations",
@@ -4230,16 +4581,8 @@ class MainWindow(QMainWindow):
 
         def on_success(report) -> None:  # type: ignore[no-untyped-def]
             self._latest_health_report = report
-            failed_checks = [check for check in report.checks if not check.is_ok]
-            summary_lines = [
-                f"{'OK' if check.is_ok else 'FAIL'} - {check.check_id}: {check.message}"
-                for check in report.checks
-            ]
-            summary_text = "\n".join(summary_lines)
-            if failed_checks:
-                QMessageBox.warning(self, "Project health check", summary_text)
-            else:
-                QMessageBox.information(self, "Project health check", summary_text)
+            self._latest_runtime_issue_report = self._build_runtime_issue_report()
+            self._open_runtime_center_dialog(title="Project Health Check")
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Project health check", f"Health check failed: {exc}")
@@ -4254,23 +4597,45 @@ class MainWindow(QMainWindow):
         state_root = self._state_root
         latest_run_log_path = self._resolve_latest_run_log_path()
         latest_report = self._latest_health_report
+        startup_report = self._startup_report
+        latest_import_issue_report = self._latest_import_issue_report
+        latest_run_issue_report = self._latest_run_issue_report
+        latest_package_issue_report = self._latest_package_issue_report
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             report = latest_report
             if report is None:
                 report = run_project_health_check(project_root, state_root=state_root)
+            reports_for_bundle = [
+                build_startup_issue_report(startup_report)
+                if startup_report is not None
+                else RuntimeIssueReport(workflow="startup", issues=[]),
+                build_project_health_issue_report(report),
+            ]
+            if latest_import_issue_report.issues:
+                reports_for_bundle.append(latest_import_issue_report)
+            if latest_run_issue_report.issues:
+                reports_for_bundle.append(latest_run_issue_report)
+            if latest_package_issue_report.issues:
+                reports_for_bundle.append(latest_package_issue_report)
+            runtime_issue_report = merge_runtime_issue_reports(
+                *reports_for_bundle,
+                workflow="runtime_center",
+            )
             bundle_path = build_support_bundle(
                 project_root,
                 diagnostics_report=report,
+                runtime_issue_report=runtime_issue_report,
                 state_root=state_root,
                 destination_dir=project_root,
                 last_run_log_path=latest_run_log_path,
             )
-            return (report, bundle_path)
+            return (report, runtime_issue_report, bundle_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            report, bundle_path = payload
+            report, runtime_issue_report, bundle_path = payload
             self._latest_health_report = report
+            self._latest_runtime_issue_report = runtime_issue_report
             QMessageBox.information(self, "Support bundle created", f"Bundle written to:\n{bundle_path}")
 
         def on_error(exc: Exception) -> None:
@@ -4288,6 +4653,23 @@ class MainWindow(QMainWindow):
         output_dir = choose_existing_directory(self, "Choose Package Output Folder", str(Path.home()))
         if not output_dir:
             return
+        preflight_result = build_package_preflight(
+            project_root=project_root,
+            project_name=project_name,
+            entry_file=entry_file,
+            output_dir=output_dir,
+        )
+        if not preflight_result.is_ready:
+            self._latest_package_issue_report = RuntimeIssueReport(
+                workflow="package",
+                issues=list(preflight_result.issues),
+            )
+            self._latest_runtime_issue_report = self._build_runtime_issue_report()
+            self._open_runtime_center_dialog(
+                title="Packaging Preflight",
+                report=self._latest_package_issue_report,
+            )
+            return
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return package_project(
@@ -4299,18 +4681,76 @@ class MainWindow(QMainWindow):
 
         def on_success(result) -> None:  # type: ignore[no-untyped-def]
             if result.success:
+                self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
+                self._latest_runtime_issue_report = self._build_runtime_issue_report()
                 QMessageBox.information(
                     self,
                     "Package created",
                     f"Project packaged to:\n{result.output_path}\n\n"
-                    f"The .desktop file inside can be placed on ~/Desktop/ or\n"
+                    f"Created artifacts:\n"
+                    f"- {result.desktop_name}\n"
+                    f"- {result.project_folder_name}/ with your packaged source files\n\n"
+                    f"Place the .desktop file on ~/Desktop/ or in\n"
                     f"~/.local/share/applications/ for a launcher shortcut.",
                 )
             else:
-                QMessageBox.warning(self, "Packaging failed", f"Packaging error:\n{result.error}")
+                self._latest_package_issue_report = RuntimeIssueReport(
+                    workflow="package",
+                    issues=[
+                        RuntimeIssue(
+                            issue_id="package.export_failed",
+                            workflow="package",
+                            severity="blocking",
+                            title="Packaging failed",
+                            summary=result.error or "Packaging failed unexpectedly.",
+                            why_it_happened=(
+                                "The export step encountered a filesystem or packaging problem after the initial preflight checks."
+                            ),
+                            next_steps=[
+                                "Review the packaging error details.",
+                                "Choose a different output location if the destination may be restricted or stale.",
+                                "Re-run packaging after fixing the reported issue.",
+                            ],
+                            help_topic="packaging_backup",
+                            evidence={
+                                "output_path": result.output_path,
+                                "desktop_name": result.desktop_name,
+                            },
+                        )
+                    ],
+                )
+                self._latest_runtime_issue_report = self._build_runtime_issue_report()
+                self._open_runtime_center_dialog(
+                    title="Packaging Failed",
+                    report=self._latest_package_issue_report,
+                )
 
         def on_error(exc: Exception) -> None:
-            QMessageBox.warning(self, "Packaging failed", f"Unexpected error during packaging:\n{exc}")
+            self._latest_package_issue_report = RuntimeIssueReport(
+                workflow="package",
+                issues=[
+                    RuntimeIssue(
+                        issue_id="package.export_exception",
+                        workflow="package",
+                        severity="blocking",
+                        title="Packaging failed unexpectedly",
+                        summary=str(exc),
+                        why_it_happened="The packaging workflow raised an unexpected exception before it could finish cleanly.",
+                        next_steps=[
+                            "Review the error details and retry packaging.",
+                            "Choose a different output location if the destination may be restricted.",
+                            "Generate a support bundle if the error persists.",
+                        ],
+                        help_topic="packaging_backup",
+                        evidence={"project_root": project_root, "output_dir": output_dir},
+                    )
+                ],
+            )
+            self._latest_runtime_issue_report = self._build_runtime_issue_report()
+            self._open_runtime_center_dialog(
+                title="Packaging Failed",
+                report=self._latest_package_issue_report,
+            )
 
         self._background_tasks.run(key="package_project", task=task, on_success=on_success, on_error=on_error)
 
@@ -4377,6 +4817,7 @@ class MainWindow(QMainWindow):
             exception_settings_action.setEnabled(
                 self._loaded_project is not None and not self._run_service.supervisor.is_running()
             )
+        self._update_run_target_summary()
 
     def _has_active_python_file(self) -> bool:
         active_tab = self._editor_manager.active_tab()
@@ -4574,6 +5015,17 @@ class MainWindow(QMainWindow):
     def _update_problems_from_output(self) -> list[ProblemEntry]:
         output_text = self._active_run_output_tail.text()
         problems = parse_traceback_problems(output_text)
+        run_issues = explain_runtime_message(output_text, workflow="run")
+        issue_ids = tuple(issue.issue_id for issue in run_issues)
+        if issue_ids != self._latest_run_issue_ids and run_issues:
+            summaries = "; ".join(issue.title for issue in run_issues)
+            self._append_console_line(
+                f"[system] Runtime explanation available: {summaries}. Open Runtime Center for details.",
+                stream="system",
+            )
+        self._latest_run_issue_ids = issue_ids
+        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=run_issues)
+        self._latest_runtime_issue_report = self._build_runtime_issue_report()
         self._set_problems(problems)
         return problems
 
@@ -4672,6 +5124,9 @@ class MainWindow(QMainWindow):
     def _clear_problems(self) -> None:
         self._stored_lint_diagnostics.clear()
         self._stored_runtime_problems = []
+        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
+        self._latest_run_issue_ids = ()
+        self._latest_runtime_issue_report = self._build_runtime_issue_report()
         if self._problems_panel is not None:
             self._problems_panel.clear()
             self._update_problems_tab_title(0)
@@ -4970,9 +5425,7 @@ class MainWindow(QMainWindow):
 
         # Page 0: Welcome screen
         self._welcome_widget = WelcomeWidget(self._center_stack)
-        self._welcome_widget.new_project_requested.connect(self._handle_new_project_action)
-        self._welcome_widget.open_project_requested.connect(self._handle_open_project_action)
-        self._welcome_widget.project_selected.connect(self._open_project_by_path)
+        self._connect_welcome_widget_actions(self._welcome_widget)
         self._center_stack.addWidget(self._welcome_widget)
 
         # Page 1: Editor area (find/replace + tabs)

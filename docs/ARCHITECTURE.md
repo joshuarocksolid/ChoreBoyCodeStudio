@@ -664,6 +664,7 @@ Key shell responsibilities include:
 * split-pane layout persistence and reset behavior
 * project-tree context action wiring
 * bottom-pane composition (console, Python console, problems, debug inspector, run log)
+* runtime/onboarding presentation such as welcome surfaces, status summaries, drill-down actions, and help entry points
 * owning the worker/controller graph without becoming the implementation home for each workflow
 
 ## 12.4 `editors`
@@ -742,7 +743,8 @@ Creates new projects from curated starter templates.
 
 ## 12.10 `support`
 
-Diagnostics, health checks, report bundles, and other support workflows.
+Diagnostics, health checks, runtime explanation models, report bundles, preflight checks,
+and other support workflows.
 
 ## 12.11 `plugins`
 
@@ -1295,19 +1297,79 @@ Example projects are only accessible through `Help > Load Example Project...`. T
 
 At editor startup, run a lightweight compatibility probe.
 
-Suggested checks:
+Current startup checks should stay small, deterministic, and support-oriented. The
+baseline probe covers:
 
 * AppRun available
 * PySide2 importable
 * FreeCAD importable
-* QtUiTools available
 * writable global settings path
+* writable global log path
 * writable temp path
-* optional vendored package availability
+* vendored Python tooling runtime availability
 
 The probe should generate a user-visible compatibility summary.
 
 This is especially important because environment assumptions are fragile in constrained systems.
+
+---
+
+## 19.1 Runtime explanation and onboarding layer
+
+Capability data is only useful if the editor can explain it.
+
+The shipped architecture should treat runtime explanation as a first-class layer rather
+than scattered strings in status bars, message boxes, and docs.
+
+### 19.1.1 Explanation sources of truth
+
+Runtime/onboarding explanation should be built from structured facts, not ad-hoc UI copy:
+
+* startup capability probe results
+* project health checks
+* runtime module inventory / importability probes
+* run-target and run-configuration metadata
+* packaging/export preflight results
+
+### 19.1.2 Ownership boundary
+
+Use a clear split:
+
+* `support` owns machine-readable explanation models, issue classification, and preflight/report building
+* `shell` owns summaries, drill-down presentation, quick actions, and welcome/help entry points
+* `ui/help` and the printed manual own durable teaching content keyed to the same explanation topics
+
+### 19.1.3 Progressive disclosure rule
+
+The UX should follow three layers:
+
+* compact status summaries for everyday awareness
+* a dedicated drill-down surface for runtime/project explanation
+* deeper help/manual content for concepts and workflows
+
+This prevents the status bar from becoming noisy while still keeping supportable detail one click away.
+
+### 19.1.4 Safety and performance rules
+
+Runtime explanation must respect ChoreBoy constraints:
+
+* never require terminal access in user-facing recovery steps
+* never execute arbitrary user project code in the editor process to explain a problem
+* keep startup probes lightweight; deeper checks run in background or on demand
+* preserve structured issue IDs/evidence so support bundles and UI surfaces describe the same facts
+
+### 19.1.5 Run/package preflight rule
+
+For run and packaging workflows, explanation should happen before expensive or failure-prone
+actions when the blocker is already knowable from editor-side state. Typical examples include:
+
+* missing or invalid run target
+* invalid run-configuration metadata
+* package export path overlap
+* excluded or missing packaged entry file
+
+These checks should be treated as deterministic editor-side preflight, not delayed until
+after a runner or packaging attempt fails.
 
 ---
 

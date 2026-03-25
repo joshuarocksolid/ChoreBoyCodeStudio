@@ -109,3 +109,19 @@ def test_show_shortcuts_uses_help_markdown_dialog(monkeypatch: pytest.MonkeyPatc
     assert shown
     assert shown[0][0] == "Keyboard Shortcuts"
     assert "Ctrl+Shift+Y" in shown[0][1]
+
+
+def test_show_packaging_backup_uses_help_file_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
+    controller = _build_controller()
+    shown: list[tuple[str, str]] = []
+    parent = QWidget()
+
+    monkeypatch.setattr(
+        help_controller_module,
+        "show_help_file",
+        lambda title, file_name, _tokens, parent=None: shown.append((title, file_name)),
+    )
+
+    controller.show_packaging_backup(parent=parent)
+
+    assert shown == [("Packaging, Sharing, and Backup", "packaging_backup.md")]

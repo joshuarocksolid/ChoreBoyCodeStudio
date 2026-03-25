@@ -1994,3 +1994,157 @@ repo's test/runtime/tooling truth explicit.
 - Depends on: `M01`, `M02`, `M03`, `M04`, `M05`, `M06`, `M07`
 - Done when: the repo contains a repeatable validation gate covering architecture-focused automated suites plus light/dark manual confirmation for the touched shell/editor surfaces.
 
+---
+
+## 22) Phase N — Better onboarding and runtime explanation
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase turns section 9 of `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md` into an
+explicit implementation track. The goal is to make the editor unusually clear about
+its constrained runtime, active run target, recovery paths, and packaging/export
+behavior without requiring terminal knowledge or trial-and-error.
+
+### N01 — Contract and acceptance cutover for runtime explanation
+- Status: `TODO`
+- Objective: document the runtime-onboarding architecture, backlog slices, and acceptance bar before behavior changes land.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `app/ui/help/getting_started.md`
+  - `app/ui/help/headless_notes.md`
+  - `docs/manual/chapters/01_quick_start.md`
+  - `docs/manual/chapters/10_troubleshooting.md`
+  - `docs/manual/chapters/11_shortcuts.md`
+  - `docs/manual/chapters/12_appendix_limits_and_quickref.md`
+- Automated test layer: `unit` (docs-adjacent contract tests land in follow-on slices, not here)
+- Validation method: doc review plus subsequent slices explicitly linking to `AT-73` through `AT-80`
+- Acceptance linkage: `AT-73`, `AT-74`, `AT-75`, `AT-76`, `AT-77`, `AT-78`, `AT-79`, `AT-80`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: runtime-explanation ownership, rollout slices, and acceptance scenarios are explicit, and user-facing onboarding copy no longer contradicts shipped shortcuts or startup wording.
+
+### N02 — Structured runtime explanation models and preflight core
+- Status: `TODO`
+- Objective: introduce machine-readable explanation models, issue classification, and editor-side preflight rules on top of existing probes/diagnostics.
+- Primary files:
+  - `app/core/models.py`
+  - `app/support/diagnostics.py`
+  - `app/support/runtime_explainer.py`
+  - `app/support/preflight.py`
+  - `tests/unit/support/test_runtime_explainer.py`
+  - `tests/unit/support/test_preflight.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/support/test_runtime_explainer.py tests/unit/support/test_preflight.py`
+- Acceptance linkage: `AT-73`, `AT-76`, `AT-77`, `AT-78`, `AT-79`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N01`
+- Done when: the same issue/preflight objects can feed status summaries, drill-down UI, workflow guards, and support-bundle artifacts without duplicated rule logic.
+
+### N03 — Runtime Center shell surface and status-bar drill-down
+- Status: `TODO`
+- Objective: replace terse startup/health summaries with a reusable drill-down surface for runtime and project explanation.
+- Primary files:
+  - `app/shell/status_bar.py`
+  - `app/shell/main_window.py`
+  - `app/shell/help_controller.py`
+  - `app/shell/runtime_center_dialog.py`
+  - `tests/unit/shell/test_runtime_center_dialog.py`
+  - `tests/integration/shell/test_runtime_center_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_runtime_center_dialog.py tests/integration/shell/test_runtime_center_integration.py`
+- Acceptance linkage: `AT-73`, `AT-79`, `AT-80`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N02`
+- Done when: startup status, project health, and support-oriented next steps are accessible through one structured runtime surface instead of scattered one-shot message boxes.
+
+### N04 — First-run checklist and welcome/help integration
+- Status: `TODO`
+- Objective: make onboarding re-openable and discoverable even when recent projects auto-load.
+- Primary files:
+  - `app/shell/welcome_widget.py`
+  - `app/shell/main_window.py`
+  - `app/ui/help/getting_started.md`
+  - `app/ui/help/headless_notes.md`
+  - `tests/integration/shell/test_welcome_runtime_onboarding.py`
+- Automated test layer: `integration`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/shell/test_welcome_runtime_onboarding.py` plus manual light/dark walkthrough
+- Acceptance linkage: `AT-74`, `AT-80`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N01`, `N03`
+- Done when: first-run guidance remains easy to reach from welcome and Help surfaces, and recent-project auto-load no longer hides onboarding.
+
+### N05 — Run-target clarity and run preflight
+- Status: `TODO`
+- Objective: make active file vs project vs named configuration explicit before execution and catch obvious non-code blockers without launching the runner.
+- Primary files:
+  - `app/project/run_configs.py`
+  - `app/shell/run_config_controller.py`
+  - `app/shell/main_window.py`
+  - `app/shell/toolbar.py`
+  - `tests/unit/project/test_run_configs.py`
+  - `tests/integration/shell/test_run_preflight_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_run_configs.py tests/integration/shell/test_run_preflight_integration.py`
+- Acceptance linkage: `AT-75`, `AT-80`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N02`
+- Done when: users can see the active run target/configuration before execution, and invalid run metadata fails through clear preflight messaging rather than runner trial-and-error.
+
+### N06 — Contextual import, headless, and packaging explainers
+- Status: `TODO`
+- Objective: attach deterministic ChoreBoy-aware explanations to the common failure modes called out in the strategy analysis.
+- Primary files:
+  - `app/intelligence/diagnostics_service.py`
+  - `app/bootstrap/runtime_module_probe.py`
+  - `app/intelligence/runtime_import_probe.py`
+  - `app/packaging/packager.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/intelligence/test_diagnostics_service.py`
+  - `tests/unit/packaging/test_packager.py`
+  - `tests/integration/shell/test_runtime_explanations_integration.py`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_diagnostics_service.py tests/unit/packaging/test_packager.py tests/integration/shell/test_runtime_explanations_integration.py tests/runtime_parity/bootstrap/`
+- Acceptance linkage: `AT-76`, `AT-77`, `AT-78`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N02`, `N03`, `N05`
+- Done when: common import/headless/package failures yield consistent, actionable guidance without requiring terminal access or arbitrary code execution in the editor.
+
+### N07 — Support-bundle explanation snapshot and help-source cleanup
+- Status: `TODO`
+- Objective: package the same runtime explanation facts into support artifacts and reduce duplicated help/shortcut sources.
+- Primary files:
+  - `app/support/support_bundle.py`
+  - `app/ui/help/getting_started.md`
+  - `app/ui/help/headless_notes.md`
+  - `app/ui/help/shortcuts.md`
+  - `app/shell/help_controller.py`
+  - `docs/manual/chapters/09_packaging_backup.md`
+  - `tests/integration/support/test_support_bundle.py`
+- Automated test layer: `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/support/test_support_bundle.py`
+- Acceptance linkage: `AT-79`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N03`, `N04`, `N05`, `N06`
+- Done when: support bundles include machine-readable runtime explanation data and help/manual/runtime-center wording no longer drifts from live shortcuts or workflow behavior.
+
+### N08 — Runtime-parity, theme, and responsiveness hardening
+- Status: `TODO`
+- Objective: validate that the richer onboarding/runtime surfaces remain fast, theme-safe, and truthful on AppRun-sensitive paths.
+- Primary files:
+  - `app/bootstrap/capability_probe.py`
+  - `app/bootstrap/runtime_module_probe.py`
+  - `app/intelligence/runtime_import_probe.py`
+  - `app/shell/status_bar.py`
+  - `app/shell/welcome_widget.py`
+  - `tests/integration/performance/test_runtime_onboarding_performance.py`
+  - `tests/runtime_parity/support/test_runtime_explanation_runtime.py`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_runtime_onboarding_performance.py tests/runtime_parity/support/test_runtime_explanation_runtime.py` plus manual light/dark validation
+- Acceptance linkage: `AT-73`, `AT-74`, `AT-75`, `AT-76`, `AT-77`, `AT-78`, `AT-79`, `AT-80`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `N03`, `N04`, `N05`, `N06`, `N07`
+- Done when: the runtime-explanation feature set has passing automated evidence, theme-safe manual validation, and no noticeable regression in startup or routine shell responsiveness.
+

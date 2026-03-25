@@ -7,7 +7,8 @@ Use this chapter when something does not work as expected.
 1. Read the **Run Log** tab.
 2. Check the **Problems** panel.
 3. Look at startup status in the status bar.
-4. Run `Tools > Project Health Check`.
+4. Open `Tools > Runtime Center...`.
+5. Run `Tools > Project Health Check` if you need fresh project-specific checks.
 
 ![Figure 14 — Tools menu with Project Health Check command](../screenshots/manual_14_project_health_check.png)
 
@@ -40,12 +41,12 @@ Fix:
 
 ## Problem: entry file is missing
 
-If entry file was deleted or moved, Code Studio can prompt for replacement.
+If the default entry file or a named run configuration points at a file that no longer exists, Code Studio now blocks the launch before the runner starts.
 
 Fix:
 
-1. Choose a valid `.py` replacement file in prompt.
-2. Save updated project entry.
+1. Read the run preflight explanation in Runtime Center.
+2. Update the project entry or run configuration to point at a real `.py` file.
 3. Run project again.
 
 ## Problem: debug does not pause at breakpoints
@@ -93,16 +94,17 @@ Your script hit a GUI-only FreeCAD path in a headless run context.
 Fix:
 
 1. Open `Tools > FreeCAD Headless Notes`.
-2. Use headless-safe API path where possible.
-3. Retest.
+2. Open `Tools > Runtime Center...` if you want the structured explanation and next steps in one place.
+3. Use headless-safe API path where possible.
+4. Retest.
 
 ## Problem: uncertain environment state
 
 Fix:
 
 1. Run `Tools > Project Health Check`.
-2. Read each failed check line.
-3. Apply suggested correction.
+2. Review the issues in Runtime Center.
+3. Apply the suggested correction.
 4. Re-run the check.
 
 ## Generate support bundle
@@ -112,6 +114,8 @@ When you need help from another person:
 1. Open project.
 2. Use `Tools > Generate Support Bundle`.
 3. Share generated bundle and project folder.
+
+The support bundle now includes both `project_health.json` and a runtime explanation snapshot so another person can see the same issue summaries you saw in the app.
 
 ![Figure 15 — Tools menu with Generate Support Bundle command](../screenshots/manual_15_support_bundle.png)
 

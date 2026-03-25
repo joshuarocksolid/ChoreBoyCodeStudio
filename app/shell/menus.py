@@ -93,12 +93,14 @@ class MenuCallbacks:
     on_open_plugin_manager: Callable[[], object] | None = None
     on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_refresh_runtime_modules: Callable[[], object] | None = None
+    on_runtime_center: Callable[[], object] | None = None
     on_project_health_check: Callable[[], object] | None = None
     on_generate_support_bundle: Callable[[], object] | None = None
     on_headless_notes: Callable[[], object] | None = None
     on_help_load_example_project: Callable[[], object] | None = None
     on_help_open_app_log: Callable[[], object] | None = None
     on_help_open_log_folder: Callable[[], object] | None = None
+    on_help_runtime_onboarding: Callable[[], object] | None = None
     on_help_getting_started: Callable[[], object] | None = None
     on_help_shortcuts: Callable[[], object] | None = None
     on_help_about: Callable[[], object] | None = None
@@ -800,6 +802,14 @@ def build_menu_stubs(
     _register_menu_action(
         tools_menu,
         actions,
+        "shell.action.tools.runtimeCenter",
+        "Runtime Center...",
+        enabled=True,
+        callback=callback_registry.on_runtime_center,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
         "shell.action.tools.projectHealthCheck",
         "Project Health Check",
         enabled=True,
@@ -851,6 +861,14 @@ def build_menu_stubs(
         callback=callback_registry.on_help_open_log_folder,
     )
     help_menu.addSeparator()
+    _register_menu_action(
+        help_menu,
+        actions,
+        "shell.action.help.runtimeOnboarding",
+        "Runtime Onboarding...",
+        enabled=True,
+        callback=callback_registry.on_help_runtime_onboarding,
+    )
     _register_menu_action(
         help_menu,
         actions,

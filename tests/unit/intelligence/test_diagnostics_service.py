@@ -13,8 +13,10 @@ from app.intelligence import diagnostics_service as diagnostics_service_module
 from app.intelligence.diagnostics_service import (
     DiagnosticSeverity,
     analyze_python_file,
+    explain_unresolved_import,
     find_unresolved_imports,
 )
+from app.intelligence.runtime_import_probe import RuntimeImportProbeResult
 
 pytestmark = pytest.mark.unit
 
@@ -189,6 +191,68 @@ def test_find_unresolved_imports_uses_source_overrides(tmp_path: Path) -> None:
     diagnostics_buffer = find_unresolved_imports(str(project_root), source_overrides=overrides)
     assert len(diagnostics_buffer) == 1
     assert "nonexistent_module" in diagnostics_buffer[0].message
+
+
+def test_explain_unresolved_import_classifies_project_module_missing(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "app"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+
+    explanation = explain_unresolved_import(str(project_root), "app.util")
+
+    assert explanation.kind == "project_module_missing"
+    assert "project tree" in explanation.why_it_happened.lower()
+
+
+def test_explain_unresolved_import_classifies_vendored_dependency_missing(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    explanation = explain_unresolved_import(str(project_root), "requests")
+
+    assert explanation.kind == "vendored_dependency_missing"
+    assert "vendor/" in explanation.next_steps[0]
+
+
+def test_explain_unresolved_import_classifies_runtime_module_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setattr(
+        diagnostics_service_module,
+        "probe_runtime_module_importability",
+        lambda module_name: RuntimeImportProbeResult(
+            module_name=module_name,
+            runtime_path="/opt/freecad/AppRun",
+            is_importable=False,
+            failure_reason="import_error",
+            detail="No module named FreeCADGui",
+        ),
+    )
+
+    explanation = explain_unresolved_import(
+        str(project_root),
+        "FreeCADGui",
+        allow_runtime_import_probe=True,
+    )
+
+    assert explanation.kind == "runtime_module_unavailable"
+    assert explanation.evidence["runtime_probe_reason"] == "import_error"
+
+
+def test_explain_unresolved_import_classifies_compiled_extension_unknown(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "fastmath.so").write_text("binary", encoding="utf-8")
+
+    explanation = explain_unresolved_import(str(project_root), "fastmath")
+
+    assert explanation.kind == "compiled_extension_unknown"
+    assert explanation.evidence["compiled_extension_candidate"] is True
 
 
 # ---------------------------------------------------------------------------

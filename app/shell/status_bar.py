@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from app.core.models import CapabilityProbeReport
+from app.support.runtime_explainer import build_startup_issue_report
 
 if TYPE_CHECKING:
     from PySide2.QtWidgets import QLabel, QMainWindow, QStatusBar
@@ -67,11 +68,13 @@ def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> Sta
             details="All startup capability checks passed.",
         )
 
-    failed_checks = ", ".join(report.failed_check_ids)
+    issue_report = build_startup_issue_report(report)
+    issue_titles = "; ".join(issue.title for issue in issue_report.issues)
+    detail_text = f"{issue_report.total_count} issue(s): {issue_titles}" if issue_titles else "Startup capability checks reported issues."
     return StartupStatusView(
         severity="warning",
         text=f"Startup: Runtime issues ({report.available_count}/{report.total_count} checks)",
-        details=f"Failed checks: {failed_checks}",
+        details=detail_text,
     )
 
 
@@ -197,7 +200,10 @@ class ShellStatusBarController:
         """Update startup status label from the latest probe output."""
         startup_status = map_startup_report_to_status(report)
         self._startup_label.setText(startup_status.text)
-        self._startup_label.setToolTip(startup_status.details)
+        tooltip = startup_status.details
+        if bool(self._startup_label.property("startupInteractive")):
+            tooltip = f"{tooltip}\n\nClick to open Runtime Center."
+        self._startup_label.setToolTip(tooltip)
         self._startup_label.setProperty("startupSeverity", startup_status.severity)  # type: ignore[arg-type]
 
     def set_project_state_text(self, text: str) -> None:
@@ -249,15 +255,29 @@ class ShellStatusBarController:
 def create_shell_status_bar(
     main_window: "QMainWindow",
     startup_report: Optional[CapabilityProbeReport] = None,
+    on_startup_activated: object | None = None,
 ) -> ShellStatusBarController:
     """Create and attach a status bar shell to the given window."""
+    from PySide2 import QtCore, QtGui
     from PySide2.QtWidgets import QLabel, QStatusBar
+
+    class _ClickableLabel(QLabel):
+        clicked = QtCore.Signal()
+
+        def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[name-defined]
+            if event.button() == QtCore.Qt.LeftButton:
+                self.clicked.emit()
+            super().mousePressEvent(event)
 
     status_bar = QStatusBar(main_window)
     status_bar.setObjectName("shell.statusBar")
 
-    startup_label = QLabel(status_bar)
+    startup_label = _ClickableLabel(status_bar)
     startup_label.setObjectName("shell.startupStatusLabel")
+    startup_label.setProperty("startupInteractive", bool(on_startup_activated))  # type: ignore[arg-type]
+    startup_label.setCursor(QtCore.Qt.PointingHandCursor if on_startup_activated else QtCore.Qt.ArrowCursor)
+    if on_startup_activated:
+        startup_label.clicked.connect(on_startup_activated)  # type: ignore[arg-type]
 
     diagnostics_label = QLabel("", status_bar)
     diagnostics_label.setObjectName("shell.diagnosticsStatusLabel")

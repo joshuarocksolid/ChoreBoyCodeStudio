@@ -491,6 +491,16 @@ QToolButton[objectName^="shell.toolbar.btn"]:hover {{
 QToolButton[objectName^="shell.toolbar.btn"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
+QToolButton#shell\\.toolbar\\.btn\\.runTarget {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    padding: 5px 10px;
+}}
+QToolButton#shell\\.toolbar\\.btn\\.runTarget:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
 /* -- Run button (green accent) ------------------------------------------ */
 QToolButton#shell\\.toolbar\\.btn\\.run {{
     background: {"#1B3D1B" if tokens.is_dark else "#E6F4EA"};
@@ -586,6 +596,25 @@ QLabel#shell\\.welcome\\.subtitle {{
     color: {tokens.text_muted};
     padding-bottom: 4px;
 }}
+QWidget#shell\\.welcome\\.onboardingCard {{
+    background: {tokens.panel_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 8px;
+}}
+QLabel#shell\\.welcome\\.onboardingTitle {{
+    font-size: 14px;
+    font-weight: 700;
+    color: {tokens.text_primary};
+}}
+QLabel#shell\\.welcome\\.onboardingRuntimeSummary,
+QLabel#shell\\.welcome\\.onboardingChecklist {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+}}
+QLabel#shell\\.welcome\\.onboardingReminder {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+}}
 QPushButton#shell\\.welcome\\.newProjectBtn,
 QPushButton#shell\\.welcome\\.openProjectBtn {{
     background: {tokens.accent};
@@ -603,6 +632,36 @@ QPushButton#shell\\.welcome\\.openProjectBtn:hover {{
 QPushButton#shell\\.welcome\\.newProjectBtn:pressed,
 QPushButton#shell\\.welcome\\.openProjectBtn:pressed {{
     background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+}}
+QPushButton#shell\\.welcome\\.onboardingPrimaryBtn {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.welcome\\.onboardingPrimaryBtn:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+}}
+QPushButton#shell\\.welcome\\.onboardingActionBtn,
+QPushButton#shell\\.welcome\\.onboardingSecondaryBtn {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 12px;
+    font-size: 12px;
+}}
+QPushButton#shell\\.welcome\\.onboardingActionBtn:hover,
+QPushButton#shell\\.welcome\\.onboardingSecondaryBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.welcome\\.onboardingActionBtn:disabled {{
+    color: {tokens.text_muted};
+    border-color: {tokens.border};
 }}
 QLineEdit#shell\\.welcome\\.searchInput {{
     background: {tokens.panel_bg};
@@ -1063,6 +1122,98 @@ QPushButton#shell\\.helpDialog\\.closeBtn:pressed {{
     background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
 }}
 """
+
+
+def shell_section_runtime_center_dialog(tokens: ShellThemeTokens) -> str:
+    return f"""/* -- Runtime Center dialog ----------------------------------------------- */
+QDialog#shell\\.runtimeCenterDialog {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+}}
+QWidget#shell\\.runtimeCenterDialog\\.header {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.runtimeCenterDialog\\.title {{
+    font-size: 18px;
+    font-weight: 700;
+    color: {tokens.text_primary};
+}}
+QLabel#shell\\.runtimeCenterDialog\\.summary {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+}}
+QListWidget#shell\\.runtimeCenterDialog\\.issueList {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    outline: none;
+    alternate-background-color: {tokens.row_alt_bg};
+    font-size: 12px;
+}}
+QListWidget#shell\\.runtimeCenterDialog\\.issueList::item {{
+    padding: 8px 10px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListWidget#shell\\.runtimeCenterDialog\\.issueList::item:last {{
+    border-bottom: none;
+}}
+QListWidget#shell\\.runtimeCenterDialog\\.issueList::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListWidget#shell\\.runtimeCenterDialog\\.issueList::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTextBrowser#shell\\.runtimeCenterDialog\\.detailBrowser {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+}}
+QWidget#shell\\.runtimeCenterDialog\\.footer {{
+    background: {tokens.panel_bg};
+    border-top: 1px solid {tokens.border};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.helpButton,
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.helpButton:hover,
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.helpButton:pressed,
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.helpButton:disabled {{
+    color: {tokens.text_muted};
+    border-color: {tokens.border};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton:hover {{
+    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
+    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+}}
+"""
+
 
 def settings_section_dialog_and_tabs(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Dialog -------------------------------------------------------------- */

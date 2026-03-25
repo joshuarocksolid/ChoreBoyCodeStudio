@@ -1734,7 +1734,178 @@ Verify that the editor-architecture hardening slice remains reliable, responsive
 
 ---
 
-## 14. Minimum MVP Gate
+## 14. Runtime Onboarding and Explanation Validation
+
+## AT-73 — Runtime Center explains startup and project health clearly
+
+**Purpose:**  
+Verify that runtime readiness and project health are explained through one structured surface instead of terse status-only wording.
+
+**Preconditions:**  
+- runtime explanation surface is implemented
+- a valid project is available
+
+**Steps:**  
+1. Launch the editor and observe the startup status summary.
+2. Open the runtime explanation / health drill-down surface from the status bar or Tools/Help entry point.
+3. Open a valid project and revisit the same surface.
+
+**Expected Result:**  
+- startup readiness can be drilled into without reading logs directly
+- project/runtime checks are shown with understandable summaries and next steps
+- the same surface can be used for startup and project-health understanding
+
+---
+
+## AT-74 — Onboarding stays discoverable after recent-project auto-load
+
+**Purpose:**  
+Verify that onboarding/help entry points remain easy to find even when the welcome screen is skipped by recent-project behavior.
+
+**Preconditions:**  
+- runtime onboarding flow is implemented
+- at least one recent project exists
+
+**Steps:**  
+1. Launch the editor with recent-project auto-load enabled.
+2. Confirm the editor opens the recent project instead of the welcome screen.
+3. Locate the onboarding entry point again from the visible UI.
+4. Open the onboarding/getting-started flow.
+
+**Expected Result:**  
+- onboarding/help is still reachable without hunting through the UI
+- the flow explains next steps for opening, running, diagnosing, and recovering work
+- discoverability does not depend on the welcome screen being visible
+
+---
+
+## AT-75 — Active run target is explicit before execution
+
+**Purpose:**  
+Verify that users can tell whether they are running the active file, project default entry, or a named run configuration before launching code.
+
+**Preconditions:**  
+- run-target clarity surface is implemented
+- a project with at least one alternate run configuration exists
+
+**Steps:**  
+1. Open the project and inspect the visible run-target summary.
+2. Switch between active-file run, project run, and a named run configuration.
+3. Trigger a run preflight failure with an invalid or missing entry file.
+
+**Expected Result:**  
+- the current run target/configuration is visible before execution
+- the summary includes enough context to understand what Run will do
+- invalid run metadata fails through clear preflight messaging rather than an opaque runner failure
+
+---
+
+## AT-76 — Headless/runtime failures produce contextual explanation
+
+**Purpose:**  
+Verify that known ChoreBoy runtime limits are explained in-product when they are encountered.
+
+**Preconditions:**  
+- contextual runtime explainers are implemented
+- a project that triggers a known headless/GUI mismatch is available
+
+**Steps:**  
+1. Run a script that hits a GUI-only FreeCAD path in normal headless execution.
+2. Observe the surfaced explanation in the runtime/help/problem UI.
+3. Open the linked headless guidance content.
+
+**Expected Result:**  
+- the failure is explained as a headless/GUI mismatch, not just raw traceback text
+- the explanation includes actionable next steps
+- the guidance stays within ChoreBoy constraints and does not require terminal access
+
+---
+
+## AT-77 — Import/runtime dependency issues are explained without a terminal
+
+**Purpose:**  
+Verify that unresolved imports and runtime-module mismatches produce clear, ChoreBoy-aware explanations.
+
+**Preconditions:**  
+- import/runtime explainers are implemented
+- a project with at least one missing or unsupported import is available
+
+**Steps:**  
+1. Open the project and inspect diagnostics for the missing/unsupported import.
+2. Open the related runtime explanation.
+3. Compare the explanation with the project layout and any vendored dependency state.
+
+**Expected Result:**  
+- the app distinguishes likely causes such as missing project module, missing vendored dependency, or runtime-unavailable module
+- the explanation uses editor/project language rather than shell instructions
+- the result is understandable without reading low-level probe logs
+
+---
+
+## AT-78 — Packaging preflight explains export blockers before packaging
+
+**Purpose:**  
+Verify that known packaging/export blockers are surfaced before or during the packaging workflow in a supportable way.
+
+**Preconditions:**  
+- packaging preflight is implemented
+- a project that can trigger a known packaging blocker is available
+
+**Steps:**  
+1. Attempt to package a valid project.
+2. Attempt to package a project with a known blocker such as missing entry file or output overlap.
+3. Inspect the packaging explanation/preflight output.
+
+**Expected Result:**  
+- packaging readiness is explained before a confusing export failure when possible
+- common blockers are described in user-facing terms
+- successful packaging still explains what artifact was created and how it should be used on ChoreBoy
+
+---
+
+## AT-79 — Support bundle includes runtime explanation snapshot
+
+**Purpose:**  
+Verify that support artifacts include the same structured runtime explanation data shown in the UI.
+
+**Preconditions:**  
+- support bundle generation is implemented
+- runtime explanation system is implemented
+
+**Steps:**  
+1. Open a project and trigger at least one runtime/onboarding explanation state.
+2. Generate a support bundle.
+3. Inspect the diagnostics payloads inside the archive.
+
+**Expected Result:**  
+- the bundle includes a machine-readable runtime explanation snapshot in addition to existing health/log artifacts
+- the snapshot aligns with the issue summaries shown in the UI
+- a support reviewer can understand the runtime state without reproducing the exact session
+
+---
+
+## AT-80 — Runtime onboarding surfaces stay readable and responsive
+
+**Purpose:**  
+Verify that the richer onboarding/runtime UI remains usable in both themes and does not introduce visible responsiveness regressions.
+
+**Preconditions:**  
+- runtime onboarding surfaces are implemented
+- editor can switch between light and dark themes
+
+**Steps:**  
+1. Open the welcome/onboarding flow, Runtime Center, and run-target explanation surfaces in light mode.
+2. Repeat in dark mode.
+3. Trigger normal background refresh or explanation loading paths.
+
+**Expected Result:**  
+- labels, badges, actions, warnings, and help surfaces remain readable in both themes
+- explanation drill-down feels responsive and does not noticeably freeze the UI
+- cached/live state indicators remain understandable in both themes
+
+---
+
+## 15. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -1757,7 +1928,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 15. Completion Rule
+## 16. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -1771,7 +1942,7 @@ A feature is complete only when:
 
 ---
 
-## 16. Maintenance Rules
+## 17. Maintenance Rules
 
 Update this file when:
 

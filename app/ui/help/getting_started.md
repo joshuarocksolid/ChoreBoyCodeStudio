@@ -13,7 +13,7 @@ For hobby projects, this makes trial and error much safer.
 1. Check startup status.
    Look at the bottom status bar.
    If you see `Startup: Runtime ready (x/y checks)`, you are good to go.
-   If you see `Startup: Runtime issues (x/y checks)`, you can still keep going, but run `Tools > Project Health Check` soon.
+   If you see `Startup: Runtime issues (x/y checks)`, click the status item or open `Tools > Runtime Center...`.
 
 2. Create or open a project.
    - New project: `File > New Project...`
@@ -31,8 +31,9 @@ For hobby projects, this makes trial and error much safer.
    Press `Ctrl+S` or use `File > Save`.
    Get in the habit of saving before each run.
 
-6. Run the project.
-   Press `F5` or use `Run > Run`.
+6. Run your code.
+   Press `F5` to run the active file.
+   Use `Shift+F5` for `Run Project` when you want the project's default entry.
    The run starts in a separate process.
 
 7. Read the output.
@@ -40,7 +41,7 @@ For hobby projects, this makes trial and error much safer.
    This tab shows normal output, errors, and traceback details from your latest run.
 
 8. Stop when needed.
-   If a script keeps running, press `Shift+F5` or use `Run > Stop`.
+   If a script keeps running, press `Shift+F2` or use `Run > Stop`.
 
 9. Fix issues quickly.
    Open the `Problems` tab.
@@ -49,6 +50,14 @@ For hobby projects, this makes trial and error much safer.
 10. Run again.
     Edit, save, run, check `Run Log`, repeat.
     This short cycle is the fastest way to make progress.
+
+## Runtime Onboarding
+
+If you want the short guided checklist again, open:
+
+- `Help > Runtime Onboarding...`
+
+This works even when Code Studio auto-opens your most recent project and skips the Welcome page.
 
 ## Pick a Starter Template
 
@@ -80,10 +89,10 @@ Start with these checks, in this order:
    Look for syntax and runtime issue summaries.
 
 3. Startup status in the bottom bar
-   If runtime checks failed, that can explain import or run errors.
+   If runtime checks failed, open `Runtime Center` for the drill-down explanation.
 
 4. `Tools > Project Health Check`
-   This gives actionable checks for project setup issues.
+   This refreshes project-specific checks and opens the same Runtime Center surface.
 
 5. `Tools > Generate Support Bundle`
    Use this when you need to share diagnostics with someone helping you.
@@ -106,7 +115,8 @@ Open `Tools > FreeCAD Headless Notes` for safe guidance.
 ## Shortcuts to Remember
 
 - `F5` Run
-- `Shift+F5` Stop
+- `Shift+F5` Run Project
+- `Shift+F2` Stop
 - `Ctrl+S` Save
 - `Ctrl+Shift+S` Save All
 - `Ctrl+O` Open Project
