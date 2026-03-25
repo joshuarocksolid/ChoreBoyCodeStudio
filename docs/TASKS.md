@@ -2006,7 +2006,7 @@ its constrained runtime, active run target, recovery paths, and packaging/export
 behavior without requiring terminal knowledge or trial-and-error.
 
 ### N01 — Contract and acceptance cutover for runtime explanation
-- Status: `TODO`
+- Status: `DONE`
 - Objective: document the runtime-onboarding architecture, backlog slices, and acceptance bar before behavior changes land.
 - Primary files:
   - `docs/ARCHITECTURE.md`
@@ -2026,7 +2026,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: runtime-explanation ownership, rollout slices, and acceptance scenarios are explicit, and user-facing onboarding copy no longer contradicts shipped shortcuts or startup wording.
 
 ### N02 — Structured runtime explanation models and preflight core
-- Status: `TODO`
+- Status: `DONE`
 - Objective: introduce machine-readable explanation models, issue classification, and editor-side preflight rules on top of existing probes/diagnostics.
 - Primary files:
   - `app/core/models.py`
@@ -2043,7 +2043,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: the same issue/preflight objects can feed status summaries, drill-down UI, workflow guards, and support-bundle artifacts without duplicated rule logic.
 
 ### N03 — Runtime Center shell surface and status-bar drill-down
-- Status: `TODO`
+- Status: `DONE`
 - Objective: replace terse startup/health summaries with a reusable drill-down surface for runtime and project explanation.
 - Primary files:
   - `app/shell/status_bar.py`
@@ -2060,7 +2060,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: startup status, project health, and support-oriented next steps are accessible through one structured runtime surface instead of scattered one-shot message boxes.
 
 ### N04 — First-run checklist and welcome/help integration
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make onboarding re-openable and discoverable even when recent projects auto-load.
 - Primary files:
   - `app/shell/welcome_widget.py`
@@ -2076,7 +2076,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: first-run guidance remains easy to reach from welcome and Help surfaces, and recent-project auto-load no longer hides onboarding.
 
 ### N05 — Run-target clarity and run preflight
-- Status: `TODO`
+- Status: `DONE`
 - Objective: make active file vs project vs named configuration explicit before execution and catch obvious non-code blockers without launching the runner.
 - Primary files:
   - `app/project/run_configs.py`
@@ -2093,7 +2093,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: users can see the active run target/configuration before execution, and invalid run metadata fails through clear preflight messaging rather than runner trial-and-error.
 
 ### N06 — Contextual import, headless, and packaging explainers
-- Status: `TODO`
+- Status: `DONE`
 - Objective: attach deterministic ChoreBoy-aware explanations to the common failure modes called out in the strategy analysis.
 - Primary files:
   - `app/intelligence/diagnostics_service.py`
@@ -2112,7 +2112,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: common import/headless/package failures yield consistent, actionable guidance without requiring terminal access or arbitrary code execution in the editor.
 
 ### N07 — Support-bundle explanation snapshot and help-source cleanup
-- Status: `TODO`
+- Status: `DONE`
 - Objective: package the same runtime explanation facts into support artifacts and reduce duplicated help/shortcut sources.
 - Primary files:
   - `app/support/support_bundle.py`
@@ -2130,7 +2130,7 @@ behavior without requiring terminal knowledge or trial-and-error.
 - Done when: support bundles include machine-readable runtime explanation data and help/manual/runtime-center wording no longer drifts from live shortcuts or workflow behavior.
 
 ### N08 — Runtime-parity, theme, and responsiveness hardening
-- Status: `TODO`
+- Status: `DONE`
 - Objective: validate that the richer onboarding/runtime surfaces remain fast, theme-safe, and truthful on AppRun-sensitive paths.
 - Primary files:
   - `app/bootstrap/capability_probe.py`
