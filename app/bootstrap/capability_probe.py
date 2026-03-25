@@ -19,6 +19,7 @@ from app.bootstrap.paths import (
 )
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
+from app.python_tools.vendor_runtime import import_python_tooling_modules, initialize_python_tooling_runtime
 
 
 APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
@@ -27,6 +28,7 @@ FREECAD_IMPORT_CHECK_ID = "freecad_import"
 STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
 GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
 TEMP_ROOT_WRITABLE_CHECK_ID = "temp_root_writable"
+PYTHON_TOOLING_RUNTIME_CHECK_ID = "python_tooling_runtime"
 MODULE_IMPORT_PROBE_TIMEOUT_SECONDS = 10
 
 
@@ -43,6 +45,7 @@ def run_startup_capability_probe(
         (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
         (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
         (TEMP_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_temp_path(temp_root=temp_root)),
+        (PYTHON_TOOLING_RUNTIME_CHECK_ID, check_python_tooling_runtime),
     ]
     checks: list[CapabilityCheckResult] = []
 
@@ -144,6 +147,39 @@ def check_writable_temp_path(temp_root: Optional[PathInput] = None) -> Capabilit
     """Check that app temp directory is writable."""
     directory = resolve_temp_root(temp_root)
     return _check_writable_directory(directory, TEMP_ROOT_WRITABLE_CHECK_ID, "Temp root")
+
+
+def check_python_tooling_runtime() -> CapabilityCheckResult:
+    """Check that vendored Python format/import tooling is importable."""
+    runtime_status = initialize_python_tooling_runtime()
+    details = {
+        "vendor_root": str(runtime_status.vendor_root),
+        "black_available": runtime_status.black_available,
+        "isort_available": runtime_status.isort_available,
+        "tomli_available": runtime_status.tomli_available,
+    }
+    if not runtime_status.is_available:
+        return CapabilityCheckResult(
+            check_id=PYTHON_TOOLING_RUNTIME_CHECK_ID,
+            is_available=False,
+            message=runtime_status.message,
+            details=details,
+        )
+
+    black_module, isort_module, tomli_module = import_python_tooling_modules()
+    details.update(
+        {
+            "black_version": getattr(black_module, "__version__", ""),
+            "isort_version": getattr(isort_module, "__version__", ""),
+            "tomli_version": getattr(tomli_module, "__version__", ""),
+        }
+    )
+    return CapabilityCheckResult(
+        check_id=PYTHON_TOOLING_RUNTIME_CHECK_ID,
+        is_available=True,
+        message="Vendored Python format/import tooling is ready.",
+        details=details,
+    )
 
 
 def _check_module_import(module_name: str, check_id: str) -> CapabilityCheckResult:

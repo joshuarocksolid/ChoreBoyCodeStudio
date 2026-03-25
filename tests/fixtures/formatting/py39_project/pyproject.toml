@@ -1,0 +1,11 @@
+[project]
+name = "samplepkg"
+requires-python = ">=3.9,<3.10"
+
+[tool.black]
+line-length = 40
+
+[tool.isort]
+profile = "black"
+line_length = 40
+src_paths = ["src"]

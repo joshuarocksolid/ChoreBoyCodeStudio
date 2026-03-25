@@ -270,7 +270,28 @@ For interactive Python console sessions where users submit commands over stdin a
 
 ## 8.3 `python_debug`
 
-For breakpoint-driven debug sessions. This mode executes user code inside the runner process under debugger control and accepts debug commands from the editor.
+For breakpoint-driven debug sessions. This mode executes user code inside the
+runner process under debugger control and accepts structured debug commands from
+the editor.
+
+### `python_debug` design rules
+
+`python_debug` must follow a stricter contract than normal run mode:
+
+* stdout/stderr remain the user-facing output channel for program prints,
+  tracebacks, and run logs
+* debugger control and inspector state travel over a dedicated editor<->runner
+  debug channel, not over ad-hoc stdout markers
+* the editor process never executes debug-target project code directly
+* breakpoint, watch, frame, scope, and exception data are structured, bounded,
+  and explicit
+
+Because ChoreBoy production heavily restricts subprocess execution, the debugger
+engine must pass a runtime-parity decision gate before cutover. The preferred
+target is an AppRun-safe `debugpy`/pydevd path that avoids the normal adapter
+subprocess requirement. The fallback is a custom in-runner `bdb` engine on the
+same editor-side contracts. The shipped product must not carry long-lived
+parallel debug engines beyond the decision gate.
 
 ## 8.4 Future `freecad_gui`
 
@@ -363,6 +384,13 @@ choreboy_code_studio/
       process_supervisor.py
       console_model.py
       problem_parser.py
+    debug/
+      __init__.py
+      debug_models.py
+      debug_session.py
+      debug_transport.py
+      debug_protocol.py
+      debug_breakpoints.py
     plugins/
       __init__.py
       api_broker.py
@@ -717,6 +745,9 @@ Recommended manifest contents:
 * log file path
 * timestamp
 * optional breakpoint payloads (for `python_debug`)
+* optional debug transport metadata (for `python_debug`)
+* optional exception-stop policy (for `python_debug`)
+* optional runtime source remap data (for dirty-buffer debug sessions)
 
 ### Example
 
@@ -727,14 +758,34 @@ Recommended manifest contents:
   "project_root": "/home/default/projects/my_project",
   "entry_file": "main.py",
   "working_directory": "/home/default/projects/my_project",
-  "mode": "python_script",
+  "mode": "python_debug",
   "argv": [],
   "env": {},
   "log_file": "/home/default/projects/my_project/cbcs/logs/run_20260228_153500.log",
+  "debug_transport": {
+    "protocol": "cbcs_debug_v1",
+    "host": "127.0.0.1",
+    "port": 47123,
+    "session_token": "debug_20260228_153500_001"
+  },
+  "debug_options": {
+    "stop_on_uncaught_exceptions": true,
+    "stop_on_raised_exceptions": false
+  },
+  "source_maps": [
+    {
+      "runtime_path": "/tmp/choreboy_code_studio/debug/run_123.py",
+      "source_path": "/home/default/projects/my_project/app/main.py"
+    }
+  ],
   "breakpoints": [
     {
+      "breakpoint_id": "bp_main_42",
       "file_path": "/home/default/projects/my_project/app/main.py",
-      "line_number": 42
+      "line_number": 42,
+      "enabled": true,
+      "condition": "customer_count > 10",
+      "hit_condition": 3
     }
   ]
 }
@@ -762,20 +813,35 @@ Runner subprocesses must be launched in a separate session:
 
 For baseline run mode, standard stdout/stderr is sufficient.
 
-Recommended enhancement:
+For `python_debug`, stdout/stderr are reserved for user-visible program output,
+warnings, and tracebacks. Debugger traffic must use a dedicated structured
+channel so:
 
-* prefix structured status messages with a recognizable marker, such as JSON lines on stdout
-* example categories:
+* user prints do not corrupt debugger state
+* debugger requests/replies are not parsed from arbitrary text
+* the run log remains readable and supportable
 
-  * `run_started`
-  * `run_finished`
-  * `traceback`
-  * `warning`
-  * `status`
+Transition markers on stdout are acceptable only as short-lived migration aids;
+they are not the steady-state debugger contract.
 
-Current debug-capable builds may also emit explicit debug lifecycle markers (for example paused/running markers) so editor controls can synchronize state while preserving full output logs.
+### 13.4A Debug control protocol
 
-Human output and structured output may coexist, but the protocol must stay simple.
+Debug control should use a local loopback transport with explicit messages for:
+
+* session start/ready/error
+* threads
+* stack frames
+* scopes
+* variables
+* watch evaluation
+* continue/pause/step/disconnect
+* breakpoint verification updates
+* stop reasons (`breakpoint`, `pause`, `step`, `exception`)
+* exception payloads
+
+The protocol should be versioned, bounded, and resilient to partial failure. A
+broken debug transport must fail the debug session clearly without corrupting
+normal run-mode output handling.
 
 ## 13.5 Exit codes
 
@@ -800,6 +866,10 @@ For responsiveness on high-output workloads, console buffering should be bounded
 Current implementation also maintains a bounded run-output tail buffer for
 traceback/problem extraction so very long runs do not accumulate unbounded
 in-memory output strings.
+
+For `python_debug`, the console remains the place for stdout/stderr, while the
+Debug panel is driven by structured inspector state from the dedicated debug
+channel.
 
 ## 14.2 Problems
 
@@ -1000,6 +1070,74 @@ constraints:
 Refactors that claim semantic safety must use a trustable planner. Token replacement
 and text-search fallbacks may still exist as explicit user workflows, but not as
 silent backups for semantic rename/reference operations.
+
+## 17.5 Real Python formatting and import management
+
+If the editor exposes "Format Current File" or "Format on save" for Python, the
+behavior must be recognizable as real Python formatting rather than generic
+whitespace cleanup.
+
+### 17.5.1 Formatter and import-management contract
+
+Python formatting and import management should follow a deterministic tool chain:
+
+* generic text hygiene for universal save concerns such as trailing whitespace and
+  final newline handling
+* import organization as a style/layout transform
+* Black as the final Python formatting authority
+
+This keeps generic editor hygiene separate from Python-specific style transforms and
+ensures the final buffer matches user expectations for Black-formatted code.
+
+### 17.5.2 Configuration source of truth
+
+Phase-1 Python formatting/import management should honor only project-local
+`pyproject.toml` configuration for advanced tool behavior:
+
+* `[tool.black]`
+* `[tool.isort]`
+* `[project.requires-python]`
+
+Code Studio settings should control workflow toggles such as:
+
+* format on save
+* organize imports on save
+* status visibility
+
+They should not become a second full style-configuration system that competes with
+the Python ecosystem or silently composes with hidden per-user tool configs.
+
+### 17.5.3 Execution and save-path rules
+
+The shipped formatter/import stack must respect ChoreBoy runtime constraints:
+
+* run in-process inside the editor runtime
+* prefer vendored pure-Python dependencies by default
+* do not depend on formatter/import CLI subprocesses
+* apply explicit size/latency guardrails before introducing background complexity
+
+Manual "Format Current File" and "Organize Imports" actions remain explicit user
+commands. Save-time automation may chain them, but save reliability outranks style
+automation:
+
+* formatting/import failures must not discard user edits
+* save should still write the current buffer when style tooling fails
+* failure states must be understandable and visible in the UI
+
+### 17.5.4 Boundaries with semantic and structural tooling
+
+Import sorting is a deterministic style tool, not semantic truth.
+
+That means:
+
+* do not present import sorting as proof that imports are resolved correctly
+* keep move/rename import rewrites separate from organize-imports behavior
+* keep unsafe unused-import cleanup out of the phase-1 organize-imports path
+* defer syntax-preserving structural import edits to the later semantic/refactor lane
+
+Future structural import-management work can converge with the trusted-semantics
+roadmap, but the initial formatting/import stack should stay small, predictable, and
+supportable.
 
 ---
 
@@ -1289,6 +1427,17 @@ sidecar processes.
 `.jedi` or `.ropeproject` in user projects or hidden cache roots under Home.
 **Why:** hidden directories are unreliable on ChoreBoy and conflict with the
 filesystem-first, supportable project model.
+
+## AD-010: In-process, project-local pyproject-aware Python formatting stack
+
+**Decision:** ship Python formatting/import management through in-process adapters
+over vendored Black and isort, using project-local `pyproject.toml` as the only
+advanced configuration surface in phase 1. Black remains the final formatting
+authority, while organize-imports stays a deterministic style step rather than a
+semantic or structural refactor engine.
+**Why:** ChoreBoy's runtime heavily constrains subprocess execution, hidden/global
+tool configuration is harder to support, and users need trustworthy formatting
+behavior without conflating style tools with semantic truth.
 
 ---
 

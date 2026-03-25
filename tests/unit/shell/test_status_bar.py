@@ -6,6 +6,7 @@ from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.status_bar import (
     format_diagnostics_counts,
     map_editor_status_view,
+    map_python_tooling_status_view,
     map_run_status_view,
     map_startup_report_to_status,
 )
@@ -101,3 +102,20 @@ def test_map_run_status_view_defaults_to_idle_for_unknown_state() -> None:
     view = map_run_status_view("mystery")
     assert view.severity == "idle"
     assert view.text == "Run: idle"
+
+
+def test_map_python_tooling_status_view_handles_ready_pyproject_state() -> None:
+    view = map_python_tooling_status_view(
+        runtime_available=True,
+        config_state="pyproject",
+        config_path="/tmp/project/pyproject.toml",
+    )
+    assert view.severity == "ok"
+    assert view.text == "Python: tools ready | pyproject"
+    assert "/tmp/project/pyproject.toml" in view.details
+
+
+def test_map_python_tooling_status_view_handles_unavailable_runtime() -> None:
+    view = map_python_tooling_status_view(runtime_available=False, config_state="defaults")
+    assert view.severity == "warning"
+    assert view.text == "Python: tools unavailable"

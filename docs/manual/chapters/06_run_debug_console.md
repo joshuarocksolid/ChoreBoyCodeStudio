@@ -8,6 +8,8 @@ This chapter explains how to execute and investigate your code.
 - **Run Project** (`Shift+F5`): runs the configured project entry file.
 - **Debug Active File** (`Ctrl+F5`): starts debug flow for active file.
 - **Debug Project** (`Ctrl+Shift+F5`): debug run for project entry file.
+- **Debug Current Test**: starts a pytest-targeted debug run for the active test file.
+- **Rerun Last Debug Target**: repeats the most recent debug launch intent.
 
 ## Basic run workflow
 
@@ -25,6 +27,12 @@ This chapter explains how to execute and investigate your code.
 Click in the editor gutter next to a line number.
 A marker appears for that line.
 
+Optional: open breakpoint properties to add:
+
+- a condition
+- a hit-count threshold
+- enable/disable state without removing the breakpoint
+
 ### Step 2 — Start debug
 
 Use `Ctrl+F5` for active file, or `Ctrl+Shift+F5` for project entry.
@@ -39,7 +47,30 @@ Open the **Debug** bottom tab and use:
 - Step Into (`F11`)
 - Step Out (`Shift+F11`)
 
-You can also inspect stack and variable info in the panel.
+You can also inspect:
+
+- threads
+- call stack
+- scopes (`locals`, `globals`, and exception state when relevant)
+- watch expressions
+- lazy-expanded variables for lists, dicts, and objects
+
+Selecting a frame in the panel updates the current execution highlight in the editor.
+
+### Step 3a — Evaluate watches and variables
+
+When paused:
+
+1. Add a watch expression in the Debug panel.
+2. Expand scopes or nested variables as needed.
+3. Select a different frame if you need values from another stack level.
+
+Watch results are tied to the selected paused frame, not to raw console commands.
+
+### Step 3b — Exception stops
+
+The debugger can stop on uncaught exceptions and, when enabled, raised exceptions.
+Use the session controls to decide how noisy you want exception pausing to be.
 
 ### Step 4 — Stop debugging
 
@@ -56,6 +87,8 @@ If breakpoints do not pause where expected:
 4. Use Run Log + Problems as fallback diagnosis path.
 
 In other words: if stepping is not acting as expected, you can still diagnose most issues quickly with a normal run and traceback.
+
+During debugging, program output still appears in **Run Log**. The **Debug** tab is reserved for structured inspector state, watches, and breakpoint/session controls.
 
 ## Python Console (REPL)
 
@@ -74,6 +107,7 @@ You can run short snippets, test expressions, and inspect values without changin
 
 - Use **Run** for normal development.
 - Use **Debug** when you need step-by-step control.
+- Use **Debug Current Test** for pytest-oriented troubleshooting loops.
 - Use **Python Console** for quick experiments and checks.
 
 ## FreeCAD macro workflow

@@ -33,6 +33,7 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.indent_style == "spaces"
     assert snapshot.detect_indentation_from_file is True
     assert snapshot.format_on_save is False
+    assert snapshot.organize_imports_on_save is False
     assert snapshot.trim_trailing_whitespace_on_save is True
     assert snapshot.insert_final_newline_on_save is True
     assert snapshot.enable_preview is True
@@ -68,6 +69,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                 "indent_size": 1,
                 "detect_indentation_from_file": False,
                 "format_on_save": True,
+                "organize_imports_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
                 "enable_preview": False,
@@ -118,6 +120,7 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.indent_size == 1
     assert snapshot.detect_indentation_from_file is False
     assert snapshot.format_on_save is True
+    assert snapshot.organize_imports_on_save is True
     assert snapshot.trim_trailing_whitespace_on_save is False
     assert snapshot.insert_final_newline_on_save is False
     assert snapshot.enable_preview is False
@@ -153,6 +156,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         indent_size=1,
         detect_indentation_from_file=False,
         format_on_save=True,
+        organize_imports_on_save=True,
         trim_trailing_whitespace_on_save=False,
         insert_final_newline_on_save=False,
         enable_preview=False,
@@ -185,6 +189,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["indent_style"] == "tabs"
     assert merged["editor"]["detect_indentation_from_file"] is False
     assert merged["editor"]["format_on_save"] is True
+    assert merged["editor"]["organize_imports_on_save"] is True
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
     assert merged["editor"]["enable_preview"] is False
@@ -357,6 +362,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
                 "indent_size": 2,
                 "detect_indentation_from_file": False,
                 "format_on_save": True,
+                "organize_imports_on_save": True,
                 "trim_trailing_whitespace_on_save": False,
                 "insert_final_newline_on_save": False,
                 "enable_preview": False,
@@ -384,7 +390,20 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         }
     )
 
-    assert grouped.editor_preferences == (6, 13, "Fira Code", "tabs", 2, False, True, False, False, False, False)
+    assert grouped.editor_preferences == (
+        6,
+        13,
+        "Fira Code",
+        "tabs",
+        2,
+        False,
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+    )
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
     assert grouped.output_preferences == (False, False)

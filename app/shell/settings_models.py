@@ -29,6 +29,7 @@ class EditorSettingsSnapshot:
     indent_size: int = constants.UI_EDITOR_INDENT_SIZE_DEFAULT
     detect_indentation_from_file: bool = constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_DEFAULT
     format_on_save: bool = constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT
+    organize_imports_on_save: bool = constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_DEFAULT
     trim_trailing_whitespace_on_save: bool = constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT
     insert_final_newline_on_save: bool = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
     enable_preview: bool = constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT
@@ -66,7 +67,7 @@ class EditorSettingsSnapshot:
 class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
-    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool]
+    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool]
     completion_preferences: tuple[bool, bool, int]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
@@ -133,6 +134,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         editor_settings.get(constants.UI_EDITOR_FORMAT_ON_SAVE_KEY),
         default=constants.UI_EDITOR_FORMAT_ON_SAVE_DEFAULT,
     )
+    organize_imports_on_save = _coerce_bool(
+        editor_settings.get(constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_KEY),
+        default=constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_DEFAULT,
+    )
     trim_trailing_whitespace_on_save = _coerce_bool(
         editor_settings.get(constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY),
         default=constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_DEFAULT,
@@ -176,6 +181,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         indent_size=indent_size,
         detect_indentation_from_file=detect_indentation_from_file,
         format_on_save=format_on_save,
+        organize_imports_on_save=organize_imports_on_save,
         trim_trailing_whitespace_on_save=trim_trailing_whitespace_on_save,
         insert_final_newline_on_save=insert_final_newline_on_save,
         enable_preview=enable_preview,
@@ -243,6 +249,7 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.indent_size,
             snapshot.detect_indentation_from_file,
             snapshot.format_on_save,
+            snapshot.organize_imports_on_save,
             snapshot.trim_trailing_whitespace_on_save,
             snapshot.insert_final_newline_on_save,
             snapshot.enable_preview,
@@ -342,6 +349,7 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_INDENT_SIZE_KEY: max(1, int(snapshot.indent_size)),
         constants.UI_EDITOR_DETECT_INDENTATION_FROM_FILE_KEY: bool(snapshot.detect_indentation_from_file),
         constants.UI_EDITOR_FORMAT_ON_SAVE_KEY: bool(snapshot.format_on_save),
+        constants.UI_EDITOR_ORGANIZE_IMPORTS_ON_SAVE_KEY: bool(snapshot.organize_imports_on_save),
         constants.UI_EDITOR_TRIM_TRAILING_WHITESPACE_ON_SAVE_KEY: bool(snapshot.trim_trailing_whitespace_on_save),
         constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: bool(snapshot.insert_final_newline_on_save),
         constants.UI_EDITOR_ENABLE_PREVIEW_KEY: bool(snapshot.enable_preview),

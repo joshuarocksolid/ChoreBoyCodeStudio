@@ -72,7 +72,7 @@ def test_apply_output_routes_run_log_and_debug_console_lines_without_focus_steal
 
     assert harness.output_tail == ["hello\n"]
     assert harness.console_lines == [("hello\n", "stdout")]
-    assert harness.debug_lines == ["hello"]
+    assert harness.debug_lines == []
     assert harness.focused_tabs == []
     assert harness.refresh_calls == 0
 
@@ -81,13 +81,44 @@ def test_apply_output_debug_protocol_events_refresh_without_appending_log() -> N
     harness = _CoordinatorHarness(active_mode=constants.RUN_MODE_PYTHON_DEBUG)
     coordinator = harness.build()
 
-    coordinator.apply(ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_PAUSED__\n"))
+    coordinator.apply(
+        ProcessEvent(
+            event_type="debug",
+            payload={
+                "kind": "event",
+                "event": "stopped",
+                "body": {"message": "Paused at breakpoint."},
+            },
+        )
+    )
 
     assert harness.output_tail == []
     assert harness.console_lines == []
     assert harness.debug_lines == ["[debug] Paused at breakpoint."]
     assert harness.debug_inspector_updates == 1
     assert harness.refresh_calls == 1
+
+
+def test_apply_debug_error_response_appends_debug_line_only() -> None:
+    harness = _CoordinatorHarness(active_mode=constants.RUN_MODE_PYTHON_DEBUG)
+    coordinator = harness.build()
+
+    coordinator.apply(
+        ProcessEvent(
+            event_type="debug",
+            payload={
+                "kind": "response",
+                "command": "evaluate",
+                "success": False,
+                "body": {"expression": "missing"},
+                "error_message": "NameError: missing",
+            },
+        )
+    )
+
+    assert harness.output_tail == []
+    assert harness.console_lines == []
+    assert harness.debug_lines == ["[debug] NameError: missing"]
 
 
 def test_apply_exit_clears_session_and_focuses_problems_for_failed_run() -> None:

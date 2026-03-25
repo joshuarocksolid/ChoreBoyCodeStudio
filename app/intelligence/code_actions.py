@@ -1,4 +1,9 @@
-"""Quick-fix planning and application for diagnostics."""
+"""Quick-fix planning and application for diagnostics.
+
+Import-related fixes here intentionally remain narrow, explicit quick fixes.
+They are not the general organize-imports engine and they are not a substitute
+for future structural cleanup in the trusted-semantics lane.
+"""
 
 from __future__ import annotations
 
@@ -43,6 +48,9 @@ def plan_safe_fixes_for_file(
             continue
         expected_line = _line_text_at(source_lines, diagnostic.line_number)
         if diagnostic.code in {"PY220", "PY221"}:
+            # Keep unused/duplicate import removal line-scoped for now. Broader
+            # import cleanup belongs to the structural semantics roadmap, not
+            # this quick-fix lane.
             title_prefix = "Remove unused import" if diagnostic.code == "PY220" else "Remove duplicate import"
             fix = QuickFix(
                 title=f"{title_prefix} at line {diagnostic.line_number}",

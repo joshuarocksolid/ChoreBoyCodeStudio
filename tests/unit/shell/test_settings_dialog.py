@@ -180,6 +180,29 @@ def test_settings_dialog_snapshot_includes_enable_preview_toggle() -> None:
     assert snapshot.enable_preview is False
 
 
+def test_settings_dialog_snapshot_includes_organize_imports_on_save_toggle() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot(organize_imports_on_save=False))
+    dialog._organize_imports_on_save_input.setChecked(True)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.organize_imports_on_save is True
+
+
+def test_settings_dialog_shows_python_tooling_status_labels() -> None:
+    dialog = SettingsDialog(
+        EditorSettingsSnapshot(),
+        python_tooling_runtime_text="Black/isort/tomli: available",
+        python_tooling_runtime_details="Vendor root: /tmp/vendor",
+        python_tooling_config_text="Project pyproject.toml: detected",
+        python_tooling_config_details="Path: /tmp/project/pyproject.toml",
+    )
+
+    assert dialog._python_tooling_runtime_status_label.text() == "Black/isort/tomli: available"
+    assert dialog._python_tooling_runtime_status_label.toolTip() == "Vendor root: /tmp/vendor"
+    assert dialog._python_tooling_config_status_label.text() == "Project pyproject.toml: detected"
+    assert "/tmp/project/pyproject.toml" in dialog._python_tooling_config_status_label.toolTip()
+
+
 def test_settings_dialog_tab_bar_prevents_label_clipping() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
     tab_bar = dialog._tabs_widget.tabBar()

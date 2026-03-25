@@ -42,6 +42,15 @@ class RunStatusView:
     details: str
 
 
+@dataclass(frozen=True)
+class PythonToolingStatusView:
+    """UI-friendly Python tooling readiness state for the status bar."""
+
+    severity: str
+    text: str
+    details: str
+
+
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
     """Map capability probe output into deterministic status bar copy."""
     if report is None:
@@ -133,6 +142,36 @@ def map_run_status_view(status: str, *, return_code: int | None = None) -> RunSt
     )
 
 
+def map_python_tooling_status_view(
+    *,
+    runtime_available: bool,
+    config_state: str,
+    config_path: str | None = None,
+    config_error: str | None = None,
+) -> PythonToolingStatusView:
+    """Map Python tooling/runtime metadata into concise status-bar copy."""
+    if not runtime_available:
+        return PythonToolingStatusView(
+            severity="warning",
+            text="Python: tools unavailable",
+            details="Vendored Black/isort/tomli tooling is not ready.",
+        )
+
+    state_to_copy = {
+        "no_project": ("Python: tools ready | no project", "Open a project to detect project-local pyproject.toml."),
+        "defaults": ("Python: tools ready | defaults", "No project-local pyproject.toml detected."),
+        "pyproject": ("Python: tools ready | pyproject", "Project-local pyproject.toml detected."),
+        "pyproject_error": ("Python: tools ready | pyproject error", "Project-local pyproject.toml could not be parsed."),
+    }
+    text, details = state_to_copy.get(config_state, state_to_copy["defaults"])
+    if config_path:
+        details = f"{details} Path: {config_path}."
+    if config_error:
+        details = f"{details} Error: {config_error}"
+    severity = "warning" if config_state == "pyproject_error" else "ok"
+    return PythonToolingStatusView(severity=severity, text=text, details=details)
+
+
 class ShellStatusBarController:
     """Small controller for shell status bar labels."""
 
@@ -140,6 +179,7 @@ class ShellStatusBarController:
         self,
         status_bar: "QStatusBar",
         startup_label: "QLabel",
+        python_tooling_label: "QLabel",
         run_label: "QLabel",
         project_label: "QLabel",
         editor_label: "QLabel",
@@ -147,6 +187,7 @@ class ShellStatusBarController:
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
+        self._python_tooling_label = python_tooling_label
         self._run_label = run_label
         self._project_label = project_label
         self._editor_label = editor_label
@@ -162,6 +203,25 @@ class ShellStatusBarController:
     def set_project_state_text(self, text: str) -> None:
         """Update lightweight project-status copy."""
         self._project_label.setText(text)
+
+    def set_python_tooling_status(
+        self,
+        *,
+        runtime_available: bool,
+        config_state: str,
+        config_path: str | None = None,
+        config_error: str | None = None,
+    ) -> None:
+        """Update Python tooling readiness copy."""
+        view = map_python_tooling_status_view(
+            runtime_available=runtime_available,
+            config_state=config_state,
+            config_path=config_path,
+            config_error=config_error,
+        )
+        self._python_tooling_label.setText(view.text)
+        self._python_tooling_label.setToolTip(view.details)
+        self._python_tooling_label.setProperty("pythonToolingSeverity", view.severity)  # type: ignore[arg-type]
 
     def set_editor_status(self, file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> None:
         """Update current editor telemetry in the status bar."""
@@ -203,6 +263,9 @@ def create_shell_status_bar(
     diagnostics_label.setObjectName("shell.diagnosticsStatusLabel")
     diagnostics_label.setVisible(False)
 
+    python_tooling_label = QLabel("Python: tools unknown", status_bar)
+    python_tooling_label.setObjectName("shell.pythonToolingStatusLabel")
+
     project_label = QLabel("Project: none loaded", status_bar)
     project_label.setObjectName("shell.projectStatusLabel")
 
@@ -214,12 +277,22 @@ def create_shell_status_bar(
 
     status_bar.addWidget(startup_label, 1)
     status_bar.addPermanentWidget(diagnostics_label, 0)
+    status_bar.addPermanentWidget(python_tooling_label, 0)
     status_bar.addPermanentWidget(run_label, 0)
     status_bar.addPermanentWidget(project_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
     main_window.setStatusBar(status_bar)
 
-    controller = ShellStatusBarController(status_bar, startup_label, run_label, project_label, editor_label, diagnostics_label)
+    controller = ShellStatusBarController(
+        status_bar,
+        startup_label,
+        python_tooling_label,
+        run_label,
+        project_label,
+        editor_label,
+        diagnostics_label,
+    )
     controller.set_startup_report(startup_report)
+    controller.set_python_tooling_status(runtime_available=False, config_state="no_project")
     controller.set_run_status("idle")
     return controller

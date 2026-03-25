@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Callable
 
 from app.core import constants
+from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.core.models import LoadedProject
 from app.run.run_service import RunService, RunSession
 from app.shell.actions import map_run_action_state
@@ -52,7 +53,9 @@ class RunSessionController:
         argv: list[str] | None,
         working_directory: str | None,
         env_overrides: dict[str, str] | None,
-        breakpoints: list[dict[str, int | str]] | None,
+        breakpoints: list[DebugBreakpoint] | list[dict[str, object]] | None,
+        debug_exception_policy: DebugExceptionPolicy | None,
+        source_maps: list[DebugSourceMap] | None,
         skip_save: bool,
         save_all: Callable[[], bool],
         before_start: Callable[[], None],
@@ -96,6 +99,8 @@ class RunSessionController:
                 working_directory=working_directory,
                 env_overrides=env_overrides,
                 breakpoints=breakpoints,
+                debug_exception_policy=debug_exception_policy,
+                source_maps=source_maps,
             )
         except Exception as exc:
             append_console_line(f"Run failed to start: {exc}\n", "stderr")
@@ -108,7 +113,7 @@ class RunSessionController:
         self._active_session_mode = mode
         append_console_line(f"Run started ({session.run_id})\n", "system")
         if mode == constants.RUN_MODE_PYTHON_DEBUG:
-            append_python_console_line("[system] Debug session started. Use toolbar or pdb commands.")
+            append_python_console_line("[system] Debug session started. Use toolbar and Debug panel controls.")
 
         return RunSessionStartResult(started=True, session=session)
 

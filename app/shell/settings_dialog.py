@@ -81,6 +81,10 @@ class SettingsDialog(QDialog):
         project_snapshot: EditorSettingsSnapshot | None = None,
         project_scope_available: bool = False,
         initial_scope: str = SETTINGS_SCOPE_GLOBAL,
+        python_tooling_runtime_text: str = "Black/isort/tomli: unknown",
+        python_tooling_runtime_details: str = "",
+        python_tooling_config_text: str = "Project pyproject.toml: no project",
+        python_tooling_config_details: str = "",
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -252,6 +256,20 @@ class SettingsDialog(QDialog):
         self._format_on_save_input = QCheckBox(editor_group)
         self._format_on_save_input.setChecked(snapshot.format_on_save)
         editor_form.addRow("Format on save", self._format_on_save_input)
+
+        self._organize_imports_on_save_input = QCheckBox(editor_group)
+        self._organize_imports_on_save_input.setChecked(snapshot.organize_imports_on_save)
+        editor_form.addRow("Organize imports on save", self._organize_imports_on_save_input)
+
+        self._python_tooling_runtime_status_label = QLabel(python_tooling_runtime_text, editor_group)
+        self._python_tooling_runtime_status_label.setWordWrap(True)
+        self._python_tooling_runtime_status_label.setToolTip(python_tooling_runtime_details)
+        editor_form.addRow("Python tooling runtime", self._python_tooling_runtime_status_label)
+
+        self._python_tooling_config_status_label = QLabel(python_tooling_config_text, editor_group)
+        self._python_tooling_config_status_label.setWordWrap(True)
+        self._python_tooling_config_status_label.setToolTip(python_tooling_config_details)
+        editor_form.addRow("Project Python config", self._python_tooling_config_status_label)
 
         self._trim_trailing_whitespace_on_save_input = QCheckBox(editor_group)
         self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
@@ -599,6 +617,7 @@ class SettingsDialog(QDialog):
             indent_size=int(self._indent_size_input.value()),
             detect_indentation_from_file=self._detect_indentation_input.isChecked(),
             format_on_save=self._format_on_save_input.isChecked(),
+            organize_imports_on_save=self._organize_imports_on_save_input.isChecked(),
             trim_trailing_whitespace_on_save=self._trim_trailing_whitespace_on_save_input.isChecked(),
             insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
             enable_preview=self._enable_preview_input.isChecked(),
@@ -636,6 +655,7 @@ class SettingsDialog(QDialog):
         self._indent_size_input.setValue(snapshot.indent_size)
         self._detect_indentation_input.setChecked(snapshot.detect_indentation_from_file)
         self._format_on_save_input.setChecked(snapshot.format_on_save)
+        self._organize_imports_on_save_input.setChecked(snapshot.organize_imports_on_save)
         self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(snapshot.enable_preview)
@@ -780,6 +800,7 @@ class SettingsDialog(QDialog):
         self._indent_size_input.setValue(baseline.indent_size)
         self._detect_indentation_input.setChecked(baseline.detect_indentation_from_file)
         self._format_on_save_input.setChecked(baseline.format_on_save)
+        self._organize_imports_on_save_input.setChecked(baseline.organize_imports_on_save)
         self._trim_trailing_whitespace_on_save_input.setChecked(baseline.trim_trailing_whitespace_on_save)
         self._insert_final_newline_on_save_input.setChecked(baseline.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(baseline.enable_preview)

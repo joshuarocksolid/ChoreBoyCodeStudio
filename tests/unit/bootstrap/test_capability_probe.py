@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -169,6 +170,37 @@ def test_check_writable_temp_path_uses_namespaced_temp_root(tmp_path: Path) -> N
     assert result.details["path"] == str((tmp_path / "temp").resolve())
 
 
+def test_check_python_tooling_runtime_reports_versions_when_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        capability_probe,
+        "initialize_python_tooling_runtime",
+        lambda: SimpleNamespace(
+            is_available=True,
+            vendor_root=Path("/tmp/vendor"),
+            black_available=True,
+            isort_available=True,
+            tomli_available=True,
+            message="ready",
+        ),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "import_python_tooling_modules",
+        lambda: (
+            type("BlackModule", (), {"__version__": "25.11.0"})(),
+            type("IsortModule", (), {"__version__": "6.1.0"})(),
+            type("TomliModule", (), {"__version__": "2.3.0"})(),
+        ),
+    )
+
+    result = capability_probe.check_python_tooling_runtime()
+    assert result.check_id == capability_probe.PYTHON_TOOLING_RUNTIME_CHECK_ID
+    assert result.is_available is True
+    assert result.details["black_version"] == "25.11.0"
+    assert result.details["isort_version"] == "6.1.0"
+    assert result.details["tomli_version"] == "2.3.0"
+
+
 def test_run_startup_capability_probe_returns_structured_failures_instead_of_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -203,6 +235,11 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
         capability_probe,
         "check_writable_temp_path",
         lambda temp_root=None: CapabilityCheckResult("temp_root_writable", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_python_tooling_runtime",
+        lambda: CapabilityCheckResult("python_tooling_runtime", True, "ok"),
     )
 
     report = capability_probe.run_startup_capability_probe()

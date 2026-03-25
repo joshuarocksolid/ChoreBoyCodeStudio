@@ -136,6 +136,12 @@ ship every optional grammar offline by default. JavaScript and TOML are bundled
 because HTML/Markdown injections and `pyproject.toml` highlighting are
 product-critical, while lower-priority grammars such as SQL remain optional.
 
+The same budget now also applies to the Python formatting/import-management
+stack. The shipped offline bundle includes `black`, `isort`, and `tomli`, and
+the formatter path is expected to stay in-process and Python-3.9-compatible.
+Any future additions to that lane should be evaluated against the archive-size
+gate before release.
+
 ## Developer guidance
 
 When changing packaging/install behavior:
@@ -147,6 +153,8 @@ When changing packaging/install behavior:
 - keep user-facing copy explicit about `/home/default/`
 - keep user-facing copy explicit that the installed launcher hardcodes the chosen final path
 - preserve the compressed archive + 15 MB budget contract unless the product distribution strategy changes
+- treat `black`/`isort`/`tomli` as part of the supported vendored runtime, and
+  keep `black` on the pure-Python install path when refreshing the bundle
 - if future work changes this contract, update:
   - `package.py`
   - `packaging/install.py`

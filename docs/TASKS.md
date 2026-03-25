@@ -1405,3 +1405,296 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `I05`, `I06`
 - Done when: semantic completion is async/cancellable, trust states are legible in both themes, and latency gates have passing evidence.
 
+---
+
+## 18) Phase J — Real Python formatting and import management
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+### J01 — Formatting/import-management contract and acceptance coverage
+- Status: `TODO`
+- Objective: lock the in-process, project-local `pyproject.toml` contract for Python formatting and import management before behavior changes land.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent contract tests land in follow-on slices, not here)
+- Validation method: doc review plus subsequent slices linking to the new formatting/import acceptance IDs
+- Acceptance linkage: `AT-52`, `AT-53`, `AT-54`, `AT-55`, `AT-56`, `AT-57`, `AT-58`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: the formatter/import stack rules, configuration boundaries, rollout slices, and acceptance coverage are all explicit and traceable.
+
+### J02 — Fixture corpus and failing format/import tests
+- Status: `TODO`
+- Objective: add representative fixture projects and failing tests for `pyproject.toml` handling, Python-version-aware import grouping, comment preservation, broken buffers, and editor text-apply behavior before the adapter cutover.
+- Primary files:
+  - `tests/fixtures/formatting/**`
+  - `tests/unit/python_tools/**`
+  - `tests/unit/editors/test_code_editor_widget_editing.py`
+  - `tests/integration/shell/**`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/python_tools/ tests/unit/editors/test_code_editor_widget_editing.py tests/integration/shell/`
+- Acceptance linkage: `AT-52`, `AT-53`, `AT-54`, `AT-55`, `AT-57`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J01`
+- Done when: fixtures cover `src/` projects, `__future__` imports, relative imports, comments, syntax-broken buffers, and Python-3.9-sensitive stdlib classification, with failing tests demonstrating the current gap.
+
+### J03 — AppRun formatter/import compatibility spike
+- Status: `TODO`
+- Objective: validate Black, isort, and TOML parsing in the real AppRun path with visible-path behavior, package-size discipline, and no formatter CLI dependency.
+- Primary files:
+  - `vendor/README.md`
+  - `docs/PACKAGING.md`
+  - `tests/runtime_parity/python_tools/test_python_format_runtime.py`
+  - `app/python_tools/vendor_runtime.py`
+- Automated test layer: `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/python_tools/test_python_format_runtime.py`
+- Acceptance linkage: `AT-56`, `AT-58`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J01`, `J02`
+- Done when: the chosen Black/isort/tomli stack runs under AppRun without hidden cache/config paths, unsupported subprocess assumptions, or installer-budget regressions.
+
+### J04 — Python tooling layer and config resolver
+- Status: `TODO`
+- Objective: introduce a dedicated Python tooling layer with explicit config resolution, typed result models, and vendored dependency bootstrap helpers.
+- Primary files:
+  - `app/python_tools/config.py`
+  - `app/python_tools/models.py`
+  - `app/python_tools/black_adapter.py`
+  - `app/python_tools/isort_adapter.py`
+  - `app/python_tools/vendor_runtime.py`
+  - `app/project/project_service.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/python_tools/`
+- Acceptance linkage: `AT-52`, `AT-53`, `AT-54`, `AT-56`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J02`, `J03`
+- Done when: callers can request Python formatting/import actions through one focused service layer with explicit config and failure-state metadata.
+
+### J05 — Editor text-apply helper for full-buffer transforms
+- Status: `TODO`
+- Objective: add a document-apply helper that lets formatter/import actions replace full buffers without destroying practical undo/cursor trust.
+- Primary files:
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/text_editing.py`
+  - `tests/unit/editors/test_code_editor_widget_editing.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/editors/test_code_editor_widget_editing.py`
+- Acceptance linkage: `AT-52`, `AT-57`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J02`
+- Done when: formatter/import callers can apply full-document changes through a tested helper rather than raw `setPlainText(...)` replacement.
+
+### J06 — Manual Python format command cutover
+- Status: `TODO`
+- Objective: replace whitespace-only Python formatting with a Black-backed manual format action while preserving non-Python fallback behavior.
+- Primary files:
+  - `app/editors/formatting_service.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `tests/unit/shell/test_main_window_format_actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_main_window_format_actions.py tests/integration/shell/`
+- Acceptance linkage: `AT-52`, `AT-54`, `AT-57`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J04`, `J05`
+- Done when: manual format on Python uses the Black-backed path with explicit failure classification, and non-Python files still use deterministic hygiene formatting.
+
+### J07 — Manual organize-imports command
+- Status: `TODO`
+- Objective: add a dedicated Python-only organize-imports command using isort with Black-compatible output and Python-target-aware import grouping.
+- Primary files:
+  - `app/python_tools/isort_adapter.py`
+  - `app/shell/main_window.py`
+  - `app/shell/menus.py`
+  - `tests/unit/python_tools/test_isort_adapter.py`
+  - `tests/unit/shell/test_main_window_format_actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/python_tools/test_isort_adapter.py tests/unit/shell/test_main_window_format_actions.py tests/integration/shell/`
+- Acceptance linkage: `AT-53`, `AT-54`, `AT-57`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J04`, `J05`
+- Done when: organize-imports is a separate, trustworthy command that preserves comments/futures ordering and does not reuse unsafe quick-fix line deletion.
+
+### J08 — Save pipeline hardening and settings
+- Status: `TODO`
+- Objective: upgrade save-time Python formatting/import organization with explicit settings, failure resilience, and measurable guardrails.
+- Primary files:
+  - `app/core/constants.py`
+  - `app/shell/settings_models.py`
+  - `app/shell/settings_dialog.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_settings_models.py`
+  - `tests/unit/shell/test_settings_dialog.py`
+  - `tests/unit/shell/test_main_window_format_actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_settings_models.py tests/unit/shell/test_settings_dialog.py tests/unit/shell/test_main_window_format_actions.py tests/integration/shell/`
+- Acceptance linkage: `AT-54`, `AT-55`, `AT-57`, `AT-58`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J06`, `J07`
+- Done when: save-time organize+format ordering is explicit, settings are layered correctly, failures do not block save, and large-file guardrails are enforced.
+
+### J09 — Formatter/import readiness surfaces
+- Status: `TODO`
+- Objective: expose formatter/import readiness and project-local configuration detection through existing capability and settings/status seams.
+- Primary files:
+  - `app/bootstrap/capability_probe.py`
+  - `app/shell/status_bar.py`
+  - `app/shell/settings_dialog.py`
+  - `tests/unit/bootstrap/test_capability_probe.py`
+  - `tests/unit/shell/test_status_bar.py`
+  - `tests/unit/shell/test_settings_dialog.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/bootstrap/test_capability_probe.py tests/unit/shell/test_status_bar.py tests/unit/shell/test_settings_dialog.py`
+- Acceptance linkage: `AT-54`, `AT-56`, `AT-57`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J04`, `J08`
+- Done when: users can see whether Black/isort are available and whether project-local formatting/import configuration was detected, without adding a second style editor UI.
+
+### J10 — Structural import-management follow-on alignment
+- Status: `TODO`
+- Objective: define the post-phase cutover from regex import rewrites and unsafe unused-import cleanup toward structural tooling aligned with trusted semantics.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `app/intelligence/import_rewrite.py`
+  - `app/intelligence/code_actions.py`
+- Automated test layer: `unit` (follow-on implementation slices add behavior tests)
+- Validation method: design review plus follow-on slices referencing the structural acceptance contract
+- Acceptance linkage: `AT-53`, `AT-56`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `J01`, `J07`
+- Done when: the repo explicitly documents that organize-imports is not the long-term structural refactor lane and links the eventual cutover to the trusted-semantics roadmap.
+
+---
+
+## 19) Phase K — Better debugger and runtime inspection
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+### K01 — Debugger contract and acceptance cutover docs
+- Status: `TODO`
+- Objective: document the north-star debugger architecture, engine decision gate, and acceptance bar before replacing the current `pdb` text bridge.
+- Primary files:
+  - `docs/PRD.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/TASKS.md`
+  - `docs/manual/chapters/06_run_debug_console.md`
+- Automated test layer: `manual_acceptance`
+- Validation method: doc review plus follow-on slices explicitly linking to `AT-30`, `AT-31`, and `AT-59` through `AT-64`
+- Acceptance linkage: `AT-30`, `AT-31`, `AT-59`, `AT-60`, `AT-61`, `AT-62`, `AT-63`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: the repo states that debugger control is structured, stdout/stderr are not the steady-state debug protocol, and the engine decision gate is explicit.
+
+### K02 — Runtime-parity debugger engine spike
+- Status: `TODO`
+- Objective: validate the AppRun-safe debugger engine choice against subprocess restrictions, dirty-buffer remap, watch evaluation, exception stops, and thread behavior.
+- Primary files:
+  - `tests/runtime_parity/debug/**`
+  - `app/debug/debug_runtime_probe.py`
+  - `app/runner/debug_runner.py`
+- Automated test layer: `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/debug/`
+- Acceptance linkage: `AT-59`, `AT-61`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K01`
+- Done when: the repo has passing runtime evidence for the chosen engine and a written rejection reason for the losing approach.
+
+### K03 — Engine-neutral debug manifest and session contracts
+- Status: `TODO`
+- Objective: expand run/debug manifests, breakpoint models, exception policy, and session state so shell logic no longer depends on raw `pdb` commands.
+- Primary files:
+  - `app/run/run_manifest.py`
+  - `app/run/run_service.py`
+  - `app/debug/debug_models.py`
+  - `app/debug/debug_session.py`
+  - `app/debug/debug_breakpoints.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/debug/ tests/unit/run/test_run_service.py`
+- Acceptance linkage: `AT-30`, `AT-31`, `AT-59`, `AT-61`, `AT-63`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K02`
+- Done when: debug sessions are described with typed structured contracts for transport, breakpoints, exception policy, and selected-frame inspection.
+
+### K04 — Dedicated debug transport cutover
+- Status: `TODO`
+- Objective: move debugger traffic onto a dedicated control transport and remove stdout-marker parsing from the steady-state path.
+- Primary files:
+  - `app/debug/debug_transport.py`
+  - `app/debug/debug_protocol.py`
+  - `app/run/process_supervisor.py`
+  - `app/run/run_service.py`
+  - `app/shell/run_output_coordinator.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/debug/ tests/integration/debug/ tests/integration/run/`
+- Acceptance linkage: `AT-30`, `AT-31`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K03`
+- Done when: user stdout/stderr no longer doubles as the active debugger control protocol and disconnect/failure states are explicit.
+
+### K05 — Runner debugger engine replacement
+- Status: `TODO`
+- Objective: replace the CLI-style `MarkedPdb` loop with the chosen structured engine and support verified breakpoints, conditions, hit thresholds, and exception stops.
+- Primary files:
+  - `app/runner/debug_runner.py`
+  - `app/runner/runner_main.py`
+  - `app/debug/debug_command_service.py`
+  - `tests/unit/runner/test_debug_runner.py`
+  - `tests/integration/debug/**`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/runner/test_debug_runner.py tests/integration/debug/ tests/runtime_parity/debug/`
+- Acceptance linkage: `AT-30`, `AT-59`, `AT-61`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K03`, `K04`
+- Done when: structured pause/continue/step/breakpoint/exception flows work without raw `pdb` command strings.
+
+### K06 — Debug inspector overhaul
+- Status: `TODO`
+- Objective: rebuild the Debug panel around threads, selected frames, scope-aware variables, lazy expansion, bounded previews, and watch results.
+- Primary files:
+  - `app/debug/debug_models.py`
+  - `app/debug/debug_session.py`
+  - `app/shell/debug_panel_widget.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/debug/ tests/unit/shell/ tests/integration/debug/`
+- Acceptance linkage: `AT-31`, `AT-60`, `AT-61`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K03`, `K04`, `K05`
+- Done when: paused state is represented as selected thread/frame/scope data with lazy variable loading and clear watch/error states.
+
+### K07 — End-user debug workflow surface
+- Status: `TODO`
+- Objective: finish workflow-level UX for debug current file/project/test, rerun last target, breakpoint properties, exception policy, and dirty-buffer source remap.
+- Primary files:
+  - `app/shell/menus.py`
+  - `app/shell/toolbar.py`
+  - `app/shell/main_window.py`
+  - `app/run/test_runner_service.py`
+  - `app/shell/actions.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/ tests/integration/shell/ tests/integration/debug/`
+- Acceptance linkage: `AT-59`, `AT-61`, `AT-62`, `AT-63`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K05`, `K06`
+- Done when: the visible run/debug surface supports the full planned workflows without asking users to type raw debugger commands.
+
+### K08 — Debug reliability, performance, and supportability hardening
+- Status: `TODO`
+- Objective: add the final test, latency, theme, and support-bundle coverage needed to ship the richer debugger safely.
+- Primary files:
+  - `tests/unit/debug/**`
+  - `tests/integration/debug/**`
+  - `tests/runtime_parity/debug/**`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/manual/chapters/06_run_debug_console.md`
+- Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/debug/ tests/integration/debug/ tests/runtime_parity/debug/` plus manual light/dark validation
+- Acceptance linkage: `AT-30`, `AT-31`, `AT-59`, `AT-60`, `AT-61`, `AT-62`, `AT-63`, `AT-64`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `K05`, `K06`, `K07`
+- Done when: debugger behavior has passing automated evidence, documented manual coverage, theme safety, and actionable diagnostics for real-world failures.
+

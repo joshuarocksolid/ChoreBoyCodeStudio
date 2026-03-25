@@ -22,6 +22,7 @@ from app.editors.find_replace_bar import FindOptions
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
 from app.editors.text_editing import (
     indent_lines,
+    map_offset_through_text_change,
     next_line_indentation,
     outdent_lines,
     smart_backspace_columns,
@@ -1086,6 +1087,35 @@ class CodeEditorWidget(QPlainTextEdit):
             cursor.select(QTextCursor.LineUnderCursor)
         cursor.insertText(replacement_text)
         self.setTextCursor(cursor)
+
+    def replace_document_text(self, replacement_text: str) -> bool:
+        """Replace the full document in one undo step while preserving editor context."""
+        original_text = self.toPlainText()
+        if replacement_text == original_text:
+            return False
+
+        cursor = self.textCursor()
+        original_anchor = cursor.anchor()
+        original_position = cursor.position()
+        vertical_scroll = self.verticalScrollBar().value()
+        horizontal_scroll = self.horizontalScrollBar().value()
+        mapped_anchor = map_offset_through_text_change(original_text, replacement_text, original_anchor)
+        mapped_position = map_offset_through_text_change(original_text, replacement_text, original_position)
+
+        edit_cursor = QTextCursor(self.document())
+        edit_cursor.beginEditBlock()
+        edit_cursor.select(QTextCursor.Document)
+        edit_cursor.insertText(replacement_text)
+        edit_cursor.endEditBlock()
+
+        restored_cursor = QTextCursor(self.document())
+        restored_cursor.setPosition(mapped_anchor)
+        move_mode = QTextCursor.MoveAnchor if mapped_anchor == mapped_position else QTextCursor.KeepAnchor
+        restored_cursor.setPosition(mapped_position, move_mode)
+        self.setTextCursor(restored_cursor)
+        self.verticalScrollBar().setValue(min(vertical_scroll, self.verticalScrollBar().maximum()))
+        self.horizontalScrollBar().setValue(min(horizontal_scroll, self.horizontalScrollBar().maximum()))
+        return True
 
     def _handle_smart_backspace(self) -> bool:
         cursor = self.textCursor()

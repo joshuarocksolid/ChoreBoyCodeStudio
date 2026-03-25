@@ -70,3 +70,15 @@ def test_enter_key_auto_indents_with_tab_preference(editor: CodeEditorWidget) ->
     editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier))
 
     assert editor.toPlainText() == "if ready:\n\t"
+
+
+def test_replace_document_text_preserves_single_undo_step(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("import b\nimport a\n")
+
+    editor.replace_document_text("import a\nimport b\n")
+
+    assert editor.toPlainText() == "import a\nimport b\n"
+
+    editor.undo()
+
+    assert editor.toPlainText() == "import b\nimport a\n"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import difflib
+
 
 def indent_lines(text: str, *, indent_text: str = "    ") -> str:
     """Indent every non-empty line in text."""
@@ -76,3 +78,25 @@ def smart_backspace_columns(line_text: str, cursor_column: int, *, indent_text: 
     if not prefix.endswith(" " * remove_count):
         return 0
     return remove_count
+
+
+def map_offset_through_text_change(original_text: str, updated_text: str, offset: int) -> int:
+    """Map a character offset from ``original_text`` into ``updated_text``."""
+    if offset <= 0:
+        return 0
+    if offset >= len(original_text):
+        return len(updated_text)
+
+    safe_offset = max(0, min(offset, len(original_text)))
+    matcher = difflib.SequenceMatcher(a=original_text, b=updated_text, autojunk=False)
+    for tag, original_start, original_end, updated_start, updated_end in matcher.get_opcodes():
+        if safe_offset < original_start:
+            delta = safe_offset - original_start
+            return max(0, updated_start + delta)
+        if tag == "equal":
+            if safe_offset <= original_end:
+                return updated_start + (safe_offset - original_start)
+            continue
+        if safe_offset <= original_end:
+            return updated_end
+    return len(updated_text)

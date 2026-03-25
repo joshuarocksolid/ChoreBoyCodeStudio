@@ -61,10 +61,12 @@ class MenuCallbacks:
     on_debug_project: Callable[[], object] | None = None
     on_run_pytest_project: Callable[[], object] | None = None
     on_run_pytest_current_file: Callable[[], object] | None = None
+    on_debug_pytest_current_file: Callable[[], object] | None = None
     on_run_with_config: Callable[[], object] | None = None
     on_manage_run_configs: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
+    on_rerun_last_debug_target: Callable[[], object] | None = None
     on_continue_debug: Callable[[], object] | None = None
     on_pause_debug: Callable[[], object] | None = None
     on_step_over: Callable[[], object] | None = None
@@ -72,6 +74,7 @@ class MenuCallbacks:
     on_step_out: Callable[[], object] | None = None
     on_toggle_breakpoint: Callable[[], object] | None = None
     on_remove_all_breakpoints: Callable[[], object] | None = None
+    on_debug_exception_stops: Callable[[], object] | None = None
     on_start_python_console: Callable[[], object] | None = None
     on_clear_console: Callable[[], object] | None = None
     on_package_project: Callable[[], object] | None = None
@@ -83,6 +86,7 @@ class MenuCallbacks:
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None
     on_format_current_file: Callable[[], object] | None = None
+    on_organize_imports_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
     on_open_plugin_manager: Callable[[], object] | None = None
@@ -464,6 +468,15 @@ def build_menu_stubs(
     _register_menu_action(
         run_menu,
         actions,
+        "shell.action.run.debugPytestCurrentFile",
+        "Debug Current Test",
+        "Ctrl+Alt+Shift+T",
+        callback=callback_registry.on_debug_pytest_current_file,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
         "shell.action.run.runWithConfig",
         "Run With Configuration...",
         callback=callback_registry.on_run_with_config,
@@ -491,6 +504,15 @@ def build_menu_stubs(
         "Restart",
         "Ctrl+Shift+F2",
         callback=callback_registry.on_restart,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.rerunLastDebugTarget",
+        "Rerun Last Debug Target",
+        "Ctrl+Shift+F6",
+        callback=callback_registry.on_rerun_last_debug_target,
         shortcut_overrides=shortcut_overrides,
     )
     run_menu.addSeparator()
@@ -554,6 +576,13 @@ def build_menu_stubs(
         "shell.action.run.removeAllBreakpoints",
         "Remove All Breakpoints",
         callback=callback_registry.on_remove_all_breakpoints,
+    )
+    _register_menu_action(
+        run_menu,
+        actions,
+        "shell.action.run.debugExceptionStops",
+        "Exception Stop Settings...",
+        callback=callback_registry.on_debug_exception_stops,
     )
     run_menu.addSeparator()
     _register_menu_action(
@@ -670,6 +699,14 @@ def build_menu_stubs(
         "Format Current File",
         enabled=True,
         callback=callback_registry.on_format_current_file,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.organizeImportsCurrentFile",
+        "Organize Imports",
+        enabled=True,
+        callback=callback_registry.on_organize_imports_current_file,
     )
     _register_menu_action(
         tools_menu,

@@ -1,4 +1,14 @@
-"""Python import rewrite helpers for file moves and renames."""
+"""Python import rewrite helpers for file moves and renames.
+
+This module intentionally stays narrow:
+- deterministic move/rename rewrite previews only
+- no general organize-imports behavior
+- no claim of semantic proof beyond the current text rewrite contract
+
+Longer term, the trusted-semantics/refactor lane should replace this regex path
+with structural import rewrites. The Black/isort organize-imports flow lives in
+`app.python_tools`, not here.
+"""
 
 from __future__ import annotations
 

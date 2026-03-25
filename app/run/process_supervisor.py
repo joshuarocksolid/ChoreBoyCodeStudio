@@ -18,12 +18,13 @@ ProcessState = Literal["idle", "running", "stopping", "exited"]
 class ProcessEvent:
     """Event emitted by process supervisor during run lifecycle."""
 
-    event_type: Literal["output", "exit", "state"]
+    event_type: Literal["output", "exit", "state", "debug"]
     stream: Literal["stdout", "stderr"] | None = None
     text: str | None = None
     return_code: int | None = None
     state: ProcessState | None = None
     terminated_by_user: bool = False
+    payload: object | None = None
 
 
 @dataclass

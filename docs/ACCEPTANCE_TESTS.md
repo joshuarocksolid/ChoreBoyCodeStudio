@@ -773,6 +773,143 @@ Verify variable/stack inspection affordances in debug workflows.
 
 ---
 
+## AT-59 — Conditional breakpoints and hit-count thresholds
+
+**Purpose:**  
+Verify that breakpoint properties are practical for real debugging workflows.
+
+**Preconditions:**  
+- debug-eligible Python project open
+- file contains a loop or repeated call site
+
+**Steps:**  
+1. Add a breakpoint from the gutter.
+2. Open breakpoint properties and set a condition.
+3. Run Debug and verify the breakpoint only pauses when the condition is true.
+4. Change the breakpoint to use a hit-count threshold.
+5. Run Debug again and verify the breakpoint does not stop before the threshold.
+
+**Expected Result:**  
+- conditional breakpoints are evaluated in runner context without crashing the editor
+- hit-count thresholds are honored deterministically
+- breakpoint verification failures are visible and actionable
+
+---
+
+## AT-60 — Threads, frames, scopes, and lazy variable expansion
+
+**Purpose:**  
+Verify the runtime inspector presents paused state as navigable structured data.
+
+**Preconditions:**  
+- active paused debug session
+- sample program exposes at least one nested object and more than one stack frame
+
+**Steps:**  
+1. Pause at a breakpoint with a non-trivial call stack.
+2. Switch between available frames in the Debug panel.
+3. Inspect locals and globals by scope.
+4. Expand nested variables such as dicts, lists, and custom objects.
+5. Confirm large values are truncated rather than freezing the UI.
+
+**Expected Result:**  
+- the panel shows threads, frames, and scopes separately
+- selecting a frame updates the editor highlight and variable view coherently
+- nested variables load on demand instead of materializing the full object graph at once
+- object previews stay readable and bounded
+
+---
+
+## AT-61 — Exception pause behavior and exception-stop settings
+
+**Purpose:**  
+Verify uncaught exception stops are visible and configurable.
+
+**Preconditions:**  
+- debug-eligible Python project open
+- project contains one script that raises an uncaught exception and one that raises then catches an exception
+
+**Steps:**  
+1. Enable stop on uncaught exceptions and debug the uncaught-exception script.
+2. Confirm the session pauses with exception details before exit.
+3. Disable stop on raised exceptions and debug the caught-exception script.
+4. Enable stop on raised exceptions and debug the caught-exception script again.
+
+**Expected Result:**  
+- uncaught exceptions surface as a clear stop reason with traceback details
+- raised-exception behavior follows the configured policy
+- continuing after an exception stop behaves predictably and the session can still terminate cleanly
+
+---
+
+## AT-62 — Debug current test and rerun last debug target
+
+**Purpose:**  
+Verify debug workflows cover both scripts and pytest targets without requiring manual command recreation.
+
+**Preconditions:**  
+- project contains at least one passing test file
+- an editor tab is open on that test file
+
+**Steps:**  
+1. Trigger **Debug Current Test** from the active test file.
+2. Pause on a breakpoint inside the test or code under test.
+3. Stop the session.
+4. Trigger **Rerun Last Debug Target**.
+
+**Expected Result:**  
+- current-file pytest debugging launches the intended target
+- breakpoint and inspector behavior matches normal debug sessions
+- rerun uses the last debug target without requiring the user to rebuild the launch intent
+
+---
+
+## AT-63 — Dirty-buffer debug source remap
+
+**Purpose:**  
+Verify debugging unsaved editor changes still navigates back to the real editor file rather than a transient runtime copy.
+
+**Preconditions:**  
+- project is open
+- active Python file has unsaved edits
+
+**Steps:**  
+1. Add a breakpoint in the dirty active file.
+2. Start **Debug Active File** without manually saving first.
+3. Pause at the breakpoint and inspect the current frame.
+4. Navigate between stack frames from the Debug panel.
+
+**Expected Result:**  
+- the runner executes the dirty-buffer snapshot
+- editor navigation and current-line highlighting point at the real project file
+- breakpoint mapping remains coherent even though the runtime used a transient copy
+
+---
+
+## AT-64 — Debug transport reliability, theme safety, and responsiveness
+
+**Purpose:**  
+Verify the structured debug transport remains supportable under normal runtime pressure.
+
+**Preconditions:**  
+- debug rollout enabled
+- editor can switch between light and dark mode
+- medium-size Python debug fixture is available
+
+**Steps:**  
+1. Start a debug session on the fixture and pause several times.
+2. Expand nested variables and evaluate watches while stdout/stderr continues to produce output.
+3. Switch between light and dark mode while the Debug panel is populated.
+4. Restart the debug target and stop it again.
+
+**Expected Result:**  
+- debugger state remains synchronized even while the program emits console output
+- pause-to-inspector updates feel responsive and do not stall the UI thread
+- debug controls, highlights, badges, and tree states remain readable in both themes
+- restart/stop leaves the session in a clean state with actionable logs if failure occurs
+
+---
+
 ## AT-32 — Syntax highlighting modernization and adaptive performance
 
 **Purpose:**  
@@ -1244,6 +1381,163 @@ Verify that semantic UI surfaces are legible in light/dark mode and remain respo
 - all semantic labels, badges, lists, popups, and previews remain readable in both themes
 - semantic completion and navigation feel responsive enough for normal editing workflows
 - performance regressions are measurable and within the documented rollout targets
+
+---
+
+## AT-52 — Python format command performs real formatting
+
+**Purpose:**  
+Verify that formatting a Python file performs recognizable Python formatting rather than only whitespace cleanup.
+
+**Preconditions:**  
+- formatter dependencies are available
+- a Python file with import/order/wrapping style issues is open in the editor
+
+**Steps:**  
+1. Open a Python file that needs more than trailing-whitespace cleanup.
+2. Invoke **Format Current File**.
+3. Inspect the updated buffer and save state.
+
+**Expected Result:**  
+- the resulting Python code matches the shipped Black-style formatting behavior
+- the editor does not claim success when only whitespace cleanup would have occurred
+- unchanged files report a no-op result instead of mutating the buffer
+- non-Python files continue using the generic hygiene formatter path
+
+---
+
+## AT-53 — Organize imports is explicit, Black-compatible, and non-destructive
+
+**Purpose:**  
+Verify that organize-imports is a separate trusted command that sorts imports without pretending to be a structural refactor engine.
+
+**Preconditions:**  
+- formatter/import dependencies are available
+- a Python file containing unsorted imports, comments, and `__future__` imports is open
+
+**Steps:**  
+1. Invoke **Organize Imports** on the file.
+2. Inspect the resulting import block.
+3. Repeat on a file with comments and multi-line imports.
+
+**Expected Result:**  
+- organize-imports is a separate command from format
+- imports are grouped and ordered in a Black-compatible way
+- `__future__` imports stay correctly ordered
+- surrounding comments are preserved
+- the command does not silently remove unused imports or perform broader refactors
+
+---
+
+## AT-54 — Project-local pyproject configuration drives Python style behavior
+
+**Purpose:**  
+Verify that Python formatting/import behavior comes from project-local `pyproject.toml` settings instead of hidden global tool state.
+
+**Preconditions:**  
+- project contains a `pyproject.toml` with `[tool.black]`, `[tool.isort]`, or `[project.requires-python]`
+- formatter/import dependencies are available
+
+**Steps:**  
+1. Open the project and a Python file that exercises the configured style.
+2. Trigger **Format Current File** and **Organize Imports**.
+3. Inspect settings/status surfaces for detected formatter/import configuration.
+
+**Expected Result:**  
+- project-local `pyproject.toml` settings are honored for the supported formatter/import options
+- Python target-version-sensitive import grouping matches the declared project/runtime intent
+- the UI makes it clear that project-local config was detected
+- hidden global formatter/import config does not silently override project behavior
+
+---
+
+## AT-55 — Save succeeds even when organize/format fails
+
+**Purpose:**  
+Verify that save reliability outranks style automation when a formatter/import step fails.
+
+**Preconditions:**  
+- save-time format or organize-imports automation is enabled
+- a Python file is open
+- create either a syntax-broken buffer or a deliberate formatter/import configuration failure
+
+**Steps:**  
+1. Edit the Python file into a state that causes organize-imports or format to fail.
+2. Save the file.
+3. Inspect the saved on-disk contents and the UI feedback.
+
+**Expected Result:**  
+- the current buffer contents are still written to disk
+- the editor remains stable and the file is not lost
+- the user sees a clear warning describing the formatting/import failure
+- save does not silently pretend the style action succeeded
+
+---
+
+## AT-56 — Python formatter/import tooling respects ChoreBoy runtime constraints
+
+**Purpose:**  
+Verify that the shipped Python formatter/import stack works under the AppRun runtime without violating ChoreBoy filesystem and subprocess constraints.
+
+**Preconditions:**  
+- test executed in the AppRun-based target or target-like runtime
+- formatter/import dependencies are present
+
+**Steps:**  
+1. Open a project with Python files and `pyproject.toml`.
+2. Run **Format Current File** and **Organize Imports**.
+3. Inspect project/global state directories and runtime behavior.
+
+**Expected Result:**  
+- formatting/import commands work without spawning unsupported formatter sidecar binaries
+- no hidden cache or metadata directories are created for the shipped formatter/import path
+- any formatter/import readiness status is reported clearly
+- the shipped dependency set remains supportable for the real runtime and packaging contract
+
+---
+
+## AT-57 — Formatting/import actions preserve editor trust and theme readability
+
+**Purpose:**  
+Verify that formatting/import actions preserve practical editor state and remain understandable in both light and dark themes.
+
+**Preconditions:**  
+- formatter/import rollout is enabled
+- editor can switch between light and dark mode
+- a Python file with selection/cursor state is open
+
+**Steps:**  
+1. Place the caret and selection inside a Python file.
+2. Trigger **Format Current File** and **Organize Imports**.
+3. Repeat in both light and dark modes while observing status/error surfaces.
+
+**Expected Result:**  
+- formatting/import actions preserve practical cursor, selection, scroll, and undo behavior
+- success, no-op, and failure states remain readable in both themes
+- the editor does not feel like it discarded the user’s working context after applying a full-buffer transform
+
+---
+
+## AT-58 — Python formatting/import latency stays within rollout targets
+
+**Purpose:**  
+Verify that the shipped Python formatting/import path remains responsive enough for normal editing workflows.
+
+**Preconditions:**  
+- formatter/import rollout is enabled
+- medium-size Python fixture file is available
+
+**Steps:**  
+1. Warm the formatter/import path on the medium fixture.
+2. Measure **Format Current File** latency.
+3. Measure **Organize Imports** latency.
+4. Measure save-time organize+format latency with both toggles enabled.
+
+**Expected Result:**  
+- manual format stays within the documented rollout target
+- organize-imports stays within the documented rollout target
+- combined save-time automation remains responsive enough for day-to-day editing
+- any guardrail-triggered skips are explicit rather than manifesting as UI freezes
 
 ---
 

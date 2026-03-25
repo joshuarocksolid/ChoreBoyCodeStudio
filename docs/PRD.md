@@ -20,7 +20,8 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
    * persistent log file
    * crash popup with full traceback
-     This is your proven model and must be first-class. 
+   * breakpoint-driven debug flow with stack, variable, watch, and exception inspection inside the app
+     The log/traceback model is still the fallback safety net and must remain first-class.
 4. **Safe + predictable** on ChoreBoy: no system installs required; everything ships as a folder under Home and runs reliably.
 
 ### Secondary goals
@@ -33,7 +34,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
 ## 3) Non-goals (v1)
 
-* Full VSCode/IntelliJ parity (LSP, refactors, debugging breakpoints, git integrations).
+* Full VSCode/IntelliJ parity (LSP breadth, advanced refactors, remote debugging, git integrations).
 * Installing packages system-wide, or depending on OS packages not shipped with FreeCAD.
 * Internet-based workflows (ChoreBoy is LAN-only; no general internet). 
 * Internet marketplace and publisher-signing dependency for plugin installation.

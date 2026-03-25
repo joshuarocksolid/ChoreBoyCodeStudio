@@ -10,6 +10,7 @@ import pytest
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
+from app.debug.debug_models import DebugExceptionPolicy, DebugSourceMap
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_manifest import load_run_manifest
 from app.run.run_service import (
@@ -179,8 +180,62 @@ def test_start_run_supports_projectless_script_with_explicit_entry(
     assert launch_context["cwd"] == str(script_path.parent.resolve())
 
 
-def test_forward_event_tracks_debug_pause_and_resume_markers(tmp_path: Path) -> None:
-    """Debug protocol output markers should update pause state deterministically."""
+def test_start_run_python_debug_writes_transport_policy_and_source_maps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    monkeypatch.setattr(service.supervisor, "start", lambda *args, **kwargs: None)
+
+    session = service.start_run(
+        loaded_project,
+        mode=constants.RUN_MODE_PYTHON_DEBUG,
+        debug_exception_policy=DebugExceptionPolicy(
+            stop_on_uncaught_exceptions=False,
+            stop_on_raised_exceptions=True,
+        ),
+        source_maps=[
+            DebugSourceMap(
+                runtime_path=str((project_root / "cbcs" / "temp.py").resolve()),
+                source_path=str((project_root / "run.py").resolve()),
+            )
+        ],
+    )
+    manifest = load_run_manifest(session.manifest_path)
+
+    assert manifest.mode == constants.RUN_MODE_PYTHON_DEBUG
+    assert manifest.debug_transport is not None
+    assert manifest.debug_transport.protocol
+    assert manifest.debug_transport.host == "127.0.0.1"
+    assert manifest.debug_transport.port > 0
+    assert manifest.debug_exception_policy == DebugExceptionPolicy(
+        stop_on_uncaught_exceptions=False,
+        stop_on_raised_exceptions=True,
+    )
+    assert manifest.source_maps == [
+        DebugSourceMap(
+            runtime_path=str((project_root / "cbcs" / "temp.py").resolve()),
+            source_path=str((project_root / "run.py").resolve()),
+        )
+    ]
+    service._close_debug_transport_server()  # noqa: SLF001 - avoid leaking a listener in unit tests
+
+
+def test_forward_debug_message_tracks_pause_and_resume_events(tmp_path: Path) -> None:
+    """Structured debug events should update pause state deterministically."""
     captured_events: list[ProcessEvent] = []
     service = RunService(
         on_event=captured_events.append,
@@ -188,16 +243,16 @@ def test_forward_event_tracks_debug_pause_and_resume_markers(tmp_path: Path) -> 
         runner_boot_path=str(tmp_path / "run_runner.py"),
     )
 
-    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
-        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_PAUSED__\n")
+    service._forward_debug_message(  # noqa: SLF001 - characterization test for private coordination logic
+        {"kind": "event", "event": "stopped", "body": {"message": "Paused at breakpoint."}}
     )
     assert service.is_debug_paused is True
 
-    service._forward_event(  # noqa: SLF001 - characterization test for private coordination logic
-        ProcessEvent(event_type="output", stream="stdout", text="__CB_DEBUG_RUNNING__\n")
+    service._forward_debug_message(  # noqa: SLF001 - characterization test for private coordination logic
+        {"kind": "event", "event": "continued", "body": {"message": "Debug execution running."}}
     )
     assert service.is_debug_paused is False
-    assert [event.event_type for event in captured_events] == ["output", "output"]
+    assert [event.event_type for event in captured_events] == ["debug", "debug"]
 
 
 def test_forward_event_exit_clears_active_session_state(tmp_path: Path) -> None:
