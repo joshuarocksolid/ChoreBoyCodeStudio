@@ -38,12 +38,16 @@ def test_new_form_creates_ui_file_and_opens_it(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    text_responses = iter([("CustomerForm", True), ("customer_form.ui", True)])
-    monkeypatch.setattr("app.shell.main_window.QInputDialog.getText", lambda *args, **kwargs: next(text_responses))
-    monkeypatch.setattr(
-        "app.shell.main_window.QInputDialog.getItem",
-        lambda *args, **kwargs: ("QWidget", True),
+    from app.designer.new_form_dialog import NewFormDialog, NewFormRequest
+
+    fake_result = NewFormRequest(
+        form_class_name="CustomerForm",
+        root_widget_class="QWidget",
+        root_object_name="CustomerForm",
     )
+    monkeypatch.setattr(NewFormDialog, "exec_", lambda self: qt_widgets.QDialog.Accepted)
+    monkeypatch.setattr(NewFormDialog, "result", property(lambda self: fake_result))
+    monkeypatch.setattr(NewFormDialog, "form_file_name", lambda self: "customer_form.ui")
 
     opened_paths: list[str] = []
     monkeypatch.setattr(window, "_open_file_in_editor", lambda file_path: opened_paths.append(file_path) or True)

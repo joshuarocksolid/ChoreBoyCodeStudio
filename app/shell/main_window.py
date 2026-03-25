@@ -877,43 +877,17 @@ class MainWindow(QMainWindow):
             return
 
         destination_directory = self._selected_tree_directory() or self._loaded_project.project_root
-        form_name, accepted_name = QInputDialog.getText(self, "New Form", "Form class name:", QLineEdit.Normal, "MainForm")
-        normalized_form_name = form_name.strip()
-        if not accepted_name or not normalized_form_name:
+
+        from app.designer.new_form_dialog import NewFormDialog
+
+        dialog = NewFormDialog(self)
+        if dialog.exec_() != QDialog.Accepted or dialog.result is None:
             return
 
-        file_name, accepted_file = QInputDialog.getText(
-            self,
-            "New Form",
-            "Form file name (.ui):",
-            QLineEdit.Normal,
-            "form.ui",
-        )
-        normalized_file_name = file_name.strip()
-        if not accepted_file or not normalized_file_name:
+        request = dialog.result
+        normalized_file_name = dialog.form_file_name()
+        if not normalized_file_name:
             return
-        if not normalized_file_name.lower().endswith(".ui"):
-            normalized_file_name = f"{normalized_file_name}.ui"
-
-        root_widget_class, accepted_widget = QInputDialog.getItem(
-            self,
-            "New Form",
-            "Root widget:",
-            ["QWidget", "QDialog", "QMainWindow"],
-            0,
-            False,
-        )
-        if not accepted_widget or not root_widget_class:
-            return
-
-        root_object_name = normalized_form_name
-        if root_object_name and root_object_name[0].islower():
-            root_object_name = root_object_name[0].upper() + root_object_name[1:]
-        request = NewFormRequest(
-            form_class_name=normalized_form_name,
-            root_widget_class=root_widget_class,
-            root_object_name=root_object_name or "Form",
-        )
 
         target_path = Path(destination_directory) / normalized_file_name
         if target_path.exists():
