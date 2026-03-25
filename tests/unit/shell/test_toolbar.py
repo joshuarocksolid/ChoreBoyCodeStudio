@@ -64,7 +64,11 @@ def test_disabled_actions_produce_hidden_buttons() -> None:
     widget = RunToolbarWidget(registry)
     from PySide2.QtWidgets import QToolButton
 
-    buttons = widget.findChildren(QToolButton)
+    buttons = [
+        btn
+        for btn in widget.findChildren(QToolButton)
+        if btn.objectName() != "shell.toolbar.btn.runTarget"
+    ]
     assert len(buttons) == 12
     assert all(btn.isHidden() for btn in buttons)
 

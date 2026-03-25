@@ -15,3 +15,7 @@ markers = [
     "runtime_parity: tests requiring /opt/freecad/AppRun or equivalent runtime",
     "manual_acceptance: links automated coverage to manual acceptance workflows",
 ]
+# Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
+filterwarnings = [
+    "ignore::DeprecationWarning:rope.base.project",
+]

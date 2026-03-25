@@ -39,6 +39,7 @@ def _build_window_stub() -> MainWindow:
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: None)
     window_any._background_tasks = _FakeBackgroundTasks()
+    window_any._workflow_broker = object()
     window_any._workspace_controller = SimpleNamespace(
         buffer_revision=lambda _path: 1,
         open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()),
@@ -55,11 +56,11 @@ def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.Mon
     window_any = cast(Any, window)
     captured: list[bool] = []
 
-    def _fake_analyze(*_args, **kwargs):  # type: ignore[no-untyped-def]
+    def _fake_analyze(_broker, **kwargs):  # type: ignore[no-untyped-def]
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
-        return []
+        return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
+    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
 
     MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="manual")
     background_call = window_any._background_tasks.calls[0]
@@ -73,11 +74,11 @@ def test_render_lint_save_trigger_disables_runtime_probe(monkeypatch: pytest.Mon
     window_any = cast(Any, window)
     captured: list[bool] = []
 
-    def _fake_analyze(*_args, **kwargs):  # type: ignore[no-untyped-def]
+    def _fake_analyze(_broker, **kwargs):  # type: ignore[no-untyped-def]
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
-        return []
+        return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
+    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
 
     MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="save")
     background_call = window_any._background_tasks.calls[0]
@@ -95,11 +96,11 @@ def test_lint_all_open_files_disables_runtime_probe(monkeypatch: pytest.MonkeyPa
     }
     captured: list[bool] = []
 
-    def _fake_analyze(*_args, **kwargs):  # type: ignore[no-untyped-def]
+    def _fake_analyze(_broker, **kwargs):  # type: ignore[no-untyped-def]
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
-        return []
+        return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_file", _fake_analyze)
+    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
 
     MainWindow._lint_all_open_files(window)
     assert len(window_any._background_tasks.calls) == 2

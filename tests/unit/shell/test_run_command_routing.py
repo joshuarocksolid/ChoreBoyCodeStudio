@@ -11,6 +11,7 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
+from app.core.models import LoadedProject, ProjectMetadata
 from app.debug.debug_breakpoints import build_breakpoint
 from app.debug.debug_models import DebugExceptionPolicy, DebugSourceMap
 from app.shell.main_window import MainWindow
@@ -71,9 +72,22 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
     ]
 
 
-def test_handle_run_project_action_uses_project_entry_resolution() -> None:
+def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path) -> None:
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    (project_root / "app.py").write_text("print('run')\n", encoding="utf-8")
+    manifest_path = project_root / "cbcs" / "project.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text('{"schema_version": 1, "name": "T", "default_entry": "app.py"}', encoding="utf-8")
+    loaded = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str(manifest_path.resolve()),
+        metadata=ProjectMetadata(schema_version=1, name="T", default_entry="app.py"),
+        entries=[],
+    )
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
+    window_any._loaded_project = loaded
     window_any._resolve_project_entry_for_project_run = lambda: "app.py"
     calls: list[dict[str, object]] = []
     window_any._start_session = lambda **kwargs: calls.append(kwargs) or True

@@ -102,6 +102,7 @@ from app.run.runtime_launch import (
 )
 from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.config import resolve_project_package_config
+from app.packaging.layout import resolve_entry_path
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
 from app.plugins.builtin_workflows import register_builtin_workflow_providers
@@ -3268,7 +3269,18 @@ class MainWindow(QMainWindow):
         if loaded_project is None:
             QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return None
-        return loaded_project.metadata.default_entry
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        default_entry = (loaded_project.metadata.default_entry or "").strip()
+        resolved, _error = resolve_entry_path(root=project_root, entry_file=default_entry)
+        if resolved is not None:
+            return default_entry
+        missing_label = default_entry if default_entry else "(empty)"
+        replacement = self._prompt_for_project_entry_replacement(missing_label)
+        if not replacement:
+            return None
+        if self._set_project_entry_point(replacement):
+            return replacement.strip()
+        return None
 
     def _prompt_for_project_entry_replacement(self, missing_entry: str) -> str | None:
         loaded_project = self._loaded_project

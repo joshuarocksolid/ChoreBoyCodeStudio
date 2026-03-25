@@ -10,6 +10,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from app.plugins.workflow_broker import WorkflowProviderDescriptor
 from app.python_tools.models import (
     PYTHON_TOOLING_CONFIG_SOURCE_DEFAULTS,
     PYTHON_TOOLING_STATUS_FORMATTED,
@@ -80,13 +81,24 @@ def _dummy_python_settings(file_path: str) -> PythonToolingSettings:
     )
 
 
+def _wf_descriptor(*, title: str = "Test provider") -> WorkflowProviderDescriptor:
+    return WorkflowProviderDescriptor(
+        provider_key="test",
+        kind="test",
+        lane="test",
+        title=title,
+        source_kind="builtin",
+    )
+
+
 def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWidget]:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     editor_widget = _FakeEditorWidget(text)
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: SimpleNamespace(file_path=file_path))
-    window_any._active_editor_widget = lambda: editor_widget
+    window_any._editor_widgets_by_path = {file_path: editor_widget}
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
+    window_any._workflow_broker = object()
     return window, editor_widget
 
 
@@ -107,6 +119,7 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
     window_any._update_editor_status_for_path = lambda *_args, **_kwargs: None
     window_any._intelligence_runtime_settings = SimpleNamespace()
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
+    window_any._workflow_broker = object()
     window_any._render_lint_diagnostics_for_file = lambda *_args, **_kwargs: None
     window_any._start_symbol_indexing = lambda *_args, **_kwargs: None
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
@@ -121,22 +134,32 @@ def test_handle_format_current_file_action_uses_black_for_python_files(
     infos: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(
-        "app.shell.main_window.format_python_text",
-        lambda source_text, *, file_path, project_root: calls.append(
+    def _fake_format(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        calls.append(
             {
                 "source_text": source_text,
                 "file_path": file_path,
                 "project_root": project_root,
             }
         )
-        or PythonTextTransformResult(
-            formatted_text='value = {"alpha": 1}\n',
-            changed=True,
-            status=PYTHON_TOOLING_STATUS_FORMATTED,
-            settings=_dummy_python_settings(file_path),
-        ),
-    )
+        return (
+            _wf_descriptor(title="Black"),
+            PythonTextTransformResult(
+                formatted_text='value = {"alpha": 1}\n',
+                changed=True,
+                status=PYTHON_TOOLING_STATUS_FORMATTED,
+                settings=_dummy_python_settings(file_path),
+            ),
+        )
+
+    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format)
     monkeypatch.setattr(
         "app.shell.main_window.format_text_basic",
         lambda *_args, **_kwargs: pytest.fail("Non-Python formatter should not run for .py files"),
@@ -160,7 +183,7 @@ def test_handle_format_current_file_action_uses_black_for_python_files(
         }
     ]
     assert editor_widget.replacements == ['value = {"alpha": 1}\n']
-    assert infos == [("Format Current File", "Formatting applied.")]
+    assert infos == [("Format Current File", "Formatting applied via Black.")]
     assert warnings == []
 
 
@@ -171,8 +194,8 @@ def test_handle_format_current_file_action_uses_basic_formatter_for_non_python_f
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_text",
-        lambda *_args, **_kwargs: pytest.fail("Python formatter should not run for non-Python files"),
+        "app.shell.main_window.format_python_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Python formatter should not run for non-Python files"),
     )
     monkeypatch.setattr(
         "app.shell.main_window.format_text_basic",
@@ -195,16 +218,26 @@ def test_handle_format_current_file_action_surfaces_python_syntax_errors(
     window, editor_widget = _build_window("/tmp/project/main.py", "def broken(:\n    pass\n")
     warnings: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(
-        "app.shell.main_window.format_python_text",
-        lambda *_args, **_kwargs: PythonTextTransformResult(
-            formatted_text="def broken(:\n    pass\n",
-            changed=False,
-            status=PYTHON_TOOLING_STATUS_SYNTAX_ERROR,
-            settings=_dummy_python_settings("/tmp/project/main.py"),
-            error_message="Cannot parse",
-        ),
-    )
+    def _fake_format(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        return (
+            _wf_descriptor(title="Black"),
+            PythonTextTransformResult(
+                formatted_text="def broken(:\n    pass\n",
+                changed=False,
+                status=PYTHON_TOOLING_STATUS_SYNTAX_ERROR,
+                settings=_dummy_python_settings("/tmp/project/main.py"),
+                error_message="Cannot parse",
+            ),
+        )
+
+    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format)
     monkeypatch.setattr(
         "app.shell.main_window.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
@@ -228,22 +261,32 @@ def test_handle_organize_imports_action_uses_isort_for_python_files(
     calls: list[dict[str, str]] = []
     infos: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_text",
-        lambda source_text, *, file_path, project_root: calls.append(
+    def _fake_organize(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        calls.append(
             {
                 "source_text": source_text,
                 "file_path": file_path,
                 "project_root": project_root,
             }
         )
-        or PythonTextTransformResult(
-            formatted_text="import a\nimport b\n",
-            changed=True,
-            status=PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED,
-            settings=_dummy_python_settings(file_path),
-        ),
-    )
+        return (
+            _wf_descriptor(title="isort"),
+            PythonTextTransformResult(
+                formatted_text="import a\nimport b\n",
+                changed=True,
+                status=PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED,
+                settings=_dummy_python_settings(file_path),
+            ),
+        )
+
+    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize)
     monkeypatch.setattr(
         "app.shell.main_window.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
@@ -259,7 +302,7 @@ def test_handle_organize_imports_action_uses_isort_for_python_files(
         }
     ]
     assert editor_widget.replacements == ["import a\nimport b\n"]
-    assert infos == [("Organize Imports", "Imports organized.")]
+    assert infos == [("Organize Imports", "Imports organized via isort.")]
 
 
 def test_handle_organize_imports_action_rejects_non_python_files(
@@ -269,8 +312,8 @@ def test_handle_organize_imports_action_rejects_non_python_files(
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_text",
-        lambda *_args, **_kwargs: pytest.fail("isort should not run for non-Python files"),
+        "app.shell.main_window.organize_imports_with_workflow",
+        lambda *_a, **_kw: pytest.fail("isort should not run for non-Python files"),
     )
     monkeypatch.setattr(
         "app.shell.main_window.QMessageBox.information",
@@ -298,26 +341,46 @@ def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
     organize_calls: list[str] = []
     format_calls: list[str] = []
 
-    monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_text",
-        lambda source_text, **_kwargs: organize_calls.append(source_text)
-        or PythonTextTransformResult(
-            formatted_text="import a\nimport b\n",
-            changed=True,
-            status=PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED,
-            settings=_dummy_python_settings("/tmp/project/main.py"),
-        ),
-    )
-    monkeypatch.setattr(
-        "app.shell.main_window.format_python_text",
-        lambda source_text, **_kwargs: format_calls.append(source_text)
-        or PythonTextTransformResult(
-            formatted_text="import a\n\nimport b\n",
-            changed=True,
-            status=PYTHON_TOOLING_STATUS_FORMATTED,
-            settings=_dummy_python_settings("/tmp/project/main.py"),
-        ),
-    )
+    def _fake_organize_save(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        organize_calls.append(source_text)
+        return (
+            _wf_descriptor(title="isort"),
+            PythonTextTransformResult(
+                formatted_text="import a\nimport b\n",
+                changed=True,
+                status=PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED,
+                settings=_dummy_python_settings("/tmp/project/main.py"),
+            ),
+        )
+
+    def _fake_format_save(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        format_calls.append(source_text)
+        return (
+            _wf_descriptor(title="Black"),
+            PythonTextTransformResult(
+                formatted_text="import a\n\nimport b\n",
+                changed=True,
+                status=PYTHON_TOOLING_STATUS_FORMATTED,
+                settings=_dummy_python_settings("/tmp/project/main.py"),
+            ),
+        )
+
+    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_save)
+    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format_save)
     monkeypatch.setattr(
         "app.shell.main_window.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
@@ -337,16 +400,26 @@ def test_save_tab_still_saves_when_python_style_automation_fails(
     window_any._editor_organize_imports_on_save = True
     warnings: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_text",
-        lambda *_args, **_kwargs: PythonTextTransformResult(
-            formatted_text="import b\nimport a\n",
-            changed=False,
-            status=PYTHON_TOOLING_STATUS_SYNTAX_ERROR,
-            settings=_dummy_python_settings("/tmp/project/main.py"),
-            error_message="Cannot parse",
-        ),
-    )
+    def _fake_organize_err(
+        _broker: object,
+        *,
+        source_text: str,
+        file_path: str,
+        project_root: str,
+        preferred_provider_key: str | None = None,
+    ) -> tuple[WorkflowProviderDescriptor, PythonTextTransformResult]:
+        return (
+            _wf_descriptor(title="isort"),
+            PythonTextTransformResult(
+                formatted_text="import b\nimport a\n",
+                changed=False,
+                status=PYTHON_TOOLING_STATUS_SYNTAX_ERROR,
+                settings=_dummy_python_settings("/tmp/project/main.py"),
+                error_message="Cannot parse",
+            ),
+        )
+
+    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_err)
     monkeypatch.setattr(
         "app.shell.main_window.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
@@ -377,12 +450,12 @@ def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
 
     monkeypatch.setattr("app.shell.main_window.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_text",
-        lambda *_args, **_kwargs: pytest.fail("Guardrail should skip organize imports"),
+        "app.shell.main_window.organize_imports_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Guardrail should skip organize imports"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_text",
-        lambda *_args, **_kwargs: pytest.fail("Guardrail should skip formatting"),
+        "app.shell.main_window.format_python_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Guardrail should skip formatting"),
     )
     monkeypatch.setattr(
         "app.shell.main_window.should_refresh_index_after_save",
