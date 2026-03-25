@@ -11,6 +11,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QToolButton
 
 from app.shell.main_window import MainWindow
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -70,28 +71,31 @@ def test_run_toolbar_target_summary_reflects_selected_configuration(
     )
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    assert window._open_project_by_path(str(project_root.resolve())) is True
-    assert window._open_file_in_editor(str((project_root / "run.py").resolve()), preview=False) is True
+    try:
+        assert window._open_project_by_path(str(project_root.resolve())) is True
+        assert window._open_file_in_editor(str((project_root / "run.py").resolve()), preview=False) is True
 
-    monkeypatch.setattr("app.shell.main_window.QInputDialog.getItem", lambda *_args, **_kwargs: ("Tool", True))
-    started: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        window,
-        "_start_session",
-        lambda **kwargs: started.append(kwargs) or True,
-    )
+        monkeypatch.setattr("app.shell.main_window.QInputDialog.getItem", lambda *_args, **_kwargs: ("Tool", True))
+        started: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            window,
+            "_start_session",
+            lambda **kwargs: started.append(kwargs) or True,
+        )
 
-    window._handle_run_with_configuration_action()
+        window._handle_run_with_configuration_action()
 
-    assert window._active_named_run_config_name == "Tool"
-    toolbar_button = window.findChild(QToolButton, "shell.toolbar.btn.runTarget")
-    assert toolbar_button is not None
-    assert "F5 run.py" in toolbar_button.text()
-    assert "Shift+F5 run.py" in toolbar_button.text()
-    assert "Config Tool" in toolbar_button.text()
-    assert "Working directory: tools" in toolbar_button.toolTip()
-    assert "Env overrides: APP_ENV=dev" in toolbar_button.toolTip()
-    assert started and started[0]["entry_file"] == "tools/tool.py"
+        assert window._active_named_run_config_name == "Tool"
+        toolbar_button = window.findChild(QToolButton, "shell.toolbar.btn.runTarget")
+        assert toolbar_button is not None
+        assert "F5 run.py" in toolbar_button.text()
+        assert "Shift+F5 run.py" in toolbar_button.text()
+        assert "Config Tool" in toolbar_button.text()
+        assert "Working directory: tools" in toolbar_button.toolTip()
+        assert "Env overrides: APP_ENV=dev" in toolbar_button.toolTip()
+        assert started and started[0]["entry_file"] == "tools/tool.py"
+    finally:
+        shutdown_main_window_for_test(window)
 
 
 def test_run_project_preflight_opens_runtime_center_for_missing_entry(
@@ -104,27 +108,30 @@ def test_run_project_preflight_opens_runtime_center_for_missing_entry(
     _write_project(project_root, default_entry="missing.py")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    try:
+        assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    opened_dialogs: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        window,
-        "_open_runtime_center_dialog",
-        lambda *, title="Runtime Center", report=None: opened_dialogs.append(
-            {"title": title, "report": report}
-        ),
-    )
-    monkeypatch.setattr(
-        window,
-        "_start_session",
-        lambda **_kwargs: pytest.fail("run should not start when preflight fails"),
-    )
+        opened_dialogs: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            window,
+            "_open_runtime_center_dialog",
+            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
+                {"title": title, "report": report}
+            ),
+        )
+        monkeypatch.setattr(
+            window,
+            "_start_session",
+            lambda **_kwargs: pytest.fail("run should not start when preflight fails"),
+        )
 
-    started = window._handle_run_project_action()
+        started = window._handle_run_project_action()
 
-    assert started is False
-    assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Run Project"
-    report = opened_dialogs[0]["report"]
-    assert report is not None
-    assert [issue.issue_id for issue in report.issues] == ["run.entry_not_found"]
+        assert started is False
+        assert len(opened_dialogs) == 1
+        assert opened_dialogs[0]["title"] == "Run Project"
+        report = opened_dialogs[0]["report"]
+        assert report is not None
+        assert [issue.issue_id for issue in report.issues] == ["run.entry_not_found"]
+    finally:
+        shutdown_main_window_for_test(window)

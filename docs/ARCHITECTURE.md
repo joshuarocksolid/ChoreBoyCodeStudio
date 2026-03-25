@@ -754,8 +754,11 @@ Owns plugin lifecycle and contracts:
 * discovery and compatibility checks
 * install/uninstall registry persistence
 * declarative contribution registration
-* runtime plugin host IPC and command dispatch
+* workflow provider catalog and broker selection
+* runtime plugin host IPC across query and job lanes
+* project-scoped plugin policy in `cbcs/plugins.json`
 * safe mode and failure quarantine controls
+* bundled first-party plugin discovery
 
 ## 12.12 `intelligence`
 
@@ -1512,7 +1515,13 @@ v1 includes a first-class plugin platform with two extension types:
 * declarative contributions
 * runtime code plugins
 
-Runtime code plugins execute in an isolated plugin host process using explicit IPC contracts. The editor process does not import plugin code directly.
+Runtime code plugins execute in an isolated plugin host process using explicit IPC
+contracts. The editor process does not import plugin code directly.
+
+Python workflow extensibility is provider-based rather than command-centric. Core shell
+surfaces talk to a workflow broker, which resolves either built-in providers or runtime
+plugin providers and keeps the shell in control of UI, buffer application, diagnostics
+rendering, and supportability.
 
 ## 24.2 Plugin boundaries and contracts
 
@@ -1520,12 +1529,33 @@ Plugin contracts are explicit and versioned:
 
 * plugin manifest schema (`plugin.json`)
 * plugin API version compatibility
-* declared capabilities and activation events
+* declared capabilities, permissions, and activation events
+* project-scoped plugin policy in `cbcs/plugins.json`
+* typed workflow provider contracts for formatter/import-organizer/diagnostics/test/
+  template/packaging/runtime-explainer/FreeCAD-helper/dependency-audit lanes
 * deterministic lifecycle (discover → validate → enable → activate → disable)
 
 v1 distribution is offline-first through local folder or zip installation.
 Publisher signing is not required in v1.
-Per-project plugin overrides and pinning ship in phase 2.
+Bundled first-party plugins live in visible repo path `bundled_plugins/`.
+
+Per-project plugin overrides and pinning are now explicit architecture, not deferred:
+
+* projects can pin plugin versions
+* projects can enable/disable plugins without changing global registry state
+* projects can prefer specific workflow providers by kind/language
+
+## 24.3 Workflow provider topology
+
+The plugin host exposes two lanes:
+
+* query lane for fast structured requests such as formatting, diagnostics, template
+  metadata, and runtime explainers
+* job lane for long-running work such as pytest, packaging, dependency audit, and
+  FreeCAD helpers
+
+This keeps the editor responsive while allowing richer workflow plugins than a simple
+menu-command model would support.
 
 ---
 

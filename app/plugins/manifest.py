@@ -5,8 +5,9 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, NoReturn
 
+from app.core import constants
 from app.core.errors import PluginManifestValidationError
-from app.plugins.models import PluginEngineConstraints, PluginManifest
+from app.plugins.models import PluginEngineConstraints, PluginManifest, PluginWorkflowProvider
 
 PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 PLUGIN_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -46,12 +47,30 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
         field="capabilities",
         manifest_path=manifest_path,
     )
+    permissions = _parse_string_list(
+        payload.get("permissions", []),
+        field="permissions",
+        manifest_path=manifest_path,
+    )
 
     contributes = payload.get("contributes", {})
     if contributes is None:
         contributes = {}
     if not isinstance(contributes, dict):
         _raise_error("contributes must be an object.", field="contributes", manifest_path=manifest_path)
+    workflow_providers = _parse_workflow_providers(
+        contributes.get("workflow_providers", []),
+        manifest_path=manifest_path,
+    )
+    if workflow_providers and runtime_entrypoint is None:
+        _raise_error(
+            "runtime.entrypoint is required when contributes.workflow_providers are declared.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
+    normalized_contributes = dict(contributes)
+    if workflow_providers:
+        normalized_contributes["workflow_providers"] = [provider.to_dict() for provider in workflow_providers]
 
     engine_payload = payload.get("engine_constraints", {})
     if engine_payload is None:
@@ -92,7 +111,9 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
         runtime_entrypoint=runtime_entrypoint,
         activation_events=activation_events,
         capabilities=capabilities,
-        contributes=dict(contributes),
+        permissions=permissions,
+        workflow_providers=workflow_providers,
+        contributes=normalized_contributes,
         engine=PluginEngineConstraints(
             min_app_version=min_app_version,
             max_app_version=max_app_version,
@@ -138,6 +159,148 @@ def _parse_string_list(
         if stripped not in values:
             values.append(stripped)
     return values
+
+
+def _parse_workflow_providers(
+    raw_value: object,
+    *,
+    manifest_path: Path | None,
+) -> list[PluginWorkflowProvider]:
+    if raw_value in (None, {}):
+        return []
+    if not isinstance(raw_value, list):
+        _raise_error(
+            "contributes.workflow_providers must be a list of objects.",
+            field="contributes.workflow_providers",
+            manifest_path=manifest_path,
+        )
+    providers: list[PluginWorkflowProvider] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(raw_value):
+        if not isinstance(item, dict):
+            _raise_error(
+                f"contributes.workflow_providers[{index}] must be an object.",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        provider_id = _require_non_empty_string(
+            item,
+            "id",
+            manifest_path=manifest_path,
+        )
+        if provider_id in seen_ids:
+            _raise_error(
+                f"Duplicate workflow provider id: {provider_id}",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        seen_ids.add(provider_id)
+        if not PLUGIN_ID_PATTERN.fullmatch(provider_id):
+            _raise_error(
+                "workflow provider id must use only letters, numbers, dots, underscores, or hyphens.",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        kind = _require_non_empty_string(item, "kind", manifest_path=manifest_path)
+        if kind not in constants.WORKFLOW_PROVIDER_KINDS:
+            _raise_error(
+                f"Unsupported workflow provider kind: {kind}",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        lane = _require_non_empty_string(item, "lane", manifest_path=manifest_path)
+        if lane not in (
+            constants.WORKFLOW_PROVIDER_LANE_QUERY,
+            constants.WORKFLOW_PROVIDER_LANE_JOB,
+        ):
+            _raise_error(
+                f"Unsupported workflow provider lane: {lane}",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        title = _require_non_empty_string(item, "title", manifest_path=manifest_path)
+        priority = _optional_positive_int(item, "priority", manifest_path=manifest_path)
+        query_handler = _optional_non_empty_string(item, "query_handler", manifest_path=manifest_path)
+        start_handler = _optional_non_empty_string(item, "start_handler", manifest_path=manifest_path)
+        cancel_handler = _optional_non_empty_string(item, "cancel_handler", manifest_path=manifest_path)
+        if lane == constants.WORKFLOW_PROVIDER_LANE_QUERY and query_handler is None:
+            _raise_error(
+                "Query workflow providers require query_handler.",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        if lane == constants.WORKFLOW_PROVIDER_LANE_JOB and start_handler is None:
+            _raise_error(
+                "Job workflow providers require start_handler.",
+                field="contributes.workflow_providers",
+                manifest_path=manifest_path,
+            )
+        languages = tuple(
+            _parse_string_list(
+                item.get("languages", []),
+                field="contributes.workflow_providers.languages",
+                manifest_path=manifest_path,
+            )
+        )
+        file_extensions = tuple(_parse_file_extensions(item.get("file_extensions", []), manifest_path=manifest_path))
+        capabilities = tuple(
+            _parse_string_list(
+                item.get("capabilities", []),
+                field="contributes.workflow_providers.capabilities",
+                manifest_path=manifest_path,
+            )
+        )
+        permissions = tuple(
+            _parse_string_list(
+                item.get("permissions", []),
+                field="contributes.workflow_providers.permissions",
+                manifest_path=manifest_path,
+            )
+        )
+        providers.append(
+            PluginWorkflowProvider(
+                provider_id=provider_id,
+                kind=kind,
+                lane=lane,
+                title=title,
+                priority=priority if priority is not None else 100,
+                languages=languages,
+                file_extensions=file_extensions,
+                query_handler=query_handler,
+                start_handler=start_handler,
+                cancel_handler=cancel_handler,
+                capabilities=capabilities,
+                permissions=permissions,
+            )
+        )
+    return providers
+
+
+def _parse_file_extensions(raw_value: object, *, manifest_path: Path | None) -> list[str]:
+    if not isinstance(raw_value, list):
+        _raise_error(
+            "file_extensions must be a list of strings.",
+            field="contributes.workflow_providers.file_extensions",
+            manifest_path=manifest_path,
+        )
+    extensions: list[str] = []
+    for index, item in enumerate(raw_value):
+        if not isinstance(item, str) or not item.strip():
+            _raise_error(
+                f"file_extensions[{index}] must be a non-empty string.",
+                field="contributes.workflow_providers.file_extensions",
+                manifest_path=manifest_path,
+            )
+        normalized = item.strip().lower()
+        if not normalized.startswith(".") or normalized == ".":
+            _raise_error(
+                f"file_extensions[{index}] must start with '.'.",
+                field="contributes.workflow_providers.file_extensions",
+                manifest_path=manifest_path,
+            )
+        if normalized not in extensions:
+            extensions.append(normalized)
+    return extensions
 
 
 def _require_non_empty_string(

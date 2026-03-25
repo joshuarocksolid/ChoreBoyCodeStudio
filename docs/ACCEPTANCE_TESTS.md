@@ -1195,6 +1195,116 @@ Verify manifest compatibility guards prevent invalid activation.
 
 ---
 
+## AT-85 — Workflow provider selection and provenance
+
+**Purpose:**  
+Verify workflow-capable plugins participate in typed provider selection rather than only
+menu-command registration.
+
+**Preconditions:**  
+- editor is running
+- at least one bundled or installed workflow provider is available
+- a Python project is open
+
+**Steps:**  
+1. Open Plugin Manager and confirm a workflow-capable plugin shows provider details.
+2. Trigger a Python workflow such as Format Current File, Organize Imports, or Run Project Tests.
+3. Observe the resulting success/progress surface.
+
+**Expected Result:**  
+- Plugin Manager shows provider ids, permissions, and source kind
+- the selected workflow runs through the provider broker rather than a raw menu command path
+- user-visible messaging shows which provider handled the workflow
+
+---
+
+## AT-86 — Project plugin pinning and overrides
+
+**Purpose:**  
+Verify `cbcs/plugins.json` controls project-scoped plugin policy and provider preference.
+
+**Preconditions:**  
+- editor is running
+- project is open
+- at least one workflow-capable plugin is available
+
+**Steps:**  
+1. Open Plugin Manager for the project.
+2. Pin a plugin version for the project.
+3. Enable or disable a plugin only for the project.
+4. Choose a preferred provider for one workflow kind.
+5. Reopen the project and inspect `cbcs/plugins.json`.
+
+**Expected Result:**  
+- `cbcs/plugins.json` is written under the visible project metadata folder
+- version pins and project enable/disable state persist across reopen
+- preferred provider selection is preserved and applied to matching workflows
+
+---
+
+## AT-87 — Streaming workflow jobs stay responsive
+
+**Purpose:**  
+Verify long-running workflow providers use streaming job IPC rather than blocking unary
+ command flow.
+
+**Preconditions:**  
+- editor is running
+- project contains runnable tests or another long-running provider workflow
+
+**Steps:**  
+1. Start a workflow job such as Run Project Tests.
+2. Observe the shell while the job is active.
+3. Cancel or let the job finish.
+
+**Expected Result:**  
+- the editor remains responsive while the workflow job runs
+- progress and final completion/error state travel through job events
+- cancellation or terminal completion is handled deterministically
+
+---
+
+## AT-88 — Support bundle captures plugin/provider state
+
+**Purpose:**  
+Verify support bundles include enough provider context to diagnose workflow-plugin issues.
+
+**Preconditions:**  
+- editor is running
+- project is open
+- plugin/provider state exists
+
+**Steps:**  
+1. Generate a support bundle.
+2. Inspect the resulting archive.
+
+**Expected Result:**  
+- bundle includes `project/cbcs/plugins.json` when project plugin policy exists
+- bundle includes plugin registry/trust diagnostics and active provider inventory
+- recent plugin/provider failures are visible in the diagnostics payload
+
+---
+
+## AT-89 — Pure-Python workflow compatibility gating
+
+**Purpose:**  
+Verify phase-1 workflow plugin safety gates reject unsupported plugin assumptions early.
+
+**Preconditions:**  
+- local plugin package exists that violates phase-1 workflow rules (for example compiled
+  extension payloads, hidden-path assumptions, or unsupported subprocess expectations)
+
+**Steps:**  
+1. Attempt to install the incompatible plugin package.
+2. Review the installation or compatibility diagnostics.
+
+**Expected Result:**  
+- installation or activation is blocked when the workflow plugin violates phase-1 safety rules
+- the reported reason is actionable and references the incompatible assumption
+- compatible pure-Python workflow plugins remain installable
+
+---
+
 ## AT-44 — Preview tab mode across explorer/navigation surfaces
 
 **Purpose:**  

@@ -27,14 +27,14 @@ class DeclarativeContributionManager:
     def __init__(
         self,
         *,
-        register_runtime_command: Callable[[str, Callable[[], object], bool], None],
+        register_runtime_command: Callable[[str, Callable[..., object], bool], None],
         register_runtime_menu_command: Callable[..., None],
         unregister_runtime_menu_command: Callable[[str], None],
-        execute_runtime_command: Callable[[str], object],
+        execute_runtime_command: Callable[[str, dict[str, Any] | None, str | None], object],
         subscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         unsubscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         emit_message: Callable[[str], None],
-        execute_plugin_runtime_command: Callable[[str, dict[str, Any]], Any],
+        execute_plugin_runtime_command: Callable[[str, dict[str, Any], str | None], Any],
         on_runtime_command_success: Callable[[str, str], None],
         on_runtime_command_failure: Callable[[str, str, str], None],
     ) -> None:
@@ -112,11 +112,12 @@ class DeclarativeContributionManager:
                 if runtime_flag:
                     self._register_runtime_command(
                         normalized_command_id,
-                        lambda cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
+                        lambda extra_payload=None, activation_event=None, cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
                             plugin_id=pid,
                             version=ver,
                             command_id=cid,
-                            payload=payload,
+                            payload=_merge_runtime_payload(payload, extra_payload),
+                            activation_event=activation_event,
                         ),
                         True,
                     )
@@ -131,7 +132,11 @@ class DeclarativeContributionManager:
                     command_id=normalized_command_id,
                     menu_id=menu_id.strip(),
                     label=title.strip(),
-                    handler=lambda cid=normalized_command_id: self._execute_runtime_command(cid),
+                    handler=lambda cid=normalized_command_id: self._execute_runtime_command(
+                        cid,
+                        None,
+                        None,
+                    ),
                     shortcut=shortcut,
                     enabled=True,
                     status_tip=status_tip,
@@ -156,9 +161,10 @@ class DeclarativeContributionManager:
         version: str,
         command_id: str,
         payload: dict[str, Any],
+        activation_event: str | None,
     ) -> Any:
         try:
-            result = self._execute_plugin_runtime_command(command_id, payload)
+            result = self._execute_plugin_runtime_command(command_id, payload, activation_event)
         except Exception as exc:
             self._on_runtime_command_failure(plugin_id, version, str(exc))
             raise
@@ -179,12 +185,42 @@ class DeclarativeContributionManager:
             normalized_command_id = command_id.strip()
             if not normalized_command_id:
                 continue
+            normalized_event_type_name = event_type_name.strip()
 
-            def _handler(_event: object, cid: str = normalized_command_id) -> None:
+            def _handler(
+                _event: object,
+                cid: str = normalized_command_id,
+                event_name: str = normalized_event_type_name,
+            ) -> None:
                 try:
-                    self._execute_runtime_command(cid)
+                    event_payload = _event_to_payload(_event)
+                    self._execute_runtime_command(
+                        cid,
+                        event_payload,
+                        f"on_event:{event_name}",
+                    )
                 except Exception:
                     return
 
             self._subscribe_shell_event(event_type, _handler)
             self._event_subscriptions.append((event_type, _handler))
+
+
+def _event_to_payload(event: object) -> dict[str, Any]:
+    if hasattr(event, "__dict__"):
+        return {
+            key: value
+            for key, value in vars(event).items()
+            if not key.startswith("_")
+        }
+    return {}
+
+
+def _merge_runtime_payload(
+    base_payload: dict[str, Any],
+    extra_payload: object,
+) -> dict[str, Any]:
+    merged = dict(base_payload)
+    if isinstance(extra_payload, dict):
+        merged.update(extra_payload)
+    return merged

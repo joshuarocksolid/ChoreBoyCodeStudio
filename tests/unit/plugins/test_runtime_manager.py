@@ -7,7 +7,13 @@ import threading
 import pytest
 
 from app.core.errors import RunLifecycleError
-from app.plugins.rpc_protocol import build_response, decode_message, encode_message
+from app.plugins.rpc_protocol import (
+    build_job_event,
+    build_job_terminal_message,
+    build_response,
+    decode_message,
+    encode_message,
+)
 from app.plugins.runtime_manager import PluginRuntimeManager
 from app.run.process_supervisor import ProcessEvent
 
@@ -32,20 +38,77 @@ class _ResponsiveHostSupervisor:
     def send_input(self, text: str) -> None:
         self.sent_input.append(text)
         payload = decode_message(text)
-        if payload.get("type") != "command":
-            return
-        response = build_response(
-            request_id=payload["request_id"],
-            ok=True,
-            result={"echo": payload.get("payload", {})},
-        )
-        self._on_event(
-            ProcessEvent(
-                event_type="output",
-                stream="stdout",
-                text=encode_message(response),
+        payload_type = payload.get("type")
+        if payload_type == "command":
+            response = build_response(
+                request_id=payload["request_id"],
+                ok=True,
+                result={"echo": payload.get("payload", {})},
             )
-        )
+            self._on_event(
+                ProcessEvent(
+                    event_type="output",
+                    stream="stdout",
+                    text=encode_message(response),
+                )
+            )
+            return
+        if payload_type == "provider_query":
+            response = build_response(
+                request_id=payload["request_id"],
+                ok=True,
+                result={"provider_key": payload["provider_key"], "request": payload.get("request", {})},
+            )
+            self._on_event(
+                ProcessEvent(
+                    event_type="output",
+                    stream="stdout",
+                    text=encode_message(response),
+                )
+            )
+            return
+        if payload_type == "provider_job_start":
+            messages = [
+                build_response(
+                    request_id=payload["request_id"],
+                    ok=True,
+                    result={"job_id": payload["job_id"], "provider_key": payload["provider_key"]},
+                ),
+                build_job_event(
+                    job_id=payload["job_id"],
+                    provider_key=payload["provider_key"],
+                    event_type="job_progress",
+                    payload={"completed": 1},
+                ),
+                build_job_terminal_message(
+                    job_id=payload["job_id"],
+                    provider_key=payload["provider_key"],
+                    message_type="job_result",
+                    result={"job": "done"},
+                ),
+            ]
+            for message in messages:
+                self._on_event(
+                    ProcessEvent(
+                        event_type="output",
+                        stream="stdout",
+                        text=encode_message(message),
+                    )
+                )
+            return
+        if payload_type == "provider_job_cancel":
+            response = build_response(
+                request_id=payload["request_id"],
+                ok=True,
+                result={"job_id": payload["job_id"], "cancel_requested": True},
+            )
+            self._on_event(
+                ProcessEvent(
+                    event_type="output",
+                    stream="stdout",
+                    text=encode_message(response),
+                )
+            )
 
 
 class _SilentHostSupervisor(_ResponsiveHostSupervisor):
@@ -133,3 +196,38 @@ def test_host_exit_is_persisted_to_plugin_host_log(
         manager.log_file_path,
         encoding="utf-8",
     ).read()
+
+
+def test_invoke_workflow_query_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    result = manager.invoke_workflow_query("cbcs.python_tools:formatter", {"source_text": "x=1\n"})
+
+    assert result["provider_key"] == "cbcs.python_tools:formatter"
+    assert result["request"] == {"source_text": "x=1\n"}
+
+
+def test_start_workflow_job_receives_events_and_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+    events: list[tuple[str, dict[str, object]]] = []
+
+    job = manager.start_workflow_job(
+        "cbcs.pytest:pytest",
+        {"project_root": "/tmp/project"},
+        on_event=lambda event_type, payload: events.append((event_type, dict(payload))),
+    )
+    result = manager.wait_for_workflow_job(job)
+
+    assert result == {"job": "done"}
+    assert events == [("job_progress", {"completed": 1})]
+
+
+def test_cancel_workflow_job_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    result = manager.cancel_workflow_job("job-1")
+
+    assert result == {"job_id": "job-1", "cancel_requested": True}

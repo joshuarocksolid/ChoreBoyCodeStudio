@@ -17,6 +17,7 @@ from app.run.runtime_launch import (
 )
 
 _IMPORT_MODE_ARG = "--import-mode=importlib"
+_PYTEST_CACHE_PROVIDER_DISABLE_ARGS = ["-p", "no:cacheprovider"]
 _RUN_TESTS_FILENAME = "run_tests.py"
 
 
@@ -163,7 +164,21 @@ def _normalized_pytest_args(pytest_args: list[str]) -> list[str]:
                 insert_at = index
                 break
         normalized_args.insert(insert_at, _IMPORT_MODE_ARG)
+    if not _has_cache_provider_override(normalized_args):
+        insert_at = len(normalized_args)
+        for index, arg in enumerate(normalized_args):
+            if not arg.startswith("-"):
+                insert_at = index
+                break
+        normalized_args[insert_at:insert_at] = list(_PYTEST_CACHE_PROVIDER_DISABLE_ARGS)
     return normalized_args
+
+
+def _has_cache_provider_override(pytest_args: list[str]) -> bool:
+    for index, arg in enumerate(pytest_args):
+        if arg == "-p" and index + 1 < len(pytest_args) and pytest_args[index + 1] == "no:cacheprovider":
+            return True
+    return False
 
 
 def _project_run_tests_script(project_root: str) -> Path | None:

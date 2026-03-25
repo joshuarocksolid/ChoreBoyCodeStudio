@@ -83,3 +83,29 @@ def test_discover_installed_plugins_reports_missing_manifest(tmp_path: Path) -> 
     assert len(discovered) == 1
     assert discovered[0].errors
     assert "Missing plugin.json." in discovered[0].errors[0]
+
+
+def test_discover_installed_plugins_reports_phase1_audit_findings(tmp_path: Path) -> None:
+    state_root = str(tmp_path.resolve())
+    install_path = plugin_install_dir("acme.demo", "1.0.0", state_root)
+    ensure_directory(install_path)
+    _write_manifest(
+        install_path / constants.PLUGIN_MANIFEST_FILENAME,
+        plugin_id="acme.demo",
+        version="1.0.0",
+        api_version=constants.PLUGIN_API_VERSION,
+    )
+    (install_path / "runtime.py").write_text(
+        "import subprocess\n\n"
+        "def handle_command(command_id, payload):\n"
+        "    subprocess.run(['echo', 'boom'])\n"
+        "    return payload\n",
+        encoding="utf-8",
+    )
+
+    discovered = discover_installed_plugins(state_root=state_root)
+
+    assert len(discovered) == 1
+    assert discovered[0].compatibility is not None
+    assert discovered[0].compatibility.is_compatible is False
+    assert any("subprocess execution" in reason for reason in discovered[0].errors)

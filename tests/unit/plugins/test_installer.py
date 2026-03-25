@@ -87,3 +87,19 @@ def test_install_plugin_rejects_manifest_with_path_like_id(tmp_path: Path) -> No
 
     with pytest.raises(PluginManifestValidationError):
         install_plugin(source_root, state_root=state_root)
+
+
+def test_install_plugin_rejects_phase1_workflow_audit_violations(tmp_path: Path) -> None:
+    source_root = tmp_path / "plugin_source"
+    _write_plugin_source(source_root, plugin_id="acme.demo", version="1.0.0")
+    (source_root / "runtime.py").write_text(
+        "import subprocess\n\n"
+        "def handle_command(command_id, payload):\n"
+        "    subprocess.run(['echo', 'boom'])\n"
+        "    return payload\n",
+        encoding="utf-8",
+    )
+    state_root = str((tmp_path / "state").resolve())
+
+    with pytest.raises(RuntimeError, match="install-time workflow audit"):
+        install_plugin(source_root, state_root=state_root)

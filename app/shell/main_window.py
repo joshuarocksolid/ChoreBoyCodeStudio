@@ -104,8 +104,10 @@ from app.shell.run_log_panel import RunInfo, RunLogPanel
 from app.packaging.config import resolve_project_package_config
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
+from app.plugins.builtin_workflows import register_builtin_workflow_providers
 from app.plugins.contributions import DeclarativeContributionManager
 from app.plugins.discovery import discover_installed_plugins
+from app.plugins.project_config import load_project_plugin_config
 from app.plugins.registry_store import (
     clear_registry_entry_failures,
     load_plugin_registry,
@@ -113,6 +115,16 @@ from app.plugins.registry_store import (
 )
 from app.plugins.runtime_manager import PluginRuntimeManager
 from app.plugins.security_policy import merge_plugin_safe_mode, plugin_safe_mode_enabled
+from app.plugins.workflow_adapters import (
+    analyze_python_with_workflow,
+    format_python_with_workflow,
+    list_templates_with_workflow,
+    organize_imports_with_workflow,
+    package_project_with_workflow,
+    run_pytest_with_workflow,
+)
+from app.plugins.workflow_broker import WorkflowBroker
+from app.plugins.workflow_catalog import WorkflowProviderCatalog
 from app.support.diagnostics import ProjectHealthReport, run_project_health_check
 from app.support.runtime_explainer import (
     HELP_TOPIC_GETTING_STARTED,
@@ -351,6 +363,8 @@ class MainWindow(QMainWindow):
         self._event_bus = ShellEventBus()
         self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
         self._plugin_api_broker = PluginApiBroker(self._plugin_runtime_manager)
+        self._workflow_broker = WorkflowBroker(self._plugin_api_broker)
+        self._workflow_provider_catalog = WorkflowProviderCatalog([])
         self._plugin_safe_mode = self._load_plugin_safe_mode()
         self._declarative_contribution_manager = DeclarativeContributionManager(
             register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
@@ -364,9 +378,10 @@ class MainWindow(QMainWindow):
             subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
             unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
             emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
-            execute_plugin_runtime_command=lambda command_id, payload: self._plugin_api_broker.invoke_runtime_command(
+            execute_plugin_runtime_command=lambda command_id, payload, activation_event: self._plugin_api_broker.invoke_runtime_command_for_event(
                 command_id,
                 payload,
+                activation_event=activation_event,
             ),
             on_runtime_command_success=self._clear_plugin_runtime_failure,
             on_runtime_command_failure=self._record_plugin_runtime_failure,
@@ -495,6 +510,10 @@ class MainWindow(QMainWindow):
             state_root=self._state_root,
         )
         self._template_service = TemplateService()
+        register_builtin_workflow_providers(
+            self._workflow_broker,
+            template_service=self._template_service,
+        )
         self._example_project_service = ExampleProjectService()
         self._main_thread_dispatcher = MainThreadDispatcher(self)
         self._semantic_session = SemanticSession(
@@ -1300,7 +1319,7 @@ class MainWindow(QMainWindow):
         self,
         *,
         command_id: str,
-        handler: Callable[[], object],
+        handler: Callable[..., object],
         replace: bool = False,
     ) -> None:
         if self._action_registry is None:
@@ -1313,7 +1332,7 @@ class MainWindow(QMainWindow):
         command_id: str,
         menu_id: str,
         label: str,
-        handler: Callable[[], object],
+        handler: Callable[..., object],
         shortcut: str | None = None,
         enabled: bool = True,
         status_tip: str | None = None,
@@ -1339,8 +1358,17 @@ class MainWindow(QMainWindow):
         self._action_registry.unregister_menu_action(command_id)
         self._action_registry.unregister_command(command_id)
 
-    def execute_runtime_command(self, command_id: str) -> object:
-        return self._command_broker.invoke(command_id)
+    def execute_runtime_command(
+        self,
+        command_id: str,
+        payload: dict[str, object] | None = None,
+        activation_event: str | None = None,
+    ) -> object:
+        if payload is None and activation_event is None:
+            return self._command_broker.invoke(command_id)
+        if payload is None:
+            return self._command_broker.invoke(command_id, {}, activation_event)
+        return self._command_broker.invoke(command_id, payload, activation_event)
 
     def subscribe_shell_event(self, event_type: type[ShellEventT], handler: Callable[[ShellEventT], None]) -> None:
         self._event_bus.subscribe(event_type, handler)
@@ -1425,7 +1453,11 @@ class MainWindow(QMainWindow):
         self._open_project_by_path(str(created_path))
 
     def _handle_new_project_from_template_action(self) -> None:
-        templates = self._template_service.list_templates()
+        try:
+            _provider, templates = list_templates_with_workflow(self._workflow_broker)
+        except Exception as exc:
+            QMessageBox.warning(self, "No templates available", f"Unable to load templates: {exc}")
+            return
         if not templates:
             QMessageBox.warning(self, "No templates available", "No project templates were found.")
             return
@@ -2443,6 +2475,7 @@ class MainWindow(QMainWindow):
         self._active_named_run_config_name = None
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
+        self._reload_plugin_contributions()
         self._refresh_python_tooling_status()
         self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
@@ -2994,29 +3027,39 @@ class MainWindow(QMainWindow):
             else:
                 project_root = self._resolve_python_tooling_project_root(file_path)
                 if self._editor_organize_imports_on_save:
-                    organize_result = organize_imports_text(
-                        transformed_text,
-                        file_path=file_path,
-                        project_root=project_root,
-                    )
-                    transformed_text = self._consume_save_python_tool_result(
-                        action_label="Organize Imports on save",
-                        current_text=transformed_text,
-                        result=organize_result,
-                        warning_messages=warning_messages,
-                    )
+                    try:
+                        _provider, organize_result = organize_imports_with_workflow(
+                            self._workflow_broker,
+                            source_text=transformed_text,
+                            file_path=file_path,
+                            project_root=project_root,
+                        )
+                    except Exception as exc:
+                        warning_messages.append(f"Organize Imports on save failed: {exc}")
+                    else:
+                        transformed_text = self._consume_save_python_tool_result(
+                            action_label="Organize Imports on save",
+                            current_text=transformed_text,
+                            result=organize_result,
+                            warning_messages=warning_messages,
+                        )
                 if self._editor_format_on_save:
-                    format_result = format_python_text(
-                        transformed_text,
-                        file_path=file_path,
-                        project_root=project_root,
-                    )
-                    transformed_text = self._consume_save_python_tool_result(
-                        action_label="Formatting on save",
-                        current_text=transformed_text,
-                        result=format_result,
-                        warning_messages=warning_messages,
-                    )
+                    try:
+                        _provider, format_result = format_python_with_workflow(
+                            self._workflow_broker,
+                            source_text=transformed_text,
+                            file_path=file_path,
+                            project_root=project_root,
+                        )
+                    except Exception as exc:
+                        warning_messages.append(f"Formatting on save failed: {exc}")
+                    else:
+                        transformed_text = self._consume_save_python_tool_result(
+                            action_label="Formatting on save",
+                            current_text=transformed_text,
+                            result=format_result,
+                            warning_messages=warning_messages,
+                        )
 
         if transformed_text != original_text:
             self._apply_text_to_open_tab(file_path, transformed_text)
@@ -3298,10 +3341,15 @@ class MainWindow(QMainWindow):
         project_root = self._loaded_project.project_root
         self._append_console_line(f"Running pytest in {project_root}", stream="system")
 
-        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
-            return run_pytest_project(project_root)
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_pytest_with_workflow(
+                self._workflow_broker,
+                project_root=project_root,
+            )
 
-        def on_success(result: PytestRunResult) -> None:
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            provider, result = payload
+            self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
@@ -3337,10 +3385,16 @@ class MainWindow(QMainWindow):
             return
         self._append_console_line(f"Running pytest for {target_path}", stream="system")
 
-        def task(_cancel_event) -> PytestRunResult:  # type: ignore[no-untyped-def]
-            return run_pytest_target(loaded_project.project_root, str(target_path))
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_pytest_with_workflow(
+                self._workflow_broker,
+                project_root=loaded_project.project_root,
+                target_path=str(target_path),
+            )
 
-        def on_success(result: PytestRunResult) -> None:
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            provider, result = payload
+            self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
@@ -3868,11 +3922,20 @@ class MainWindow(QMainWindow):
 
         source_text = editor_widget.toPlainText()
         if active_tab.file_path.lower().endswith(".py"):
-            result = format_python_text(
-                source_text,
-                file_path=active_tab.file_path,
-                project_root=self._resolve_python_tooling_project_root(active_tab.file_path),
-            )
+            try:
+                provider, result = format_python_with_workflow(
+                    self._workflow_broker,
+                    source_text=source_text,
+                    file_path=active_tab.file_path,
+                    project_root=self._resolve_python_tooling_project_root(active_tab.file_path),
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    "Format Current File",
+                    f"Formatting failed: {exc}",
+                )
+                return
             if result.status == PYTHON_TOOLING_STATUS_UNCHANGED:
                 QMessageBox.information(self, "Format Current File", "File is already formatted.")
                 return
@@ -3884,7 +3947,11 @@ class MainWindow(QMainWindow):
                 )
                 return
             editor_widget.replace_document_text(result.formatted_text)
-            QMessageBox.information(self, "Format Current File", "Formatting applied.")
+            QMessageBox.information(
+                self,
+                "Format Current File",
+                f"Formatting applied via {provider.title}.",
+            )
             return
 
         result = format_text_basic(source_text)
@@ -3909,11 +3976,16 @@ class MainWindow(QMainWindow):
             )
             return
 
-        result = organize_imports_text(
-            editor_widget.toPlainText(),
-            file_path=active_tab.file_path,
-            project_root=self._resolve_python_tooling_project_root(active_tab.file_path),
-        )
+        try:
+            provider, result = organize_imports_with_workflow(
+                self._workflow_broker,
+                source_text=editor_widget.toPlainText(),
+                file_path=active_tab.file_path,
+                project_root=self._resolve_python_tooling_project_root(active_tab.file_path),
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Organize Imports", f"Organize Imports failed: {exc}")
+            return
         if result.status == PYTHON_TOOLING_STATUS_UNCHANGED:
             QMessageBox.information(self, "Organize Imports", "Imports are already organized.")
             return
@@ -3926,7 +3998,7 @@ class MainWindow(QMainWindow):
             return
 
         editor_widget.replace_document_text(result.formatted_text)
-        QMessageBox.information(self, "Organize Imports", "Imports organized.")
+        QMessageBox.information(self, "Organize Imports", f"Imports organized via {provider.title}.")
 
     def _handle_lint_current_file_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -3949,6 +4021,7 @@ class MainWindow(QMainWindow):
         if self._plugin_manager_dialog is None:
             self._plugin_manager_dialog = PluginManagerDialog(
                 state_root=self._state_root,
+                project_root=None if self._loaded_project is None else self._loaded_project.project_root,
                 on_plugins_changed=self._reload_plugin_contributions,
                 safe_mode_enabled=self._plugin_safe_mode,
                 on_safe_mode_changed=self._handle_plugin_safe_mode_changed,
@@ -3958,6 +4031,9 @@ class MainWindow(QMainWindow):
                 lambda _result: setattr(self, "_plugin_manager_dialog", None)
             )
         self._plugin_manager_dialog.set_safe_mode_enabled(self._plugin_safe_mode)
+        self._plugin_manager_dialog.set_project_root(
+            None if self._loaded_project is None else self._loaded_project.project_root
+        )
         self._plugin_manager_dialog.refresh_plugins()
         self._plugin_manager_dialog.show()
         self._plugin_manager_dialog.raise_()
@@ -3971,16 +4047,48 @@ class MainWindow(QMainWindow):
         if self._plugin_safe_mode:
             self._declarative_contribution_manager.clear()
             self._plugin_runtime_manager.stop()
+            self._workflow_provider_catalog = WorkflowProviderCatalog([])
+            self._workflow_broker.set_plugin_catalog(self._workflow_provider_catalog)
             return
         registry = load_plugin_registry(self._state_root)
         enabled_map = {
             (entry.plugin_id, entry.version): entry.enabled
             for entry in registry.entries
         }
-        discovered_plugins = discover_installed_plugins(state_root=self._state_root)
+        project_plugin_config = None
+        if self._loaded_project is not None:
+            try:
+                project_plugin_config = load_project_plugin_config(self._loaded_project.project_root)
+            except Exception:
+                project_plugin_config = None
+        discovered_plugins = discover_installed_plugins(
+            state_root=self._state_root,
+            include_bundled=True,
+        )
+        effective_enabled_map = dict(enabled_map)
+        if project_plugin_config is not None:
+            for discovered in discovered_plugins:
+                default_enabled = effective_enabled_map.get((discovered.plugin_id, discovered.version), True)
+                pinned_version = project_plugin_config.pinned_versions.get(discovered.plugin_id)
+                if pinned_version is not None and pinned_version != discovered.version:
+                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = False
+                    continue
+                if discovered.plugin_id in project_plugin_config.enabled_plugins:
+                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = True
+                if discovered.plugin_id in project_plugin_config.disabled_plugins:
+                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = False
         self._declarative_contribution_manager.apply(
             discovered_plugins,
-            enabled_map=enabled_map,
+            enabled_map=effective_enabled_map,
+        )
+        self._workflow_provider_catalog = WorkflowProviderCatalog.from_plugins(
+            discovered_plugins,
+            enabled_map=effective_enabled_map,
+            project_config=project_plugin_config,
+        )
+        self._workflow_broker.set_plugin_catalog(
+            self._workflow_provider_catalog,
+            project_config=project_plugin_config,
         )
         self._plugin_api_broker.reload_runtime_plugins()
 
@@ -4048,8 +4156,9 @@ class MainWindow(QMainWindow):
         key = f"lint::{file_path}"
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return analyze_python_file(
-                file_path,
+            _provider, diagnostics = analyze_python_with_workflow(
+                self._workflow_broker,
+                file_path=file_path,
                 project_root=project_root,
                 source=buffer_source,
                 known_runtime_modules=self._known_runtime_modules,
@@ -4057,6 +4166,7 @@ class MainWindow(QMainWindow):
                 selected_linter=self._selected_linter,
                 lint_rule_overrides=self._lint_rule_overrides,
             )
+            return diagnostics
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
             active_widget = self._editor_widgets_by_path.get(file_path)
@@ -4186,8 +4296,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
             return
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        diagnostics = analyze_python_file(
-            file_path, project_root=project_root,
+        _provider, diagnostics = analyze_python_with_workflow(
+            self._workflow_broker,
+            file_path=file_path,
+            project_root=project_root,
             known_runtime_modules=self._known_runtime_modules,
             allow_runtime_import_probe=True,
             selected_linter=self._selected_linter,
@@ -4628,6 +4740,7 @@ class MainWindow(QMainWindow):
                 project_root,
                 diagnostics_report=report,
                 runtime_issue_report=runtime_issue_report,
+                workflow_provider_metrics=self._workflow_broker.list_provider_metrics(),
                 state_root=state_root,
                 destination_dir=project_root,
                 last_run_log_path=latest_run_log_path,
@@ -4676,25 +4789,27 @@ class MainWindow(QMainWindow):
         reviewed_package_config = wizard.build_package_config()
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return package_project(
+            return package_project_with_workflow(
+                self._workflow_broker,
                 project_root=project_root,
                 project_name=project_metadata.name,
                 entry_file=project_metadata.default_entry,
                 output_dir=output_dir,
                 profile=selected_profile,
-                package_config=reviewed_package_config,
-                project_metadata=project_metadata,
+                package_config=reviewed_package_config.to_dict(),
+                project_metadata=project_metadata.to_dict(),
                 known_runtime_modules=self._known_runtime_modules,
             )
 
         def on_success(result) -> None:  # type: ignore[no-untyped-def]
+            provider, result = result
             self._latest_package_issue_report = result.validation.issue_report
             self._latest_runtime_issue_report = self._build_runtime_issue_report()
             if result.success:
                 QMessageBox.information(
                     self,
                     "Package created",
-                    f"Project packaged to:\n{result.artifact_root}\n\n"
+                    f"Project packaged via {provider.title} to:\n{result.artifact_root}\n\n"
                     f"Generated files:\n"
                     f"- package_manifest.json\n"
                     f"- package_report.json\n"
@@ -6064,6 +6179,7 @@ class MainWindow(QMainWindow):
             self._loaded_project.project_root,
             exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
         )
+        self._reload_plugin_contributions()
         self._refresh_python_tooling_status()
         self._populate_project_tree(self._loaded_project, preserve_state=True)
         if self._search_sidebar is not None:

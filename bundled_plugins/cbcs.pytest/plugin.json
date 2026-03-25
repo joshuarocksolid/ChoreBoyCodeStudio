@@ -1,0 +1,30 @@
+{
+  "id": "cbcs.pytest",
+  "name": "CBCS Pytest Workflow",
+  "version": "1.0.0",
+  "api_version": 1,
+  "runtime": {
+    "entrypoint": "runtime.py"
+  },
+  "activation_events": [
+    "on_provider:test"
+  ],
+  "capabilities": [
+    "workflow.test"
+  ],
+  "permissions": [
+    "project.read",
+    "runner.invoke"
+  ],
+  "contributes": {
+    "workflow_providers": [
+      {
+        "id": "pytest",
+        "kind": "test",
+        "lane": "job",
+        "title": "CBCS Pytest Runner",
+        "start_handler": "handle_pytest_job"
+      }
+    ]
+  }
+}

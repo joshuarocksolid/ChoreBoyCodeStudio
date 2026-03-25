@@ -106,6 +106,11 @@ def global_plugins_trust_path(state_root: Optional[PathInput] = None) -> Path:
     return global_plugins_dir(state_root) / constants.PLUGINS_TRUST_FILENAME
 
 
+def bundled_plugins_root() -> Path:
+    """Return the repository-bundled plugin directory path."""
+    return resolve_app_root() / constants.BUNDLED_PLUGINS_DIRNAME
+
+
 def plugin_install_dir(plugin_id: str, version: str, state_root: Optional[PathInput] = None) -> Path:
     """Return install directory for one plugin version."""
     return global_plugins_installed_dir(state_root) / _safe_path_component(plugin_id, "plugin_id") / _safe_path_component(version, "version")
@@ -156,6 +161,11 @@ def project_manifest_path(project_root: PathInput) -> Path:
 def project_package_config_path(project_root: PathInput) -> Path:
     """Return the canonical per-project packaging config path."""
     return project_cbcs_dir(project_root) / constants.PROJECT_PACKAGE_CONFIG_FILENAME
+
+
+def project_plugins_path(project_root: PathInput) -> Path:
+    """Return the canonical per-project plugin policy path."""
+    return project_cbcs_dir(project_root) / constants.PROJECT_PLUGINS_FILENAME
 
 
 def project_settings_path(project_root: PathInput) -> Path:

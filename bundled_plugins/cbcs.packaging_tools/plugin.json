@@ -1,0 +1,31 @@
+{
+  "id": "cbcs.packaging_tools",
+  "name": "CBCS Packaging Tools",
+  "version": "1.0.0",
+  "api_version": 1,
+  "runtime": {
+    "entrypoint": "runtime.py"
+  },
+  "activation_events": [
+    "on_provider:packaging"
+  ],
+  "capabilities": [
+    "workflow.packaging"
+  ],
+  "permissions": [
+    "project.read",
+    "project.write",
+    "runner.invoke"
+  ],
+  "contributes": {
+    "workflow_providers": [
+      {
+        "id": "packaging",
+        "kind": "packaging",
+        "lane": "job",
+        "title": "CBCS Packaging Tools",
+        "start_handler": "handle_packaging_job"
+      }
+    ]
+  }
+}

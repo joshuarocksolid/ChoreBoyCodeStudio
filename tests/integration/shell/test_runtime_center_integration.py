@@ -12,6 +12,7 @@ from PySide2.QtWidgets import QApplication, QLabel
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.main_window import MainWindow
 from app.support.diagnostics import DiagnosticItem, ProjectHealthReport
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -53,18 +54,21 @@ def test_startup_status_click_opens_runtime_center(monkeypatch: pytest.MonkeyPat
         ),
         state_root=str(tmp_path.resolve()),
     )
-    assert window.menu_registry is not None
-    assert window.menu_registry.action("shell.action.tools.runtimeCenter") is not None
+    try:
+        assert window.menu_registry is not None
+        assert window.menu_registry.action("shell.action.tools.runtimeCenter") is not None
 
-    startup_label = window.findChild(QLabel, "shell.startupStatusLabel")
-    assert startup_label is not None
-    startup_label.clicked.emit()  # type: ignore[attr-defined]
+        startup_label = window.findChild(QLabel, "shell.startupStatusLabel")
+        assert startup_label is not None
+        startup_label.clicked.emit()  # type: ignore[attr-defined]
 
-    assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Runtime Center"
-    report = opened_dialogs[0]["report"]
-    assert report.workflow == "runtime_center"
-    assert [issue.issue_id for issue in report.issues] == ["runtime.apprun_missing"]
+        assert len(opened_dialogs) == 1
+        assert opened_dialogs[0]["title"] == "Runtime Center"
+        report = opened_dialogs[0]["report"]
+        assert report.workflow == "runtime_center"
+        assert [issue.issue_id for issue in report.issues] == ["runtime.apprun_missing"]
+    finally:
+        shutdown_main_window_for_test(window)
 
 
 def test_project_health_check_opens_runtime_center_with_latest_report(
@@ -89,31 +93,34 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
     (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    try:
+        assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    fake_report = ProjectHealthReport(
-        project_root=str(project_root.resolve()),
-        checks=[
-            DiagnosticItem(
-                check_id="project_structure",
-                is_ok=False,
-                message="No Python files were found.",
-            )
-        ],
-    )
+        fake_report = ProjectHealthReport(
+            project_root=str(project_root.resolve()),
+            checks=[
+                DiagnosticItem(
+                    check_id="project_structure",
+                    is_ok=False,
+                    message="No Python files were found.",
+                )
+            ],
+        )
 
-    def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
-        _ = key
-        _ = task
-        _ = on_error
-        on_success(fake_report)
+        def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
+            _ = key
+            _ = task
+            _ = on_error
+            on_success(fake_report)
 
-    monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
-    window._handle_project_health_check_action()
+        monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
+        window._handle_project_health_check_action()
 
-    assert window._latest_health_report == fake_report
-    assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Project Health Check"
-    report = opened_dialogs[0]["report"]
-    assert report.workflow == "runtime_center"
-    assert [issue.issue_id for issue in report.issues] == ["project.structure_invalid"]
+        assert window._latest_health_report == fake_report
+        assert len(opened_dialogs) == 1
+        assert opened_dialogs[0]["title"] == "Project Health Check"
+        report = opened_dialogs[0]["report"]
+        assert report.workflow == "runtime_center"
+        assert [issue.issue_id for issue in report.issues] == ["project.structure_invalid"]
+    finally:
+        shutdown_main_window_for_test(window)

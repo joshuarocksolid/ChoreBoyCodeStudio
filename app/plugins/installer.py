@@ -8,6 +8,7 @@ import shutil
 from app.bootstrap.paths import PathInput, ensure_directory, plugin_install_dir
 from app.core import constants
 from app.filesystem.trash import move_path_to_trash
+from app.plugins.auditor import audit_plugin_package_messages
 from app.plugins.manifest import load_plugin_manifest
 from app.plugins.models import PluginRegistryEntry
 from app.plugins.package_format import locate_manifest_root, stage_plugin_source
@@ -37,6 +38,11 @@ def install_plugin(
         manifest_root = locate_manifest_root(staged_root)
         manifest_path = manifest_root / constants.PLUGIN_MANIFEST_FILENAME
         manifest = load_plugin_manifest(manifest_path)
+        audit_messages = audit_plugin_package_messages(manifest_root, manifest)
+        if audit_messages:
+            raise RuntimeError(
+                "Plugin package failed install-time workflow audit:\n- " + "\n- ".join(audit_messages)
+            )
         install_path = plugin_install_dir(manifest.plugin_id, manifest.version, state_root)
         ensure_directory(install_path.parent)
         if install_path.exists():
@@ -88,10 +94,34 @@ def set_plugin_enabled(
     *,
     enabled: bool,
     state_root: PathInput | None = None,
+    install_path: str | None = None,
+    source_kind: str = constants.PLUGIN_SOURCE_INSTALLED,
 ) -> None:
-    set_registry_entry_enabled(
-        plugin_id,
-        version,
-        enabled=enabled,
+    registry = load_plugin_registry(state_root)
+    has_entry = any(
+        entry.plugin_id == plugin_id and entry.version == version
+        for entry in registry.entries
+    )
+    if has_entry:
+        set_registry_entry_enabled(
+            plugin_id,
+            version,
+            enabled=enabled,
+            state_root=state_root,
+        )
+        return
+    if install_path is None:
+        raise ValueError(f"Plugin registry entry missing for {plugin_id}@{version}")
+    upsert_registry_entry(
+        PluginRegistryEntry(
+            plugin_id=plugin_id,
+            version=version,
+            install_path=install_path,
+            source_kind=source_kind,
+            enabled=enabled,
+            installed_at=datetime.now().isoformat(timespec="seconds"),
+            last_error=None,
+            failure_count=0,
+        ),
         state_root=state_root,
     )

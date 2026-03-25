@@ -12,6 +12,7 @@ from PySide2.QtWidgets import QApplication, QDialog
 
 from app.packaging.models import PACKAGE_PROFILE_INSTALLABLE
 from app.shell.main_window import MainWindow
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -50,29 +51,34 @@ def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
     _write_project(project_root, source_text="import totally_fake\n")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    try:
+        assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    opened_dialogs: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        window,
-        "_open_runtime_center_dialog",
-        lambda *, title="Runtime Center", report=None: opened_dialogs.append({"title": title, "report": report}),
-    )
+        opened_dialogs: list[dict[str, object]] = []
+        monkeypatch.setattr(
+            window,
+            "_open_runtime_center_dialog",
+            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
+                {"title": title, "report": report}
+            ),
+        )
 
-    def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
-        _ = key
-        _ = on_error
-        on_success(task(None))
+        def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
+            _ = key
+            _ = on_error
+            on_success(task(None))
 
-    monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
-    window._handle_analyze_imports_action()
+        monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
+        window._handle_analyze_imports_action()
 
-    assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Import Analysis"
-    report = opened_dialogs[0]["report"]
-    assert report is not None
-    assert report.issues
-    assert report.issues[0].issue_id.startswith("import.vendored_dependency_missing")
+        assert len(opened_dialogs) == 1
+        assert opened_dialogs[0]["title"] == "Import Analysis"
+        report = opened_dialogs[0]["report"]
+        assert report is not None
+        assert report.issues
+        assert report.issues[0].issue_id.startswith("import.vendored_dependency_missing")
+    finally:
+        shutdown_main_window_for_test(window)
 
 
 def test_headless_runtime_signature_updates_latest_run_issue_report(
@@ -81,14 +87,19 @@ def test_headless_runtime_signature_updates_latest_run_issue_report(
 ) -> None:
     _ = _ensure_qapplication(monkeypatch)
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    window._active_run_output_tail.append("Traceback...\nCannot load Gui module in console application\n")
+    try:
+        window._active_run_output_tail.append(
+            "Traceback...\nCannot load Gui module in console application\n"
+        )
 
-    problems = window._update_problems_from_output()
+        problems = window._update_problems_from_output()
 
-    assert problems == []
-    assert [issue.issue_id for issue in window._latest_run_issue_report.issues] == [
-        "runtime.freecad_gui_module_in_headless_run"
-    ]
+        assert problems == []
+        assert [issue.issue_id for issue in window._latest_run_issue_report.issues] == [
+            "runtime.freecad_gui_module_in_headless_run"
+        ]
+    finally:
+        shutdown_main_window_for_test(window)
 
 
 def test_packaging_preflight_opens_runtime_center_before_export(
@@ -104,42 +115,47 @@ def test_packaging_preflight_opens_runtime_center_before_export(
     manifest_path.write_text(json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    try:
+        assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    class _FakeWizard:
-        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-            self.output_dir = str(tmp_path / "exports")
-            self.selected_profile = PACKAGE_PROFILE_INSTALLABLE
-            self._package_config = kwargs["package_config"]
+        class _FakeWizard:
+            def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+                self.output_dir = str(tmp_path / "exports")
+                self.selected_profile = PACKAGE_PROFILE_INSTALLABLE
+                self._package_config = kwargs["package_config"]
 
-        def exec_(self) -> int:
-            return QDialog.Accepted
+            def exec_(self) -> int:
+                return QDialog.Accepted
 
-        def build_package_config(self):  # type: ignore[no-untyped-def]
-            return self._package_config
+            def build_package_config(self):  # type: ignore[no-untyped-def]
+                return self._package_config
 
-    opened_dialogs: list[dict[str, object]] = []
-    monkeypatch.setattr("app.shell.main_window.PackageProjectWizard", _FakeWizard)
-    monkeypatch.setattr(
-        window,
-        "_open_runtime_center_dialog",
-        lambda *, title="Runtime Center", report=None: opened_dialogs.append({"title": title, "report": report}),
-    )
+        opened_dialogs: list[dict[str, object]] = []
+        monkeypatch.setattr("app.shell.main_window.PackageProjectWizard", _FakeWizard)
+        monkeypatch.setattr(
+            window,
+            "_open_runtime_center_dialog",
+            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
+                {"title": title, "report": report}
+            ),
+        )
 
-    def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
-        _ = key
-        try:
-            on_success(task(None))
-        except Exception as exc:  # pragma: no cover - defensive path
-            on_error(exc)
+        def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
+            _ = key
+            try:
+                on_success(task(None))
+            except Exception as exc:  # pragma: no cover - defensive path
+                on_error(exc)
 
-    monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
+        monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
 
-    window._handle_package_project_action()
+        window._handle_package_project_action()
 
-    assert len(opened_dialogs) == 1
-    assert opened_dialogs[0]["title"] == "Packaging Failed"
-    report = opened_dialogs[0]["report"]
-    assert report is not None
-    issue_ids = [issue.issue_id for issue in report.issues]
-    assert "package.entry_invalid" in issue_ids
+        assert len(opened_dialogs) == 1
+        assert opened_dialogs[0]["title"] == "Packaging Failed"
+        report = opened_dialogs[0]["report"]
+        assert report is not None
+        issue_ids = [issue.issue_id for issue in report.issues]
+        assert "package.entry_invalid" in issue_ids
+    finally:
+        shutdown_main_window_for_test(window)

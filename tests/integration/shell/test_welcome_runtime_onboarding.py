@@ -11,6 +11,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication
 
 from app.shell.main_window import MainWindow
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -62,16 +63,19 @@ def test_runtime_onboarding_is_reachable_after_recent_project_autoload(
     monkeypatch.setattr(MainWindow, "_handle_runtime_onboarding_action", _record_onboarding_action)
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    app.processEvents()
-    app.processEvents()
+    try:
+        app.processEvents()
+        app.processEvents()
 
-    assert window._loaded_project is not None
-    assert window._loaded_project.project_root == str(project_root.resolve())
-    assert onboarding_calls == ["opened"]
+        assert window._loaded_project is not None
+        assert window._loaded_project.project_root == str(project_root.resolve())
+        assert onboarding_calls == ["opened"]
 
-    assert window.menu_registry is not None
-    action = window.menu_registry.action("shell.action.help.runtimeOnboarding")
-    assert action is not None
-    action.trigger()
+        assert window.menu_registry is not None
+        action = window.menu_registry.action("shell.action.help.runtimeOnboarding")
+        assert action is not None
+        action.trigger()
 
-    assert onboarding_calls == ["opened", "opened"]
+        assert onboarding_calls == ["opened", "opened"]
+    finally:
+        shutdown_main_window_for_test(window)

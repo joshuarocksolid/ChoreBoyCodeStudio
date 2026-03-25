@@ -139,3 +139,58 @@ def test_load_plugin_manifest_rejects_invalid_json(tmp_path: Path) -> None:
 
     with pytest.raises(PluginManifestValidationError, match="Invalid JSON in plugin manifest"):
         load_plugin_manifest(manifest_path)
+
+
+def test_parse_plugin_manifest_accepts_workflow_provider_contributions() -> None:
+    manifest = parse_plugin_manifest(
+        {
+            "id": "acme.workflow",
+            "name": "Workflow Plugin",
+            "version": "1.0.0",
+            "api_version": 1,
+            "runtime": {"entrypoint": "runtime.py"},
+            "capabilities": ["workflow.formatter"],
+            "permissions": ["project.read"],
+            "contributes": {
+                "workflow_providers": [
+                    {
+                        "id": "formatter",
+                        "kind": "formatter",
+                        "lane": "query",
+                        "title": "Formatter",
+                        "languages": ["python"],
+                        "file_extensions": [".py"],
+                        "query_handler": "handle_formatter_query",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert manifest.permissions == ["project.read"]
+    assert len(manifest.workflow_providers) == 1
+    assert manifest.workflow_providers[0].provider_id == "formatter"
+    assert manifest.workflow_providers[0].query_handler == "handle_formatter_query"
+
+
+def test_parse_plugin_manifest_rejects_workflow_provider_without_runtime_entrypoint() -> None:
+    with pytest.raises(PluginManifestValidationError, match="runtime.entrypoint is required"):
+        parse_plugin_manifest(
+            {
+                "id": "acme.workflow",
+                "name": "Workflow Plugin",
+                "version": "1.0.0",
+                "api_version": 1,
+                "contributes": {
+                    "workflow_providers": [
+                        {
+                            "id": "formatter",
+                            "kind": "formatter",
+                            "lane": "query",
+                            "title": "Formatter",
+                            "query_handler": "handle_formatter_query",
+                        }
+                    ]
+                },
+            }
+        )

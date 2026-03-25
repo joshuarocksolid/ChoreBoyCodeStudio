@@ -1,0 +1,29 @@
+{
+  "id": "cbcs.freecad_helpers",
+  "name": "CBCS FreeCAD Helpers",
+  "version": "1.0.0",
+  "api_version": 1,
+  "runtime": {
+    "entrypoint": "runtime.py"
+  },
+  "activation_events": [
+    "on_provider:freecad_helper"
+  ],
+  "capabilities": [
+    "workflow.freecad_helper"
+  ],
+  "permissions": [
+    "freecad.headless"
+  ],
+  "contributes": {
+    "workflow_providers": [
+      {
+        "id": "capability_probe",
+        "kind": "freecad_helper",
+        "lane": "job",
+        "title": "CBCS FreeCAD Capability Probe",
+        "start_handler": "handle_freecad_helper_job"
+      }
+    ]
+  }
+}

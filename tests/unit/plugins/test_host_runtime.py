@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from app.bootstrap.paths import plugin_install_dir
 from app.core import constants
-from app.plugins.host_runtime import _load_runtime_module
+from app.plugins.host_runtime import load_plugin_runtime_module
 from app.plugins.host_runtime import load_runtime_command_handlers
 from app.plugins.models import PluginRegistryEntry
 from app.plugins.registry_store import upsert_registry_entry
@@ -24,10 +25,11 @@ def test_load_runtime_module_requires_entrypoint_inside_plugin_root(tmp_path: Pa
     outside_path.write_text("def handle_command(*_args, **_kwargs):\n    return {'outside': True}\n", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="escapes plugin install path"):
-        _load_runtime_module(
-            plugin_id="acme.demo",
-            install_path=install_path,
-            runtime_entrypoint="../outside.py",
+        load_plugin_runtime_module(
+            "acme.demo",
+            install_path,
+            "../outside.py",
+            module_cache={},
         )
 
 
@@ -36,16 +38,17 @@ def test_load_runtime_module_requires_existing_entrypoint_file(tmp_path: Path) -
     install_path.mkdir()
 
     with pytest.raises(RuntimeError, match="Runtime entrypoint not found"):
-        _load_runtime_module(
-            plugin_id="acme.demo",
-            install_path=install_path,
-            runtime_entrypoint="runtime.py",
+        load_plugin_runtime_module(
+            "acme.demo",
+            install_path,
+            "runtime.py",
+            module_cache={},
         )
 
 
 def test_load_runtime_handlers_skips_untrusted_runtime_plugins(tmp_path: Path) -> None:
     state_root = str((tmp_path / "state").resolve())
-    install_path = tmp_path / "plugins" / "acme.demo" / "1.0.0"
+    install_path = plugin_install_dir("acme.demo", "1.0.0", state_root)
     install_path.mkdir(parents=True, exist_ok=True)
     (install_path / constants.PLUGIN_MANIFEST_FILENAME).write_text(
         json.dumps(
@@ -91,7 +94,7 @@ def test_load_runtime_handlers_skips_untrusted_runtime_plugins(tmp_path: Path) -
 
 def test_load_runtime_handlers_allows_trusted_runtime_plugins(tmp_path: Path) -> None:
     state_root = str((tmp_path / "state").resolve())
-    install_path = tmp_path / "plugins" / "acme.demo" / "1.0.0"
+    install_path = plugin_install_dir("acme.demo", "1.0.0", state_root)
     install_path.mkdir(parents=True, exist_ok=True)
     (install_path / constants.PLUGIN_MANIFEST_FILENAME).write_text(
         json.dumps(

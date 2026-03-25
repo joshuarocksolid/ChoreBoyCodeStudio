@@ -84,6 +84,7 @@ def set_registry_entry_enabled(
                     plugin_id=entry.plugin_id,
                     version=entry.version,
                     install_path=entry.install_path,
+                    source_kind=entry.source_kind,
                     enabled=enabled,
                     installed_at=entry.installed_at,
                     last_error=None if enabled else entry.last_error,
@@ -116,6 +117,7 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
         plugin_id = item.get("id")
         version = item.get("version")
         install_path = item.get("install_path")
+        source_kind = item.get("source_kind", constants.PLUGIN_SOURCE_INSTALLED)
         enabled = item.get("enabled", True)
         installed_at = item.get("installed_at", "")
         last_error = item.get("last_error")
@@ -126,6 +128,11 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
             continue
         if not isinstance(install_path, str) or not install_path.strip():
             continue
+        if source_kind not in (
+            constants.PLUGIN_SOURCE_INSTALLED,
+            constants.PLUGIN_SOURCE_BUNDLED,
+        ):
+            source_kind = constants.PLUGIN_SOURCE_INSTALLED
         if not isinstance(enabled, bool):
             enabled = True
         if not isinstance(installed_at, str):
@@ -139,6 +146,7 @@ def parse_plugin_registry(payload: Mapping[str, Any]) -> PluginRegistry:
                 plugin_id=plugin_id.strip(),
                 version=version.strip(),
                 install_path=install_path.strip(),
+                source_kind=source_kind,
                 enabled=enabled,
                 installed_at=installed_at,
                 last_error=last_error,
@@ -171,6 +179,7 @@ def record_registry_entry_failure(
                     plugin_id=entry.plugin_id,
                     version=entry.version,
                     install_path=entry.install_path,
+                    source_kind=entry.source_kind,
                     enabled=False if should_disable else entry.enabled,
                     installed_at=entry.installed_at,
                     last_error=error_message,
@@ -202,6 +211,7 @@ def clear_registry_entry_failures(
                     plugin_id=entry.plugin_id,
                     version=entry.version,
                     install_path=entry.install_path,
+                    source_kind=entry.source_kind,
                     enabled=entry.enabled,
                     installed_at=entry.installed_at,
                     last_error=None,

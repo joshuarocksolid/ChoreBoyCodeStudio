@@ -942,7 +942,7 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/shell/actions.py`
   - `app/shell/menus.py`
   - `app/shell/toolbar.py`
-  - `tests/integration/run/test_process_supervisor.py`
+  - `tests/integration/run/test_process_supervisor_integration.py`
 
 ### G11 — Non-blocking search + background symbol indexing
 - Status: `DONE`
@@ -993,7 +993,7 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
 - Objective: make run lifecycle events deterministic and resilient to observer callback failures.
 - Primary files:
   - `app/run/process_supervisor.py`
-  - `tests/integration/run/test_process_supervisor.py`
+  - `tests/integration/run/test_process_supervisor_integration.py`
 
 ### G16 — Background-task runner for blocking shell actions
 - Status: `DONE`
@@ -2275,4 +2275,191 @@ story for both Code Studio itself and packaged user projects.
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O02`, `O03`, `O04`, `O05`, `O06`
 - Done when: packaging/distribution is a first-class validated phase with explicit unit, integration, runtime-parity, and manual acceptance coverage.
+
+---
+
+## 31) Phase P — Python Workflow Plugin Ecosystem
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+This phase is the provider-based follow-on to the original plugin platform. It maps to the
+workflow-plugin implementation plan tracked in active execution as `o01-*` through `o10-*`
+todo ids.
+
+### P01 — Provider contract/doc cutover (`o01-contract-cutover`)
+- Status: `DONE`
+- Objective: codify provider-based plugin architecture, phased scope, and acceptance linkage in the canonical docs.
+- Primary files:
+  - `docs/plugins/PRD.md`
+  - `docs/plugins/API_REFERENCE.md`
+  - `docs/plugins/AUTHORING_GUIDE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (doc-driven contract coverage lands in follow-on slices)
+- Validation method: doc review plus traceability from `P02`-`P10`
+- Acceptance linkage: `AT-37`, `AT-38`, `AT-39`, `AT-40`, `AT-41`, `AT-42`, `AT-85`, `AT-86`, `AT-87`, `AT-88`, `AT-89`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: the provider model, bundled-plugin strategy, project pinning, and rollout slices are explicitly documented and traceable.
+
+### P02 — Manifest v2 and visible project plugin policy (`o02-manifest-pinning`)
+- Status: `DONE`
+- Objective: extend plugin manifests with permissions/provider metadata and store project-scoped plugin policy in visible project metadata.
+- Primary files:
+  - `app/plugins/manifest.py`
+  - `app/plugins/models.py`
+  - `app/plugins/project_config.py`
+  - `app/core/constants.py`
+  - `app/bootstrap/paths.py`
+  - `tests/unit/plugins/test_manifest.py`
+  - `tests/unit/plugins/test_project_config.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/`
+- Acceptance linkage: `AT-39`, `AT-42`, `AT-86`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P01`
+- Done when: manifests support workflow providers/permissions, and `cbcs/plugins.json` persists pins, enablement overrides, and preferred providers.
+
+### P03 — Workflow provider catalog and broker (`o03-provider-broker`)
+- Status: `DONE`
+- Objective: move Python workflow surfaces from raw plugin command dispatch to typed provider resolution.
+- Primary files:
+  - `app/plugins/workflow_catalog.py`
+  - `app/plugins/workflow_broker.py`
+  - `app/plugins/workflow_adapters.py`
+  - `tests/unit/plugins/test_workflow_catalog.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/`
+- Acceptance linkage: `AT-85`, `AT-86`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P02`
+- Done when: shell code can resolve the effective provider for a workflow kind/language/path without importing plugin runtime code directly.
+
+### P04 — IPC v2 with query/job workflow lanes (`o04-ipc-v2`)
+- Status: `DONE`
+- Objective: support fast query providers, streaming workflow jobs, structured events, and cancellation in the plugin host protocol.
+- Primary files:
+  - `app/plugins/rpc_protocol.py`
+  - `app/plugins/runtime_manager.py`
+  - `app/plugins/api_broker.py`
+  - `app/plugins/host_runtime.py`
+  - `run_plugin_host.py`
+  - `tests/unit/plugins/test_rpc_protocol.py`
+  - `tests/unit/plugins/test_runtime_manager.py`
+  - `tests/runtime_parity/plugins/test_workflow_plugin_runtime.py`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py`
+- Acceptance linkage: `AT-38`, `AT-40`, `AT-87`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P03`
+- Done when: workflow queries and jobs execute through isolated host IPC with structured results, events, and cancellation.
+
+### P05 — Core workflow adapters behind provider contracts (`o05-core-adapters`)
+- Status: `DONE`
+- Objective: wrap template, packaging, runtime explanation, FreeCAD helper, dependency-audit, and pytest services behind the workflow broker without changing core UX ownership.
+- Primary files:
+  - `app/plugins/builtin_workflows.py`
+  - `app/plugins/workflow_adapters.py`
+  - `app/shell/main_window.py`
+  - `bundled_plugins/cbcs.templates.standard/**`
+  - `bundled_plugins/cbcs.packaging_tools/**`
+  - `bundled_plugins/cbcs.runtime_explainers/**`
+  - `bundled_plugins/cbcs.freecad_helpers/**`
+  - `bundled_plugins/cbcs.dependency_audit/**`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py`
+- Acceptance linkage: `AT-78`, `AT-79`, `AT-81`, `AT-85`, `AT-87`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P04`
+- Done when: the shell talks to typed workflow adapters for these surfaces and continues to own final UI/rendering behavior.
+
+### P06 — Python formatting/diagnostics provider cutover (`o06-python-cutover`)
+- Status: `DONE`
+- Objective: expose Python formatting, import organization, and diagnostics through provider contracts while keeping editor-owned edit application.
+- Primary files:
+  - `bundled_plugins/cbcs.python_tools/**`
+  - `bundled_plugins/cbcs.python_diagnostics/**`
+  - `app/plugins/builtin_workflows.py`
+  - `app/plugins/workflow_adapters.py`
+  - `app/shell/main_window.py`
+  - `tests/runtime_parity/python_tools/test_python_format_runtime.py`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/python_tools/test_python_format_runtime.py`
+- Acceptance linkage: `AT-52`, `AT-53`, `AT-54`, `AT-55`, `AT-56`, `AT-57`, `AT-58`, `AT-85`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P04`, `P05`
+- Done when: formatting/import/diagnostics workflows resolve through providers but edits and diagnostics presentation remain editor-controlled.
+
+### P07 — Bundled first-party workflow plugins (`o07-reference-plugins`)
+- Status: `DONE`
+- Objective: dogfood the workflow API with bundled first-party plugins and real sample implementations.
+- Primary files:
+  - `bundled_plugins/cbcs.python_tools/**`
+  - `bundled_plugins/cbcs.python_diagnostics/**`
+  - `bundled_plugins/cbcs.pytest/**`
+  - `bundled_plugins/cbcs.templates.standard/**`
+  - `bundled_plugins/cbcs.packaging_tools/**`
+  - `bundled_plugins/cbcs.runtime_explainers/**`
+  - `bundled_plugins/cbcs.freecad_helpers/**`
+  - `bundled_plugins/cbcs.dependency_audit/**`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py`
+- Acceptance linkage: `AT-85`, `AT-87`, `AT-89`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P05`, `P06`
+- Done when: at least one bundled provider exists for each initial workflow lane and serves as a maintained compatibility reference.
+
+### P08 — Workflow-plugin UX, provenance, and supportability (`o08-ui-support`)
+- Status: `DONE`
+- Objective: surface provider provenance, project policy, permissions, and failure state clearly in the shell and support tooling.
+- Primary files:
+  - `app/shell/plugins_panel.py`
+  - `app/shell/main_window.py`
+  - `app/support/support_bundle.py`
+  - `tests/integration/plugins/test_support_bundle_plugins_integration.py`
+- Automated test layer: `integration`, `unit`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/integration/plugins/test_support_bundle_plugins_integration.py`
+- Acceptance linkage: `AT-85`, `AT-86`, `AT-88`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P02`, `P03`, `P04`, `P07`
+- Done when: Plugin Manager and support bundles expose project pins, provider inventory, permissions, source/provenance, and recent failure state.
+
+### P09 — Safety and performance gates for workflow plugins (`o09-safety-performance`)
+- Status: `DONE`
+- Objective: enforce phase-1 workflow-plugin safety rules and prevent silent editor degradation.
+- Primary files:
+  - `app/plugins/auditor.py`
+  - `app/plugins/discovery.py`
+  - `app/plugins/installer.py`
+  - `app/plugins/host_runtime.py`
+  - `app/run/test_runner_service.py`
+  - `tests/unit/plugins/test_auditor.py`
+  - `tests/unit/plugins/test_discovery.py`
+  - `tests/unit/plugins/test_installer.py`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py tests/unit/run/test_test_runner_service.py`
+- Acceptance linkage: `AT-40`, `AT-87`, `AT-89`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P04`, `P07`
+- Done when: install/discovery audits block incompatible phase-1 plugins, runtime loading stays lazy, hidden-path writes are avoided, and provider timeout/performance visibility is explicit.
+
+### P10 — Validation matrix, author SDK, and compatibility policy (`o10-validation-sdk`)
+- Status: `DONE`
+- Objective: ship a real validation story and author-facing contract around workflow plugins.
+- Primary files:
+  - `docs/plugins/PRD.md`
+  - `docs/plugins/API_REFERENCE.md`
+  - `docs/plugins/AUTHORING_GUIDE.md`
+  - `docs/plugins/COMPATIBILITY_POLICY.md`
+  - `docs/plugins/SDK.md`
+  - `tests/unit/plugins/`
+  - `tests/integration/plugins/`
+  - `tests/runtime_parity/plugins/`
+- Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/integration/plugins/test_support_bundle_plugins_integration.py tests/runtime_parity/plugins/test_workflow_plugin_runtime.py`
+- Acceptance linkage: `AT-85`, `AT-86`, `AT-87`, `AT-88`, `AT-89`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `P01`, `P07`, `P08`, `P09`
+- Done when: workflow-plugin behavior has unit/integration/runtime-parity/manual coverage, sample plugins live in-tree, and author docs define a stable compatibility/deprecation story.
 

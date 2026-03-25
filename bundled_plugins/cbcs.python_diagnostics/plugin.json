@@ -1,0 +1,38 @@
+{
+  "id": "cbcs.python_diagnostics",
+  "name": "CBCS Python Diagnostics",
+  "version": "1.0.0",
+  "api_version": 1,
+  "runtime": {
+    "entrypoint": "runtime.py"
+  },
+  "activation_events": [
+    "on_provider:diagnostics"
+  ],
+  "capabilities": [
+    "workflow.diagnostics"
+  ],
+  "permissions": [
+    "project.read"
+  ],
+  "contributes": {
+    "workflow_providers": [
+      {
+        "id": "diagnostics",
+        "kind": "diagnostics",
+        "lane": "query",
+        "title": "CBCS Python Diagnostics",
+        "languages": [
+          "python"
+        ],
+        "file_extensions": [
+          ".py",
+          ".pyi",
+          ".pyw",
+          ".fcmacro"
+        ],
+        "query_handler": "handle_diagnostics_query"
+      }
+    ]
+  }
+}
