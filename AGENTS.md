@@ -38,7 +38,7 @@ python3 run_tests.py -v --import-mode=importlib
 - `--import-mode=importlib` is required because test directories lack `__init__.py` and have duplicate file names across `tests/unit/` and `tests/integration/`.
 - `QT_QPA_PLATFORM=offscreen` is set automatically by `run_tests.py`.
 - The `runtime_parity` test passes because AppRun is installed at the expected path.
-- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1189 passed, 1 skipped` (the skipped test requires the optional SQL tree-sitter grammar bundle).
+- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1195 passed, 2 skipped` (the skipped tests require optional JavaScript and SQL tree-sitter grammar bundles).
 
 To run a subset:
 
