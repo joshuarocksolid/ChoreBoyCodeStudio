@@ -70,7 +70,7 @@ The architecture must explicitly respect these runtime realities:
 6. SQLite works and is suitable for local persistence.
 7. `subprocess` works and is a core primitive.
 8. Detached process launch is proven and necessary for robust app lifetime behavior.
-9. Optional pure-Python vendored packages are acceptable; compiled/system dependencies are not.
+9. Optional pure-Python vendored packages are acceptable by default. Compiled dependencies require an explicit runtime-parity spike and a supported in-process load path (for example the proven memfd strategy), and must not be introduced casually.
 
 These are not implementation details. They are first-class architectural constraints.
 
@@ -681,6 +681,19 @@ Owns plugin lifecycle and contracts:
 * runtime plugin host IPC and command dispatch
 * safe mode and failure quarantine controls
 
+## 12.12 `intelligence`
+
+Owns trusted language intelligence and refactoring contracts:
+
+* semantic facade and typed result models
+* project-aware semantic sessions and worker scheduling
+* read-only semantic queries (completion, definition, hover, signatures, references)
+* refactor planning and preview/apply orchestration
+* coarse indexing and caches as acceleration only, never semantic truth
+
+The intelligence layer should keep semantic engines behind narrow interfaces so the
+shell and editor widgets do not depend on library-specific APIs directly.
+
 ---
 
 ## 13. Runner Contract
@@ -921,6 +934,72 @@ rebuilding every file on each pass.
 ## 17.3 Design rule
 
 Indexing is an optimization layer, not a source of truth. If index state is stale or missing, the editor must still function.
+
+## 17.4 Trusted Python semantics
+
+Python intelligence must separate fast structural acceleration from semantic truth.
+
+Current implementation already has a useful speed layer:
+
+* tree-sitter for lexical/editor structure
+* SQLite for project symbol cache and quick lookup
+* background workers for incremental refresh
+
+That layer should remain, but only as an optimization layer. The source of truth for
+Python semantics should live in a dedicated semantic engine layer behind a facade.
+
+### 17.4.1 Semantic facade contract
+
+The shell and editors should talk to a focused semantic facade that returns typed
+results with explicit metadata such as:
+
+* engine
+* source
+* confidence
+* latency
+* stale/fallback state
+* unsupported reason
+
+This keeps UI policy separate from library-specific implementation details and makes
+degradation states visible instead of silent.
+
+### 17.4.2 Engine boundaries
+
+For Python, the long-term architecture is:
+
+* a read-only semantic engine for completion, definition, hover, signatures, and references
+* a refactor engine for project-wide rename and related safe edits
+* SQLite/tree-sitter acceleration beneath those engines, not beside them as competing truth sources
+
+The editor must not silently combine lexical hits and semantic hits under the same
+feature label. If a result is approximate, the UI should say so explicitly.
+
+### 17.4.3 Worker model
+
+Semantic queries must not block the Qt UI thread.
+
+Because editor buffers need unsaved-text awareness and some semantic libraries have
+thread-safety constraints, Python semantic work should run through a dedicated,
+serialized worker/session model per project rather than ad-hoc parallel background
+threads.
+
+### 17.4.4 Safety rules
+
+Read-only semantic queries must never execute arbitrary user code in the editor
+process. Prefer static/project analysis APIs over interpreter-style execution.
+
+Project-local caches created by semantic engines must respect ChoreBoy filesystem
+constraints:
+
+* no hidden dot-prefixed directories
+* visible cache/state paths only
+* no silent creation of engine-owned metadata directories in user projects
+
+### 17.4.5 Refactor rule
+
+Refactors that claim semantic safety must use a trustable planner. Token replacement
+and text-search fallbacks may still exist as explicit user workflows, but not as
+silent backups for semantic rename/reference operations.
 
 ---
 
@@ -1186,6 +1265,30 @@ Everything else should build on top of this slice.
 
 **Decision:** never assume runtime features without checking.
 **Why:** constrained environment and supportability.
+
+## AD-007: Separate semantic truth from structural acceleration
+
+**Decision:** SQLite and tree-sitter remain acceleration layers, while trusted Python
+semantics move behind a dedicated semantic facade and engine layer.
+**Why:** the current name/token heuristics are fast but not trustworthy enough for
+serious Python workflows, especially across imports, shadowing, and project-wide
+rename/reference operations.
+
+## AD-008: In-process semantic engines only by default
+
+**Decision:** the shipped Python semantic core must use in-process libraries that fit
+AppRun/AppArmor constraints; server/protocol or Node-backed engines are deferred
+unless a runtime-parity spike proves them safe and supportable.
+**Why:** ChoreBoy heavily restricts subprocess execution, and reliability is more
+important than reusing desktop-IDE architecture patterns that assume unconstrained
+sidecar processes.
+
+## AD-009: No hidden engine metadata paths
+
+**Decision:** semantic/refactor engines must not rely on hidden directories such as
+`.jedi` or `.ropeproject` in user projects or hidden cache roots under Home.
+**Why:** hidden directories are unreliable on ChoreBoy and conflict with the
+filesystem-first, supportable project model.
 
 ---
 

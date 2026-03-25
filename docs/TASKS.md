@@ -1286,3 +1286,122 @@ Release class default for this phase: `RELEASE-CRITICAL`
   - `docs/ARCHITECTURE.md`
   - `docs/ACCEPTANCE_TESTS.md`
 
+---
+
+## 17) Phase I — Trusted Python semantics and navigation
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+### I01 — Semantic contract and acceptance coverage
+- Status: `TODO`
+- Objective: lock the architecture, backlog, and acceptance contract for trusted Python semantics before behavior changes land.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent contract tests land in follow-on slices, not here)
+- Validation method: doc review plus subsequent slices linking to the new semantic acceptance IDs
+- Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-48`, `AT-49`, `AT-50`, `AT-51`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: semantic layering, safety rules, rollout slices, and acceptance scenarios are all explicitly documented and traceable.
+
+### I02 — Semantic fixture corpus and failing contract tests
+- Status: `TODO`
+- Objective: create representative fixture projects and failing tests that expose the current heuristic trust gaps before the engine cutover.
+- Primary files:
+  - `tests/fixtures/semantic/**`
+  - `tests/unit/intelligence/test_semantic_facade.py`
+  - `tests/integration/intelligence/test_semantic_navigation_integration.py`
+  - existing intelligence unit tests under `tests/unit/intelligence/`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/integration/intelligence/`
+- Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-49`, `AT-50`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I01`
+- Done when: fixtures cover import graphs, shadowing, `vendor/`, syntax-broken buffers, runtime imports, and dynamic-code degradation, with failing tests proving the gap.
+
+### I03 — AppRun semantic-engine compatibility spike
+- Status: `TODO`
+- Objective: validate Jedi and Rope in the real AppRun path with visible cache policy, no hidden-folder writes, and safe in-process configuration.
+- Primary files:
+  - `app/intelligence/jedi_runtime.py`
+  - `app/intelligence/refactor_runtime.py`
+  - `tests/runtime_parity/intelligence/test_semantic_engine_runtime.py`
+  - `docs/ARCHITECTURE.md`
+- Automated test layer: `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/intelligence/test_semantic_engine_runtime.py`
+- Acceptance linkage: `AT-50`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I01`, `I02`
+- Done when: Jedi and Rope run under AppRun without hidden engine metadata paths, unsafe extension loading, or unsupported subprocess assumptions.
+
+### I04 — Semantic facade and serialized worker
+- Status: `TODO`
+- Objective: introduce a facade, typed semantic result models, deterministic `sys.path` handling, and a serialized worker/session layer for Python semantics.
+- Primary files:
+  - `app/intelligence/semantic_models.py`
+  - `app/intelligence/semantic_facade.py`
+  - `app/intelligence/semantic_worker.py`
+  - `app/intelligence/jedi_engine.py`
+  - `app/intelligence/cache_controls.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/unit/shell/`
+- Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-50`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I02`, `I03`
+- Done when: shell/editor callers depend on the facade contract, and semantic work no longer relies on ad-hoc concurrent background calls.
+
+### I05 — Read-only semantic cutover
+- Status: `TODO`
+- Objective: replace heuristic completion, definition, hover, signature help, and references with project-aware semantic queries while preserving unsaved-buffer support.
+- Primary files:
+  - `app/intelligence/navigation_service.py`
+  - `app/intelligence/completion_service.py`
+  - `app/intelligence/hover_service.py`
+  - `app/intelligence/signature_service.py`
+  - `app/intelligence/reference_service.py`
+  - `app/editors/code_editor_widget.py`
+  - `app/shell/main_window.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/integration/intelligence/`
+- Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-48`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I03`, `I04`
+- Done when: semantic read-only actions are correct on fixture projects, confidence/degradation states are explicit, and ambiguous definitions no longer silently choose the first result.
+
+### I06 — Trusted rename planner and patch preview
+- Status: `TODO`
+- Objective: hard-cut rename to a trusted project-wide planner with grouped patch previews, rollback, and no token-replace fallback.
+- Primary files:
+  - `app/intelligence/refactor_service.py`
+  - `app/intelligence/refactor_engine.py`
+  - `app/intelligence/import_rewrite.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/intelligence/test_refactor_service.py`
+  - `tests/integration/intelligence/test_semantic_rename_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_refactor_service.py tests/integration/intelligence/test_semantic_rename_integration.py`
+- Acceptance linkage: `AT-49`, `AT-50`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I03`, `I04`, `I05`
+- Done when: rename preview/apply is semantic, grouped by patch, rollback-safe, and blocked when safe proof is unavailable.
+
+### I07 — Trust UX, async completion, and performance hardening
+- Status: `TODO`
+- Objective: ship inline/editor-driven trust UX, async semantic completion, theme-safe states, and measured cold/warm performance gates.
+- Primary files:
+  - `app/editors/code_editor_widget.py`
+  - `app/shell/main_window.py`
+  - `app/intelligence/semantic_facade.py`
+  - `app/intelligence/cache_controls.py`
+  - `tests/integration/performance/test_semantic_intelligence_performance.py`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `integration`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_semantic_intelligence_performance.py` plus manual light/dark validation on semantic UI states
+- Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-48`, `AT-49`, `AT-51`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I05`, `I06`
+- Done when: semantic completion is async/cancellable, trust states are legible in both themes, and latency gates have passing evidence.
+

@@ -94,10 +94,14 @@ class CodeEditorWidget(QPlainTextEdit):
         self._indent_style = "spaces"
         self._indent_size = DEFAULT_TAB_WIDTH
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
+        self._completion_requester: Callable[[str, str, int, bool, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
+        self._hover_provider: Callable[[str, int], str | None] | None = None
+        self._signature_help_provider: Callable[[str, int], str | None] | None = None
         self._completion_enabled = True
         self._completion_auto_trigger = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
+        self._completion_request_generation = 0
         self._completion_items_by_label: dict[str, CompletionItem] = {}
         self._completion_model = QStringListModel(self)
         self._completion_popup = QCompleter(self._completion_model, self)
@@ -350,6 +354,11 @@ class CodeEditorWidget(QPlainTextEdit):
                 if start <= cursor_pos < end:
                     QToolTip.showText(ev.globalPos(), tooltip, self)  # type: ignore[union-attr]
                     return True
+            if self._hover_provider is not None:
+                hover_text = self._hover_provider(self.toPlainText(), cursor_pos)
+                if hover_text:
+                    QToolTip.showText(ev.globalPos(), hover_text, self)  # type: ignore[union-attr]
+                    return True
             QToolTip.hideText()
             return True
         return super().event(ev)
@@ -474,9 +483,21 @@ class CodeEditorWidget(QPlainTextEdit):
         """Attach completion provider callback invoked during editor typing."""
         self._completion_provider = provider
 
+    def set_completion_requester(self, requester: Callable[[str, str, int, bool, int], None] | None) -> None:
+        """Attach asynchronous completion requester callback."""
+        self._completion_requester = requester
+
     def set_completion_accepted_callback(self, callback: Callable[[CompletionItem], None] | None) -> None:
         """Attach callback invoked when completion item is accepted."""
         self._completion_accepted_callback = callback
+
+    def set_hover_provider(self, provider: Callable[[str, int], str | None] | None) -> None:
+        """Attach hover provider used by tooltip interactions."""
+        self._hover_provider = provider
+
+    def set_signature_help_provider(self, provider: Callable[[str, int], str | None] | None) -> None:
+        """Attach signature-help provider used by inline calltips."""
+        self._signature_help_provider = provider
 
     def set_completion_preferences(self, *, enabled: bool, auto_trigger: bool, min_chars: int) -> None:
         """Apply completion behavior preferences."""
@@ -488,7 +509,7 @@ class CodeEditorWidget(QPlainTextEdit):
 
     def trigger_completion(self, *, manual: bool, force_empty_prefix: bool = False) -> None:
         """Request and display completion candidates at current cursor location."""
-        if not self._completion_enabled or self._completion_provider is None:
+        if not self._completion_enabled:
             return
         source_text = self.toPlainText()
         cursor_position = self.textCursor().position()
@@ -497,11 +518,48 @@ class CodeEditorWidget(QPlainTextEdit):
             self._completion_popup.popup().hide()
             return
 
+        if self._completion_requester is not None:
+            self._completion_request_generation += 1
+            request_generation = self._completion_request_generation
+            self._completion_popup.popup().hide()
+            self._completion_requester(
+                prefix,
+                source_text,
+                cursor_position,
+                manual or force_empty_prefix,
+                request_generation,
+            )
+            return
+
+        if self._completion_provider is None:
+            return
         items = self._completion_provider(prefix, source_text, cursor_position, manual or force_empty_prefix)
         if not items:
             self._completion_popup.popup().hide()
             return
         self._show_completion_items(items, prefix=prefix)
+
+    def show_completion_items_for_request(
+        self,
+        *,
+        request_generation: int,
+        prefix: str,
+        items: list[CompletionItem],
+    ) -> None:
+        """Apply asynchronous completion results if still current."""
+        if request_generation != self._completion_request_generation:
+            return
+        if not items:
+            self._completion_popup.popup().hide()
+            return
+        self._show_completion_items(items, prefix=prefix)
+
+    def show_calltip(self, text: str | None) -> None:
+        """Show or hide inline calltip near the cursor."""
+        if not text:
+            QToolTip.hideText()
+            return
+        QToolTip.showText(self.mapToGlobal(self.cursorRect().bottomRight()), text, self)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
         if self._handle_completion_popup_navigation(e):
@@ -531,9 +589,17 @@ class CodeEditorWidget(QPlainTextEdit):
 
         super().keyPressEvent(e)
         if not self._completion_enabled or not self._completion_auto_trigger:
+            if e.text() in {"(", ","}:
+                self._show_signature_help()
+            elif e.text() == ")":
+                QToolTip.hideText()
             return
 
         inserted_text = e.text()
+        if inserted_text in {"(", ","}:
+            self._show_signature_help()
+        elif inserted_text == ")":
+            QToolTip.hideText()
         if inserted_text == ".":
             self.trigger_completion(manual=True, force_empty_prefix=True)
             return
@@ -542,6 +608,11 @@ class CodeEditorWidget(QPlainTextEdit):
             return
         if self._completion_popup.popup().isVisible():
             self._completion_popup.popup().hide()
+
+    def _show_signature_help(self) -> None:
+        if self._signature_help_provider is None:
+            return
+        self.show_calltip(self._signature_help_provider(self.toPlainText(), self.textCursor().position()))
 
     _ICON_ZONE_WIDTH = 20
 

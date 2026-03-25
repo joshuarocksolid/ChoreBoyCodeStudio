@@ -69,7 +69,9 @@ from app.intelligence.navigation_service import lookup_definition_with_cache
 from app.intelligence.outline_service import build_file_outline
 from app.intelligence.reference_service import find_references
 from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
+from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.signature_service import resolve_signature_help
+from app.intelligence.semantic_worker import SemanticWorker
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_service import CompletionRequest, CompletionService
@@ -386,7 +388,11 @@ class MainWindow(QMainWindow):
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
-        self._completion_service = CompletionService(cache_db_path=self._symbol_cache_db_path)
+        self._semantic_facade = SemanticFacade(cache_db_path=self._symbol_cache_db_path, state_root=self._state_root)
+        self._completion_service = CompletionService(
+            cache_db_path=self._symbol_cache_db_path,
+            semantic_facade=self._semantic_facade,
+        )
         self._autosave_store = AutosaveStore(state_root=self._state_root)
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = QTimer(self)
@@ -432,6 +438,7 @@ class MainWindow(QMainWindow):
         self._background_tasks = BackgroundTaskRunner(
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
+        self._semantic_worker = SemanticWorker(dispatch_to_main_thread=self._dispatch_to_main_thread)
         self._logger = get_subsystem_logger("shell")
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
             diagnostics_enabled=lambda: self._diagnostics_enabled,
@@ -1402,9 +1409,9 @@ class MainWindow(QMainWindow):
         source_text = editor_widget.toPlainText()
         cursor_position = editor_widget.textCursor().position()
 
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+        def task() -> object:  # type: ignore[no-untyped-def]
             started_at = time.perf_counter()
-            result = find_references(
+            result = self._semantic_facade.find_references(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
@@ -1435,7 +1442,17 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Find References", "Place cursor on a symbol first.")
                 return
             if not result.hits:
-                QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
+                if result.metadata.unsupported_reason:
+                    QMessageBox.information(
+                        self,
+                        "Find References",
+                        (
+                            f"No semantic references found for '{result.symbol_name}'.\n\n"
+                            "The symbol may be dynamic or unresolved. Use Find in Files for text search."
+                        ),
+                    )
+                else:
+                    QMessageBox.information(self, "Find References", f"No references found for '{result.symbol_name}'.")
                 return
 
             if self._problems_panel is None:
@@ -1456,7 +1473,7 @@ class MainWindow(QMainWindow):
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Find References", f"Reference search failed: {exc}")
 
-        self._background_tasks.run(
+        self._semantic_worker.submit(
             key="find_references",
             task=task,
             on_success=on_success,
@@ -1495,9 +1512,9 @@ class MainWindow(QMainWindow):
         source_text = editor_widget.toPlainText()
         cursor_position = editor_widget.textCursor().position()
 
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+        def task() -> object:  # type: ignore[no-untyped-def]
             started_at = time.perf_counter()
-            plan = plan_rename_symbol(
+            plan = self._semantic_facade.plan_rename(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
@@ -1528,17 +1545,18 @@ class MainWindow(QMainWindow):
             return plan
 
         def on_success(plan) -> None:  # type: ignore[no-untyped-def]
-            if plan is None or not plan.hits:
-                QMessageBox.information(self, "Rename Symbol", f"No references found for '{old_symbol}'.")
+            if plan is None or not plan.preview_patches:
+                QMessageBox.information(
+                    self,
+                    "Rename Symbol",
+                    f"No safe semantic rename plan found for '{old_symbol}'.",
+                )
                 return
 
-            preview_lines = [
-                f"{Path(hit.file_path).name}:{hit.line_number}:{hit.column_number + 1}"
-                for hit in plan.hits[:20]
-            ]
-            preview_body = "\n".join(preview_lines)
-            if len(plan.hits) > 20:
-                preview_body += f"\n... and {len(plan.hits) - 20} more occurrence(s)"
+            preview_chunks = [patch.diff_text for patch in plan.preview_patches[:3]]
+            preview_body = "\n\n".join(chunk for chunk in preview_chunks if chunk)
+            if len(plan.preview_patches) > 3:
+                preview_body += f"\n\n... and {len(plan.preview_patches) - 3} more file patch(es)"
             confirm = QMessageBox.question(
                 self,
                 "Rename Preview",
@@ -1554,7 +1572,7 @@ class MainWindow(QMainWindow):
                 return
 
             try:
-                result = apply_rename_plan(plan)
+                result = self._semantic_facade.apply_rename(plan)
             except OSError as exc:
                 QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
                 return
@@ -1570,7 +1588,7 @@ class MainWindow(QMainWindow):
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Rename Symbol", f"Rename planning failed: {exc}")
 
-        self._background_tasks.run(
+        self._semantic_worker.submit(
             key="rename_symbol",
             task=task,
             on_success=on_success,
@@ -1592,26 +1610,37 @@ class MainWindow(QMainWindow):
             return
         project_root = self._loaded_project.project_root
         current_file_path = active_tab.file_path
+        source_text = editor_widget.toPlainText()
+        cursor_position = editor_widget.textCursor().position()
 
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return lookup_definition_with_cache(
+        def task() -> object:  # type: ignore[no-untyped-def]
+            return self._semantic_facade.lookup_definition(
                 project_root=project_root,
                 current_file_path=current_file_path,
-                symbol_name=symbol_name,
-                cache_db_path=self._symbol_cache_db_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
             )
 
         def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
             if not lookup.found:
-                QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
+                if lookup.metadata.unsupported_reason:
+                    QMessageBox.information(
+                        self,
+                        "Go To Definition",
+                        f"No semantic definition found for '{symbol_name}'. The symbol may be dynamic or unresolved.",
+                    )
+                else:
+                    QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
                 return
-            location = lookup.locations[0]
+            location = self._choose_definition_location(lookup.locations)
+            if location is None:
+                return
             self._open_file_at_line(location.file_path, location.line_number)
 
         def on_error(exc: Exception) -> None:
             QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
 
-        self._background_tasks.run(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
+        self._semantic_worker.submit(key="go_to_definition", task=task, on_success=on_success, on_error=on_error)
 
     def _handle_signature_help_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -1620,19 +1649,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Signature Help", "Open a file tab first.")
             return
 
-        signature = resolve_signature_help(editor_widget.toPlainText(), editor_widget.textCursor().position())
-        if signature is None:
+        tooltip_text = self._build_inline_signature_text(
+            file_path=active_tab.file_path,
+            source_text=editor_widget.toPlainText(),
+            cursor_position=editor_widget.textCursor().position(),
+        )
+        if not tooltip_text:
             QMessageBox.information(self, "Signature Help", "No callable signature information available.")
             return
-
-        details = [
-            signature.signature_text,
-            f"Active parameter index: {signature.argument_index}",
-        ]
-        if signature.doc_summary:
-            details.append(f"Doc: {signature.doc_summary}")
-        details.append(f"Source: {signature.source}")
-        QMessageBox.information(self, "Signature Help", "\n".join(details))
+        editor_widget.show_calltip(tooltip_text)
 
     def _handle_hover_info_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
@@ -1641,17 +1666,85 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Hover Info", "Open a file tab first.")
             return
 
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        hover_info = resolve_hover_info(
+        tooltip_text = self._build_inline_hover_text(
+            file_path=active_tab.file_path,
             source_text=editor_widget.toPlainText(),
             cursor_position=editor_widget.textCursor().position(),
-            current_file_path=active_tab.file_path,
-            project_root=project_root,
-            cache_db_path=self._symbol_cache_db_path,
         )
-        if hover_info is None:
+        if not tooltip_text:
             QMessageBox.information(self, "Hover Info", "No symbol info available.")
             return
+        editor_widget.show_calltip(tooltip_text)
+
+    def _choose_definition_location(self, locations: list[object]):  # type: ignore[no-untyped-def]
+        if not locations:
+            return None
+        if len(locations) == 1:
+            return locations[0]
+
+        labels: list[str] = []
+        by_label: dict[str, object] = {}
+        for location in locations:
+            file_path = str(getattr(location, "file_path", ""))
+            line_number = int(getattr(location, "line_number", 0) or 0)
+            symbol_kind = str(getattr(location, "symbol_kind", "symbol"))
+            label = f"{Path(file_path).name}:{line_number} ({symbol_kind})"
+            labels.append(label)
+            by_label[label] = location
+        selected_label, ok = QInputDialog.getItem(
+            self,
+            "Choose Definition Target",
+            "Multiple definition targets found:",
+            labels,
+            0,
+            editable=False,
+        )
+        if not ok or not selected_label:
+            return None
+        return by_label.get(selected_label)
+
+    def _build_inline_signature_text(
+        self,
+        *,
+        file_path: str,
+        source_text: str,
+        cursor_position: int,
+    ) -> str | None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        signature = self._semantic_facade.resolve_signature_help(
+            project_root=project_root,
+            current_file_path=file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+        )
+        if signature is None:
+            return None
+        details = [
+            signature.signature_text,
+            f"Active parameter index: {signature.argument_index}",
+            f"Source: {signature.source}",
+            f"Confidence: {signature.metadata.confidence}",
+        ]
+        if signature.doc_summary:
+            details.insert(1, f"Doc: {signature.doc_summary}")
+        return "\n".join(details)
+
+    def _build_inline_hover_text(
+        self,
+        *,
+        file_path: str,
+        source_text: str,
+        cursor_position: int,
+    ) -> str | None:
+        project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        hover_info = self._semantic_facade.resolve_hover_info(
+            project_root=project_root,
+            current_file_path=file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+        )
+        if hover_info is None:
+            return None
 
         details = [f"Symbol: {hover_info.symbol_name}", f"Kind: {hover_info.symbol_kind}"]
         if hover_info.file_path:
@@ -1661,7 +1754,10 @@ class MainWindow(QMainWindow):
         if hover_info.doc_summary:
             details.append(f"Doc: {hover_info.doc_summary}")
         details.append(f"Source: {hover_info.source}")
-        QMessageBox.information(self, "Hover Info", "\n".join(details))
+        details.append(f"Confidence: {hover_info.metadata.confidence}")
+        if hover_info.metadata.unsupported_reason:
+            details.append(f"Reason: {hover_info.metadata.unsupported_reason}")
+        return "\n".join(details)
 
     def _handle_analyze_imports_action(self) -> None:
         if self._loaded_project is None:
@@ -3747,6 +3843,9 @@ class MainWindow(QMainWindow):
             self._external_change_poll_timer.stop()
         self._drain_run_event_queue()
         self._background_tasks.cancel_all()
+        if hasattr(self, "_semantic_worker"):
+            self._semantic_worker.cancel_all()
+            self._semantic_worker.shutdown()
         if self._active_search_worker is not None and self._active_search_worker.is_running():
             self._active_search_worker.cancel()
         self._active_search_worker = None
@@ -4643,6 +4742,37 @@ class MainWindow(QMainWindow):
                 manual_trigger=manual_trigger,
             )
 
+        def completion_requester(
+            prefix: str,
+            source_text: str,
+            cursor_position: int,
+            manual_trigger: bool,
+            request_generation: int,
+        ) -> None:
+            self._request_editor_completions_async(
+                file_path=tab_file_path,
+                editor_widget=editor_widget,
+                prefix=prefix,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                manual_trigger=manual_trigger,
+                request_generation=request_generation,
+            )
+
+        def hover_provider(source_text: str, cursor_position: int) -> str | None:
+            return self._build_inline_hover_text(
+                file_path=tab_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+            )
+
+        def signature_provider(source_text: str, cursor_position: int) -> str | None:
+            return self._build_inline_signature_text(
+                file_path=tab_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+            )
+
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
             self._handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
 
@@ -4657,7 +4787,10 @@ class MainWindow(QMainWindow):
 
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_completion_provider(completion_provider)
+        editor_widget.set_completion_requester(completion_requester)
         editor_widget.set_completion_accepted_callback(on_completion_accepted)
+        editor_widget.set_hover_provider(hover_provider)
+        editor_widget.set_signature_help_provider(signature_provider)
         editor_widget.set_breakpoints(self._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
@@ -4841,6 +4974,47 @@ class MainWindow(QMainWindow):
                     len(completions),
                 )
         return completions
+
+    def _request_editor_completions_async(
+        self,
+        *,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        prefix: str,
+        source_text: str,
+        cursor_position: int,
+        manual_trigger: bool,
+        request_generation: int,
+    ) -> None:
+        def task() -> tuple[int, str, list[CompletionItem]]:  # type: ignore[no-untyped-def]
+            completions = self._request_editor_completions(
+                file_path=file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                manual_trigger=manual_trigger,
+            )
+            return (request_generation, prefix, completions)
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            generation, completion_prefix, completions = payload
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if active_widget is not editor_widget:
+                return
+            editor_widget.show_completion_items_for_request(
+                request_generation=generation,
+                prefix=completion_prefix,
+                items=completions,
+            )
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Async completion request failed for %s: %s", file_path, exc)
+
+        self._semantic_worker.submit(
+            key=f"completion:{file_path}",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
         if tab_index < 0 or self._editor_tabs_widget is None:

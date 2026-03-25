@@ -80,12 +80,11 @@ def test_apply_rename_plan_rolls_back_on_write_failure(tmp_path: Path, monkeypat
     original_helper = helper.read_text(encoding="utf-8")
     original_main = main.read_text(encoding="utf-8")
     original_write_text = Path.write_text
-    failing_target = str(main.resolve())
     call_count = {"count": 0}
 
     def flaky_write_text(self: Path, data: str, *args, **kwargs):  # type: ignore[no-untyped-def]
         call_count["count"] += 1
-        if str(self.resolve()) == failing_target and call_count["count"] == 2:
+        if call_count["count"] == 2:
             raise OSError("simulated write failure")
         return original_write_text(self, data, *args, **kwargs)
 

@@ -1,8 +1,7 @@
-"""Unit tests for backgrounded reference and rename actions in MainWindow."""
+"""Unit tests for semantic reference and rename actions in MainWindow."""
 
 from __future__ import annotations
 
-import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -15,12 +14,41 @@ from app.shell.main_window import MainWindow
 pytestmark = pytest.mark.unit
 
 
-class _FakeBackgroundTasks:
+class _FakeSemanticWorker:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def run(self, **kwargs: Any) -> None:
+    def submit(self, **kwargs: Any) -> None:
         self.calls.append(kwargs)
+
+
+class _FakeSemanticFacade:
+    def __init__(self) -> None:
+        self.find_references_calls: list[dict[str, Any]] = []
+        self.plan_rename_calls: list[dict[str, Any]] = []
+        self.apply_rename_calls: list[object] = []
+        self.find_references_result: object = SimpleNamespace(
+            symbol_name="task_name",
+            hits=[],
+            metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
+        )
+        self.rename_plan_result: object = None
+        self.apply_rename_result: object = SimpleNamespace(
+            changed_files=["/tmp/project/main.py"],
+            changed_occurrences=1,
+        )
+
+    def find_references(self, **kwargs: Any) -> object:
+        self.find_references_calls.append(kwargs)
+        return self.find_references_result
+
+    def plan_rename(self, **kwargs: Any) -> object:
+        self.plan_rename_calls.append(kwargs)
+        return self.rename_plan_result
+
+    def apply_rename(self, plan: object) -> object:
+        self.apply_rename_calls.append(plan)
+        return self.apply_rename_result
 
 
 def _build_window_for_reference_actions() -> MainWindow:
@@ -38,7 +66,8 @@ def _build_window_for_reference_actions() -> MainWindow:
     window_any._active_editor_widget = lambda: editor_widget
     window_any._intelligence_runtime_settings = SimpleNamespace(metrics_logging_enabled=False)
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
-    window_any._background_tasks = _FakeBackgroundTasks()
+    window_any._semantic_worker = _FakeSemanticWorker()
+    window_any._semantic_facade = _FakeSemanticFacade()
     window_any._problems_panel = SimpleNamespace(set_results=lambda *_a, **_kw: None)
     window_any._update_problems_tab_title = lambda *_a, **_kw: None
     window_any._focus_problems_tab = lambda: None
@@ -51,27 +80,24 @@ def _build_window_for_reference_actions() -> MainWindow:
 def test_handle_find_references_action_dispatches_background_task(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_for_reference_actions()
     window_any = cast(Any, window)
-
-    calls: list[dict[str, object]] = []
-    expected_result = SimpleNamespace(symbol_name="task_name", hits=[object(), object()])
-
-    def _fake_find_references(**kwargs: object) -> object:
-        calls.append(kwargs)
-        return expected_result
-
-    monkeypatch.setattr("app.shell.main_window.find_references", _fake_find_references)
+    expected_result = SimpleNamespace(
+        symbol_name="task_name",
+        hits=[object(), object()],
+        metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
+    )
+    window_any._semantic_facade.find_references_result = expected_result
 
     MainWindow._handle_find_references_action(window)
 
-    assert len(window_any._background_tasks.calls) == 1
-    background_call = window_any._background_tasks.calls[0]
-    assert background_call["key"] == "find_references"
+    assert len(window_any._semantic_worker.calls) == 1
+    worker_call = window_any._semantic_worker.calls[0]
+    assert worker_call["key"] == "find_references"
 
-    task = background_call["task"]
-    result = task(threading.Event())
+    task = worker_call["task"]
+    result = task()
 
     assert result is expected_result
-    assert calls == [
+    assert window_any._semantic_facade.find_references_calls == [
         {
             "project_root": "/tmp/project",
             "current_file_path": "/tmp/project/main.py",
@@ -96,7 +122,7 @@ def test_handle_find_references_action_on_success_updates_results() -> None:
     window_any._focus_problems_tab = lambda: focused.append(True)
 
     MainWindow._handle_find_references_action(window)
-    background_call = window_any._background_tasks.calls[0]
+    worker_call = window_any._semantic_worker.calls[0]
 
     hit = SimpleNamespace(
         is_definition=False,
@@ -104,9 +130,13 @@ def test_handle_find_references_action_on_success_updates_results() -> None:
         file_path="/tmp/project/main.py",
         line_number=2,
     )
-    result = SimpleNamespace(symbol_name="task_name", hits=[hit])
+    result = SimpleNamespace(
+        symbol_name="task_name",
+        hits=[hit],
+        metadata=SimpleNamespace(unsupported_reason="", source="semantic", confidence="exact"),
+    )
 
-    background_call["on_success"](result)
+    worker_call["on_success"](result)
 
     assert len(seen) == 1
     assert seen[0][0] == "References: task_name"
@@ -118,32 +148,32 @@ def test_handle_find_references_action_on_success_updates_results() -> None:
 def test_handle_rename_symbol_action_dispatches_background_task(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_for_reference_actions()
     window_any = cast(Any, window)
-
-    calls: list[dict[str, object]] = []
-    expected_plan = SimpleNamespace(old_symbol="task_name", new_symbol="renamed_task", hits=[object()])
+    expected_plan = SimpleNamespace(
+        old_symbol="task_name",
+        new_symbol="renamed_task",
+        hits=[object()],
+        preview_patches=[SimpleNamespace(diff_text="--- a\n+++ a\n@@\n-task_name\n+renamed_task")],
+        touched_files=["/tmp/project/main.py"],
+        metadata=SimpleNamespace(source="semantic", confidence="exact"),
+    )
+    window_any._semantic_facade.rename_plan_result = expected_plan
 
     monkeypatch.setattr(
         "app.shell.main_window.QInputDialog.getText",
         lambda *_args, **_kwargs: ("renamed_task", True),
     )
 
-    def _fake_plan_rename_symbol(**kwargs: object) -> object:
-        calls.append(kwargs)
-        return expected_plan
-
-    monkeypatch.setattr("app.shell.main_window.plan_rename_symbol", _fake_plan_rename_symbol)
-
     MainWindow._handle_rename_symbol_action(window)
 
-    assert len(window_any._background_tasks.calls) == 1
-    background_call = window_any._background_tasks.calls[0]
-    assert background_call["key"] == "rename_symbol"
+    assert len(window_any._semantic_worker.calls) == 1
+    worker_call = window_any._semantic_worker.calls[0]
+    assert worker_call["key"] == "rename_symbol"
 
-    task = background_call["task"]
-    result = task(threading.Event())
+    task = worker_call["task"]
+    result = task()
 
     assert result is expected_plan
-    assert calls == [
+    assert window_any._semantic_facade.plan_rename_calls == [
         {
             "project_root": "/tmp/project",
             "current_file_path": "/tmp/project/main.py",
@@ -170,10 +200,6 @@ def test_handle_rename_symbol_action_on_success_applies_plan(monkeypatch: pytest
         lambda *_args, **_kwargs: 16384,  # QMessageBox.Yes
     )
     monkeypatch.setattr(
-        "app.shell.main_window.apply_rename_plan",
-        lambda plan: SimpleNamespace(changed_files=["/tmp/project/main.py"], changed_occurrences=len(plan.hits)),
-    )
-    monkeypatch.setattr(
         "app.shell.main_window.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
@@ -182,18 +208,21 @@ def test_handle_rename_symbol_action_on_success_applies_plan(monkeypatch: pytest
     window_any._reload_current_project = lambda: reloaded.append(True)
 
     MainWindow._handle_rename_symbol_action(window)
-    background_call = window_any._background_tasks.calls[0]
+    worker_call = window_any._semantic_worker.calls[0]
 
     hit = SimpleNamespace(file_path="/tmp/project/main.py", line_number=2, column_number=8)
     plan = SimpleNamespace(
         old_symbol="task_name",
         new_symbol="renamed_task",
         hits=[hit],
+        preview_patches=[SimpleNamespace(diff_text="--- a\n+++ a\n@@\n-task_name\n+renamed_task")],
         touched_files=["/tmp/project/main.py"],
+        metadata=SimpleNamespace(source="semantic", confidence="exact"),
     )
 
-    background_call["on_success"](plan)
+    worker_call["on_success"](plan)
 
     assert refreshed == [["/tmp/project/main.py"]]
     assert reloaded == [True]
     assert infos[-1][0] == "Rename Symbol"
+    assert window_any._semantic_facade.apply_rename_calls == [plan]

@@ -1058,7 +1058,7 @@ Verify manifest compatibility guards prevent invalid activation.
 
 ---
 
-## AT-43 — Preview tab mode across explorer/navigation surfaces
+## AT-44 — Preview tab mode across explorer/navigation surfaces
 
 **Purpose:**  
 Verify single-preview semantics, promotion behavior, and preview toggle across all supported file-open surfaces.
@@ -1090,7 +1090,164 @@ Verify single-preview semantics, promotion behavior, and preview toggle across a
 
 ---
 
-## 11. Minimum MVP Gate
+## 11. Trusted Python Semantics Acceptance Tests
+
+## AT-45 — Imported-symbol semantics resolve correctly while editing
+
+**Purpose:**  
+Verify that the semantic engine resolves imported symbols reliably, including unsaved current-buffer edits.
+
+**Preconditions:**  
+- project with at least two Python modules and cross-file imports is open
+- semantic engine rollout is enabled
+
+**Steps:**  
+1. Open a file that imports a symbol from another project module.
+2. Invoke go-to-definition on the imported symbol.
+3. Request hover info for the same symbol.
+4. Trigger signature help on a call to that symbol.
+5. Modify the current buffer without saving and repeat hover/signature where the edit changes the result.
+
+**Expected Result:**  
+- go-to-definition lands on the correct imported definition
+- hover and signature help reflect the imported symbol, not merely a same-name local/global match
+- unsaved current-buffer edits are respected for read-only semantic actions
+- the UI identifies semantic results clearly
+
+---
+
+## AT-46 — Shadowed and ambiguous symbols are handled explicitly
+
+**Purpose:**  
+Verify that same-name symbols in different scopes/modules do not silently collapse into one result.
+
+**Preconditions:**  
+- project fixture contains shadowed names and duplicate symbol names across files
+- semantic engine rollout is enabled
+
+**Steps:**  
+1. Open a fixture with a local symbol shadowing an imported or module-level symbol.
+2. Invoke go-to-definition and find-references on both occurrences.
+3. Invoke go-to-definition on a symbol with multiple valid targets.
+
+**Expected Result:**  
+- navigation and references respect binding identity rather than same-spelling token matches
+- unrelated homonyms are excluded from the semantic result set
+- when multiple valid targets exist, the user is prompted to choose instead of the editor silently opening the first match
+
+---
+
+## AT-47 — Semantic completion surfaces trustworthy detail and confidence
+
+**Purpose:**  
+Verify that completion behavior is semantic, cancellable, and clear about result provenance.
+
+**Preconditions:**  
+- project with cross-module imports and member accesses is open
+- semantic completion is enabled
+
+**Steps:**  
+1. Trigger completion on an imported module member.
+2. Trigger completion while rapidly typing to force stale requests.
+3. Inspect completion rows for detail/source/confidence metadata.
+
+**Expected Result:**  
+- imported/member completions are project-aware and relevant
+- stale completion responses are discarded rather than flashing outdated items
+- completion rows show useful semantic metadata such as kind, source, or confidence state
+- approximate/fallback results, if shown, are clearly labeled as such
+
+---
+
+## AT-48 — Dynamic-code degradation is explicit and recoverable
+
+**Purpose:**  
+Verify that unsupported dynamic patterns degrade safely instead of pretending to be exact.
+
+**Preconditions:**  
+- project fixture includes deliberately dynamic code that the semantic engine cannot prove precisely
+- semantic engine rollout is enabled
+
+**Steps:**  
+1. Invoke definition/references on a symbol produced through dynamic behavior.
+2. Inspect the UI response.
+3. Follow the offered text-search or manual-search escape hatch.
+
+**Expected Result:**  
+- the editor does not silently present lexical/text results as semantic truth
+- the user sees an explicit unsupported or degraded message
+- the fallback path to text search is available and understandable
+
+---
+
+## AT-49 — Semantic rename preview, apply, and rollback
+
+**Purpose:**  
+Verify that project-wide rename is planned semantically, previewed clearly, and rolled back safely on failure.
+
+**Preconditions:**  
+- project fixture contains a renameable symbol used across multiple files
+- semantic rename is enabled
+
+**Steps:**  
+1. Invoke rename on the target symbol.
+2. Review the preview UI before applying.
+3. Apply the rename and inspect the touched files.
+4. Repeat with a simulated write failure or blocked unsafe rename case.
+
+**Expected Result:**  
+- the preview is grouped by file with patch-style changes rather than only filename/line lists
+- only semantically related occurrences are renamed
+- unsafe/ambiguous rename operations are blocked with a clear explanation
+- mid-apply failure triggers deterministic rollback rather than partial project corruption
+
+---
+
+## AT-50 — Semantic engine runtime behavior respects ChoreBoy constraints
+
+**Purpose:**  
+Verify that the chosen semantic/refactor engines operate safely under the real AppRun runtime and filesystem rules.
+
+**Preconditions:**  
+- test executed in the AppRun-based target or target-like runtime
+- semantic engine dependencies are present
+
+**Steps:**  
+1. Start the editor and open a semantic fixture project.
+2. Exercise completion, definition, references, and rename preview.
+3. Inspect project/global state directories after use.
+
+**Expected Result:**  
+- semantic features work without spawning unsupported sidecar binaries
+- no hidden engine metadata directories such as `.jedi` or `.ropeproject` are created
+- any semantic cache/state paths are visible and supportable
+- read-only semantic queries do not rely on unsafe extension loading or interpreter-style execution of project code
+
+---
+
+## AT-51 — Semantic UI states remain usable in both themes and within latency targets
+
+**Purpose:**  
+Verify that semantic UI surfaces are legible in light/dark mode and remain responsive enough for real editing.
+
+**Preconditions:**  
+- semantic engine rollout is enabled
+- editor can switch between light and dark themes
+- medium-size fixture project is available
+
+**Steps:**  
+1. Trigger semantic completion, hover, signature help, references, and rename preview in light mode.
+2. Repeat in dark mode.
+3. Measure warm completion/navigation behavior on the medium fixture.
+
+**Expected Result:**  
+- all semantic labels, badges, lists, popups, and previews remain readable in both themes
+- semantic completion and navigation feel responsive enough for normal editing workflows
+- performance regressions are measurable and within the documented rollout targets
+
+---
+
+## 12. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -1113,7 +1270,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 12. Completion Rule
+## 13. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -1127,7 +1284,7 @@ A feature is complete only when:
 
 ---
 
-## 13. Maintenance Rules
+## 14. Maintenance Rules
 
 Update this file when:
 

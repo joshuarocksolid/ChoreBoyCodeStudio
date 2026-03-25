@@ -8,6 +8,10 @@ from pathlib import Path
 import tokenize
 
 from app.core import constants
+from app.intelligence.semantic_facade import SemanticFacade
+from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
+
+_FACADE_BY_PROJECT_ROOT: dict[str, SemanticFacade] = {}
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class ReferenceSearchResult:
 
     symbol_name: str
     hits: list[ReferenceHit]
+    metadata: SemanticOperationMetadata | None = None
 
     @property
     def found(self) -> bool:
@@ -44,17 +49,36 @@ def find_references(
     """Find symbol references across project Python files."""
     symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
     if not symbol_name:
-        return ReferenceSearchResult(symbol_name="", hits=[])
+        return ReferenceSearchResult(symbol_name="", hits=[], metadata=None)
 
-    root = Path(project_root).expanduser().resolve()
-    if not root.exists():
-        return ReferenceSearchResult(symbol_name=symbol_name, hits=[])
+    try:
+        semantic_result = _facade(project_root).find_references(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+        )
+    except Exception:
+        semantic_result = None
 
-    hits: list[ReferenceHit] = []
-    for file_path in _iter_python_files(root):
-        hits.extend(_collect_references_from_file(file_path=file_path, symbol_name=symbol_name))
-    hits.sort(key=lambda item: (item.file_path, item.line_number, item.column_number))
-    return ReferenceSearchResult(symbol_name=symbol_name, hits=hits)
+    if semantic_result is not None and (semantic_result.found or semantic_result.metadata.unsupported_reason):
+        return ReferenceSearchResult(
+            symbol_name=semantic_result.symbol_name,
+            hits=[
+                ReferenceHit(
+                    symbol_name=hit.symbol_name,
+                    file_path=hit.file_path,
+                    line_number=hit.line_number,
+                    column_number=hit.column_number,
+                    line_text=hit.line_text,
+                    is_definition=hit.is_definition,
+                )
+                for hit in semantic_result.hits
+            ],
+            metadata=semantic_result.metadata,
+        )
+
+    return _find_references_heuristic(project_root=project_root, source_text=source_text, cursor_position=cursor_position)
 
 
 def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
@@ -70,6 +94,35 @@ def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
     if not symbol.isidentifier():
         return ""
     return symbol
+
+
+def _find_references_heuristic(
+    *,
+    project_root: str,
+    source_text: str,
+    cursor_position: int,
+) -> ReferenceSearchResult:
+    symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
+    if not symbol_name:
+        return ReferenceSearchResult(symbol_name="", hits=[], metadata=None)
+
+    root = Path(project_root).expanduser().resolve()
+    if not root.exists():
+        return ReferenceSearchResult(
+            symbol_name=symbol_name,
+            hits=[],
+            metadata=approximate_metadata("token_scan", source="approximate", fallback_reason="missing_project_root"),
+        )
+
+    hits: list[ReferenceHit] = []
+    for file_path in _iter_python_files(root):
+        hits.extend(_collect_references_from_file(file_path=file_path, symbol_name=symbol_name))
+    hits.sort(key=lambda item: (item.file_path, item.line_number, item.column_number))
+    return ReferenceSearchResult(
+        symbol_name=symbol_name,
+        hits=hits,
+        metadata=approximate_metadata("token_scan", source="approximate", fallback_reason="heuristic_lookup"),
+    )
 
 
 def _collect_file_definitions(
@@ -175,3 +228,13 @@ def _line_symbol_column(source_lines: list[str], line_number: int, symbol_name: 
     if column < 0:
         return 0
     return column
+
+
+def _facade(project_root: str) -> SemanticFacade:
+    normalized_root = str(Path(project_root).expanduser().resolve())
+    cached = _FACADE_BY_PROJECT_ROOT.get(normalized_root)
+    if cached is None:
+        cache_db_path = str((Path(normalized_root) / constants.PROJECT_META_DIRNAME / constants.PROJECT_CACHE_DIRNAME / "semantic.sqlite3").resolve())
+        cached = SemanticFacade(cache_db_path=cache_db_path)
+        _FACADE_BY_PROJECT_ROOT[normalized_root] = cached
+    return cached

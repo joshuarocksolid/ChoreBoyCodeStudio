@@ -16,6 +16,7 @@ from app.intelligence.completion_providers import (
     provide_project_module_items,
     provide_project_symbol_items,
 )
+from app.intelligence.semantic_facade import SemanticFacade
 
 
 @dataclass(frozen=True)
@@ -34,9 +35,10 @@ class CompletionRequest:
 class CompletionService:
     """Build and rank completion candidates from multiple providers."""
 
-    def __init__(self, *, cache_db_path: str) -> None:
+    def __init__(self, *, cache_db_path: str, semantic_facade: SemanticFacade | None = None) -> None:
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
         self._acceptance_scores: dict[str, int] = {}
+        self._semantic_facade = semantic_facade or SemanticFacade(cache_db_path=self._cache_db_path)
 
     def complete(self, request: CompletionRequest) -> list[CompletionItem]:
         """Return ranked completion candidates for one editor query."""
@@ -46,6 +48,18 @@ class CompletionService:
         if not request.trigger_is_manual and len(effective_prefix) < max(1, request.min_prefix_chars):
             return []
 
+        try:
+            semantic_candidates = self._semantic_facade.complete(
+                project_root=request.project_root,
+                current_file_path=request.current_file_path,
+                source_text=request.source_text,
+                cursor_position=request.cursor_position,
+                trigger_is_manual=request.trigger_is_manual,
+                min_prefix_chars=request.min_prefix_chars,
+                max_results=request.max_results * 2,
+            )
+        except Exception:
+            semantic_candidates = []
         project_limit = max(request.max_results * 2, 120)
         if module_context is not None:
             module_candidates = provide_module_member_items(
@@ -54,16 +68,16 @@ class CompletionService:
                 cursor_position=request.cursor_position,
                 limit=project_limit,
             )
-            if not module_candidates:
+            if not semantic_candidates and not module_candidates:
                 return []
             ranked = self._rank_candidates(
-                module_candidates,
+                [*semantic_candidates, *_mark_as_approximate(module_candidates)],
                 prefix=effective_prefix,
                 current_file_path=request.current_file_path,
             )
             return [entry.item for entry in ranked[: request.max_results]]
 
-        raw_candidates = [
+        raw_candidates = [*semantic_candidates, *_mark_as_approximate([
             *provide_current_file_symbol_items(
                 request.source_text,
                 prefix=prefix,
@@ -83,7 +97,7 @@ class CompletionService:
             ),
             *provide_builtin_items(prefix),
             *provide_keyword_items(prefix),
-        ]
+        ])]
 
         ranked = self._rank_candidates(raw_candidates, prefix=effective_prefix, current_file_path=request.current_file_path)
         return [entry.item for entry in ranked[: request.max_results]]
@@ -149,6 +163,8 @@ def _base_match_score(label: str, prefix: str) -> int:
 
 
 def _source_score(candidate: CompletionItem, *, current_file_path: str) -> int:
+    if candidate.source == "semantic":
+        return 60
     if candidate.kind == CompletionKind.SYMBOL and candidate.source_file_path == current_file_path:
         return 40
     if candidate.kind == CompletionKind.SYMBOL:
@@ -160,3 +176,27 @@ def _source_score(candidate: CompletionItem, *, current_file_path: str) -> int:
     if candidate.kind == CompletionKind.KEYWORD:
         return 5
     return 0
+
+
+def _mark_as_approximate(candidates: list[CompletionItem]) -> list[CompletionItem]:
+    marked: list[CompletionItem] = []
+    for candidate in candidates:
+        detail = candidate.detail
+        if detail:
+            detail = f"{detail} • approximate"
+        else:
+            detail = "approximate"
+        marked.append(
+            CompletionItem(
+                label=candidate.label,
+                insert_text=candidate.insert_text,
+                kind=candidate.kind,
+                detail=detail,
+                source_file_path=candidate.source_file_path,
+                engine=candidate.engine or "heuristic",
+                source="approximate",
+                confidence="approximate",
+                semantic_kind=candidate.semantic_kind,
+            )
+        )
+    return marked

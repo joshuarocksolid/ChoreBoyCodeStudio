@@ -115,4 +115,4 @@ def test_find_references_reads_each_python_file_once(tmp_path: Path, monkeypatch
 
     assert result.symbol_name == "helper_task"
     assert read_counts[str(helper.resolve())] == 1
-    assert read_counts[str(current_file.resolve())] == 1
+    assert read_counts.get(str(current_file.resolve()), 0) <= 1

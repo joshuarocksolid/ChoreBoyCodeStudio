@@ -56,7 +56,8 @@ def test_completion_service_prefers_current_file_symbols(tmp_path: Path) -> None
 
     assert completions
     assert completions[0].insert_text == "alpha_local"
-    assert completions[0].detail == "current file"
+    assert "semantic" in completions[0].detail
+    assert completions[0].source == "semantic"
 
 
 def test_completion_service_manual_trigger_allows_short_prefix(tmp_path: Path) -> None:
