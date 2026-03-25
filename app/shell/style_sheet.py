@@ -1055,6 +1055,13 @@ QLabel#designer\\.modeBar\\.statusLabel {{
 QWidget#designer\\.palette\\.panel {{
     background: {tokens.panel_bg};
 }}
+QLabel#designer\\.palette\\.header {{
+    color: {tokens.text_muted};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 6px 8px 4px 8px;
+}}
 QTreeWidget#designer\\.palette\\.tree {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};

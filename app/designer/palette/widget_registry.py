@@ -17,6 +17,7 @@ class PaletteWidgetDefinition:
     allowed_parent_classes: tuple[str, ...] = ()
     default_properties: Mapping[str, object] = field(default_factory=dict)
     is_layout_item: bool = False
+    icon_char: str = ""
 
 
 class WidgetPaletteRegistry:
@@ -39,24 +40,25 @@ class WidgetPaletteRegistry:
 def default_widget_palette_registry() -> WidgetPaletteRegistry:
     """Build the baseline D1 widget palette registry."""
     definitions = [
-        PaletteWidgetDefinition("QWidget", "Widget", "Containers", "widget"),
-        PaletteWidgetDefinition("QFrame", "Frame", "Containers", "frame"),
-        PaletteWidgetDefinition("QGroupBox", "Group Box", "Containers", "groupBox"),
-        PaletteWidgetDefinition("QTabWidget", "Tab Widget", "Containers", "tabWidget"),
-        PaletteWidgetDefinition("QScrollArea", "Scroll Area", "Containers", "scrollArea"),
-        PaletteWidgetDefinition("QLineEdit", "Line Edit", "Inputs", "lineEdit"),
-        PaletteWidgetDefinition("QTextEdit", "Text Edit", "Inputs", "textEdit"),
-        PaletteWidgetDefinition("QComboBox", "Combo Box", "Inputs", "comboBox"),
-        PaletteWidgetDefinition("QCheckBox", "Check Box", "Inputs", "checkBox"),
-        PaletteWidgetDefinition("QRadioButton", "Radio Button", "Inputs", "radioButton"),
-        PaletteWidgetDefinition("QLabel", "Label", "Display", "label"),
-        PaletteWidgetDefinition("QPushButton", "Push Button", "Buttons/Actions", "pushButton"),
+        PaletteWidgetDefinition("QWidget", "Widget", "Containers", "widget", icon_char="\u25A1"),
+        PaletteWidgetDefinition("QFrame", "Frame", "Containers", "frame", icon_char="\u25A0"),
+        PaletteWidgetDefinition("QGroupBox", "Group Box", "Containers", "groupBox", icon_char="\u25A3"),
+        PaletteWidgetDefinition("QTabWidget", "Tab Widget", "Containers", "tabWidget", icon_char="\u2630"),
+        PaletteWidgetDefinition("QScrollArea", "Scroll Area", "Containers", "scrollArea", icon_char="\u2B13"),
+        PaletteWidgetDefinition("QLineEdit", "Line Edit", "Inputs", "lineEdit", icon_char="\u270E"),
+        PaletteWidgetDefinition("QTextEdit", "Text Edit", "Inputs", "textEdit", icon_char="\u2263"),
+        PaletteWidgetDefinition("QComboBox", "Combo Box", "Inputs", "comboBox", icon_char="\u25BE"),
+        PaletteWidgetDefinition("QCheckBox", "Check Box", "Inputs", "checkBox", icon_char="\u2611"),
+        PaletteWidgetDefinition("QRadioButton", "Radio Button", "Inputs", "radioButton", icon_char="\u25C9"),
+        PaletteWidgetDefinition("QLabel", "Label", "Display", "label", icon_char="\u24C1"),
+        PaletteWidgetDefinition("QPushButton", "Push Button", "Buttons/Actions", "pushButton", icon_char="\u25B6"),
         PaletteWidgetDefinition(
             "QSpacerItem",
             "Spacer",
             "Layout Items",
             "spacerItem",
             is_layout_item=True,
+            icon_char="\u2B0C",
         ),
     ]
     return WidgetPaletteRegistry(definitions)
