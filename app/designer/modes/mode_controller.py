@@ -27,13 +27,27 @@ class DesignerModeDefinition:
     mode_id: str
     display_name: str
     shortcut: str
+    icon_char: str = ""
+    tooltip: str = ""
 
 
 DESIGNER_MODE_DEFINITIONS: tuple[DesignerModeDefinition, ...] = (
-    DesignerModeDefinition(MODE_WIDGET, "Widget", "F3"),
-    DesignerModeDefinition(MODE_SIGNALS_SLOTS, "Signals/Slots", "F4"),
-    DesignerModeDefinition(MODE_BUDDY, "Buddy", "F5"),
-    DesignerModeDefinition(MODE_TAB_ORDER, "Tab Order", "F6"),
+    DesignerModeDefinition(
+        MODE_WIDGET, "Widget", "F3",
+        icon_char="\u270E", tooltip="Widget Editing Mode (F3)",
+    ),
+    DesignerModeDefinition(
+        MODE_SIGNALS_SLOTS, "Signals", "F4",
+        icon_char="\u26A1", tooltip="Signals/Slots Mode (F4)",
+    ),
+    DesignerModeDefinition(
+        MODE_BUDDY, "Buddy", "F5",
+        icon_char="\u2696", tooltip="Buddy Assignment Mode (F5)",
+    ),
+    DesignerModeDefinition(
+        MODE_TAB_ORDER, "Tab Order", "F6",
+        icon_char="\u2195", tooltip="Tab Order Mode (F6)",
+    ),
 )
 
 
