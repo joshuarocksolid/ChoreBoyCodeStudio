@@ -235,3 +235,48 @@ def test_select_pytest_runtime_preserves_env_override_symlink_path(
     selected = _select_pytest_runtime(project_root=str(project_root.resolve()))
 
     assert selected.endswith("custom_python")
+
+
+# ---------------------------------------------------------------------------
+# Cursor-based test identification (R04)
+# ---------------------------------------------------------------------------
+
+
+def test_identify_test_at_cursor_finds_enclosing_test() -> None:
+    from app.run.test_runner_service import identify_test_at_cursor
+
+    source = """\
+def test_hello():
+    assert True
+
+def test_goodbye():
+    x = 1
+    assert x == 1
+"""
+    # Line 5 is inside test_goodbye (1-based)
+    assert identify_test_at_cursor(source, 5) == "test_goodbye"
+    # Line 1 is inside test_hello
+    assert identify_test_at_cursor(source, 1) == "test_hello"
+
+
+def test_identify_test_at_cursor_returns_none_outside_tests() -> None:
+    from app.run.test_runner_service import identify_test_at_cursor
+
+    source = """\
+import os
+
+def helper():
+    pass
+
+def test_foo():
+    pass
+"""
+    # Line 3 is inside helper, not a test
+    assert identify_test_at_cursor(source, 3) is None
+
+
+def test_identify_test_at_cursor_handles_syntax_error() -> None:
+    from app.run.test_runner_service import identify_test_at_cursor
+
+    source = "def test_broken(\n"
+    assert identify_test_at_cursor(source, 1) is None
