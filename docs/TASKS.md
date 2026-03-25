@@ -1307,7 +1307,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Done when: semantic layering, safety rules, rollout slices, and acceptance scenarios are all explicitly documented and traceable.
 
 ### I02 — Semantic fixture corpus and failing contract tests
-- Status: `TODO`
+- Status: `DONE`
 - Objective: create representative fixture projects and failing tests that expose the current heuristic trust gaps before the engine cutover.
 - Primary files:
   - `tests/fixtures/semantic/**`
