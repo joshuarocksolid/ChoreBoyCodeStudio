@@ -16,8 +16,10 @@ class IconPickerField(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._line_edit = QLineEdit(self)
+        self._line_edit.setObjectName("designer.iconPicker.lineEdit")
         self._line_edit.editingFinished.connect(self._emit_path)
         self._browse_button = QPushButton("Browse…", self)
+        self._browse_button.setObjectName("designer.iconPicker.btn.browse")
         self._browse_button.clicked.connect(self._browse_for_icon)
 
         layout = QHBoxLayout(self)

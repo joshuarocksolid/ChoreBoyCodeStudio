@@ -21,6 +21,7 @@ class FormCanvas(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.canvas")
         self._model: UIModel | None = None
         self._selection_controller: SelectionController | None = None
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
@@ -34,7 +35,9 @@ class FormCanvas(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
         self._hint_label = QLabel("Drag widgets from the palette onto this canvas.", self)
+        self._hint_label.setObjectName("designer.canvas.hintLabel")
         self._canvas_tree = QTreeWidget(self)
+        self._canvas_tree.setObjectName("designer.canvas.tree")
         self._canvas_tree.setHeaderHidden(True)
         self._canvas_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._canvas_tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)

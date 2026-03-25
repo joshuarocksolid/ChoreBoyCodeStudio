@@ -58,6 +58,7 @@ class ObjectInspector(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.inspector")
         self._model: UIModel | None = None
         self._selection_controller: SelectionController | None = None
         self._item_by_object_name: dict[str, QTreeWidgetItem] = {}
@@ -68,6 +69,7 @@ class ObjectInspector(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self._tree = _ObjectTreeWidget(self)
+        self._tree.setObjectName("designer.inspector.tree")
         self._tree.setHeaderHidden(True)
         self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)

@@ -441,6 +441,7 @@ class DesignerEditorSurface(QWidget):
         self._mode_buttons: dict[str, QToolButton] = {}
         for mode_def in DESIGNER_MODE_DEFINITIONS:
             button = QToolButton(self._mode_bar)
+            button.setObjectName(f"designer.modeBar.btn.{mode_def.mode_id}")
             button.setCheckable(True)
             button.setText(f"{mode_def.display_name} ({mode_def.shortcut})")
             button.clicked.connect(lambda _checked=False, mode_id=mode_def.mode_id: self.set_mode(mode_id))
@@ -448,10 +449,12 @@ class DesignerEditorSurface(QWidget):
             mode_layout.addWidget(button)
         mode_layout.addStretch(1)
         self._mode_status_label = QLabel("", self._mode_bar)
+        self._mode_status_label.setObjectName("designer.modeBar.statusLabel")
         mode_layout.addWidget(self._mode_status_label, 0)
         root_layout.addWidget(self._mode_bar, 0)
 
         self._splitter = QSplitter(self)
+        self._splitter.setObjectName("designer.surface.splitter")
         self._splitter.setChildrenCollapsible(False)
         root_layout.addWidget(self._splitter, 1)
 
@@ -460,6 +463,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas = FormCanvas(self._splitter)
         self._canvas.set_selection_controller(self._selection_controller)
         self._inspector_tabs = QTabWidget(self._splitter)
+        self._inspector_tabs.setObjectName("designer.surface.inspectorTabs")
         self._object_inspector = ObjectInspector(self._inspector_tabs)
         self._object_inspector.set_selection_controller(self._selection_controller)
         self._object_inspector.set_reparent_callback(self._handle_inspector_reparent_request)

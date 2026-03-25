@@ -21,13 +21,18 @@ class ComponentLibraryPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.components.panel")
         self._summary_label = QLabel("No reusable components.", self)
+        self._summary_label.setObjectName("designer.components.summary")
         self._list = QListWidget(self)
+        self._list.setObjectName("designer.components.list")
         self._list.itemDoubleClicked.connect(lambda item: self.insert_requested.emit(item.text()))
 
         self._insert_button = QPushButton("Insert Selected", self)
+        self._insert_button.setObjectName("designer.components.btn.insert")
         self._insert_button.clicked.connect(self._emit_insert_selected)
         self._refresh_button = QPushButton("Refresh", self)
+        self._refresh_button.setObjectName("designer.components.btn.refresh")
         self._refresh_button.clicked.connect(self.refresh_requested.emit)
 
         button_row = QHBoxLayout()

@@ -32,11 +32,14 @@ class PropertyEditorPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.property.panel")
         self._target_object_name: str | None = None
         self._is_populating = False
 
         self._header_label = QLabel("Select a widget to edit properties.", self)
+        self._header_label.setObjectName("designer.property.header")
         self._form_host = QWidget(self)
+        self._form_host.setObjectName("designer.property.formHost")
         self._form_layout = QFormLayout(self._form_host)
         self._form_layout.setContentsMargins(0, 0, 0, 0)
         self._form_layout.setSpacing(6)

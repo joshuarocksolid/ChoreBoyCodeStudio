@@ -52,10 +52,12 @@ class PalettePanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None, *, registry: WidgetPaletteRegistry | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.palette.panel")
         self._registry = registry or default_widget_palette_registry()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self._tree = _PaletteTreeWidget(self)
+        self._tree.setObjectName("designer.palette.tree")
         self._tree.setHeaderHidden(True)
         self._tree.itemDoubleClicked.connect(self._handle_item_double_clicked)
         layout.addWidget(self._tree)

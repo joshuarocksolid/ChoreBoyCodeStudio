@@ -25,9 +25,11 @@ class ConnectionEditorPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("designer.connections.panel")
         self._connections: list[ConnectionModel] = []
         self._is_populating = False
         self._summary_label = QLabel("No signal/slot connections.", self)
+        self._summary_label.setObjectName("designer.connections.summary")
         self._table = QTableWidget(0, 4, self)
         self._table.setObjectName("designer.connections.table")
         self._table.setHorizontalHeaderLabels(["Sender", "Signal", "Receiver", "Slot"])
@@ -38,8 +40,10 @@ class ConnectionEditorPanel(QWidget):
         self._table.itemChanged.connect(self._handle_item_changed)
 
         self._add_button = QPushButton("Add Default Connection", self)
+        self._add_button.setObjectName("designer.connections.btn.add")
         self._add_button.clicked.connect(self.add_requested.emit)
         self._remove_button = QPushButton("Remove Selected", self)
+        self._remove_button.setObjectName("designer.connections.btn.remove")
         self._remove_button.clicked.connect(self._emit_remove_selected)
 
         button_row = QHBoxLayout()
