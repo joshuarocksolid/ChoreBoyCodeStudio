@@ -56,6 +56,10 @@ def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> N
     assert snapshot.syntax_color_overrides_light == {}
     assert snapshot.syntax_color_overrides_dark == {}
     assert snapshot.lint_rule_overrides == {}
+    assert snapshot.local_history_max_checkpoints_per_file == 50
+    assert snapshot.local_history_retention_days == 30
+    assert snapshot.local_history_max_tracked_file_bytes == 1_000_000
+    assert snapshot.local_history_exclude_patterns == []
 
 
 def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
@@ -110,6 +114,12 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
                     "PY220": {"enabled": False, "severity": "info"},
                 }
             },
+            "local_history": {
+                "max_checkpoints_per_file": 12,
+                "retention_days": 45,
+                "max_tracked_file_bytes": 4096,
+                "exclude_patterns": ["*.bin", "exports/*.json"],
+            },
         }
     )
 
@@ -145,6 +155,10 @@ def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
     assert snapshot.syntax_color_overrides_light == {"keyword": "#123456"}
     assert snapshot.syntax_color_overrides_dark == {"keyword": "#654321"}
     assert snapshot.lint_rule_overrides == {"PY220": {"enabled": False, "severity": "info"}}
+    assert snapshot.local_history_max_checkpoints_per_file == 12
+    assert snapshot.local_history_retention_days == 45
+    assert snapshot.local_history_max_tracked_file_bytes == 4096
+    assert snapshot.local_history_exclude_patterns == ["*.bin", "exports/*.json"]
 
 
 def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() -> None:
@@ -181,6 +195,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         syntax_color_overrides_light={"keyword": "#123456"},
         syntax_color_overrides_dark={"keyword": "#654321"},
         lint_rule_overrides={"PY220": {"enabled": False, "severity": "info"}},
+        local_history_max_checkpoints_per_file=12,
+        local_history_retention_days=45,
+        local_history_max_tracked_file_bytes=4096,
+        local_history_exclude_patterns=["*.bin", "exports/*.json"],
     )
     merged = merge_editor_settings_snapshot({"schema_version": 1}, snapshot)
 
@@ -212,6 +230,10 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["linter"]["enabled"] is False
     assert merged["linter"]["selected_linter"] == "pyflakes"
     assert merged["linter"]["rule_overrides"] == {"PY220": {"enabled": False, "severity": "info"}}
+    assert merged["local_history"]["max_checkpoints_per_file"] == 12
+    assert merged["local_history"]["retention_days"] == 45
+    assert merged["local_history"]["max_tracked_file_bytes"] == 4096
+    assert merged["local_history"]["exclude_patterns"] == ["*.bin", "exports/*.json"]
 
 
 def test_parse_editor_settings_snapshot_invalid_selected_linter_defaults_to_default() -> None:
@@ -586,3 +608,22 @@ def test_merge_auto_save_round_trip() -> None:
 def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
     grouped = parse_main_window_settings({"editor": {"auto_save": True}})
     assert grouped.editor_preferences[-1] is True
+
+
+def test_parse_main_window_settings_includes_local_history_policy() -> None:
+    grouped = parse_main_window_settings(
+        {
+            "local_history": {
+                "max_checkpoints_per_file": 9,
+                "retention_days": 21,
+                "max_tracked_file_bytes": 8192,
+                "exclude_patterns": ["*.cache"],
+            }
+        }
+    )
+
+    policy = grouped.local_history_retention_policy
+    assert policy.max_checkpoints_per_file == 9
+    assert policy.retention_days == 21
+    assert policy.max_tracked_file_bytes == 8192
+    assert policy.excluded_glob_patterns == ("*.cache",)

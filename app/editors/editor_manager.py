@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from app.editors.editor_tab import EditorTabState
+from app.persistence.atomic_write import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,55 @@ class EditorManager:
             closed_preview_path=closed_preview_path,
         )
 
+    def open_file_with_content(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        preview: bool = False,
+        original_content: Optional[str] = None,
+        last_known_mtime: Optional[float] = None,
+    ) -> OpenedTabResult:
+        """Open a tab from provided content instead of reading from disk."""
+        normalized_path = str(Path(file_path).expanduser().resolve())
+
+        existing_tab = self._tabs_by_path.get(normalized_path)
+        if existing_tab is not None:
+            promoted_from_preview = False
+            if not preview and existing_tab.is_preview:
+                existing_tab.promote()
+                promoted_from_preview = True
+                if self._preview_file_path == normalized_path:
+                    self._preview_file_path = None
+            self._active_file_path = normalized_path
+            return OpenedTabResult(
+                tab=existing_tab,
+                was_already_open=True,
+                promoted_from_preview=promoted_from_preview,
+            )
+
+        closed_preview_path: Optional[str] = None
+        if preview:
+            closed_preview_path = self._close_existing_preview_tab()
+        tab = EditorTabState(
+            file_path=normalized_path,
+            display_name=Path(normalized_path).name,
+            original_content=content if original_content is None else original_content,
+            current_content=content,
+            last_known_mtime=last_known_mtime,
+            is_preview=preview,
+        )
+        self._tabs_by_path[normalized_path] = tab
+        self._open_order.append(normalized_path)
+        self._active_file_path = normalized_path
+        if preview:
+            self._preview_file_path = normalized_path
+        return OpenedTabResult(
+            tab=tab,
+            was_already_open=False,
+            closed_preview_path=closed_preview_path,
+        )
+
     def open_paths(self) -> list[str]:
         """Return open file paths in deterministic tab order."""
         return list(self._open_order)
@@ -107,7 +158,7 @@ class EditorManager:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
         path = Path(tab.file_path)
-        path.write_text(tab.current_content, encoding="utf-8")
+        atomic_write_text(path, tab.current_content)
         tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path))
         return tab
 

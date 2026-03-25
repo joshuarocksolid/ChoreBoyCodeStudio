@@ -32,12 +32,20 @@ class _FakeProjectTreeController:
     def __init__(self) -> None:
         self.close_calls: list[str] = []
         self.move_calls: list[tuple[str, str]] = []
+        self.deleted_records: list[str] = []
+        self.lineage_remaps: list[dict[str, str]] = []
 
     def close_deleted_editor_paths(self, deleted_path: str, **_kwargs) -> None:  # type: ignore[no-untyped-def]
         self.close_calls.append(deleted_path)
+        record_deleted_path = _kwargs.get("record_deleted_path")
+        if record_deleted_path is not None:
+            record_deleted_path(deleted_path)
 
     def apply_path_move_updates(self, source_path: str, destination_path: str, **_kwargs) -> None:  # type: ignore[no-untyped-def]
         self.move_calls.append((source_path, destination_path))
+        remap_file_lineage = _kwargs.get("remap_file_lineage")
+        if remap_file_lineage is not None:
+            remap_file_lineage({source_path: destination_path})
 
 
 def _coordinator(
@@ -60,6 +68,8 @@ def _coordinator(
         update_widget_language=lambda _widget, _path: None,
         maybe_rewrite_imports=lambda _src, _dst: None,
         reload_project=lambda: reloaded.append(True),
+        record_deleted_path=fake_tree_controller.deleted_records.append,
+        remap_file_lineage=fake_tree_controller.lineage_remaps.append,
     )
     return coordinator, reloaded
 
@@ -76,6 +86,7 @@ def test_handle_rename_applies_path_move_updates_and_reloads(monkeypatch: pytest
 
     assert error is None
     assert tree_controller.move_calls == [("/tmp/project/old.py", "/tmp/project/new.py")]
+    assert tree_controller.lineage_remaps == [{"/tmp/project/old.py": "/tmp/project/new.py"}]
     assert reloaded == [True]
 
 
@@ -90,9 +101,11 @@ def test_handle_bulk_delete_collects_failures_and_still_reloads(monkeypatch: pyt
 
     monkeypatch.setattr("app.shell.project_tree_action_coordinator.delete_path", _delete)
 
-    failures = coordinator.handle_bulk_delete(["/tmp/project/good.py", "/tmp/project/bad.py"])
+    failures, deleted_paths = coordinator.handle_bulk_delete(["/tmp/project/good.py", "/tmp/project/bad.py"])
 
     assert tree_controller.close_calls == ["/tmp/project/good.py"]
+    assert tree_controller.deleted_records == ["/tmp/project/good.py"]
+    assert deleted_paths == ["/tmp/project/good.py"]
     assert failures == ["bad.py: permission denied"]
     assert reloaded == [True]
 
@@ -117,6 +130,10 @@ def test_handle_paste_cut_applies_moves_and_clears_clipboard(monkeypatch: pytest
     assert tree_controller.move_calls == [
         ("/tmp/project/a.py", "/tmp/project/dest/a.py"),
         ("/tmp/project/b.py", "/tmp/project/dest/b.py"),
+    ]
+    assert tree_controller.lineage_remaps == [
+        {"/tmp/project/a.py": "/tmp/project/dest/a.py"},
+        {"/tmp/project/b.py": "/tmp/project/dest/b.py"},
     ]
 
 

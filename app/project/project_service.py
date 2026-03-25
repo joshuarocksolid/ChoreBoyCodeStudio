@@ -21,8 +21,9 @@ from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_pa
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
+from app.persistence.atomic_write import atomic_write_text
 from app.project.file_excludes import should_exclude_name
-from app.project.project_manifest import build_default_project_manifest_payload, load_project_manifest
+from app.project.project_manifest import build_default_project_manifest_payload, ensure_project_id
 
 _TOML_MODULE = _toml_module
 
@@ -62,7 +63,7 @@ def open_project(
     resolved_root = validate_project_structure(resolved_root)
     manifest_path = project_manifest_path(resolved_root)
 
-    metadata = load_project_manifest(manifest_path)
+    metadata = ensure_project_id(manifest_path)
 
     from app.project.file_excludes import compute_effective_excludes
     effective_excludes = compute_effective_excludes(
@@ -201,7 +202,7 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         template="blank_project",
     )
     try:
-        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     except OSError as exc:
         raise AppValidationError(f"Unable to write project manifest: {exc}") from exc
 
@@ -210,7 +211,7 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         raise AppValidationError(f"Entry path exists but is not a file: {entry_path}")
     if not entry_path.exists():
         try:
-            entry_path.write_text("# Project entrypoint.\n", encoding="utf-8")
+            atomic_write_text(entry_path, "# Project entrypoint.\n")
         except OSError as exc:
             raise AppValidationError(f"Unable to write main.py: {exc}") from exc
 
@@ -412,7 +413,7 @@ def _initialize_missing_project_metadata(project_root: Path) -> None:
 
     try:
         cbcs_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     except OSError as exc:
         raise ProjectStructureValidationError(
             f"Unable to initialize project metadata at cbcs/project.json: {exc}",

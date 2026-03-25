@@ -10,6 +10,7 @@ import pytest
 from app.core.errors import AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError
 from app.core.models import LoadedProject
 from app.project import project_service
+from app.project.project_manifest import PROJECT_ID_PREFIX
 from app.project.project_service import (
     ProjectRootState,
     assess_project_root,
@@ -43,11 +44,14 @@ def test_open_project_returns_loaded_project_for_valid_minimal_layout(tmp_path: 
     (project_root / "readme.md").write_text("# project alpha\n", encoding="utf-8")
 
     loaded_project = open_project(project_root)
+    manifest_payload = json.loads((project_root / "cbcs" / "project.json").read_text(encoding="utf-8"))
 
     assert isinstance(loaded_project, LoadedProject)
     assert loaded_project.project_root == str(project_root.resolve())
     assert loaded_project.manifest_path == str((project_root / "cbcs" / "project.json").resolve())
     assert loaded_project.metadata.name == "Project Alpha"
+    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
+    assert manifest_payload["project_id"] == loaded_project.metadata.project_id
     assert [entry.relative_path for entry in loaded_project.entries] == [
         "app",
         "app/main.py",
@@ -90,6 +94,7 @@ def test_create_blank_project_writes_manifest_and_main_entrypoint(tmp_path: Path
     assert created_path == destination.resolve()
     assert (created_path / "main.py").exists()
     assert payload["name"] == "Blank Project"
+    assert payload["project_id"].startswith(PROJECT_ID_PREFIX)
     assert payload["default_entry"] == "main.py"
     assert payload["template"] == "blank_project"
 
@@ -116,7 +121,9 @@ def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) ->
 
     assert loaded_project.metadata.name == "project_without_cbcs"
     assert loaded_project.metadata.default_entry == "run.py"
+    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert manifest_path.exists()
+    assert payload["project_id"].startswith(PROJECT_ID_PREFIX)
     assert payload["template"] == "imported_external"
 
 
@@ -129,6 +136,7 @@ def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "main.py"
+    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert (project_root / "cbcs" / "project.json").exists()
 
 
@@ -442,6 +450,7 @@ def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path
     loaded_project = project_service.open_project_and_track_recent(project_root, state_root=tmp_path / "state")
 
     assert loaded_project.project_root == str(project_root.resolve())
+    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert load_recent_projects(state_root=tmp_path / "state") == [str(project_root.resolve())]
 
 

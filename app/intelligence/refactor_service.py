@@ -9,6 +9,7 @@ from app.core import constants
 from app.intelligence.reference_service import ReferenceHit, extract_symbol_under_cursor
 from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.semantic_models import SemanticOperationMetadata, SemanticRenamePatch
+from app.persistence.atomic_write import atomic_write_text
 
 _FACADE_BY_PROJECT_ROOT: dict[str, SemanticFacade] = {}
 
@@ -89,11 +90,11 @@ def apply_rename_plan(plan: RenamePlan) -> RenameApplyResult:
         for patch in plan.preview_patches:
             path = Path(patch.file_path).expanduser().resolve()
             originals[patch.file_path] = path.read_text(encoding="utf-8")
-            path.write_text(patch.updated_content, encoding="utf-8")
+            atomic_write_text(path, patch.updated_content)
             updated_files.append(patch.file_path)
     except OSError:
         for file_path, payload in originals.items():
-            Path(file_path).write_text(payload, encoding="utf-8")
+            atomic_write_text(file_path, payload)
         raise
 
     return RenameApplyResult(changed_files=sorted(updated_files), changed_occurrences=len(plan.hits))

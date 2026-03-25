@@ -273,3 +273,48 @@ def test_settings_dialog_footer_buttons_clear_standard_icons() -> None:
     cancel_btn = button_box.button(QDialogButtonBox.Cancel)
     assert cancel_btn is not None
     assert cancel_btn.icon().isNull()
+
+
+def test_settings_dialog_snapshot_includes_local_history_controls() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    dialog._local_history_max_checkpoints_input.setValue(12)
+    dialog._local_history_retention_days_input.setValue(45)
+    dialog._local_history_max_tracked_file_kb_input.setValue(8)
+    dialog._local_history_exclude_input.setText("*.bin")
+    dialog._handle_add_local_history_exclude()
+
+    snapshot = dialog.snapshot()
+
+    assert snapshot.local_history_max_checkpoints_per_file == 12
+    assert snapshot.local_history_retention_days == 45
+    assert snapshot.local_history_max_tracked_file_bytes == 8 * 1024
+    assert snapshot.local_history_exclude_patterns == ["*.bin"]
+
+
+def test_settings_dialog_reset_local_history_uses_global_values_in_project_scope() -> None:
+    global_snapshot = EditorSettingsSnapshot(
+        local_history_max_checkpoints_per_file=7,
+        local_history_retention_days=14,
+        local_history_max_tracked_file_bytes=4096,
+        local_history_exclude_patterns=["*.cache"],
+    )
+    project_snapshot = EditorSettingsSnapshot(
+        local_history_max_checkpoints_per_file=20,
+        local_history_retention_days=90,
+        local_history_max_tracked_file_bytes=16384,
+        local_history_exclude_patterns=["*.tmp"],
+    )
+    dialog = SettingsDialog(
+        global_snapshot,
+        project_snapshot=project_snapshot,
+        project_scope_available=True,
+        initial_scope=SETTINGS_SCOPE_PROJECT,
+    )
+
+    dialog._handle_reset_local_history_settings()
+
+    snapshot = dialog.snapshot()
+    assert snapshot.local_history_max_checkpoints_per_file == 7
+    assert snapshot.local_history_retention_days == 14
+    assert snapshot.local_history_max_tracked_file_bytes == 4096
+    assert snapshot.local_history_exclude_patterns == ["*.cache"]

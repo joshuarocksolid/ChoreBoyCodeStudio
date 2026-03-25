@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generic, Protocol, TypeVar
+from typing import Callable, Generic, Optional, Protocol, TypeVar
 
-from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
+from app.intelligence.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
 from app.project.file_operation_models import ImportUpdatePolicy
 
 
@@ -32,6 +32,7 @@ class ProjectTreeController(Generic[W]):
         close_editor_file: Callable[[str], None],
         breakpoints_by_file: dict[str, set[int]],
         refresh_breakpoints_list: Callable[[], None],
+        record_deleted_path: Optional[Callable[[str], None]] = None,
     ) -> None:
         deleted_resolved = str(Path(deleted_path).resolve())
         for open_path in list(editor_widgets_by_path.keys()):
@@ -45,6 +46,8 @@ class ProjectTreeController(Generic[W]):
             close_editor_file(open_path)
             breakpoints_by_file.pop(open_path, None)
         refresh_breakpoints_list()
+        if record_deleted_path is not None:
+            record_deleted_path(deleted_resolved)
 
     def apply_path_move_updates(
         self,
@@ -60,6 +63,7 @@ class ProjectTreeController(Generic[W]):
         update_widget_language: Callable[[W, str], None],
         refresh_breakpoints_list: Callable[[], None],
         maybe_rewrite_imports: Callable[[str, str], None],
+        remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
     ) -> None:
         remapped_paths = remap_editor_paths(source_path, destination_path)
         for old_path, new_path in remapped_paths.items():
@@ -77,17 +81,20 @@ class ProjectTreeController(Generic[W]):
             update_widget_language(widget, new_path)
 
         refresh_breakpoints_list()
+        if remap_file_lineage is not None and remapped_paths:
+            remap_file_lineage(dict(remapped_paths))
         maybe_rewrite_imports(source_path, destination_path)
 
     def maybe_rewrite_imports_for_move(
         self,
         *,
-        project_root: str | None,
+        project_root: Optional[str],
         source_path: str,
         destination_path: str,
         resolve_policy_for_operation: Callable[[], ImportUpdatePolicy],
         request_confirmation: Callable[[str], bool],
         show_warning: Callable[[str], None],
+        on_applied: Optional[Callable[[list[ImportRewritePreview]], None]] = None,
     ) -> None:
         if not project_root:
             return
@@ -126,3 +133,6 @@ class ProjectTreeController(Generic[W]):
             apply_import_rewrites(previews)
         except OSError as exc:
             show_warning(f"Could not rewrite imports: {exc}")
+            return
+        if on_applied is not None:
+            on_applied(previews)

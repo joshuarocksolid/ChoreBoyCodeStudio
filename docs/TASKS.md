@@ -1698,3 +1698,159 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `K05`, `K06`, `K07`
 - Done when: debugger behavior has passing automated evidence, documented manual coverage, theme safety, and actionable diagnostics for real-world failures.
 
+---
+
+## 20) Phase L — Local History, Diffs, and Recovery UX
+
+Release class default for this phase: `RELEASE-CRITICAL`
+
+### L01 — Local history contract and acceptance cutover docs
+- Status: `TODO`
+- Objective: define the local-history architecture, safety model, retention rules, and acceptance contract before feature code lands.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit` (docs-adjacent contract tests land in follow-on slices, not here)
+- Validation method: doc review plus follow-on slices explicitly linking to `AT-65` through `AT-71`
+- Acceptance linkage: `AT-65`, `AT-66`, `AT-67`, `AT-68`, `AT-69`, `AT-70`, `AT-71`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: none
+- Done when: the repo explicitly documents local-history storage location, draft-vs-checkpoint semantics, restore-to-buffer rules, lineage behavior, and user-visible acceptance scenarios.
+
+### L02 — Atomic source save foundation
+- Status: `TODO`
+- Objective: harden file writes with one atomic text-write path before durable history depends on save correctness.
+- Primary files:
+  - `app/persistence/atomic_write.py`
+  - `app/editors/editor_manager.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/persistence/test_atomic_write.py`
+  - `tests/unit/editors/test_editor_manager.py`
+  - `tests/integration/shell/test_main_window_shutdown_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/persistence/test_atomic_write.py tests/unit/editors/test_editor_manager.py tests/integration/shell/test_main_window_shutdown_integration.py`
+- Acceptance linkage: `AT-65`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L01`
+- Done when: editor save, save-all, and auto-save-to-file share one atomic write primitive and only clear dirty state after the real file write succeeds.
+
+### L03 — Project identity and file-lineage foundation
+- Status: `TODO`
+- Objective: add stable project identity and logical file lineage so history survives move/rename/delete flows.
+- Primary files:
+  - `app/project/project_manifest.py`
+  - `app/core/models.py`
+  - `app/shell/project_tree_controller.py`
+  - `app/shell/project_tree_action_coordinator.py`
+  - `tests/unit/project/test_project_manifest.py`
+  - `tests/unit/shell/test_project_tree_controller.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/project/test_project_manifest.py tests/unit/shell/test_project_tree_controller.py tests/integration/shell/`
+- Acceptance linkage: `AT-68`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L01`, `L02`
+- Done when: projects expose a stable identity, app-driven path changes update logical history lineage, and deleted resources can still be referenced by history metadata.
+
+### L04 — Unified local history store and legacy draft migration
+- Status: `TODO`
+- Objective: replace the one-draft JSON store with a unified local-history substrate backed by SQLite metadata and content-addressed blobs, while migrating existing drafts forward safely.
+- Primary files:
+  - `app/persistence/history_models.py`
+  - `app/persistence/local_history_store.py`
+  - `app/persistence/history_retention.py`
+  - `app/persistence/autosave_store.py`
+  - `tests/unit/persistence/test_local_history_store.py`
+  - `tests/unit/persistence/test_autosave_store.py`
+  - `tests/runtime_parity/persistence/test_local_history_runtime.py`
+- Automated test layer: `unit`, `runtime_parity`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/persistence/test_local_history_store.py tests/unit/persistence/test_autosave_store.py tests/runtime_parity/persistence/test_local_history_runtime.py`
+- Acceptance linkage: `AT-65`, `AT-66`, `AT-68`, `AT-70`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L02`, `L03`
+- Done when: drafts and checkpoints share one history backend, legacy autosave entries migrate on access, and retention metadata exists without hidden paths.
+
+### L05 — Checkpoint capture integration
+- Status: `TODO`
+- Objective: create durable history checkpoints for save, reload, refactor, quick-fix, import-rewrite, and delete workflows.
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/editors/editor_manager.py`
+  - `app/intelligence/refactor_engine.py`
+  - `app/intelligence/code_actions.py`
+  - `app/intelligence/import_rewrite.py`
+  - `tests/integration/persistence/test_local_history_checkpoints.py`
+- Automated test layer: `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/persistence/test_local_history_checkpoints.py tests/integration/shell/`
+- Acceptance linkage: `AT-65`, `AT-68`, `AT-69`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L03`, `L04`
+- Done when: all high-value editor write paths emit labeled, bounded history checkpoints and grouped multi-file operations are recorded as one transaction.
+
+### L06 — Draft recovery compare/restore UX
+- Status: `TODO`
+- Objective: replace the yes/no draft prompt with a reviewable compare-and-restore workflow that restores into the buffer first.
+- Primary files:
+  - `app/shell/main_window.py`
+  - `app/editors/code_editor_widget.py`
+  - `tests/integration/persistence/test_autosave_recovery.py`
+  - `tests/integration/shell/test_local_history_recovery_ui.py`
+- Automated test layer: `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/persistence/test_autosave_recovery.py tests/integration/shell/test_local_history_recovery_ui.py`
+- Acceptance linkage: `AT-66`, `AT-67`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L04`, `L05`
+- Done when: crash recovery offers compare/restore choices, restores do not silently overwrite disk, and editor context remains trustworthy after restore-to-buffer.
+
+### L07 — Per-file local history dialog
+- Status: `TODO`
+- Objective: ship a first-class timeline and diff viewer for the active file with compare and restore actions.
+- Primary files:
+  - `app/shell/local_history_dialog.py`
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `tests/unit/shell/test_local_history_dialog.py`
+  - `tests/integration/shell/test_local_history_dialog_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/test_local_history_dialog.py tests/integration/shell/test_local_history_dialog_integration.py`
+- Acceptance linkage: `AT-65`, `AT-67`, `AT-71`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L04`, `L05`, `L06`
+- Done when: users can browse a file timeline, inspect lazy-loaded diffs, compare revisions, and restore a chosen revision into the live buffer.
+
+### L08 — Global history restore and deleted-file recovery
+- Status: `TODO`
+- Objective: add global search/picker flows for history entries whose live files were renamed, moved, or deleted.
+- Primary files:
+  - `app/shell/history_restore_picker.py`
+  - `app/shell/menus.py`
+  - `app/shell/main_window.py`
+  - `tests/integration/shell/test_global_history_restore.py`
+- Automated test layer: `integration`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/integration/shell/test_global_history_restore.py`
+- Acceptance linkage: `AT-68`, `AT-69`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L03`, `L04`, `L05`, `L07`
+- Done when: deleted or moved files can be found from global history and restored through an explicit, understandable workflow.
+
+### L09 — Local history settings, retention, and validation hardening
+- Status: `TODO`
+- Objective: finish settings, pruning, theme safety, performance gates, runtime-parity checks, and supportability coverage for shipping the feature confidently.
+- Primary files:
+  - `app/core/constants.py`
+  - `app/shell/settings_models.py`
+  - `app/shell/settings_dialog.py`
+  - `app/support/support_bundle.py`
+  - `tests/unit/persistence/test_local_history_store.py`
+  - `tests/unit/shell/test_settings_models.py`
+  - `tests/unit/shell/test_settings_dialog.py`
+  - `tests/integration/performance/test_local_history_performance.py`
+  - `tests/runtime_parity/persistence/test_local_history_runtime.py`
+  - `docs/ACCEPTANCE_TESTS.md`
+- Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/persistence/test_local_history_store.py tests/unit/shell/test_settings_models.py tests/unit/shell/test_settings_dialog.py tests/integration/performance/test_local_history_performance.py tests/runtime_parity/persistence/test_local_history_runtime.py` plus manual light/dark validation
+- Acceptance linkage: `AT-70`, `AT-71`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L04`, `L05`, `L06`, `L07`, `L08`
+- Done when: retention and exclusion controls are configurable, history pruning remains bounded, support diagnostics include history context when appropriate, and the local-history UI is validated for theme safety and responsiveness.
+

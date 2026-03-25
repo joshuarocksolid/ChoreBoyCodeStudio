@@ -38,6 +38,7 @@ class MenuCallbacks:
     on_toggle_auto_save: Callable[[bool], object] | None = None
     on_open_settings: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
+    on_open_global_history: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -213,6 +214,22 @@ def build_menu_stubs(
     if quick_open_action is not None:
         quick_open_action.setToolTip("Search project files by name and open the selected file.")
         quick_open_action.setStatusTip("Search project files by name and open the selected file.")
+    _register_menu_action(
+        file_menu,
+        actions,
+        "shell.action.file.globalHistory",
+        "Open Global History...",
+        enabled=True,
+        callback=callback_registry.on_open_global_history,
+    )
+    global_history_action = actions.get("shell.action.file.globalHistory")
+    if global_history_action is not None:
+        global_history_action.setToolTip(
+            "Search saved local-history entries across projects, including moved or deleted files."
+        )
+        global_history_action.setStatusTip(
+            "Search saved local-history entries across projects, including moved or deleted files."
+        )
     file_menu.addSeparator()
     _register_menu_action(
         file_menu,

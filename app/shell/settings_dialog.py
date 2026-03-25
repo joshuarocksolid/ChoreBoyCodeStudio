@@ -132,6 +132,7 @@ class SettingsDialog(QDialog):
         self._intelligence_reset_to_global_btn: QPushButton | None = None
         self._linter_reset_to_global_btn: QPushButton | None = None
         self._file_excludes_reset_btn: QPushButton | None = None
+        self._local_history_reset_btn: QPushButton | None = None
         self._linter_provider_scope_hint: QLabel | None = None
 
         layout = QVBoxLayout(self)
@@ -509,6 +510,78 @@ class SettingsDialog(QDialog):
         excludes_vbox.addLayout(btn_row)
 
         files_layout.addWidget(excludes_group)
+
+        local_history_group = QGroupBox("Local History")
+        local_history_group.setObjectName("shell.settingsDialog.localHistoryGroup")
+        local_history_layout = QVBoxLayout(local_history_group)
+
+        local_history_help = QLabel(
+            "Bound local history storage per project. Excluded patterns skip durable history checkpoints while keeping normal editing and save behavior."
+        )
+        local_history_help.setObjectName("shell.settingsDialog.localHistoryHelp")
+        local_history_help.setWordWrap(True)
+        local_history_layout.addWidget(local_history_help)
+
+        local_history_form = QFormLayout()
+        local_history_form.setVerticalSpacing(10)
+        local_history_form.setHorizontalSpacing(16)
+        self._local_history_max_checkpoints_input = QSpinBox(local_history_group)
+        self._local_history_max_checkpoints_input.setRange(1, 500)
+        self._local_history_max_checkpoints_input.setValue(snapshot.local_history_max_checkpoints_per_file)
+        local_history_form.addRow("Max revisions per file", self._local_history_max_checkpoints_input)
+
+        self._local_history_retention_days_input = QSpinBox(local_history_group)
+        self._local_history_retention_days_input.setRange(1, 3650)
+        self._local_history_retention_days_input.setValue(snapshot.local_history_retention_days)
+        local_history_form.addRow("Retention days", self._local_history_retention_days_input)
+
+        self._local_history_max_tracked_file_kb_input = QSpinBox(local_history_group)
+        self._local_history_max_tracked_file_kb_input.setRange(1, 1024 * 100)
+        self._local_history_max_tracked_file_kb_input.setValue(
+            max(1, int((snapshot.local_history_max_tracked_file_bytes + 1023) / 1024))
+        )
+        local_history_form.addRow("Max tracked file size (KB)", self._local_history_max_tracked_file_kb_input)
+        local_history_layout.addLayout(local_history_form)
+
+        local_history_excludes_help = QLabel(
+            "Skip durable local-history checkpoints for files matching these glob patterns."
+        )
+        local_history_excludes_help.setObjectName("shell.settingsDialog.localHistoryExcludesHelp")
+        local_history_excludes_help.setWordWrap(True)
+        local_history_layout.addWidget(local_history_excludes_help)
+
+        self._local_history_excludes_list = QListWidget(local_history_group)
+        self._local_history_excludes_list.setObjectName("shell.settingsDialog.localHistoryExcludesList")
+        for pattern in snapshot.local_history_exclude_patterns:
+            self._local_history_excludes_list.addItem(pattern)
+        local_history_layout.addWidget(self._local_history_excludes_list, 1)
+
+        local_history_add_row = QHBoxLayout()
+        self._local_history_exclude_input = QLineEdit(local_history_group)
+        self._local_history_exclude_input.setObjectName("shell.settingsDialog.localHistoryExcludeInput")
+        self._local_history_exclude_input.setPlaceholderText("e.g. *.bin, export/*.json")
+        self._local_history_exclude_input.returnPressed.connect(self._handle_add_local_history_exclude)
+        local_history_add_row.addWidget(self._local_history_exclude_input, 1)
+        local_history_add_btn = QPushButton("Add", local_history_group)
+        local_history_add_btn.setObjectName("shell.settingsDialog.addLocalHistoryExcludeBtn")
+        local_history_add_btn.clicked.connect(self._handle_add_local_history_exclude)
+        local_history_add_row.addWidget(local_history_add_btn)
+        local_history_layout.addLayout(local_history_add_row)
+
+        local_history_button_row = QHBoxLayout()
+        local_history_remove_btn = QPushButton("Remove Selected", local_history_group)
+        local_history_remove_btn.setObjectName("shell.settingsDialog.removeLocalHistoryExcludeBtn")
+        local_history_remove_btn.clicked.connect(self._handle_remove_local_history_exclude)
+        local_history_button_row.addWidget(local_history_remove_btn)
+        local_history_reset_btn = QPushButton("Reset to Defaults", local_history_group)
+        local_history_reset_btn.setObjectName("shell.settingsDialog.resetLocalHistoryBtn")
+        local_history_reset_btn.clicked.connect(self._handle_reset_local_history_settings)
+        self._local_history_reset_btn = local_history_reset_btn
+        local_history_button_row.addWidget(local_history_reset_btn)
+        local_history_button_row.addStretch(1)
+        local_history_layout.addLayout(local_history_button_row)
+
+        files_layout.addWidget(local_history_group)
         files_layout.addStretch(1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
@@ -642,6 +715,10 @@ class SettingsDialog(QDialog):
             syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
             lint_rule_overrides=self._lint_rule_overrides_snapshot(),
             file_exclude_patterns=self._file_exclude_patterns_snapshot(),
+            local_history_max_checkpoints_per_file=int(self._local_history_max_checkpoints_input.value()),
+            local_history_retention_days=int(self._local_history_retention_days_input.value()),
+            local_history_max_tracked_file_bytes=int(self._local_history_max_tracked_file_kb_input.value()) * 1024,
+            local_history_exclude_patterns=self._local_history_exclude_patterns_snapshot(),
         )
 
     def _capture_active_scope_snapshot(self) -> None:
@@ -697,6 +774,14 @@ class SettingsDialog(QDialog):
         self._file_excludes_list.clear()
         for pattern in snapshot.file_exclude_patterns:
             self._file_excludes_list.addItem(pattern)
+        self._local_history_max_checkpoints_input.setValue(snapshot.local_history_max_checkpoints_per_file)
+        self._local_history_retention_days_input.setValue(snapshot.local_history_retention_days)
+        self._local_history_max_tracked_file_kb_input.setValue(
+            max(1, int((snapshot.local_history_max_tracked_file_bytes + 1023) / 1024))
+        )
+        self._local_history_excludes_list.clear()
+        for pattern in snapshot.local_history_exclude_patterns:
+            self._local_history_excludes_list.addItem(pattern)
         self._refresh_shortcut_conflicts()
         self._refresh_syntax_validation()
         self._refresh_validation_state()
@@ -765,6 +850,10 @@ class SettingsDialog(QDialog):
             self._linter_reset_to_global_btn.setVisible(is_project_scope)
         if self._file_excludes_reset_btn is not None:
             self._file_excludes_reset_btn.setText(
+                "Reset to Global" if is_project_scope else "Reset to Defaults"
+            )
+        if self._local_history_reset_btn is not None:
+            self._local_history_reset_btn.setText(
                 "Reset to Global" if is_project_scope else "Reset to Defaults"
             )
 
@@ -1293,6 +1382,51 @@ class SettingsDialog(QDialog):
             baseline_patterns = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL].file_exclude_patterns
         for pattern in baseline_patterns:
             self._file_excludes_list.addItem(pattern)
+
+    def _local_history_exclude_patterns_snapshot(self) -> list[str]:
+        patterns: list[str] = []
+        for i in range(self._local_history_excludes_list.count()):
+            item = self._local_history_excludes_list.item(i)
+            if item is None:
+                continue
+            text = item.text().strip()
+            if text:
+                patterns.append(text)
+        return patterns
+
+    def _handle_add_local_history_exclude(self) -> None:
+        text = self._local_history_exclude_input.text().strip()
+        if not text:
+            return
+        existing = {
+            self._local_history_excludes_list.item(i).text()
+            for i in range(self._local_history_excludes_list.count())
+            if self._local_history_excludes_list.item(i) is not None
+        }
+        for part in text.split(","):
+            pattern = part.strip()
+            if pattern and pattern not in existing:
+                self._local_history_excludes_list.addItem(pattern)
+                existing.add(pattern)
+        self._local_history_exclude_input.clear()
+
+    def _handle_remove_local_history_exclude(self) -> None:
+        selected = self._local_history_excludes_list.currentRow()
+        if selected >= 0:
+            self._local_history_excludes_list.takeItem(selected)
+
+    def _handle_reset_local_history_settings(self) -> None:
+        baseline = EditorSettingsSnapshot()
+        if self._active_scope == SETTINGS_SCOPE_PROJECT:
+            baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
+        self._local_history_max_checkpoints_input.setValue(baseline.local_history_max_checkpoints_per_file)
+        self._local_history_retention_days_input.setValue(baseline.local_history_retention_days)
+        self._local_history_max_tracked_file_kb_input.setValue(
+            max(1, int((baseline.local_history_max_tracked_file_bytes + 1023) / 1024))
+        )
+        self._local_history_excludes_list.clear()
+        for pattern in baseline.local_history_exclude_patterns:
+            self._local_history_excludes_list.addItem(pattern)
 
     def _handle_reset_linter_overrides_to_global(self) -> None:
         self._lint_rule_overrides.clear()

@@ -1541,7 +1541,173 @@ Verify that the shipped Python formatting/import path remains responsive enough 
 
 ---
 
-## 12. Minimum MVP Gate
+## 12. Local History, Diffs, and Recovery Acceptance Tests
+
+## AT-65 — Saves create local history checkpoints with compareable revisions
+
+**Purpose:**  
+Verify that successful saves create durable local-history checkpoints that users can inspect and compare.
+
+**Preconditions:**  
+- local history is enabled
+- a project is open
+- an editable text file is open in the editor
+
+**Steps:**  
+1. Save the file once in a known baseline state.
+2. Make and save a second meaningful change.
+3. Open **Local History** for the active file.
+4. Compare the latest entry with the current file and with the previous entry.
+
+**Expected Result:**  
+- the file shows durable local-history checkpoints representing the saved states
+- the revision list includes timestamps and any relevant labels/source metadata
+- the UI can compare a selected entry with the current file and a previous entry
+- opening local history does not mutate the file on disk
+
+---
+
+## AT-66 — Crash recovery offers compare-and-restore without silent overwrite
+
+**Purpose:**  
+Verify that draft recovery uses a reviewable recovery flow instead of blindly replacing the file.
+
+**Preconditions:**  
+- draft recovery and local history are enabled
+- a project file has unsaved edits
+
+**Steps:**  
+1. Modify a file without saving.
+2. Simulate abnormal exit or crash.
+3. Relaunch the editor and reopen the file.
+4. Use the recovery UI to compare the draft against the saved file.
+5. Choose **Restore Draft to Buffer**.
+
+**Expected Result:**  
+- the recovery flow offers clear choices such as compare, restore to buffer, or keep disk version
+- the user can review the draft-versus-saved diff before restoring
+- restoring places the recovered contents into the editor buffer first
+- the source file on disk is not silently overwritten until the user saves explicitly
+
+---
+
+## AT-67 — Local history restore returns older content to the buffer safely
+
+**Purpose:**  
+Verify that users can restore an older revision from local history without losing control of the current session.
+
+**Preconditions:**  
+- a file has at least two local-history checkpoints
+- the file is open in the editor
+
+**Steps:**  
+1. Open **Local History** for the file.
+2. Select an older revision and inspect the diff.
+3. Choose **Restore to Buffer** for that revision.
+4. Review the restored editor state before saving.
+
+**Expected Result:**  
+- the selected revision is restored into the active buffer rather than directly replacing the file on disk
+- cursor/scroll/undo behavior remains practical after the restore
+- the user can decide whether to save or discard the restored content
+- the restore result is understandable and does not silently destroy newer history entries
+
+---
+
+## AT-68 — Moved, renamed, and deleted files remain recoverable from history
+
+**Purpose:**  
+Verify that local history follows logical files across path changes and can recover deleted files.
+
+**Preconditions:**  
+- a project contains a file with at least one saved local-history checkpoint
+
+**Steps:**  
+1. Rename or move the file from the project tree.
+2. Confirm the file still shows its earlier local-history entries.
+3. Delete the file.
+4. Use the global history restore flow to find an entry for the deleted file.
+5. Restore the deleted file through the explicit recovery workflow.
+
+**Expected Result:**  
+- local history follows the file across app-driven move/rename operations
+- the deleted file remains discoverable through global history search/picker UI
+- the restore workflow recreates or reopens the deleted content explicitly and safely
+- path changes do not orphan earlier history entries
+
+---
+
+## AT-69 — Multi-file history transactions are grouped and labeled
+
+**Purpose:**  
+Verify that high-risk multi-file edits appear as one understandable history event.
+
+**Preconditions:**  
+- a project fixture supports a semantic rename, import rewrite, or safe multi-file fix
+- local history is enabled
+
+**Steps:**  
+1. Perform a multi-file operation such as semantic rename or grouped import rewrite.
+2. Open local history for one affected file and inspect the relevant entry.
+3. Inspect the grouped transaction metadata and affected-file list.
+4. Restore the grouped change through the provided workflow.
+
+**Expected Result:**  
+- the multi-file change is represented as one labeled transaction rather than unrelated per-file mystery entries
+- the UI shows which files were affected by the grouped change
+- restoring the grouped transaction behaves deterministically and leaves the project in a coherent state
+- users can understand why the entry exists and what action created it
+
+---
+
+## AT-70 — Retention, exclusions, and large-file guardrails behave predictably
+
+**Purpose:**  
+Verify that local history storage remains bounded and supportable on constrained systems.
+
+**Preconditions:**  
+- local history settings are available
+- the project includes at least one excluded file pattern target and one oversized file fixture
+
+**Steps:**  
+1. Configure retention limits such as max entries per file or retention days.
+2. Save repeated revisions of one tracked file until pruning should occur.
+3. Save changes to an excluded file.
+4. Attempt to create local history entries for an oversized file.
+
+**Expected Result:**  
+- older entries are pruned according to the configured retention policy
+- excluded files do not generate local-history entries
+- oversized files are skipped or degraded according to the documented guardrails
+- the user receives clear, supportable feedback when history is intentionally not recorded
+
+---
+
+## AT-71 — Local history diff and recovery UI stays readable and responsive
+
+**Purpose:**  
+Verify that local-history workflows are usable in both themes and do not introduce unacceptable UI stalls.
+
+**Preconditions:**  
+- local history UI is implemented
+- editor can switch between light and dark mode
+- a medium-size file with multiple revisions is available
+
+**Steps:**  
+1. Open local history in light mode and inspect add/remove diff styling.
+2. Repeat in dark mode.
+3. Select several revisions in sequence and observe diff-loading responsiveness.
+4. Trigger a recovery compare flow from a draft or older checkpoint.
+
+**Expected Result:**  
+- diff colors, labels, buttons, and selection states are readable in both light and dark themes
+- revision switching and diff generation feel responsive for normal editing workflows
+- the history UI uses lazy loading or equivalent safeguards rather than freezing the editor on open
+- success, warning, and recovery states remain understandable in both themes
+
+---
+
+## 13. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:
 
@@ -1564,7 +1730,7 @@ MVP is **not complete** until all minimum-gate tests pass on the real target run
 
 ---
 
-## 13. Completion Rule
+## 14. Completion Rule
 
 A feature is not considered complete merely because code exists.
 
@@ -1578,7 +1744,7 @@ A feature is complete only when:
 
 ---
 
-## 14. Maintenance Rules
+## 15. Maintenance Rules
 
 Update this file when:
 

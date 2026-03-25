@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 from typing import Optional
 
+from app.persistence.atomic_write import atomic_write_text
 from app.intelligence.refactor_runtime import initialize_refactor_runtime
 from app.intelligence.semantic_models import (
     SemanticOperationMetadata,
@@ -103,11 +104,11 @@ class RopeRefactorEngine:
             for patch in plan.preview_patches:
                 target = Path(patch.file_path).expanduser().resolve()
                 originals[patch.file_path] = target.read_text(encoding="utf-8")
-                target.write_text(patch.updated_content, encoding="utf-8")
+                atomic_write_text(target, patch.updated_content)
                 updated_files.append(patch.file_path)
         except OSError:
             for file_path, payload in originals.items():
-                Path(file_path).write_text(payload, encoding="utf-8")
+                atomic_write_text(file_path, payload)
             raise
         return SemanticRenameApplyResult(
             changed_files=sorted(updated_files),

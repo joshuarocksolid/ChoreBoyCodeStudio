@@ -8,9 +8,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import uuid
 from typing import Any, Callable, Mapping, Optional, TypeVar
 
-from PySide2.QtCore import QEvent, QSize, QTimer, Qt
+from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QMouseEvent
 from PySide2.QtWidgets import (
     QApplication,
@@ -78,7 +79,7 @@ from app.intelligence.semantic_worker import SemanticWorker
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_service import CompletionRequest, CompletionService
-from app.editors.editor_manager import EditorManager
+from app.editors.editor_manager import EditorManager, OpenedTabResult
 from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
@@ -89,6 +90,9 @@ from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.persistence.autosave_store import AutosaveStore
+from app.persistence.history_models import LocalHistoryFileSummary
+from app.persistence.history_retention import LocalHistoryRetentionPolicy
+from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
 from app.persistence.settings_store import project_settings_has_overrides
 from app.run.console_model import ConsoleModel
@@ -126,6 +130,12 @@ from app.shell.layout_persistence import (
     merge_layout_into_settings,
     parse_shell_layout_state,
 )
+from app.shell.history_restore_picker import (
+    HISTORY_RESTORE_ACTION_OPEN_TIMELINE,
+    HISTORY_RESTORE_ACTION_RESTORE_LATEST,
+    HistoryRestorePickerDialog,
+)
+from app.shell.local_history_dialog import DraftRecoveryDialog, LocalHistoryDialog
 from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
@@ -299,6 +309,7 @@ class MainWindow(QMainWindow):
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
         self._quick_open_dialog: QuickOpenDialog | None = None
+        self._history_restore_picker_dialog: HistoryRestorePickerDialog | None = None
         self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._run_log_panel: RunLogPanel | None = None
@@ -396,6 +407,7 @@ class MainWindow(QMainWindow):
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
+        self._local_history_retention_policy = self._load_local_history_retention_policy()
         self._theme_mode = self._load_theme_mode()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
@@ -414,7 +426,14 @@ class MainWindow(QMainWindow):
             cache_db_path=self._symbol_cache_db_path,
             semantic_facade=self._semantic_facade,
         )
-        self._autosave_store = AutosaveStore(state_root=self._state_root)
+        self._local_history_store = LocalHistoryStore(
+            state_root=self._state_root,
+            retention_policy=self._local_history_retention_policy,
+        )
+        self._autosave_store = AutosaveStore(
+            state_root=self._state_root,
+            history_store=self._local_history_store,
+        )
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setSingleShot(True)
@@ -508,6 +527,8 @@ class MainWindow(QMainWindow):
             update_widget_language=self._update_widget_language_for_path,
             maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
             reload_project=self._reload_current_project,
+            record_deleted_path=self._record_deleted_local_history_path,
+            remap_file_lineage=self._remap_local_history_file_lineage,
         )
 
         self._configure_window_frame()
@@ -567,6 +588,7 @@ class MainWindow(QMainWindow):
                 on_new_project=self._handle_new_project_action,
                 on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
+                on_open_global_history=self._handle_open_global_history_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
@@ -987,6 +1009,9 @@ class MainWindow(QMainWindow):
     def _load_output_preferences(self) -> tuple[bool, bool]:
         return self._load_main_window_settings().output_preferences
 
+    def _load_local_history_retention_policy(self) -> LocalHistoryRetentionPolicy:
+        return self._load_main_window_settings().local_history_retention_policy
+
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
         return self._load_main_window_settings().intelligence_runtime_settings
 
@@ -1268,6 +1293,8 @@ class MainWindow(QMainWindow):
             self._auto_open_console_on_run_output,
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
+        self._local_history_retention_policy = self._load_local_history_retention_policy()
+        self._local_history_store.set_retention_policy(self._local_history_retention_policy, apply_now=True)
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
@@ -1369,6 +1396,43 @@ class MainWindow(QMainWindow):
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
+
+    def _handle_open_global_history_action(self) -> None:
+        history_store = getattr(self, "_local_history_store", None)
+        if history_store is None:
+            return
+
+        summaries = history_store.list_global_history_files()
+        if not summaries:
+            QMessageBox.information(
+                self,
+                "Global History",
+                "No saved local-history entries are available yet.",
+            )
+            return
+
+        if self._history_restore_picker_dialog is None:
+            self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
+
+        self._history_restore_picker_dialog.set_entries(summaries)
+        result = self._history_restore_picker_dialog.open_dialog()
+        if result != QDialog.Accepted:
+            return
+
+        selected_entry = self._history_restore_picker_dialog.selected_entry()
+        if selected_entry is None:
+            return
+
+        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
+            latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
+            if latest_content is None:
+                QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
+                return
+            self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
+            return
+
+        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
+            self._show_local_history_for_entry(selected_entry)
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -1664,6 +1728,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Rename Symbol", f"Failed to apply rename: {exc}")
                 return
 
+            self._record_local_history_transaction(
+                {patch.file_path: patch.updated_content for patch in plan.preview_patches},
+                source="semantic_rename",
+                label=f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'",
+            )
             self._refresh_open_tabs_from_disk(result.changed_files)
             self._reload_current_project()
             QMessageBox.information(
@@ -2264,11 +2333,22 @@ class MainWindow(QMainWindow):
             if not tab.is_dirty:
                 continue
             try:
-                self._save_tab(tab.file_path, show_style_warnings=False)
+                self._save_tab(
+                    tab.file_path,
+                    show_style_warnings=False,
+                    checkpoint_source="auto_save_to_file",
+                )
             except Exception:
                 self._logger.warning("Auto-save to file failed for %s", tab.file_path, exc_info=True)
 
-    def _save_tab(self, file_path: str, *, show_style_warnings: bool = True) -> bool:
+    def _save_tab(
+        self,
+        file_path: str,
+        *,
+        show_style_warnings: bool = True,
+        checkpoint_source: str = "save",
+    ) -> bool:
+        path_existed_before_save = Path(file_path).expanduser().resolve().exists()
         self._apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
@@ -2283,7 +2363,19 @@ class MainWindow(QMainWindow):
                 self._refresh_tab_presentation(saved_tab.file_path)
 
         self._pending_autosave_payloads.pop(saved_tab.file_path, None)
-        self._autosave_store.delete_draft(saved_tab.file_path)
+        self._record_local_history_checkpoint(
+            saved_tab.file_path,
+            saved_tab.current_content,
+            source=checkpoint_source,
+        )
+        project_id, project_root = self._local_history_context_for_path(saved_tab.file_path)
+        self._autosave_store.delete_draft(
+            saved_tab.file_path,
+            project_id=project_id,
+            project_root=project_root,
+        )
+        if not path_existed_before_save and project_id is not None:
+            self._reload_current_project()
         self._refresh_save_action_states()
         self._update_editor_status_for_path(saved_tab.file_path)
         if should_refresh_index_after_save(
@@ -2295,6 +2387,224 @@ class MainWindow(QMainWindow):
             self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
+
+    def _local_history_context_for_path(self, file_path: str) -> tuple[Optional[str], Optional[str]]:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return (None, None)
+        metadata = getattr(loaded_project, "metadata", None)
+        project_id = None if metadata is None else getattr(metadata, "project_id", None)
+        normalized_file_path = Path(file_path).expanduser().resolve()
+        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        try:
+            normalized_file_path.relative_to(project_root)
+        except ValueError:
+            return (None, None)
+        return (project_id, str(project_root))
+
+    def _record_local_history_checkpoint(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        source: str,
+        label: str = "",
+        transaction_id: Optional[str] = None,
+    ) -> None:
+        history_store = getattr(self, "_local_history_store", None)
+        if history_store is None:
+            return
+        project_id, project_root = self._local_history_context_for_path(file_path)
+        try:
+            checkpoint = history_store.create_checkpoint(
+                file_path,
+                content,
+                project_id=project_id,
+                project_root=project_root,
+                source=source,
+                label=label,
+                transaction_id=transaction_id,
+            )
+        except Exception:
+            self._logger.warning("Local history checkpoint failed for %s", file_path, exc_info=True)
+            return
+        if checkpoint is None:
+            skip_reason = history_store.checkpoint_skip_reason(
+                file_path,
+                content,
+                project_root=project_root,
+            )
+            if skip_reason == "excluded":
+                self.statusBar().showMessage(
+                    f"Local history skipped for {Path(file_path).name}: file matches a local-history exclude pattern.",
+                    5000,
+                )
+            elif skip_reason == "too_large":
+                max_bytes = self._local_history_retention_policy.max_tracked_file_bytes
+                self.statusBar().showMessage(
+                    (
+                        f"Local history skipped for {Path(file_path).name}: "
+                        f"file exceeds the {max_bytes} byte tracking limit."
+                    ),
+                    5000,
+                )
+            self._logger.info("Local history checkpoint skipped for %s", file_path)
+
+    def _record_local_history_transaction(
+        self,
+        payloads_by_path: Mapping[str, str],
+        *,
+        source: str,
+        label: str,
+    ) -> None:
+        normalized_payloads = {path: payload for path, payload in payloads_by_path.items() if payload is not None}
+        if not normalized_payloads:
+            return
+        transaction_id = None
+        if len(normalized_payloads) > 1:
+            transaction_id = f"txn_{uuid.uuid4().hex}"
+        for file_path, payload in normalized_payloads.items():
+            self._record_local_history_checkpoint(
+                file_path,
+                payload,
+                source=source,
+                label=label,
+                transaction_id=transaction_id,
+            )
+
+    def _capture_text_history_snapshots(self, target_paths: list[str]) -> dict[str, str]:
+        snapshots: dict[str, str] = {}
+        for target_path in target_paths:
+            path = Path(target_path).expanduser().resolve()
+            if path.is_file():
+                candidate_paths = [path]
+            elif path.is_dir():
+                candidate_paths = sorted(child for child in path.rglob("*") if child.is_file())
+            else:
+                continue
+            for candidate in candidate_paths:
+                try:
+                    snapshots[str(candidate.resolve())] = candidate.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+        return snapshots
+
+    def _filter_snapshots_for_paths(
+        self,
+        snapshots_by_path: Mapping[str, str],
+        accepted_paths: list[str],
+    ) -> dict[str, str]:
+        accepted_prefixes = [str(Path(path).expanduser().resolve()) for path in accepted_paths]
+        filtered: dict[str, str] = {}
+        for file_path, payload in snapshots_by_path.items():
+            normalized_path = str(Path(file_path).expanduser().resolve())
+            if any(
+                normalized_path == prefix or normalized_path.startswith(f"{prefix}/")
+                for prefix in accepted_prefixes
+            ):
+                filtered[normalized_path] = payload
+        return filtered
+
+    def _record_deleted_local_history_path(self, deleted_path: str) -> None:
+        history_store = getattr(self, "_local_history_store", None)
+        if history_store is None:
+            return
+        project_id, project_root = self._local_history_context_for_path(deleted_path)
+        if project_id is None:
+            return
+        try:
+            history_store.record_deleted_path(
+                project_id=project_id,
+                project_root=project_root,
+                deleted_path=deleted_path,
+            )
+        except Exception:
+            self._logger.warning("Local history delete tracking failed for %s", deleted_path, exc_info=True)
+
+    def _remap_local_history_file_lineage(self, path_mapping: dict[str, str]) -> None:
+        history_store = getattr(self, "_local_history_store", None)
+        if history_store is None or not path_mapping:
+            return
+        first_path = next(iter(path_mapping.values()))
+        project_id, project_root = self._local_history_context_for_path(first_path)
+        if project_id is None:
+            return
+        try:
+            history_store.remap_file_lineage(
+                project_id=project_id,
+                project_root=project_root,
+                path_mapping=path_mapping,
+            )
+        except Exception:
+            self._logger.warning("Local history path remap failed for %s", path_mapping, exc_info=True)
+
+    def _current_text_for_history_path(self, file_path: str) -> str:
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is not None:
+            return tab_state.current_content
+        try:
+            return Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return ""
+
+    def _restore_local_history_content_to_buffer(self, file_path: str, content: str) -> None:
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            target_path = Path(file_path).expanduser().resolve()
+            if target_path.exists():
+                self._open_file_in_editor(file_path, preview=False)
+            else:
+                self._open_restored_history_buffer(file_path, content)
+            tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            QMessageBox.warning(self, "Local History", f"Could not open {Path(file_path).name} for restore.")
+            return
+        self._apply_text_to_open_tab(file_path, content)
+        updated_tab = self._editor_manager.update_tab_content(file_path, content)
+        tab_index = self._tab_index_for_path(file_path)
+        if self._editor_tabs_widget is not None and tab_index >= 0:
+            self._refresh_tab_presentation(updated_tab.file_path)
+        self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
+
+    def _show_local_history_for_entry(self, summary: LocalHistoryFileSummary) -> None:
+        self._show_local_history_for_path(
+            summary.file_path,
+            project_id=summary.project_id,
+            project_root=summary.project_root,
+            file_name=Path(summary.display_path or summary.file_path).name,
+        )
+
+    def _show_local_history_for_path(
+        self,
+        file_path: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+        file_name: Optional[str] = None,
+    ) -> None:
+        history_store = getattr(self, "_local_history_store", None)
+        if history_store is None:
+            return
+        if project_id is None and project_root is None:
+            project_id, project_root = self._local_history_context_for_path(file_path)
+        checkpoints = history_store.list_checkpoints(
+            file_path,
+            project_id=project_id,
+            project_root=project_root,
+            include_deleted=True,
+        )
+        if not checkpoints:
+            QMessageBox.information(self, "Local History", "No local-history entries are available for this file yet.")
+            return
+        dialog = LocalHistoryDialog(
+            file_name=file_name or Path(file_path).name,
+            checkpoints=checkpoints,
+            current_text=self._current_text_for_history_path(file_path),
+            checkpoint_content_loader=history_store.load_checkpoint_content,
+            restore_to_buffer=lambda content: self._restore_local_history_content_to_buffer(file_path, content),
+            parent=self,
+        )
+        dialog.exec_()
 
     def _resolve_python_tooling_project_root(self, file_path: str) -> str:
         normalized_file_path = Path(file_path).expanduser().resolve()
@@ -3498,7 +3808,15 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Apply Safe Fixes", "No changes were applied.")
             return
 
-        self._refresh_open_tabs_from_disk([file_path])
+        affected_files = sorted(path for path in affected_paths if path)
+        self._record_local_history_transaction(
+            self._capture_text_history_snapshots(affected_files),
+            source="quick_fix",
+            label="Apply Safe Fixes",
+        )
+        self._refresh_open_tabs_from_disk(affected_files)
+        if self._loaded_project is not None and any(path != file_path for path in affected_files):
+            self._reload_current_project()
         self._render_lint_diagnostics_for_file(file_path, trigger="manual")
         QMessageBox.information(self, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
 
@@ -4605,6 +4923,8 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget = QTabWidget(editor_page)
         tab_bar = _MiddleClickTabBar(self._editor_tabs_widget)
         tab_bar.set_tab_double_click_callback(self._handle_editor_tab_header_double_click)
+        tab_bar.setContextMenuPolicy(Qt.CustomContextMenu)
+        tab_bar.customContextMenuRequested.connect(self._show_editor_tab_context_menu)
         self._editor_tabs_widget.setTabBar(tab_bar)
         self._editor_tabs_widget.setObjectName("shell.editorTabs")
         self._editor_tabs_widget.currentChanged.connect(self._handle_editor_tab_changed)
@@ -4889,6 +5209,9 @@ class MainWindow(QMainWindow):
         copy_path_action = menu.addAction("Copy Path")
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
+        local_history_action = None
+        if not is_directory:
+            local_history_action = menu.addAction("Local History...")
         run_file_action = None
         set_entry_point_action = None
         if (
@@ -4932,6 +5255,8 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(relative_path)
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
+        elif not is_directory and local_history_action is not None and chosen == local_history_action:
+            self._show_local_history_for_path(absolute_path)
         elif run_file_action is not None and chosen == run_file_action:
             self._handle_tree_run_file(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
@@ -5032,9 +5357,16 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
+        delete_snapshots = self._capture_text_history_snapshots([target_path])
         error_message = self._project_tree_action_coordinator.handle_delete(target_path)
         if error_message is not None:
             QMessageBox.warning(self, "Move to Trash", error_message)
+            return
+        self._record_local_history_transaction(
+            delete_snapshots,
+            source="delete",
+            label=f"Delete '{Path(target_path).name}'",
+        )
 
     def _handle_tree_duplicate(self, source_path: str) -> None:
         error_message = self._project_tree_action_coordinator.handle_duplicate(source_path)
@@ -5052,7 +5384,13 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
-        failed = self._project_tree_action_coordinator.handle_bulk_delete(paths)
+        delete_snapshots = self._capture_text_history_snapshots(paths)
+        failed, deleted_paths = self._project_tree_action_coordinator.handle_bulk_delete(paths)
+        self._record_local_history_transaction(
+            self._filter_snapshots_for_paths(delete_snapshots, deleted_paths),
+            source="delete",
+            label="Bulk delete from project tree",
+        )
         if failed:
             QMessageBox.warning(self, "Move to Trash", "\n".join(failed))
 
@@ -5115,7 +5453,17 @@ class MainWindow(QMainWindow):
             resolve_policy_for_operation=self._resolve_import_update_policy_for_operation,
             request_confirmation=self._request_import_rewrite_confirmation,
             show_warning=lambda details: self._show_import_update_warning(details),
+            on_applied=self._handle_import_rewrites_applied,
         )
+
+    def _handle_import_rewrites_applied(self, previews) -> None:  # type: ignore[no-untyped-def]
+        payloads = {preview.file_path: preview.updated_content for preview in previews}
+        self._record_local_history_transaction(
+            payloads,
+            source="import_rewrite",
+            label="Update imports after move/rename",
+        )
+        self._refresh_open_tabs_from_disk(sorted(payloads.keys()))
 
     def _request_import_rewrite_confirmation(self, message: str) -> bool:
         answer = QMessageBox.question(
@@ -5192,6 +5540,29 @@ class MainWindow(QMainWindow):
             opened_result = self._editor_manager.open_file(file_path, preview=use_preview)
         except ValueError as exc:
             QMessageBox.warning(self, "Unable to open file", str(exc))
+            return False
+        return self._materialize_opened_editor_tab(opened_result, started_at=started_at, restore_draft=True)
+
+    def _open_restored_history_buffer(self, file_path: str, content: str) -> bool:
+        if self._editor_tabs_widget is None:
+            return False
+        opened_result = self._editor_manager.open_file_with_content(
+            file_path,
+            content,
+            original_content="",
+            preview=False,
+            last_known_mtime=None,
+        )
+        return self._materialize_opened_editor_tab(opened_result, started_at=None, restore_draft=False)
+
+    def _materialize_opened_editor_tab(
+        self,
+        opened_result: OpenedTabResult,
+        *,
+        started_at: Optional[float],
+        restore_draft: bool,
+    ) -> bool:
+        if self._editor_tabs_widget is None:
             return False
 
         if opened_result.closed_preview_path:
@@ -5297,7 +5668,8 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         self._editor_tabs_widget.setCurrentIndex(tab_index)
         self._refresh_tab_presentation(opened_result.tab.file_path)
-        self._maybe_restore_draft(opened_result.tab, editor_widget)
+        if restore_draft:
+            self._maybe_restore_draft(opened_result.tab, editor_widget)
         self._apply_detected_indentation_for_widget(
             opened_result.tab.file_path,
             editor_widget,
@@ -5306,11 +5678,12 @@ class MainWindow(QMainWindow):
         self._handle_editor_tab_changed(tab_index)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(opened_result.tab.file_path)
-        self._logger.info(
-            "File open telemetry: file=%s elapsed_ms=%.2f",
-            opened_result.tab.file_path,
-            (time.perf_counter() - started_at) * 1000.0,
-        )
+        if started_at is not None:
+            self._logger.info(
+                "File open telemetry: file=%s elapsed_ms=%.2f",
+                opened_result.tab.file_path,
+                (time.perf_counter() - started_at) * 1000.0,
+            )
         return True
 
     def _open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
@@ -5543,6 +5916,27 @@ class MainWindow(QMainWindow):
             return
         self._promote_preview_tab(active_tab.file_path)
 
+    def _show_editor_tab_context_menu(self, position: QPoint) -> None:
+        if self._editor_tabs_widget is None:
+            return
+        tab_bar = self._editor_tabs_widget.tabBar()
+        tab_index = tab_bar.tabAt(position)
+        if tab_index < 0:
+            return
+        file_path = self._editor_tabs_widget.tabToolTip(tab_index)
+        if not file_path:
+            return
+
+        menu = QMenu(self)
+        local_history_action = menu.addAction("Local History...")
+        menu.addSeparator()
+        close_action = menu.addAction("Close")
+        chosen = menu.exec_(tab_bar.mapToGlobal(position))
+        if chosen == local_history_action:
+            self._show_local_history_for_path(file_path)
+        elif chosen == close_action:
+            self._handle_tab_close_requested(tab_index)
+
     def _handle_tab_close_requested(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:
             return
@@ -5724,6 +6118,13 @@ class MainWindow(QMainWindow):
         )
 
         if choice == QMessageBox.Yes:
+            if tab_state.is_dirty and tab_state.current_content != disk_content:
+                self._record_local_history_checkpoint(
+                    file_path,
+                    tab_state.current_content,
+                    source="external_reload_discarded_buffer",
+                    label="Discarded buffer during disk reload",
+                )
             editor_widget.blockSignals(True)
             editor_widget.setPlainText(disk_content)
             editor_widget.blockSignals(False)
@@ -5734,7 +6135,18 @@ class MainWindow(QMainWindow):
             if self._editor_tabs_widget is not None and tab_index >= 0:
                 self._refresh_tab_presentation(file_path)
             self._pending_autosave_payloads.pop(file_path, None)
-            self._autosave_store.delete_draft(file_path)
+            self._record_local_history_checkpoint(
+                file_path,
+                disk_content,
+                source="external_reload",
+                label="Reloaded from disk after external change",
+            )
+            project_id, project_root = self._local_history_context_for_path(file_path)
+            self._autosave_store.delete_draft(
+                file_path,
+                project_id=project_id,
+                project_root=project_root,
+            )
             self._refresh_save_action_states()
             self._update_editor_status_for_path(file_path)
             return
@@ -5777,23 +6189,32 @@ class MainWindow(QMainWindow):
         return tuple(entry.relative_path for entry in entries)
 
     def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
-        draft_entry = self._autosave_store.load_draft(tab_state.file_path)
+        project_id, project_root = self._local_history_context_for_path(tab_state.file_path)
+        draft_entry = self._autosave_store.load_draft(
+            tab_state.file_path,
+            project_id=project_id,
+            project_root=project_root,
+        )
         if draft_entry is None or draft_entry.content == tab_state.current_content:
             return
 
-        response = QMessageBox.question(
-            self,
-            "Restore draft",
-            f"A recovery draft is available for {tab_state.display_name}.\nRestore unsaved changes?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
+        dialog = DraftRecoveryDialog(
+            file_name=tab_state.display_name,
+            disk_text=tab_state.current_content,
+            draft_text=draft_entry.content,
+            parent=self,
         )
-        if response != QMessageBox.Yes:
+        response = dialog.exec_()
+        if response != QDialog.Accepted:
+            if dialog.discard_draft:
+                self._autosave_store.delete_draft(
+                    tab_state.file_path,
+                    project_id=project_id,
+                    project_root=project_root,
+                )
             return
 
-        editor_widget.blockSignals(True)
-        editor_widget.setPlainText(draft_entry.content)
-        editor_widget.blockSignals(False)
+        editor_widget.replace_document_text(draft_entry.content)
         updated_tab = self._editor_manager.update_tab_content(tab_state.file_path, draft_entry.content)
         tab_index = self._tab_index_for_path(tab_state.file_path)
         if self._editor_tabs_widget is not None and tab_index >= 0:
@@ -5817,7 +6238,13 @@ class MainWindow(QMainWindow):
         self._pending_autosave_payloads.clear()
         for file_path, content in pending_items:
             try:
-                self._autosave_store.save_draft(file_path, content)
+                project_id, project_root = self._local_history_context_for_path(file_path)
+                self._autosave_store.save_draft(
+                    file_path,
+                    content,
+                    project_id=project_id,
+                    project_root=project_root,
+                )
             except OSError as exc:
                 self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)
 

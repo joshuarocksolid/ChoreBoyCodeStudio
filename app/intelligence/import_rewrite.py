@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 
 from app.core import constants
+from app.persistence.atomic_write import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -62,11 +63,11 @@ def apply_import_rewrites(previews: list[ImportRewritePreview]) -> list[str]:
         for preview in previews:
             target = Path(preview.file_path).expanduser().resolve()
             original_payloads[preview.file_path] = target.read_text(encoding="utf-8")
-            target.write_text(preview.updated_content, encoding="utf-8")
+            atomic_write_text(target, preview.updated_content)
             updated_paths.append(preview.file_path)
     except OSError:
         for file_path, payload in original_payloads.items():
-            Path(file_path).write_text(payload, encoding="utf-8")
+            atomic_write_text(file_path, payload)
         raise
     return updated_paths
 

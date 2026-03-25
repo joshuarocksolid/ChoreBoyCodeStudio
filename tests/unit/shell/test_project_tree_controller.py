@@ -39,6 +39,7 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
     closed: list[str] = []
     removed_tabs: list[int] = []
     breakpoints = {"/tmp/project/app.py": {10}, "/tmp/project/sub/module.py": {4}}
+    deleted_records: list[str] = []
 
     controller.close_deleted_editor_paths(
         "/tmp/project",
@@ -49,6 +50,7 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
         close_editor_file=closed.append,
         breakpoints_by_file=breakpoints,
         refresh_breakpoints_list=lambda: None,
+        record_deleted_path=deleted_records.append,
     )
 
     assert editor_widgets == {}
@@ -56,6 +58,7 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
     assert breakpoints == {}
     assert removed_tabs == [0, 0]
     assert widget_a.released is True and widget_b.released is True
+    assert deleted_records == ["/tmp/project"]
 
 
 def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
@@ -65,6 +68,7 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
     breakpoints = {"/tmp/project/old.py": {12}}
     updated_tabs: list[tuple[int, str]] = []
     rewrites: list[tuple[str, str]] = []
+    lineage_remaps: list[dict[str, str]] = []
 
     controller.apply_path_move_updates(
         "/tmp/project/old.py",
@@ -78,6 +82,7 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
         update_widget_language=lambda w, path: w.set_language_for_path(path),  # type: ignore[attr-defined]
         refresh_breakpoints_list=lambda: None,
         maybe_rewrite_imports=lambda source, destination: rewrites.append((source, destination)),
+        remap_file_lineage=lineage_remaps.append,
     )
 
     assert "/tmp/project/new.py" in editor_widgets
@@ -87,6 +92,7 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
     assert widget.language_path == "/tmp/project/new.py"
     assert updated_tabs == [(3, "/tmp/project/new.py")]
     assert rewrites == [("/tmp/project/old.py", "/tmp/project/new.py")]
+    assert lineage_remaps == [{"/tmp/project/old.py": "/tmp/project/new.py"}]
 
 
 def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> None:
@@ -104,6 +110,7 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
     }
     updated_tabs: list[tuple[int, str]] = []
     rewrites: list[tuple[str, str]] = []
+    lineage_remaps: list[dict[str, str]] = []
 
     controller.apply_path_move_updates(
         "/tmp/project/pkg",
@@ -120,6 +127,7 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
         update_widget_language=lambda w, path: w.set_language_for_path(path),  # type: ignore[attr-defined]
         refresh_breakpoints_list=lambda: None,
         maybe_rewrite_imports=lambda source, destination: rewrites.append((source, destination)),
+        remap_file_lineage=lineage_remaps.append,
     )
 
     assert sorted(editor_widgets.keys()) == [
@@ -139,6 +147,12 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
         (2, "/tmp/project/lib/sub/b.py"),
     ]
     assert rewrites == [("/tmp/project/pkg", "/tmp/project/lib")]
+    assert lineage_remaps == [
+        {
+            "/tmp/project/pkg/a.py": "/tmp/project/lib/a.py",
+            "/tmp/project/pkg/sub/b.py": "/tmp/project/lib/sub/b.py",
+        }
+    ]
 
 
 def test_maybe_rewrite_imports_for_move_honors_ask_policy_cancel(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

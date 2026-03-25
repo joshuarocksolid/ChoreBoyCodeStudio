@@ -46,6 +46,21 @@ def global_cache_dir(state_root: Optional[PathInput] = None) -> Path:
     return _global_state_child(constants.GLOBAL_CACHE_DIRNAME, state_root)
 
 
+def global_history_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the global local-history directory path."""
+    return _global_state_child(constants.GLOBAL_HISTORY_DIRNAME, state_root)
+
+
+def global_history_index_path(state_root: Optional[PathInput] = None) -> Path:
+    """Return the SQLite metadata index path for local history."""
+    return global_history_dir(state_root) / constants.GLOBAL_HISTORY_INDEX_FILENAME
+
+
+def global_history_blobs_dir(state_root: Optional[PathInput] = None) -> Path:
+    """Return the content-addressed blob directory for local history."""
+    return global_history_dir(state_root) / constants.GLOBAL_HISTORY_BLOBS_DIRNAME
+
+
 def global_crash_reports_dir(state_root: Optional[PathInput] = None) -> Path:
     """Return the global crash reports directory path."""
     return _global_state_child(constants.GLOBAL_CRASH_REPORTS_DIRNAME, state_root)

@@ -340,6 +340,8 @@ choreboy_code_studio/
       menus.py
       actions.py
       status_bar.py
+      local_history_dialog.py
+      history_restore_picker.py
     editors/
       __init__.py
       editor_tab.py
@@ -417,7 +419,11 @@ choreboy_code_studio/
       __init__.py
       settings_store.py
       sqlite_index.py
+      atomic_write.py
       autosave_store.py
+      history_models.py
+      local_history_store.py
+      history_retention.py
     templates/
       __init__.py
       template_service.py
@@ -483,6 +489,7 @@ The initialized file remains the single source of truth going forward.
 This file should be human-readable JSON and contain:
 
 * project name
+* stable project id
 * schema version
 * default entry point
 * default working directory
@@ -496,6 +503,7 @@ This file should be human-readable JSON and contain:
 ```json
 {
   "schema_version": 1,
+  "project_id": "proj_a1b2c3d4e5f6",
   "name": "My Project",
   "default_entry": "main.py",
   "working_directory": ".",
@@ -556,6 +564,9 @@ Recommended contents:
   recent_projects.json
   logs/
   cache/
+  history/
+    index.sqlite3
+    blobs/
   plugins/
     registry.json
     installed/
@@ -576,6 +587,7 @@ Recommended contents:
 * compatibility probe results cache
 * optional global search/index cache
 * editor crash logs
+* local history drafts, checkpoints, labels, and deleted-file tombstones
 * global plugin registry, installs, and plugin host logs
 
 ## 11.2 What does not belong here
@@ -686,7 +698,11 @@ Stores:
   * syntax-color overrides (theme-aware)
   * linter provider selection + global lint enable state
   * linter rule overrides
+* atomic text-write helpers used by editor save paths
 * autosave drafts
+* local history checkpoints
+* content-addressed revision blobs
+* history retention and pruning state
 * optional indexes
 * lightweight caches
 
@@ -977,6 +993,46 @@ Recommended v1 behavior:
 
 This is safer for support and easier to reason about.
 
+## 16.2 Local history strategy
+
+Autosave drafts and local history solve related but different problems and should
+remain distinct in the architecture:
+
+* **drafts** protect the latest unsaved dirty-buffer state after crash or abnormal
+  exit
+* **checkpoints** provide a bounded timeline of durable, user-reviewable restore
+  points across saves and high-risk multi-file edits
+
+The shipped local-history design should follow these rules:
+
+* store history in a visible global app-state location under
+  `~/choreboy_code_studio_state/history/`
+* use a metadata index plus content-addressed full-text blobs rather than
+  fragile patch chains as the canonical source of truth
+* treat diffs as a derived presentation layer, generated lazily for review UI
+* create durable checkpoints for successful saves, explicit snapshots/labels,
+  external-file reload decisions, and multi-file refactor/import-update applies
+* keep draft writes debounced and lightweight; do not turn every keystroke into a
+  durable history revision
+* restore history revisions into the editor buffer first, not directly onto disk,
+  so the user can review and save explicitly
+* keep restore and diff workflows independent of Git so the feature remains
+  understandable for ChoreBoy users who do not use version control
+
+## 16.3 File identity and path lineage
+
+Local history must survive app-driven move, rename, and delete operations.
+
+That requires:
+
+* a stable project identity in canonical project metadata
+* a stable logical file key in the history index that is not just the current
+  absolute path
+* lineage updates on move/rename so a file keeps one timeline across path
+  changes
+* tombstones for deleted files so restore flows can recover them after the live
+  filesystem entry is gone
+
 ---
 
 ## 17. Search and Indexing
@@ -1231,6 +1287,8 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 * support bundle creation
 * project health check
 * large file loading
+* local-history retention pruning
+* global history search over deleted/moved entries
 
 Current implementation explicitly offloads:
 
@@ -1274,6 +1332,8 @@ For:
 * manifest creation
 * settings parsing
 * project metadata
+* local-history index/blob helpers
+* history retention and lineage rules
 * problem parsing
 * capability probe helpers
 
@@ -1283,6 +1343,9 @@ For:
 
 * opening a project
 * saving a file
+* recording local-history checkpoints on save
+* draft recovery compare/restore
+* deleted-file recovery and path-lineage restore
 * creating a run manifest
 * launching runner
 * capturing stdout/stderr
@@ -1438,6 +1501,35 @@ semantic or structural refactor engine.
 **Why:** ChoreBoy's runtime heavily constrains subprocess execution, hidden/global
 tool configuration is harder to support, and users need trustworthy formatting
 behavior without conflating style tools with semantic truth.
+
+## AD-011: Local history is a first-class editor safety feature
+
+**Decision:** ship a native local-history subsystem independent of Git, with
+clear draft-vs-checkpoint semantics and restore-to-buffer workflows.
+**Why:** ChoreBoy users need trustworthy recovery and diff tools even when they
+do not use version control or have terminal access.
+
+## AD-012: Global visible store for local history
+
+**Decision:** store local-history data under the visible global app-state root
+instead of hidden folders or per-project-only metadata.
+**Why:** this survives deleted-file accidents better, fits ChoreBoy's visible-path
+constraints, and avoids inflating project folders with heavy safety data.
+
+## AD-013: Full-text blobs are canonical; diffs are derived
+
+**Decision:** keep canonical history entries as full-text snapshot blobs plus
+metadata index rows, while generating diffs lazily for UI review.
+**Why:** full-text snapshots are simpler to validate, restore, prune, and recover
+from than patch-chain-first storage.
+
+## AD-014: Restore to buffer before disk
+
+**Decision:** local-history and draft restore flows should place restored content
+into the live editor buffer first and require an explicit save to update the
+source file on disk.
+**Why:** this preserves user trust, keeps undo/cursor context intact, and avoids
+silent destructive overwrites during recovery.
 
 ---
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generic, TypeVar
+from typing import Callable, Generic, Optional, TypeVar
 
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
@@ -32,6 +32,8 @@ class ProjectTreeActionCoordinator(Generic[W]):
         update_widget_language: Callable[[W, str], None],
         maybe_rewrite_imports: Callable[[str, str], None],
         reload_project: Callable[[], None],
+        record_deleted_path: Optional[Callable[[str], None]] = None,
+        remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
     ) -> None:
         self._project_tree_controller = project_tree_controller
         self._editor_widgets_by_path = editor_widgets_by_path
@@ -47,8 +49,10 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._update_widget_language = update_widget_language
         self._maybe_rewrite_imports = maybe_rewrite_imports
         self._reload_project = reload_project
+        self._record_deleted_path = record_deleted_path
+        self._remap_file_lineage = remap_file_lineage
 
-    def handle_new_file(self, destination_directory: str, file_name: str) -> str | None:
+    def handle_new_file(self, destination_directory: str, file_name: str) -> Optional[str]:
         validated_name = self._validate_child_name(file_name)
         if validated_name is None:
             return "File name cannot include path separators."
@@ -58,7 +62,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_new_folder(self, destination_directory: str, folder_name: str) -> str | None:
+    def handle_new_folder(self, destination_directory: str, folder_name: str) -> Optional[str]:
         validated_name = self._validate_child_name(folder_name)
         if validated_name is None:
             return "Folder name cannot include path separators."
@@ -68,7 +72,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_rename(self, source_path: str, new_name: str) -> str | None:
+    def handle_rename(self, source_path: str, new_name: str) -> Optional[str]:
         source = Path(source_path)
         validated_name = self._validate_child_name(new_name)
         if validated_name is None:
@@ -84,7 +88,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_delete(self, target_path: str) -> str | None:
+    def handle_delete(self, target_path: str) -> Optional[str]:
         result = delete_path(target_path)
         if not result.success:
             return result.message
@@ -92,23 +96,25 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return None
 
-    def handle_duplicate(self, source_path: str) -> str | None:
+    def handle_duplicate(self, source_path: str) -> Optional[str]:
         result = duplicate_path(source_path)
         if not result.success:
             return result.message
         self._reload_project()
         return None
 
-    def handle_bulk_delete(self, paths: list[str]) -> list[str]:
+    def handle_bulk_delete(self, paths: list[str]) -> tuple[list[str], list[str]]:
         failed: list[str] = []
+        deleted_paths: list[str] = []
         for target_path in paths:
             result = delete_path(target_path)
             if result.success:
                 self.close_deleted_editor_paths(target_path)
+                deleted_paths.append(target_path)
             else:
                 failed.append(f"{Path(target_path).name}: {result.message}")
         self._reload_project()
-        return failed
+        return failed, deleted_paths
 
     def handle_bulk_duplicate(self, paths: list[str]) -> list[str]:
         failed: list[str] = []
@@ -156,7 +162,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._reload_project()
         return (failed, next_clipboard_paths, next_clipboard_cut)
 
-    def handle_drop_move(self, source_path: str, target_path: str) -> str | None:
+    def handle_drop_move(self, source_path: str, target_path: str) -> Optional[str]:
         source = Path(source_path).resolve()
         target = Path(target_path).resolve()
         destination_directory = target if target.is_dir() else target.parent
@@ -190,6 +196,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             close_editor_file=self._close_editor_file,
             breakpoints_by_file=self._breakpoints_by_file,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
+            record_deleted_path=self._record_deleted_path,
         )
 
     def apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
@@ -205,10 +212,11 @@ class ProjectTreeActionCoordinator(Generic[W]):
             update_widget_language=self._update_widget_language,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
             maybe_rewrite_imports=self._maybe_rewrite_imports,
+            remap_file_lineage=self._remap_file_lineage,
         )
 
     @staticmethod
-    def _validate_child_name(name: str) -> str | None:
+    def _validate_child_name(name: str) -> Optional[str]:
         normalized = name.strip()
         if not normalized:
             return None

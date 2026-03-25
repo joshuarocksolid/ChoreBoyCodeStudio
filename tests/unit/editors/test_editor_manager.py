@@ -68,6 +68,23 @@ def test_opening_existing_preview_permanently_promotes_tab(tmp_path: Path) -> No
     assert manager.preview_tab() is None
 
 
+def test_open_file_with_content_creates_dirty_tab_for_missing_path(tmp_path: Path) -> None:
+    file_path = tmp_path / "restored.py"
+    manager = EditorManager()
+
+    opened = manager.open_file_with_content(
+        str(file_path),
+        "print('restored')\n",
+        original_content="",
+    )
+
+    assert opened.was_already_open is False
+    assert opened.tab.file_path == str(file_path.resolve())
+    assert opened.tab.current_content == "print('restored')\n"
+    assert opened.tab.original_content == ""
+    assert opened.tab.is_dirty is True
+
+
 def test_update_tab_content_marks_tab_dirty(tmp_path: Path) -> None:
     """Updating content should toggle dirty state."""
     file_path = tmp_path / "run.py"
@@ -110,6 +127,28 @@ def test_save_tab_persists_content_and_clears_dirty_state(tmp_path: Path) -> Non
 
     assert file_path.read_text(encoding="utf-8") == "print('saved')\n"
     assert opened.tab.is_dirty is False
+
+
+def test_save_tab_keeps_dirty_state_when_atomic_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = tmp_path / "run.py"
+    file_path.write_text("print('hello')\n", encoding="utf-8")
+    manager = EditorManager()
+    opened = manager.open_file(str(file_path))
+    manager.update_tab_content(str(file_path), "print('saved')\n")
+
+    def raise_write(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise OSError("simulated save failure")
+
+    monkeypatch.setattr("app.editors.editor_manager.atomic_write_text", raise_write)
+
+    with pytest.raises(OSError, match="simulated save failure"):
+        manager.save_tab(str(file_path))
+
+    assert file_path.read_text(encoding="utf-8") == "print('hello')\n"
+    assert opened.tab.is_dirty is True
 
 
 def test_save_all_persists_only_dirty_tabs(tmp_path: Path) -> None:

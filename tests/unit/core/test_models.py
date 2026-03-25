@@ -66,6 +66,7 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     """Project metadata should expose explicit defaults for omitted optional fields."""
     metadata = ProjectMetadata(schema_version=1, name="My Project")
 
+    assert metadata.project_id == "proj_legacy_unknown"
     assert metadata.default_entry == "main.py"
     assert metadata.default_argv == []
     assert metadata.working_directory == "."
@@ -80,6 +81,7 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
     metadata = ProjectMetadata(
         schema_version=1,
         name="Custom Project",
+        project_id="proj_custom123",
         default_entry="app/start.py",
         working_directory="app",
         template="qt_app",
@@ -90,6 +92,7 @@ def test_project_metadata_serializes_to_stable_schema() -> None:
 
     assert metadata.to_dict() == {
         "schema_version": 1,
+        "project_id": "proj_custom123",
         "name": "Custom Project",
         "default_entry": "app/start.py",
         "default_argv": [],
@@ -118,7 +121,7 @@ def test_project_file_entry_serializes_to_stable_schema() -> None:
 
 def test_loaded_project_serializes_to_stable_schema() -> None:
     """Loaded project payload should be stable for shell and tree wiring."""
-    metadata = ProjectMetadata(schema_version=1, name="Project Alpha")
+    metadata = ProjectMetadata(schema_version=1, name="Project Alpha", project_id="proj_alpha")
     loaded_project = LoadedProject(
         project_root="/tmp/project_alpha",
         manifest_path="/tmp/project_alpha/cbcs/project.json",
@@ -142,6 +145,7 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
         "manifest_path": "/tmp/project_alpha/cbcs/project.json",
         "metadata": {
             "schema_version": 1,
+            "project_id": "proj_alpha",
             "name": "Project Alpha",
             "default_entry": "main.py",
             "default_argv": [],

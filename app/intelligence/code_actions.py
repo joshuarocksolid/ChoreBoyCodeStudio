@@ -14,6 +14,7 @@ import re
 
 from app.core import constants
 from app.intelligence.diagnostics_service import CodeDiagnostic
+from app.persistence.atomic_write import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -183,7 +184,7 @@ def _apply_file_fixes(
             changed += 1
     if changed:
         _record_file_snapshot(path, snapshots=snapshots, snapshot_order=snapshot_order)
-        path.write_text("".join(lines), encoding="utf-8")
+        atomic_write_text(path, "".join(lines))
     return changed
 
 
@@ -207,7 +208,7 @@ def _apply_create_module_fix(
         created_directories=created_directories,
     )
     _record_file_snapshot(target, snapshots=snapshots, snapshot_order=snapshot_order)
-    target.write_text('"""Auto-created module from quick-fix."""\n', encoding="utf-8")
+    atomic_write_text(target, '"""Auto-created module from quick-fix."""\n')
     return 1
 
 
@@ -226,7 +227,7 @@ def _ensure_package_inits(
         init_path = current / "__init__.py"
         if not init_path.exists():
             _record_file_snapshot(init_path, snapshots=snapshots, snapshot_order=snapshot_order)
-            init_path.write_text("", encoding="utf-8")
+            atomic_write_text(init_path, "")
         parent = current.parent
         if parent == current:
             break
@@ -350,7 +351,7 @@ def _rollback_quick_fix_changes(
                     path.unlink()
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(original_content, encoding="utf-8")
+            atomic_write_text(path, original_content)
         except OSError:
             continue
     for directory in reversed(created_directories):

@@ -68,6 +68,7 @@ class ProjectMetadata:
 
     schema_version: int
     name: str
+    project_id: str = "proj_legacy_unknown"
     default_entry: str = "main.py"
     default_argv: list[str] = field(default_factory=list)
     working_directory: str = "."
@@ -81,6 +82,7 @@ class ProjectMetadata:
         """Return a JSON-serializable representation with explicit defaults."""
         payload: dict[str, Any] = {
             "schema_version": self.schema_version,
+            "project_id": self.project_id,
             "name": self.name,
             "default_entry": self.default_entry,
             "default_argv": list(self.default_argv),

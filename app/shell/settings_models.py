@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
+from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.intelligence.lint_profile import parse_lint_rule_overrides
 from app.persistence.settings_store import compute_effective_settings_payload, filter_project_settings_payload
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS, parse_global_exclude_patterns
@@ -61,6 +62,12 @@ class EditorSettingsSnapshot:
     syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
     lint_rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     file_exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
+    local_history_max_checkpoints_per_file: int = constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_DEFAULT
+    local_history_retention_days: int = constants.UI_LOCAL_HISTORY_RETENTION_DAYS_DEFAULT
+    local_history_max_tracked_file_bytes: int = constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_DEFAULT
+    local_history_exclude_patterns: list[str] = field(
+        default_factory=lambda: list(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_DEFAULT)
+    )
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,7 @@ class MainWindowSettingsSnapshot:
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
     intelligence_runtime_settings: IntelligenceRuntimeSettings
+    local_history_retention_policy: LocalHistoryRetentionPolicy
 
 
 SETTINGS_SCOPE_GLOBAL = "global"
@@ -101,6 +109,9 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     output_settings = settings_payload.get(constants.UI_OUTPUT_SETTINGS_KEY, {})
     if not isinstance(output_settings, dict):
         output_settings = {}
+    local_history_settings = settings_payload.get(constants.UI_LOCAL_HISTORY_SETTINGS_KEY, {})
+    if not isinstance(local_history_settings, dict):
+        local_history_settings = {}
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
     _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
     theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
@@ -234,6 +245,25 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
         lint_rule_overrides=lint_rule_overrides,
         file_exclude_patterns=file_exclude_patterns,
+        local_history_max_checkpoints_per_file=_coerce_int(
+            local_history_settings.get(constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_KEY),
+            default=constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_DEFAULT,
+            minimum=1,
+        ),
+        local_history_retention_days=_coerce_int(
+            local_history_settings.get(constants.UI_LOCAL_HISTORY_RETENTION_DAYS_KEY),
+            default=constants.UI_LOCAL_HISTORY_RETENTION_DAYS_DEFAULT,
+            minimum=1,
+        ),
+        local_history_max_tracked_file_bytes=_coerce_int(
+            local_history_settings.get(constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_KEY),
+            default=constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_DEFAULT,
+            minimum=1,
+        ),
+        local_history_exclude_patterns=_normalize_pattern_list(
+            local_history_settings.get(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_KEY),
+            default=list(constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_DEFAULT),
+        ),
     )
 
 
@@ -278,6 +308,12 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             highlighting_adaptive_mode=snapshot.highlighting_adaptive_mode,
             highlighting_reduced_threshold_chars=snapshot.highlighting_reduced_threshold_chars,
             highlighting_lexical_only_threshold_chars=snapshot.highlighting_lexical_only_threshold_chars,
+        ),
+        local_history_retention_policy=LocalHistoryRetentionPolicy(
+            max_checkpoints_per_file=snapshot.local_history_max_checkpoints_per_file,
+            retention_days=snapshot.local_history_retention_days,
+            max_tracked_file_bytes=snapshot.local_history_max_tracked_file_bytes,
+            excluded_glob_patterns=tuple(snapshot.local_history_exclude_patterns),
         ),
     )
 
@@ -415,6 +451,16 @@ def merge_editor_settings_snapshot(
     merged[constants.UI_FILE_EXCLUDES_SETTINGS_KEY] = {
         constants.UI_FILE_EXCLUDES_PATTERNS_KEY: list(snapshot.file_exclude_patterns),
     }
+    merged[constants.UI_LOCAL_HISTORY_SETTINGS_KEY] = {
+        constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_KEY: max(
+            1, int(snapshot.local_history_max_checkpoints_per_file)
+        ),
+        constants.UI_LOCAL_HISTORY_RETENTION_DAYS_KEY: max(1, int(snapshot.local_history_retention_days)),
+        constants.UI_LOCAL_HISTORY_MAX_TRACKED_FILE_BYTES_KEY: max(
+            1, int(snapshot.local_history_max_tracked_file_bytes)
+        ),
+        constants.UI_LOCAL_HISTORY_EXCLUDE_PATTERNS_KEY: list(snapshot.local_history_exclude_patterns),
+    }
     return merged
 
 
@@ -485,6 +531,19 @@ def _coerce_int(value: Any, *, default: int, minimum: int) -> int:
     if not isinstance(value, int):
         return default
     return max(minimum, value)
+
+
+def _normalize_pattern_list(value: Any, *, default: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        return list(default)
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        pattern = item.strip()
+        if pattern:
+            normalized.append(pattern)
+    return normalized
 
 
 def _normalize_string_map(payload: Mapping[str, Any]) -> dict[str, str]:
