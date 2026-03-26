@@ -6,10 +6,10 @@ import queue
 from pathlib import Path
 import subprocess
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeyEvent, QKeySequence, QMouseEvent
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
@@ -383,6 +383,7 @@ class MainWindow(QMainWindow):
         self._configure_window_frame()
         self._build_layout_shell()
         self._configure_close_tab_shortcut()
+        self.installEventFilter(self)
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
@@ -469,6 +470,9 @@ class MainWindow(QMainWindow):
             ),
             shortcut_overrides=self._effective_shortcuts,
         )
+        app_instance = QApplication.instance()
+        if app_instance is not None:
+            app_instance.focusChanged.connect(self._handle_focus_changed)
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -1027,6 +1031,37 @@ class MainWindow(QMainWindow):
             if selected_label == f"{template.display_name} ({template.template_id})":
                 return template
         return None
+
+    def _handle_focus_changed(self, _old: QWidget | None, _new: QWidget | None) -> None:
+        self._refresh_designer_action_states()
+        self._refresh_run_action_states()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if event.type() == QEvent.ShortcutOverride:
+            key_event = cast(QKeyEvent, event)
+            if self._handle_designer_mode_shortcut_override(key_event):
+                return True
+        return super().eventFilter(watched, event)
+
+    def _handle_designer_mode_shortcut_override(self, key_event: QKeyEvent) -> bool:
+        if key_event.modifiers() != Qt.NoModifier:
+            return False
+        key = key_event.key()
+        if key not in (Qt.Key_F5, Qt.Key_F6):
+            return False
+        active_surface = self._active_designer_surface()
+        if active_surface is None:
+            return False
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is None or not active_surface.isAncestorOf(focus_widget):
+            return False
+        mode_id = "buddy" if key == Qt.Key_F5 else "tab_order"
+        if active_surface.set_mode(mode_id):
+            self._refresh_designer_action_states()
+            self._persist_designer_last_mode(mode_id)
+            key_event.accept()
+            return True
+        return False
 
     def _handle_quick_open_action(self) -> None:
         if self._loaded_project is None:
