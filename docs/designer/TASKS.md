@@ -578,3 +578,156 @@ These IDs are local to the Designer program and should later be linked into `doc
 4. D3 and D4 (signals/slots + focus tools + custom widget workflows)
 5. D5 (fidelity and ecosystem polish)
 
+---
+
+## 7) Post-audit follow-up backlog (2026-03-26)
+
+These items were discovered during the Designer parity audit and smoke tests in
+`docs/designer/AUDIT_REPORT.md`.
+
+## Epic D6 — Reliability and correctness hardening
+
+### Story D6.S1 — Insert/undo reliability hardening
+
+#### Task D6.S1.T1 — Fix repeated drag/drop insertion parent resolution
+- **Status:** TODO
+- **Objective:** Make repeated palette insertion reliable by resolving a valid container parent (selected container, ancestor fallback, or root fallback) instead of silently failing after first insert.
+- **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/canvas/drop_rules.py`, `tests/unit/designer/canvas/test_form_canvas.py`, `tests/integration/designer/test_designer_save_roundtrip.py` (or new insertion-focused integration test)
+- **Automated test layer:** unit, integration
+- **Validation method:** targeted insertion test proving multiple consecutive drops succeed when a valid container exists and invalid targets produce explicit feedback.
+- **Acceptance linkage:** DFIX-01
+- **Depends on:** none
+- **Done when:** users can insert multiple widgets consecutively via drag/drop without hidden failure.
+
+#### Task D6.S1.T2 — Route canvas drop mutations through snapshot command stack
+- **Status:** TODO
+- **Objective:** Ensure all insertion paths (palette click, drag/drop, component insertion) are consistently undoable/redoable and mark tabs dirty.
+- **Primary files:** `app/designer/editor_surface.py`, `app/designer/canvas/form_canvas.py`, `tests/unit/designer/commands/test_command_stack.py`, integration coverage for insertion undo/redo
+- **Automated test layer:** unit, integration
+- **Validation method:** integration test: insert via drag/drop -> Ctrl+Z removes -> Ctrl+Shift+Z restores.
+- **Acceptance linkage:** DFIX-02
+- **Depends on:** D6.S1.T1
+- **Done when:** insertion mutation source no longer changes undo/redo behavior.
+
+### Story D6.S2 — Preview robustness
+
+#### Task D6.S2.T1 — Stabilize in-process preview window lifecycle
+- **Status:** TODO
+- **Objective:** Make Preview Form reliably visible and diagnosable during manual use.
+- **Primary files:** `app/designer/editor_surface.py`, `app/designer/preview/preview_window.py`, `tests/integration/designer/test_designer_preview_loader.py`
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** preview action opens visible window (or explicit warning) on every invocation in smoke flow.
+- **Acceptance linkage:** DFIX-03
+- **Depends on:** none
+- **Done when:** preview command is no longer perceived as a no-op.
+
+#### Task D6.S2.T2 — Add isolated preview subprocess timeout + termination diagnostics
+- **Status:** TODO
+- **Objective:** Prevent hangs in custom-widget isolated preview compatibility checks.
+- **Primary files:** `app/designer/preview/preview_service.py`, `tests/integration/designer/test_custom_widget_isolated_preview_runner.py`
+- **Automated test layer:** integration
+- **Validation method:** isolated preview tests complete deterministically and return actionable timeout/import/load errors.
+- **Acceptance linkage:** DFIX-04
+- **Depends on:** none
+- **Done when:** no isolated preview path can block indefinitely.
+
+### Story D6.S3 — `.ui` layout fidelity corrections
+
+#### Task D6.S3.T1 — Preserve layout item attributes (`row`/`column`/span/alignment) in round-trip
+- **Status:** TODO
+- **Objective:** Stop dropping grid/item placement metadata on save.
+- **Primary files:** `app/designer/model/layout_node.py`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, `tests/unit/designer/io/test_ui_reader_writer.py`
+- **Automated test layer:** unit
+- **Validation method:** fixture round-trip proving `<item>` attributes are preserved.
+- **Acceptance linkage:** DFIX-05
+- **Depends on:** none
+- **Done when:** grid-based forms survive read-write-read without layout coordinate loss.
+
+### Story D6.S4 — Shortcut conflict/scoping hardening
+
+#### Task D6.S4.T1 — Enforce focus-scoped Designer mode shortcuts over Run shortcuts
+- **Status:** TODO
+- **Objective:** Resolve F5/F6 ambiguity between designer mode actions and run/debug actions.
+- **Primary files:** `app/shell/menus.py`, `app/shell/main_window.py`, `app/designer/editor_surface.py`, shortcut-related tests under `tests/unit/shell/` + integration shortcut-focus checks
+- **Automated test layer:** unit, integration
+- **Validation method:** with designer tab focused F5/F6 switches modes; outside designer focus F5/F6 follow run/debug semantics.
+- **Acceptance linkage:** DFIX-06
+- **Depends on:** none
+- **Done when:** shortcut behavior is deterministic, documented, and test-covered.
+
+## Epic D7 — Core parity expansion (high-impact usability)
+
+### Story D7.S1 — Must-have palette expansion
+
+#### Task D7.S1.T1 — Add missing must-have widget box entries
+- **Status:** TODO
+- **Objective:** Expand from 13 baseline widgets to cover basic Qt Designer form-building needs.
+- **Primary files:** `app/designer/palette/widget_registry.py`, `app/designer/canvas/drop_rules.py`, related property/schema + insertion tests
+- **Automated test layer:** unit, integration
+- **Validation method:** each must-have widget can be inserted and serialized in supported contexts.
+- **Acceptance linkage:** DGAP-01
+- **Depends on:** D6.S1.T1
+- **Done when:** requested must-have list is represented with valid insertion behavior.
+
+### Story D7.S2 — Property editor depth expansion
+
+#### Task D7.S2.T1 — Add core Qt property groups and typed editors
+- **Status:** TODO
+- **Objective:** Support common Qt Designer properties (`sizePolicy`, min/max size, font, palette, cursor, styleSheet, windowTitle, windowIcon, layout margins/spacing).
+- **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`, `app/designer/properties/property_editor_panel.py`, IO tests as needed
+- **Automated test layer:** unit, integration
+- **Validation method:** per-property edit -> model update -> save/reopen persistence checks.
+- **Acceptance linkage:** DGAP-02
+- **Depends on:** D7.S1.T1 (recommended), D6.S3.T1 (for layout property fidelity)
+- **Done when:** expanded property surface is editable and stable across round-trip.
+
+### Story D7.S3 — Signal/slot editor parity upgrades
+
+#### Task D7.S3.T1 — Introduce class-aware signal/slot picklists and validation
+- **Status:** TODO
+- **Objective:** Replace manual free-text connection editing with discoverable, class-aware signal/slot selection.
+- **Primary files:** `app/designer/connections/connection_editor_panel.py`, `app/designer/editor_surface.py`, new signal/slot metadata helper(s), tests
+- **Automated test layer:** unit, integration
+- **Validation method:** source/target class-aware lists + prevented invalid pairings + persisted connection output.
+- **Acceptance linkage:** DGAP-03
+- **Depends on:** D7.S2.T1 (recommended)
+- **Done when:** users no longer need manual signal/slot string typing for common workflows.
+
+### Story D7.S4 — Clipboard operations parity
+
+#### Task D7.S4.T1 — Implement cut/copy/paste widget-subtree workflows
+- **Status:** TODO
+- **Objective:** Support subtree clipboard operations (same-form and cross-form insert where safe).
+- **Primary files:** `app/designer/editor_surface.py`, model/component helpers, command stack tests/integration tests
+- **Automated test layer:** unit, integration
+- **Validation method:** copy/cut/paste preserves subtree and objectName uniqueness with undo/redo support.
+- **Acceptance linkage:** DGAP-04
+- **Depends on:** D6.S1.T2
+- **Done when:** clipboard subtree operations match expected designer productivity flow.
+
+## Epic D8 — Advanced parity and polish
+
+### Story D8.S1 — `.ui` format breadth expansion
+
+#### Task D8.S1.T1 — Add action-related and ordering element support
+- **Status:** TODO
+- **Objective:** Expand reader/writer coverage for `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, `<buttongroup>` and related nodes.
+- **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, new/updated IO fixture tests
+- **Automated test layer:** unit
+- **Validation method:** deterministic round-trip tests for newly supported XML elements.
+- **Acceptance linkage:** DGAP-05
+- **Depends on:** D6.S3.T1
+- **Done when:** these nodes are no longer dropped or silently rewritten away.
+
+### Story D8.S2 — Canvas affordance polish
+
+#### Task D8.S2.T1 — Add in-place text edit + context menu + align/distribute/adjust-size tools
+- **Status:** TODO
+- **Objective:** Close major interaction affordance gaps vs Qt Designer widget editing mode.
+- **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/layout/layout_commands.py`, `app/shell/menus.py`, integration/manual acceptance coverage
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** GUI walkthrough proving in-place text edits, context actions, and align/distribute sizing tools.
+- **Acceptance linkage:** DGAP-06
+- **Depends on:** D6.S1.T1, D6.S1.T2
+- **Done when:** core widget editing affordances feel Qt Designer-like for common operations.
+
