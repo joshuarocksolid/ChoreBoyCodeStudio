@@ -58,6 +58,8 @@ def _build_widget(widget: WidgetNode) -> ET.Element:
         element.append(_build_widget(child))
     if widget.layout is not None:
         element.append(_build_layout(widget.layout))
+    for add_action in widget.add_actions:
+        element.append(_build_add_action_node(add_action))
     _append_unknown_children(element, widget.unknown_children_xml)
     return element
 

@@ -20,6 +20,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
+from app.designer.actions import ActionEditorPanel
 from app.designer.canvas import FormCanvas, SelectionController, snap_to_grid
 from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.commands import CommandStack, SnapshotCommand
@@ -52,7 +53,16 @@ from app.designer.modes import (
     DesignerModeController,
     TabOrderEditorPanel,
 )
-from app.designer.model import ConnectionModel, CustomWidgetModel, PropertyValue, UIModel, WidgetNode
+from app.designer.model import (
+    ActionGroupModel,
+    ActionModel,
+    AddActionModel,
+    ConnectionModel,
+    CustomWidgetModel,
+    PropertyValue,
+    UIModel,
+    WidgetNode,
+)
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import (
     build_preview_safety_decision,
@@ -670,11 +680,26 @@ class DesignerEditorSurface(QWidget):
         self._component_library_panel = ComponentLibraryPanel(self._inspector_tabs)
         self._component_library_panel.insert_requested.connect(self.insert_component)
         self._component_library_panel.refresh_requested.connect(self._refresh_component_panel)
+        self._action_editor_panel = ActionEditorPanel(self._inspector_tabs)
+        self._action_editor_panel.add_action_requested.connect(self._handle_action_panel_add_action_request)
+        self._action_editor_panel.remove_action_requested.connect(self._handle_action_panel_remove_action_request)
+        self._action_editor_panel.action_property_changed.connect(self._handle_action_panel_property_changed)
+        self._action_editor_panel.action_group_changed.connect(self._handle_action_panel_assign_action_group)
+        self._action_editor_panel.add_group_requested.connect(self._handle_action_panel_add_group_request)
+        self._action_editor_panel.remove_group_requested.connect(self._handle_action_panel_remove_group_request)
+        self._action_editor_panel.group_add_action_requested.connect(self._handle_action_panel_group_add_action)
+        self._action_editor_panel.group_remove_action_requested.connect(self._handle_action_panel_group_remove_action)
+        self._action_editor_panel.placement_add_action_requested.connect(self._handle_action_panel_add_placement_action)
+        self._action_editor_panel.placement_remove_action_requested.connect(
+            self._handle_action_panel_remove_placement_action
+        )
+        self._action_editor_panel.placement_move_action_requested.connect(self._handle_action_panel_move_placement_action)
         self._inspector_tabs.addTab(self._object_inspector, "Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Properties")
         self._inspector_tabs.addTab(self._connection_panel, "Signals")
         self._inspector_tabs.addTab(self._tab_order_panel, "Tab \u2195")
         self._inspector_tabs.addTab(self._buddy_panel, "Buddy")
+        self._inspector_tabs.addTab(self._action_editor_panel, "Actions")
         self._inspector_tabs.addTab(self._component_library_panel, "Library")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
@@ -1494,6 +1519,322 @@ class DesignerEditorSurface(QWidget):
 
     def _refresh_component_panel(self) -> None:
         self._component_library_panel.bind_components(self.available_component_names())
+        self._refresh_action_panel()
+
+    def _refresh_action_panel(self) -> None:
+        if self._model is None:
+            self._action_editor_panel.bind_actions([], [], placement_targets=[], placements_by_target={})
+            return
+        placement_targets = self._collect_action_placement_targets()
+        placements_by_target = {
+            object_name: list(self._placement_list_for_target(object_name))
+            for object_name, _class_name in placement_targets
+        }
+        self._action_editor_panel.bind_actions(
+            list(self._model.actions),
+            list(self._model.action_groups),
+            placement_targets=placement_targets,
+            placements_by_target=placements_by_target,
+        )
+
+    def _collect_action_placement_targets(self) -> list[tuple[str, str]]:
+        if self._model is None:
+            return []
+        targets: list[tuple[str, str]] = []
+        root = self._model.root_widget
+        for object_name in root.collect_object_names():
+            widget = root.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            if widget.class_name not in {"QMainWindow", "QMenuBar", "QMenu", "QToolBar"}:
+                continue
+            targets.append((widget.object_name, widget.class_name))
+        return targets
+
+    def _placement_list_for_target(self, object_name: str) -> list[str]:
+        if self._model is None:
+            return []
+        widget = self._model.root_widget.find_by_object_name(object_name)
+        if widget is None:
+            return []
+        return [ref.name for ref in widget.add_actions]
+
+    def _action_name_exists(self, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        return any(action.name == action_name for action in self._model.actions)
+
+    def _group_name_exists(self, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        return any(group.name == group_name for group in self._model.action_groups)
+
+    def _next_action_name(self, preferred_name: str) -> str:
+        if self._model is None:
+            return preferred_name
+        normalized = preferred_name.strip() or "action"
+        if not normalized.startswith("action"):
+            normalized = f"action{normalized[:1].upper()}{normalized[1:]}" if normalized else "action"
+        candidate = normalized
+        index = 1
+        while self._action_name_exists(candidate):
+            candidate = f"{normalized}{index}"
+            index += 1
+        return candidate
+
+    def _next_group_name(self, preferred_name: str) -> str:
+        if self._model is None:
+            return preferred_name
+        normalized = preferred_name.strip() or "actionGroup"
+        candidate = normalized
+        index = 1
+        while self._group_name_exists(candidate):
+            candidate = f"{normalized}{index}"
+            index += 1
+        return candidate
+
+    def _remove_action_name_everywhere(self, action_name: str) -> None:
+        if self._model is None:
+            return
+        for group in self._model.action_groups:
+            group.add_actions = [ref for ref in group.add_actions if ref.name != action_name]
+        self._model.add_actions = [ref for ref in self._model.add_actions if ref.name != action_name]
+        for object_name in self._model.collect_object_names():
+            widget = self._model.root_widget.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            widget.add_actions = [ref for ref in widget.add_actions if ref.name != action_name]
+
+    def _set_action_text(self, action_name: str, text_value: str) -> bool:
+        if self._model is None:
+            return False
+        target = next((action for action in self._model.actions if action.name == action_name), None)
+        if target is None:
+            return False
+        normalized = text_value.strip()
+        if not normalized:
+            target.properties.pop("text", None)
+            return True
+        target.properties["text"] = PropertyValue(value_type="string", value=normalized)
+        return True
+
+    def _assign_action_to_group(self, action_name: str, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        for group in self._model.action_groups:
+            group.add_actions = [ref for ref in group.add_actions if ref.name != action_name]
+        normalized_group = group_name.strip()
+        if not normalized_group:
+            return True
+        group = next((item for item in self._model.action_groups if item.name == normalized_group), None)
+        if group is None:
+            return False
+        if not any(ref.name == action_name for ref in group.add_actions):
+            group.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _add_action_definition(self, requested_name: str) -> bool:
+        if self._model is None:
+            return False
+        action_name = self._next_action_name(requested_name)
+        if not action_name:
+            return False
+        if self._action_name_exists(action_name):
+            return False
+        self._model.actions.append(ActionModel(name=action_name))
+        return True
+
+    def _remove_action_definition(self, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        remaining = [action for action in self._model.actions if action.name != action_name]
+        if len(remaining) == len(self._model.actions):
+            return False
+        self._model.actions = remaining
+        self._remove_action_name_everywhere(action_name)
+        return True
+
+    def _add_action_group(self, requested_name: str) -> bool:
+        if self._model is None:
+            return False
+        group_name = self._next_group_name(requested_name)
+        if not group_name:
+            return False
+        if self._group_name_exists(group_name):
+            return False
+        self._model.action_groups.append(ActionGroupModel(name=group_name))
+        return True
+
+    def _remove_action_group(self, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        remaining = [group for group in self._model.action_groups if group.name != group_name]
+        if len(remaining) == len(self._model.action_groups):
+            return False
+        self._model.action_groups = remaining
+        return True
+
+    def _add_action_to_group(self, group_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        if not self._action_name_exists(action_name):
+            return False
+        group = next((item for item in self._model.action_groups if item.name == group_name), None)
+        if group is None:
+            return False
+        if any(ref.name == action_name for ref in group.add_actions):
+            return False
+        group.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _remove_action_from_group(self, group_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        group = next((item for item in self._model.action_groups if item.name == group_name), None)
+        if group is None:
+            return False
+        remaining = [ref for ref in group.add_actions if ref.name != action_name]
+        if len(remaining) == len(group.add_actions):
+            return False
+        group.add_actions = remaining
+        return True
+
+    def _add_placement_action(self, target_name: str, action_name: str) -> bool:
+        if self._model is None or not self._action_name_exists(action_name):
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        if any(ref.name == action_name for ref in target_widget.add_actions):
+            return False
+        target_widget.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _remove_placement_action(self, target_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        remaining = [ref for ref in target_widget.add_actions if ref.name != action_name]
+        if len(remaining) == len(target_widget.add_actions):
+            return False
+        target_widget.add_actions = remaining
+        return True
+
+    def _move_placement_action(self, target_name: str, action_name: str, direction: int) -> bool:
+        if self._model is None or direction == 0:
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        current_names = [ref.name for ref in target_widget.add_actions]
+        try:
+            current_index = current_names.index(action_name)
+        except ValueError:
+            return False
+        next_index = current_index + int(direction)
+        if next_index < 0 or next_index >= len(current_names):
+            return False
+        current_names[current_index], current_names[next_index] = current_names[next_index], current_names[current_index]
+        target_widget.add_actions = [AddActionModel(name=name) for name in current_names]
+        return True
+
+    def _handle_action_panel_add_action_request(self, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action",
+            mutator=lambda: self._add_action_definition(action_name),
+        )
+
+    def _handle_action_panel_remove_action_request(self, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action",
+            mutator=lambda: self._remove_action_definition(action_name),
+        )
+
+    def _handle_action_panel_property_changed(self, action_name: str, property_name: str, value: str) -> None:
+        if property_name != "text":
+            return
+        self._apply_action_model_mutation(
+            description="edit action text",
+            mutator=lambda: self._set_action_text(action_name, value),
+        )
+
+    def _handle_action_panel_assign_action_group(self, action_name: str, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="assign action group",
+            mutator=lambda: self._assign_action_to_group(action_name, group_name),
+        )
+
+    def _handle_action_panel_add_group_request(self, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action group",
+            mutator=lambda: self._add_action_group(group_name),
+        )
+
+    def _handle_action_panel_remove_group_request(self, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action group",
+            mutator=lambda: self._remove_action_group(group_name),
+        )
+
+    def _handle_action_panel_group_add_action(self, group_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action to group",
+            mutator=lambda: self._add_action_to_group(group_name, action_name),
+        )
+
+    def _handle_action_panel_group_remove_action(self, group_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action from group",
+            mutator=lambda: self._remove_action_from_group(group_name, action_name),
+        )
+
+    def _handle_action_panel_add_placement_action(self, target_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add placement action",
+            mutator=lambda: self._add_placement_action(target_name, action_name),
+        )
+
+    def _handle_action_panel_remove_placement_action(self, target_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove placement action",
+            mutator=lambda: self._remove_placement_action(target_name, action_name),
+        )
+
+    def _handle_action_panel_move_placement_action(self, target_name: str, action_name: str, direction: int) -> None:
+        self._apply_action_model_mutation(
+            description="move placement action",
+            mutator=lambda: self._move_placement_action(target_name, action_name, direction),
+        )
+
+    def _apply_action_model_mutation(self, *, description: str, mutator) -> None:  # type: ignore[no-untyped-def]
+        if self._model is None:
+            return
+        before_xml = self.serialize_to_ui_string()
+        try:
+            changed = bool(mutator())
+        except (TypeError, ValueError):
+            changed = False
+        if not changed:
+            return
+        self._refresh_action_panel()
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        self._command_stack.push(
+            SnapshotCommand(
+                description=description,
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        self._refresh_action_panel()
 
     def _buddy_candidates(self) -> list[str]:
         if self._model is None:

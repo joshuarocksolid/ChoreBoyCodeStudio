@@ -768,6 +768,47 @@ def test_editor_surface_paste_rejects_invalid_parent(tmp_path: Path) -> None:
     assert "does not accept widgets" in surface._error_label.text().lower()  # type: ignore[attr-defined]
 
 
+def test_editor_surface_action_panel_mutations_are_undoable(tmp_path: Path) -> None:
+    ui_file = tmp_path / "actions.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>MainWindow</class>"
+            "<widget class=\"QMainWindow\" name=\"MainWindow\">"
+            "<widget class=\"QWidget\" name=\"centralWidget\"/>"
+            "<widget class=\"QMenuBar\" name=\"menuBar\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+
+    panel = surface._action_editor_panel  # type: ignore[attr-defined]
+    panel.add_action_requested.emit("actionOpen")
+    panel.add_group_requested.emit("fileGroup")
+    panel.action_group_changed.emit("actionOpen", "fileGroup")
+    panel.placement_add_action_requested.emit("menuBar", "actionOpen")
+
+    assert [action.name for action in surface.model.actions] == ["actionOpen"]
+    assert [group.name for group in surface.model.action_groups] == ["fileGroup"]
+    assert [ref.name for ref in surface.model.action_groups[0].add_actions] == ["actionOpen"]
+    menu_bar = surface.model.root_widget.find_by_object_name("menuBar")
+    assert menu_bar is not None
+    assert [ref.name for ref in menu_bar.add_actions] == ["actionOpen"]
+
+    assert surface.undo() is True
+    menu_bar_after_undo = surface.model.root_widget.find_by_object_name("menuBar")  # type: ignore[union-attr]
+    assert menu_bar_after_undo is not None
+    assert [ref.name for ref in menu_bar_after_undo.add_actions] == []
+
+    assert surface.redo() is True
+    menu_bar_after_redo = surface.model.root_widget.find_by_object_name("menuBar")  # type: ignore[union-attr]
+    assert menu_bar_after_redo is not None
+    assert [ref.name for ref in menu_bar_after_redo.add_actions] == ["actionOpen"]
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

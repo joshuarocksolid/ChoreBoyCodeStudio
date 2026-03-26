@@ -47,10 +47,14 @@ def test_read_ui_file_parses_actions_fixture_with_advanced_nodes() -> None:
     assert len(model.action_groups) == 1
     assert model.action_groups[0].name == "fileActionGroup"
     assert [ref.name for ref in model.action_groups[0].add_actions] == ["actionOpen"]
-    assert [ref.name for ref in model.add_actions] == ["actionOpen", "actionSave"]
+    assert [ref.name for ref in model.add_actions] == []
     assert [entry.name for entry in model.zorders] == ["centralwidget", "menubar"]
     assert len(model.button_groups) == 1
     assert model.button_groups[0].name == "modeGroup"
+    assert [ref.name for ref in model.root_widget.add_actions] == ["actionOpen", "actionSave"]
+    menu_bar = model.root_widget.find_by_object_name("menubar")
+    assert menu_bar is not None
+    assert [ref.name for ref in menu_bar.add_actions] == ["menuFile"]
 
 
 def test_read_write_round_trip_for_layout_fixture(tmp_path: Path) -> None:
@@ -127,7 +131,11 @@ def test_write_ui_string_serializes_connections_and_resources() -> None:
 def test_write_ui_string_serializes_advanced_action_nodes() -> None:
     model = UIModel(
         form_class_name="MainWindow",
-        root_widget=WidgetNode(class_name="QMainWindow", object_name="MainWindow"),
+        root_widget=WidgetNode(
+            class_name="QMainWindow",
+            object_name="MainWindow",
+            add_actions=[AddActionModel(name="menuFile")],
+        ),
         actions=[
             ActionModel(
                 name="actionOpen",
@@ -163,6 +171,7 @@ def test_write_ui_string_serializes_advanced_action_nodes() -> None:
     assert [ref.name for ref in reparsed.add_actions] == ["actionOpen", "actionExit"]
     assert [entry.name for entry in reparsed.zorders] == ["centralWidget"]
     assert [group.name for group in reparsed.button_groups] == ["exclusiveButtons"]
+    assert [ref.name for ref in reparsed.root_widget.add_actions] == ["menuFile"]
 
 
 def test_read_ui_string_parses_tab_stops() -> None:

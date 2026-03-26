@@ -70,6 +70,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
     properties: dict[str, PropertyValue] = {}
     children: list[WidgetNode] = []
     layout: LayoutNode | None = None
+    add_actions: list[AddActionModel] = []
     unknown_children_xml: list[str] = []
 
     for child in element:
@@ -84,7 +85,12 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
         if child.tag == "layout":
             layout = _parse_layout(child)
             continue
-        if child.tag in {"action", "actiongroup", "addaction", "zorder", "buttongroups", "buttongroup"}:
+        if child.tag in {"action", "actiongroup", "zorder", "buttongroups", "buttongroup"}:
+            continue
+        if child.tag == "addaction":
+            action_name = (child.attrib.get("name") or "").strip()
+            if action_name:
+                add_actions.append(AddActionModel(name=action_name))
             continue
         unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
 
@@ -94,6 +100,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
         properties=properties,
         children=children,
         layout=layout,
+        add_actions=add_actions,
         unknown_children_xml=unknown_children_xml,
     )
 
@@ -330,10 +337,13 @@ def _parse_action_groups(scopes: Sequence[ET.Element]) -> list[ActionGroupModel]
 
 def _parse_add_actions(scopes: Sequence[ET.Element]) -> list[AddActionModel]:
     parsed: list[AddActionModel] = []
+    widget_scope = scopes[1] if len(scopes) > 1 else None
     for scope in scopes:
         for element in scope.findall("addaction"):
             name = (element.attrib.get("name") or "").strip()
             if not name:
+                continue
+            if widget_scope is not None and scope is widget_scope:
                 continue
             parsed.append(AddActionModel(name=name))
     return parsed

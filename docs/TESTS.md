@@ -112,6 +112,9 @@ python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface
 python3 run_tests.py -v tests/unit/shell/test_menus_edit_actions.py
 python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k "actions_fixture_with_advanced_nodes or serializes_advanced_action_nodes"
 python3 run_tests.py -v tests/unit/designer/io/test_ui_formatter.py -k action_related_nodes
+python3 run_tests.py -v tests/unit/designer/actions/test_action_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k action_panel_mutations_are_undoable
+python3 run_tests.py -v tests/integration/designer/test_designer_action_editor.py
 ```
 
 ## 6) Manual acceptance validation

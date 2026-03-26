@@ -804,7 +804,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D9.S1 — QAction model + `.ui` contract
 
 #### Task D9.S1.T1 — Add action/actiongroup/addaction model ownership
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Introduce explicit models for QAction ecosystem elements and placement references.
 - **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, IO fixtures/tests
 - **Automated test layer:** unit
@@ -812,11 +812,17 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-07
 - **Depends on:** D8.S1.T1
 - **Done when:** action graph nodes are represented in model and survive round-trip.
+- **Implementation note:** PR-16 extends D9.S1 with concrete model ownership now exercised by authoring workflows:
+  - `UIModel` + widget nodes now retain explicit `ActionModel`, `ActionGroupModel`, placement `AddActionModel`, `ZOrderModel`, and `ButtonGroupModel` state used by editor mutations.
+  - reader/writer parity includes widget-scoped placement (`<widget><addaction .../>`) plus top-level action/actiongroup/zorder/buttongroup structures with deterministic output.
+  - regression coverage confirms advanced node fidelity under active editing workflows:
+    - `tests/unit/designer/io/test_ui_reader_writer.py`
+    - `tests/unit/designer/io/test_ui_formatter.py`
 
 ### Story D9.S2 — Action editor workflows
 
 #### Task D9.S2.T1 — Build action editor panel (CRUD + grouping)
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Provide dedicated UI for creating/editing/removing actions and action groups.
 - **Primary files:** `app/designer/actions/*` (new), `app/designer/editor_surface.py`, integration tests
 - **Automated test layer:** unit, integration
@@ -824,11 +830,17 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-07
 - **Depends on:** D9.S1.T1
 - **Done when:** users can author action definitions without manual XML edits.
+- **Implementation note:** PR-16 introduces a dedicated action authoring surface (`ActionEditorPanel`) and wires it into Designer:
+  - new panel tab (**Actions**) supports QAction CRUD, group CRUD, action-text editing, action↔group assignment, and group membership editing.
+  - panel emits explicit intent signals consumed by `DesignerEditorSurface` mutation handlers that run through snapshot undo/redo, validation refresh, and dirty-state propagation.
+  - new coverage:
+    - `tests/unit/designer/actions/test_action_editor_panel.py`
+    - `tests/unit/designer/test_editor_surface.py -k action_panel_mutations_are_undoable`
 
 ### Story D9.S3 — Menu/toolbar composition workflows
 
 #### Task D9.S3.T1 — Author menu bar / toolbar action placement for `QMainWindow`
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Support action placement and ordering in menu/toolbar structures for supported form classes.
 - **Primary files:** `app/designer/actions/*`, `app/designer/editor_surface.py`, `app/designer/io/*`, integration/manual acceptance tests
 - **Automated test layer:** integration, manual_acceptance
@@ -836,6 +848,11 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-07
 - **Depends on:** D9.S2.T1
 - **Done when:** authored menu/toolbar structures are persisted and re-editable.
+- **Implementation note:** PR-16 adds menu/toolbar placement composition flows for supported `QMainWindow` forms:
+  - action panel now exposes placement targets (`QMainWindow`, `QMenuBar`, `QMenu`, `QToolBar`) and allows add/remove/reorder of placed actions.
+  - placements mutate widget-scoped `add_actions` and persist to `.ui` output; saved forms reopen with placements re-editable in the same panel.
+  - integration evidence:
+    - `tests/integration/designer/test_designer_action_editor.py`
 
 ---
 

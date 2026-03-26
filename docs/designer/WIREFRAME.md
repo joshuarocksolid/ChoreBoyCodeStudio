@@ -146,7 +146,36 @@ References:
 - string -> line edit / text edit
 - color/font/icon -> specialized pickers (phase-based)
 
-## 3.5 Bottom Dock — Validation/Messages/Compatibility
+## 3.5 Right Dock — Actions tab
+
+### Purpose
+
+- Author QAction ecosystem structures directly in Designer without hand-editing XML.
+- Keep action definitions, grouping, and placement workflows visible and undoable.
+
+### Sections
+
+1. **Actions**
+   - list of QAction object names
+   - create/remove actions
+   - edit common action properties (MVP: `text`)
+   - assign selected action to a group (or unassign)
+2. **Action Groups**
+   - list of action groups
+   - create/remove groups
+   - add/remove action membership in selected group
+3. **Menu/Toolbar Placements**
+   - target selector for supported placement widgets (`QMainWindow`, `QMenuBar`, `QMenu`, `QToolBar`)
+   - add/remove placed actions for selected target
+   - reorder placed actions (move up/down)
+
+### Interaction guarantees
+
+- all mutations are command-stack-backed and undo/redo safe.
+- naming remains deterministic (new actions/groups auto-de-duplicate names).
+- edited forms save/reopen with action/group/placement state preserved.
+
+## 3.6 Bottom Dock — Validation/Messages/Compatibility
 
 ### Tabs
 
@@ -228,6 +257,7 @@ References:
 | `designer.form.preview` | Preview Form | `Ctrl+R` | `QUiLoader` preview parity |
 | `designer.form.form_settings` | Form Settings… | `Alt+Return` | class/name/base size/margins |
 | `designer.form.check_compat` | Run Compatibility Check | `Ctrl+Shift+R` | load-check and report |
+| `designer.form.actions` | Edit Actions |  | Focuses Actions tab in right dock |
 
 ## 5.4 Layout menu
 
