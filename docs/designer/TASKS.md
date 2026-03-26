@@ -618,7 +618,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D6.S2 — Preview robustness
 
 #### Task D6.S2.T1 — Stabilize in-process preview window lifecycle
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Make Preview Form reliably visible and diagnosable during manual use.
 - **Primary files:** `app/designer/editor_surface.py`, `app/designer/preview/preview_window.py`, `tests/integration/designer/test_designer_preview_loader.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -626,6 +626,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-03
 - **Depends on:** none
 - **Done when:** preview command is no longer perceived as a no-op.
+- **Implementation note:** `DesignerEditorSurface` now retains a strong preview-window reference (`_active_preview_widget`), closes stale preview windows before opening new ones, and clears retained state on preview destroy to keep lifecycle deterministic.
 
 #### Task D6.S2.T2 — Add isolated preview subprocess timeout + termination diagnostics
 - **Status:** TODO

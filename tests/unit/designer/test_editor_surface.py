@@ -709,3 +709,48 @@ def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     assert surface.preview_current_form() is True
     assert "isolated runner preview mode" in surface._error_label.text().lower()  # type: ignore[attr-defined]
     assert "passed in isolated preview mode" in surface.run_compatibility_check().lower()
+
+
+def test_editor_surface_preview_retains_active_widget_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>PreviewForm</class>"
+            "<widget class=\"QWidget\" name=\"PreviewForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    shown: list[bool] = []
+
+    class _PreviewWidgetProxy:
+        def __init__(self) -> None:
+            self.destroyed = surface.destroyed  # pragma: no cover - signal plumbing only
+
+        def setAttribute(self, *_args, **_kwargs) -> None:
+            return None
+
+        def setWindowTitle(self, *_args, **_kwargs) -> None:
+            return None
+
+        def show(self) -> None:
+            shown.append(True)
+
+        def close(self) -> None:
+            return None
+
+        def deleteLater(self) -> None:
+            return None
+
+    preview_widget = _PreviewWidgetProxy()
+    monkeypatch.setattr("app.designer.editor_surface.load_widget_from_ui_xml", lambda _xml: preview_widget)
+
+    assert surface.preview_current_form() is True
+    assert shown == [True]
+    assert surface._active_preview_widget is preview_widget  # type: ignore[attr-defined]

@@ -72,6 +72,10 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 - **File/lines:** `app/designer/editor_surface.py:153-179`, `app/shell/main_window.py:1484-1493`  
 - **Details:** `preview_current_form()` calls `preview_widget.show()` and returns. No retained preview reference in surface/shell; manual smoke repeatedly observed no visible preview despite action invocation.  
 - **Suggested fix:** Keep preview widget lifecycle anchored (e.g., `self._active_preview_widget`) and expose deterministic visibility/error signaling.
+- **Status (2026-03-26):** **RESOLVED (PR-03)**  
+  `DesignerEditorSurface` now retains a strong `_active_preview_widget` reference, closes any prior preview before opening a new one, and clears the reference on widget destruction. Regression coverage:
+  - `tests/unit/designer/test_editor_surface.py::test_editor_surface_preview_retains_active_widget_reference`
+  - `tests/integration/designer/test_designer_preview_loader.py::test_designer_preview_and_compatibility_actions`
 
 4) **Isolated custom-widget preview can hang indefinitely**  
 - **File/lines:** `app/designer/preview/preview_service.py:67-109`  

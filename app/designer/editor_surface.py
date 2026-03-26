@@ -83,6 +83,7 @@ class DesignerEditorSurface(QWidget):
         self._enable_naming_lint = enable_naming_lint
         self._snap_to_grid = snap_to_grid
         self._snap_grid_size = max(1, int(grid_size))
+        self._active_preview_widget: QWidget | None = None
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -174,9 +175,21 @@ class DesignerEditorSurface(QWidget):
         except Exception as exc:
             self._show_status(f"Preview failed: {exc}", "error")
             return False
+        if self._active_preview_widget is not None:
+            try:
+                self._active_preview_widget.close()
+            except RuntimeError:
+                pass
+            self._active_preview_widget = None
         configure_preview_widget(preview_widget, window_title=f"Preview — {Path(self._file_path).name}")
+        self._active_preview_widget = preview_widget
+        preview_widget.destroyed.connect(self._handle_preview_widget_destroyed)
         preview_widget.show()
         return True
+
+    def _handle_preview_widget_destroyed(self, _obj: object | None = None) -> None:
+        if self.sender() is self._active_preview_widget:
+            self._active_preview_widget = None
 
     def run_compatibility_check(self) -> str:
         """Run QUiLoader compatibility check and return status message."""

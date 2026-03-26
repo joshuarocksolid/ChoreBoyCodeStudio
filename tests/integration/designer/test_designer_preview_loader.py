@@ -65,6 +65,11 @@ def test_designer_preview_and_compatibility_actions(monkeypatch: pytest.MonkeyPa
 
     window._handle_designer_preview_action()
     assert warning_messages == []
+    surface = window._active_designer_surface()
+    assert surface is not None
+    preview_window = getattr(surface, "_active_preview_widget", None)
+    assert preview_window is not None
+    assert preview_window.isVisible() is True
 
     for top_level in app.topLevelWidgets():
         if top_level is not window:
