@@ -103,6 +103,9 @@ python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k size_
 python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py -k appearance
 python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py -k appearance
 python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k appearance_and_window_metadata
+python3 run_tests.py -v tests/unit/designer/connections/test_signal_slot_metadata.py
+python3 run_tests.py -v tests/unit/designer/connections/test_connection_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k connection
 ```
 
 ## 6) Manual acceptance validation

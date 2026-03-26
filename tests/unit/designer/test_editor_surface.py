@@ -386,8 +386,8 @@ def test_editor_surface_connection_edit_is_undoable(tmp_path: Path) -> None:
             "<widget class=\"QPushButton\" name=\"pushButton\"/>"
             "</widget>"
             "<resources/>"
-            "<connections><connection><sender>pushButton</sender><signal>clicked()</signal>"
-            "<receiver>SampleForm</receiver><slot>accept()</slot></connection></connections>"
+            "<connections><connection><sender>pushButton</sender><signal>clicked(bool)</signal>"
+            "<receiver>SampleForm</receiver><slot>setEnabled(bool)</slot></connection></connections>"
             "</ui>\n"
         ),
         encoding="utf-8",
@@ -395,11 +395,39 @@ def test_editor_surface_connection_edit_is_undoable(tmp_path: Path) -> None:
 
     surface = DesignerEditorSurface(str(ui_file.resolve()))
     assert surface.model is not None
-    surface._handle_connection_edited(0, "slot", "reject()")  # type: ignore[attr-defined]
-    assert surface.model.connections[0].slot == "reject()"
+    surface._handle_connection_edited(0, "slot", "setVisible(bool)")  # type: ignore[attr-defined]
+    assert surface.model.connections[0].slot == "setVisible(bool)"
     assert surface.can_undo is True
     assert surface.undo() is True
-    assert surface.model.connections[0].slot == "accept()"
+    assert surface.model.connections[0].slot == "setEnabled(bool)"
+
+
+def test_editor_surface_connection_edit_rejects_incompatible_signature_update(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "</widget>"
+            "<resources/>"
+            "<connections><connection><sender>pushButton</sender><signal>clicked()</signal>"
+            "<receiver>SampleForm</receiver><slot>setFocus()</slot></connection></connections>"
+            "</ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._handle_connection_edited(0, "slot", "setText(QString)")  # type: ignore[attr-defined]
+
+    assert surface.model.connections[0].slot == "setFocus()"
+    assert surface.can_undo is False
+    assert surface._error_label.isHidden() is False  # type: ignore[attr-defined]
+    error_text = surface._error_label.text().lower()  # type: ignore[attr-defined]
+    assert "not available" in error_text or "incompatible" in error_text
 
 
 def test_editor_surface_signals_mode_switches_to_connections_tab(tmp_path: Path) -> None:

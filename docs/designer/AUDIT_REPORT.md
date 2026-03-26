@@ -26,7 +26,7 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 | Palette | **OK** | 13-widget baseline registry implemented and filter/search UI present. |
 | Inspector | **OK** | Tree sync + reparent path is implemented and tested. |
 | Properties | **ISSUE** | Typed/grouped editor exists, but schema depth is narrow relative to Qt Designer property surface. |
-| Connections | **ISSUE** | Add/edit/remove exists, but editor is table/manual-text oriented; no class-aware signal/slot picklists or slot discovery. |
+| Connections | **OK** | Class-aware sender/signal/receiver/slot pickers are implemented with metadata catalogs, compatibility-filtered slot choices, and invalid edit rejection paths. |
 | Modes | **OK** | Widget/Signals/Buddy/Tab Order modes and panel switching are implemented. |
 | Layout | **OK** | HBox/VBox/Grid + break-layout implemented for modeled structures. |
 | Commands | **ISSUE** | Snapshot undo/redo works for many surface actions, but drag/drop canvas mutations are not consistently routed through snapshot commands. |
@@ -135,6 +135,17 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 - **File/lines:** `app/designer/connections/connection_editor_panel.py:29-112`  
 - **Details:** Manual table editing and “Add Default Connection” are present, but no object-class-aware signal/slot chooser UX.  
 - **Suggested fix:** introduce signal/slot metadata provider and combobox-based selection with compatibility filtering.
+- **Status (2026-03-26):** **RESOLVED (PR-13)**  
+  Added class-aware metadata catalogs and combo-based connection editing:
+  - new metadata helper `app/designer/connections/signal_slot_metadata.py` (Qt meta-object introspection + deterministic fallbacks + compatibility checks),
+  - `ConnectionEditorPanel` now uses sender/signal/receiver/slot pickers with slot options filtered by selected signal signature,
+  - `DesignerEditorSurface` now validates connection edits and blocks unsupported/incompatible updates before mutating the model.
+  Regression coverage:
+  - `tests/unit/designer/connections/test_signal_slot_metadata.py`
+  - `tests/unit/designer/connections/test_connection_editor_panel.py`
+  - `tests/unit/designer/test_editor_surface.py -k connection`
+  - `tests/integration/designer/test_open_ui_designer_surface.py`
+  - `tests/integration/designer/test_designer_preview_loader.py`
 
 ---
 
@@ -214,8 +225,8 @@ Legend: **Missing / Partial / Complete**
 
 | Feature | Qt Designer | Current implementation | Gap |
 |---|---|---|---|
-| Visual signal/slot editing with object metadata | Supported | Signals mode + editable table | **Partial** |
-| Class-aware signal/slot pick lists | Supported by configure dialogs/editor | Not implemented (manual text edits) | **Missing** |
+| Visual signal/slot editing with object metadata | Supported | Signals mode + metadata-backed picker table | **Complete** |
+| Class-aware signal/slot pick lists | Supported by configure dialogs/editor | Implemented via class-aware combobox catalogs with compatibility filtering | **Complete** |
 | Custom slot authoring workflow | Supported | Not explicit | **Missing** |
 
 ## E) Action editor / menu & toolbar authoring
@@ -364,6 +375,7 @@ Legend: **Missing / Partial / Complete**
 - **Effort:** **L**
 - **Dependencies:** R7 useful
 - **Acceptance criteria:** Users choose from available signals/slots per object class, with invalid combos blocked.
+- **Status (2026-03-26):** **RESOLVED (PR-13)**
 
 ### R10. Implement clipboard subtree operations (cut/copy/paste)
 - **Files:** `app/designer/editor_surface.py`, command stack/model clone helpers, tests

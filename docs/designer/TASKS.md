@@ -715,7 +715,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D7.S3 — Signal/slot editor parity upgrades
 
 #### Task D7.S3.T1 — Introduce class-aware signal/slot picklists and validation
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Replace manual free-text connection editing with discoverable, class-aware signal/slot selection.
 - **Primary files:** `app/designer/connections/connection_editor_panel.py`, `app/designer/editor_surface.py`, new signal/slot metadata helper(s), tests
 - **Automated test layer:** unit, integration
@@ -723,6 +723,14 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-03
 - **Depends on:** D7.S2.T1 (recommended)
 - **Done when:** users no longer need manual signal/slot string typing for common workflows.
+- **Implementation note:** PR-13 delivered class-aware signal/slot catalogs with picker-based editing:
+  - new metadata helper module (`app/designer/connections/signal_slot_metadata.py`) provides per-class signal/slot choices using Qt meta-object introspection with deterministic fallbacks for common widget classes.
+  - connections panel now renders sender/signal/receiver/slot combobox editors instead of free-text table cells, with receiver slot options compatibility-filtered by selected signal signature.
+  - editor-surface validation now blocks invalid sender/receiver/signature updates and surfaces actionable error messages without mutating model state.
+  - new/updated coverage:
+    - `tests/unit/designer/connections/test_signal_slot_metadata.py`
+    - `tests/unit/designer/connections/test_connection_editor_panel.py`
+    - `tests/unit/designer/test_editor_surface.py -k connection`
 
 ### Story D7.S4 — Clipboard operations parity
 

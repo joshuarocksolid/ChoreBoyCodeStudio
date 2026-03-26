@@ -28,6 +28,14 @@ from app.designer.components import (
     save_component_from_widget,
 )
 from app.designer.connections import ConnectionEditorPanel
+from app.designer.connections.signal_slot_metadata import (
+    connection_object_options,
+    is_signal_slot_pair_compatible,
+    signal_choices_for_class,
+    signal_supported_for_class,
+    slot_choices_for_class,
+    slot_supported_for_class,
+)
 from app.designer.inspector import ObjectInspector
 from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
@@ -269,6 +277,7 @@ class DesignerEditorSurface(QWidget):
         self._model = normalized_model
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -531,6 +540,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -580,6 +590,12 @@ class DesignerEditorSurface(QWidget):
             item.setToolTip(f"Click to select: {issue.object_name}" if issue.object_name else "")
             self._validation_list.addItem(item)
         self._validation_list.setVisible(True)
+
+    def _refresh_connection_panel_context(self) -> None:
+        if self._model is None:
+            self._connection_panel.bind_connection_context([])
+            return
+        self._connection_panel.bind_connection_context(connection_object_options(self._model))
 
     def _handle_validation_item_clicked(self, item: object) -> None:
         """Select the widget referenced by a validation issue."""
@@ -675,6 +691,7 @@ class DesignerEditorSurface(QWidget):
         if before_xml == after_xml:
             self._show_status("Connection already exists.", "warning")
             return
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -691,14 +708,35 @@ class DesignerEditorSurface(QWidget):
         if self._model is None:
             return
         sender_widget = self._model.root_widget.find_by_object_name(sender_object_name)
+        receiver_widget = self._model.root_widget.find_by_object_name(receiver_object_name)
         signal_name = "customSignal()"
-        if sender_widget is not None and sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"}:
-            signal_name = "clicked()"
+        if sender_widget is not None:
+            if sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"}:
+                signal_name = "clicked()"
+            else:
+                sender_signals = signal_choices_for_class(sender_widget.class_name)
+                if sender_signals:
+                    signal_name = sender_signals[0]
+        slot_name = "setFocus()"
+        if receiver_widget is not None:
+            receiver_slots = slot_choices_for_class(receiver_widget.class_name)
+            compatible_slots = [
+                slot_signature
+                for slot_signature in receiver_slots
+                if is_signal_slot_pair_compatible(signal_name, slot_signature)
+            ]
+            if compatible_slots:
+                if "setFocus()" in compatible_slots:
+                    slot_name = "setFocus()"
+                else:
+                    slot_name = compatible_slots[0]
+            elif receiver_slots:
+                slot_name = receiver_slots[0]
         candidate = ConnectionModel(
             sender=sender_object_name,
             signal=signal_name,
             receiver=receiver_object_name,
-            slot="setFocus()",
+            slot=slot_name,
         )
         if candidate in self._model.connections:
             return
@@ -711,6 +749,7 @@ class DesignerEditorSurface(QWidget):
             return
         before_xml = self.serialize_to_ui_string()
         self._model.connections.pop(index)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -737,7 +776,14 @@ class DesignerEditorSurface(QWidget):
         connection = self._model.connections[index]
         before_xml = self.serialize_to_ui_string()
         updated_connection = replace(connection, **{field_name: value.strip()})
+        validation_error = self._validate_connection_update(updated_connection, field_name)
+        if validation_error:
+            self._show_status(validation_error, "error")
+            self._refresh_connection_panel_context()
+            self._connection_panel.bind_connections(self._model.connections)
+            return
         self._model.connections[index] = updated_connection
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -752,6 +798,48 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+
+    def _validate_connection_update(
+        self,
+        updated_connection: ConnectionModel,
+        field_name: str,
+    ) -> str | None:
+        if self._model is None:
+            return "No form model loaded."
+        sender_widget = self._model.root_widget.find_by_object_name(updated_connection.sender)
+        receiver_widget = self._model.root_widget.find_by_object_name(updated_connection.receiver)
+        if sender_widget is None:
+            return f"Sender '{updated_connection.sender}' was not found."
+        if receiver_widget is None:
+            return f"Receiver '{updated_connection.receiver}' was not found."
+        sender_class = sender_widget.class_name
+        receiver_class = receiver_widget.class_name
+
+        if field_name in {"signal", "slot"} and not signal_supported_for_class(
+            sender_class,
+            updated_connection.signal,
+        ):
+            return (
+                f"Signal '{updated_connection.signal}' is not available for "
+                f"{updated_connection.sender} ({sender_class})."
+            )
+        if field_name in {"signal", "slot"} and not slot_supported_for_class(
+            receiver_class,
+            updated_connection.slot,
+        ):
+            return (
+                f"Slot '{updated_connection.slot}' is not available for "
+                f"{updated_connection.receiver} ({receiver_class})."
+            )
+        if field_name in {"signal", "slot"} and not is_signal_slot_pair_compatible(
+            updated_connection.signal,
+            updated_connection.slot,
+        ):
+            return (
+                "Signal/slot signatures are incompatible: "
+                f"{updated_connection.signal} -> {updated_connection.slot}."
+            )
+        return None
 
     def _handle_tab_order_changed(self, ordered_object_names: list[str]) -> None:
         if self._model is None:
@@ -1025,6 +1113,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -1077,6 +1166,7 @@ class DesignerEditorSurface(QWidget):
         )
         after_xml = self.serialize_to_ui_string()
         self._pending_connection_source = None
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         if before_xml == after_xml:

@@ -175,6 +175,11 @@ References:
 - Connection gesture:
   - choose source widget -> signal
   - choose target widget -> slot
+- Connection inspector behavior:
+  - sender/receiver object pickers show `objectName (className)` labels.
+  - signal picker is class-aware for selected sender.
+  - slot picker is class-aware for selected receiver and filtered to signatures compatible with selected signal.
+  - incompatible or unsupported signature edits are blocked with explicit validation feedback.
 - Writes to `.ui` `<connections>`.
 - Shortcut: `F4`
 
