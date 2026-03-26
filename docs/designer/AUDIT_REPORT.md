@@ -81,6 +81,12 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 - **File/lines:** `app/designer/preview/preview_service.py:67-109`  
 - **Details:** `subprocess.run(...)` has no timeout; isolated preview integration tests time out externally at 20s.  
 - **Suggested fix:** Add explicit timeout + termination handling + actionable error message payload (timeout vs import failure vs loader failure).
+- **Status (2026-03-26):** **RESOLVED (PR-04)**  
+  Isolated preview probing now enforces an internal subprocess timeout, reports runtime-qualified timeout diagnostics, and uses a FreeCAD-safe runpy command path so probes complete deterministically under AppRun. Regression coverage:
+  - `tests/unit/designer/preview/test_preview_service.py::test_probe_ui_xml_compatibility_isolated_passes_timeout`
+  - `tests/unit/designer/preview/test_preview_service.py::test_probe_ui_xml_compatibility_isolated_reports_timeout`
+  - `tests/unit/designer/preview/test_preview_service.py::test_build_isolated_preview_command_uses_runpy_for_freecad_runtime`
+  - `tests/integration/designer/test_custom_widget_isolated_preview_runner.py::test_isolated_preview_runner_loads_promoted_custom_widget`
 
 5) **Grid layout fidelity loss in `.ui` round-trip**  
 - **File/lines:** `app/designer/io/ui_reader.py:110-123`, `app/designer/model/layout_node.py:16-22`, `app/designer/io/ui_writer.py:63-73`  

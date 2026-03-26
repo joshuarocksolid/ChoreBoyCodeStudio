@@ -629,7 +629,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Implementation note:** `DesignerEditorSurface` now retains a strong preview-window reference (`_active_preview_widget`), closes stale preview windows before opening new ones, and clears retained state on preview destroy to keep lifecycle deterministic.
 
 #### Task D6.S2.T2 — Add isolated preview subprocess timeout + termination diagnostics
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Prevent hangs in custom-widget isolated preview compatibility checks.
 - **Primary files:** `app/designer/preview/preview_service.py`, `tests/integration/designer/test_custom_widget_isolated_preview_runner.py`
 - **Automated test layer:** integration
@@ -637,6 +637,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-04
 - **Depends on:** none
 - **Done when:** no isolated preview path can block indefinitely.
+- **Implementation note:** isolated preview now enforces a bounded subprocess timeout, uses AppRun-aware runner command construction, and returns explicit timeout/launch diagnostics without hanging the caller.
 
 ### Story D6.S3 — `.ui` layout fidelity corrections
 
