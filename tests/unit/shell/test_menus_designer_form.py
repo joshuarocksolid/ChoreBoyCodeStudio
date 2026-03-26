@@ -85,3 +85,19 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
         "insert_component",
         "duplicate",
     ]
+
+
+def test_designer_form_actions_include_edit_clipboard_shortcuts(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    window = QMainWindow()
+    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+
+    cut_action = registry.action("shell.action.edit.cut")
+    copy_action = registry.action("shell.action.edit.copy")
+    paste_action = registry.action("shell.action.edit.paste")
+
+    assert cut_action is not None
+    assert copy_action is not None
+    assert paste_action is not None
+    assert cut_action.shortcut().toString() == "Ctrl+X"
+    assert copy_action.shortcut().toString() == "Ctrl+C"
+    assert paste_action.shortcut().toString() == "Ctrl+V"

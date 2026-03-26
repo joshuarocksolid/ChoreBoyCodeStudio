@@ -106,6 +106,10 @@ python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k appea
 python3 run_tests.py -v tests/unit/designer/connections/test_signal_slot_metadata.py
 python3 run_tests.py -v tests/unit/designer/connections/test_connection_editor_panel.py
 python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k connection
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k "copy_cut_paste_selection_workflow or paste_rejects_invalid_parent"
+python3 run_tests.py -v tests/integration/designer/test_designer_component_actions.py -k clipboard_edit_actions
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py -k "open_ui_file_uses_designer_surface or open_python_file_still_uses_code_editor"
+python3 run_tests.py -v tests/unit/shell/test_menus_edit_actions.py
 ```
 
 ## 6) Manual acceptance validation

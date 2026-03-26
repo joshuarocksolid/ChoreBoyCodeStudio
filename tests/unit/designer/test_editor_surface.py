@@ -708,6 +708,66 @@ def test_editor_surface_duplicate_selection_creates_renamed_copy(tmp_path: Path)
     assert duplicated.class_name == "QPushButton"
 
 
+def test_editor_surface_copy_cut_paste_selection_workflow(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "<widget class=\"QGroupBox\" name=\"targetGroup\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    assert surface.copy_selection() is True
+    clipboard_text = QApplication.clipboard().text()
+    assert "<class>ClipboardPayload</class>" in clipboard_text
+    assert "pushButton" in clipboard_text
+
+    surface._selection_controller.set_selected_object_name("targetGroup")  # type: ignore[attr-defined]
+    assert surface.paste_selection() is True
+    target = surface.model.root_widget.find_by_object_name("targetGroup")
+    assert target is not None
+    assert any(child.object_name == "pushButton1" for child in target.children)
+
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    assert surface.cut_selection() is True
+    assert surface.model.root_widget.find_by_object_name("pushButton") is None
+    assert surface.undo() is True
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+
+
+def test_editor_surface_paste_rejects_invalid_parent(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\"/>"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+
+    surface._selection_controller.set_selected_object_name("pushButton")  # type: ignore[attr-defined]
+    assert surface.copy_selection() is True
+    surface._selection_controller.set_selected_object_name("lineEdit")  # type: ignore[attr-defined]
+    assert surface.paste_selection() is False
+    assert "does not accept widgets" in surface._error_label.text().lower()  # type: ignore[attr-defined]
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -89,6 +89,9 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
     insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     duplicate_action = window.menu_registry.action("designer.form.duplicate_selection") if window.menu_registry else None
+    cut_action = window.menu_registry.action("shell.action.edit.cut") if window.menu_registry else None
+    copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
+    paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
@@ -100,6 +103,9 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert save_component_action is not None and save_component_action.isEnabled()
     assert insert_component_action is not None and insert_component_action.isEnabled()
     assert duplicate_action is not None and duplicate_action.isEnabled()
+    assert cut_action is not None and cut_action.isEnabled()
+    assert copy_action is not None and copy_action.isEnabled()
+    assert paste_action is not None and paste_action.isEnabled()
     initial_dirty = surface = None
     surface = window._active_designer_surface()
     assert surface is not None
@@ -168,6 +174,9 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
     insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     duplicate_action = window.menu_registry.action("designer.form.duplicate_selection") if window.menu_registry else None
+    cut_action = window.menu_registry.action("shell.action.edit.cut") if window.menu_registry else None
+    copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
+    paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
@@ -179,6 +188,9 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert save_component_action is not None and not save_component_action.isEnabled()
     assert insert_component_action is not None and not insert_component_action.isEnabled()
     assert duplicate_action is not None and not duplicate_action.isEnabled()
+    assert cut_action is not None and not cut_action.isEnabled()
+    assert copy_action is not None and not copy_action.isEnabled()
+    assert paste_action is not None and not paste_action.isEnabled()
     window.close()
 
 

@@ -735,7 +735,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D7.S4 — Clipboard operations parity
 
 #### Task D7.S4.T1 — Implement cut/copy/paste widget-subtree workflows
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Support subtree clipboard operations (same-form and cross-form insert where safe).
 - **Primary files:** `app/designer/editor_surface.py`, model/component helpers, command stack tests/integration tests
 - **Automated test layer:** unit, integration
@@ -743,6 +743,16 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-04
 - **Depends on:** D6.S1.T2
 - **Done when:** clipboard subtree operations match expected designer productivity flow.
+- **Implementation note:** PR-14 delivered designer clipboard subtree workflows with undo-safe mutation paths:
+  - `DesignerEditorSurface` now supports `copy_selection`, `cut_selection`, `paste_selection`, and `delete_selection` on non-root widget subtrees.
+  - clipboard payloads are serialized as deterministic `.ui` XML snippets (`ClipboardPayload`) and read back through the existing reader for paste, preserving nested subtree structure.
+  - pasted subtrees get deterministic object-name de-duplication and parent capability validation before mutation.
+  - shell Edit menu now wires `Cut/Copy/Paste` actions to the active Designer surface when a `.ui` tab is focused, while preserving existing text-editor behavior when code tabs are active.
+  - new/updated coverage:
+    - `tests/unit/designer/test_editor_surface.py` (`copy/cut/paste` + invalid paste parent + undo)
+    - `tests/integration/designer/test_designer_component_actions.py` (menu-driven cut/copy/paste workflow)
+    - `tests/integration/designer/test_open_ui_designer_surface.py` (Edit action enable/disable by active tab type)
+    - `tests/unit/shell/test_menus_edit_actions.py`, `tests/unit/shell/test_menus_designer_form.py`, `tests/unit/shell/test_shortcut_preferences.py`
 
 ## Epic D8 — Advanced parity and polish
 

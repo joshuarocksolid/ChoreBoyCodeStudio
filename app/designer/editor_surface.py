@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide2.QtCore import Qt, QTimer, Signal
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -20,6 +21,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.designer.canvas import FormCanvas, SelectionController, snap_to_grid
+from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.commands import CommandStack, SnapshotCommand
 from app.designer.components import (
     ComponentLibraryPanel,
@@ -402,6 +404,167 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+        return True
+
+    def delete_selection(self) -> bool:
+        """Delete selected widget subtree (non-root) with undo support."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        parent_widget, in_layout = self._find_parent_for_widget(self._model.root_widget, selected_name)
+        if parent_widget is None:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not self._remove_child_from_parent(parent_widget, selected_name, in_layout=in_layout):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._selection_controller.set_selected_object_name(parent_widget.object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="delete selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def copy_selection(self) -> bool:
+        """Copy selected widget subtree to designer clipboard."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        selected_widget = self._model.root_widget.find_by_object_name(selected_name)
+        if selected_widget is None:
+            return False
+        clipboard_model = UIModel(
+            form_class_name="ClipboardPayload",
+            root_widget=WidgetNode(
+                class_name="QWidget",
+                object_name="clipboardRoot",
+                children=[copy.deepcopy(selected_widget)],
+            ),
+        )
+        QApplication.clipboard().setText(write_ui_string(clipboard_model))
+        self._show_status("Selection copied.", "success", auto_dismiss=True)
+        return True
+
+    def cut_selection(self) -> bool:
+        """Cut selected widget subtree to designer clipboard and remove it."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        selected_widget = self._model.root_widget.find_by_object_name(selected_name)
+        if selected_widget is None:
+            return False
+        if not self.copy_selection():
+            return False
+        before_xml = self.serialize_to_ui_string()
+        parent_widget, in_layout = self._find_parent_for_widget(self._model.root_widget, selected_name)
+        if parent_widget is None:
+            return False
+        removed = self._remove_child_from_parent(parent_widget, selected_name, in_layout=in_layout)
+        if not removed:
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._selection_controller.set_selected_object_name(parent_widget.object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="cut selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def paste_selection(self) -> bool:
+        """Paste previously copied/cut widget subtree under selected parent."""
+        if self._model is None:
+            return False
+        clipboard_text = QApplication.clipboard().text().strip()
+        if not clipboard_text:
+            return False
+        try:
+            clipboard_model = read_ui_string(clipboard_text)
+        except ValueError:
+            return False
+        if not clipboard_model.root_widget.children:
+            return False
+        parent_widget = self._resolve_selected_widget()
+        if parent_widget is None:
+            return False
+        for source_widget in clipboard_model.root_widget.children:
+            if not can_insert_widget(
+                parent_class_name=parent_widget.class_name,
+                child_class_name=source_widget.class_name,
+                is_layout_item=False,
+                parent_has_layout=parent_widget.layout is not None,
+            ):
+                self._show_status("Paste target does not accept widgets.", "error")
+                return False
+        before_xml = self.serialize_to_ui_string()
+        names_in_use = set(self._model.collect_object_names())
+        pasted_widgets: list[WidgetNode] = []
+        for source_widget in clipboard_model.root_widget.children:
+            duplicate = copy.deepcopy(source_widget)
+            self._ensure_unique_subtree_names(duplicate, names_in_use)
+            pasted_widgets.append(duplicate)
+            if parent_widget.layout is not None:
+                parent_widget.layout.items.append(LayoutItem(widget=duplicate))
+            else:
+                parent_widget.children.append(duplicate)
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        if pasted_widgets:
+            self._selection_controller.set_selected_object_name(pasted_widgets[-1].object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="paste selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        self._show_status("Selection pasted.", "success", auto_dismiss=True)
         return True
 
     def promote_selected_widget(self, promoted_class_name: str, header: str) -> bool:
@@ -1048,6 +1211,34 @@ class DesignerEditorSurface(QWidget):
                 if parent is not None:
                     return parent, in_layout
         return None, False
+
+    def _remove_child_from_parent(self, parent: WidgetNode, object_name: str, *, in_layout: bool) -> bool:
+        if in_layout:
+            if parent.layout is None:
+                return False
+            filtered_items = []
+            removed = False
+            for item in parent.layout.items:
+                child_widget = item.widget
+                if child_widget is not None and child_widget.object_name == object_name and not removed:
+                    removed = True
+                    continue
+                filtered_items.append(item)
+            if not removed:
+                return False
+            parent.layout.items = filtered_items
+            return True
+        filtered_children: list[WidgetNode] = []
+        removed = False
+        for child in parent.children:
+            if child.object_name == object_name and not removed:
+                removed = True
+                continue
+            filtered_children.append(child)
+        if not removed:
+            return False
+        parent.children = filtered_children
+        return True
 
     def _ensure_unique_subtree_names(self, widget: WidgetNode, names_in_use: set[str]) -> None:
         if widget.object_name in names_in_use:

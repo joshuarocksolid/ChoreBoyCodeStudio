@@ -432,6 +432,9 @@ class MainWindow(QMainWindow):
                 on_quick_open=self._handle_quick_open_action,
                 on_undo=self._handle_undo_action,
                 on_redo=self._handle_redo_action,
+                on_cut=self._handle_cut_action,
+                on_copy=self._handle_copy_action,
+                on_paste=self._handle_paste_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
@@ -1123,6 +1126,39 @@ class MainWindow(QMainWindow):
         editor_widget = self._active_editor_widget()
         if editor_widget is not None:
             editor_widget.redo()
+
+    def _handle_cut_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.cut_selection():
+                self._refresh_save_action_states()
+                self._refresh_designer_action_states()
+                self._update_editor_status_for_path(designer_surface.file_path)
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.cut()
+
+    def _handle_copy_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            designer_surface.copy_selection()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.copy()
+
+    def _handle_paste_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.paste_selection():
+                self._refresh_save_action_states()
+                self._refresh_designer_action_states()
+                self._update_editor_status_for_path(designer_surface.file_path)
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.paste()
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -3147,6 +3183,9 @@ class MainWindow(QMainWindow):
             "designer.form.save_component",
             "designer.form.insert_component",
             "designer.form.duplicate_selection",
+            "shell.action.edit.cut",
+            "shell.action.edit.copy",
+            "shell.action.edit.paste",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",

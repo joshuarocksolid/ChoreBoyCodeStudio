@@ -38,6 +38,9 @@ class MenuCallbacks:
     on_quick_open: Callable[[], object] | None = None
     on_undo: Callable[[], object] | None = None
     on_redo: Callable[[], object] | None = None
+    on_cut: Callable[[], object] | None = None
+    on_copy: Callable[[], object] | None = None
+    on_paste: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -270,6 +273,36 @@ def build_menu_stubs(
         "Ctrl+Shift+Z",
         enabled=True,
         callback=callback_registry.on_redo,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.cut",
+        "Cut",
+        "Ctrl+X",
+        enabled=True,
+        callback=callback_registry.on_cut,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.copy",
+        "Copy",
+        "Ctrl+C",
+        enabled=True,
+        callback=callback_registry.on_copy,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.paste",
+        "Paste",
+        "Ctrl+V",
+        enabled=True,
+        callback=callback_registry.on_paste,
         shortcut_overrides=shortcut_overrides,
     )
     if quick_open_action is not None:

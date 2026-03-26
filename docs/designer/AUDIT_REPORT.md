@@ -248,7 +248,7 @@ Legend: **Missing / Partial / Complete**
 
 | Feature | Qt Designer | Current implementation | Gap |
 |---|---|---|---|
-| Cut/copy/paste widget subtree | Supported | Not implemented as standard clipboard flow | **Missing** |
+| Cut/copy/paste widget subtree | Supported | Implemented on designer surface (`copy_selection` / `cut_selection` / `paste_selection`) with undo-safe snapshots | **Complete** |
 | Cross-form paste | Supported | Not implemented | **Missing** |
 | Robust drag reordering | Supported | Partial (inspector reparent, limited by insertion path issues) | **Partial** |
 
@@ -382,6 +382,7 @@ Legend: **Missing / Partial / Complete**
 - **Effort:** **L**
 - **Dependencies:** R2
 - **Acceptance criteria:** Subtree copy/paste and cut/paste work within and across forms.
+- **Status (2026-03-26):** **RESOLVED (PR-14)**
 
 ### R11. Add `.ui` format coverage for action/actiongroup/addaction/zorder/buttongroup
 - **Files:** IO reader/writer + model contracts + tests

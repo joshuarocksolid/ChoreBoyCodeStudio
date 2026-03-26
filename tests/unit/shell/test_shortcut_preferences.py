@@ -19,6 +19,9 @@ pytestmark = pytest.mark.unit
 def test_default_shortcut_map_contains_known_command_ids() -> None:
     defaults = default_shortcut_map()
     assert defaults["designer.file.new_form"] == "Ctrl+Shift+N"
+    assert defaults["shell.action.edit.cut"] == "Ctrl+X"
+    assert defaults["shell.action.edit.copy"] == "Ctrl+C"
+    assert defaults["shell.action.edit.paste"] == "Ctrl+V"
     assert defaults["designer.layout.horizontal"] == "Ctrl+1"
     assert defaults["designer.layout.vertical"] == "Ctrl+2"
     assert defaults["designer.layout.grid"] == "Ctrl+3"
