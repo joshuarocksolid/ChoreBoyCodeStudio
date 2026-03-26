@@ -559,7 +559,7 @@ Every task in this file contains:
 
 ## 5) Acceptance linkage index (Designer-specific)
 
-These IDs are local to the Designer program and should later be linked into `docs/ACCEPTANCE_TESTS.md` once implementation starts:
+These IDs are local to the Designer program and are mapped in `docs/ACCEPTANCE_TESTS.md` section 10A.
 
 - **DF-xx**: foundation checks (probe + schema/loader harness)
 - **DMVP-xx**: MVP designer workflow checks
@@ -567,16 +567,20 @@ These IDs are local to the Designer program and should later be linked into `doc
 - **DADV-xx**: signals/slots/tab order/buddy checks
 - **DRES-xx**: resources/promote/custom-widget checks
 - **DADV2-xx**: advanced round-trip/component/team workflow checks
+- **DFIX-xx**: post-audit reliability/correctness hardening checks
+- **DGAP-xx**: post-audit parity gap closure checks
 
 ---
 
 ## 6) Immediate execution order recommendation
 
-1. D0.S1 and D0.S2 (probe + model/io scaffolding)
-2. D1.S1 through D1.S5 (MVP path: open/edit/save/preview)
-3. D2 stories (object/property/layout productivity + undo/redo)
-4. D3 and D4 (signals/slots + focus tools + custom widget workflows)
-5. D5 (fidelity and ecosystem polish)
+D0–D5 are complete and should be treated as baseline. Execute post-audit work in this order:
+
+1. **D6** reliability hardening (insert/undo, preview lifecycle/timeout, layout fidelity, shortcut arbitration)
+2. **D7** high-impact parity (palette breadth, property depth, signal/slot picker UX, clipboard subtree ops)
+3. **D8** advanced parity and polish (`.ui` breadth, canvas affordances, preview variants)
+4. **D9** action/menu/toolbar authoring subsystem (QAction ecosystem parity)
+5. release hardening pass (targeted + full suites, manual acceptance evidence, docs sync)
 
 ---
 
@@ -730,4 +734,76 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-06
 - **Depends on:** D6.S1.T1, D6.S1.T2
 - **Done when:** core widget editing affordances feel Qt Designer-like for common operations.
+
+### Story D8.S3 — Preview variants
+
+#### Task D8.S3.T1 — Add preview style/device-size variants
+- **Status:** TODO
+- **Objective:** Expose alternate style/theme/device preview modes for practical form QA.
+- **Primary files:** `app/designer/preview/preview_service.py`, `app/designer/preview/preview_window.py`, `app/shell/menus.py`, integration/manual acceptance coverage
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** trigger each variant and verify deterministic preview load/error behavior.
+- **Acceptance linkage:** DGAP-08
+- **Depends on:** D6.S2.T1, D6.S2.T2
+- **Done when:** users can run style/device preview variants without unstable lifecycle behavior.
+
+## Epic D9 — Action/menu/toolbar authoring parity
+
+### Story D9.S1 — QAction model + `.ui` contract
+
+#### Task D9.S1.T1 — Add action/actiongroup/addaction model ownership
+- **Status:** TODO
+- **Objective:** Introduce explicit models for QAction ecosystem elements and placement references.
+- **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, IO fixtures/tests
+- **Automated test layer:** unit
+- **Validation method:** deterministic parse/serialize coverage for action graph and placement nodes.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D8.S1.T1
+- **Done when:** action graph nodes are represented in model and survive round-trip.
+
+### Story D9.S2 — Action editor workflows
+
+#### Task D9.S2.T1 — Build action editor panel (CRUD + grouping)
+- **Status:** TODO
+- **Objective:** Provide dedicated UI for creating/editing/removing actions and action groups.
+- **Primary files:** `app/designer/actions/*` (new), `app/designer/editor_surface.py`, integration tests
+- **Automated test layer:** unit, integration
+- **Validation method:** panel workflows verified for create/edit/delete and deterministic naming.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D9.S1.T1
+- **Done when:** users can author action definitions without manual XML edits.
+
+### Story D9.S3 — Menu/toolbar composition workflows
+
+#### Task D9.S3.T1 — Author menu bar / toolbar action placement for `QMainWindow`
+- **Status:** TODO
+- **Objective:** Support action placement and ordering in menu/toolbar structures for supported form classes.
+- **Primary files:** `app/designer/actions/*`, `app/designer/editor_surface.py`, `app/designer/io/*`, integration/manual acceptance tests
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** compose menu/toolbar structures, save, reopen, and verify placement persistence.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D9.S2.T1
+- **Done when:** authored menu/toolbar structures are persisted and re-editable.
+
+---
+
+## 8) Execution slices (PR-oriented checklist)
+
+The post-audit execution plan is implemented in thin slices:
+
+1. PR-00 docs normalization (this backlog + acceptance/test docs sync)
+2. PR-01 regression tests for critical gaps
+3. PR-02/03 insertion reliability + command-stack unification
+4. PR-04/05 preview lifecycle + isolated timeout hardening
+5. PR-06 layout item attribute fidelity
+6. PR-07 shortcut arbitration
+7. PR-08 diagnostics unification (Designer validation -> Problems pane)
+8. PR-09/10 palette expansion batches
+9. PR-11/12 property schema depth batches
+10. PR-13 signal/slot picker UX
+11. PR-14 clipboard subtree operations
+12. PR-15 `.ui` advanced node support
+13. PR-16 action/menu/toolbar authoring subsystem
+14. PR-17 canvas affordance polish
+15. PR-18 preview variants + final hardening/docs closure
 

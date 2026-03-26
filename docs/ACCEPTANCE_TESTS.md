@@ -886,7 +886,7 @@ Verify rule-level lint settings (enable + severity) affect diagnostics output.
 
 ---
 
-## 10A. Designer acceptance program (implemented)
+## 10A. Designer acceptance program (baseline + active gap-closure)
 
 Designer implementation is validated through the Designer-specific suites documented in `docs/designer/TASKS.md` and mapped by acceptance linkage IDs:
 
@@ -896,6 +896,8 @@ Designer implementation is validated through the Designer-specific suites docume
 - **DADV-xx**: advanced modes (signals/slots, tab order, buddy interactions + serialization)
 - **DRES-xx**: resources/icons/promote/custom-widget preview isolation
 - **DADV2-xx**: deterministic formatting, unknown-node preservation, reusable components, naming lint
+- **DFIX-xx**: post-audit reliability/correctness hardening
+- **DGAP-xx**: post-audit parity gap closure
 
 Current acceptance evidence is provided by automated integration + runtime parity suites under:
 
@@ -906,7 +908,18 @@ and by Designer unit coverage under:
 
 - `tests/unit/designer/`
 
-The Designer backlog now reports all linked tasks as `DONE` in `docs/designer/TASKS.md`.
+D0–D5 Designer backlog items are complete. Post-audit D6–D9 gap-closure items are tracked as active TODO work in `docs/designer/TASKS.md`.
+
+Post-audit acceptance focus includes:
+
+- **DFIX-01** repeated drag/drop insertion reliability
+- **DFIX-02** insertion undo/redo consistency across gesture paths
+- **DFIX-03** preview visibility reliability (or explicit actionable failure reporting)
+- **DFIX-04** isolated preview timeout/termination determinism
+- **DFIX-05** grid/item attribute round-trip fidelity (`row`/`column`/span/alignment)
+- **DFIX-06** focus-scoped F5/F6 shortcut arbitration (Designer mode vs Run/Continue)
+- **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence
+- **DGAP-08** preview style/device variant workflows
 
 ---
 

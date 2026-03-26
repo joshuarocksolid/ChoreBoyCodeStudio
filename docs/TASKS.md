@@ -16,6 +16,9 @@ This version replaces the previous broad checklist with a **thin-slice, test-tra
 > - `docs/designer/TASKS.md`
 > - `docs/designer/WIREFRAME.md`
 > - `docs/designer/ARCHITECTURE_PLAN.md`
+> - `docs/designer/AUDIT_REPORT.md`
+>
+> Post-audit execution status (2026-03-26): Designer D6–D9 epics are active in `docs/designer/TASKS.md` with PR-oriented execution slices. The app-level backlog tracks Designer progress through that dedicated document to avoid duplicate task drift.
 
 ---
 

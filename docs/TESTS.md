@@ -48,6 +48,12 @@ Implemented coverage includes:
   - signals/slots, tab order, buddy interactions + serialization
   - resources/iconset/promote/custom-widget isolated preview checks
   - deterministic formatter, unknown-node preservation, component library flows
+  - post-audit reliability/parity closure suites (DFIX/DGAP workstream), including:
+    - insertion parent-resolution + undo consistency
+    - isolated preview timeout/error diagnostics
+    - layout-item attribute round-trip fidelity
+    - focus-scoped F5/F6 shortcut arbitration
+    - Designer validation + shell Problems parity
 
 ## 5) Core commands
 
@@ -73,6 +79,19 @@ Run Designer-focused suites directly (fast signal while iterating on Designer):
   tests/unit/shell/test_menus_designer_mode.py \
   tests/unit/shell/test_shortcut_preferences.py \
   tests/unit/shell/test_status_bar.py
+```
+
+Run post-audit reliability/parity closure suites (recommended for D6+ slices):
+
+```bash
+python3 run_tests.py -v tests/unit/designer/canvas/test_form_canvas.py
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_service.py
+python3 run_tests.py -v tests/integration/designer/test_custom_widget_isolated_preview_runner.py
+python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_mode.py
+python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
 ```
 
 ## 6) Manual acceptance validation

@@ -371,3 +371,18 @@ Legend: **Missing / Partial / Complete**
   - insertion undo/redo consistency,
   - shortcut conflict resolution under designer focus.
 
+---
+
+## Program alignment update (PR-00 normalization)
+
+The implementation program now maps these post-audit linkage families into the active backlog/acceptance docs:
+
+- **DFIX-xx** reliability/correctness hardening tasks (D6)
+- **DGAP-xx** parity-gap closure tasks (D7, D8)
+
+Additionally, the previously identified QAction/menu/toolbar parity gap is now represented as a dedicated backlog epic:
+
+- **D9 — Action/menu/toolbar authoring parity** in `docs/designer/TASKS.md`
+
+This resolves the prior planning gap where action-editor parity was called out in the audit but lacked an explicit implementation track.
+
