@@ -7,7 +7,19 @@ from pathlib import Path
 import pytest
 
 from app.designer.io import read_ui_file, read_ui_string, write_ui_file, write_ui_string
-from app.designer.model import ConnectionModel, CustomWidgetModel, ResourceModel, UIModel, WidgetNode
+from app.designer.model import (
+    AddActionModel,
+    ActionGroupModel,
+    ActionModel,
+    ButtonGroupModel,
+    ConnectionModel,
+    CustomWidgetModel,
+    PropertyValue,
+    ResourceModel,
+    UIModel,
+    WidgetNode,
+    ZOrderModel,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -24,6 +36,21 @@ def test_read_ui_file_parses_minimal_fixture() -> None:
     run_button = model.root_widget.find_by_object_name("pushButton")
     assert run_button is not None
     assert run_button.class_name == "QPushButton"
+
+
+def test_read_ui_file_parses_actions_fixture_with_advanced_nodes() -> None:
+    model = read_ui_file(str((_FIXTURE_ROOT / "actions_form.ui").resolve()))
+
+    assert len(model.actions) == 2
+    assert model.actions[0].name == "actionOpen"
+    assert model.actions[1].name == "actionSave"
+    assert len(model.action_groups) == 1
+    assert model.action_groups[0].name == "fileActionGroup"
+    assert [ref.name for ref in model.action_groups[0].add_actions] == ["actionOpen"]
+    assert [ref.name for ref in model.add_actions] == ["actionOpen", "actionSave"]
+    assert [entry.name for entry in model.zorders] == ["centralwidget", "menubar"]
+    assert len(model.button_groups) == 1
+    assert model.button_groups[0].name == "modeGroup"
 
 
 def test_read_write_round_trip_for_layout_fixture(tmp_path: Path) -> None:
@@ -95,6 +122,47 @@ def test_write_ui_string_serializes_connections_and_resources() -> None:
     assert reparsed.resources[0].location == "icons.qrc"
     assert len(reparsed.connections) == 1
     assert reparsed.connections[0].sender == "okButton"
+
+
+def test_write_ui_string_serializes_advanced_action_nodes() -> None:
+    model = UIModel(
+        form_class_name="MainWindow",
+        root_widget=WidgetNode(class_name="QMainWindow", object_name="MainWindow"),
+        actions=[
+            ActionModel(
+                name="actionOpen",
+                properties={"text": PropertyValue(value_type="string", value="Open")},
+            ),
+            ActionModel(
+                name="actionExit",
+                properties={"text": PropertyValue(value_type="string", value="Exit")},
+            ),
+        ],
+        action_groups=[
+            ActionGroupModel(
+                name="fileActions",
+                add_actions=[AddActionModel(name="actionOpen")],
+            )
+        ],
+        add_actions=[AddActionModel(name="actionOpen"), AddActionModel(name="actionExit")],
+        zorders=[ZOrderModel(name="centralWidget")],
+        button_groups=[ButtonGroupModel(name="exclusiveButtons")],
+    )
+
+    xml = write_ui_string(model)
+    reparsed = read_ui_string(xml)
+
+    assert "<action name=\"actionOpen\">" in xml
+    assert "<actiongroup name=\"fileActions\">" in xml
+    assert "<addaction name=\"actionOpen\" " in xml
+    assert "<zorder>centralWidget</zorder>" in xml
+    assert "<buttongroup name=\"exclusiveButtons\"" in xml
+    assert [action.name for action in reparsed.actions] == ["actionOpen", "actionExit"]
+    assert [group.name for group in reparsed.action_groups] == ["fileActions"]
+    assert [ref.name for ref in reparsed.action_groups[0].add_actions] == ["actionOpen"]
+    assert [ref.name for ref in reparsed.add_actions] == ["actionOpen", "actionExit"]
+    assert [entry.name for entry in reparsed.zorders] == ["centralWidget"]
+    assert [group.name for group in reparsed.button_groups] == ["exclusiveButtons"]
 
 
 def test_read_ui_string_parses_tab_stops() -> None:

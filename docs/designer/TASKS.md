@@ -759,7 +759,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D8.S1 — `.ui` format breadth expansion
 
 #### Task D8.S1.T1 — Add action-related and ordering element support
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Expand reader/writer coverage for `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, `<buttongroup>` and related nodes.
 - **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, new/updated IO fixture tests
 - **Automated test layer:** unit
@@ -767,6 +767,13 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-05
 - **Depends on:** D6.S3.T1
 - **Done when:** these nodes are no longer dropped or silently rewritten away.
+- **Implementation note:** PR-15 expanded advanced `.ui` node coverage for action and ordering contracts:
+  - added explicit model ownership for action ecosystem nodes (`ActionModel`, `ActionGroupModel`, `AddActionModel`, `ZOrderModel`, `ButtonGroupModel`) in `app/designer/model/action_model.py` and wired fields into `UIModel`.
+  - reader now parses `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, and `<buttongroup>` from both top-level and `QMainWindow` widget scopes while avoiding duplicate captures.
+  - writer now emits these nodes deterministically and round-trips group-local add-action links plus top-level placement references.
+  - added fixture coverage (`tests/fixtures/designer/actions_form.ui`) and focused tests in:
+    - `tests/unit/designer/io/test_ui_reader_writer.py`
+    - `tests/unit/designer/io/test_ui_formatter.py`
 
 ### Story D8.S2 — Canvas affordance polish
 

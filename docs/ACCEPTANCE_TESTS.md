@@ -923,6 +923,7 @@ Post-audit acceptance focus includes:
 - **DGAP-02** layout+sizing property schema expansion supports `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, and `contentsMargins` with typed editors + deterministic `.ui` round-trip
 - **DGAP-03** class-aware signal/slot picker workflow provides sender/receiver object metadata picklists, class-backed signal/slot choices, and blocks invalid/incompatible signature updates before model mutation
 - **DGAP-04** designer clipboard subtree workflows support cut/copy/paste for non-root widgets with deterministic object-name de-duplication, invalid-parent rejection messaging, and undo-safe mutation history
+- **DGAP-05** advanced `.ui` node support round-trips `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, and `<buttongroup>` without dropping or flattening model intent
 - **DGAP-09** appearance/metadata property schema expansion supports `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, and `windowIcon` with typed editors + deterministic `.ui` round-trip
 - **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence
 - **DGAP-08** preview style/device variant workflows

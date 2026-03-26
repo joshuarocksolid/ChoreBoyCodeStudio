@@ -242,7 +242,7 @@ Legend: **Missing / Partial / Complete**
 |---|---|---|---|
 | `class/widget/layout/item/property/tabstops/resources/customwidgets/connections` | Supported | Supported | **Complete** |
 | Unknown-node preservation | Not always emphasized, but format accepts additional blocks | Implemented for many unknown nodes/properties | **Complete** |
-| `action`, `actiongroup`, `addaction`, `zorder`, `buttongroup`, richer spacer/layout item metadata | Supported in Qt Designer ecosystem | Not modeled/emitted comprehensively | **Missing** |
+| `action`, `actiongroup`, `addaction`, `zorder`, `buttongroup`, richer spacer/layout item metadata | Supported in Qt Designer ecosystem | Action/order node model + reader/writer coverage implemented for deterministic round-trip (PR-15) | **Complete** |
 
 ## G) Clipboard / drag operations
 
@@ -389,6 +389,7 @@ Legend: **Missing / Partial / Complete**
 - **Effort:** **L-XL**
 - **Dependencies:** R5
 - **Acceptance criteria:** Supported XML elements round-trip with deterministic formatting.
+- **Status (2026-03-26):** **RESOLVED (PR-15)**
 
 ## 4) Polish items
 

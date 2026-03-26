@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <widget class="QWidget" name="centralwidget"/>
+  <widget class="QMenuBar" name="menubar">
+   <addaction name="menuFile"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionOpen">
+   <property name="text">
+    <string>Open</string>
+   </property>
+  </action>
+  <action name="actionSave">
+   <property name="text">
+    <string>Save</string>
+   </property>
+  </action>
+  <actiongroup name="fileActionGroup">
+   <property name="exclusive">
+    <bool>true</bool>
+   </property>
+   <action name="actionOpen"/>
+  </actiongroup>
+  <addaction name="actionOpen"/>
+  <addaction name="actionSave"/>
+ </widget>
+ <zorder>centralwidget</zorder>
+ <zorder>menubar</zorder>
+ <buttongroups>
+  <buttongroup name="modeGroup"/>
+ </buttongroups>
+ <resources/>
+ <connections/>
+</ui>
