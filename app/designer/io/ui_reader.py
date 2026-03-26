@@ -150,6 +150,10 @@ def _parse_property(element: ET.Element) -> PropertyValue:
         if not icon_text:
             icon_text = (value_element.findtext("normaloff") or "").strip()
         return PropertyValue(value_type=value_type, value=icon_text)
+    if value_type == "size":
+        return PropertyValue(value_type=value_type, value=_parse_size(value_element))
+    if value_type == "sizepolicy":
+        return PropertyValue(value_type=value_type, value=_parse_size_policy(value_element))
     raw_xml = ET.tostring(value_element, encoding="unicode") if len(value_element) > 0 else None
     return PropertyValue(value_type=value_type, value=value_element.text or "", raw_xml=raw_xml)
 
@@ -160,6 +164,22 @@ def _parse_rect(rect_element: ET.Element) -> dict[str, int]:
         field_value = rect_element.findtext(field)
         parsed[field] = int((field_value or "0").strip() or "0")
     return parsed
+
+
+def _parse_size(size_element: ET.Element) -> dict[str, int]:
+    return {
+        "width": int((size_element.findtext("width") or "0").strip() or "0"),
+        "height": int((size_element.findtext("height") or "0").strip() or "0"),
+    }
+
+
+def _parse_size_policy(size_policy_element: ET.Element) -> dict[str, object]:
+    return {
+        "hsizetype": (size_policy_element.attrib.get("hsizetype") or "").strip(),
+        "vsizetype": (size_policy_element.attrib.get("vsizetype") or "").strip(),
+        "horstretch": int((size_policy_element.findtext("horstretch") or "0").strip() or "0"),
+        "verstretch": int((size_policy_element.findtext("verstretch") or "0").strip() or "0"),
+    }
 
 
 def _parse_connections(root: ET.Element) -> list[ConnectionModel]:

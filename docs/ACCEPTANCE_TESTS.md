@@ -920,6 +920,7 @@ Post-audit acceptance focus includes:
 - **DFIX-06** focus-scoped F5/F6 shortcut arbitration (Designer mode vs Run/Continue)
 - **DFIX-07** Designer validation diagnostics are mirrored into global Problems panel without conflicting empty-state UX
 - **DGAP-01** must-have palette tranche-1/tranche-2 widgets (`QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`, `QListWidget`, `QTreeWidget`, `QTableWidget`, `QStackedWidget`, `QSplitter`, `QMainWindow`) insert and persist through save/reopen (with `QSplitter` validated via root-child round-trip fallback because splitter currently serializes outside layout-item wrapper semantics)
+- **DGAP-02** layout+sizing property schema expansion supports `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, and `contentsMargins` with typed editors + deterministic `.ui` round-trip
 - **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence
 - **DGAP-08** preview style/device variant workflows
 

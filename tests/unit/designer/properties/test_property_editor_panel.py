@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QToolButton
+from PySide2.QtWidgets import QApplication, QCheckBox, QLineEdit, QSpinBox, QToolButton
 
 from app.designer.model import WidgetNode
 from app.designer.properties import IconPickerField, PropertyEditorController
@@ -79,3 +79,17 @@ def test_property_panel_uses_icon_picker_for_iconset_fields() -> None:
     picker.path_changed.emit("icons/run.png")
 
     assert ("pushButton", "icon", "icons/run.png") in edits
+
+
+def test_property_panel_renders_layout_and_sizing_fields() -> None:
+    panel = PropertyEditorPanel()
+    controller = PropertyEditorController()
+    widget = WidgetNode(class_name="QWidget", object_name="rootWidget")
+    panel.bind_widget(widget, controller.field_definitions_for_widget(widget))
+
+    assert panel.findChild(QLineEdit, "designer.property.editor.minimumSize") is not None
+    assert panel.findChild(QLineEdit, "designer.property.editor.maximumSize") is not None
+    assert panel.findChild(QLineEdit, "designer.property.editor.contentsMargins") is not None
+
+    spacing_spin = panel.findChild(QSpinBox, "designer.property.editor.layoutSpacing")
+    assert spacing_spin is not None

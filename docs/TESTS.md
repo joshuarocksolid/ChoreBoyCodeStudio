@@ -97,6 +97,9 @@ python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
 python3 run_tests.py -v tests/unit/shell/test_main_window_debug_routing.py -k designer_validation_issues
 python3 run_tests.py -v tests/unit/designer/palette/test_widget_registry.py
 python3 run_tests.py -v tests/unit/designer/canvas/test_drop_rules.py
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k size_policy_and_size_constraints
 ```
 
 ## 6) Manual acceptance validation

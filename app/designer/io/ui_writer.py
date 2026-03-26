@@ -77,6 +77,27 @@ def _build_property(property_name: str, property_value: PropertyValue) -> ET.Ele
     property_element = ET.Element("property", attrib={"name": property_name})
     value_type = property_value.value_type
     value = property_value.value
+    if value_type == "sizepolicy" and isinstance(value, dict):
+        size_policy = ET.SubElement(
+            property_element,
+            "sizepolicy",
+            attrib={
+                "hsizetype": str(value.get("hsizetype", "Preferred")),
+                "vsizetype": str(value.get("vsizetype", "Preferred")),
+            },
+        )
+        hor_stretch = ET.SubElement(size_policy, "horstretch")
+        hor_stretch.text = str(int(value.get("horstretch", 0)))
+        ver_stretch = ET.SubElement(size_policy, "verstretch")
+        ver_stretch.text = str(int(value.get("verstretch", 0)))
+        return property_element
+    if value_type == "size" and isinstance(value, dict):
+        size_element = ET.SubElement(property_element, "size")
+        width = ET.SubElement(size_element, "width")
+        width.text = str(int(value.get("width", 0)))
+        height = ET.SubElement(size_element, "height")
+        height.text = str(int(value.get("height", 0)))
+        return property_element
     if value_type == "rect" and isinstance(value, dict):
         rect_element = ET.SubElement(property_element, "rect")
         for field in ("x", "y", "width", "height"):

@@ -699,7 +699,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D7.S2 — Property editor depth expansion
 
 #### Task D7.S2.T1 — Add core Qt property groups and typed editors
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Support common Qt Designer properties (`sizePolicy`, min/max size, font, palette, cursor, styleSheet, windowTitle, windowIcon, layout margins/spacing).
 - **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`, `app/designer/properties/property_editor_panel.py`, IO tests as needed
 - **Automated test layer:** unit, integration
@@ -707,6 +707,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-02
 - **Depends on:** D7.S1.T1 (recommended), D6.S3.T1 (for layout property fidelity)
 - **Done when:** expanded property surface is editable and stable across round-trip.
+- **Implementation note:** PR-11 delivered the layout/sizing tranche with schema + typed editing + IO fidelity for `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, and `contentsMargins`. Property editor now coerces `sizepolicy` string inputs into structured payloads, property panel renders dedicated typed editors for these fields, and reader/writer round-trip tests verify deterministic persistence. Appearance-focused properties (`font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`) remain in the PR-12 tranche.
 
 ### Story D7.S3 — Signal/slot editor parity upgrades
 

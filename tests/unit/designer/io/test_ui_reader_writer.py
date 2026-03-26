@@ -309,3 +309,46 @@ def test_read_write_round_trip_preserves_grid_layout_item_attributes() -> None:
         "colspan": "2",
         "alignment": "Qt::AlignCenter",
     }
+
+
+def test_read_write_round_trip_preserves_size_policy_and_size_constraints() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>SizingForm</class>"
+        "<widget class=\"QWidget\" name=\"SizingForm\">"
+        "<widget class=\"QLineEdit\" name=\"lineEdit\">"
+        "<property name=\"sizePolicy\">"
+        "<sizepolicy hsizetype=\"Expanding\" vsizetype=\"Fixed\">"
+        "<horstretch>2</horstretch><verstretch>0</verstretch>"
+        "</sizepolicy>"
+        "</property>"
+        "<property name=\"minimumSize\"><size><width>120</width><height>30</height></size></property>"
+        "<property name=\"maximumSize\"><size><width>480</width><height>60</height></size></property>"
+        "</widget>"
+        "</widget>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+
+    model = read_ui_string(source_xml)
+    rewritten = write_ui_string(model)
+
+    assert "<property name=\"sizePolicy\">" in rewritten
+    assert "hsizetype=\"Expanding\"" in rewritten
+    assert "vsizetype=\"Fixed\"" in rewritten
+    assert "<property name=\"minimumSize\">" in rewritten
+    assert "<property name=\"maximumSize\">" in rewritten
+
+    reparsed = read_ui_string(rewritten)
+    line_edit = reparsed.root_widget.find_by_object_name("lineEdit")
+    assert line_edit is not None
+    assert line_edit.properties["sizePolicy"].value_type == "sizepolicy"
+    assert line_edit.properties["sizePolicy"].value == {
+        "hsizetype": "Expanding",
+        "vsizetype": "Fixed",
+        "horstretch": 2,
+        "verstretch": 0,
+    }
+    assert line_edit.properties["minimumSize"].value == {"width": 120, "height": 30}
+    assert line_edit.properties["maximumSize"].value == {"width": 480, "height": 60}

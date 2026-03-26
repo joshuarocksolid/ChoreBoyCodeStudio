@@ -160,12 +160,14 @@ class PropertyEditorPanel(QWidget):
             return checkbox
         if field.value_type in {"int", "number"}:
             spin_box = QSpinBox(self._form_host)
+            spin_box.setObjectName(f"designer.property.editor.{field.name}")
             spin_box.setRange(-99999, 99999)
             spin_box.setValue(int(value if value is not None else 0))
             spin_box.valueChanged.connect(lambda v, name=field.name: self._emit_edit(name, v))
             return spin_box
         if field.value_type in {"float", "double"}:
             double_box = QDoubleSpinBox(self._form_host)
+            double_box.setObjectName(f"designer.property.editor.{field.name}")
             double_box.setRange(-99999.0, 99999.0)
             double_box.setDecimals(3)
             double_box.setValue(float(value if value is not None else 0.0))
@@ -177,6 +179,7 @@ class PropertyEditorPanel(QWidget):
             picker.path_changed.connect(lambda path, name=field.name: self._emit_edit(name, path))
             return picker
         line_edit = QLineEdit(self._form_host)
+        line_edit.setObjectName(f"designer.property.editor.{field.name}")
         line_edit.setText("" if value is None else str(value))
         line_edit.editingFinished.connect(
             lambda editor=line_edit, name=field.name: self._emit_edit(name, editor.text())
