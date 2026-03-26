@@ -100,6 +100,9 @@ python3 run_tests.py -v tests/unit/designer/canvas/test_drop_rules.py
 python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py
 python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py
 python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k size_policy_and_size_constraints
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py -k appearance
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py -k appearance
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k appearance_and_window_metadata
 ```
 
 ## 6) Manual acceptance validation

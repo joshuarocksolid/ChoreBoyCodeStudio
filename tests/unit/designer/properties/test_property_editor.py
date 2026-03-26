@@ -99,3 +99,42 @@ def test_set_property_rejects_invalid_rect_shape() -> None:
 
     with pytest.raises(ValueError, match="Size property value must be a dict"):
         controller.set_property(widget, "minimumSize", "128x64")
+
+
+def test_set_property_supports_appearance_and_metadata_fields() -> None:
+    widget = WidgetNode(class_name="QPushButton", object_name="pushButton")
+    controller = PropertyEditorController()
+
+    controller.set_property(widget, "font", {"family": "Sans", "pointsize": 11, "bold": True, "italic": False})
+    controller.set_property(
+        widget,
+        "palette",
+        {"active": {"WindowText": "#112233"}, "disabled": {"ButtonText": "#556677"}},
+    )
+    controller.set_property(widget, "cursor", "PointingHandCursor")
+    controller.set_property(widget, "styleSheet", "QPushButton { color: #fff; }")
+    controller.set_property(widget, "windowTitle", "Run Dialog")
+    controller.set_property(widget, "windowIcon", "icons/run.png")
+
+    assert widget.properties["font"].value_type == "font"
+    assert widget.properties["font"].value["family"] == "Sans"
+    assert widget.properties["palette"].value_type == "palette"
+    assert widget.properties["palette"].value["active"]["WindowText"] == "#112233"
+    assert widget.properties["cursor"].value_type == "cursor"
+    assert widget.properties["cursor"].value == "PointingHandCursor"
+    assert widget.properties["styleSheet"].value_type == "string"
+    assert widget.properties["windowTitle"].value == "Run Dialog"
+    assert widget.properties["windowIcon"].value_type == "iconset"
+
+
+def test_reset_property_restores_appearance_defaults() -> None:
+    widget = WidgetNode(class_name="QPushButton", object_name="pushButton")
+    controller = PropertyEditorController()
+
+    controller.set_property(widget, "windowTitle", "Temporary")
+    controller.set_property(widget, "cursor", "WaitCursor")
+    controller.reset_property(widget, "windowTitle")
+    controller.reset_property(widget, "cursor")
+
+    assert widget.properties["windowTitle"].value == ""
+    assert widget.properties["cursor"].value == "ArrowCursor"

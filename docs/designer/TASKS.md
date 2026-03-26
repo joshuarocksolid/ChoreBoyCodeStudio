@@ -707,7 +707,10 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-02
 - **Depends on:** D7.S1.T1 (recommended), D6.S3.T1 (for layout property fidelity)
 - **Done when:** expanded property surface is editable and stable across round-trip.
-- **Implementation note:** PR-11 delivered the layout/sizing tranche with schema + typed editing + IO fidelity for `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, and `contentsMargins`. Property editor now coerces `sizepolicy` string inputs into structured payloads, property panel renders dedicated typed editors for these fields, and reader/writer round-trip tests verify deterministic persistence. Appearance-focused properties (`font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`) remain in the PR-12 tranche.
+- **Implementation note:** PR-11 + PR-12 delivered schema + typed editing + IO fidelity for:
+  - layout/sizing: `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, `contentsMargins`
+  - appearance/metadata: `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`
+  Property editor now coerces `sizepolicy` string inputs into structured payloads, property panel renders dedicated typed editors (including icon pickers for `icon` and `windowIcon`), and reader/writer round-trip tests verify deterministic persistence across these property families.
 
 ### Story D7.S3 — Signal/slot editor parity upgrades
 

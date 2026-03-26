@@ -197,7 +197,7 @@ Legend: **Missing / Partial / Complete**
 | Feature | Qt Designer | Current implementation | Gap |
 |---|---|---|---|
 | Property breadth by class | Extensive class-specific property sheets | Narrow baseline schema | **Partial** |
-| `sizePolicy`, `minimumSize`, `maximumSize`, `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`, layout spacing/margins | Supported in Qt Designer property editor | sizing/layout tranche delivered in PR-11 (`sizePolicy`, `minimumSize`, `maximumSize`, `layoutSpacing`, `contentsMargins`); appearance/metadata tranche still pending | **Partial** |
+| `sizePolicy`, `minimumSize`, `maximumSize`, `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`, layout spacing/margins | Supported in Qt Designer property editor | sizing/layout tranche delivered in PR-11; appearance/metadata tranche delivered in PR-12 (`font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`) | **Partial** |
 | Grouped property UX | Grouped categories | Grouped categories present | **Partial** |
 
 ## C) Layout system

@@ -352,3 +352,58 @@ def test_read_write_round_trip_preserves_size_policy_and_size_constraints() -> N
     }
     assert line_edit.properties["minimumSize"].value == {"width": 120, "height": 30}
     assert line_edit.properties["maximumSize"].value == {"width": 480, "height": 60}
+
+
+def test_read_write_round_trip_preserves_appearance_and_window_metadata_properties() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>AppearanceForm</class>"
+        "<widget class=\"QWidget\" name=\"AppearanceForm\">"
+        "<property name=\"windowTitle\"><string>Example Window</string></property>"
+        "<property name=\"windowIcon\"><iconset><normaloff>icons/window.png</normaloff></iconset></property>"
+        "<property name=\"cursor\"><cursorShape>PointingHandCursor</cursorShape></property>"
+        "<property name=\"styleSheet\"><string notr=\"true\">QWidget { color: #333; }</string></property>"
+        "<property name=\"font\">"
+        "<font><family>DejaVu Sans</family><pointsize>11</pointsize><bold>true</bold></font>"
+        "</property>"
+        "<property name=\"palette\">"
+        "<palette><active><colorrole role=\"WindowText\"><brush brushstyle=\"SolidPattern\">"
+        "<color alpha=\"255\"><red>10</red><green>20</green><blue>30</blue></color>"
+        "</brush></colorrole></active></palette>"
+        "</property>"
+        "</widget>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+
+    model = read_ui_string(source_xml)
+    rewritten = write_ui_string(model)
+
+    assert "<property name=\"windowTitle\">" in rewritten
+    assert "<string>Example Window</string>" in rewritten
+    assert "<property name=\"windowIcon\">" in rewritten
+    assert "<normaloff>icons/window.png</normaloff>" in rewritten
+    assert "<property name=\"cursor\">" in rewritten
+    assert "PointingHandCursor" in rewritten
+    assert "<property name=\"styleSheet\">" in rewritten
+    assert "<string>QWidget { color: #333; }</string>" in rewritten
+    assert "<property name=\"font\">" in rewritten
+    assert "<family>DejaVu Sans</family>" in rewritten
+    assert "<pointsize>11</pointsize>" in rewritten
+    assert "<property name=\"palette\">" in rewritten
+    assert "<colorrole role=\"WindowText\">" in rewritten
+
+    reparsed = read_ui_string(rewritten)
+    root_widget = reparsed.root_widget
+    assert root_widget.properties["windowTitle"].value == "Example Window"
+    assert root_widget.properties["windowIcon"].value == "icons/window.png"
+    assert root_widget.properties["cursor"].value_type == "cursorShape"
+    assert root_widget.properties["cursor"].value == "PointingHandCursor"
+    assert root_widget.properties["styleSheet"].value == "QWidget { color: #333; }"
+    assert root_widget.properties["font"].value_type == "font"
+    assert root_widget.properties["font"].raw_xml is not None
+    assert "DejaVu Sans" in root_widget.properties["font"].raw_xml
+    assert root_widget.properties["palette"].value_type == "palette"
+    assert root_widget.properties["palette"].raw_xml is not None
+    assert "WindowText" in root_widget.properties["palette"].raw_xml

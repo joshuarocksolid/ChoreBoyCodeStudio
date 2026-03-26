@@ -175,6 +175,7 @@ class PropertyEditorPanel(QWidget):
             return double_box
         if field.value_type == "iconset":
             picker = IconPickerField(self._form_host)
+            picker.setObjectName(f"designer.property.editor.{field.name}")
             picker.set_path("" if value is None else str(value))
             picker.path_changed.connect(lambda path, name=field.name: self._emit_edit(name, path))
             return picker
