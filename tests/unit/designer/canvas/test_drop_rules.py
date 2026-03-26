@@ -46,3 +46,28 @@ def test_can_insert_widget_requires_layout_for_layout_items() -> None:
         )
         is True
     )
+
+
+def test_can_insert_widget_allows_tranche_one_widgets_under_container_parent() -> None:
+    supported_widgets = [
+        "QSpinBox",
+        "QDoubleSpinBox",
+        "QSlider",
+        "QProgressBar",
+        "QDateEdit",
+        "QTimeEdit",
+        "QDateTimeEdit",
+        "QDial",
+        "QToolButton",
+        "QDialogButtonBox",
+    ]
+    for class_name in supported_widgets:
+        assert (
+            can_insert_widget(
+                parent_class_name="QWidget",
+                child_class_name=class_name,
+                is_layout_item=False,
+                parent_has_layout=False,
+            )
+            is True
+        )

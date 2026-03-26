@@ -168,3 +168,76 @@ def test_designer_save_roundtrip_preserves_grid_layout_item_attributes(
         "colspan": "2",
         "alignment": "Qt::AlignCenter",
     }
+
+
+def test_designer_save_roundtrip_persists_tranche_one_palette_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Designer Palette Tranche One")
+    ui_file = project_root / "palette_tranche_one.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>PaletteTrancheOneForm</class>"
+            "<widget class=\"QWidget\" name=\"PaletteTrancheOneForm\">"
+            "<layout class=\"QVBoxLayout\" name=\"verticalLayout\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._open_file_in_editor(str(ui_file.resolve())) is True
+
+    surface = window._active_designer_surface()
+    assert surface is not None
+    assert surface.model is not None
+
+    for class_name in (
+        "QSpinBox",
+        "QDoubleSpinBox",
+        "QSlider",
+        "QProgressBar",
+        "QDateEdit",
+        "QTimeEdit",
+        "QDateTimeEdit",
+        "QDial",
+        "QToolButton",
+        "QDialogButtonBox",
+    ):
+        surface._handle_palette_insert_request(class_name)  # type: ignore[attr-defined]
+
+    assert window._handle_save_action() is True
+    window.close()
+
+    reloaded = read_ui_file(str(ui_file.resolve()))
+    inserted_widgets = []
+    if reloaded.root_widget.layout is not None:
+        inserted_widgets = [item.widget for item in reloaded.root_widget.layout.items if item.widget is not None]
+    if not inserted_widgets:
+        inserted_widgets = list(reloaded.root_widget.children)
+    class_names = {widget.class_name for widget in inserted_widgets}
+    assert {
+        "QSpinBox",
+        "QDoubleSpinBox",
+        "QSlider",
+        "QProgressBar",
+        "QDateEdit",
+        "QTimeEdit",
+        "QDateTimeEdit",
+        "QDial",
+        "QToolButton",
+        "QDialogButtonBox",
+    }.issubset(class_names)

@@ -90,9 +90,12 @@ python3 run_tests.py -v tests/unit/designer/preview/test_preview_service.py
 python3 run_tests.py -v tests/integration/designer/test_custom_widget_isolated_preview_runner.py
 python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.py
 python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
+python3 run_tests.py -v tests/integration/designer/test_designer_save_roundtrip.py -k tranche_one_palette_widgets
 python3 run_tests.py -v tests/unit/shell/test_menus_designer_mode.py
 python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
 python3 run_tests.py -v tests/unit/shell/test_main_window_debug_routing.py -k designer_validation_issues
+python3 run_tests.py -v tests/unit/designer/palette/test_widget_registry.py
+python3 run_tests.py -v tests/unit/designer/canvas/test_drop_rules.py
 ```
 
 ## 6) Manual acceptance validation

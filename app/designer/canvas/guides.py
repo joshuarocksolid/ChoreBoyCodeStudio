@@ -19,6 +19,15 @@ _WIDGET_ICON_CHARS: dict[str, str] = {
     "QLabel": "\u24C1",       # Ⓛ
     "QPushButton": "\u25B6",  # ▶
     "QToolButton": "\u25B6",  # ▶
+    "QDialogButtonBox": "\u25A4",  # ▤
+    "QSpinBox": "\u2195",  # ↕
+    "QDoubleSpinBox": "\u21C5",  # ⇅
+    "QSlider": "\u2501",  # ━
+    "QProgressBar": "\u25AD",  # ▭
+    "QDateEdit": "\u2637",  # ☷
+    "QTimeEdit": "\u23F2",  # ⏲
+    "QDateTimeEdit": "\u23F1",  # ⏱
+    "QDial": "\u25CE",  # ◎
     "QSpacerItem": "\u2B0C",  # ⬌
 }
 

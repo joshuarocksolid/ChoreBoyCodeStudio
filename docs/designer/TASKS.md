@@ -683,7 +683,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D7.S1 — Must-have palette expansion
 
 #### Task D7.S1.T1 — Add missing must-have widget box entries
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Expand from 13 baseline widgets to cover basic Qt Designer form-building needs.
 - **Primary files:** `app/designer/palette/widget_registry.py`, `app/designer/canvas/drop_rules.py`, related property/schema + insertion tests
 - **Automated test layer:** unit, integration
@@ -691,6 +691,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-01
 - **Depends on:** D6.S1.T1
 - **Done when:** requested must-have list is represented with valid insertion behavior.
+- **Implementation note:** tranche-1 must-have widgets (`QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`) were added to the palette registry and icon mapping, with unit coverage for registry/categories/drop rules and integration save-roundtrip coverage confirming deterministic insertion + serialization.
 
 ### Story D7.S2 — Property editor depth expansion
 
