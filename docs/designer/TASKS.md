@@ -642,7 +642,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D6.S3 — `.ui` layout fidelity corrections
 
 #### Task D6.S3.T1 — Preserve layout item attributes (`row`/`column`/span/alignment) in round-trip
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Stop dropping grid/item placement metadata on save.
 - **Primary files:** `app/designer/model/layout_node.py`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, `tests/unit/designer/io/test_ui_reader_writer.py`
 - **Automated test layer:** unit
@@ -650,6 +650,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-05
 - **Depends on:** none
 - **Done when:** grid-based forms survive read-write-read without layout coordinate loss.
+- **Implementation note:** `LayoutItem` now stores item-level attributes and reader/writer parse+emit `row`/`column`/`rowspan`/`colspan`/`alignment` attributes so grid metadata survives deterministic round-trip.
 
 ### Story D6.S4 — Shortcut conflict/scoping hardening
 

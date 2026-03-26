@@ -54,7 +54,7 @@ def _build_widget(widget: WidgetNode) -> ET.Element:
 def _build_layout(layout: LayoutNode) -> ET.Element:
     element = ET.Element("layout", attrib={"class": layout.class_name, "name": layout.object_name})
     for item in layout.items:
-        item_element = ET.SubElement(element, "item")
+        item_element = ET.SubElement(element, "item", attrib=dict(item.attributes))
         _append_layout_item(item_element, item)
     _append_unknown_children(element, layout.unknown_children_xml)
     return element

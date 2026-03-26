@@ -92,6 +92,10 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 - **File/lines:** `app/designer/io/ui_reader.py:110-123`, `app/designer/model/layout_node.py:16-22`, `app/designer/io/ui_writer.py:63-73`  
 - **Details:** Layout-item attributes on `<item>` (e.g., row/column/rowspan/colspan/alignment) are not parsed/stored/re-emitted.  
 - **Suggested fix:** Extend `LayoutItem` with attribute map, parse attributes in reader, write attributes in writer, and add regression fixtures for grid forms.
+- **Status (2026-03-26):** **RESOLVED (PR-05)**  
+  `LayoutItem` now stores per-item attributes and reader/writer round-trips `row`/`column`/`rowspan`/`colspan`/`alignment` on `<item>` nodes. Regression coverage:
+  - `tests/unit/designer/io/test_ui_reader_writer.py::test_read_write_round_trip_preserves_grid_layout_item_attributes`
+  - `tests/integration/designer/test_designer_save_roundtrip.py::test_designer_save_roundtrip_preserves_grid_layout_item_attributes`
 
 6) **Mode/run shortcut overlap (F5/F6) is ambiguous**  
 - **File/lines:** `app/shell/menus.py:548-562,571-577,648-650`, `app/designer/editor_surface.py:997-1008`  

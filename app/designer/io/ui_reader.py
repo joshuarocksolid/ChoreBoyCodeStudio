@@ -108,19 +108,24 @@ def _parse_layout(element: ET.Element) -> LayoutNode:
 
 
 def _parse_layout_item(element: ET.Element) -> LayoutItem | None:
+    attributes = {
+        key: value
+        for key, value in element.attrib.items()
+        if key in {"row", "column", "rowspan", "colspan", "alignment"}
+    }
     widget_element = element.find("widget")
     if widget_element is not None:
-        return LayoutItem(widget=_parse_widget(widget_element))
+        return LayoutItem(widget=_parse_widget(widget_element), attributes=attributes)
     layout_element = element.find("layout")
     if layout_element is not None:
-        return LayoutItem(layout=_parse_layout(layout_element))
+        return LayoutItem(layout=_parse_layout(layout_element), attributes=attributes)
     spacer_element = element.find("spacer")
     if spacer_element is not None:
         spacer_name = spacer_element.attrib.get("name", "").strip() or "spacerItem"
-        return LayoutItem(spacer=SpacerItem(name=spacer_name))
+        return LayoutItem(spacer=SpacerItem(name=spacer_name), attributes=attributes)
     unknown_xml = [ET.tostring(child, encoding="unicode") for child in list(element)]
     if unknown_xml:
-        return LayoutItem(unknown_xml=unknown_xml)
+        return LayoutItem(attributes=attributes, unknown_xml=unknown_xml)
     return None
 
 

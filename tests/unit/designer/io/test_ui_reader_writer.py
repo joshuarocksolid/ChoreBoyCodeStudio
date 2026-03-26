@@ -270,3 +270,42 @@ def test_read_write_round_trip_preserves_unknown_property_payloads() -> None:
     rewritten = write_ui_string(model)
     assert "<fancytype>" in rewritten
     assert "<value>123</value>" in rewritten
+
+
+def test_read_write_round_trip_preserves_grid_layout_item_attributes() -> None:
+    source_xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<ui version=\"4.0\">"
+        "<class>GridForm</class>"
+        "<widget class=\"QWidget\" name=\"GridForm\">"
+        "<layout class=\"QGridLayout\" name=\"gridLayout\">"
+        "<item row=\"0\" column=\"0\">"
+        "<widget class=\"QLabel\" name=\"label\">"
+        "<property name=\"text\"><string>Name</string></property>"
+        "</widget>"
+        "</item>"
+        "<item row=\"1\" column=\"0\" rowspan=\"1\" colspan=\"2\" alignment=\"Qt::AlignCenter\">"
+        "<widget class=\"QLineEdit\" name=\"lineEdit\"/>"
+        "</item>"
+        "</layout>"
+        "</widget>"
+        "<resources/><connections/>"
+        "</ui>\n"
+    )
+    model = read_ui_string(source_xml)
+
+    rewritten = write_ui_string(model)
+    assert "<item row=\"0\" column=\"0\">" in rewritten
+    assert "<item row=\"1\" column=\"0\" rowspan=\"1\" colspan=\"2\" alignment=\"Qt::AlignCenter\">" in rewritten
+
+    reparsed = read_ui_string(rewritten)
+    assert reparsed.root_widget.layout is not None
+    assert len(reparsed.root_widget.layout.items) == 2
+    assert reparsed.root_widget.layout.items[0].attributes == {"row": "0", "column": "0"}
+    assert reparsed.root_widget.layout.items[1].attributes == {
+        "row": "1",
+        "column": "0",
+        "rowspan": "1",
+        "colspan": "2",
+        "alignment": "Qt::AlignCenter",
+    }
