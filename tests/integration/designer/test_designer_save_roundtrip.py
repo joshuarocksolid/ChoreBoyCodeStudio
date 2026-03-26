@@ -14,8 +14,23 @@ import PySide2.QtWidgets as qt_widgets
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 from app.designer.io import read_ui_file
+from app.designer.model import WidgetNode
 
 pytestmark = pytest.mark.integration
+
+
+def _collect_widget_class_names(root: WidgetNode) -> set[str]:
+    class_names: set[str] = set()
+    stack: list[WidgetNode] = [root]
+    while stack:
+        current = stack.pop()
+        class_names.add(current.class_name)
+        stack.extend(current.children)
+        if current.layout is not None:
+            for item in current.layout.items:
+                if item.widget is not None:
+                    stack.append(item.widget)
+    return class_names
 
 
 def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
@@ -223,12 +238,7 @@ def test_designer_save_roundtrip_persists_tranche_one_palette_widgets(
     window.close()
 
     reloaded = read_ui_file(str(ui_file.resolve()))
-    inserted_widgets = []
-    if reloaded.root_widget.layout is not None:
-        inserted_widgets = [item.widget for item in reloaded.root_widget.layout.items if item.widget is not None]
-    if not inserted_widgets:
-        inserted_widgets = list(reloaded.root_widget.children)
-    class_names = {widget.class_name for widget in inserted_widgets}
+    class_names = _collect_widget_class_names(reloaded.root_widget)
     assert {
         "QSpinBox",
         "QDoubleSpinBox",
@@ -240,4 +250,64 @@ def test_designer_save_roundtrip_persists_tranche_one_palette_widgets(
         "QDial",
         "QToolButton",
         "QDialogButtonBox",
+    }.issubset(class_names)
+
+
+def test_designer_save_roundtrip_persists_tranche_two_palette_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Designer Palette Tranche Two")
+    ui_file = project_root / "palette_tranche_two.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>PaletteTrancheTwoForm</class>"
+            "<widget class=\"QWidget\" name=\"PaletteTrancheTwoForm\">"
+            "<layout class=\"QVBoxLayout\" name=\"verticalLayout\"/>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._open_file_in_editor(str(ui_file.resolve())) is True
+
+    surface = window._active_designer_surface()
+    assert surface is not None
+    assert surface.model is not None
+
+    for class_name in (
+        "QListWidget",
+        "QTreeWidget",
+        "QTableWidget",
+        "QStackedWidget",
+        "QSplitter",
+        "QMainWindow",
+    ):
+        surface._handle_palette_insert_request(class_name)  # type: ignore[attr-defined]
+
+    assert window._handle_save_action() is True
+    window.close()
+
+    reloaded = read_ui_file(str(ui_file.resolve()))
+    class_names = _collect_widget_class_names(reloaded.root_widget)
+    assert {
+        "QListWidget",
+        "QTreeWidget",
+        "QTableWidget",
+        "QStackedWidget",
+        "QSplitter",
+        "QMainWindow",
     }.issubset(class_names)

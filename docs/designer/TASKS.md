@@ -691,7 +691,10 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-01
 - **Depends on:** D6.S1.T1
 - **Done when:** requested must-have list is represented with valid insertion behavior.
-- **Implementation note:** tranche-1 must-have widgets (`QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`) were added to the palette registry and icon mapping, with unit coverage for registry/categories/drop rules and integration save-roundtrip coverage confirming deterministic insertion + serialization.
+- **Implementation note:** tranche-1 + tranche-2 must-have widgets were added to the palette registry and icon mapping. Added widgets now include:
+  - tranche-1: `QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`
+  - tranche-2: `QListWidget`, `QTreeWidget`, `QTableWidget`, `QStackedWidget`, `QSplitter`, `QMainWindow`
+  with unit coverage for registry/category/drop rules and integration save-roundtrip coverage confirming deterministic insertion + serialization.
 
 ### Story D7.S2 — Property editor depth expansion
 

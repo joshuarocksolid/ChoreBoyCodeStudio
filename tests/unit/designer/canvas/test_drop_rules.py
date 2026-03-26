@@ -71,3 +71,42 @@ def test_can_insert_widget_allows_tranche_one_widgets_under_container_parent() -
             )
             is True
         )
+
+
+def test_can_insert_widget_allows_tranche_two_widgets_under_container_parent() -> None:
+    supported_widgets = [
+        "QListWidget",
+        "QTreeWidget",
+        "QTableWidget",
+        "QStackedWidget",
+        "QSplitter",
+    ]
+    for class_name in supported_widgets:
+        assert (
+            can_insert_widget(
+                parent_class_name="QWidget",
+                child_class_name=class_name,
+                is_layout_item=False,
+                parent_has_layout=False,
+            )
+            is True
+        )
+
+    assert (
+        can_insert_widget(
+            parent_class_name="QWidget",
+            child_class_name="QMainWindow",
+            is_layout_item=False,
+            parent_has_layout=False,
+        )
+        is True
+    )
+    assert (
+        can_insert_widget(
+            parent_class_name="QGroupBox",
+            child_class_name="QMainWindow",
+            is_layout_item=False,
+            parent_has_layout=False,
+        )
+        is False
+    )

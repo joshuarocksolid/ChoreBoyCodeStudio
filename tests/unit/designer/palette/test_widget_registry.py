@@ -39,6 +39,21 @@ def test_default_palette_registry_includes_tranche1_must_have_widgets() -> None:
     assert expected.issubset(class_names)
 
 
+def test_default_palette_registry_includes_tranche2_structural_widgets() -> None:
+    registry = default_widget_palette_registry()
+    class_names = {item.class_name for item in registry.list_all()}
+
+    expected = {
+        "QListWidget",
+        "QTreeWidget",
+        "QTableWidget",
+        "QStackedWidget",
+        "QSplitter",
+        "QMainWindow",
+    }
+    assert expected.issubset(class_names)
+
+
 def test_palette_registry_groups_items_by_category() -> None:
     registry = default_widget_palette_registry()
     containers = registry.list_by_category("Containers")
@@ -46,13 +61,22 @@ def test_palette_registry_groups_items_by_category() -> None:
     display = registry.list_by_category("Display")
     numeric_inputs = registry.list_by_category("Numeric Inputs")
     date_time_inputs = registry.list_by_category("Date/Time Inputs")
+    item_views = registry.list_by_category("Item Views")
     layout_items = registry.list_by_category("Layout Items")
 
-    assert {item.class_name for item in containers} >= {"QWidget", "QTabWidget", "QScrollArea"}
+    assert {item.class_name for item in containers} >= {
+        "QWidget",
+        "QTabWidget",
+        "QScrollArea",
+        "QStackedWidget",
+        "QSplitter",
+        "QMainWindow",
+    }
     assert {item.class_name for item in inputs} >= {"QLineEdit", "QTextEdit"}
     assert {item.class_name for item in display} == {"QLabel"}
     assert {item.class_name for item in numeric_inputs} >= {"QSpinBox", "QDoubleSpinBox", "QSlider", "QDial"}
     assert {item.class_name for item in date_time_inputs} == {"QDateEdit", "QTimeEdit", "QDateTimeEdit"}
+    assert {item.class_name for item in item_views} == {"QListWidget", "QTreeWidget", "QTableWidget"}
     assert {item.class_name for item in layout_items} == {"QSpacerItem"}
 
 

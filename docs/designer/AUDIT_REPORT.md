@@ -190,7 +190,7 @@ Legend: **Missing / Partial / Complete**
 | Feature | Qt Designer | Current implementation | Gap |
 |---|---|---|---|
 | Core widget box breadth | Broad standard widget families (inputs, item views, containers, displays, buttons, main-window primitives) | 13 entries (`QWidget`, `QFrame`, `QGroupBox`, `QTabWidget`, `QScrollArea`, `QLineEdit`, `QTextEdit`, `QComboBox`, `QCheckBox`, `QRadioButton`, `QLabel`, `QPushButton`, `QSpacerItem`) | **Partial** |
-| Must-have missing set (examples from request) | Includes `QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QListWidget`, `QTreeWidget`, `QTableWidget`, `QToolButton`, `QDialogButtonBox`, `QStackedWidget`, `QSplitter`, `QMenuBar`, `QToolBar`, `QStatusBar`, `QMainWindow` | Numeric/date/action tranche delivered in PR-09; structural and action-host widgets still pending | **Partial** |
+| Must-have missing set (examples from request) | Includes `QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QListWidget`, `QTreeWidget`, `QTableWidget`, `QToolButton`, `QDialogButtonBox`, `QStackedWidget`, `QSplitter`, `QMenuBar`, `QToolBar`, `QStatusBar`, `QMainWindow` | Numeric/date/action tranche delivered in PR-09; structural tranche delivered in PR-10 (`QListWidget`, `QTreeWidget`, `QTableWidget`, `QStackedWidget`, `QSplitter`, `QMainWindow`); action-host authoring widgets still pending | **Partial** |
 
 ## B) Property editor depth
 
