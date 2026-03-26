@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide2.QtCore import QItemSelectionModel, Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
@@ -31,6 +33,7 @@ class FormCanvas(QWidget):
         self._palette_registry = default_widget_palette_registry()
         self._snap_to_grid_enabled = True
         self._snap_grid_size = 8
+        self._insert_request_handler: Callable[[str], tuple[bool, str]] | None = None
 
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
@@ -70,6 +73,12 @@ class FormCanvas(QWidget):
         if self._selection_controller is not None:
             self._selection_controller.selection_changed.connect(self._handle_controller_selection_changed)
             self._selection_controller.selection_set_changed.connect(self._handle_controller_selection_set_changed)
+
+    def set_insert_request_handler(
+        self,
+        handler: Callable[[str], tuple[bool, str]] | None,
+    ) -> None:
+        self._insert_request_handler = handler
 
     def configure_snap_to_grid(self, *, enabled: bool, grid_size: int) -> None:
         self._snap_to_grid_enabled = bool(enabled)
@@ -138,7 +147,10 @@ class FormCanvas(QWidget):
         if not class_name:
             event.ignore()
             return
-        inserted, error_message = self.try_insert_widget_by_class_name(class_name)
+        if self._insert_request_handler is None:
+            inserted, error_message = self.try_insert_widget_by_class_name(class_name)
+        else:
+            inserted, error_message = self._insert_request_handler(class_name)
         if not inserted:
             if error_message:
                 self.insert_rejected.emit(error_message)

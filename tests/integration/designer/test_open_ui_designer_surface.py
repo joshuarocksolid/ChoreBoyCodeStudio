@@ -10,13 +10,32 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 import PySide2.QtGui as qt_gui
 import PySide2.QtWidgets as qt_widgets
+from PySide2.QtCore import QMimeData
 
 from app.designer.editor_surface import DesignerEditorSurface
+from app.designer.palette.palette_panel import PALETTE_WIDGET_MIME
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.integration
+
+
+class _FakeDropEvent:
+    def __init__(self, class_name: str) -> None:
+        self._mime_data = QMimeData()
+        self._mime_data.setData(PALETTE_WIDGET_MIME, class_name.encode("utf-8"))
+        self.accepted = False
+        self.ignored = False
+
+    def mimeData(self) -> QMimeData:  # noqa: N802 - Qt-style
+        return self._mime_data
+
+    def acceptProposedAction(self) -> None:
+        self.accepted = True
+
+    def ignore(self) -> None:
+        self.ignored = True
 
 
 def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
@@ -31,6 +50,10 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
 
 def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -77,9 +100,24 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert save_component_action is not None and save_component_action.isEnabled()
     assert insert_component_action is not None and insert_component_action.isEnabled()
     assert duplicate_action is not None and duplicate_action.isEnabled()
-    mode_action.trigger()
+    initial_dirty = surface = None
     surface = window._active_designer_surface()
     assert surface is not None
+    initial_dirty = surface.is_dirty
+    assert initial_dirty is False
+    assert surface.can_undo is False
+
+    # Simulate canvas drag/drop insertion path via dropEvent.
+    event = _FakeDropEvent("QPushButton")
+    surface._canvas.dropEvent(event)  # type: ignore[attr-defined]
+    assert event.accepted is True
+    assert event.ignored is False
+    assert surface.model is not None
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+    assert surface.is_dirty is True
+    assert surface.can_undo is True
+
+    mode_action.trigger()
     tab_titles = [surface._inspector_tabs.tabText(index) for index in range(surface._inspector_tabs.count())]  # type: ignore[attr-defined]
     assert "Library" in tab_titles
     assert surface.current_mode == "signals_slots"

@@ -605,7 +605,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Implementation note:** `FormCanvas` now resolves insertion parents by selected widget -> ancestor container -> root fallback, emits explicit rejection messages, and regression coverage verifies repeated insertion recovery.
 
 #### Task D6.S1.T2 — Route canvas drop mutations through snapshot command stack
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Ensure all insertion paths (palette click, drag/drop, component insertion) are consistently undoable/redoable and mark tabs dirty.
 - **Primary files:** `app/designer/editor_surface.py`, `app/designer/canvas/form_canvas.py`, `tests/unit/designer/commands/test_command_stack.py`, integration coverage for insertion undo/redo
 - **Automated test layer:** unit, integration
@@ -613,6 +613,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-02
 - **Depends on:** D6.S1.T1
 - **Done when:** insertion mutation source no longer changes undo/redo behavior.
+- **Implementation note:** canvas drop events now delegate to a surface-owned insertion handler (`_insert_widget_via_snapshot`) so drag/drop and palette requests share the same snapshot/dirty pipeline.
 
 ### Story D6.S2 — Preview robustness
 

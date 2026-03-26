@@ -457,6 +457,8 @@ class DesignerEditorSurface(QWidget):
         self._palette_panel.widget_insert_requested.connect(self._handle_palette_insert_request)
         self._canvas = FormCanvas(self._splitter)
         self._canvas.set_selection_controller(self._selection_controller)
+        self._canvas.set_insert_request_handler(self._insert_widget_via_snapshot)
+        self._canvas.insert_rejected.connect(self._handle_canvas_insert_rejected)
         self._inspector_tabs = QTabWidget(self._splitter)
         self._inspector_tabs.setObjectName("designer.surface.inspectorTabs")
         self._object_inspector = ObjectInspector(self._inspector_tabs)
@@ -780,19 +782,30 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
 
     def _handle_palette_insert_request(self, class_name: str) -> None:
-        if self._model is None:
-            return
-        before_xml = self.serialize_to_ui_string()
-        if not self._canvas.insert_widget_by_class_name(class_name):
-            self._show_status("Widget insertion is not allowed for the selected parent.", "error")
+        inserted, error_message = self._insert_widget_via_snapshot(class_name)
+        if not inserted:
+            self._show_status(error_message or "Widget insertion is not allowed for the selected parent.", "error")
             return
         self._hide_status()
+
+    def _handle_canvas_insert_rejected(self, message: str) -> None:
+        self._show_status(message or "Widget insertion is not allowed for the selected parent.", "error")
+
+    def _insert_widget_via_snapshot(self, class_name: str) -> tuple[bool, str]:
+        if self._model is None:
+            return False, "No form model loaded."
+        before_xml = self.serialize_to_ui_string()
+        inserted, error_message = self._canvas.try_insert_widget_by_class_name(class_name)
+        if not inserted:
+            return False, error_message or "Widget insertion is not allowed for the selected parent."
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return True, ""
         self._command_stack.push(
             SnapshotCommand(
                 description=f"insert {class_name}",
@@ -801,6 +814,7 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+        return True, ""
 
     def _handle_inspector_reparent_request(self, source_object_name: str, target_object_name: str) -> bool:
         if self._model is None:

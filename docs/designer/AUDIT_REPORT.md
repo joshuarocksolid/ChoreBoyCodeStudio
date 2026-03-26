@@ -61,6 +61,10 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
 - **File/lines:** `app/designer/canvas/form_canvas.py:130-142`, `app/designer/editor_surface.py:782-803`  
 - **Details:** Palette button path `_handle_palette_insert_request()` wraps mutations with before/after snapshot + dirty state, but raw drop path mutates model directly in canvas without snapshot push.  
 - **Suggested fix:** Route all insertion events (double-click and drop) through one surface-level mutation API that always records command stack snapshots and dirty state.
+- **Status (2026-03-26):** **RESOLVED (PR-02)**  
+  Canvas drop insertion is now delegated to a surface-owned insertion handler that shares the same snapshot mutation pipeline as palette insertion. Regression coverage:
+  - `tests/unit/designer/test_editor_surface.py::test_editor_surface_canvas_insert_route_updates_dirty_and_undo`
+  - `tests/integration/designer/test_open_ui_designer_surface.py::test_open_ui_file_uses_designer_surface`
 
 ### Major
 

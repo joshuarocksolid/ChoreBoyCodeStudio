@@ -87,6 +87,30 @@ def test_editor_surface_palette_insert_updates_model(tmp_path: Path) -> None:
     assert inserted.class_name == "QPushButton"
 
 
+def test_editor_surface_canvas_insert_route_updates_dirty_and_undo(tmp_path: Path) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>SampleForm</class>"
+            "<widget class=\"QWidget\" name=\"SampleForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    assert surface.is_dirty is False
+    assert surface.can_undo is False
+
+    inserted, error_message = surface._insert_widget_via_snapshot("QPushButton")  # type: ignore[attr-defined]
+    assert inserted is True, error_message
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+    assert surface.is_dirty is True
+    assert surface.can_undo is True
+
+
 def test_editor_surface_emits_dirty_state_on_mutation(tmp_path: Path) -> None:
     ui_file = tmp_path / "sample.ui"
     ui_file.write_text(
