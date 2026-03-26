@@ -142,6 +142,30 @@ def test_canvas_tree_selection_syncs_with_selection_controller() -> None:
     assert "statusLabel" in current_item.text(0)
 
 
+def test_canvas_double_click_emits_edit_text_context_action() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[WidgetNode(class_name="QLabel", object_name="statusLabel")],
+        ),
+    )
+    controller = SelectionController()
+    canvas.set_selection_controller(controller)
+    canvas.load_model(model)
+    seen_actions: list[str] = []
+    canvas.set_context_action_handler(lambda action_id: seen_actions.append(action_id))
+
+    controller.set_selected_object_name("statusLabel")
+    current_item = canvas._canvas_tree.currentItem()  # type: ignore[attr-defined]
+    assert current_item is not None
+    canvas._handle_tree_item_double_clicked(current_item, 0)  # type: ignore[attr-defined]
+
+    assert seen_actions == ["designer.canvas.context.edit_text"]
+
+
 def test_insert_widget_by_class_name_resolves_container_from_ancestor_selection() -> None:
     canvas = FormCanvas()
     model = UIModel(

@@ -112,6 +112,7 @@ References:
 - Drag = move (absolute mode or valid layout operation)
 - Ctrl+drag = clone (parity target phase)
 - Delete = remove selected widget(s)
+- Right-click = context menu (edit text, clipboard actions, duplicate/delete, align/distribute, adjust size)
 
 ## 3.3 Right Dock — Object Inspector tab
 
@@ -267,6 +268,14 @@ References:
 | `designer.layout.vertical` | Lay Out Vertically | `Ctrl+2` | Qt Designer convention |
 | `designer.layout.grid` | Lay Out in a Grid | `Ctrl+3` | Qt Designer convention |
 | `designer.layout.break` | Break Layout | `Ctrl+0` | Qt Designer convention |
+| `designer.layout.align_left` | Align Left |  | align selected widgets to left edge |
+| `designer.layout.align_hcenter` | Align Horizontal Centers |  | align selected widgets by horizontal center |
+| `designer.layout.align_right` | Align Right |  | align selected widgets to right edge |
+| `designer.layout.align_top` | Align Top |  | align selected widgets to top edge |
+| `designer.layout.align_vcenter` | Align Vertical Centers |  | align selected widgets by vertical center |
+| `designer.layout.align_bottom` | Align Bottom |  | align selected widgets to bottom edge |
+| `designer.layout.distribute_horizontal` | Distribute Horizontally |  | spread selected widgets along X |
+| `designer.layout.distribute_vertical` | Distribute Vertically |  | spread selected widgets along Y |
 | `designer.layout.adjust_size` | Adjust Size | `Ctrl+J` | Fit to content |
 | `designer.layout.spacer_h` | Insert Horizontal Spacer | `Ctrl+Shift+H` | |
 | `designer.layout.spacer_v` | Insert Vertical Spacer | `Ctrl+Shift+V` | |

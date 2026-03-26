@@ -809,6 +809,99 @@ def test_editor_surface_action_panel_mutations_are_undoable(tmp_path: Path) -> N
     assert [ref.name for ref in menu_bar_after_redo.add_actions] == ["actionOpen"]
 
 
+def test_editor_surface_align_distribute_adjust_size_and_text_edit_mutations(tmp_path: Path) -> None:
+    ui_file = tmp_path / "affordances.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>Form</class>"
+            "<widget class=\"QWidget\" name=\"Form\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\">"
+            "<property name=\"text\"><string>One</string></property>"
+            "<property name=\"geometry\"><rect><x>16</x><y>16</y><width>120</width><height>32</height></rect></property>"
+            "</widget>"
+            "<widget class=\"QLabel\" name=\"label\">"
+            "<property name=\"text\"><string>Two</string></property>"
+            "<property name=\"geometry\"><rect><x>200</x><y>64</y><width>120</width><height>32</height></rect></property>"
+            "</widget>"
+            "<widget class=\"QLineEdit\" name=\"lineEdit\">"
+            "<property name=\"placeholderText\"><string>Three</string></property>"
+            "<property name=\"geometry\"><rect><x>300</x><y>80</y><width>200</width><height>32</height></rect></property>"
+            "</widget>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+
+    surface._selection_controller.set_selected_object_names(["pushButton", "label"])  # type: ignore[attr-defined]
+    assert surface.align_selection("left") is True
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    label = surface.model.root_widget.find_by_object_name("label")
+    assert push_button is not None and label is not None
+    assert push_button.properties["geometry"].value["x"] == label.properties["geometry"].value["x"]
+
+    surface._selection_controller.set_selected_object_names(["pushButton", "label", "lineEdit"])  # type: ignore[attr-defined]
+    assert surface.distribute_selection("vertical") is True
+    y_positions = [
+        int(surface.model.root_widget.find_by_object_name(name).properties["geometry"].value["y"])  # type: ignore[union-attr]
+        for name in ("pushButton", "label", "lineEdit")
+    ]
+    assert y_positions[0] < y_positions[1] < y_positions[2]
+
+    surface._selection_controller.set_selected_object_names(["lineEdit"])  # type: ignore[attr-defined]
+    assert surface.adjust_size_for_selection() is True
+    line_edit = surface.model.root_widget.find_by_object_name("lineEdit")
+    assert line_edit is not None
+    assert line_edit.properties["geometry"].value["width"] == 120
+    assert line_edit.properties["geometry"].value["height"] == 32
+
+    surface._selection_controller.set_selected_object_names(["pushButton", "label"])  # type: ignore[attr-defined]
+    assert surface.edit_text_for_selection("Renamed") is True
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    label = surface.model.root_widget.find_by_object_name("label")
+    assert push_button is not None and label is not None
+    assert push_button.properties["text"].value == "Renamed"
+    assert label.properties["text"].value == "Renamed"
+
+
+def test_editor_surface_canvas_context_action_dispatches_core_commands(tmp_path: Path) -> None:
+    ui_file = tmp_path / "context.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>Form</class>"
+            "<widget class=\"QWidget\" name=\"Form\">"
+            "<widget class=\"QPushButton\" name=\"pushButton\">"
+            "<property name=\"text\"><string>One</string></property>"
+            "<property name=\"geometry\"><rect><x>16</x><y>16</y><width>120</width><height>32</height></rect></property>"
+            "</widget>"
+            "<widget class=\"QLabel\" name=\"label\">"
+            "<property name=\"text\"><string>Two</string></property>"
+            "<property name=\"geometry\"><rect><x>200</x><y>48</y><width>120</width><height>32</height></rect></property>"
+            "</widget>"
+            "</widget>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    assert surface.model is not None
+    surface._selection_controller.set_selected_object_names(["pushButton", "label"])  # type: ignore[attr-defined]
+
+    surface._handle_canvas_context_action("designer.canvas.context.align_left")  # type: ignore[attr-defined]
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    label = surface.model.root_widget.find_by_object_name("label")
+    assert push_button is not None and label is not None
+    assert push_button.properties["geometry"].value["x"] == label.properties["geometry"].value["x"]
+
+    surface._handle_canvas_context_action("designer.canvas.context.adjust_size")  # type: ignore[attr-defined]
+    assert push_button.properties["geometry"].value["width"] == 120
+    assert label.properties["geometry"].value["height"] == 32
+
+
 def test_editor_surface_preview_uses_isolated_mode_for_promoted_custom_widgets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -883,3 +976,56 @@ def test_editor_surface_preview_retains_active_widget_reference(
     assert surface.preview_current_form() is True
     assert shown == [True]
     assert surface._active_preview_widget is preview_widget  # type: ignore[attr-defined]
+
+
+def test_editor_surface_preview_variant_applies_style_and_window_title(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui_file = tmp_path / "sample.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>PreviewForm</class>"
+            "<widget class=\"QWidget\" name=\"PreviewForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    surface = DesignerEditorSurface(str(ui_file.resolve()))
+    seen_kwargs: dict[str, object] = {}
+
+    class _PreviewWidgetProxy:
+        def __init__(self) -> None:
+            self.destroyed = surface.destroyed  # pragma: no cover - signal plumbing only
+
+        def setAttribute(self, *_args, **_kwargs) -> None:
+            return None
+
+        def setWindowTitle(self, *_args, **_kwargs) -> None:
+            return None
+
+        def show(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        def deleteLater(self) -> None:
+            return None
+
+    preview_widget = _PreviewWidgetProxy()
+    monkeypatch.setattr("app.designer.editor_surface.load_widget_from_ui_xml", lambda _xml: preview_widget)
+
+    def _fake_configure(widget, **kwargs):  # type: ignore[no-untyped-def]
+        seen_kwargs.update(kwargs)
+        return widget
+
+    monkeypatch.setattr("app.designer.editor_surface.configure_preview_widget", _fake_configure)
+
+    assert surface.preview_current_form_variant("fusion") is True
+    assert surface.active_preview_variant_id == "fusion"
+    assert seen_kwargs["style_name"] == "Fusion"
+    assert seen_kwargs["viewport_size"] is None
+    assert "Fusion Style" in str(seen_kwargs["window_title"])

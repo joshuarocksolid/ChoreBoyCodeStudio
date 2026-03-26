@@ -17,6 +17,7 @@ from app.designer.preview import (
     probe_ui_xml_compatibility,
     probe_ui_xml_compatibility_isolated,
 )
+from app.designer.preview.preview_variants import preview_variant_by_id, preview_variants
 from app.designer.preview.preview_service import (
     ISOLATED_PREVIEW_TIMEOUT_SECONDS,
     _build_isolated_preview_command,
@@ -135,3 +136,17 @@ def test_build_isolated_preview_command_uses_module_flag_for_python_runtime() ->
         custom_widgets_json="[]",
     )
     assert command[:3] == ["/usr/bin/python3", "-m", "app.designer.preview.preview_runner"]
+
+
+def test_preview_variants_include_style_and_device_presets() -> None:
+    variants = list(preview_variants())
+    variant_ids = [variant.variant_id for variant in variants]
+    assert variant_ids == [
+        "default",
+        "fusion",
+        "phone_portrait",
+        "tablet_portrait",
+    ]
+    assert preview_variant_by_id("fusion") is not None
+    assert preview_variant_by_id("phone_portrait") is not None
+    assert preview_variant_by_id("missing") is None

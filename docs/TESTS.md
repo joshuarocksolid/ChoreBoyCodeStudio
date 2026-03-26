@@ -115,6 +115,20 @@ python3 run_tests.py -v tests/unit/designer/io/test_ui_formatter.py -k action_re
 python3 run_tests.py -v tests/unit/designer/actions/test_action_editor_panel.py
 python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k action_panel_mutations_are_undoable
 python3 run_tests.py -v tests/integration/designer/test_designer_action_editor.py
+python3 run_tests.py -v tests/unit/designer/layout/test_layout_commands.py
+python3 run_tests.py -v tests/unit/designer/canvas/test_form_canvas.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k "align_distribute_adjust_size_and_text_edit_mutations or canvas_context_action_dispatches_core_commands"
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_layout.py
+python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
+python3 run_tests.py -v tests/integration/designer/test_designer_layout_actions.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_variants.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_service.py -k preview_variants_include_style_and_device_presets
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k preview_variant_applies_style_and_window_title
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_preview_variants.py
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_form.py
+python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
 ```
 
 ## 6) Manual acceptance validation

@@ -397,16 +397,19 @@ Legend: **Missing / Partial / Complete**
 - **Files:** canvas/layout command modules, menus, tests
 - **Effort:** **L**
 - **Dependencies:** R1/R2
+- **Status (2026-03-26):** **RESOLVED (PR-17)**
 
 ### R13. In-place text editing and context menus
 - **Files:** canvas/editor surface interaction layer
 - **Effort:** **M-L**
 - **Dependencies:** R1
+- **Status (2026-03-26):** **RESOLVED (PR-17)**
 
 ### R14. Preview style/device variants
 - **Files:** preview service/menu wiring
 - **Effort:** **M**
 - **Dependencies:** R3/R4
+- **Status (2026-03-26):** **RESOLVED (PR-18)**
 
 ---
 

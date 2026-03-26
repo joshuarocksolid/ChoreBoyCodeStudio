@@ -451,11 +451,24 @@ class MainWindow(QMainWindow):
                 on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
                 on_designer_layout_grid=self._handle_designer_layout_grid_action,
                 on_designer_layout_break=self._handle_designer_layout_break_action,
+                on_designer_layout_align_left=self._handle_designer_layout_align_left_action,
+                on_designer_layout_align_hcenter=self._handle_designer_layout_align_hcenter_action,
+                on_designer_layout_align_right=self._handle_designer_layout_align_right_action,
+                on_designer_layout_align_top=self._handle_designer_layout_align_top_action,
+                on_designer_layout_align_vcenter=self._handle_designer_layout_align_vcenter_action,
+                on_designer_layout_align_bottom=self._handle_designer_layout_align_bottom_action,
+                on_designer_layout_distribute_horizontal=self._handle_designer_layout_distribute_horizontal_action,
+                on_designer_layout_distribute_vertical=self._handle_designer_layout_distribute_vertical_action,
+                on_designer_layout_adjust_size=self._handle_designer_layout_adjust_size_action,
                 on_designer_mode_widget=self._handle_designer_mode_widget_action,
                 on_designer_mode_signals_slots=self._handle_designer_mode_signals_slots_action,
                 on_designer_mode_buddy=self._handle_designer_mode_buddy_action,
                 on_designer_mode_tab_order=self._handle_designer_mode_tab_order_action,
                 on_designer_preview=self._handle_designer_preview_action,
+                on_designer_preview_default=lambda: self._handle_designer_preview_variant_action("default"),
+                on_designer_preview_fusion=lambda: self._handle_designer_preview_variant_action("fusion"),
+                on_designer_preview_phone_portrait=lambda: self._handle_designer_preview_variant_action("phone_portrait"),
+                on_designer_preview_tablet_portrait=lambda: self._handle_designer_preview_variant_action("tablet_portrait"),
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_designer_add_resource=self._handle_designer_add_resource_action,
                 on_designer_promote_widget=self._handle_designer_promote_widget_action,
@@ -1524,6 +1537,63 @@ class MainWindow(QMainWindow):
         if not surface.break_layout_for_selection():
             QMessageBox.information(self, "Break Layout", "No layout available on selected widget.")
 
+    def _handle_designer_layout_align_left_action(self) -> None:
+        self._apply_designer_align_command("left", "Align Left")
+
+    def _handle_designer_layout_align_hcenter_action(self) -> None:
+        self._apply_designer_align_command("center_horizontal", "Align Horizontal Centers")
+
+    def _handle_designer_layout_align_right_action(self) -> None:
+        self._apply_designer_align_command("right", "Align Right")
+
+    def _handle_designer_layout_align_top_action(self) -> None:
+        self._apply_designer_align_command("top", "Align Top")
+
+    def _handle_designer_layout_align_vcenter_action(self) -> None:
+        self._apply_designer_align_command("center_vertical", "Align Vertical Centers")
+
+    def _handle_designer_layout_align_bottom_action(self) -> None:
+        self._apply_designer_align_command("bottom", "Align Bottom")
+
+    def _handle_designer_layout_distribute_horizontal_action(self) -> None:
+        self._apply_designer_distribute_command("horizontal", "Distribute Horizontally")
+
+    def _handle_designer_layout_distribute_vertical_action(self) -> None:
+        self._apply_designer_distribute_command("vertical", "Distribute Vertically")
+
+    def _handle_designer_layout_adjust_size_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.adjust_size_for_selection():
+            QMessageBox.information(
+                self,
+                "Adjust Size",
+                "Adjust Size requires at least one freeform selected widget.",
+            )
+
+    def _apply_designer_align_command(self, mode: str, label: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.align_selection(mode):
+            QMessageBox.information(
+                self,
+                label,
+                "Align requires at least two freeform selected widgets.",
+            )
+
+    def _apply_designer_distribute_command(self, axis: str, label: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.distribute_selection(axis):
+            QMessageBox.information(
+                self,
+                label,
+                "Distribute requires at least three freeform selected widgets.",
+            )
+
     def _apply_designer_layout_command(self, layout_class_name: str) -> None:
         surface = self._active_designer_surface()
         if surface is None:
@@ -1559,6 +1629,17 @@ class MainWindow(QMainWindow):
         if surface is None:
             return
         if not surface.preview_current_form():
+            QMessageBox.warning(
+                self,
+                "Designer Preview",
+                "Preview failed. See the Designer error panel for details.",
+            )
+
+    def _handle_designer_preview_variant_action(self, variant_id: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.preview_current_form_variant(variant_id):
             QMessageBox.warning(
                 self,
                 "Designer Preview",
@@ -3176,6 +3257,10 @@ class MainWindow(QMainWindow):
         has_active_designer = active_surface is not None
         for action_id in (
             "designer.form.preview",
+            "designer.form.preview.default",
+            "designer.form.preview.fusion",
+            "designer.form.preview.phone_portrait",
+            "designer.form.preview.tablet_portrait",
             "designer.form.check_compat",
             "designer.form.add_resource",
             "designer.form.promote_widget",
@@ -3190,6 +3275,15 @@ class MainWindow(QMainWindow):
             "designer.layout.vertical",
             "designer.layout.grid",
             "designer.layout.break",
+            "designer.layout.align_left",
+            "designer.layout.align_hcenter",
+            "designer.layout.align_right",
+            "designer.layout.align_top",
+            "designer.layout.align_vcenter",
+            "designer.layout.align_bottom",
+            "designer.layout.distribute_horizontal",
+            "designer.layout.distribute_vertical",
+            "designer.layout.adjust_size",
             "designer.mode.widget",
             "designer.mode.signals_slots",
             "designer.mode.buddy",

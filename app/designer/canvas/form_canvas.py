@@ -5,7 +5,16 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide2.QtCore import QItemSelectionModel, Qt, Signal
-from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide2.QtWidgets import (
+    QAbstractItemView,
+    QAction,
+    QLabel,
+    QMenu,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.canvas.guides import default_snapped_geometry, widget_icon_char
@@ -34,6 +43,7 @@ class FormCanvas(QWidget):
         self._snap_to_grid_enabled = True
         self._snap_grid_size = 8
         self._insert_request_handler: Callable[[str], tuple[bool, str]] | None = None
+        self._context_action_handler: Callable[[str], None] | None = None
 
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
@@ -49,6 +59,7 @@ class FormCanvas(QWidget):
         self._canvas_tree.setHeaderHidden(True)
         self._canvas_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._canvas_tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
+        self._canvas_tree.itemDoubleClicked.connect(self._handle_tree_item_double_clicked)
         layout.addWidget(self._hint_label)
         layout.addWidget(self._canvas_tree, 1)
 
@@ -79,6 +90,9 @@ class FormCanvas(QWidget):
         handler: Callable[[str], tuple[bool, str]] | None,
     ) -> None:
         self._insert_request_handler = handler
+
+    def set_context_action_handler(self, handler: Callable[[str], None] | None) -> None:
+        self._context_action_handler = handler
 
     def configure_snap_to_grid(self, *, enabled: bool, grid_size: int) -> None:
         self._snap_to_grid_enabled = bool(enabled)
@@ -157,6 +171,43 @@ class FormCanvas(QWidget):
             event.ignore()
             return
         event.acceptProposedAction()
+
+    def contextMenuEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if self._context_action_handler is None:
+            event.ignore()
+            return
+        menu = QMenu(self)
+        for action_id, label in (
+            ("designer.canvas.context.edit_text", "Edit Text…"),
+            ("designer.canvas.context.duplicate", "Duplicate Selection"),
+            ("designer.canvas.context.delete", "Delete Selection"),
+            ("designer.canvas.context.cut", "Cut"),
+            ("designer.canvas.context.copy", "Copy"),
+            ("designer.canvas.context.paste", "Paste"),
+            ("", ""),
+            ("designer.canvas.context.align_left", "Align Left"),
+            ("designer.canvas.context.align_hcenter", "Align Horizontal Centers"),
+            ("designer.canvas.context.align_right", "Align Right"),
+            ("designer.canvas.context.align_top", "Align Top"),
+            ("designer.canvas.context.align_vcenter", "Align Vertical Centers"),
+            ("designer.canvas.context.align_bottom", "Align Bottom"),
+            ("designer.canvas.context.distribute_horizontal", "Distribute Horizontally"),
+            ("designer.canvas.context.distribute_vertical", "Distribute Vertically"),
+            ("designer.canvas.context.adjust_size", "Adjust Size"),
+        ):
+            if not action_id:
+                menu.addSeparator()
+                continue
+            action = QAction(label, menu)
+            action.setData(action_id)
+            menu.addAction(action)
+        chosen = menu.exec_(event.globalPos())
+        if chosen is None:
+            return
+        action_id = chosen.data()
+        if not action_id:
+            return
+        self._context_action_handler(str(action_id))
 
     def insert_widget_by_class_name(self, class_name: str) -> bool:
         inserted, _error_message = self.try_insert_widget_by_class_name(class_name)
@@ -264,6 +315,11 @@ class FormCanvas(QWidget):
         selected_items = self._canvas_tree.selectedItems()
         selected_names = [item.data(0, TREE_ROLE_OBJECT_NAME) for item in selected_items if item.data(0, TREE_ROLE_OBJECT_NAME)]
         self._selection_controller.set_selected_object_names(selected_names)
+
+    def _handle_tree_item_double_clicked(self, _item: QTreeWidgetItem, _column: int) -> None:
+        if self._context_action_handler is None:
+            return
+        self._context_action_handler("designer.canvas.context.edit_text")
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
         if self._selection_controller is not None and len(self._selection_controller.selected_object_names) > 1:

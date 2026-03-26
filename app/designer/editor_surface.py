@@ -43,6 +43,7 @@ from app.designer.inspector import ObjectInspector
 from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
+from app.designer.layout import adjust_widgets_to_default_size, align_widgets, distribute_widgets
 from app.designer.modes import (
     BuddyEditorPanel,
     DESIGNER_MODE_DEFINITIONS,
@@ -65,9 +66,12 @@ from app.designer.model import (
 )
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import (
+    PreviewVariant,
     build_preview_safety_decision,
     configure_preview_widget,
     load_widget_from_ui_xml,
+    preview_variant_by_id,
+    preview_variants,
     preview_registry_from_model,
     probe_ui_xml_compatibility,
     probe_ui_xml_compatibility_isolated,
@@ -105,6 +109,7 @@ class DesignerEditorSurface(QWidget):
         self._snap_to_grid = snap_to_grid
         self._snap_grid_size = max(1, int(grid_size))
         self._active_preview_widget: QWidget | None = None
+        self._active_preview_variant_id = "default"
         self._validation_issues: list[ValidationIssue] = []
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
@@ -179,6 +184,14 @@ class DesignerEditorSurface(QWidget):
 
     def preview_current_form(self) -> bool:
         """Preview current form with QUiLoader-generated widget."""
+        return self.preview_current_form_variant(self._active_preview_variant_id)
+
+    def preview_current_form_variant(self, variant_id: str) -> bool:
+        """Preview current form with an explicit variant preset."""
+        variant = preview_variant_by_id(variant_id)
+        if variant is None:
+            self._show_status("Preview failed: unknown preview variant.", "error")
+            return False
         try:
             ui_xml = self.serialize_to_ui_string()
         except Exception as exc:
@@ -207,15 +220,35 @@ class DesignerEditorSurface(QWidget):
             except RuntimeError:
                 pass
             self._active_preview_widget = None
-        configure_preview_widget(preview_widget, window_title=f"Preview — {Path(self._file_path).name}")
+        configure_preview_widget(
+            preview_widget,
+            window_title=self._preview_window_title_for_variant(variant),
+            style_name=variant.style_name,
+            viewport_size=variant.viewport_size,
+        )
         self._active_preview_widget = preview_widget
+        self._active_preview_variant_id = variant.variant_id
         preview_widget.destroyed.connect(self._handle_preview_widget_destroyed)
         preview_widget.show()
         return True
 
+    def preview_variants(self) -> list[PreviewVariant]:
+        """Return available preview variant presets."""
+        return list(preview_variants())
+
+    @property
+    def active_preview_variant_id(self) -> str:
+        return self._active_preview_variant_id
+
     def _handle_preview_widget_destroyed(self, _obj: object | None = None) -> None:
         if self.sender() is self._active_preview_widget:
             self._active_preview_widget = None
+
+    def _preview_window_title_for_variant(self, variant: PreviewVariant) -> str:
+        form_label = Path(self._file_path).name
+        if variant.variant_id == "default":
+            return f"Preview — {form_label}"
+        return f"Preview ({variant.label}) — {form_label}"
 
     def run_compatibility_check(self) -> str:
         """Run QUiLoader compatibility check and return status message."""
@@ -659,6 +692,7 @@ class DesignerEditorSurface(QWidget):
         self._canvas = FormCanvas(self._splitter)
         self._canvas.set_selection_controller(self._selection_controller)
         self._canvas.set_insert_request_handler(self._insert_widget_via_snapshot)
+        self._canvas.set_context_action_handler(self._handle_canvas_context_action)
         self._canvas.insert_rejected.connect(self._handle_canvas_insert_rejected)
         self._inspector_tabs = QTabWidget(self._splitter)
         self._inspector_tabs.setObjectName("designer.surface.inspectorTabs")
@@ -1182,6 +1216,127 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
         return True
 
+    def align_selection(self, mode: str) -> bool:
+        """Align currently selected freeform widgets by geometry."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if len(selected_widgets) < 2:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not align_widgets(selected_widgets, mode):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"align {mode}",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def distribute_selection(self, axis: str) -> bool:
+        """Distribute currently selected freeform widgets by geometry."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if len(selected_widgets) < 3:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not distribute_widgets(selected_widgets, axis):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"distribute {axis}",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def adjust_size_for_selection(self) -> bool:
+        """Adjust selected freeform widgets to deterministic class default size."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if not selected_widgets:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not adjust_widgets_to_default_size(selected_widgets):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="adjust size",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def edit_text_for_selection(self, text_value: str) -> bool:
+        """Set text/title/windowTitle for selected widgets when supported."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if not selected_widgets:
+            return False
+        normalized = text_value.strip()
+        if not normalized:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        changed = False
+        for widget in selected_widgets:
+            property_name = self._preferred_text_property_name(widget)
+            if not property_name:
+                continue
+            existing = widget.properties.get(property_name)
+            if existing is not None and existing.value == normalized and existing.value_type == "string":
+                continue
+            widget.properties[property_name] = PropertyValue(value_type="string", value=normalized)
+            changed = True
+        if not changed:
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="edit text",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
     def break_layout_for_selection(self) -> bool:
         """Break layout for selected widget (or root when none selected)."""
         if self._model is None:
@@ -1217,6 +1372,102 @@ class DesignerEditorSurface(QWidget):
         if not selected_name:
             return self._model.root_widget
         return self._model.root_widget.find_by_object_name(selected_name)
+
+    def _resolve_selected_widgets(self) -> list[WidgetNode]:
+        if self._model is None:
+            return []
+        names = self._selection_controller.selected_object_names
+        if not names and self._selection_controller.selected_object_name:
+            names = [self._selection_controller.selected_object_name]
+        resolved: list[WidgetNode] = []
+        for name in names:
+            if not name:
+                continue
+            widget = self._model.root_widget.find_by_object_name(name)
+            if widget is None:
+                continue
+            resolved.append(widget)
+        return resolved
+
+    def _preferred_text_property_name(self, widget: WidgetNode) -> str:
+        class_name = widget.class_name
+        if class_name in {"QPushButton", "QLabel", "QCheckBox", "QRadioButton", "QGroupBox", "QToolButton"}:
+            return "text"
+        if class_name in {"QLineEdit"}:
+            return "placeholderText"
+        if class_name in {"QWidget", "QMainWindow", "QDialog"}:
+            return "windowTitle"
+        if "text" in widget.properties:
+            return "text"
+        if "windowTitle" in widget.properties:
+            return "windowTitle"
+        return ""
+
+    def _handle_canvas_context_action(self, action_id: str) -> None:
+        if action_id == "designer.canvas.context.edit_text":
+            selected_widgets = self._resolve_selected_widgets()
+            if not selected_widgets:
+                return
+            editable_widgets = [widget for widget in selected_widgets if self._preferred_text_property_name(widget)]
+            if not editable_widgets:
+                self._show_status("Selected widget does not expose editable text.", "warning", auto_dismiss=True)
+                return
+            selected_widget = editable_widgets[0]
+            property_name = self._preferred_text_property_name(selected_widget)
+            current_value = str(selected_widget.properties.get(property_name, PropertyValue("string", "")).value)
+            from PySide2.QtWidgets import QInputDialog, QLineEdit
+
+            new_value, accepted = QInputDialog.getText(
+                self,
+                "Edit Text",
+                "Text:",
+                QLineEdit.Normal,
+                current_value,
+            )
+            if not accepted:
+                return
+            if not self.edit_text_for_selection(new_value):
+                self._show_status("No editable text changes were applied.", "warning", auto_dismiss=True)
+            return
+        if action_id == "designer.canvas.context.duplicate":
+            self.duplicate_selection()
+            return
+        if action_id == "designer.canvas.context.delete":
+            self.delete_selection()
+            return
+        if action_id == "designer.canvas.context.cut":
+            self.cut_selection()
+            return
+        if action_id == "designer.canvas.context.copy":
+            self.copy_selection()
+            return
+        if action_id == "designer.canvas.context.paste":
+            self.paste_selection()
+            return
+        align_map = {
+            "designer.canvas.context.align_left": "left",
+            "designer.canvas.context.align_hcenter": "center_horizontal",
+            "designer.canvas.context.align_right": "right",
+            "designer.canvas.context.align_top": "top",
+            "designer.canvas.context.align_vcenter": "center_vertical",
+            "designer.canvas.context.align_bottom": "bottom",
+        }
+        if action_id in align_map:
+            if not self.align_selection(align_map[action_id]):
+                self._show_status("Align requires at least two freeform widgets.", "warning", auto_dismiss=True)
+            return
+        distribute_map = {
+            "designer.canvas.context.distribute_horizontal": "horizontal",
+            "designer.canvas.context.distribute_vertical": "vertical",
+        }
+        if action_id in distribute_map:
+            if not self.distribute_selection(distribute_map[action_id]):
+                self._show_status("Distribute requires at least three freeform widgets.", "warning", auto_dismiss=True)
+            return
+        if action_id == "designer.canvas.context.adjust_size":
+            if not self.adjust_size_for_selection():
+                self._show_status("Adjust Size requires at least one freeform widget.", "warning", auto_dismiss=True)
+            return
 
     def _find_parent_for_widget(self, root: WidgetNode, object_name: str) -> tuple[WidgetNode | None, bool]:
         for child in root.children:

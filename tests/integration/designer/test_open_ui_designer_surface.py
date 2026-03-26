@@ -79,10 +79,31 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), DesignerEditorSurface)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    preview_default_action = window.menu_registry.action("designer.form.preview.default") if window.menu_registry else None
+    preview_fusion_action = window.menu_registry.action("designer.form.preview.fusion") if window.menu_registry else None
+    preview_phone_action = (
+        window.menu_registry.action("designer.form.preview.phone_portrait") if window.menu_registry else None
+    )
+    preview_tablet_action = (
+        window.menu_registry.action("designer.form.preview.tablet_portrait") if window.menu_registry else None
+    )
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
     buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
+    align_left_action = window.menu_registry.action("designer.layout.align_left") if window.menu_registry else None
+    align_hcenter_action = window.menu_registry.action("designer.layout.align_hcenter") if window.menu_registry else None
+    align_right_action = window.menu_registry.action("designer.layout.align_right") if window.menu_registry else None
+    align_top_action = window.menu_registry.action("designer.layout.align_top") if window.menu_registry else None
+    align_vcenter_action = window.menu_registry.action("designer.layout.align_vcenter") if window.menu_registry else None
+    align_bottom_action = window.menu_registry.action("designer.layout.align_bottom") if window.menu_registry else None
+    distribute_horizontal_action = (
+        window.menu_registry.action("designer.layout.distribute_horizontal") if window.menu_registry else None
+    )
+    distribute_vertical_action = (
+        window.menu_registry.action("designer.layout.distribute_vertical") if window.menu_registry else None
+    )
+    adjust_size_action = window.menu_registry.action("designer.layout.adjust_size") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
@@ -93,10 +114,23 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
     paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
+    assert preview_default_action is not None and preview_default_action.isEnabled()
+    assert preview_fusion_action is not None and preview_fusion_action.isEnabled()
+    assert preview_phone_action is not None and preview_phone_action.isEnabled()
+    assert preview_tablet_action is not None and preview_tablet_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
     assert tab_mode_action is not None and tab_mode_action.isEnabled()
     assert buddy_mode_action is not None and buddy_mode_action.isEnabled()
+    assert align_left_action is not None and align_left_action.isEnabled()
+    assert align_hcenter_action is not None and align_hcenter_action.isEnabled()
+    assert align_right_action is not None and align_right_action.isEnabled()
+    assert align_top_action is not None and align_top_action.isEnabled()
+    assert align_vcenter_action is not None and align_vcenter_action.isEnabled()
+    assert align_bottom_action is not None and align_bottom_action.isEnabled()
+    assert distribute_horizontal_action is not None and distribute_horizontal_action.isEnabled()
+    assert distribute_vertical_action is not None and distribute_vertical_action.isEnabled()
+    assert adjust_size_action is not None and adjust_size_action.isEnabled()
     assert add_resource_action is not None and add_resource_action.isEnabled()
     assert promote_action is not None and promote_action.isEnabled()
     assert format_action is not None and format_action.isEnabled()
@@ -164,10 +198,31 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), CodeEditorWidget)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    preview_default_action = window.menu_registry.action("designer.form.preview.default") if window.menu_registry else None
+    preview_fusion_action = window.menu_registry.action("designer.form.preview.fusion") if window.menu_registry else None
+    preview_phone_action = (
+        window.menu_registry.action("designer.form.preview.phone_portrait") if window.menu_registry else None
+    )
+    preview_tablet_action = (
+        window.menu_registry.action("designer.form.preview.tablet_portrait") if window.menu_registry else None
+    )
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
     buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
+    align_left_action = window.menu_registry.action("designer.layout.align_left") if window.menu_registry else None
+    align_hcenter_action = window.menu_registry.action("designer.layout.align_hcenter") if window.menu_registry else None
+    align_right_action = window.menu_registry.action("designer.layout.align_right") if window.menu_registry else None
+    align_top_action = window.menu_registry.action("designer.layout.align_top") if window.menu_registry else None
+    align_vcenter_action = window.menu_registry.action("designer.layout.align_vcenter") if window.menu_registry else None
+    align_bottom_action = window.menu_registry.action("designer.layout.align_bottom") if window.menu_registry else None
+    distribute_horizontal_action = (
+        window.menu_registry.action("designer.layout.distribute_horizontal") if window.menu_registry else None
+    )
+    distribute_vertical_action = (
+        window.menu_registry.action("designer.layout.distribute_vertical") if window.menu_registry else None
+    )
+    adjust_size_action = window.menu_registry.action("designer.layout.adjust_size") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
@@ -178,10 +233,23 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
     paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
+    assert preview_default_action is not None and not preview_default_action.isEnabled()
+    assert preview_fusion_action is not None and not preview_fusion_action.isEnabled()
+    assert preview_phone_action is not None and not preview_phone_action.isEnabled()
+    assert preview_tablet_action is not None and not preview_tablet_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
     assert tab_mode_action is not None and not tab_mode_action.isEnabled()
     assert buddy_mode_action is not None and not buddy_mode_action.isEnabled()
+    assert align_left_action is not None and not align_left_action.isEnabled()
+    assert align_hcenter_action is not None and not align_hcenter_action.isEnabled()
+    assert align_right_action is not None and not align_right_action.isEnabled()
+    assert align_top_action is not None and not align_top_action.isEnabled()
+    assert align_vcenter_action is not None and not align_vcenter_action.isEnabled()
+    assert align_bottom_action is not None and not align_bottom_action.isEnabled()
+    assert distribute_horizontal_action is not None and not distribute_horizontal_action.isEnabled()
+    assert distribute_vertical_action is not None and not distribute_vertical_action.isEnabled()
+    assert adjust_size_action is not None and not adjust_size_action.isEnabled()
     assert add_resource_action is not None and not add_resource_action.isEnabled()
     assert promote_action is not None and not promote_action.isEnabled()
     assert format_action is not None and not format_action.isEnabled()

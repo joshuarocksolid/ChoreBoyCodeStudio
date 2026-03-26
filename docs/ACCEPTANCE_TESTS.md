@@ -924,9 +924,10 @@ Post-audit acceptance focus includes:
 - **DGAP-03** class-aware signal/slot picker workflow provides sender/receiver object metadata picklists, class-backed signal/slot choices, and blocks invalid/incompatible signature updates before model mutation
 - **DGAP-04** designer clipboard subtree workflows support cut/copy/paste for non-root widgets with deterministic object-name de-duplication, invalid-parent rejection messaging, and undo-safe mutation history
 - **DGAP-05** advanced `.ui` node support round-trips `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, and `<buttongroup>` without dropping or flattening model intent
+- **DGAP-06** canvas affordance polish delivers in-place text editing (double-click/context), context-menu mutation actions, and align/distribute/adjust-size geometry operations with undo-safe command history
 - **DGAP-09** appearance/metadata property schema expansion supports `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, and `windowIcon` with typed editors + deterministic `.ui` round-trip
 - **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence (QAction CRUD/grouping and menu/toolbar placement authoring with save/reopen editability)
-- **DGAP-08** preview style/device variant workflows
+- **DGAP-08** preview style/device variant workflows include Form-menu preset actions for default/fusion/phone/tablet variants with deterministic preview invocation and active-variant state tracking
 
 ---
 

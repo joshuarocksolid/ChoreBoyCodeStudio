@@ -778,7 +778,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D8.S2 — Canvas affordance polish
 
 #### Task D8.S2.T1 — Add in-place text edit + context menu + align/distribute/adjust-size tools
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Close major interaction affordance gaps vs Qt Designer widget editing mode.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/layout/layout_commands.py`, `app/shell/menus.py`, integration/manual acceptance coverage
 - **Automated test layer:** integration, manual_acceptance
@@ -786,11 +786,23 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-06
 - **Depends on:** D6.S1.T1, D6.S1.T2
 - **Done when:** core widget editing affordances feel Qt Designer-like for common operations.
+- **Implementation note:** PR-17 adds canvas affordance tooling across context interactions + layout command surface:
+  - `FormCanvas` now exposes a context menu with edit-text, clipboard, duplicate/delete, align, distribute, and adjust-size actions plus double-click routing to in-place text editing.
+  - `DesignerEditorSurface` now supports multi-selection geometry operations (`align_selection`, `distribute_selection`, `adjust_size_for_selection`) and in-place text edits via `edit_text_for_selection`, all backed by snapshot undo/redo and dirty-state tracking.
+  - shell Layout menu now includes align/distribute/adjust-size commands wired into main-window handlers and Designer action-state gating.
+  - new/updated coverage:
+    - `tests/unit/designer/layout/test_layout_commands.py`
+    - `tests/unit/designer/canvas/test_form_canvas.py`
+    - `tests/unit/designer/test_editor_surface.py` (affordance workflows + context action dispatch)
+    - `tests/unit/shell/test_menus_designer_layout.py`
+    - `tests/unit/shell/test_shortcut_preferences.py`
+    - `tests/integration/designer/test_designer_layout_actions.py`
+    - `tests/integration/designer/test_open_ui_designer_surface.py`
 
 ### Story D8.S3 — Preview variants
 
 #### Task D8.S3.T1 — Add preview style/device-size variants
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Expose alternate style/theme/device preview modes for practical form QA.
 - **Primary files:** `app/designer/preview/preview_service.py`, `app/designer/preview/preview_window.py`, `app/shell/menus.py`, integration/manual acceptance coverage
 - **Automated test layer:** integration, manual_acceptance
@@ -798,6 +810,19 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-08
 - **Depends on:** D6.S2.T1, D6.S2.T2
 - **Done when:** users can run style/device preview variants without unstable lifecycle behavior.
+- **Implementation note:** PR-18 introduces explicit preview variant presets and shell wiring:
+  - new preview variant catalog (`app/designer/preview/preview_variants.py`) defines deterministic presets: default, Fusion style, phone portrait, and tablet portrait.
+  - `DesignerEditorSurface` now supports variant-aware preview execution via `preview_current_form_variant`, tracks active variant state, and applies variant style/viewport through preview window configuration.
+  - Form menu now includes **Preview Variant** submenu actions (`designer.form.preview.default|fusion|phone_portrait|tablet_portrait`) wired through `MainWindow` and gated by Designer tab focus/action-state refresh.
+  - new/updated coverage:
+    - `tests/unit/designer/preview/test_preview_variants.py`
+    - `tests/unit/designer/preview/test_preview_service.py`
+    - `tests/unit/designer/test_editor_surface.py` (variant preview behavior)
+    - `tests/unit/shell/test_menus_designer_preview_variants.py`
+    - `tests/unit/shell/test_menus_designer_form.py`
+    - `tests/unit/shell/test_shortcut_preferences.py`
+    - `tests/integration/designer/test_designer_preview_loader.py`
+    - `tests/integration/designer/test_open_ui_designer_surface.py`
 
 ## Epic D9 — Action/menu/toolbar authoring parity
 
