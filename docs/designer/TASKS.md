@@ -655,7 +655,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D6.S4 — Shortcut conflict/scoping hardening
 
 #### Task D6.S4.T1 — Enforce focus-scoped Designer mode shortcuts over Run shortcuts
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Resolve F5/F6 ambiguity between designer mode actions and run/debug actions.
 - **Primary files:** `app/shell/menus.py`, `app/shell/main_window.py`, `app/designer/editor_surface.py`, shortcut-related tests under `tests/unit/shell/` + integration shortcut-focus checks
 - **Automated test layer:** unit, integration
@@ -663,6 +663,20 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-06
 - **Depends on:** none
 - **Done when:** shortcut behavior is deterministic, documented, and test-covered.
+- **Implementation note:** MainWindow now applies focus-scoped ShortcutOverride arbitration for F5/F6 (Designer mode actions when focus is inside an active Designer surface, Run/Continue otherwise), backed by new shortcut-scope helper logic and unit/integration regression coverage.
+
+### Story D6.S5 — Designer diagnostics unification
+
+#### Task D6.S5.T1 — Surface Designer validation issues in global Problems panel
+- **Status:** DONE
+- **Objective:** Eliminate split diagnostics UX by ensuring Designer validation issues are included in the shared Problems panel dataset.
+- **Primary files:** `app/designer/editor_surface.py`, `app/shell/main_window.py`, `tests/integration/designer/test_open_ui_designer_surface.py`, `tests/unit/shell/test_main_window_debug_routing.py`
+- **Automated test layer:** unit, integration
+- **Validation method:** open `.ui` in Designer, verify validation list + Problems panel both report active Designer diagnostics; clearing diagnostics removes corresponding Problems entries.
+- **Acceptance linkage:** DFIX-07
+- **Depends on:** D6.S4.T1
+- **Done when:** Designer validation and Problems panel no longer disagree for active Designer tabs.
+- **Implementation note:** `DesignerEditorSurface` now emits validation issue updates; `MainWindow` maps them to `CodeDiagnostic` entries merged into the Problems panel alongside lint/runtime diagnostics, including close/reset lifecycle cleanup.
 
 ## Epic D7 — Core parity expansion (high-impact usability)
 

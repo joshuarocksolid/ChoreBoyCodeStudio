@@ -84,6 +84,7 @@ from app.designer.editor_surface import DesignerEditorSurface
 from app.designer.io.ui_writer import write_ui_file
 from app.designer.model import PropertyValue, UIModel, WidgetNode
 from app.designer.new_form_dialog import NewFormRequest
+from app.designer.validation import ValidationIssue
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -215,6 +216,7 @@ class MainWindow(QMainWindow):
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
+        self._stored_designer_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
             state_root=self._state_root,
@@ -1891,6 +1893,7 @@ class MainWindow(QMainWindow):
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
         self._stored_lint_diagnostics.clear()
+        self._stored_designer_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
             from app.project.file_excludes import compute_effective_excludes
@@ -2727,6 +2730,7 @@ class MainWindow(QMainWindow):
         if self._problems_panel is None:
             return
         all_diags = [d for diags in self._stored_lint_diagnostics.values() for d in diags]
+        all_diags.extend(d for diags in self._stored_designer_diagnostics.values() for d in diags)
         self._problems_panel.set_quick_fixes_enabled(self._quick_fixes_enabled)
         self._problems_panel.set_diagnostics(all_diags, self._stored_runtime_problems)
         self._update_problems_tab_title(self._problems_panel.problem_count())
@@ -3402,6 +3406,7 @@ class MainWindow(QMainWindow):
     def _clear_problems(self) -> None:
         self._stored_lint_diagnostics.clear()
         self._stored_runtime_problems = []
+        self._stored_designer_diagnostics.clear()
         if self._problems_panel is not None:
             self._problems_panel.clear()
             self._update_problems_tab_title(0)
@@ -4189,6 +4194,12 @@ class MainWindow(QMainWindow):
                     is_dirty,
                 )
             )
+            designer_surface.validation_issues_changed.connect(
+                lambda issues, tab_file_path=opened_result.tab.file_path: self._handle_designer_validation_issues_changed(
+                    tab_file_path,
+                    list(issues),
+                )
+            )
             designer_surface.mode_changed.connect(
                 lambda _mode, tab_file_path=opened_result.tab.file_path: (
                     self._refresh_designer_action_states(),
@@ -4197,6 +4208,10 @@ class MainWindow(QMainWindow):
             )
             designer_surface.mode_changed.connect(self._persist_designer_last_mode)
             designer_surface.set_mode(self._designer_last_mode)
+            self._handle_designer_validation_issues_changed(
+                opened_result.tab.file_path,
+                designer_surface.validation_issues,
+            )
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -4348,6 +4363,56 @@ class MainWindow(QMainWindow):
                 self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
+
+    def _handle_designer_validation_issues_changed(self, file_path: str, issues: list[ValidationIssue]) -> None:
+        diagnostics: list[CodeDiagnostic] = []
+        for issue in issues:
+            code = str(getattr(issue, "code", "DVAL000"))
+            message = str(getattr(issue, "message", "Designer validation issue"))
+            severity_value = str(getattr(issue, "severity", "warning"))
+            object_name_value = getattr(issue, "object_name", "")
+            object_name = str(object_name_value) if object_name_value else ""
+            line_number = self._designer_validation_issue_line_number(file_path, object_name)
+            if object_name:
+                message = f"{message} (object: {object_name})"
+            diagnostics.append(
+                CodeDiagnostic(
+                    code=code,
+                    severity=self._designer_severity_to_diagnostic_severity(severity_value),
+                    file_path=file_path,
+                    line_number=line_number,
+                    message=message,
+                )
+            )
+        if diagnostics:
+            self._stored_designer_diagnostics[file_path] = diagnostics
+        else:
+            self._stored_designer_diagnostics.pop(file_path, None)
+        self._render_merged_problems_panel()
+
+    def _designer_severity_to_diagnostic_severity(self, severity: str) -> DiagnosticSeverity:
+        normalized = severity.strip().lower()
+        if normalized == "error":
+            return DiagnosticSeverity.ERROR
+        if normalized == "info":
+            return DiagnosticSeverity.INFO
+        return DiagnosticSeverity.WARNING
+
+    def _designer_validation_issue_line_number(self, file_path: str, object_name: str) -> int:
+        if not object_name:
+            return 1
+        surface = self._designer_widgets_by_path.get(file_path)
+        if surface is None:
+            return 1
+        try:
+            ui_xml = surface.serialize_to_ui_string()
+        except ValueError:
+            return 1
+        needle = f'name="{object_name}"'
+        object_index = ui_xml.find(needle)
+        if object_index < 0:
+            return 1
+        return ui_xml.count("\n", 0, object_index) + 1
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -4502,6 +4567,7 @@ class MainWindow(QMainWindow):
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
         self._stored_lint_diagnostics.pop(file_path, None)
+        self._stored_designer_diagnostics.pop(file_path, None)
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
@@ -4532,6 +4598,7 @@ class MainWindow(QMainWindow):
         self._semantic_last_applied_signature_by_file.clear()
         self._editor_widgets_by_path.clear()
         self._designer_widgets_by_path.clear()
+        self._stored_designer_diagnostics.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
         self._refresh_designer_action_states()

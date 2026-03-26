@@ -918,6 +918,7 @@ Post-audit acceptance focus includes:
 - **DFIX-04** isolated preview timeout/termination determinism
 - **DFIX-05** grid/item attribute round-trip fidelity (`row`/`column`/span/alignment)
 - **DFIX-06** focus-scoped F5/F6 shortcut arbitration (Designer mode vs Run/Continue)
+- **DFIX-07** Designer validation diagnostics are mirrored into global Problems panel without conflicting empty-state UX
 - **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence
 - **DGAP-08** preview style/device variant workflows
 

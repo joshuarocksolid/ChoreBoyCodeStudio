@@ -180,3 +180,47 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert insert_component_action is not None and not insert_component_action.isEnabled()
     assert duplicate_action is not None and not duplicate_action.isEnabled()
     window.close()
+
+
+def test_designer_validation_issues_are_visible_in_global_problems_panel(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Designer Problems Bridge")
+    ui_file = project_root / "form.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>Form</class>"
+            "<widget class=\"QWidget\" name=\"Form\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._open_file_in_editor(str(ui_file.resolve())) is True
+
+    surface = window._active_designer_surface()
+    assert surface is not None
+    validation_rows = [surface._validation_list.item(index).text() for index in range(surface._validation_list.count())]  # type: ignore[attr-defined]
+    assert any("DLAYOUT001" in row for row in validation_rows)
+
+    problems_panel = window._problems_panel
+    assert problems_panel is not None
+    assert problems_panel.problem_count() >= 1
+    assert problems_panel.tree_widget().topLevelItemCount() >= 1
+    first_group = problems_panel.tree_widget().topLevelItem(0)
+    assert first_group is not None
+    assert "form.ui" in first_group.text(1)
+    window.close()

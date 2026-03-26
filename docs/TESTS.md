@@ -53,7 +53,7 @@ Implemented coverage includes:
     - isolated preview timeout/error diagnostics
     - layout-item attribute round-trip fidelity
     - focus-scoped F5/F6 shortcut arbitration
-    - Designer validation + shell Problems parity
+  - Designer validation + shell Problems parity
 
 ## 5) Core commands
 
@@ -92,6 +92,7 @@ python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.
 python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
 python3 run_tests.py -v tests/unit/shell/test_menus_designer_mode.py
 python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
+python3 run_tests.py -v tests/unit/shell/test_main_window_debug_routing.py -k designer_validation_issues
 ```
 
 ## 6) Manual acceptance validation

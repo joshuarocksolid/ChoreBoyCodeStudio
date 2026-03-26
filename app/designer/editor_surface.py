@@ -55,7 +55,7 @@ from app.designer.preview import (
     requires_isolated_preview,
 )
 from app.designer.properties import PropertyEditorController, PropertyEditorPanel
-from app.designer.validation import build_validation_issues
+from app.designer.validation import ValidationIssue, build_validation_issues
 
 
 class DesignerEditorSurface(QWidget):
@@ -63,6 +63,7 @@ class DesignerEditorSurface(QWidget):
 
     dirty_state_changed = Signal(bool)
     mode_changed = Signal(str)
+    validation_issues_changed = Signal(list)
 
     def __init__(
         self,
@@ -84,6 +85,7 @@ class DesignerEditorSurface(QWidget):
         self._snap_to_grid = snap_to_grid
         self._snap_grid_size = max(1, int(grid_size))
         self._active_preview_widget: QWidget | None = None
+        self._validation_issues: list[ValidationIssue] = []
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -122,6 +124,10 @@ class DesignerEditorSurface(QWidget):
     @property
     def current_mode(self) -> str:
         return self._mode_controller.current_mode
+
+    @property
+    def validation_issues(self) -> list[ValidationIssue]:
+        return list(self._validation_issues)
 
     def set_mode(self, mode_id: str) -> bool:
         """Set active designer editing mode."""
@@ -554,9 +560,13 @@ class DesignerEditorSurface(QWidget):
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
         if self._model is None:
+            self._validation_issues = []
+            self.validation_issues_changed.emit([])
             self._validation_list.setVisible(False)
             return
         issues = build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint)
+        self._validation_issues = list(issues)
+        self.validation_issues_changed.emit(list(issues))
         if not issues:
             self._validation_list.setVisible(False)
             return

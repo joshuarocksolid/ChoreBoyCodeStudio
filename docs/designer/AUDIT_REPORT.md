@@ -104,11 +104,20 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
   - when designer surface focused, mode shortcuts win;
   - otherwise run/debug actions win;
   - add integration tests for focus-sensitive shortcut resolution.
+- **Status (2026-03-26):** **RESOLVED (PR-06)**  
+  Main-window shortcut override handling now routes F5/F6 deterministically based on active focused Designer surface; run/debug actions continue to own F5/F6 outside focused Designer scope. Regression coverage:
+  - `tests/unit/shell/test_shortcut_preferences.py::test_should_route_designer_mode_shortcut_only_when_designer_tab_active`
+  - `tests/integration/shell/test_run_debug_toolbar_integration.py::test_f5_f6_shortcuts_are_focus_scoped_between_designer_and_run`
 
 7) **Validation UX split and not reflected in shell Problems pane**  
 - **File/lines:** `app/designer/editor_surface.py:491-557`  
 - **Details:** Designer validation renders in in-surface list; shell Problems panel can show “No problems” simultaneously, creating conflicting UX states.  
 - **Suggested fix:** unify diagnostics plumbing or clearly scope/descope designer validation visibility from global Problems UI.
+- **Status (2026-03-26):** **RESOLVED (PR-07)**  
+  Designer validation issues now emit from `DesignerEditorSurface`, are converted into shell `CodeDiagnostic` entries, and are merged into the global Problems panel alongside lint/runtime diagnostics. Regression coverage:
+  - `tests/integration/designer/test_open_ui_designer_surface.py::test_designer_validation_issues_are_visible_in_global_problems_panel`
+  - `tests/unit/shell/test_main_window_debug_routing.py::test_handle_designer_validation_issues_changed_rebuilds_problems`
+  - `tests/unit/shell/test_main_window_debug_routing.py::test_handle_designer_validation_issues_changed_clears_file_when_empty`
 
 8) **New-form defaults immediately trigger naming lint warnings**  
 - **File/lines:** `app/designer/new_form_dialog.py:185-190`, `app/shell/main_window.py:915-928`  

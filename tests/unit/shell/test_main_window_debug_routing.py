@@ -13,6 +13,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from app.core import constants  # noqa: E402
 from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState  # noqa: E402
 from app.debug.debug_session import DebugSession  # noqa: E402
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
 from app.run.problem_parser import ProblemEntry  # noqa: E402
 from app.run.process_supervisor import ProcessEvent  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402
@@ -343,6 +344,57 @@ def test_process_queued_run_events_drains_without_applying_while_shutting_down()
 
     assert window_any._run_event_queue.empty() is True
     assert applied_events == []
+
+
+def test_handle_designer_validation_issues_changed_rebuilds_problems() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._designer_widgets_by_path = {}
+    window_any._stored_designer_diagnostics = {}
+    render_calls: list[str] = []
+    window_any._render_merged_problems_panel = lambda: render_calls.append("render")
+
+    issue = SimpleNamespace(
+        code="DLAYOUT001",
+        message="Top-level form has no layout.",
+        severity="warning",
+        object_name="Form",
+    )
+
+    MainWindow._handle_designer_validation_issues_changed(window, "/tmp/project/form.ui", [issue])
+
+    diagnostics = window_any._stored_designer_diagnostics["/tmp/project/form.ui"]
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert diagnostic.code == "DLAYOUT001"
+    assert diagnostic.severity == DiagnosticSeverity.WARNING
+    assert diagnostic.line_number == 1
+    assert "(object: Form)" in diagnostic.message
+    assert render_calls == ["render"]
+
+
+def test_handle_designer_validation_issues_changed_clears_file_when_empty() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._designer_widgets_by_path = {}
+    window_any._stored_designer_diagnostics = {
+        "/tmp/project/form.ui": [
+            CodeDiagnostic(
+                code="DLAYOUT001",
+                severity=DiagnosticSeverity.WARNING,
+                file_path="/tmp/project/form.ui",
+                line_number=1,
+                message="Top-level form has no layout.",
+            )
+        ]
+    }
+    render_calls: list[str] = []
+    window_any._render_merged_problems_panel = lambda: render_calls.append("render")
+
+    MainWindow._handle_designer_validation_issues_changed(window, "/tmp/project/form.ui", [])
+
+    assert "/tmp/project/form.ui" not in window_any._stored_designer_diagnostics
+    assert render_calls == ["render"]
 
 
 def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
