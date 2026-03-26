@@ -68,3 +68,51 @@ def test_designer_changes_mark_dirty_and_save_to_disk(monkeypatch: pytest.Monkey
     reloaded_text = ui_file.read_text(encoding="utf-8")
     assert "<layout class=\"QVBoxLayout\"" in reloaded_text
     window.close()
+
+
+def test_designer_repeated_insertions_recover_after_non_container_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Designer Insertions")
+    ui_file = project_root / "insertions.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>InsertionsForm</class>"
+            "<widget class=\"QWidget\" name=\"InsertionsForm\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._open_file_in_editor(str(ui_file.resolve())) is True
+
+    surface = window._active_designer_surface()
+    assert surface is not None
+    assert surface.model is not None
+
+    # First insertion selects non-container pushButton.
+    surface._handle_palette_insert_request("QPushButton")  # type: ignore[attr-defined]
+    push_button = surface.model.root_widget.find_by_object_name("pushButton")
+    assert push_button is not None
+    assert surface.selected_object_name == "pushButton"
+
+    # Second insertion should recover by using a valid container ancestor/root.
+    surface._handle_palette_insert_request("QLabel")  # type: ignore[attr-defined]
+    label = surface.model.root_widget.find_by_object_name("label")
+    assert label is not None
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+
+    window.close()

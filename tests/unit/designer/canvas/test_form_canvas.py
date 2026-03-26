@@ -142,5 +142,69 @@ def test_canvas_tree_selection_syncs_with_selection_controller() -> None:
     assert "statusLabel" in current_item.text(0)
 
 
+def test_insert_widget_by_class_name_resolves_container_from_ancestor_selection() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(
+            class_name="QWidget",
+            object_name="rootWidget",
+            children=[
+                WidgetNode(
+                    class_name="QWidget",
+                    object_name="containerWidget",
+                    children=[WidgetNode(class_name="QPushButton", object_name="existingButton")],
+                )
+            ],
+        ),
+    )
+    controller = SelectionController()
+    canvas.set_selection_controller(controller)
+    canvas.load_model(model)
+
+    controller.set_selected_object_name("existingButton")
+
+    inserted = canvas.insert_widget_by_class_name("QLineEdit")
+
+    assert inserted is True
+    container = model.root_widget.find_by_object_name("containerWidget")
+    assert container is not None
+    assert container.find_by_object_name("lineEdit") is not None
+
+
+def test_insert_widget_by_class_name_falls_back_to_root_when_selection_invalid() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(class_name="QWidget", object_name="rootWidget"),
+    )
+    controller = SelectionController()
+    canvas.set_selection_controller(controller)
+    canvas.load_model(model)
+
+    controller.set_selected_object_name("missingWidget")
+
+    inserted = canvas.insert_widget_by_class_name("QPushButton")
+
+    assert inserted is True
+    assert model.root_widget.find_by_object_name("pushButton") is not None
+
+
+def test_insert_widget_by_class_name_falls_back_when_selection_is_non_container() -> None:
+    canvas = FormCanvas()
+    model = UIModel(
+        form_class_name="CanvasForm",
+        root_widget=WidgetNode(class_name="QWidget", object_name="rootWidget"),
+    )
+    selection = SelectionController()
+    canvas.set_selection_controller(selection)
+    canvas.load_model(model)
+
+    assert canvas.insert_widget_by_class_name("QPushButton") is True
+    assert selection.selected_object_name == "pushButton"
+
+    assert canvas.insert_widget_by_class_name("QLabel") is True
+    assert model.root_widget.find_by_object_name("label") is not None
+
 
 

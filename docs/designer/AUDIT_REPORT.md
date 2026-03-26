@@ -50,6 +50,12 @@ Scope: `app/designer/*`, shell integration, manual GUI smoke, Qt Designer parity
   - otherwise climb to nearest valid ancestor;
   - fallback to root widget;
   - surface explicit user feedback on invalid target.
+- **Status (2026-03-26):** **RESOLVED (PR-01)**  
+  Insert parent resolution now walks selected widget -> ancestor containers -> root fallback and emits explicit rejection messaging when no valid target exists. Regression coverage:
+  - `tests/unit/designer/canvas/test_form_canvas.py::test_insert_widget_by_class_name_resolves_container_from_ancestor_selection`
+  - `tests/unit/designer/canvas/test_form_canvas.py::test_insert_widget_by_class_name_falls_back_to_root_when_selection_invalid`
+  - `tests/unit/designer/canvas/test_form_canvas.py::test_insert_widget_by_class_name_falls_back_when_selection_is_non_container`
+  - `tests/integration/designer/test_designer_save_roundtrip.py::test_designer_repeated_insertions_recover_after_non_container_selection`
 
 2) **Drop-event mutations bypass snapshot command tracking**  
 - **File/lines:** `app/designer/canvas/form_canvas.py:130-142`, `app/designer/editor_surface.py:782-803`  

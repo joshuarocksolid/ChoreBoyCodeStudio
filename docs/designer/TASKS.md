@@ -594,7 +594,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D6.S1 — Insert/undo reliability hardening
 
 #### Task D6.S1.T1 — Fix repeated drag/drop insertion parent resolution
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Make repeated palette insertion reliable by resolving a valid container parent (selected container, ancestor fallback, or root fallback) instead of silently failing after first insert.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/canvas/drop_rules.py`, `tests/unit/designer/canvas/test_form_canvas.py`, `tests/integration/designer/test_designer_save_roundtrip.py` (or new insertion-focused integration test)
 - **Automated test layer:** unit, integration
@@ -602,6 +602,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-01
 - **Depends on:** none
 - **Done when:** users can insert multiple widgets consecutively via drag/drop without hidden failure.
+- **Implementation note:** `FormCanvas` now resolves insertion parents by selected widget -> ancestor container -> root fallback, emits explicit rejection messages, and regression coverage verifies repeated insertion recovery.
 
 #### Task D6.S1.T2 — Route canvas drop mutations through snapshot command stack
 - **Status:** TODO

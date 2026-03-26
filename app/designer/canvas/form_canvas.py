@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import QItemSelectionModel, Qt
+from PySide2.QtCore import QItemSelectionModel, Qt, Signal
 from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from app.designer.canvas.drop_rules import can_insert_widget
@@ -18,6 +18,8 @@ TREE_ROLE_OBJECT_NAME = Qt.UserRole + 1
 
 class FormCanvas(QWidget):
     """Canvas host that mutates `UIModel` during insert operations."""
+
+    insert_rejected = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,27 +138,76 @@ class FormCanvas(QWidget):
         if not class_name:
             event.ignore()
             return
-        if not self.insert_widget_by_class_name(class_name):
+        inserted, error_message = self.try_insert_widget_by_class_name(class_name)
+        if not inserted:
+            if error_message:
+                self.insert_rejected.emit(error_message)
             event.ignore()
             return
         event.acceptProposedAction()
 
     def insert_widget_by_class_name(self, class_name: str) -> bool:
+        inserted, _error_message = self.try_insert_widget_by_class_name(class_name)
+        return inserted
+
+    def try_insert_widget_by_class_name(self, class_name: str) -> tuple[bool, str]:
         if self._model is None:
-            return False
+            return False, "No form model loaded."
         definition = self._palette_registry.lookup(class_name)
         if definition is None:
-            return False
-        parent_name = (
-            self._selection_controller.selected_object_name
-            if self._selection_controller is not None and self._selection_controller.selected_object_name
-            else self._model.root_widget.object_name
-        )
-        inserted = self.insert_palette_widget(parent_object_name=parent_name, definition=definition)
+            return False, "Widget insertion is not allowed for the selected parent."
+        parent_name = self._resolve_insert_parent_object_name(definition)
+        if not parent_name:
+            return False, "Widget insertion is not allowed for the selected parent."
+        try:
+            inserted = self.insert_palette_widget(parent_object_name=parent_name, definition=definition)
+        except ValueError as exc:
+            return False, str(exc)
         inserted_name = getattr(inserted, "object_name", "")
         if inserted_name and self._selection_controller is not None:
             self._selection_controller.set_selected_object_name(inserted_name)
-        return True
+        return True, ""
+
+    def _resolve_insert_parent_object_name(self, definition: PaletteWidgetDefinition) -> str | None:
+        if self._model is None:
+            return None
+        for candidate in self._candidate_insert_parents():
+            if can_insert_widget(
+                parent_class_name=candidate.class_name,
+                child_class_name=definition.class_name,
+                is_layout_item=definition.is_layout_item,
+                parent_has_layout=candidate.layout is not None,
+            ):
+                return candidate.object_name
+        return None
+
+    def _candidate_insert_parents(self) -> list[WidgetNode]:
+        assert self._model is not None
+        root = self._model.root_widget
+        selected_name = None if self._selection_controller is None else self._selection_controller.selected_object_name
+        if not selected_name:
+            return [root]
+        selection_path = self._find_selection_path(root, selected_name)
+        if not selection_path:
+            return [root]
+        if selection_path[-1].object_name != root.object_name:
+            selection_path.append(root)
+        return selection_path
+
+    def _find_selection_path(self, current: WidgetNode, target_name: str) -> list[WidgetNode]:
+        if current.object_name == target_name:
+            return [current]
+        descendants: list[WidgetNode] = list(current.children)
+        if current.layout is not None:
+            descendants.extend(item.widget for item in current.layout.items if item.widget is not None)
+        for child in descendants:
+            if child is None:
+                continue
+            path = self._find_selection_path(child, target_name)
+            if path:
+                path.append(current)
+                return path
+        return []
 
     def _generate_unique_object_name(self, prefix: str) -> str:
         assert self._model is not None
