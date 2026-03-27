@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
+from app.intelligence.semantic_models import (
+    SemanticOperationMetadata,
+    approximate_metadata,
+    unsupported_metadata,
+)
 from app.intelligence.symbol_index import SymbolLocation, build_python_symbol_index, to_indexed_symbols
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
 
@@ -50,8 +54,17 @@ def lookup_definition_with_cache(
                 source_text=source_text,
                 cursor_position=cursor_position,
             )
-        except Exception:
-            semantic_result = None
+        except Exception as exc:
+            return DefinitionLookupResult(
+                found=False,
+                symbol_name=clean_name,
+                locations=[],
+                metadata=unsupported_metadata(
+                    "jedi",
+                    source="semantic_unavailable",
+                    unsupported_reason=f"runtime_unavailable: {exc.__class__.__name__}: {exc}",
+                ),
+            )
         if semantic_result is not None and (semantic_result.found or semantic_result.metadata.unsupported_reason):
             return DefinitionLookupResult(
                 found=semantic_result.found,

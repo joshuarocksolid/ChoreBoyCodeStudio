@@ -9,7 +9,11 @@ import tokenize
 
 from app.core import constants
 from app.intelligence.semantic_facade import SemanticFacade
-from app.intelligence.semantic_models import SemanticOperationMetadata, approximate_metadata
+from app.intelligence.semantic_models import (
+    SemanticOperationMetadata,
+    approximate_metadata,
+    unsupported_metadata,
+)
 
 _FACADE_BY_PROJECT_ROOT: dict[str, SemanticFacade] = {}
 
@@ -58,8 +62,16 @@ def find_references(
             source_text=source_text,
             cursor_position=cursor_position,
         )
-    except Exception:
-        semantic_result = None
+    except Exception as exc:
+        return ReferenceSearchResult(
+            symbol_name=symbol_name,
+            hits=[],
+            metadata=unsupported_metadata(
+                "jedi",
+                source="semantic_unavailable",
+                unsupported_reason=f"runtime_unavailable: {exc.__class__.__name__}: {exc}",
+            ),
+        )
 
     if semantic_result is not None and (semantic_result.found or semantic_result.metadata.unsupported_reason):
         return ReferenceSearchResult(

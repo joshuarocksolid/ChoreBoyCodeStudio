@@ -1875,6 +1875,16 @@ class MainWindow(QMainWindow):
                 return
             if not result.hits:
                 if result.metadata.unsupported_reason:
+                    if result.metadata.source == "semantic_unavailable":
+                        QMessageBox.warning(
+                            self,
+                            "Find References",
+                            (
+                                "Semantic references are currently unavailable.\n\n"
+                                f"Reason: {result.metadata.unsupported_reason}"
+                            ),
+                        )
+                        return
                     QMessageBox.information(
                         self,
                         "Find References",
@@ -2058,6 +2068,16 @@ class MainWindow(QMainWindow):
         def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
             if not lookup.found:
                 if lookup.metadata.unsupported_reason:
+                    if lookup.metadata.source == "semantic_unavailable":
+                        QMessageBox.warning(
+                            self,
+                            "Go To Definition",
+                            (
+                                "Semantic definitions are currently unavailable.\n\n"
+                                f"Reason: {lookup.metadata.unsupported_reason}"
+                            ),
+                        )
+                        return
                     QMessageBox.information(
                         self,
                         "Go To Definition",

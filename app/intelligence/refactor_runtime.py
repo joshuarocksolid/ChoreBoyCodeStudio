@@ -25,7 +25,7 @@ def runtime_status() -> RefactorRuntimeStatus:
 
 
 def initialize_refactor_runtime() -> RefactorRuntimeStatus:
-    """Ensure vendored Rope is importable."""
+    """Ensure vendored Rope and required refactor modules are importable."""
     global _RUNTIME_INITIALIZED, _RUNTIME_STATUS
     if _RUNTIME_INITIALIZED:
         return _RUNTIME_STATUS
@@ -33,6 +33,8 @@ def initialize_refactor_runtime() -> RefactorRuntimeStatus:
     try:
         ensure_vendor_path_on_sys_path()
         import rope
+        from rope.base import project as rope_project  # noqa: F401 - runtime contract check
+        from rope.refactor import rename as rope_rename  # noqa: F401 - runtime contract check
 
         _RUNTIME_STATUS = RefactorRuntimeStatus(
             is_available=True,

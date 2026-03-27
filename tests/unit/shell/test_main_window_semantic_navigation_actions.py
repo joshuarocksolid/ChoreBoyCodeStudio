@@ -81,6 +81,37 @@ def test_handle_go_to_definition_action_uses_target_chooser(monkeypatch: pytest.
     assert opened == [("/tmp/project/b.py", 8)]
 
 
+def test_handle_go_to_definition_action_surfaces_semantic_runtime_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = _build_window()
+    window_any = cast(Any, window)
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda _parent, title, text: warnings.append((title, text)),
+    )
+
+    MainWindow._handle_go_to_definition_action(window)
+    lookup_call = window_any._intelligence_controller.lookup_definition_calls[0]
+    lookup_call["on_success"](
+        SimpleNamespace(
+            found=False,
+            symbol_name="helper_task",
+            locations=[],
+            metadata=SimpleNamespace(
+                unsupported_reason="runtime_unavailable: RuntimeError: semantic backend unavailable",
+                source="semantic_unavailable",
+                confidence="unsupported",
+            ),
+        )
+    )
+
+    assert warnings
+    assert warnings[-1][0] == "Go To Definition"
+    assert "Semantic definitions are currently unavailable." in warnings[-1][1]
+
+
 def test_signature_help_action_shows_inline_calltip(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window()
     window_any = cast(Any, window)
