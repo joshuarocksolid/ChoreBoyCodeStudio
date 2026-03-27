@@ -224,6 +224,33 @@ def test_start_workflow_job_receives_events_and_result(monkeypatch: pytest.Monke
     assert events == [("job_progress", {"completed": 1})]
 
 
+def test_start_workflow_job_surfaces_event_handler_failure_as_job_error(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager(state_root=str((tmp_path / "state").resolve()))
+    observed_events: list[tuple[str, dict[str, object]]] = []
+
+    def _on_event(event_type: str, payload):  # type: ignore[no-untyped-def]
+        observed_events.append((event_type, dict(payload)))
+        raise RuntimeError("event callback failure")
+
+    job = manager.start_workflow_job(
+        "cbcs.pytest:pytest",
+        {"project_root": "/tmp/project"},
+        on_event=_on_event,
+    )
+
+    with pytest.raises(RunLifecycleError, match="Workflow job event handler failed"):
+        manager.wait_for_workflow_job(job)
+
+    assert observed_events == [("job_progress", {"completed": 1})]
+    log_text = open(manager.log_file_path, encoding="utf-8").read()
+    assert "Workflow job event handler failed" in log_text
+    assert "provider=cbcs.pytest:pytest" in log_text
+
+
 def test_cancel_workflow_job_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
     manager = PluginRuntimeManager()

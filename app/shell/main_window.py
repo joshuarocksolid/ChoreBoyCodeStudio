@@ -3203,17 +3203,21 @@ class MainWindow(QMainWindow):
         return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
 
     def _handle_run_project_action(self) -> bool:
-        entry_file = self._resolve_project_entry_for_project_run()
-        if entry_file is None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return False
+        entry_file = (loaded_project.metadata.default_entry or "").strip()
         if not self._ensure_run_preflight_ready(title="Run Project", entry_file=entry_file):
             return False
         return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=entry_file)
 
     def _handle_debug_project_action(self) -> bool:
-        entry_file = self._resolve_project_entry_for_project_run()
-        if entry_file is None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return False
+        entry_file = (loaded_project.metadata.default_entry or "").strip()
         if not self._ensure_run_preflight_ready(title="Debug Project", entry_file=entry_file):
             return False
         started = self._start_session(

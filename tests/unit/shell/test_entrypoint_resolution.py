@@ -76,3 +76,17 @@ def test_resolve_project_entry_for_project_run_prompts_when_default_entry_missin
 
     assert resolved == "app.py"
     assert set_calls == ["app.py"]
+
+
+def test_resolve_project_entry_for_project_run_returns_default_when_entry_exists(tmp_path: Path) -> None:
+    loaded_project = _loaded_project(tmp_path, default_entry="main.py")
+    entry_path = Path(loaded_project.project_root) / "main.py"
+    entry_path.write_text("print('ok')\n", encoding="utf-8")
+
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = loaded_project
+
+    resolved = MainWindow._resolve_project_entry_for_project_run(window)
+
+    assert resolved == "main.py"

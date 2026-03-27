@@ -57,3 +57,18 @@ def test_shutdown_main_window_for_test_returns_executor_threads_to_baseline(
         time.sleep(0.05)
 
     assert _shell_task_thread_count() == baseline
+
+
+def test_shutdown_main_window_for_test_invokes_full_close_teardown_sequence() -> None:
+    """Test helper should mirror closeEvent teardown order."""
+    window = MainWindow.__new__(MainWindow)
+    window_any = window
+    calls: list[str] = []
+    window_any._begin_shutdown_teardown = lambda: calls.append("begin")  # type: ignore[attr-defined]
+    window_any._stop_active_run_before_close = lambda: calls.append("stop")  # type: ignore[attr-defined]
+    window_any._is_shutting_down = False  # type: ignore[attr-defined]
+
+    shutdown_main_window_for_test(window)
+
+    assert window_any._is_shutting_down is True  # type: ignore[attr-defined]
+    assert calls == ["begin", "stop"]

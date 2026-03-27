@@ -88,7 +88,7 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = loaded
-    window_any._resolve_project_entry_for_project_run = lambda: "app.py"
+    window_any._ensure_run_preflight_ready = lambda **_kwargs: True
     calls: list[dict[str, object]] = []
     window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
 
@@ -96,6 +96,32 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
 
     assert started is True
     assert calls == [{"mode": constants.RUN_MODE_PYTHON_SCRIPT, "entry_file": "app.py"}]
+
+
+def test_handle_run_project_action_stops_when_preflight_fails_without_modal_resolution(tmp_path: Path) -> None:
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    manifest_path = project_root / "cbcs" / "project.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text('{"schema_version": 1, "name": "T", "default_entry": "missing.py"}', encoding="utf-8")
+    loaded = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str(manifest_path.resolve()),
+        metadata=ProjectMetadata(schema_version=1, name="T", default_entry="missing.py"),
+        entries=[],
+    )
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = loaded
+    window_any._ensure_run_preflight_ready = lambda **_kwargs: False
+    window_any._resolve_project_entry_for_project_run = (
+        lambda: (_ for _ in ()).throw(AssertionError("run path should not invoke modal entry resolution"))
+    )
+    window_any._start_session = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("session should not start"))
+
+    started = MainWindow._handle_run_project_action(window)
+
+    assert started is False
 
 
 def test_start_active_file_session_rejects_non_python_file(monkeypatch: pytest.MonkeyPatch) -> None:
