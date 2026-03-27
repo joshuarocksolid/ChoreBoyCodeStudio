@@ -106,7 +106,8 @@ Build under test: ChoreBoy Code Studio v0.2
 ### Findings
 - [PASS] Project-tree context actions are reachable; additional targeted retry produced an explicit tree-action modal (`New Folder`) from context flow, confirming at least part of file-operation UI path is functioning. Screenshot: `/workspace/smoke_artifacts/screenshots/phase_extra_new_file_prompt_attempt.png`
 - [WARN] Full create/rename/delete/drag-drop sequence still could not be completed end-to-end in one stable pass due recurring UI-state interference (search/rename overlays and agent instability), so AT-27/AT-28 remain only partially verified.
-- [Evidence] `/workspace/smoke_artifacts/screenshots/phase09_tree_context_menu.png`, `/workspace/smoke_artifacts/screenshots/phase09_context_menu_retry.png`, `/workspace/smoke_artifacts/screenshots/phase_extra_new_file_prompt_attempt.png`
+- [WARN] Additional recovery attempts confirmed an unstable coupling between tree selection and active editor tab state during delete prompts (delete intent repeatedly targeted `project.json` despite explicit attempts to select generated file entries), preventing safe drag-drop/delete verification in-session without risking project metadata loss.
+- [Evidence] `/workspace/smoke_artifacts/screenshots/phase09_tree_context_menu.png`, `/workspace/smoke_artifacts/screenshots/phase09_context_menu_retry.png`, `/workspace/smoke_artifacts/screenshots/phase_extra_new_file_prompt_attempt.png`, `/workspace/smoke_artifacts/screenshots/phase_extra_tree_selection_before_delete.png`, `/workspace/smoke_artifacts/screenshots/phase_extra_delete_prompt.png`
 
 ## Phase 10: Settings & preferences
 **Status**: PASS
