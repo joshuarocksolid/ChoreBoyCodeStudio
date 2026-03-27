@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 
 from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
 
@@ -33,8 +34,8 @@ def initialize_refactor_runtime() -> RefactorRuntimeStatus:
     try:
         ensure_vendor_path_on_sys_path()
         import rope
-        from rope.base import project as rope_project  # noqa: F401 - runtime contract check
-        from rope.refactor import rename as rope_rename  # noqa: F401 - runtime contract check
+        importlib.import_module("rope.base.project")
+        importlib.import_module("rope.refactor.rename")
 
         _RUNTIME_STATUS = RefactorRuntimeStatus(
             is_available=True,
