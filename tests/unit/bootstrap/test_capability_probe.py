@@ -251,3 +251,54 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
     failing_item = next(item for item in payload["checks"] if item["check_id"] == "state_root_writable")
     assert failing_item["is_available"] is False
     assert "state path probe crashed" in failing_item["message"]
+
+
+def test_run_minimal_startup_capability_probe_excludes_heavy_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Minimal startup probe should skip heavy runtime/tooling checks."""
+
+    monkeypatch.setattr(
+        capability_probe,
+        "check_apprun_presence",
+        lambda app_run_path=None: CapabilityCheckResult("apprun_presence", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_pyside2_availability",
+        lambda: CapabilityCheckResult("pyside2_import", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_writable_state_path",
+        lambda state_root=None: CapabilityCheckResult("state_root_writable", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_writable_logs_path",
+        lambda state_root=None: CapabilityCheckResult("global_logs_writable", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_writable_temp_path",
+        lambda temp_root=None: CapabilityCheckResult("temp_root_writable", True, "ok"),
+    )
+
+    def _unexpected_freecad() -> CapabilityCheckResult:
+        raise AssertionError("minimal startup probe should not run FreeCAD check")
+
+    def _unexpected_tooling() -> CapabilityCheckResult:
+        raise AssertionError("minimal startup probe should not run tooling check")
+
+    monkeypatch.setattr(capability_probe, "check_freecad_availability", _unexpected_freecad)
+    monkeypatch.setattr(capability_probe, "check_python_tooling_runtime", _unexpected_tooling)
+
+    report = capability_probe.run_minimal_startup_capability_probe()
+    check_ids = [check.check_id for check in report.checks]
+    assert check_ids == [
+        capability_probe.APP_RUN_PRESENCE_CHECK_ID,
+        capability_probe.PYSIDE2_IMPORT_CHECK_ID,
+        capability_probe.STATE_ROOT_WRITABLE_CHECK_ID,
+        capability_probe.GLOBAL_LOGS_WRITABLE_CHECK_ID,
+        capability_probe.TEMP_ROOT_WRITABLE_CHECK_ID,
+    ]

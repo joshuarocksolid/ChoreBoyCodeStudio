@@ -29,8 +29,8 @@ class _RecordingLogger:
         self.exception_messages.append(message % args if args else message)
 
 
-def test_main_runs_startup_probe_and_stores_report(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Editor startup should invoke probe and keep structured results available."""
+def test_main_runs_minimal_startup_probe_and_stores_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Editor startup should invoke minimal probe and keep results available."""
     logger = _RecordingLogger()
     report = CapabilityProbeReport(
         checks=[
@@ -47,7 +47,7 @@ def test_main_runs_startup_probe_and_stores_report(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
-    monkeypatch.setattr(run_editor, "run_startup_capability_probe", fake_probe)
+    monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", fake_probe)
     monkeypatch.setattr(
         run_editor,
         "initialize_tree_sitter_runtime",
@@ -73,7 +73,7 @@ def test_main_logs_failed_probe_checks_clearly(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
-    monkeypatch.setattr(run_editor, "run_startup_capability_probe", lambda: report)
+    monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", lambda: report)
     monkeypatch.setattr(
         run_editor,
         "initialize_tree_sitter_runtime",
@@ -109,7 +109,7 @@ def test_main_sets_startup_report_before_shell_launch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
-    monkeypatch.setattr(run_editor, "run_startup_capability_probe", fake_probe)
+    monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", fake_probe)
     monkeypatch.setattr(
         run_editor,
         "initialize_tree_sitter_runtime",
@@ -186,3 +186,25 @@ def test_start_editor_does_not_require_project_to_launch(monkeypatch: pytest.Mon
     assert run_editor._start_editor() == 11
     assert len(_FakeMainWindow.created) == 1
     assert _FakeMainWindow.created[0].startup_report is None
+
+
+def test_refresh_startup_capability_report_updates_global_and_notifies_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deferred refresh should update global report and notify callback."""
+    report = CapabilityProbeReport(
+        checks=[CapabilityCheckResult("freecad_import", True, "ok")]
+    )
+    seen: list[CapabilityProbeReport] = []
+
+    monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "run_startup_capability_probe", lambda: report)
+    run_editor.set_startup_report_refresh_callback(lambda payload: seen.append(payload))
+    try:
+        refreshed = run_editor.refresh_startup_capability_report()
+    finally:
+        run_editor.set_startup_report_refresh_callback(None)
+
+    assert refreshed == report
+    assert run_editor.get_last_startup_capability_report() == report
+    assert seen == [report]

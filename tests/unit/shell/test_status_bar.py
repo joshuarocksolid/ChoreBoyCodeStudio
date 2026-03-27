@@ -38,6 +38,23 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
     assert status.details == "All startup capability checks passed."
 
 
+def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
+    """Minimal startup reports should still render deterministic ready text."""
+    report = CapabilityProbeReport(
+        checks=[
+            CapabilityCheckResult("apprun_presence", True, "ok"),
+            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("state_root_writable", True, "ok"),
+            CapabilityCheckResult("global_logs_writable", True, "ok"),
+            CapabilityCheckResult("temp_root_writable", True, "ok"),
+        ]
+    )
+
+    status = map_startup_report_to_status(report)
+    assert status.severity == "ok"
+    assert status.text == "Startup: Runtime ready (5/5 checks)"
+
+
 def test_map_startup_report_to_status_includes_issue_titles() -> None:
     """Failing checks should surface human-readable issue titles."""
     report = CapabilityProbeReport(

@@ -39,6 +39,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
+import run_editor
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
@@ -726,6 +727,11 @@ class MainWindow(QMainWindow):
         self._runtime_probe_timer.setSingleShot(True)
         self._runtime_probe_timer.timeout.connect(self._start_runtime_module_probe)
         self._runtime_probe_timer.start(200)
+        self._startup_probe_refresh_timer = QTimer(self)
+        self._startup_probe_refresh_timer.setSingleShot(True)
+        self._startup_probe_refresh_timer.timeout.connect(self._refresh_startup_capability_report_async)
+        self._startup_probe_refresh_timer.start(0)
+        run_editor.set_startup_report_refresh_callback(self._handle_startup_report_refresh)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
@@ -753,6 +759,31 @@ class MainWindow(QMainWindow):
         if self._status_controller is None:
             return
         self._status_controller.set_startup_report(report)
+
+    def _refresh_startup_capability_report_async(self) -> None:
+        def task(cancel_event):  # type: ignore[no-untyped-def]
+            report = run_editor.refresh_startup_capability_report()
+            if cancel_event.is_set():
+                return None
+            return report
+
+        def on_success(report: object) -> None:
+            if not isinstance(report, CapabilityProbeReport):
+                return
+            self.set_startup_report(report)
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Deferred startup capability probe failed: %s", exc)
+
+        self._background_tasks.run(
+            key="startup_capability_refresh",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_startup_report_refresh(self, report: CapabilityProbeReport) -> None:
+        self._dispatch_to_main_thread(lambda: self.set_startup_report(report))
 
     def _build_runtime_issue_report(self) -> RuntimeIssueReport:
         reports: list[RuntimeIssueReport] = []
@@ -5356,6 +5387,9 @@ class MainWindow(QMainWindow):
             self._auto_start_repl_timer.stop()
         if hasattr(self, "_runtime_probe_timer"):
             self._runtime_probe_timer.stop()
+        if hasattr(self, "_startup_probe_refresh_timer"):
+            self._startup_probe_refresh_timer.stop()
+        run_editor.set_startup_report_refresh_callback(None)
         self._drain_run_event_queue()
         self._background_tasks.cancel_all()
         self._background_tasks.shutdown(wait=False)
