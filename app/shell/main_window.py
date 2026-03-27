@@ -396,6 +396,7 @@ class MainWindow(QMainWindow):
         self._keep_preview_open_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+        self._system_dark_theme_preference: bool | None = None
         self._loaded_project: LoadedProject | None = None
         self._project_tree_structure_signature: tuple[str, ...] | None = None
         self._workspace_controller = EditorWorkspaceController()
@@ -1083,6 +1084,9 @@ class MainWindow(QMainWindow):
             self._populate_project_tree(self._loaded_project, preserve_state=True)
 
     def _system_prefers_dark_theme(self) -> bool:
+        cached_preference = self._system_dark_theme_preference
+        if cached_preference is not None:
+            return cached_preference
         try:
             result = subprocess.run(
                 ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
@@ -1091,10 +1095,13 @@ class MainWindow(QMainWindow):
                 text=True,
             )
         except OSError:
+            self._system_dark_theme_preference = False
             return False
         if result.returncode != 0:
+            self._system_dark_theme_preference = False
             return False
-        return "prefer-dark" in result.stdout
+        self._system_dark_theme_preference = "prefer-dark" in result.stdout
+        return self._system_dark_theme_preference
 
     def _load_theme_mode(self) -> str:
         settings_payload = self._settings_service.load_global()
@@ -1154,6 +1161,7 @@ class MainWindow(QMainWindow):
         if mode == self._theme_mode:
             return
         self._theme_mode = mode
+        self._system_dark_theme_preference = None
         self._persist_theme_mode(mode)
         if self._quick_open_dialog is not None:
             self._quick_open_dialog.deleteLater()
