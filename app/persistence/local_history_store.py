@@ -463,6 +463,8 @@ class LocalHistoryStore:
 
         with self._connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
+            file_keys = [str(row["file_key"]) for row in rows]
+            alias_map = self._path_aliases_for_file_keys(connection, file_keys)
             summaries: list[LocalHistoryFileSummary] = []
             for row in rows:
                 latest_revision_id = row["latest_revision_id"]
@@ -485,7 +487,7 @@ class LocalHistoryStore:
                         latest_label=str(row["latest_label"] or ""),
                         latest_source=str(latest_source),
                         checkpoint_count=int(row["checkpoint_count"]),
-                        path_aliases=self._path_aliases_for_file_key(connection, str(row["file_key"])),
+                        path_aliases=alias_map.get(str(row["file_key"]), ()),
                     )
                 )
         return summaries
@@ -991,53 +993,85 @@ class LocalHistoryStore:
         )
 
     def _path_aliases_for_file_key(self, connection: sqlite3.Connection, file_key: str) -> tuple[str, ...]:
-        aliases: list[str] = []
-        seen: set[str] = set()
+        return self._path_aliases_for_file_keys(connection, [file_key]).get(file_key, ())
 
-        current_row = connection.execute(
-            """
-            SELECT current_absolute_path, current_relative_path, current_display_path
+    def _path_aliases_for_file_keys(
+        self,
+        connection: sqlite3.Connection,
+        file_keys: list[str],
+    ) -> dict[str, tuple[str, ...]]:
+        if not file_keys:
+            return {}
+        unique_file_keys = list(dict.fromkeys(file_keys))
+        alias_lists: dict[str, list[str]] = {file_key: [] for file_key in unique_file_keys}
+        alias_seen: dict[str, set[str]] = {file_key: set() for file_key in unique_file_keys}
+        placeholders = ", ".join("?" for _ in unique_file_keys)
+
+        current_rows = connection.execute(
+            f"""
+            SELECT file_key, current_absolute_path, current_relative_path, current_display_path
             FROM files
-            WHERE file_key = ?
+            WHERE file_key IN ({placeholders})
             """,
-            (file_key,),
-        ).fetchone()
-        if current_row is not None:
-            for value in (
-                current_row["current_relative_path"],
-                current_row["current_display_path"],
-                current_row["current_absolute_path"],
-            ):
-                normalized = str(value).strip()
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                aliases.append(normalized)
+            unique_file_keys,
+        ).fetchall()
+        for row in current_rows:
+            self._append_alias_values(
+                alias_lists=alias_lists,
+                alias_seen=alias_seen,
+                file_key=str(row["file_key"]),
+                values=(
+                    row["current_relative_path"],
+                    row["current_display_path"],
+                    row["current_absolute_path"],
+                ),
+            )
 
         lineage_rows = connection.execute(
-            """
-            SELECT previous_absolute_path, absolute_path, previous_relative_path, relative_path
+            f"""
+            SELECT file_key, previous_absolute_path, absolute_path, previous_relative_path, relative_path
             FROM file_lineage
-            WHERE file_key = ?
-            ORDER BY changed_at DESC, event_id DESC
+            WHERE file_key IN ({placeholders})
+            ORDER BY file_key, changed_at DESC, event_id DESC
             """,
-            (file_key,),
+            unique_file_keys,
         ).fetchall()
         for row in lineage_rows:
-            for value in (
-                row["previous_relative_path"],
-                row["relative_path"],
-                row["previous_absolute_path"],
-                row["absolute_path"],
-            ):
-                if value is None:
-                    continue
-                normalized = str(value).strip()
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                aliases.append(normalized)
-        return tuple(aliases)
+            self._append_alias_values(
+                alias_lists=alias_lists,
+                alias_seen=alias_seen,
+                file_key=str(row["file_key"]),
+                values=(
+                    row["previous_relative_path"],
+                    row["relative_path"],
+                    row["previous_absolute_path"],
+                    row["absolute_path"],
+                ),
+            )
+
+        return {
+            file_key: tuple(alias_lists.get(file_key, ()))
+            for file_key in unique_file_keys
+        }
+
+    def _append_alias_values(
+        self,
+        *,
+        alias_lists: dict[str, list[str]],
+        alias_seen: dict[str, set[str]],
+        file_key: str,
+        values: tuple[object, ...],
+    ) -> None:
+        aliases = alias_lists.setdefault(file_key, [])
+        seen = alias_seen.setdefault(file_key, set())
+        for value in values:
+            if value is None:
+                continue
+            normalized = str(value).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            aliases.append(normalized)
 
     def _refresh_file_record(
         self,

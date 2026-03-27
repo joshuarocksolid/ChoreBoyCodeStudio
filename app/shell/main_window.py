@@ -1692,37 +1692,57 @@ class MainWindow(QMainWindow):
         if history_store is None:
             return
 
-        summaries = history_store.list_global_history_files()
-        if not summaries:
-            QMessageBox.information(
-                self,
-                "Global History",
-                "No saved local-history entries are available yet.",
-            )
-            return
+        def task(cancel_event):  # type: ignore[no-untyped-def]
+            summaries = history_store.list_global_history_files()
+            if cancel_event.is_set():
+                return None
+            return summaries
 
-        if self._history_restore_picker_dialog is None:
-            self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
-
-        self._history_restore_picker_dialog.set_entries(summaries)
-        result = self._history_restore_picker_dialog.open_dialog()
-        if result != QDialog.Accepted:
-            return
-
-        selected_entry = self._history_restore_picker_dialog.selected_entry()
-        if selected_entry is None:
-            return
-
-        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
-            latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
-            if latest_content is None:
-                QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
+        def on_success(payload: object) -> None:
+            if not isinstance(payload, list):
                 return
-            self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
-            return
+            summaries = payload
+            if not summaries:
+                QMessageBox.information(
+                    self,
+                    "Global History",
+                    "No saved local-history entries are available yet.",
+                )
+                return
 
-        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
-            self._show_local_history_for_entry(selected_entry)
+            if self._history_restore_picker_dialog is None:
+                self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
+
+            self._history_restore_picker_dialog.set_entries(summaries)
+            result = self._history_restore_picker_dialog.open_dialog()
+            if result != QDialog.Accepted:
+                return
+
+            selected_entry = self._history_restore_picker_dialog.selected_entry()
+            if selected_entry is None:
+                return
+
+            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
+                latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
+                if latest_content is None:
+                    QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
+                    return
+                self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
+                return
+
+            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
+                self._show_local_history_for_entry(selected_entry)
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Failed to load global history entries: %s", exc)
+            QMessageBox.warning(self, "Global History", f"Could not load global history:\n{exc}")
+
+        self._background_tasks.run(
+            key="global_history_list",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
