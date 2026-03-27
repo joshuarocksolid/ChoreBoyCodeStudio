@@ -1,0 +1,36 @@
+{
+  "active_file_path": "/workspace/SmokeCrudExample/app/history_test.py",
+  "open_files": [
+    {
+      "breakpoints": [],
+      "cursor_column": 80,
+      "cursor_line": 5,
+      "file_path": "/workspace/SmokeCrudExample/app/theme.py",
+      "scroll_position": 0
+    },
+    {
+      "breakpoints": [],
+      "cursor_column": 1,
+      "cursor_line": 1,
+      "file_path": "/workspace/SmokeCrudExample/app/main_window.py",
+      "scroll_position": 0
+    },
+    {
+      "breakpoints": [
+        15
+      ],
+      "cursor_column": 70,
+      "cursor_line": 12,
+      "file_path": "/workspace/SmokeCrudExample/main.py",
+      "scroll_position": 0
+    },
+    {
+      "breakpoints": [],
+      "cursor_column": 1,
+      "cursor_line": 8,
+      "file_path": "/workspace/SmokeCrudExample/app/history_test.py",
+      "scroll_position": 0
+    }
+  ],
+  "schema_version": 1
+}

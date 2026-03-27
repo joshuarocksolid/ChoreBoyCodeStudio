@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "main.py",
+  "env_overrides": {},
+  "name": "SmokeHeadlessTool",
+  "project_id": "proj_620231db6b10449083b45a101d249218",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "headless_tool",
+  "working_directory": "."
+}

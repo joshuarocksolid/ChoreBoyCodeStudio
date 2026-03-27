@@ -1,0 +1,6 @@
+{
+  "template_id": "crud_showcase",
+  "display_name": "CRUD Showcase",
+  "description": "Example project demonstrating SQLite CRUD, Qt widgets, and optional FreeCAD integration.",
+  "template_version": 1
+}

@@ -1,0 +1,6 @@
+{
+  "template_id": "qt_app",
+  "display_name": "Qt App",
+  "description": "Starter GUI app using PySide2 imports in AppRun runtime.",
+  "template_version": 1
+}

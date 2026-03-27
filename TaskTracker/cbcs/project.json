@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "main.py",
+  "env_overrides": {},
+  "name": "TaskTracker",
+  "project_id": "proj_116e4a27fd1544bdb7ee754bfc4ee6fb",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "blank_project",
+  "working_directory": "."
+}
