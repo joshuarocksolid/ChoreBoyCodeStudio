@@ -100,13 +100,13 @@ Build under test: ChoreBoy Code Studio v0.2
 - [Evidence] `/workspace/smoke_artifacts/screenshots/phase08_find_in_files.png`, `/workspace/smoke_artifacts/screenshots/phase08_find_in_files_qapplication.png`
 
 ## Phase 9: Project tree file operations
-**Status**: FAIL
+**Status**: PARTIAL
 **AT coverage**: [AT-27, AT-28]
 
 ### Findings
-- [FAIL] Could not reliably complete create/rename/delete/drag-drop validations due repeated GUI-agent execution failures during this phase.
-- [WARN] Captured context-menu evidence remained inconclusive because overlay/modal states interfered with clean project-tree interaction.
-- [Evidence] `/workspace/smoke_artifacts/screenshots/phase09_tree_context_menu.png`, `/workspace/smoke_artifacts/screenshots/phase09_context_menu_retry.png`
+- [PASS] Project-tree context actions are reachable; additional targeted retry produced an explicit tree-action modal (`New Folder`) from context flow, confirming at least part of file-operation UI path is functioning. Screenshot: `/workspace/smoke_artifacts/screenshots/phase_extra_new_file_prompt_attempt.png`
+- [WARN] Full create/rename/delete/drag-drop sequence still could not be completed end-to-end in one stable pass due recurring UI-state interference (search/rename overlays and agent instability), so AT-27/AT-28 remain only partially verified.
+- [Evidence] `/workspace/smoke_artifacts/screenshots/phase09_tree_context_menu.png`, `/workspace/smoke_artifacts/screenshots/phase09_context_menu_retry.png`, `/workspace/smoke_artifacts/screenshots/phase_extra_new_file_prompt_attempt.png`
 
 ## Phase 10: Settings & preferences
 **Status**: PASS
@@ -233,12 +233,12 @@ Build under test: ChoreBoy Code Studio v0.2
 - **Actual**: Query interaction was unstable in this session; positive navigation not conclusively validated.
 - **Screenshot**: `/workspace/smoke_artifacts/screenshots/phase08_find_in_files_qapplication.png`
 
-### [P2] Project tree file-operations phase blocked by repeated GUI-agent failures
+### [P2] Project tree file-operations only partially verified
 - **Phase**: 9
 - **AT reference**: AT-27
 - **Steps to reproduce**: Attempt context-menu create/rename/delete/drag-drop operations in project tree.
 - **Expected**: Deterministic file operation flow with confirmations.
-- **Actual**: Repeated GUI-agent failures and modal/overlay interference prevented conclusive execution.
+- **Actual**: Context-action entry is present (e.g., New Folder prompt reached), but full create/rename/delete/drag-drop coverage was not completed in one stable sequence.
 - **Screenshot**: `/workspace/smoke_artifacts/screenshots/phase09_context_menu_retry.png`
 
 ### [P3] Runtime readiness count differs from expected script text
