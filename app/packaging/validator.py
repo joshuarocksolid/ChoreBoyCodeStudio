@@ -5,10 +5,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core.models import RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
 from app.packaging.dependency_audit import run_dependency_audit
 from app.packaging.layout import should_exclude_relative_path
 from app.packaging.models import (
+    DependencyAuditReport,
     PACKAGE_PROFILE_PORTABLE,
     PackageValidationReport,
     ProjectPackageConfig,
@@ -36,6 +38,7 @@ def build_package_validation_report(
     known_runtime_modules: frozenset[str] | None = None,
 ) -> PackageValidationReport:
     """Build the combined package preflight + dependency audit report."""
+    resolved_root = str(Path(project_root).expanduser().resolve())
     effective_entry = package_config.effective_entry_file(project_default_entry=project_default_entry)
     base_preflight = build_package_preflight(
         project_root=project_root,
@@ -55,10 +58,29 @@ def build_package_validation_report(
         issues=combined_issues,
         summary=_summarize_package_preflight(combined_issues),
     )
+    if not preflight.is_ready:
+        dependency_audit = DependencyAuditReport(
+            project_root=resolved_root,
+            records=[],
+            issues=[],
+            summary="Dependency audit skipped because packaging preflight has blocking issues.",
+        )
+        issue_report = RuntimeIssueReport(
+            workflow="package",
+            issues=_sort_issues(list(preflight.issues)),
+        )
+        return PackageValidationReport(
+            profile=profile,
+            preflight=preflight,
+            dependency_audit=dependency_audit,
+            issue_report=issue_report,
+        )
+
+    effective_runtime_modules = known_runtime_modules or load_cached_runtime_modules()
     dependency_audit = run_dependency_audit(
         project_root=project_root,
-        known_runtime_modules=known_runtime_modules,
-        allow_runtime_import_probe=True,
+        known_runtime_modules=effective_runtime_modules,
+        allow_runtime_import_probe=False,
     )
     issue_report = RuntimeIssueReport(
         workflow="package",
