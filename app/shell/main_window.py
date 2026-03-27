@@ -39,6 +39,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
+import run_editor
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path, project_logs_dir
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
@@ -396,6 +397,7 @@ class MainWindow(QMainWindow):
         self._keep_preview_open_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+        self._system_dark_theme_preference: bool | None = None
         self._loaded_project: LoadedProject | None = None
         self._project_tree_structure_signature: tuple[str, ...] | None = None
         self._workspace_controller = EditorWorkspaceController()
@@ -725,6 +727,11 @@ class MainWindow(QMainWindow):
         self._runtime_probe_timer.setSingleShot(True)
         self._runtime_probe_timer.timeout.connect(self._start_runtime_module_probe)
         self._runtime_probe_timer.start(200)
+        self._startup_probe_refresh_timer = QTimer(self)
+        self._startup_probe_refresh_timer.setSingleShot(True)
+        self._startup_probe_refresh_timer.timeout.connect(self._refresh_startup_capability_report_async)
+        self._startup_probe_refresh_timer.start(0)
+        run_editor.set_startup_report_refresh_callback(self._handle_startup_report_refresh)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session."""
@@ -752,6 +759,31 @@ class MainWindow(QMainWindow):
         if self._status_controller is None:
             return
         self._status_controller.set_startup_report(report)
+
+    def _refresh_startup_capability_report_async(self) -> None:
+        def task(cancel_event):  # type: ignore[no-untyped-def]
+            report = run_editor.refresh_startup_capability_report()
+            if cancel_event.is_set():
+                return None
+            return report
+
+        def on_success(report: object) -> None:
+            if not isinstance(report, CapabilityProbeReport):
+                return
+            self.set_startup_report(report)
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Deferred startup capability probe failed: %s", exc)
+
+        self._background_tasks.run(
+            key="startup_capability_refresh",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_startup_report_refresh(self, report: CapabilityProbeReport) -> None:
+        self._dispatch_to_main_thread(lambda: self.set_startup_report(report))
 
     def _build_runtime_issue_report(self) -> RuntimeIssueReport:
         reports: list[RuntimeIssueReport] = []
@@ -1083,6 +1115,9 @@ class MainWindow(QMainWindow):
             self._populate_project_tree(self._loaded_project, preserve_state=True)
 
     def _system_prefers_dark_theme(self) -> bool:
+        cached_preference = self._system_dark_theme_preference
+        if cached_preference is not None:
+            return cached_preference
         try:
             result = subprocess.run(
                 ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
@@ -1091,10 +1126,13 @@ class MainWindow(QMainWindow):
                 text=True,
             )
         except OSError:
+            self._system_dark_theme_preference = False
             return False
         if result.returncode != 0:
+            self._system_dark_theme_preference = False
             return False
-        return "prefer-dark" in result.stdout
+        self._system_dark_theme_preference = "prefer-dark" in result.stdout
+        return self._system_dark_theme_preference
 
     def _load_theme_mode(self) -> str:
         settings_payload = self._settings_service.load_global()
@@ -1154,6 +1192,7 @@ class MainWindow(QMainWindow):
         if mode == self._theme_mode:
             return
         self._theme_mode = mode
+        self._system_dark_theme_preference = None
         self._persist_theme_mode(mode)
         if self._quick_open_dialog is not None:
             self._quick_open_dialog.deleteLater()
@@ -1692,37 +1731,57 @@ class MainWindow(QMainWindow):
         if history_store is None:
             return
 
-        summaries = history_store.list_global_history_files()
-        if not summaries:
-            QMessageBox.information(
-                self,
-                "Global History",
-                "No saved local-history entries are available yet.",
-            )
-            return
+        def task(cancel_event):  # type: ignore[no-untyped-def]
+            summaries = history_store.list_global_history_files()
+            if cancel_event.is_set():
+                return None
+            return summaries
 
-        if self._history_restore_picker_dialog is None:
-            self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
-
-        self._history_restore_picker_dialog.set_entries(summaries)
-        result = self._history_restore_picker_dialog.open_dialog()
-        if result != QDialog.Accepted:
-            return
-
-        selected_entry = self._history_restore_picker_dialog.selected_entry()
-        if selected_entry is None:
-            return
-
-        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
-            latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
-            if latest_content is None:
-                QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
+        def on_success(payload: object) -> None:
+            if not isinstance(payload, list):
                 return
-            self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
-            return
+            summaries = payload
+            if not summaries:
+                QMessageBox.information(
+                    self,
+                    "Global History",
+                    "No saved local-history entries are available yet.",
+                )
+                return
 
-        if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
-            self._show_local_history_for_entry(selected_entry)
+            if self._history_restore_picker_dialog is None:
+                self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
+
+            self._history_restore_picker_dialog.set_entries(summaries)
+            result = self._history_restore_picker_dialog.open_dialog()
+            if result != QDialog.Accepted:
+                return
+
+            selected_entry = self._history_restore_picker_dialog.selected_entry()
+            if selected_entry is None:
+                return
+
+            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
+                latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
+                if latest_content is None:
+                    QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
+                    return
+                self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
+                return
+
+            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
+                self._show_local_history_for_entry(selected_entry)
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Failed to load global history entries: %s", exc)
+            QMessageBox.warning(self, "Global History", f"Could not load global history:\n{exc}")
+
+        self._background_tasks.run(
+            key="global_history_list",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -5352,6 +5411,9 @@ class MainWindow(QMainWindow):
             self._auto_start_repl_timer.stop()
         if hasattr(self, "_runtime_probe_timer"):
             self._runtime_probe_timer.stop()
+        if hasattr(self, "_startup_probe_refresh_timer"):
+            self._startup_probe_refresh_timer.stop()
+        run_editor.set_startup_report_refresh_callback(None)
         self._drain_run_event_queue()
         self._background_tasks.cancel_all()
         self._background_tasks.shutdown(wait=False)

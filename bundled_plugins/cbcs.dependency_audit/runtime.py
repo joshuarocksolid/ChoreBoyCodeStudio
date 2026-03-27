@@ -18,7 +18,7 @@ def handle_dependency_audit_job(
     report = run_dependency_audit(
         project_root=project_root,
         known_runtime_modules=_parse_known_runtime_modules(request.get("known_runtime_modules")),
-        allow_runtime_import_probe=bool(request.get("allow_runtime_import_probe", True)),
+        allow_runtime_import_probe=bool(request.get("allow_runtime_import_probe", False)),
     )
     emit_event(
         "job_finished",

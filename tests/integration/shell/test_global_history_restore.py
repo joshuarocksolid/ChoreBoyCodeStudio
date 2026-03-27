@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import pytest
 
@@ -35,6 +36,17 @@ def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped
     window._stop_active_run_before_close()
     window.deleteLater()
     app.processEvents()
+
+
+def _wait_for(predicate, app, *, timeout_seconds: float = 1.5) -> bool:  # type: ignore[no-untyped-def]
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    app.processEvents()
+    return predicate()
 
 
 def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
@@ -86,6 +98,10 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_exec)
 
     window._handle_open_global_history_action()
+    assert _wait_for(
+        lambda: window._editor_manager.get_tab(str(file_path.resolve())) is not None,
+        app,
+    )
 
     restored_tab = window._editor_manager.get_tab(str(file_path.resolve()))
     assert restored_tab is not None

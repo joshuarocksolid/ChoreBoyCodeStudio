@@ -37,6 +37,19 @@ def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped
     app.processEvents()
 
 
+def _wait_for(predicate, app, *, timeout_seconds: float = 2.0) -> bool:  # type: ignore[no-untyped-def]
+    import time
+
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    app.processEvents()
+    return predicate()
+
+
 def test_local_history_dialogs_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -79,6 +92,7 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
         window._handle_set_theme(mode)
         window._show_local_history_for_path(str(file_path.resolve()))
         window._handle_open_global_history_action()
+        assert _wait_for(lambda: window._history_restore_picker_dialog is not None, app)
 
         assert window._history_restore_picker_dialog is not None
         assert window._history_restore_picker_dialog._results.topLevelItemCount() == 1

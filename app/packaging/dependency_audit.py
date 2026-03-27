@@ -23,7 +23,7 @@ def run_dependency_audit(
     *,
     project_root: str,
     known_runtime_modules: frozenset[str] | None = None,
-    allow_runtime_import_probe: bool = True,
+    allow_runtime_import_probe: bool = False,
 ) -> DependencyAuditReport:
     """Audit first-party project imports against project, vendor, and runtime availability."""
     root = Path(project_root).expanduser().resolve()

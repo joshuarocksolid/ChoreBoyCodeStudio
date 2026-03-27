@@ -4,14 +4,19 @@ import faulthandler
 import logging
 import importlib
 import sys
+from typing import Callable
 from typing import Any, Optional
 
-from app.bootstrap.capability_probe import run_startup_capability_probe
+from app.bootstrap.capability_probe import (
+    run_minimal_startup_capability_probe,
+    run_startup_capability_probe,
+)
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.core.models import CapabilityProbeReport
 from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
+_STARTUP_REPORT_REFRESH_CALLBACK: Optional[Callable[[CapabilityProbeReport], None]] = None
 
 
 def _start_editor() -> int:
@@ -37,6 +42,25 @@ def _load_qt_runtime() -> tuple[Any, Any]:
 def get_last_startup_capability_report() -> Optional[CapabilityProbeReport]:
     """Return the latest startup probe report for diagnostics/UI wiring."""
     return _LAST_STARTUP_CAPABILITY_REPORT
+
+
+def set_startup_report_refresh_callback(
+    callback: Optional[Callable[[CapabilityProbeReport], None]]
+) -> None:
+    """Set optional callback for deferred startup-report refresh notifications."""
+    global _STARTUP_REPORT_REFRESH_CALLBACK
+    _STARTUP_REPORT_REFRESH_CALLBACK = callback
+
+
+def refresh_startup_capability_report() -> CapabilityProbeReport:
+    """Run full startup probe and broadcast updated report to shell callback."""
+    global _LAST_STARTUP_CAPABILITY_REPORT
+    report = run_startup_capability_probe()
+    _LAST_STARTUP_CAPABILITY_REPORT = report
+    callback = _STARTUP_REPORT_REFRESH_CALLBACK
+    if callback is not None:
+        callback(report)
+    return report
 
 
 def _log_capability_probe_results(logger: logging.Logger, report: CapabilityProbeReport) -> None:
@@ -101,7 +125,7 @@ def main() -> int:
         )
 
     try:
-        _LAST_STARTUP_CAPABILITY_REPORT = run_startup_capability_probe()
+        _LAST_STARTUP_CAPABILITY_REPORT = run_minimal_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:

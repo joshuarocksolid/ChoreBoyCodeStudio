@@ -65,6 +65,35 @@ def run_startup_capability_probe(
     return CapabilityProbeReport(checks=checks)
 
 
+def run_minimal_startup_capability_probe(
+    state_root: Optional[PathInput] = None,
+    temp_root: Optional[PathInput] = None,
+    app_run_path: Optional[PathInput] = None,
+) -> CapabilityProbeReport:
+    """Run a lightweight prepaint subset of startup capability checks."""
+    check_runners: list[tuple[str, Callable[[], CapabilityCheckResult]]] = [
+        (APP_RUN_PRESENCE_CHECK_ID, lambda: check_apprun_presence(app_run_path=app_run_path)),
+        (PYSIDE2_IMPORT_CHECK_ID, check_pyside2_availability),
+        (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
+        (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
+        (TEMP_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_temp_path(temp_root=temp_root)),
+    ]
+    checks: list[CapabilityCheckResult] = []
+    for expected_check_id, runner in check_runners:
+        try:
+            checks.append(runner())
+        except Exception as exc:  # pragma: no cover - defensive guard for startup resilience
+            checks.append(
+                CapabilityCheckResult(
+                    check_id=expected_check_id,
+                    is_available=False,
+                    message=f"{expected_check_id} check crashed: {exc}",
+                    details={"error_type": type(exc).__name__},
+                )
+            )
+    return CapabilityProbeReport(checks=checks)
+
+
 def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> CapabilityCheckResult:
     """Check whether the expected AppRun path exists."""
     configured = Path(app_run_path or constants.APP_RUN_PATH).expanduser()
