@@ -40,9 +40,14 @@ def initialize_jedi_runtime(state_root: Optional[PathInput] = None) -> JediRunti
         import jedi
         import parso
 
+        script_api = getattr(jedi, "Script", None)
+        if not callable(script_api):
+            raise AttributeError("module 'jedi' is missing required callable 'Script'")
+
         cache_directory = ensure_directory(global_cache_dir(state_root) / "jedi")
-        if hasattr(jedi.settings, "cache_directory"):
-            jedi.settings.cache_directory = str(cache_directory)
+        settings_obj = getattr(jedi, "settings", None)
+        if settings_obj is not None and hasattr(settings_obj, "cache_directory"):
+            settings_obj.cache_directory = str(cache_directory)
 
         _RUNTIME_STATUS = JediRuntimeStatus(
             is_available=True,

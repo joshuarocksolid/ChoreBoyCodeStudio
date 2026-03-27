@@ -110,6 +110,36 @@ def test_handle_find_references_action_on_success_updates_results() -> None:
     assert focused == [True]
 
 
+def test_handle_find_references_action_surfaces_semantic_runtime_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = _build_window_for_reference_actions()
+    window_any = cast(Any, window)
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda _parent, title, text: warnings.append((title, text)),
+    )
+
+    MainWindow._handle_find_references_action(window)
+    request_call = window_any._intelligence_controller.find_references_calls[0]
+    request_call["on_success"](
+        SimpleNamespace(
+            symbol_name="task_name",
+            hits=[],
+            metadata=SimpleNamespace(
+                unsupported_reason="runtime_unavailable: RuntimeError: semantic backend unavailable",
+                source="semantic_unavailable",
+                confidence="unsupported",
+            ),
+        )
+    )
+
+    assert warnings
+    assert warnings[-1][0] == "Find References"
+    assert "Semantic references are currently unavailable." in warnings[-1][1]
+
+
 def test_handle_rename_symbol_action_dispatches_background_task(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_for_reference_actions()
     window_any = cast(Any, window)

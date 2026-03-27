@@ -13,3 +13,4 @@ def shutdown_main_window_for_test(window: MainWindow) -> None:
     """
     window._is_shutting_down = True
     window._begin_shutdown_teardown()
+    window._stop_active_run_before_close()

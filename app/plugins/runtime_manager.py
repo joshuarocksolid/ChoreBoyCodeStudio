@@ -293,6 +293,7 @@ class PluginRuntimeManager:
             return True
         if message_type == "job_event":
             job_id = payload.get("job_id")
+            provider_key = payload.get("provider_key")
             event_type = payload.get("event_type")
             event_payload = payload.get("payload", {})
             if not isinstance(job_id, str) or not isinstance(event_type, str):
@@ -301,10 +302,29 @@ class PluginRuntimeManager:
                 event_payload = {}
             with self._pending_lock:
                 handler = self._job_event_handlers.get(job_id)
+                result_queue = self._job_result_queues.get(job_id)
             if handler is not None:
                 try:
                     handler(event_type, event_payload)
-                except Exception:
+                except Exception as exc:
+                    provider_label = provider_key if isinstance(provider_key, str) and provider_key else "unknown"
+                    error_text = (
+                        f"Workflow job event handler failed: provider={provider_label} "
+                        f"job_id={job_id} event_type={event_type} error={exc.__class__.__name__}: {exc}"
+                    )
+                    self._append_runtime_log(error_text)
+                    if result_queue is not None:
+                        try:
+                            result_queue.put_nowait(
+                                {
+                                    "type": "job_error",
+                                    "job_id": job_id,
+                                    "provider_key": provider_key,
+                                    "error": error_text,
+                                }
+                            )
+                        except queue.Full:
+                            pass
                     return True
             return True
         if message_type in {"job_result", "job_error"}:

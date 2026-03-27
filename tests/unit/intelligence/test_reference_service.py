@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,12 +34,51 @@ def test_find_references_collects_definitions_and_usages_across_files(tmp_path: 
     current_source = "from a import helper_task\nresult = helper_task(2)\n"
     current_file.write_text(current_source, encoding="utf-8")
 
-    result = find_references(
-        project_root=str(project_root.resolve()),
-        current_file_path=str(current_file.resolve()),
-        source_text=current_source,
-        cursor_position=current_source.rfind("helper_task") + 2,
-    )
+    class _Facade:
+        def find_references(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(
+                symbol_name="helper_task",
+                hits=[
+                    SimpleNamespace(
+                        symbol_name="helper_task",
+                        file_path=str((project_root / "a.py").resolve()),
+                        line_number=1,
+                        column_number=4,
+                        line_text="def helper_task(value):",
+                        is_definition=True,
+                    ),
+                    SimpleNamespace(
+                        symbol_name="helper_task",
+                        file_path=str((project_root / "a.py").resolve()),
+                        line_number=4,
+                        column_number=0,
+                        line_text="helper_task(1)",
+                        is_definition=False,
+                    ),
+                    SimpleNamespace(
+                        symbol_name="helper_task",
+                        file_path=str(current_file.resolve()),
+                        line_number=2,
+                        column_number=9,
+                        line_text="result = helper_task(2)",
+                        is_definition=False,
+                    ),
+                ],
+                metadata=SimpleNamespace(source="semantic", unsupported_reason="", confidence="exact"),
+                found=True,
+            )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("app.intelligence.reference_service._facade", lambda _project_root: _Facade())
+    try:
+        result = find_references(
+            project_root=str(project_root.resolve()),
+            current_file_path=str(current_file.resolve()),
+            source_text=current_source,
+            cursor_position=current_source.rfind("helper_task") + 2,
+        )
+    finally:
+        monkeypatch.undo()
 
     assert result.symbol_name == "helper_task"
     assert len(result.hits) >= 3
@@ -58,12 +98,43 @@ def test_find_references_excludes_comments_and_string_literals(tmp_path: Path) -
     )
     current_file.write_text(current_source, encoding="utf-8")
 
-    result = find_references(
-        project_root=str(project_root.resolve()),
-        current_file_path=str(current_file.resolve()),
-        source_text=current_source,
-        cursor_position=current_source.index("helper_task()") + 1,
-    )
+    class _Facade:
+        def find_references(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(
+                symbol_name="helper_task",
+                hits=[
+                    SimpleNamespace(
+                        symbol_name="helper_task",
+                        file_path=str(current_file.resolve()),
+                        line_number=1,
+                        column_number=4,
+                        line_text="def helper_task():",
+                        is_definition=True,
+                    ),
+                    SimpleNamespace(
+                        symbol_name="helper_task",
+                        file_path=str(current_file.resolve()),
+                        line_number=4,
+                        column_number=8,
+                        line_text="value = helper_task()",
+                        is_definition=False,
+                    ),
+                ],
+                metadata=SimpleNamespace(source="semantic", unsupported_reason="", confidence="exact"),
+                found=True,
+            )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("app.intelligence.reference_service._facade", lambda _project_root: _Facade())
+    try:
+        result = find_references(
+            project_root=str(project_root.resolve()),
+            current_file_path=str(current_file.resolve()),
+            source_text=current_source,
+            cursor_position=current_source.index("helper_task()") + 1,
+        )
+    finally:
+        monkeypatch.undo()
 
     assert result.symbol_name == "helper_task"
     assert len(result.hits) == 2
@@ -87,7 +158,10 @@ def test_find_references_returns_empty_when_no_symbol_at_cursor(tmp_path: Path) 
     assert result.hits == []
 
 
-def test_find_references_reads_each_python_file_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_references_runtime_unavailable_does_not_fallback_to_file_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     helper = project_root / "helper.py"
@@ -96,15 +170,20 @@ def test_find_references_reads_each_python_file_once(tmp_path: Path, monkeypatch
     current_source = "from helper import helper_task\nresult = helper_task(2)\n"
     current_file.write_text(current_source, encoding="utf-8")
 
-    original_read_text = Path.read_text
     read_counts: dict[str, int] = {}
 
     def counting_read_text(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
         resolved = str(self.resolve())
         read_counts[resolved] = read_counts.get(resolved, 0) + 1
-        return original_read_text(self, *args, **kwargs)
+        return ""
 
     monkeypatch.setattr(Path, "read_text", counting_read_text)
+    monkeypatch.setattr(
+        "app.intelligence.reference_service._facade",
+        lambda _project_root: SimpleNamespace(
+            find_references=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("semantic backend unavailable"))
+        ),
+    )
 
     result = find_references(
         project_root=str(project_root.resolve()),
@@ -114,5 +193,41 @@ def test_find_references_reads_each_python_file_once(tmp_path: Path, monkeypatch
     )
 
     assert result.symbol_name == "helper_task"
-    assert read_counts[str(helper.resolve())] == 1
-    assert read_counts.get(str(current_file.resolve()), 0) <= 1
+    assert result.hits == []
+    assert result.metadata is not None
+    assert result.metadata.source == "semantic_unavailable"
+    assert "runtime_unavailable" in result.metadata.unsupported_reason
+    assert read_counts == {}
+
+
+def test_find_references_surfaces_semantic_runtime_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    current_file = project_root / "main.py"
+    source = "value = helper_task\n"
+    current_file.write_text(source, encoding="utf-8")
+
+    class _FailingFacade:
+        def find_references(self, **_kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("semantic backend unavailable")
+
+    monkeypatch.setattr(
+        "app.intelligence.reference_service._facade",
+        lambda _project_root: _FailingFacade(),
+    )
+
+    result = find_references(
+        project_root=str(project_root.resolve()),
+        current_file_path=str(current_file.resolve()),
+        source_text=source,
+        cursor_position=source.index("helper_task") + 2,
+    )
+
+    assert result.symbol_name == "helper_task"
+    assert result.hits == []
+    assert result.metadata is not None
+    assert result.metadata.source == "semantic_unavailable"
+    assert "runtime_unavailable" in result.metadata.unsupported_reason

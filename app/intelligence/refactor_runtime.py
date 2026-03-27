@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 
 from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
 
@@ -25,7 +26,7 @@ def runtime_status() -> RefactorRuntimeStatus:
 
 
 def initialize_refactor_runtime() -> RefactorRuntimeStatus:
-    """Ensure vendored Rope is importable."""
+    """Ensure vendored Rope and required refactor modules are importable."""
     global _RUNTIME_INITIALIZED, _RUNTIME_STATUS
     if _RUNTIME_INITIALIZED:
         return _RUNTIME_STATUS
@@ -33,6 +34,8 @@ def initialize_refactor_runtime() -> RefactorRuntimeStatus:
     try:
         ensure_vendor_path_on_sys_path()
         import rope
+        importlib.import_module("rope.base.project")
+        importlib.import_module("rope.refactor.rename")
 
         _RUNTIME_STATUS = RefactorRuntimeStatus(
             is_available=True,
