@@ -112,6 +112,7 @@ References:
 - Drag = move (absolute mode or valid layout operation)
 - Ctrl+drag = clone (parity target phase)
 - Delete = remove selected widget(s)
+- Right-click = context menu (edit text, clipboard actions, duplicate/delete, align/distribute, adjust size)
 
 ## 3.3 Right Dock — Object Inspector tab
 
@@ -146,7 +147,36 @@ References:
 - string -> line edit / text edit
 - color/font/icon -> specialized pickers (phase-based)
 
-## 3.5 Bottom Dock — Validation/Messages/Compatibility
+## 3.5 Right Dock — Actions tab
+
+### Purpose
+
+- Author QAction ecosystem structures directly in Designer without hand-editing XML.
+- Keep action definitions, grouping, and placement workflows visible and undoable.
+
+### Sections
+
+1. **Actions**
+   - list of QAction object names
+   - create/remove actions
+   - edit common action properties (MVP: `text`)
+   - assign selected action to a group (or unassign)
+2. **Action Groups**
+   - list of action groups
+   - create/remove groups
+   - add/remove action membership in selected group
+3. **Menu/Toolbar Placements**
+   - target selector for supported placement widgets (`QMainWindow`, `QMenuBar`, `QMenu`, `QToolBar`)
+   - add/remove placed actions for selected target
+   - reorder placed actions (move up/down)
+
+### Interaction guarantees
+
+- all mutations are command-stack-backed and undo/redo safe.
+- naming remains deterministic (new actions/groups auto-de-duplicate names).
+- edited forms save/reopen with action/group/placement state preserved.
+
+## 3.6 Bottom Dock — Validation/Messages/Compatibility
 
 ### Tabs
 
@@ -175,6 +205,11 @@ References:
 - Connection gesture:
   - choose source widget -> signal
   - choose target widget -> slot
+- Connection inspector behavior:
+  - sender/receiver object pickers show `objectName (className)` labels.
+  - signal picker is class-aware for selected sender.
+  - slot picker is class-aware for selected receiver and filtered to signatures compatible with selected signal.
+  - incompatible or unsupported signature edits are blocked with explicit validation feedback.
 - Writes to `.ui` `<connections>`.
 - Shortcut: `F4`
 
@@ -223,6 +258,7 @@ References:
 | `designer.form.preview` | Preview Form | `Ctrl+R` | `QUiLoader` preview parity |
 | `designer.form.form_settings` | Form Settings… | `Alt+Return` | class/name/base size/margins |
 | `designer.form.check_compat` | Run Compatibility Check | `Ctrl+Shift+R` | load-check and report |
+| `designer.form.actions` | Edit Actions |  | Focuses Actions tab in right dock |
 
 ## 5.4 Layout menu
 
@@ -232,6 +268,14 @@ References:
 | `designer.layout.vertical` | Lay Out Vertically | `Ctrl+2` | Qt Designer convention |
 | `designer.layout.grid` | Lay Out in a Grid | `Ctrl+3` | Qt Designer convention |
 | `designer.layout.break` | Break Layout | `Ctrl+0` | Qt Designer convention |
+| `designer.layout.align_left` | Align Left |  | align selected widgets to left edge |
+| `designer.layout.align_hcenter` | Align Horizontal Centers |  | align selected widgets by horizontal center |
+| `designer.layout.align_right` | Align Right |  | align selected widgets to right edge |
+| `designer.layout.align_top` | Align Top |  | align selected widgets to top edge |
+| `designer.layout.align_vcenter` | Align Vertical Centers |  | align selected widgets by vertical center |
+| `designer.layout.align_bottom` | Align Bottom |  | align selected widgets to bottom edge |
+| `designer.layout.distribute_horizontal` | Distribute Horizontally |  | spread selected widgets along X |
+| `designer.layout.distribute_vertical` | Distribute Vertically |  | spread selected widgets along Y |
 | `designer.layout.adjust_size` | Adjust Size | `Ctrl+J` | Fit to content |
 | `designer.layout.spacer_h` | Insert Horizontal Spacer | `Ctrl+Shift+H` | |
 | `designer.layout.spacer_v` | Insert Vertical Spacer | `Ctrl+Shift+V` | |

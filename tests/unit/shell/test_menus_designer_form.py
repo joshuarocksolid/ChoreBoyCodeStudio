@@ -33,6 +33,10 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
         window,
         callbacks=MenuCallbacks(
             on_designer_preview=lambda: calls.append("preview"),
+            on_designer_preview_default=lambda: calls.append("preview_default"),
+            on_designer_preview_fusion=lambda: calls.append("preview_fusion"),
+            on_designer_preview_phone_portrait=lambda: calls.append("preview_phone"),
+            on_designer_preview_tablet_portrait=lambda: calls.append("preview_tablet"),
             on_designer_check_compat=lambda: calls.append("compat"),
             on_designer_add_resource=lambda: calls.append("resource"),
             on_designer_promote_widget=lambda: calls.append("promote"),
@@ -50,6 +54,10 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
     save_component = registry.action("designer.form.save_component")
     insert_component = registry.action("designer.form.insert_component")
     duplicate = registry.action("designer.form.duplicate_selection")
+    preview_default = registry.action("designer.form.preview.default")
+    preview_fusion = registry.action("designer.form.preview.fusion")
+    preview_phone = registry.action("designer.form.preview.phone_portrait")
+    preview_tablet = registry.action("designer.form.preview.tablet_portrait")
     assert preview is not None
     assert compat is not None
     assert resource is not None
@@ -58,7 +66,15 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
     assert save_component is not None
     assert insert_component is not None
     assert duplicate is not None
+    assert preview_default is not None
+    assert preview_fusion is not None
+    assert preview_phone is not None
+    assert preview_tablet is not None
     assert preview.shortcut().toString() == "Ctrl+R"
+    assert preview_default.shortcut().toString() == ""
+    assert preview_fusion.shortcut().toString() == ""
+    assert preview_phone.shortcut().toString() == ""
+    assert preview_tablet.shortcut().toString() == ""
     assert compat.shortcut().toString() == "Ctrl+Shift+R"
     assert resource.shortcut().toString() == ""
     assert promote.shortcut().toString() == ""
@@ -68,6 +84,10 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
     assert duplicate.shortcut().toString() == "Ctrl+D"
 
     preview.trigger()
+    preview_default.trigger()
+    preview_fusion.trigger()
+    preview_phone.trigger()
+    preview_tablet.trigger()
     compat.trigger()
     resource.trigger()
     promote.trigger()
@@ -77,6 +97,10 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
     duplicate.trigger()
     assert calls == [
         "preview",
+        "preview_default",
+        "preview_fusion",
+        "preview_phone",
+        "preview_tablet",
         "compat",
         "resource",
         "promote",
@@ -85,3 +109,19 @@ def test_designer_form_actions_registered_with_shortcuts(_ensure_qapp) -> None: 
         "insert_component",
         "duplicate",
     ]
+
+
+def test_designer_form_actions_include_edit_clipboard_shortcuts(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    window = QMainWindow()
+    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+
+    cut_action = registry.action("shell.action.edit.cut")
+    copy_action = registry.action("shell.action.edit.copy")
+    paste_action = registry.action("shell.action.edit.paste")
+
+    assert cut_action is not None
+    assert copy_action is not None
+    assert paste_action is not None
+    assert cut_action.shortcut().toString() == "Ctrl+X"
+    assert copy_action.shortcut().toString() == "Ctrl+C"
+    assert paste_action.shortcut().toString() == "Ctrl+V"

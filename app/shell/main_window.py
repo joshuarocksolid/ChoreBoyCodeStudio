@@ -6,10 +6,10 @@ import queue
 from pathlib import Path
 import subprocess
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 from PySide2.QtCore import QEvent, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtGui import QCloseEvent, QColor, QIcon, QKeyEvent, QKeySequence, QMouseEvent
 from PySide2.QtWidgets import (
     QApplication,
     QDialog,
@@ -84,6 +84,7 @@ from app.designer.editor_surface import DesignerEditorSurface
 from app.designer.io.ui_writer import write_ui_file
 from app.designer.model import PropertyValue, UIModel, WidgetNode
 from app.designer.new_form_dialog import NewFormRequest
+from app.designer.validation import ValidationIssue
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -215,6 +216,7 @@ class MainWindow(QMainWindow):
         self._problems_tab_widget: QTabWidget | None = None
         self._state_root = state_root
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
+        self._stored_designer_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
             state_root=self._state_root,
@@ -383,6 +385,7 @@ class MainWindow(QMainWindow):
         self._configure_window_frame()
         self._build_layout_shell()
         self._configure_close_tab_shortcut()
+        self.installEventFilter(self)
         self._menu_registry = build_menu_stubs(
             self,
             callbacks=MenuCallbacks(
@@ -429,6 +432,9 @@ class MainWindow(QMainWindow):
                 on_quick_open=self._handle_quick_open_action,
                 on_undo=self._handle_undo_action,
                 on_redo=self._handle_redo_action,
+                on_cut=self._handle_cut_action,
+                on_copy=self._handle_copy_action,
+                on_paste=self._handle_paste_action,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
@@ -445,11 +451,24 @@ class MainWindow(QMainWindow):
                 on_designer_layout_vertical=self._handle_designer_layout_vertical_action,
                 on_designer_layout_grid=self._handle_designer_layout_grid_action,
                 on_designer_layout_break=self._handle_designer_layout_break_action,
+                on_designer_layout_align_left=self._handle_designer_layout_align_left_action,
+                on_designer_layout_align_hcenter=self._handle_designer_layout_align_hcenter_action,
+                on_designer_layout_align_right=self._handle_designer_layout_align_right_action,
+                on_designer_layout_align_top=self._handle_designer_layout_align_top_action,
+                on_designer_layout_align_vcenter=self._handle_designer_layout_align_vcenter_action,
+                on_designer_layout_align_bottom=self._handle_designer_layout_align_bottom_action,
+                on_designer_layout_distribute_horizontal=self._handle_designer_layout_distribute_horizontal_action,
+                on_designer_layout_distribute_vertical=self._handle_designer_layout_distribute_vertical_action,
+                on_designer_layout_adjust_size=self._handle_designer_layout_adjust_size_action,
                 on_designer_mode_widget=self._handle_designer_mode_widget_action,
                 on_designer_mode_signals_slots=self._handle_designer_mode_signals_slots_action,
                 on_designer_mode_buddy=self._handle_designer_mode_buddy_action,
                 on_designer_mode_tab_order=self._handle_designer_mode_tab_order_action,
                 on_designer_preview=self._handle_designer_preview_action,
+                on_designer_preview_default=lambda: self._handle_designer_preview_variant_action("default"),
+                on_designer_preview_fusion=lambda: self._handle_designer_preview_variant_action("fusion"),
+                on_designer_preview_phone_portrait=lambda: self._handle_designer_preview_variant_action("phone_portrait"),
+                on_designer_preview_tablet_portrait=lambda: self._handle_designer_preview_variant_action("tablet_portrait"),
                 on_designer_check_compat=self._handle_designer_compatibility_check_action,
                 on_designer_add_resource=self._handle_designer_add_resource_action,
                 on_designer_promote_widget=self._handle_designer_promote_widget_action,
@@ -469,6 +488,9 @@ class MainWindow(QMainWindow):
             ),
             shortcut_overrides=self._effective_shortcuts,
         )
+        app_instance = QApplication.instance()
+        if app_instance is not None:
+            app_instance.focusChanged.connect(self._handle_focus_changed)
         self._status_controller = create_shell_status_bar(self, startup_report=startup_report)
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -1028,6 +1050,37 @@ class MainWindow(QMainWindow):
                 return template
         return None
 
+    def _handle_focus_changed(self, _old: QWidget | None, _new: QWidget | None) -> None:
+        self._refresh_designer_action_states()
+        self._refresh_run_action_states()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if event.type() == QEvent.ShortcutOverride:
+            key_event = cast(QKeyEvent, event)
+            if self._handle_designer_mode_shortcut_override(key_event):
+                return True
+        return super().eventFilter(watched, event)
+
+    def _handle_designer_mode_shortcut_override(self, key_event: QKeyEvent) -> bool:
+        if key_event.modifiers() != Qt.NoModifier:
+            return False
+        key = key_event.key()
+        if key not in (Qt.Key_F5, Qt.Key_F6):
+            return False
+        active_surface = self._active_designer_surface()
+        if active_surface is None:
+            return False
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is None or not active_surface.isAncestorOf(focus_widget):
+            return False
+        mode_id = "buddy" if key == Qt.Key_F5 else "tab_order"
+        if active_surface.set_mode(mode_id):
+            self._refresh_designer_action_states()
+            self._persist_designer_last_mode(mode_id)
+            key_event.accept()
+            return True
+        return False
+
     def _handle_quick_open_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Quick Open unavailable", "Open a project first.")
@@ -1086,6 +1139,39 @@ class MainWindow(QMainWindow):
         editor_widget = self._active_editor_widget()
         if editor_widget is not None:
             editor_widget.redo()
+
+    def _handle_cut_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.cut_selection():
+                self._refresh_save_action_states()
+                self._refresh_designer_action_states()
+                self._update_editor_status_for_path(designer_surface.file_path)
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.cut()
+
+    def _handle_copy_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            designer_surface.copy_selection()
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.copy()
+
+    def _handle_paste_action(self) -> None:
+        designer_surface = self._active_designer_surface()
+        if designer_surface is not None:
+            if designer_surface.paste_selection():
+                self._refresh_save_action_states()
+                self._refresh_designer_action_states()
+                self._update_editor_status_for_path(designer_surface.file_path)
+            return
+        editor_widget = self._active_editor_widget()
+        if editor_widget is not None:
+            editor_widget.paste()
 
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -1451,6 +1537,63 @@ class MainWindow(QMainWindow):
         if not surface.break_layout_for_selection():
             QMessageBox.information(self, "Break Layout", "No layout available on selected widget.")
 
+    def _handle_designer_layout_align_left_action(self) -> None:
+        self._apply_designer_align_command("left", "Align Left")
+
+    def _handle_designer_layout_align_hcenter_action(self) -> None:
+        self._apply_designer_align_command("center_horizontal", "Align Horizontal Centers")
+
+    def _handle_designer_layout_align_right_action(self) -> None:
+        self._apply_designer_align_command("right", "Align Right")
+
+    def _handle_designer_layout_align_top_action(self) -> None:
+        self._apply_designer_align_command("top", "Align Top")
+
+    def _handle_designer_layout_align_vcenter_action(self) -> None:
+        self._apply_designer_align_command("center_vertical", "Align Vertical Centers")
+
+    def _handle_designer_layout_align_bottom_action(self) -> None:
+        self._apply_designer_align_command("bottom", "Align Bottom")
+
+    def _handle_designer_layout_distribute_horizontal_action(self) -> None:
+        self._apply_designer_distribute_command("horizontal", "Distribute Horizontally")
+
+    def _handle_designer_layout_distribute_vertical_action(self) -> None:
+        self._apply_designer_distribute_command("vertical", "Distribute Vertically")
+
+    def _handle_designer_layout_adjust_size_action(self) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.adjust_size_for_selection():
+            QMessageBox.information(
+                self,
+                "Adjust Size",
+                "Adjust Size requires at least one freeform selected widget.",
+            )
+
+    def _apply_designer_align_command(self, mode: str, label: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.align_selection(mode):
+            QMessageBox.information(
+                self,
+                label,
+                "Align requires at least two freeform selected widgets.",
+            )
+
+    def _apply_designer_distribute_command(self, axis: str, label: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.distribute_selection(axis):
+            QMessageBox.information(
+                self,
+                label,
+                "Distribute requires at least three freeform selected widgets.",
+            )
+
     def _apply_designer_layout_command(self, layout_class_name: str) -> None:
         surface = self._active_designer_surface()
         if surface is None:
@@ -1486,6 +1629,17 @@ class MainWindow(QMainWindow):
         if surface is None:
             return
         if not surface.preview_current_form():
+            QMessageBox.warning(
+                self,
+                "Designer Preview",
+                "Preview failed. See the Designer error panel for details.",
+            )
+
+    def _handle_designer_preview_variant_action(self, variant_id: str) -> None:
+        surface = self._active_designer_surface()
+        if surface is None:
+            return
+        if not surface.preview_current_form_variant(variant_id):
             QMessageBox.warning(
                 self,
                 "Designer Preview",
@@ -1856,6 +2010,7 @@ class MainWindow(QMainWindow):
         self._populate_project_tree(loaded_project)
         self._reset_editor_tabs()
         self._stored_lint_diagnostics.clear()
+        self._stored_designer_diagnostics.clear()
         if self._search_sidebar is not None:
             self._search_sidebar.set_project_root(loaded_project.project_root)
             from app.project.file_excludes import compute_effective_excludes
@@ -2692,6 +2847,7 @@ class MainWindow(QMainWindow):
         if self._problems_panel is None:
             return
         all_diags = [d for diags in self._stored_lint_diagnostics.values() for d in diags]
+        all_diags.extend(d for diags in self._stored_designer_diagnostics.values() for d in diags)
         self._problems_panel.set_quick_fixes_enabled(self._quick_fixes_enabled)
         self._problems_panel.set_diagnostics(all_diags, self._stored_runtime_problems)
         self._update_problems_tab_title(self._problems_panel.problem_count())
@@ -3101,6 +3257,10 @@ class MainWindow(QMainWindow):
         has_active_designer = active_surface is not None
         for action_id in (
             "designer.form.preview",
+            "designer.form.preview.default",
+            "designer.form.preview.fusion",
+            "designer.form.preview.phone_portrait",
+            "designer.form.preview.tablet_portrait",
             "designer.form.check_compat",
             "designer.form.add_resource",
             "designer.form.promote_widget",
@@ -3108,10 +3268,22 @@ class MainWindow(QMainWindow):
             "designer.form.save_component",
             "designer.form.insert_component",
             "designer.form.duplicate_selection",
+            "shell.action.edit.cut",
+            "shell.action.edit.copy",
+            "shell.action.edit.paste",
             "designer.layout.horizontal",
             "designer.layout.vertical",
             "designer.layout.grid",
             "designer.layout.break",
+            "designer.layout.align_left",
+            "designer.layout.align_hcenter",
+            "designer.layout.align_right",
+            "designer.layout.align_top",
+            "designer.layout.align_vcenter",
+            "designer.layout.align_bottom",
+            "designer.layout.distribute_horizontal",
+            "designer.layout.distribute_vertical",
+            "designer.layout.adjust_size",
             "designer.mode.widget",
             "designer.mode.signals_slots",
             "designer.mode.buddy",
@@ -3367,6 +3539,7 @@ class MainWindow(QMainWindow):
     def _clear_problems(self) -> None:
         self._stored_lint_diagnostics.clear()
         self._stored_runtime_problems = []
+        self._stored_designer_diagnostics.clear()
         if self._problems_panel is not None:
             self._problems_panel.clear()
             self._update_problems_tab_title(0)
@@ -4154,6 +4327,12 @@ class MainWindow(QMainWindow):
                     is_dirty,
                 )
             )
+            designer_surface.validation_issues_changed.connect(
+                lambda issues, tab_file_path=opened_result.tab.file_path: self._handle_designer_validation_issues_changed(
+                    tab_file_path,
+                    list(issues),
+                )
+            )
             designer_surface.mode_changed.connect(
                 lambda _mode, tab_file_path=opened_result.tab.file_path: (
                     self._refresh_designer_action_states(),
@@ -4162,6 +4341,10 @@ class MainWindow(QMainWindow):
             )
             designer_surface.mode_changed.connect(self._persist_designer_last_mode)
             designer_surface.set_mode(self._designer_last_mode)
+            self._handle_designer_validation_issues_changed(
+                opened_result.tab.file_path,
+                designer_surface.validation_issues,
+            )
             self._designer_widgets_by_path[opened_result.tab.file_path] = designer_surface
             tab_index = self._editor_tabs_widget.addTab(designer_surface, opened_result.tab.display_name)
             self._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -4313,6 +4496,56 @@ class MainWindow(QMainWindow):
                 self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
+
+    def _handle_designer_validation_issues_changed(self, file_path: str, issues: list[ValidationIssue]) -> None:
+        diagnostics: list[CodeDiagnostic] = []
+        for issue in issues:
+            code = str(getattr(issue, "code", "DVAL000"))
+            message = str(getattr(issue, "message", "Designer validation issue"))
+            severity_value = str(getattr(issue, "severity", "warning"))
+            object_name_value = getattr(issue, "object_name", "")
+            object_name = str(object_name_value) if object_name_value else ""
+            line_number = self._designer_validation_issue_line_number(file_path, object_name)
+            if object_name:
+                message = f"{message} (object: {object_name})"
+            diagnostics.append(
+                CodeDiagnostic(
+                    code=code,
+                    severity=self._designer_severity_to_diagnostic_severity(severity_value),
+                    file_path=file_path,
+                    line_number=line_number,
+                    message=message,
+                )
+            )
+        if diagnostics:
+            self._stored_designer_diagnostics[file_path] = diagnostics
+        else:
+            self._stored_designer_diagnostics.pop(file_path, None)
+        self._render_merged_problems_panel()
+
+    def _designer_severity_to_diagnostic_severity(self, severity: str) -> DiagnosticSeverity:
+        normalized = severity.strip().lower()
+        if normalized == "error":
+            return DiagnosticSeverity.ERROR
+        if normalized == "info":
+            return DiagnosticSeverity.INFO
+        return DiagnosticSeverity.WARNING
+
+    def _designer_validation_issue_line_number(self, file_path: str, object_name: str) -> int:
+        if not object_name:
+            return 1
+        surface = self._designer_widgets_by_path.get(file_path)
+        if surface is None:
+            return 1
+        try:
+            ui_xml = surface.serialize_to_ui_string()
+        except ValueError:
+            return 1
+        needle = f'name="{object_name}"'
+        object_index = ui_xml.find(needle)
+        if object_index < 0:
+            return 1
+        return ui_xml.count("\n", 0, object_index) + 1
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -4467,6 +4700,7 @@ class MainWindow(QMainWindow):
         self._editor_manager.close_file(file_path)
         self._breakpoints_by_file.pop(file_path, None)
         self._stored_lint_diagnostics.pop(file_path, None)
+        self._stored_designer_diagnostics.pop(file_path, None)
         self._render_merged_problems_panel()
         self._refresh_breakpoints_list()
         self._refresh_save_action_states()
@@ -4497,6 +4731,7 @@ class MainWindow(QMainWindow):
         self._semantic_last_applied_signature_by_file.clear()
         self._editor_widgets_by_path.clear()
         self._designer_widgets_by_path.clear()
+        self._stored_designer_diagnostics.clear()
         self._editor_manager = EditorManager()
         self._refresh_save_action_states()
         self._refresh_designer_action_states()

@@ -48,6 +48,12 @@ Implemented coverage includes:
   - signals/slots, tab order, buddy interactions + serialization
   - resources/iconset/promote/custom-widget isolated preview checks
   - deterministic formatter, unknown-node preservation, component library flows
+  - post-audit reliability/parity closure suites (DFIX/DGAP workstream), including:
+    - insertion parent-resolution + undo consistency
+    - isolated preview timeout/error diagnostics
+    - layout-item attribute round-trip fidelity
+    - focus-scoped F5/F6 shortcut arbitration
+  - Designer validation + shell Problems parity
 
 ## 5) Core commands
 
@@ -73,6 +79,56 @@ Run Designer-focused suites directly (fast signal while iterating on Designer):
   tests/unit/shell/test_menus_designer_mode.py \
   tests/unit/shell/test_shortcut_preferences.py \
   tests/unit/shell/test_status_bar.py
+```
+
+Run post-audit reliability/parity closure suites (recommended for D6+ slices):
+
+```bash
+python3 run_tests.py -v tests/unit/designer/canvas/test_form_canvas.py
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_service.py
+python3 run_tests.py -v tests/integration/designer/test_custom_widget_isolated_preview_runner.py
+python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
+python3 run_tests.py -v tests/integration/designer/test_designer_save_roundtrip.py -k tranche_one_palette_widgets
+python3 run_tests.py -v tests/integration/designer/test_designer_save_roundtrip.py -k tranche_two_palette_widgets
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_mode.py
+python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
+python3 run_tests.py -v tests/unit/shell/test_main_window_debug_routing.py -k designer_validation_issues
+python3 run_tests.py -v tests/unit/designer/palette/test_widget_registry.py
+python3 run_tests.py -v tests/unit/designer/canvas/test_drop_rules.py
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k size_policy_and_size_constraints
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor.py -k appearance
+python3 run_tests.py -v tests/unit/designer/properties/test_property_editor_panel.py -k appearance
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k appearance_and_window_metadata
+python3 run_tests.py -v tests/unit/designer/connections/test_signal_slot_metadata.py
+python3 run_tests.py -v tests/unit/designer/connections/test_connection_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k connection
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k "copy_cut_paste_selection_workflow or paste_rejects_invalid_parent"
+python3 run_tests.py -v tests/integration/designer/test_designer_component_actions.py -k clipboard_edit_actions
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py -k "open_ui_file_uses_designer_surface or open_python_file_still_uses_code_editor"
+python3 run_tests.py -v tests/unit/shell/test_menus_edit_actions.py
+python3 run_tests.py -v tests/unit/designer/io/test_ui_reader_writer.py -k "actions_fixture_with_advanced_nodes or serializes_advanced_action_nodes"
+python3 run_tests.py -v tests/unit/designer/io/test_ui_formatter.py -k action_related_nodes
+python3 run_tests.py -v tests/unit/designer/actions/test_action_editor_panel.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k action_panel_mutations_are_undoable
+python3 run_tests.py -v tests/integration/designer/test_designer_action_editor.py
+python3 run_tests.py -v tests/unit/designer/layout/test_layout_commands.py
+python3 run_tests.py -v tests/unit/designer/canvas/test_form_canvas.py
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k "align_distribute_adjust_size_and_text_edit_mutations or canvas_context_action_dispatches_core_commands"
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_layout.py
+python3 run_tests.py -v tests/unit/shell/test_shortcut_preferences.py
+python3 run_tests.py -v tests/integration/designer/test_designer_layout_actions.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_variants.py
+python3 run_tests.py -v tests/unit/designer/preview/test_preview_service.py -k preview_variants_include_style_and_device_presets
+python3 run_tests.py -v tests/unit/designer/test_editor_surface.py -k preview_variant_applies_style_and_window_title
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_preview_variants.py
+python3 run_tests.py -v tests/unit/shell/test_menus_designer_form.py
+python3 run_tests.py -v tests/integration/designer/test_designer_preview_loader.py
+python3 run_tests.py -v tests/integration/designer/test_open_ui_designer_surface.py
 ```
 
 ## 6) Manual acceptance validation

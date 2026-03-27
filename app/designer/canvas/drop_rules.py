@@ -11,6 +11,8 @@ _CONTAINER_CLASSES = {
     "QMainWindow",
     "QTabWidget",
     "QScrollArea",
+    "QStackedWidget",
+    "QSplitter",
 }
 
 

@@ -38,6 +38,9 @@ class MenuCallbacks:
     on_quick_open: Callable[[], object] | None = None
     on_undo: Callable[[], object] | None = None
     on_redo: Callable[[], object] | None = None
+    on_cut: Callable[[], object] | None = None
+    on_copy: Callable[[], object] | None = None
+    on_paste: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
@@ -54,11 +57,24 @@ class MenuCallbacks:
     on_designer_layout_vertical: Callable[[], object] | None = None
     on_designer_layout_grid: Callable[[], object] | None = None
     on_designer_layout_break: Callable[[], object] | None = None
+    on_designer_layout_align_left: Callable[[], object] | None = None
+    on_designer_layout_align_hcenter: Callable[[], object] | None = None
+    on_designer_layout_align_right: Callable[[], object] | None = None
+    on_designer_layout_align_top: Callable[[], object] | None = None
+    on_designer_layout_align_vcenter: Callable[[], object] | None = None
+    on_designer_layout_align_bottom: Callable[[], object] | None = None
+    on_designer_layout_distribute_horizontal: Callable[[], object] | None = None
+    on_designer_layout_distribute_vertical: Callable[[], object] | None = None
+    on_designer_layout_adjust_size: Callable[[], object] | None = None
     on_designer_mode_widget: Callable[[], object] | None = None
     on_designer_mode_signals_slots: Callable[[], object] | None = None
     on_designer_mode_buddy: Callable[[], object] | None = None
     on_designer_mode_tab_order: Callable[[], object] | None = None
     on_designer_preview: Callable[[], object] | None = None
+    on_designer_preview_default: Callable[[], object] | None = None
+    on_designer_preview_fusion: Callable[[], object] | None = None
+    on_designer_preview_phone_portrait: Callable[[], object] | None = None
+    on_designer_preview_tablet_portrait: Callable[[], object] | None = None
     on_designer_check_compat: Callable[[], object] | None = None
     on_designer_add_resource: Callable[[], object] | None = None
     on_designer_promote_widget: Callable[[], object] | None = None
@@ -272,6 +288,36 @@ def build_menu_stubs(
         callback=callback_registry.on_redo,
         shortcut_overrides=shortcut_overrides,
     )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.cut",
+        "Cut",
+        "Ctrl+X",
+        enabled=True,
+        callback=callback_registry.on_cut,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.copy",
+        "Copy",
+        "Ctrl+C",
+        enabled=True,
+        callback=callback_registry.on_copy,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        edit_menu,
+        actions,
+        "shell.action.edit.paste",
+        "Paste",
+        "Ctrl+V",
+        enabled=True,
+        callback=callback_registry.on_paste,
+        shortcut_overrides=shortcut_overrides,
+    )
     if quick_open_action is not None:
         edit_menu.addAction(quick_open_action)
     edit_menu.addSeparator()
@@ -408,6 +454,45 @@ def build_menu_stubs(
         callback=callback_registry.on_designer_preview,
         shortcut_overrides=shortcut_overrides,
     )
+    preview_variant_menu = form_menu.addMenu("Preview Variant")
+    preview_variant_menu.setObjectName("designer.menu.form.previewVariants")
+    menus["designer.menu.form.previewVariants"] = preview_variant_menu
+    _register_menu_action(
+        preview_variant_menu,
+        actions,
+        "designer.form.preview.default",
+        "Default",
+        enabled=True,
+        callback=callback_registry.on_designer_preview_default,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        preview_variant_menu,
+        actions,
+        "designer.form.preview.fusion",
+        "Fusion Style",
+        enabled=True,
+        callback=callback_registry.on_designer_preview_fusion,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        preview_variant_menu,
+        actions,
+        "designer.form.preview.phone_portrait",
+        "Phone Portrait",
+        enabled=True,
+        callback=callback_registry.on_designer_preview_phone_portrait,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        preview_variant_menu,
+        actions,
+        "designer.form.preview.tablet_portrait",
+        "Tablet Portrait",
+        enabled=True,
+        callback=callback_registry.on_designer_preview_tablet_portrait,
+        shortcut_overrides=shortcut_overrides,
+    )
     _register_menu_action(
         form_menu,
         actions,
@@ -517,6 +602,90 @@ def build_menu_stubs(
         "Ctrl+0",
         enabled=True,
         callback=callback_registry.on_designer_layout_break,
+        shortcut_overrides=shortcut_overrides,
+    )
+    layout_menu.addSeparator()
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_left",
+        "Align Left",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_left,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_hcenter",
+        "Align Horizontal Centers",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_hcenter,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_right",
+        "Align Right",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_right,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_top",
+        "Align Top",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_top,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_vcenter",
+        "Align Vertical Centers",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_vcenter,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.align_bottom",
+        "Align Bottom",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_align_bottom,
+        shortcut_overrides=shortcut_overrides,
+    )
+    layout_menu.addSeparator()
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.distribute_horizontal",
+        "Distribute Horizontally",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_distribute_horizontal,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.distribute_vertical",
+        "Distribute Vertically",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_distribute_vertical,
+        shortcut_overrides=shortcut_overrides,
+    )
+    _register_menu_action(
+        layout_menu,
+        actions,
+        "designer.layout.adjust_size",
+        "Adjust Size",
+        "Ctrl+J",
+        enabled=True,
+        callback=callback_registry.on_designer_layout_adjust_size,
         shortcut_overrides=shortcut_overrides,
     )
 

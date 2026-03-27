@@ -10,13 +10,32 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 import PySide2.QtGui as qt_gui
 import PySide2.QtWidgets as qt_widgets
+from PySide2.QtCore import QMimeData
 
 from app.designer.editor_surface import DesignerEditorSurface
+from app.designer.palette.palette_panel import PALETTE_WIDGET_MIME
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.integration
+
+
+class _FakeDropEvent:
+    def __init__(self, class_name: str) -> None:
+        self._mime_data = QMimeData()
+        self._mime_data.setData(PALETTE_WIDGET_MIME, class_name.encode("utf-8"))
+        self.accepted = False
+        self.ignored = False
+
+    def mimeData(self) -> QMimeData:  # noqa: N802 - Qt-style
+        return self._mime_data
+
+    def acceptProposedAction(self) -> None:
+        self.accepted = True
+
+    def ignore(self) -> None:
+        self.ignored = True
 
 
 def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
@@ -31,6 +50,10 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
 
 def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -56,30 +79,85 @@ def test_open_ui_file_uses_designer_surface(monkeypatch: pytest.MonkeyPatch, tmp
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), DesignerEditorSurface)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    preview_default_action = window.menu_registry.action("designer.form.preview.default") if window.menu_registry else None
+    preview_fusion_action = window.menu_registry.action("designer.form.preview.fusion") if window.menu_registry else None
+    preview_phone_action = (
+        window.menu_registry.action("designer.form.preview.phone_portrait") if window.menu_registry else None
+    )
+    preview_tablet_action = (
+        window.menu_registry.action("designer.form.preview.tablet_portrait") if window.menu_registry else None
+    )
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
     buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
+    align_left_action = window.menu_registry.action("designer.layout.align_left") if window.menu_registry else None
+    align_hcenter_action = window.menu_registry.action("designer.layout.align_hcenter") if window.menu_registry else None
+    align_right_action = window.menu_registry.action("designer.layout.align_right") if window.menu_registry else None
+    align_top_action = window.menu_registry.action("designer.layout.align_top") if window.menu_registry else None
+    align_vcenter_action = window.menu_registry.action("designer.layout.align_vcenter") if window.menu_registry else None
+    align_bottom_action = window.menu_registry.action("designer.layout.align_bottom") if window.menu_registry else None
+    distribute_horizontal_action = (
+        window.menu_registry.action("designer.layout.distribute_horizontal") if window.menu_registry else None
+    )
+    distribute_vertical_action = (
+        window.menu_registry.action("designer.layout.distribute_vertical") if window.menu_registry else None
+    )
+    adjust_size_action = window.menu_registry.action("designer.layout.adjust_size") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
     save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
     insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     duplicate_action = window.menu_registry.action("designer.form.duplicate_selection") if window.menu_registry else None
+    cut_action = window.menu_registry.action("shell.action.edit.cut") if window.menu_registry else None
+    copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
+    paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and preview_action.isEnabled()
+    assert preview_default_action is not None and preview_default_action.isEnabled()
+    assert preview_fusion_action is not None and preview_fusion_action.isEnabled()
+    assert preview_phone_action is not None and preview_phone_action.isEnabled()
+    assert preview_tablet_action is not None and preview_tablet_action.isEnabled()
     assert layout_action is not None and layout_action.isEnabled()
     assert mode_action is not None and mode_action.isEnabled()
     assert tab_mode_action is not None and tab_mode_action.isEnabled()
     assert buddy_mode_action is not None and buddy_mode_action.isEnabled()
+    assert align_left_action is not None and align_left_action.isEnabled()
+    assert align_hcenter_action is not None and align_hcenter_action.isEnabled()
+    assert align_right_action is not None and align_right_action.isEnabled()
+    assert align_top_action is not None and align_top_action.isEnabled()
+    assert align_vcenter_action is not None and align_vcenter_action.isEnabled()
+    assert align_bottom_action is not None and align_bottom_action.isEnabled()
+    assert distribute_horizontal_action is not None and distribute_horizontal_action.isEnabled()
+    assert distribute_vertical_action is not None and distribute_vertical_action.isEnabled()
+    assert adjust_size_action is not None and adjust_size_action.isEnabled()
     assert add_resource_action is not None and add_resource_action.isEnabled()
     assert promote_action is not None and promote_action.isEnabled()
     assert format_action is not None and format_action.isEnabled()
     assert save_component_action is not None and save_component_action.isEnabled()
     assert insert_component_action is not None and insert_component_action.isEnabled()
     assert duplicate_action is not None and duplicate_action.isEnabled()
-    mode_action.trigger()
+    assert cut_action is not None and cut_action.isEnabled()
+    assert copy_action is not None and copy_action.isEnabled()
+    assert paste_action is not None and paste_action.isEnabled()
+    initial_dirty = surface = None
     surface = window._active_designer_surface()
     assert surface is not None
+    initial_dirty = surface.is_dirty
+    assert initial_dirty is False
+    assert surface.can_undo is False
+
+    # Simulate canvas drag/drop insertion path via dropEvent.
+    event = _FakeDropEvent("QPushButton")
+    surface._canvas.dropEvent(event)  # type: ignore[attr-defined]
+    assert event.accepted is True
+    assert event.ignored is False
+    assert surface.model is not None
+    assert surface.model.root_widget.find_by_object_name("pushButton") is not None
+    assert surface.is_dirty is True
+    assert surface.can_undo is True
+
+    mode_action.trigger()
     tab_titles = [surface._inspector_tabs.tabText(index) for index in range(surface._inspector_tabs.count())]  # type: ignore[attr-defined]
     assert "Library" in tab_titles
     assert surface.current_mode == "signals_slots"
@@ -120,25 +198,109 @@ def test_open_python_file_still_uses_code_editor(monkeypatch: pytest.MonkeyPatch
     assert window._editor_tabs_widget is not None
     assert isinstance(window._editor_tabs_widget.currentWidget(), CodeEditorWidget)
     preview_action = window.menu_registry.action("designer.form.preview") if window.menu_registry else None
+    preview_default_action = window.menu_registry.action("designer.form.preview.default") if window.menu_registry else None
+    preview_fusion_action = window.menu_registry.action("designer.form.preview.fusion") if window.menu_registry else None
+    preview_phone_action = (
+        window.menu_registry.action("designer.form.preview.phone_portrait") if window.menu_registry else None
+    )
+    preview_tablet_action = (
+        window.menu_registry.action("designer.form.preview.tablet_portrait") if window.menu_registry else None
+    )
     layout_action = window.menu_registry.action("designer.layout.vertical") if window.menu_registry else None
     mode_action = window.menu_registry.action("designer.mode.signals_slots") if window.menu_registry else None
     tab_mode_action = window.menu_registry.action("designer.mode.tab_order") if window.menu_registry else None
     buddy_mode_action = window.menu_registry.action("designer.mode.buddy") if window.menu_registry else None
+    align_left_action = window.menu_registry.action("designer.layout.align_left") if window.menu_registry else None
+    align_hcenter_action = window.menu_registry.action("designer.layout.align_hcenter") if window.menu_registry else None
+    align_right_action = window.menu_registry.action("designer.layout.align_right") if window.menu_registry else None
+    align_top_action = window.menu_registry.action("designer.layout.align_top") if window.menu_registry else None
+    align_vcenter_action = window.menu_registry.action("designer.layout.align_vcenter") if window.menu_registry else None
+    align_bottom_action = window.menu_registry.action("designer.layout.align_bottom") if window.menu_registry else None
+    distribute_horizontal_action = (
+        window.menu_registry.action("designer.layout.distribute_horizontal") if window.menu_registry else None
+    )
+    distribute_vertical_action = (
+        window.menu_registry.action("designer.layout.distribute_vertical") if window.menu_registry else None
+    )
+    adjust_size_action = window.menu_registry.action("designer.layout.adjust_size") if window.menu_registry else None
     add_resource_action = window.menu_registry.action("designer.form.add_resource") if window.menu_registry else None
     promote_action = window.menu_registry.action("designer.form.promote_widget") if window.menu_registry else None
     format_action = window.menu_registry.action("designer.form.format_ui_xml") if window.menu_registry else None
     save_component_action = window.menu_registry.action("designer.form.save_component") if window.menu_registry else None
     insert_component_action = window.menu_registry.action("designer.form.insert_component") if window.menu_registry else None
     duplicate_action = window.menu_registry.action("designer.form.duplicate_selection") if window.menu_registry else None
+    cut_action = window.menu_registry.action("shell.action.edit.cut") if window.menu_registry else None
+    copy_action = window.menu_registry.action("shell.action.edit.copy") if window.menu_registry else None
+    paste_action = window.menu_registry.action("shell.action.edit.paste") if window.menu_registry else None
     assert preview_action is not None and not preview_action.isEnabled()
+    assert preview_default_action is not None and not preview_default_action.isEnabled()
+    assert preview_fusion_action is not None and not preview_fusion_action.isEnabled()
+    assert preview_phone_action is not None and not preview_phone_action.isEnabled()
+    assert preview_tablet_action is not None and not preview_tablet_action.isEnabled()
     assert layout_action is not None and not layout_action.isEnabled()
     assert mode_action is not None and not mode_action.isEnabled()
     assert tab_mode_action is not None and not tab_mode_action.isEnabled()
     assert buddy_mode_action is not None and not buddy_mode_action.isEnabled()
+    assert align_left_action is not None and not align_left_action.isEnabled()
+    assert align_hcenter_action is not None and not align_hcenter_action.isEnabled()
+    assert align_right_action is not None and not align_right_action.isEnabled()
+    assert align_top_action is not None and not align_top_action.isEnabled()
+    assert align_vcenter_action is not None and not align_vcenter_action.isEnabled()
+    assert align_bottom_action is not None and not align_bottom_action.isEnabled()
+    assert distribute_horizontal_action is not None and not distribute_horizontal_action.isEnabled()
+    assert distribute_vertical_action is not None and not distribute_vertical_action.isEnabled()
+    assert adjust_size_action is not None and not adjust_size_action.isEnabled()
     assert add_resource_action is not None and not add_resource_action.isEnabled()
     assert promote_action is not None and not promote_action.isEnabled()
     assert format_action is not None and not format_action.isEnabled()
     assert save_component_action is not None and not save_component_action.isEnabled()
     assert insert_component_action is not None and not insert_component_action.isEnabled()
     assert duplicate_action is not None and not duplicate_action.isEnabled()
+    assert cut_action is not None and not cut_action.isEnabled()
+    assert copy_action is not None and not copy_action.isEnabled()
+    assert paste_action is not None and not paste_action.isEnabled()
+    window.close()
+
+
+def test_designer_validation_issues_are_visible_in_global_problems_panel(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _ensure_qapplication(monkeypatch)
+    monkeypatch.setattr(
+        "app.shell.main_window.QMessageBox.warning",
+        lambda *args, **kwargs: qt_widgets.QMessageBox.Discard,
+    )
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Designer Problems Bridge")
+    ui_file = project_root / "form.ui"
+    ui_file.write_text(
+        (
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<ui version=\"4.0\"><class>Form</class>"
+            "<widget class=\"QWidget\" name=\"Form\"/>"
+            "<resources/><connections/></ui>\n"
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._open_file_in_editor(str(ui_file.resolve())) is True
+
+    surface = window._active_designer_surface()
+    assert surface is not None
+    validation_rows = [surface._validation_list.item(index).text() for index in range(surface._validation_list.count())]  # type: ignore[attr-defined]
+    assert any("DLAYOUT001" in row for row in validation_rows)
+
+    problems_panel = window._problems_panel
+    assert problems_panel is not None
+    assert problems_panel.problem_count() >= 1
+    assert problems_panel.tree_widget().topLevelItemCount() >= 1
+    first_group = problems_panel.tree_widget().topLevelItem(0)
+    assert first_group is not None
+    assert "form.ui" in first_group.text(1)
     window.close()

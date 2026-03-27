@@ -1156,12 +1156,14 @@ The Designer subsystem is now implemented as a first-class editor surface for `.
 - **Preview safety contract**:
   - normal `.ui` preview uses `QUiLoader` in-process for non-custom forms.
   - promoted/custom-widget forms require runner-assisted isolated compatibility probing, never direct editor-process project import.
+  - preview variant presets are explicit and deterministic (`default`, `fusion`, `phone_portrait`, `tablet_portrait`) and are applied through preview-window style/viewport configuration.
 - **Filesystem-first reusable components**: saved components live in project-visible `cbcs/components/` with manifest metadata; insertion preserves deterministic naming.
 
 Shell integration is explicit:
 
 - `.ui` files route to Designer tabs in `MainWindow`.
 - Designer actions are menu/shortcut managed with context-scoped behavior.
+- Form menu includes preview variant actions (`designer.form.preview.default|fusion|phone_portrait|tablet_portrait`) routed to variant-aware preview execution on `DesignerEditorSurface`.
 - Designer mode and state telemetry are surfaced in the status bar.
 - Designer settings persist under the global settings payload (`designer` section), including mode and grid/lint preferences.
 

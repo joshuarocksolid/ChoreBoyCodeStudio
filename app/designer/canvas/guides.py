@@ -19,6 +19,20 @@ _WIDGET_ICON_CHARS: dict[str, str] = {
     "QLabel": "\u24C1",       # Ⓛ
     "QPushButton": "\u25B6",  # ▶
     "QToolButton": "\u25B6",  # ▶
+    "QDialogButtonBox": "\u25A4",  # ▤
+    "QSpinBox": "\u2195",  # ↕
+    "QDoubleSpinBox": "\u21C5",  # ⇅
+    "QSlider": "\u2501",  # ━
+    "QProgressBar": "\u25AD",  # ▭
+    "QDateEdit": "\u2637",  # ☷
+    "QTimeEdit": "\u23F2",  # ⏲
+    "QDateTimeEdit": "\u23F1",  # ⏱
+    "QDial": "\u25CE",  # ◎
+    "QListWidget": "\u2630",  # ☰
+    "QTreeWidget": "\u25F3",  # ◳
+    "QTableWidget": "\u25A6",  # ▦
+    "QStackedWidget": "\u268C",  # ⚌
+    "QSplitter": "\u2503",  # ┃
     "QSpacerItem": "\u2B0C",  # ⬌
 }
 
@@ -40,9 +54,12 @@ def default_snapped_geometry(*, insert_index: int, grid_size: int, class_name: s
     base_y = 16 + insert_index * 24
     width = 120
     height = 32
-    if class_name in {"QWidget", "QFrame", "QGroupBox", "QTabWidget", "QScrollArea"}:
+    if class_name in {"QWidget", "QFrame", "QGroupBox", "QTabWidget", "QScrollArea", "QStackedWidget", "QSplitter", "QMainWindow"}:
         width = 220
         height = 140
+    if class_name == "QTableWidget":
+        width = 180
+        height = 110
     return {
         "x": snap_to_grid(base_x, grid_size),
         "y": snap_to_grid(base_y, grid_size),

@@ -5,6 +5,13 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
+from app.designer.model.action_model import (
+    AddActionModel,
+    ActionGroupModel,
+    ActionModel,
+    ButtonGroupModel,
+    ZOrderModel,
+)
 from app.designer.model.connection_model import ConnectionModel
 from app.designer.model.custom_widget_model import CustomWidgetModel
 from app.designer.model.resource_model import ResourceModel
@@ -22,6 +29,11 @@ class UIModel:
     resources: list[ResourceModel] = field(default_factory=list)
     tab_stops: list[str] = field(default_factory=list)
     custom_widgets: list[CustomWidgetModel] = field(default_factory=list)
+    actions: list[ActionModel] = field(default_factory=list)
+    action_groups: list[ActionGroupModel] = field(default_factory=list)
+    add_actions: list[AddActionModel] = field(default_factory=list)
+    zorders: list[ZOrderModel] = field(default_factory=list)
+    button_groups: list[ButtonGroupModel] = field(default_factory=list)
     unknown_top_level_xml: list[str] = field(default_factory=list)
 
     def collect_object_names(self) -> list[str]:

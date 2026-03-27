@@ -65,6 +65,22 @@ def test_designer_preview_and_compatibility_actions(monkeypatch: pytest.MonkeyPa
 
     window._handle_designer_preview_action()
     assert warning_messages == []
+    surface = window._active_designer_surface()
+    assert surface is not None
+    preview_window = getattr(surface, "_active_preview_widget", None)
+    assert preview_window is not None
+    assert preview_window.isVisible() is True
+    assert surface.active_preview_variant_id == "default"
+
+    if window.menu_registry is not None:
+        fusion_action = window.menu_registry.action("designer.form.preview.fusion")
+        phone_action = window.menu_registry.action("designer.form.preview.phone_portrait")
+        assert fusion_action is not None and fusion_action.isEnabled()
+        assert phone_action is not None and phone_action.isEnabled()
+        fusion_action.trigger()
+        assert surface.active_preview_variant_id == "fusion"
+        phone_action.trigger()
+        assert surface.active_preview_variant_id == "phone_portrait"
 
     for top_level in app.topLevelWidgets():
         if top_level is not window:

@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide2.QtCore import Qt, QTimer, Signal
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -19,7 +20,9 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
+from app.designer.actions import ActionEditorPanel
 from app.designer.canvas import FormCanvas, SelectionController, snap_to_grid
+from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.commands import CommandStack, SnapshotCommand
 from app.designer.components import (
     ComponentLibraryPanel,
@@ -28,10 +31,19 @@ from app.designer.components import (
     save_component_from_widget,
 )
 from app.designer.connections import ConnectionEditorPanel
+from app.designer.connections.signal_slot_metadata import (
+    connection_object_options,
+    is_signal_slot_pair_compatible,
+    signal_choices_for_class,
+    signal_supported_for_class,
+    slot_choices_for_class,
+    slot_supported_for_class,
+)
 from app.designer.inspector import ObjectInspector
 from app.designer.io import format_ui_xml, read_ui_file, read_ui_string
 from app.designer.io.ui_writer import write_ui_string
 from app.designer.layout import apply_layout_to_widget, break_layout
+from app.designer.layout import adjust_widgets_to_default_size, align_widgets, distribute_widgets
 from app.designer.modes import (
     BuddyEditorPanel,
     DESIGNER_MODE_DEFINITIONS,
@@ -42,12 +54,24 @@ from app.designer.modes import (
     DesignerModeController,
     TabOrderEditorPanel,
 )
-from app.designer.model import ConnectionModel, CustomWidgetModel, PropertyValue, UIModel, WidgetNode
+from app.designer.model import (
+    ActionGroupModel,
+    ActionModel,
+    AddActionModel,
+    ConnectionModel,
+    CustomWidgetModel,
+    PropertyValue,
+    UIModel,
+    WidgetNode,
+)
 from app.designer.palette.palette_panel import PalettePanel
 from app.designer.preview import (
+    PreviewVariant,
     build_preview_safety_decision,
     configure_preview_widget,
     load_widget_from_ui_xml,
+    preview_variant_by_id,
+    preview_variants,
     preview_registry_from_model,
     probe_ui_xml_compatibility,
     probe_ui_xml_compatibility_isolated,
@@ -55,7 +79,7 @@ from app.designer.preview import (
     requires_isolated_preview,
 )
 from app.designer.properties import PropertyEditorController, PropertyEditorPanel
-from app.designer.validation import build_validation_issues
+from app.designer.validation import ValidationIssue, build_validation_issues
 
 
 class DesignerEditorSurface(QWidget):
@@ -63,6 +87,7 @@ class DesignerEditorSurface(QWidget):
 
     dirty_state_changed = Signal(bool)
     mode_changed = Signal(str)
+    validation_issues_changed = Signal(list)
 
     def __init__(
         self,
@@ -83,6 +108,9 @@ class DesignerEditorSurface(QWidget):
         self._enable_naming_lint = enable_naming_lint
         self._snap_to_grid = snap_to_grid
         self._snap_grid_size = max(1, int(grid_size))
+        self._active_preview_widget: QWidget | None = None
+        self._active_preview_variant_id = "default"
+        self._validation_issues: list[ValidationIssue] = []
         self._selection_controller = SelectionController(self)
         self._property_editor = PropertyEditorController()
         self._command_stack = CommandStack(self._apply_snapshot_xml)
@@ -122,6 +150,10 @@ class DesignerEditorSurface(QWidget):
     def current_mode(self) -> str:
         return self._mode_controller.current_mode
 
+    @property
+    def validation_issues(self) -> list[ValidationIssue]:
+        return list(self._validation_issues)
+
     def set_mode(self, mode_id: str) -> bool:
         """Set active designer editing mode."""
         return self._mode_controller.set_mode(mode_id)
@@ -152,6 +184,14 @@ class DesignerEditorSurface(QWidget):
 
     def preview_current_form(self) -> bool:
         """Preview current form with QUiLoader-generated widget."""
+        return self.preview_current_form_variant(self._active_preview_variant_id)
+
+    def preview_current_form_variant(self, variant_id: str) -> bool:
+        """Preview current form with an explicit variant preset."""
+        variant = preview_variant_by_id(variant_id)
+        if variant is None:
+            self._show_status("Preview failed: unknown preview variant.", "error")
+            return False
         try:
             ui_xml = self.serialize_to_ui_string()
         except Exception as exc:
@@ -174,9 +214,41 @@ class DesignerEditorSurface(QWidget):
         except Exception as exc:
             self._show_status(f"Preview failed: {exc}", "error")
             return False
-        configure_preview_widget(preview_widget, window_title=f"Preview — {Path(self._file_path).name}")
+        if self._active_preview_widget is not None:
+            try:
+                self._active_preview_widget.close()
+            except RuntimeError:
+                pass
+            self._active_preview_widget = None
+        configure_preview_widget(
+            preview_widget,
+            window_title=self._preview_window_title_for_variant(variant),
+            style_name=variant.style_name,
+            viewport_size=variant.viewport_size,
+        )
+        self._active_preview_widget = preview_widget
+        self._active_preview_variant_id = variant.variant_id
+        preview_widget.destroyed.connect(self._handle_preview_widget_destroyed)
         preview_widget.show()
         return True
+
+    def preview_variants(self) -> list[PreviewVariant]:
+        """Return available preview variant presets."""
+        return list(preview_variants())
+
+    @property
+    def active_preview_variant_id(self) -> str:
+        return self._active_preview_variant_id
+
+    def _handle_preview_widget_destroyed(self, _obj: object | None = None) -> None:
+        if self.sender() is self._active_preview_widget:
+            self._active_preview_widget = None
+
+    def _preview_window_title_for_variant(self, variant: PreviewVariant) -> str:
+        form_label = Path(self._file_path).name
+        if variant.variant_id == "default":
+            return f"Preview — {form_label}"
+        return f"Preview ({variant.label}) — {form_label}"
 
     def run_compatibility_check(self) -> str:
         """Run QUiLoader compatibility check and return status message."""
@@ -250,6 +322,7 @@ class DesignerEditorSurface(QWidget):
         self._model = normalized_model
         self._canvas.load_model(self._model)
         self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -376,6 +449,167 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
         return True
 
+    def delete_selection(self) -> bool:
+        """Delete selected widget subtree (non-root) with undo support."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        parent_widget, in_layout = self._find_parent_for_widget(self._model.root_widget, selected_name)
+        if parent_widget is None:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not self._remove_child_from_parent(parent_widget, selected_name, in_layout=in_layout):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._selection_controller.set_selected_object_name(parent_widget.object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="delete selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def copy_selection(self) -> bool:
+        """Copy selected widget subtree to designer clipboard."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        selected_widget = self._model.root_widget.find_by_object_name(selected_name)
+        if selected_widget is None:
+            return False
+        clipboard_model = UIModel(
+            form_class_name="ClipboardPayload",
+            root_widget=WidgetNode(
+                class_name="QWidget",
+                object_name="clipboardRoot",
+                children=[copy.deepcopy(selected_widget)],
+            ),
+        )
+        QApplication.clipboard().setText(write_ui_string(clipboard_model))
+        self._show_status("Selection copied.", "success", auto_dismiss=True)
+        return True
+
+    def cut_selection(self) -> bool:
+        """Cut selected widget subtree to designer clipboard and remove it."""
+        if self._model is None:
+            return False
+        selected_name = self.selected_object_name
+        if not selected_name or selected_name == self._model.root_widget.object_name:
+            return False
+        selected_widget = self._model.root_widget.find_by_object_name(selected_name)
+        if selected_widget is None:
+            return False
+        if not self.copy_selection():
+            return False
+        before_xml = self.serialize_to_ui_string()
+        parent_widget, in_layout = self._find_parent_for_widget(self._model.root_widget, selected_name)
+        if parent_widget is None:
+            return False
+        removed = self._remove_child_from_parent(parent_widget, selected_name, in_layout=in_layout)
+        if not removed:
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._selection_controller.set_selected_object_name(parent_widget.object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="cut selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def paste_selection(self) -> bool:
+        """Paste previously copied/cut widget subtree under selected parent."""
+        if self._model is None:
+            return False
+        clipboard_text = QApplication.clipboard().text().strip()
+        if not clipboard_text:
+            return False
+        try:
+            clipboard_model = read_ui_string(clipboard_text)
+        except ValueError:
+            return False
+        if not clipboard_model.root_widget.children:
+            return False
+        parent_widget = self._resolve_selected_widget()
+        if parent_widget is None:
+            return False
+        for source_widget in clipboard_model.root_widget.children:
+            if not can_insert_widget(
+                parent_class_name=parent_widget.class_name,
+                child_class_name=source_widget.class_name,
+                is_layout_item=False,
+                parent_has_layout=parent_widget.layout is not None,
+            ):
+                self._show_status("Paste target does not accept widgets.", "error")
+                return False
+        before_xml = self.serialize_to_ui_string()
+        names_in_use = set(self._model.collect_object_names())
+        pasted_widgets: list[WidgetNode] = []
+        for source_widget in clipboard_model.root_widget.children:
+            duplicate = copy.deepcopy(source_widget)
+            self._ensure_unique_subtree_names(duplicate, names_in_use)
+            pasted_widgets.append(duplicate)
+            if parent_widget.layout is not None:
+                parent_widget.layout.items.append(LayoutItem(widget=duplicate))
+            else:
+                parent_widget.children.append(duplicate)
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        if pasted_widgets:
+            self._selection_controller.set_selected_object_name(pasted_widgets[-1].object_name)
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return False
+        self._command_stack.push(
+            SnapshotCommand(
+                description="paste selection",
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        self._show_status("Selection pasted.", "success", auto_dismiss=True)
+        return True
+
     def promote_selected_widget(self, promoted_class_name: str, header: str) -> bool:
         """Promote selected widget class and persist custom-widget metadata."""
         if self._model is None:
@@ -457,6 +691,9 @@ class DesignerEditorSurface(QWidget):
         self._palette_panel.widget_insert_requested.connect(self._handle_palette_insert_request)
         self._canvas = FormCanvas(self._splitter)
         self._canvas.set_selection_controller(self._selection_controller)
+        self._canvas.set_insert_request_handler(self._insert_widget_via_snapshot)
+        self._canvas.set_context_action_handler(self._handle_canvas_context_action)
+        self._canvas.insert_rejected.connect(self._handle_canvas_insert_rejected)
         self._inspector_tabs = QTabWidget(self._splitter)
         self._inspector_tabs.setObjectName("designer.surface.inspectorTabs")
         self._object_inspector = ObjectInspector(self._inspector_tabs)
@@ -477,11 +714,26 @@ class DesignerEditorSurface(QWidget):
         self._component_library_panel = ComponentLibraryPanel(self._inspector_tabs)
         self._component_library_panel.insert_requested.connect(self.insert_component)
         self._component_library_panel.refresh_requested.connect(self._refresh_component_panel)
+        self._action_editor_panel = ActionEditorPanel(self._inspector_tabs)
+        self._action_editor_panel.add_action_requested.connect(self._handle_action_panel_add_action_request)
+        self._action_editor_panel.remove_action_requested.connect(self._handle_action_panel_remove_action_request)
+        self._action_editor_panel.action_property_changed.connect(self._handle_action_panel_property_changed)
+        self._action_editor_panel.action_group_changed.connect(self._handle_action_panel_assign_action_group)
+        self._action_editor_panel.add_group_requested.connect(self._handle_action_panel_add_group_request)
+        self._action_editor_panel.remove_group_requested.connect(self._handle_action_panel_remove_group_request)
+        self._action_editor_panel.group_add_action_requested.connect(self._handle_action_panel_group_add_action)
+        self._action_editor_panel.group_remove_action_requested.connect(self._handle_action_panel_group_remove_action)
+        self._action_editor_panel.placement_add_action_requested.connect(self._handle_action_panel_add_placement_action)
+        self._action_editor_panel.placement_remove_action_requested.connect(
+            self._handle_action_panel_remove_placement_action
+        )
+        self._action_editor_panel.placement_move_action_requested.connect(self._handle_action_panel_move_placement_action)
         self._inspector_tabs.addTab(self._object_inspector, "Inspector")
         self._inspector_tabs.addTab(self._property_panel, "Properties")
         self._inspector_tabs.addTab(self._connection_panel, "Signals")
         self._inspector_tabs.addTab(self._tab_order_panel, "Tab \u2195")
         self._inspector_tabs.addTab(self._buddy_panel, "Buddy")
+        self._inspector_tabs.addTab(self._action_editor_panel, "Actions")
         self._inspector_tabs.addTab(self._component_library_panel, "Library")
         self._splitter.addWidget(self._palette_panel)
         self._splitter.addWidget(self._canvas)
@@ -510,6 +762,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -539,9 +792,13 @@ class DesignerEditorSurface(QWidget):
     def _refresh_validation_issues(self) -> None:
         self._validation_list.clear()
         if self._model is None:
+            self._validation_issues = []
+            self.validation_issues_changed.emit([])
             self._validation_list.setVisible(False)
             return
         issues = build_validation_issues(self._model, enable_naming_lint=self._enable_naming_lint)
+        self._validation_issues = list(issues)
+        self.validation_issues_changed.emit(list(issues))
         if not issues:
             self._validation_list.setVisible(False)
             return
@@ -555,6 +812,12 @@ class DesignerEditorSurface(QWidget):
             item.setToolTip(f"Click to select: {issue.object_name}" if issue.object_name else "")
             self._validation_list.addItem(item)
         self._validation_list.setVisible(True)
+
+    def _refresh_connection_panel_context(self) -> None:
+        if self._model is None:
+            self._connection_panel.bind_connection_context([])
+            return
+        self._connection_panel.bind_connection_context(connection_object_options(self._model))
 
     def _handle_validation_item_clicked(self, item: object) -> None:
         """Select the widget referenced by a validation issue."""
@@ -650,6 +913,7 @@ class DesignerEditorSurface(QWidget):
         if before_xml == after_xml:
             self._show_status("Connection already exists.", "warning")
             return
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -666,14 +930,35 @@ class DesignerEditorSurface(QWidget):
         if self._model is None:
             return
         sender_widget = self._model.root_widget.find_by_object_name(sender_object_name)
+        receiver_widget = self._model.root_widget.find_by_object_name(receiver_object_name)
         signal_name = "customSignal()"
-        if sender_widget is not None and sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"}:
-            signal_name = "clicked()"
+        if sender_widget is not None:
+            if sender_widget.class_name in {"QPushButton", "QCheckBox", "QRadioButton"}:
+                signal_name = "clicked()"
+            else:
+                sender_signals = signal_choices_for_class(sender_widget.class_name)
+                if sender_signals:
+                    signal_name = sender_signals[0]
+        slot_name = "setFocus()"
+        if receiver_widget is not None:
+            receiver_slots = slot_choices_for_class(receiver_widget.class_name)
+            compatible_slots = [
+                slot_signature
+                for slot_signature in receiver_slots
+                if is_signal_slot_pair_compatible(signal_name, slot_signature)
+            ]
+            if compatible_slots:
+                if "setFocus()" in compatible_slots:
+                    slot_name = "setFocus()"
+                else:
+                    slot_name = compatible_slots[0]
+            elif receiver_slots:
+                slot_name = receiver_slots[0]
         candidate = ConnectionModel(
             sender=sender_object_name,
             signal=signal_name,
             receiver=receiver_object_name,
-            slot="setFocus()",
+            slot=slot_name,
         )
         if candidate in self._model.connections:
             return
@@ -686,6 +971,7 @@ class DesignerEditorSurface(QWidget):
             return
         before_xml = self.serialize_to_ui_string()
         self._model.connections.pop(index)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -712,7 +998,14 @@ class DesignerEditorSurface(QWidget):
         connection = self._model.connections[index]
         before_xml = self.serialize_to_ui_string()
         updated_connection = replace(connection, **{field_name: value.strip()})
+        validation_error = self._validate_connection_update(updated_connection, field_name)
+        if validation_error:
+            self._show_status(validation_error, "error")
+            self._refresh_connection_panel_context()
+            self._connection_panel.bind_connections(self._model.connections)
+            return
         self._model.connections[index] = updated_connection
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         self._hide_status()
@@ -727,6 +1020,48 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+
+    def _validate_connection_update(
+        self,
+        updated_connection: ConnectionModel,
+        field_name: str,
+    ) -> str | None:
+        if self._model is None:
+            return "No form model loaded."
+        sender_widget = self._model.root_widget.find_by_object_name(updated_connection.sender)
+        receiver_widget = self._model.root_widget.find_by_object_name(updated_connection.receiver)
+        if sender_widget is None:
+            return f"Sender '{updated_connection.sender}' was not found."
+        if receiver_widget is None:
+            return f"Receiver '{updated_connection.receiver}' was not found."
+        sender_class = sender_widget.class_name
+        receiver_class = receiver_widget.class_name
+
+        if field_name in {"signal", "slot"} and not signal_supported_for_class(
+            sender_class,
+            updated_connection.signal,
+        ):
+            return (
+                f"Signal '{updated_connection.signal}' is not available for "
+                f"{updated_connection.sender} ({sender_class})."
+            )
+        if field_name in {"signal", "slot"} and not slot_supported_for_class(
+            receiver_class,
+            updated_connection.slot,
+        ):
+            return (
+                f"Slot '{updated_connection.slot}' is not available for "
+                f"{updated_connection.receiver} ({receiver_class})."
+            )
+        if field_name in {"signal", "slot"} and not is_signal_slot_pair_compatible(
+            updated_connection.signal,
+            updated_connection.slot,
+        ):
+            return (
+                "Signal/slot signatures are incompatible: "
+                f"{updated_connection.signal} -> {updated_connection.slot}."
+            )
+        return None
 
     def _handle_tab_order_changed(self, ordered_object_names: list[str]) -> None:
         if self._model is None:
@@ -780,19 +1115,30 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
 
     def _handle_palette_insert_request(self, class_name: str) -> None:
-        if self._model is None:
-            return
-        before_xml = self.serialize_to_ui_string()
-        if not self._canvas.insert_widget_by_class_name(class_name):
-            self._show_status("Widget insertion is not allowed for the selected parent.", "error")
+        inserted, error_message = self._insert_widget_via_snapshot(class_name)
+        if not inserted:
+            self._show_status(error_message or "Widget insertion is not allowed for the selected parent.", "error")
             return
         self._hide_status()
+
+    def _handle_canvas_insert_rejected(self, message: str) -> None:
+        self._show_status(message or "Widget insertion is not allowed for the selected parent.", "error")
+
+    def _insert_widget_via_snapshot(self, class_name: str) -> tuple[bool, str]:
+        if self._model is None:
+            return False, "No form model loaded."
+        before_xml = self.serialize_to_ui_string()
+        inserted, error_message = self._canvas.try_insert_widget_by_class_name(class_name)
+        if not inserted:
+            return False, error_message or "Widget insertion is not allowed for the selected parent."
         self._object_inspector.bind_model(self._model)
         self._refresh_validation_issues()
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
         self._refresh_component_panel()
         after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return True, ""
         self._command_stack.push(
             SnapshotCommand(
                 description=f"insert {class_name}",
@@ -801,6 +1147,7 @@ class DesignerEditorSurface(QWidget):
             )
         )
         self._set_dirty(True)
+        return True, ""
 
     def _handle_inspector_reparent_request(self, source_object_name: str, target_object_name: str) -> bool:
         if self._model is None:
@@ -869,6 +1216,127 @@ class DesignerEditorSurface(QWidget):
         self._set_dirty(True)
         return True
 
+    def align_selection(self, mode: str) -> bool:
+        """Align currently selected freeform widgets by geometry."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if len(selected_widgets) < 2:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not align_widgets(selected_widgets, mode):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"align {mode}",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def distribute_selection(self, axis: str) -> bool:
+        """Distribute currently selected freeform widgets by geometry."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if len(selected_widgets) < 3:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not distribute_widgets(selected_widgets, axis):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description=f"distribute {axis}",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def adjust_size_for_selection(self) -> bool:
+        """Adjust selected freeform widgets to deterministic class default size."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if not selected_widgets:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        if not adjust_widgets_to_default_size(selected_widgets):
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="adjust size",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
+    def edit_text_for_selection(self, text_value: str) -> bool:
+        """Set text/title/windowTitle for selected widgets when supported."""
+        if self._model is None:
+            return False
+        selected_widgets = self._resolve_selected_widgets()
+        if not selected_widgets:
+            return False
+        normalized = text_value.strip()
+        if not normalized:
+            return False
+        before_xml = self.serialize_to_ui_string()
+        changed = False
+        for widget in selected_widgets:
+            property_name = self._preferred_text_property_name(widget)
+            if not property_name:
+                continue
+            existing = widget.properties.get(property_name)
+            if existing is not None and existing.value == normalized and existing.value_type == "string":
+                continue
+            widget.properties[property_name] = PropertyValue(value_type="string", value=normalized)
+            changed = True
+        if not changed:
+            return False
+        self._canvas.load_model(self._model)
+        self._object_inspector.bind_model(self._model)
+        self._refresh_validation_issues()
+        self._refresh_tab_order_panel()
+        self._refresh_buddy_panel()
+        self._refresh_component_panel()
+        self._hide_status()
+        self._command_stack.push(
+            SnapshotCommand(
+                description="edit text",
+                before_xml=before_xml,
+                after_xml=self.serialize_to_ui_string(),
+            )
+        )
+        self._set_dirty(True)
+        return True
+
     def break_layout_for_selection(self) -> bool:
         """Break layout for selected widget (or root when none selected)."""
         if self._model is None:
@@ -905,6 +1373,102 @@ class DesignerEditorSurface(QWidget):
             return self._model.root_widget
         return self._model.root_widget.find_by_object_name(selected_name)
 
+    def _resolve_selected_widgets(self) -> list[WidgetNode]:
+        if self._model is None:
+            return []
+        names = self._selection_controller.selected_object_names
+        if not names and self._selection_controller.selected_object_name:
+            names = [self._selection_controller.selected_object_name]
+        resolved: list[WidgetNode] = []
+        for name in names:
+            if not name:
+                continue
+            widget = self._model.root_widget.find_by_object_name(name)
+            if widget is None:
+                continue
+            resolved.append(widget)
+        return resolved
+
+    def _preferred_text_property_name(self, widget: WidgetNode) -> str:
+        class_name = widget.class_name
+        if class_name in {"QPushButton", "QLabel", "QCheckBox", "QRadioButton", "QGroupBox", "QToolButton"}:
+            return "text"
+        if class_name in {"QLineEdit"}:
+            return "placeholderText"
+        if class_name in {"QWidget", "QMainWindow", "QDialog"}:
+            return "windowTitle"
+        if "text" in widget.properties:
+            return "text"
+        if "windowTitle" in widget.properties:
+            return "windowTitle"
+        return ""
+
+    def _handle_canvas_context_action(self, action_id: str) -> None:
+        if action_id == "designer.canvas.context.edit_text":
+            selected_widgets = self._resolve_selected_widgets()
+            if not selected_widgets:
+                return
+            editable_widgets = [widget for widget in selected_widgets if self._preferred_text_property_name(widget)]
+            if not editable_widgets:
+                self._show_status("Selected widget does not expose editable text.", "warning", auto_dismiss=True)
+                return
+            selected_widget = editable_widgets[0]
+            property_name = self._preferred_text_property_name(selected_widget)
+            current_value = str(selected_widget.properties.get(property_name, PropertyValue("string", "")).value)
+            from PySide2.QtWidgets import QInputDialog, QLineEdit
+
+            new_value, accepted = QInputDialog.getText(
+                self,
+                "Edit Text",
+                "Text:",
+                QLineEdit.Normal,
+                current_value,
+            )
+            if not accepted:
+                return
+            if not self.edit_text_for_selection(new_value):
+                self._show_status("No editable text changes were applied.", "warning", auto_dismiss=True)
+            return
+        if action_id == "designer.canvas.context.duplicate":
+            self.duplicate_selection()
+            return
+        if action_id == "designer.canvas.context.delete":
+            self.delete_selection()
+            return
+        if action_id == "designer.canvas.context.cut":
+            self.cut_selection()
+            return
+        if action_id == "designer.canvas.context.copy":
+            self.copy_selection()
+            return
+        if action_id == "designer.canvas.context.paste":
+            self.paste_selection()
+            return
+        align_map = {
+            "designer.canvas.context.align_left": "left",
+            "designer.canvas.context.align_hcenter": "center_horizontal",
+            "designer.canvas.context.align_right": "right",
+            "designer.canvas.context.align_top": "top",
+            "designer.canvas.context.align_vcenter": "center_vertical",
+            "designer.canvas.context.align_bottom": "bottom",
+        }
+        if action_id in align_map:
+            if not self.align_selection(align_map[action_id]):
+                self._show_status("Align requires at least two freeform widgets.", "warning", auto_dismiss=True)
+            return
+        distribute_map = {
+            "designer.canvas.context.distribute_horizontal": "horizontal",
+            "designer.canvas.context.distribute_vertical": "vertical",
+        }
+        if action_id in distribute_map:
+            if not self.distribute_selection(distribute_map[action_id]):
+                self._show_status("Distribute requires at least three freeform widgets.", "warning", auto_dismiss=True)
+            return
+        if action_id == "designer.canvas.context.adjust_size":
+            if not self.adjust_size_for_selection():
+                self._show_status("Adjust Size requires at least one freeform widget.", "warning", auto_dismiss=True)
+            return
+
     def _find_parent_for_widget(self, root: WidgetNode, object_name: str) -> tuple[WidgetNode | None, bool]:
         for child in root.children:
             if child.object_name == object_name:
@@ -923,6 +1487,34 @@ class DesignerEditorSurface(QWidget):
                 if parent is not None:
                     return parent, in_layout
         return None, False
+
+    def _remove_child_from_parent(self, parent: WidgetNode, object_name: str, *, in_layout: bool) -> bool:
+        if in_layout:
+            if parent.layout is None:
+                return False
+            filtered_items = []
+            removed = False
+            for item in parent.layout.items:
+                child_widget = item.widget
+                if child_widget is not None and child_widget.object_name == object_name and not removed:
+                    removed = True
+                    continue
+                filtered_items.append(item)
+            if not removed:
+                return False
+            parent.layout.items = filtered_items
+            return True
+        filtered_children: list[WidgetNode] = []
+        removed = False
+        for child in parent.children:
+            if child.object_name == object_name and not removed:
+                removed = True
+                continue
+            filtered_children.append(child)
+        if not removed:
+            return False
+        parent.children = filtered_children
+        return True
 
     def _ensure_unique_subtree_names(self, widget: WidgetNode, names_in_use: set[str]) -> None:
         if widget.object_name in names_in_use:
@@ -988,6 +1580,7 @@ class DesignerEditorSurface(QWidget):
         self._model = model
         self._canvas.load_model(model)
         self._object_inspector.bind_model(model)
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(model.connections)
         self._refresh_tab_order_panel()
         self._refresh_buddy_panel()
@@ -1040,6 +1633,7 @@ class DesignerEditorSurface(QWidget):
         )
         after_xml = self.serialize_to_ui_string()
         self._pending_connection_source = None
+        self._refresh_connection_panel_context()
         self._connection_panel.bind_connections(self._model.connections)
         self._refresh_validation_issues()
         if before_xml == after_xml:
@@ -1176,6 +1770,322 @@ class DesignerEditorSurface(QWidget):
 
     def _refresh_component_panel(self) -> None:
         self._component_library_panel.bind_components(self.available_component_names())
+        self._refresh_action_panel()
+
+    def _refresh_action_panel(self) -> None:
+        if self._model is None:
+            self._action_editor_panel.bind_actions([], [], placement_targets=[], placements_by_target={})
+            return
+        placement_targets = self._collect_action_placement_targets()
+        placements_by_target = {
+            object_name: list(self._placement_list_for_target(object_name))
+            for object_name, _class_name in placement_targets
+        }
+        self._action_editor_panel.bind_actions(
+            list(self._model.actions),
+            list(self._model.action_groups),
+            placement_targets=placement_targets,
+            placements_by_target=placements_by_target,
+        )
+
+    def _collect_action_placement_targets(self) -> list[tuple[str, str]]:
+        if self._model is None:
+            return []
+        targets: list[tuple[str, str]] = []
+        root = self._model.root_widget
+        for object_name in root.collect_object_names():
+            widget = root.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            if widget.class_name not in {"QMainWindow", "QMenuBar", "QMenu", "QToolBar"}:
+                continue
+            targets.append((widget.object_name, widget.class_name))
+        return targets
+
+    def _placement_list_for_target(self, object_name: str) -> list[str]:
+        if self._model is None:
+            return []
+        widget = self._model.root_widget.find_by_object_name(object_name)
+        if widget is None:
+            return []
+        return [ref.name for ref in widget.add_actions]
+
+    def _action_name_exists(self, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        return any(action.name == action_name for action in self._model.actions)
+
+    def _group_name_exists(self, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        return any(group.name == group_name for group in self._model.action_groups)
+
+    def _next_action_name(self, preferred_name: str) -> str:
+        if self._model is None:
+            return preferred_name
+        normalized = preferred_name.strip() or "action"
+        if not normalized.startswith("action"):
+            normalized = f"action{normalized[:1].upper()}{normalized[1:]}" if normalized else "action"
+        candidate = normalized
+        index = 1
+        while self._action_name_exists(candidate):
+            candidate = f"{normalized}{index}"
+            index += 1
+        return candidate
+
+    def _next_group_name(self, preferred_name: str) -> str:
+        if self._model is None:
+            return preferred_name
+        normalized = preferred_name.strip() or "actionGroup"
+        candidate = normalized
+        index = 1
+        while self._group_name_exists(candidate):
+            candidate = f"{normalized}{index}"
+            index += 1
+        return candidate
+
+    def _remove_action_name_everywhere(self, action_name: str) -> None:
+        if self._model is None:
+            return
+        for group in self._model.action_groups:
+            group.add_actions = [ref for ref in group.add_actions if ref.name != action_name]
+        self._model.add_actions = [ref for ref in self._model.add_actions if ref.name != action_name]
+        for object_name in self._model.collect_object_names():
+            widget = self._model.root_widget.find_by_object_name(object_name)
+            if widget is None:
+                continue
+            widget.add_actions = [ref for ref in widget.add_actions if ref.name != action_name]
+
+    def _set_action_text(self, action_name: str, text_value: str) -> bool:
+        if self._model is None:
+            return False
+        target = next((action for action in self._model.actions if action.name == action_name), None)
+        if target is None:
+            return False
+        normalized = text_value.strip()
+        if not normalized:
+            target.properties.pop("text", None)
+            return True
+        target.properties["text"] = PropertyValue(value_type="string", value=normalized)
+        return True
+
+    def _assign_action_to_group(self, action_name: str, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        for group in self._model.action_groups:
+            group.add_actions = [ref for ref in group.add_actions if ref.name != action_name]
+        normalized_group = group_name.strip()
+        if not normalized_group:
+            return True
+        group = next((item for item in self._model.action_groups if item.name == normalized_group), None)
+        if group is None:
+            return False
+        if not any(ref.name == action_name for ref in group.add_actions):
+            group.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _add_action_definition(self, requested_name: str) -> bool:
+        if self._model is None:
+            return False
+        action_name = self._next_action_name(requested_name)
+        if not action_name:
+            return False
+        if self._action_name_exists(action_name):
+            return False
+        self._model.actions.append(ActionModel(name=action_name))
+        return True
+
+    def _remove_action_definition(self, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        remaining = [action for action in self._model.actions if action.name != action_name]
+        if len(remaining) == len(self._model.actions):
+            return False
+        self._model.actions = remaining
+        self._remove_action_name_everywhere(action_name)
+        return True
+
+    def _add_action_group(self, requested_name: str) -> bool:
+        if self._model is None:
+            return False
+        group_name = self._next_group_name(requested_name)
+        if not group_name:
+            return False
+        if self._group_name_exists(group_name):
+            return False
+        self._model.action_groups.append(ActionGroupModel(name=group_name))
+        return True
+
+    def _remove_action_group(self, group_name: str) -> bool:
+        if self._model is None:
+            return False
+        remaining = [group for group in self._model.action_groups if group.name != group_name]
+        if len(remaining) == len(self._model.action_groups):
+            return False
+        self._model.action_groups = remaining
+        return True
+
+    def _add_action_to_group(self, group_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        if not self._action_name_exists(action_name):
+            return False
+        group = next((item for item in self._model.action_groups if item.name == group_name), None)
+        if group is None:
+            return False
+        if any(ref.name == action_name for ref in group.add_actions):
+            return False
+        group.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _remove_action_from_group(self, group_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        group = next((item for item in self._model.action_groups if item.name == group_name), None)
+        if group is None:
+            return False
+        remaining = [ref for ref in group.add_actions if ref.name != action_name]
+        if len(remaining) == len(group.add_actions):
+            return False
+        group.add_actions = remaining
+        return True
+
+    def _add_placement_action(self, target_name: str, action_name: str) -> bool:
+        if self._model is None or not self._action_name_exists(action_name):
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        if any(ref.name == action_name for ref in target_widget.add_actions):
+            return False
+        target_widget.add_actions.append(AddActionModel(name=action_name))
+        return True
+
+    def _remove_placement_action(self, target_name: str, action_name: str) -> bool:
+        if self._model is None:
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        remaining = [ref for ref in target_widget.add_actions if ref.name != action_name]
+        if len(remaining) == len(target_widget.add_actions):
+            return False
+        target_widget.add_actions = remaining
+        return True
+
+    def _move_placement_action(self, target_name: str, action_name: str, direction: int) -> bool:
+        if self._model is None or direction == 0:
+            return False
+        target_widget = self._model.root_widget.find_by_object_name(target_name)
+        if target_widget is None:
+            return False
+        current_names = [ref.name for ref in target_widget.add_actions]
+        try:
+            current_index = current_names.index(action_name)
+        except ValueError:
+            return False
+        next_index = current_index + int(direction)
+        if next_index < 0 or next_index >= len(current_names):
+            return False
+        current_names[current_index], current_names[next_index] = current_names[next_index], current_names[current_index]
+        target_widget.add_actions = [AddActionModel(name=name) for name in current_names]
+        return True
+
+    def _handle_action_panel_add_action_request(self, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action",
+            mutator=lambda: self._add_action_definition(action_name),
+        )
+
+    def _handle_action_panel_remove_action_request(self, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action",
+            mutator=lambda: self._remove_action_definition(action_name),
+        )
+
+    def _handle_action_panel_property_changed(self, action_name: str, property_name: str, value: str) -> None:
+        if property_name != "text":
+            return
+        self._apply_action_model_mutation(
+            description="edit action text",
+            mutator=lambda: self._set_action_text(action_name, value),
+        )
+
+    def _handle_action_panel_assign_action_group(self, action_name: str, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="assign action group",
+            mutator=lambda: self._assign_action_to_group(action_name, group_name),
+        )
+
+    def _handle_action_panel_add_group_request(self, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action group",
+            mutator=lambda: self._add_action_group(group_name),
+        )
+
+    def _handle_action_panel_remove_group_request(self, group_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action group",
+            mutator=lambda: self._remove_action_group(group_name),
+        )
+
+    def _handle_action_panel_group_add_action(self, group_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add action to group",
+            mutator=lambda: self._add_action_to_group(group_name, action_name),
+        )
+
+    def _handle_action_panel_group_remove_action(self, group_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove action from group",
+            mutator=lambda: self._remove_action_from_group(group_name, action_name),
+        )
+
+    def _handle_action_panel_add_placement_action(self, target_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="add placement action",
+            mutator=lambda: self._add_placement_action(target_name, action_name),
+        )
+
+    def _handle_action_panel_remove_placement_action(self, target_name: str, action_name: str) -> None:
+        self._apply_action_model_mutation(
+            description="remove placement action",
+            mutator=lambda: self._remove_placement_action(target_name, action_name),
+        )
+
+    def _handle_action_panel_move_placement_action(self, target_name: str, action_name: str, direction: int) -> None:
+        self._apply_action_model_mutation(
+            description="move placement action",
+            mutator=lambda: self._move_placement_action(target_name, action_name, direction),
+        )
+
+    def _apply_action_model_mutation(self, *, description: str, mutator) -> None:  # type: ignore[no-untyped-def]
+        if self._model is None:
+            return
+        before_xml = self.serialize_to_ui_string()
+        try:
+            changed = bool(mutator())
+        except (TypeError, ValueError):
+            changed = False
+        if not changed:
+            return
+        self._refresh_action_panel()
+        self._refresh_connection_panel_context()
+        self._connection_panel.bind_connections(self._model.connections)
+        self._refresh_validation_issues()
+        self._hide_status()
+        after_xml = self.serialize_to_ui_string()
+        if before_xml == after_xml:
+            return
+        self._command_stack.push(
+            SnapshotCommand(
+                description=description,
+                before_xml=before_xml,
+                after_xml=after_xml,
+            )
+        )
+        self._set_dirty(True)
+        self._refresh_action_panel()
 
     def _buddy_candidates(self) -> list[str]:
         if self._model is None:

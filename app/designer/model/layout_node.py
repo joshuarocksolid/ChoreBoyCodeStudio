@@ -19,6 +19,7 @@ class LayoutItem:
     widget: "WidgetNode | None" = None
     layout: "LayoutNode | None" = None
     spacer: SpacerItem | None = None
+    attributes: dict[str, str] = field(default_factory=dict)
     unknown_xml: list[str] = field(default_factory=list)
 
 

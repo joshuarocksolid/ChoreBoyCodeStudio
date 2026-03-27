@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from app.designer.model import (
+    AddActionModel,
+    ActionGroupModel,
+    ActionModel,
+    ButtonGroupModel,
     ConnectionModel,
     CustomWidgetModel,
     LayoutItem,
@@ -15,6 +20,7 @@ from app.designer.model import (
     SpacerItem,
     UIModel,
     WidgetNode,
+    ZOrderModel,
 )
 
 
@@ -42,6 +48,11 @@ def read_ui_string(source: str) -> UIModel:
         form_class_name=form_class_name,
         root_widget=_parse_widget(widget_element),
         ui_version=root.attrib.get("version", "4.0"),
+        actions=_parse_actions((root, widget_element)),
+        action_groups=_parse_action_groups((root, widget_element)),
+        add_actions=_parse_add_actions((root, widget_element)),
+        zorders=_parse_z_orders((root, widget_element)),
+        button_groups=_parse_button_groups((root, widget_element)),
         connections=_parse_connections(root),
         resources=_parse_resources(root),
         tab_stops=_parse_tab_stops(root),
@@ -59,6 +70,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
     properties: dict[str, PropertyValue] = {}
     children: list[WidgetNode] = []
     layout: LayoutNode | None = None
+    add_actions: list[AddActionModel] = []
     unknown_children_xml: list[str] = []
 
     for child in element:
@@ -73,6 +85,13 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
         if child.tag == "layout":
             layout = _parse_layout(child)
             continue
+        if child.tag in {"action", "actiongroup", "zorder", "buttongroups", "buttongroup"}:
+            continue
+        if child.tag == "addaction":
+            action_name = (child.attrib.get("name") or "").strip()
+            if action_name:
+                add_actions.append(AddActionModel(name=action_name))
+            continue
         unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
 
     return WidgetNode(
@@ -81,6 +100,7 @@ def _parse_widget(element: ET.Element) -> WidgetNode:
         properties=properties,
         children=children,
         layout=layout,
+        add_actions=add_actions,
         unknown_children_xml=unknown_children_xml,
     )
 
@@ -108,19 +128,24 @@ def _parse_layout(element: ET.Element) -> LayoutNode:
 
 
 def _parse_layout_item(element: ET.Element) -> LayoutItem | None:
+    attributes = {
+        key: value
+        for key, value in element.attrib.items()
+        if key in {"row", "column", "rowspan", "colspan", "alignment"}
+    }
     widget_element = element.find("widget")
     if widget_element is not None:
-        return LayoutItem(widget=_parse_widget(widget_element))
+        return LayoutItem(widget=_parse_widget(widget_element), attributes=attributes)
     layout_element = element.find("layout")
     if layout_element is not None:
-        return LayoutItem(layout=_parse_layout(layout_element))
+        return LayoutItem(layout=_parse_layout(layout_element), attributes=attributes)
     spacer_element = element.find("spacer")
     if spacer_element is not None:
         spacer_name = spacer_element.attrib.get("name", "").strip() or "spacerItem"
-        return LayoutItem(spacer=SpacerItem(name=spacer_name))
+        return LayoutItem(spacer=SpacerItem(name=spacer_name), attributes=attributes)
     unknown_xml = [ET.tostring(child, encoding="unicode") for child in list(element)]
     if unknown_xml:
-        return LayoutItem(unknown_xml=unknown_xml)
+        return LayoutItem(attributes=attributes, unknown_xml=unknown_xml)
     return None
 
 
@@ -145,6 +170,10 @@ def _parse_property(element: ET.Element) -> PropertyValue:
         if not icon_text:
             icon_text = (value_element.findtext("normaloff") or "").strip()
         return PropertyValue(value_type=value_type, value=icon_text)
+    if value_type == "size":
+        return PropertyValue(value_type=value_type, value=_parse_size(value_element))
+    if value_type == "sizepolicy":
+        return PropertyValue(value_type=value_type, value=_parse_size_policy(value_element))
     raw_xml = ET.tostring(value_element, encoding="unicode") if len(value_element) > 0 else None
     return PropertyValue(value_type=value_type, value=value_element.text or "", raw_xml=raw_xml)
 
@@ -155,6 +184,22 @@ def _parse_rect(rect_element: ET.Element) -> dict[str, int]:
         field_value = rect_element.findtext(field)
         parsed[field] = int((field_value or "0").strip() or "0")
     return parsed
+
+
+def _parse_size(size_element: ET.Element) -> dict[str, int]:
+    return {
+        "width": int((size_element.findtext("width") or "0").strip() or "0"),
+        "height": int((size_element.findtext("height") or "0").strip() or "0"),
+    }
+
+
+def _parse_size_policy(size_policy_element: ET.Element) -> dict[str, object]:
+    return {
+        "hsizetype": (size_policy_element.attrib.get("hsizetype") or "").strip(),
+        "vsizetype": (size_policy_element.attrib.get("vsizetype") or "").strip(),
+        "horstretch": int((size_policy_element.findtext("horstretch") or "0").strip() or "0"),
+        "verstretch": int((size_policy_element.findtext("verstretch") or "0").strip() or "0"),
+    }
 
 
 def _parse_connections(root: ET.Element) -> list[ConnectionModel]:
@@ -220,8 +265,146 @@ def _parse_custom_widgets(root: ET.Element) -> list[CustomWidgetModel]:
     return parsed
 
 
+def _parse_actions(scopes: Sequence[ET.Element]) -> list[ActionModel]:
+    parsed: list[ActionModel] = []
+    seen: set[str] = set()
+    for scope in scopes:
+        for element in scope.findall("action"):
+            name = (element.attrib.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            properties: dict[str, PropertyValue] = {}
+            add_actions: list[AddActionModel] = []
+            unknown_children_xml: list[str] = []
+            for child in list(element):
+                if child.tag == "property":
+                    prop_name = (child.attrib.get("name") or "").strip()
+                    if prop_name:
+                        properties[prop_name] = _parse_property(child)
+                    continue
+                if child.tag == "addaction":
+                    action_name = (child.attrib.get("name") or "").strip()
+                    if action_name:
+                        add_actions.append(AddActionModel(name=action_name))
+                    continue
+                unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
+            parsed.append(
+                ActionModel(
+                    name=name,
+                    properties=properties,
+                    add_actions=add_actions,
+                    unknown_children_xml=unknown_children_xml,
+                )
+            )
+    return parsed
+
+
+def _parse_action_groups(scopes: Sequence[ET.Element]) -> list[ActionGroupModel]:
+    parsed: list[ActionGroupModel] = []
+    seen: set[str] = set()
+    for scope in scopes:
+        for element in scope.findall("actiongroup"):
+            name = (element.attrib.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            properties: dict[str, PropertyValue] = {}
+            add_actions: list[AddActionModel] = []
+            unknown_children_xml: list[str] = []
+            for child in list(element):
+                if child.tag == "property":
+                    prop_name = (child.attrib.get("name") or "").strip()
+                    if prop_name:
+                        properties[prop_name] = _parse_property(child)
+                    continue
+                if child.tag in {"addaction", "action"}:
+                    action_name = (child.attrib.get("name") or "").strip()
+                    if action_name:
+                        add_actions.append(AddActionModel(name=action_name))
+                    continue
+                unknown_children_xml.append(ET.tostring(child, encoding="unicode"))
+            parsed.append(
+                ActionGroupModel(
+                    name=name,
+                    properties=properties,
+                    add_actions=add_actions,
+                    unknown_children_xml=unknown_children_xml,
+                )
+            )
+    return parsed
+
+
+def _parse_add_actions(scopes: Sequence[ET.Element]) -> list[AddActionModel]:
+    parsed: list[AddActionModel] = []
+    widget_scope = scopes[1] if len(scopes) > 1 else None
+    for scope in scopes:
+        for element in scope.findall("addaction"):
+            name = (element.attrib.get("name") or "").strip()
+            if not name:
+                continue
+            if widget_scope is not None and scope is widget_scope:
+                continue
+            parsed.append(AddActionModel(name=name))
+    return parsed
+
+
+def _parse_z_orders(scopes: Sequence[ET.Element]) -> list[ZOrderModel]:
+    parsed: list[ZOrderModel] = []
+    for scope in scopes:
+        for element in scope.findall("zorder"):
+            name = (element.text or "").strip()
+            if not name:
+                continue
+            parsed.append(ZOrderModel(name=name))
+    return parsed
+
+
+def _parse_button_groups(scopes: Sequence[ET.Element]) -> list[ButtonGroupModel]:
+    parsed: list[ButtonGroupModel] = []
+    seen: set[str] = set()
+    for scope in scopes:
+        direct = list(scope.findall("buttongroup"))
+        for container in scope.findall("buttongroups"):
+            direct.extend(container.findall("buttongroup"))
+        for button_group_element in direct:
+            name = (button_group_element.attrib.get("name") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            exclusive_attr = (button_group_element.attrib.get("exclusive") or "").strip().lower()
+            exclusive: bool | None = None
+            if exclusive_attr in {"true", "false"}:
+                exclusive = exclusive_attr == "true"
+            unknown_children_xml = [
+                ET.tostring(child, encoding="unicode")
+                for child in list(button_group_element)
+            ]
+            parsed.append(
+                ButtonGroupModel(
+                    name=name,
+                    exclusive=exclusive,
+                    unknown_children_xml=unknown_children_xml,
+                )
+            )
+    return parsed
+
+
 def _parse_unknown_top_level_nodes(root: ET.Element) -> list[str]:
-    known_tags = {"class", "widget", "tabstops", "resources", "customwidgets", "connections"}
+    known_tags = {
+        "class",
+        "widget",
+        "action",
+        "actiongroup",
+        "addaction",
+        "zorder",
+        "buttongroups",
+        "buttongroup",
+        "tabstops",
+        "resources",
+        "customwidgets",
+        "connections",
+    }
     unknown_nodes: list[str] = []
     for child in list(root):
         if child.tag in known_tags:

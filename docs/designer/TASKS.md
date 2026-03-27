@@ -559,7 +559,7 @@ Every task in this file contains:
 
 ## 5) Acceptance linkage index (Designer-specific)
 
-These IDs are local to the Designer program and should later be linked into `docs/ACCEPTANCE_TESTS.md` once implementation starts:
+These IDs are local to the Designer program and are mapped in `docs/ACCEPTANCE_TESTS.md` section 10A.
 
 - **DF-xx**: foundation checks (probe + schema/loader harness)
 - **DMVP-xx**: MVP designer workflow checks
@@ -567,16 +567,20 @@ These IDs are local to the Designer program and should later be linked into `doc
 - **DADV-xx**: signals/slots/tab order/buddy checks
 - **DRES-xx**: resources/promote/custom-widget checks
 - **DADV2-xx**: advanced round-trip/component/team workflow checks
+- **DFIX-xx**: post-audit reliability/correctness hardening checks
+- **DGAP-xx**: post-audit parity gap closure checks
 
 ---
 
 ## 6) Immediate execution order recommendation
 
-1. D0.S1 and D0.S2 (probe + model/io scaffolding)
-2. D1.S1 through D1.S5 (MVP path: open/edit/save/preview)
-3. D2 stories (object/property/layout productivity + undo/redo)
-4. D3 and D4 (signals/slots + focus tools + custom widget workflows)
-5. D5 (fidelity and ecosystem polish)
+D0–D5 are complete and should be treated as baseline. Execute post-audit work in this order:
+
+1. **D6** reliability hardening (insert/undo, preview lifecycle/timeout, layout fidelity, shortcut arbitration)
+2. **D7** high-impact parity (palette breadth, property depth, signal/slot picker UX, clipboard subtree ops)
+3. **D8** advanced parity and polish (`.ui` breadth, canvas affordances, preview variants)
+4. **D9** action/menu/toolbar authoring subsystem (QAction ecosystem parity)
+5. release hardening pass (targeted + full suites, manual acceptance evidence, docs sync)
 
 ---
 
@@ -590,7 +594,7 @@ These items were discovered during the Designer parity audit and smoke tests in
 ### Story D6.S1 — Insert/undo reliability hardening
 
 #### Task D6.S1.T1 — Fix repeated drag/drop insertion parent resolution
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Make repeated palette insertion reliable by resolving a valid container parent (selected container, ancestor fallback, or root fallback) instead of silently failing after first insert.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/canvas/drop_rules.py`, `tests/unit/designer/canvas/test_form_canvas.py`, `tests/integration/designer/test_designer_save_roundtrip.py` (or new insertion-focused integration test)
 - **Automated test layer:** unit, integration
@@ -598,9 +602,10 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-01
 - **Depends on:** none
 - **Done when:** users can insert multiple widgets consecutively via drag/drop without hidden failure.
+- **Implementation note:** `FormCanvas` now resolves insertion parents by selected widget -> ancestor container -> root fallback, emits explicit rejection messages, and regression coverage verifies repeated insertion recovery.
 
 #### Task D6.S1.T2 — Route canvas drop mutations through snapshot command stack
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Ensure all insertion paths (palette click, drag/drop, component insertion) are consistently undoable/redoable and mark tabs dirty.
 - **Primary files:** `app/designer/editor_surface.py`, `app/designer/canvas/form_canvas.py`, `tests/unit/designer/commands/test_command_stack.py`, integration coverage for insertion undo/redo
 - **Automated test layer:** unit, integration
@@ -608,11 +613,12 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-02
 - **Depends on:** D6.S1.T1
 - **Done when:** insertion mutation source no longer changes undo/redo behavior.
+- **Implementation note:** canvas drop events now delegate to a surface-owned insertion handler (`_insert_widget_via_snapshot`) so drag/drop and palette requests share the same snapshot/dirty pipeline.
 
 ### Story D6.S2 — Preview robustness
 
 #### Task D6.S2.T1 — Stabilize in-process preview window lifecycle
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Make Preview Form reliably visible and diagnosable during manual use.
 - **Primary files:** `app/designer/editor_surface.py`, `app/designer/preview/preview_window.py`, `tests/integration/designer/test_designer_preview_loader.py`
 - **Automated test layer:** integration, manual_acceptance
@@ -620,9 +626,10 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-03
 - **Depends on:** none
 - **Done when:** preview command is no longer perceived as a no-op.
+- **Implementation note:** `DesignerEditorSurface` now retains a strong preview-window reference (`_active_preview_widget`), closes stale preview windows before opening new ones, and clears retained state on preview destroy to keep lifecycle deterministic.
 
 #### Task D6.S2.T2 — Add isolated preview subprocess timeout + termination diagnostics
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Prevent hangs in custom-widget isolated preview compatibility checks.
 - **Primary files:** `app/designer/preview/preview_service.py`, `tests/integration/designer/test_custom_widget_isolated_preview_runner.py`
 - **Automated test layer:** integration
@@ -630,11 +637,12 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-04
 - **Depends on:** none
 - **Done when:** no isolated preview path can block indefinitely.
+- **Implementation note:** isolated preview now enforces a bounded subprocess timeout, uses AppRun-aware runner command construction, and returns explicit timeout/launch diagnostics without hanging the caller.
 
 ### Story D6.S3 — `.ui` layout fidelity corrections
 
 #### Task D6.S3.T1 — Preserve layout item attributes (`row`/`column`/span/alignment) in round-trip
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Stop dropping grid/item placement metadata on save.
 - **Primary files:** `app/designer/model/layout_node.py`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, `tests/unit/designer/io/test_ui_reader_writer.py`
 - **Automated test layer:** unit
@@ -642,11 +650,12 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-05
 - **Depends on:** none
 - **Done when:** grid-based forms survive read-write-read without layout coordinate loss.
+- **Implementation note:** `LayoutItem` now stores item-level attributes and reader/writer parse+emit `row`/`column`/`rowspan`/`colspan`/`alignment` attributes so grid metadata survives deterministic round-trip.
 
 ### Story D6.S4 — Shortcut conflict/scoping hardening
 
 #### Task D6.S4.T1 — Enforce focus-scoped Designer mode shortcuts over Run shortcuts
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Resolve F5/F6 ambiguity between designer mode actions and run/debug actions.
 - **Primary files:** `app/shell/menus.py`, `app/shell/main_window.py`, `app/designer/editor_surface.py`, shortcut-related tests under `tests/unit/shell/` + integration shortcut-focus checks
 - **Automated test layer:** unit, integration
@@ -654,13 +663,27 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DFIX-06
 - **Depends on:** none
 - **Done when:** shortcut behavior is deterministic, documented, and test-covered.
+- **Implementation note:** MainWindow now applies focus-scoped ShortcutOverride arbitration for F5/F6 (Designer mode actions when focus is inside an active Designer surface, Run/Continue otherwise), backed by new shortcut-scope helper logic and unit/integration regression coverage.
+
+### Story D6.S5 — Designer diagnostics unification
+
+#### Task D6.S5.T1 — Surface Designer validation issues in global Problems panel
+- **Status:** DONE
+- **Objective:** Eliminate split diagnostics UX by ensuring Designer validation issues are included in the shared Problems panel dataset.
+- **Primary files:** `app/designer/editor_surface.py`, `app/shell/main_window.py`, `tests/integration/designer/test_open_ui_designer_surface.py`, `tests/unit/shell/test_main_window_debug_routing.py`
+- **Automated test layer:** unit, integration
+- **Validation method:** open `.ui` in Designer, verify validation list + Problems panel both report active Designer diagnostics; clearing diagnostics removes corresponding Problems entries.
+- **Acceptance linkage:** DFIX-07
+- **Depends on:** D6.S4.T1
+- **Done when:** Designer validation and Problems panel no longer disagree for active Designer tabs.
+- **Implementation note:** `DesignerEditorSurface` now emits validation issue updates; `MainWindow` maps them to `CodeDiagnostic` entries merged into the Problems panel alongside lint/runtime diagnostics, including close/reset lifecycle cleanup.
 
 ## Epic D7 — Core parity expansion (high-impact usability)
 
 ### Story D7.S1 — Must-have palette expansion
 
 #### Task D7.S1.T1 — Add missing must-have widget box entries
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Expand from 13 baseline widgets to cover basic Qt Designer form-building needs.
 - **Primary files:** `app/designer/palette/widget_registry.py`, `app/designer/canvas/drop_rules.py`, related property/schema + insertion tests
 - **Automated test layer:** unit, integration
@@ -668,11 +691,15 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-01
 - **Depends on:** D6.S1.T1
 - **Done when:** requested must-have list is represented with valid insertion behavior.
+- **Implementation note:** tranche-1 + tranche-2 must-have widgets were added to the palette registry and icon mapping. Added widgets now include:
+  - tranche-1: `QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`
+  - tranche-2: `QListWidget`, `QTreeWidget`, `QTableWidget`, `QStackedWidget`, `QSplitter`, `QMainWindow`
+  with unit coverage for registry/category/drop rules and integration save-roundtrip coverage confirming deterministic insertion + serialization.
 
 ### Story D7.S2 — Property editor depth expansion
 
 #### Task D7.S2.T1 — Add core Qt property groups and typed editors
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Support common Qt Designer properties (`sizePolicy`, min/max size, font, palette, cursor, styleSheet, windowTitle, windowIcon, layout margins/spacing).
 - **Primary files:** `app/designer/properties/property_schema.py`, `app/designer/properties/property_editor.py`, `app/designer/properties/property_editor_panel.py`, IO tests as needed
 - **Automated test layer:** unit, integration
@@ -680,11 +707,15 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-02
 - **Depends on:** D7.S1.T1 (recommended), D6.S3.T1 (for layout property fidelity)
 - **Done when:** expanded property surface is editable and stable across round-trip.
+- **Implementation note:** PR-11 + PR-12 delivered schema + typed editing + IO fidelity for:
+  - layout/sizing: `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, `contentsMargins`
+  - appearance/metadata: `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, `windowIcon`
+  Property editor now coerces `sizepolicy` string inputs into structured payloads, property panel renders dedicated typed editors (including icon pickers for `icon` and `windowIcon`), and reader/writer round-trip tests verify deterministic persistence across these property families.
 
 ### Story D7.S3 — Signal/slot editor parity upgrades
 
 #### Task D7.S3.T1 — Introduce class-aware signal/slot picklists and validation
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Replace manual free-text connection editing with discoverable, class-aware signal/slot selection.
 - **Primary files:** `app/designer/connections/connection_editor_panel.py`, `app/designer/editor_surface.py`, new signal/slot metadata helper(s), tests
 - **Automated test layer:** unit, integration
@@ -692,11 +723,19 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-03
 - **Depends on:** D7.S2.T1 (recommended)
 - **Done when:** users no longer need manual signal/slot string typing for common workflows.
+- **Implementation note:** PR-13 delivered class-aware signal/slot catalogs with picker-based editing:
+  - new metadata helper module (`app/designer/connections/signal_slot_metadata.py`) provides per-class signal/slot choices using Qt meta-object introspection with deterministic fallbacks for common widget classes.
+  - connections panel now renders sender/signal/receiver/slot combobox editors instead of free-text table cells, with receiver slot options compatibility-filtered by selected signal signature.
+  - editor-surface validation now blocks invalid sender/receiver/signature updates and surfaces actionable error messages without mutating model state.
+  - new/updated coverage:
+    - `tests/unit/designer/connections/test_signal_slot_metadata.py`
+    - `tests/unit/designer/connections/test_connection_editor_panel.py`
+    - `tests/unit/designer/test_editor_surface.py -k connection`
 
 ### Story D7.S4 — Clipboard operations parity
 
 #### Task D7.S4.T1 — Implement cut/copy/paste widget-subtree workflows
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Support subtree clipboard operations (same-form and cross-form insert where safe).
 - **Primary files:** `app/designer/editor_surface.py`, model/component helpers, command stack tests/integration tests
 - **Automated test layer:** unit, integration
@@ -704,13 +743,23 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-04
 - **Depends on:** D6.S1.T2
 - **Done when:** clipboard subtree operations match expected designer productivity flow.
+- **Implementation note:** PR-14 delivered designer clipboard subtree workflows with undo-safe mutation paths:
+  - `DesignerEditorSurface` now supports `copy_selection`, `cut_selection`, `paste_selection`, and `delete_selection` on non-root widget subtrees.
+  - clipboard payloads are serialized as deterministic `.ui` XML snippets (`ClipboardPayload`) and read back through the existing reader for paste, preserving nested subtree structure.
+  - pasted subtrees get deterministic object-name de-duplication and parent capability validation before mutation.
+  - shell Edit menu now wires `Cut/Copy/Paste` actions to the active Designer surface when a `.ui` tab is focused, while preserving existing text-editor behavior when code tabs are active.
+  - new/updated coverage:
+    - `tests/unit/designer/test_editor_surface.py` (`copy/cut/paste` + invalid paste parent + undo)
+    - `tests/integration/designer/test_designer_component_actions.py` (menu-driven cut/copy/paste workflow)
+    - `tests/integration/designer/test_open_ui_designer_surface.py` (Edit action enable/disable by active tab type)
+    - `tests/unit/shell/test_menus_edit_actions.py`, `tests/unit/shell/test_menus_designer_form.py`, `tests/unit/shell/test_shortcut_preferences.py`
 
 ## Epic D8 — Advanced parity and polish
 
 ### Story D8.S1 — `.ui` format breadth expansion
 
 #### Task D8.S1.T1 — Add action-related and ordering element support
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Expand reader/writer coverage for `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, `<buttongroup>` and related nodes.
 - **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, new/updated IO fixture tests
 - **Automated test layer:** unit
@@ -718,11 +767,18 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-05
 - **Depends on:** D6.S3.T1
 - **Done when:** these nodes are no longer dropped or silently rewritten away.
+- **Implementation note:** PR-15 expanded advanced `.ui` node coverage for action and ordering contracts:
+  - added explicit model ownership for action ecosystem nodes (`ActionModel`, `ActionGroupModel`, `AddActionModel`, `ZOrderModel`, `ButtonGroupModel`) in `app/designer/model/action_model.py` and wired fields into `UIModel`.
+  - reader now parses `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, and `<buttongroup>` from both top-level and `QMainWindow` widget scopes while avoiding duplicate captures.
+  - writer now emits these nodes deterministically and round-trips group-local add-action links plus top-level placement references.
+  - added fixture coverage (`tests/fixtures/designer/actions_form.ui`) and focused tests in:
+    - `tests/unit/designer/io/test_ui_reader_writer.py`
+    - `tests/unit/designer/io/test_ui_formatter.py`
 
 ### Story D8.S2 — Canvas affordance polish
 
 #### Task D8.S2.T1 — Add in-place text edit + context menu + align/distribute/adjust-size tools
-- **Status:** TODO
+- **Status:** DONE
 - **Objective:** Close major interaction affordance gaps vs Qt Designer widget editing mode.
 - **Primary files:** `app/designer/canvas/form_canvas.py`, `app/designer/layout/layout_commands.py`, `app/shell/menus.py`, integration/manual acceptance coverage
 - **Automated test layer:** integration, manual_acceptance
@@ -730,4 +786,118 @@ These items were discovered during the Designer parity audit and smoke tests in
 - **Acceptance linkage:** DGAP-06
 - **Depends on:** D6.S1.T1, D6.S1.T2
 - **Done when:** core widget editing affordances feel Qt Designer-like for common operations.
+- **Implementation note:** PR-17 adds canvas affordance tooling across context interactions + layout command surface:
+  - `FormCanvas` now exposes a context menu with edit-text, clipboard, duplicate/delete, align, distribute, and adjust-size actions plus double-click routing to in-place text editing.
+  - `DesignerEditorSurface` now supports multi-selection geometry operations (`align_selection`, `distribute_selection`, `adjust_size_for_selection`) and in-place text edits via `edit_text_for_selection`, all backed by snapshot undo/redo and dirty-state tracking.
+  - shell Layout menu now includes align/distribute/adjust-size commands wired into main-window handlers and Designer action-state gating.
+  - new/updated coverage:
+    - `tests/unit/designer/layout/test_layout_commands.py`
+    - `tests/unit/designer/canvas/test_form_canvas.py`
+    - `tests/unit/designer/test_editor_surface.py` (affordance workflows + context action dispatch)
+    - `tests/unit/shell/test_menus_designer_layout.py`
+    - `tests/unit/shell/test_shortcut_preferences.py`
+    - `tests/integration/designer/test_designer_layout_actions.py`
+    - `tests/integration/designer/test_open_ui_designer_surface.py`
+
+### Story D8.S3 — Preview variants
+
+#### Task D8.S3.T1 — Add preview style/device-size variants
+- **Status:** DONE
+- **Objective:** Expose alternate style/theme/device preview modes for practical form QA.
+- **Primary files:** `app/designer/preview/preview_service.py`, `app/designer/preview/preview_window.py`, `app/shell/menus.py`, integration/manual acceptance coverage
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** trigger each variant and verify deterministic preview load/error behavior.
+- **Acceptance linkage:** DGAP-08
+- **Depends on:** D6.S2.T1, D6.S2.T2
+- **Done when:** users can run style/device preview variants without unstable lifecycle behavior.
+- **Implementation note:** PR-18 introduces explicit preview variant presets and shell wiring:
+  - new preview variant catalog (`app/designer/preview/preview_variants.py`) defines deterministic presets: default, Fusion style, phone portrait, and tablet portrait.
+  - `DesignerEditorSurface` now supports variant-aware preview execution via `preview_current_form_variant`, tracks active variant state, and applies variant style/viewport through preview window configuration.
+  - Form menu now includes **Preview Variant** submenu actions (`designer.form.preview.default|fusion|phone_portrait|tablet_portrait`) wired through `MainWindow` and gated by Designer tab focus/action-state refresh.
+  - new/updated coverage:
+    - `tests/unit/designer/preview/test_preview_variants.py`
+    - `tests/unit/designer/preview/test_preview_service.py`
+    - `tests/unit/designer/test_editor_surface.py` (variant preview behavior)
+    - `tests/unit/shell/test_menus_designer_preview_variants.py`
+    - `tests/unit/shell/test_menus_designer_form.py`
+    - `tests/unit/shell/test_shortcut_preferences.py`
+    - `tests/integration/designer/test_designer_preview_loader.py`
+    - `tests/integration/designer/test_open_ui_designer_surface.py`
+
+## Epic D9 — Action/menu/toolbar authoring parity
+
+### Story D9.S1 — QAction model + `.ui` contract
+
+#### Task D9.S1.T1 — Add action/actiongroup/addaction model ownership
+- **Status:** DONE
+- **Objective:** Introduce explicit models for QAction ecosystem elements and placement references.
+- **Primary files:** `app/designer/model/*`, `app/designer/io/ui_reader.py`, `app/designer/io/ui_writer.py`, IO fixtures/tests
+- **Automated test layer:** unit
+- **Validation method:** deterministic parse/serialize coverage for action graph and placement nodes.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D8.S1.T1
+- **Done when:** action graph nodes are represented in model and survive round-trip.
+- **Implementation note:** PR-16 extends D9.S1 with concrete model ownership now exercised by authoring workflows:
+  - `UIModel` + widget nodes now retain explicit `ActionModel`, `ActionGroupModel`, placement `AddActionModel`, `ZOrderModel`, and `ButtonGroupModel` state used by editor mutations.
+  - reader/writer parity includes widget-scoped placement (`<widget><addaction .../>`) plus top-level action/actiongroup/zorder/buttongroup structures with deterministic output.
+  - regression coverage confirms advanced node fidelity under active editing workflows:
+    - `tests/unit/designer/io/test_ui_reader_writer.py`
+    - `tests/unit/designer/io/test_ui_formatter.py`
+
+### Story D9.S2 — Action editor workflows
+
+#### Task D9.S2.T1 — Build action editor panel (CRUD + grouping)
+- **Status:** DONE
+- **Objective:** Provide dedicated UI for creating/editing/removing actions and action groups.
+- **Primary files:** `app/designer/actions/*` (new), `app/designer/editor_surface.py`, integration tests
+- **Automated test layer:** unit, integration
+- **Validation method:** panel workflows verified for create/edit/delete and deterministic naming.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D9.S1.T1
+- **Done when:** users can author action definitions without manual XML edits.
+- **Implementation note:** PR-16 introduces a dedicated action authoring surface (`ActionEditorPanel`) and wires it into Designer:
+  - new panel tab (**Actions**) supports QAction CRUD, group CRUD, action-text editing, action↔group assignment, and group membership editing.
+  - panel emits explicit intent signals consumed by `DesignerEditorSurface` mutation handlers that run through snapshot undo/redo, validation refresh, and dirty-state propagation.
+  - new coverage:
+    - `tests/unit/designer/actions/test_action_editor_panel.py`
+    - `tests/unit/designer/test_editor_surface.py -k action_panel_mutations_are_undoable`
+
+### Story D9.S3 — Menu/toolbar composition workflows
+
+#### Task D9.S3.T1 — Author menu bar / toolbar action placement for `QMainWindow`
+- **Status:** DONE
+- **Objective:** Support action placement and ordering in menu/toolbar structures for supported form classes.
+- **Primary files:** `app/designer/actions/*`, `app/designer/editor_surface.py`, `app/designer/io/*`, integration/manual acceptance tests
+- **Automated test layer:** integration, manual_acceptance
+- **Validation method:** compose menu/toolbar structures, save, reopen, and verify placement persistence.
+- **Acceptance linkage:** DGAP-07
+- **Depends on:** D9.S2.T1
+- **Done when:** authored menu/toolbar structures are persisted and re-editable.
+- **Implementation note:** PR-16 adds menu/toolbar placement composition flows for supported `QMainWindow` forms:
+  - action panel now exposes placement targets (`QMainWindow`, `QMenuBar`, `QMenu`, `QToolBar`) and allows add/remove/reorder of placed actions.
+  - placements mutate widget-scoped `add_actions` and persist to `.ui` output; saved forms reopen with placements re-editable in the same panel.
+  - integration evidence:
+    - `tests/integration/designer/test_designer_action_editor.py`
+
+---
+
+## 8) Execution slices (PR-oriented checklist)
+
+The post-audit execution plan is implemented in thin slices:
+
+1. PR-00 docs normalization (this backlog + acceptance/test docs sync)
+2. PR-01 regression tests for critical gaps
+3. PR-02/03 insertion reliability + command-stack unification
+4. PR-04/05 preview lifecycle + isolated timeout hardening
+5. PR-06 layout item attribute fidelity
+6. PR-07 shortcut arbitration
+7. PR-08 diagnostics unification (Designer validation -> Problems pane)
+8. PR-09/10 palette expansion batches
+9. PR-11/12 property schema depth batches
+10. PR-13 signal/slot picker UX
+11. PR-14 clipboard subtree operations
+12. PR-15 `.ui` advanced node support
+13. PR-16 action/menu/toolbar authoring subsystem
+14. PR-17 canvas affordance polish
+15. PR-18 preview variants + final hardening/docs closure
 

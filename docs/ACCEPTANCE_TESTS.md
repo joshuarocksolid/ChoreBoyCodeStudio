@@ -886,7 +886,7 @@ Verify rule-level lint settings (enable + severity) affect diagnostics output.
 
 ---
 
-## 10A. Designer acceptance program (implemented)
+## 10A. Designer acceptance program (baseline + active gap-closure)
 
 Designer implementation is validated through the Designer-specific suites documented in `docs/designer/TASKS.md` and mapped by acceptance linkage IDs:
 
@@ -896,6 +896,8 @@ Designer implementation is validated through the Designer-specific suites docume
 - **DADV-xx**: advanced modes (signals/slots, tab order, buddy interactions + serialization)
 - **DRES-xx**: resources/icons/promote/custom-widget preview isolation
 - **DADV2-xx**: deterministic formatting, unknown-node preservation, reusable components, naming lint
+- **DFIX-xx**: post-audit reliability/correctness hardening
+- **DGAP-xx**: post-audit parity gap closure
 
 Current acceptance evidence is provided by automated integration + runtime parity suites under:
 
@@ -906,7 +908,26 @@ and by Designer unit coverage under:
 
 - `tests/unit/designer/`
 
-The Designer backlog now reports all linked tasks as `DONE` in `docs/designer/TASKS.md`.
+D0–D5 Designer backlog items are complete. Post-audit D6–D9 gap-closure items are tracked as active TODO work in `docs/designer/TASKS.md`.
+
+Post-audit acceptance focus includes:
+
+- **DFIX-01** repeated drag/drop insertion reliability
+- **DFIX-02** insertion undo/redo consistency across gesture paths
+- **DFIX-03** preview visibility reliability (or explicit actionable failure reporting)
+- **DFIX-04** isolated preview timeout/termination determinism
+- **DFIX-05** grid/item attribute round-trip fidelity (`row`/`column`/span/alignment)
+- **DFIX-06** focus-scoped F5/F6 shortcut arbitration (Designer mode vs Run/Continue)
+- **DFIX-07** Designer validation diagnostics are mirrored into global Problems panel without conflicting empty-state UX
+- **DGAP-01** must-have palette tranche-1/tranche-2 widgets (`QSpinBox`, `QDoubleSpinBox`, `QSlider`, `QProgressBar`, `QDateEdit`, `QTimeEdit`, `QDateTimeEdit`, `QDial`, `QToolButton`, `QDialogButtonBox`, `QListWidget`, `QTreeWidget`, `QTableWidget`, `QStackedWidget`, `QSplitter`, `QMainWindow`) insert and persist through save/reopen (with `QSplitter` validated via root-child round-trip fallback because splitter currently serializes outside layout-item wrapper semantics)
+- **DGAP-02** layout+sizing property schema expansion supports `minimumSize`, `maximumSize`, `sizePolicy`, `layoutSpacing`, and `contentsMargins` with typed editors + deterministic `.ui` round-trip
+- **DGAP-03** class-aware signal/slot picker workflow provides sender/receiver object metadata picklists, class-backed signal/slot choices, and blocks invalid/incompatible signature updates before model mutation
+- **DGAP-04** designer clipboard subtree workflows support cut/copy/paste for non-root widgets with deterministic object-name de-duplication, invalid-parent rejection messaging, and undo-safe mutation history
+- **DGAP-05** advanced `.ui` node support round-trips `<action>`, `<actiongroup>`, `<addaction>`, `<zorder>`, and `<buttongroup>` without dropping or flattening model intent
+- **DGAP-06** canvas affordance polish delivers in-place text editing (double-click/context), context-menu mutation actions, and align/distribute/adjust-size geometry operations with undo-safe command history
+- **DGAP-09** appearance/metadata property schema expansion supports `font`, `palette`, `cursor`, `styleSheet`, `windowTitle`, and `windowIcon` with typed editors + deterministic `.ui` round-trip
+- **DGAP-07** action/menu/toolbar authoring parity + `.ui` persistence (QAction CRUD/grouping and menu/toolbar placement authoring with save/reopen editability)
+- **DGAP-08** preview style/device variant workflows include Form-menu preset actions for default/fusion/phone/tablet variants with deterministic preview invocation and active-variant state tracking
 
 ---
 

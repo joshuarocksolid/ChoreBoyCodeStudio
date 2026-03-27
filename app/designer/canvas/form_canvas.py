@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import QItemSelectionModel, Qt
-from PySide2.QtWidgets import QAbstractItemView, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from typing import Callable
+
+from PySide2.QtCore import QItemSelectionModel, Qt, Signal
+from PySide2.QtWidgets import (
+    QAbstractItemView,
+    QAction,
+    QLabel,
+    QMenu,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.designer.canvas.drop_rules import can_insert_widget
 from app.designer.canvas.guides import default_snapped_geometry, widget_icon_char
@@ -19,6 +30,8 @@ TREE_ROLE_OBJECT_NAME = Qt.UserRole + 1
 class FormCanvas(QWidget):
     """Canvas host that mutates `UIModel` during insert operations."""
 
+    insert_rejected = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("designer.canvas")
@@ -29,6 +42,8 @@ class FormCanvas(QWidget):
         self._palette_registry = default_widget_palette_registry()
         self._snap_to_grid_enabled = True
         self._snap_grid_size = 8
+        self._insert_request_handler: Callable[[str], tuple[bool, str]] | None = None
+        self._context_action_handler: Callable[[str], None] | None = None
 
         self.setAcceptDrops(True)
         layout = QVBoxLayout(self)
@@ -44,6 +59,7 @@ class FormCanvas(QWidget):
         self._canvas_tree.setHeaderHidden(True)
         self._canvas_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._canvas_tree.itemSelectionChanged.connect(self._handle_tree_selection_changed)
+        self._canvas_tree.itemDoubleClicked.connect(self._handle_tree_item_double_clicked)
         layout.addWidget(self._hint_label)
         layout.addWidget(self._canvas_tree, 1)
 
@@ -68,6 +84,15 @@ class FormCanvas(QWidget):
         if self._selection_controller is not None:
             self._selection_controller.selection_changed.connect(self._handle_controller_selection_changed)
             self._selection_controller.selection_set_changed.connect(self._handle_controller_selection_set_changed)
+
+    def set_insert_request_handler(
+        self,
+        handler: Callable[[str], tuple[bool, str]] | None,
+    ) -> None:
+        self._insert_request_handler = handler
+
+    def set_context_action_handler(self, handler: Callable[[str], None] | None) -> None:
+        self._context_action_handler = handler
 
     def configure_snap_to_grid(self, *, enabled: bool, grid_size: int) -> None:
         self._snap_to_grid_enabled = bool(enabled)
@@ -136,27 +161,116 @@ class FormCanvas(QWidget):
         if not class_name:
             event.ignore()
             return
-        if not self.insert_widget_by_class_name(class_name):
+        if self._insert_request_handler is None:
+            inserted, error_message = self.try_insert_widget_by_class_name(class_name)
+        else:
+            inserted, error_message = self._insert_request_handler(class_name)
+        if not inserted:
+            if error_message:
+                self.insert_rejected.emit(error_message)
             event.ignore()
             return
         event.acceptProposedAction()
 
+    def contextMenuEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if self._context_action_handler is None:
+            event.ignore()
+            return
+        menu = QMenu(self)
+        for action_id, label in (
+            ("designer.canvas.context.edit_text", "Edit Text…"),
+            ("designer.canvas.context.duplicate", "Duplicate Selection"),
+            ("designer.canvas.context.delete", "Delete Selection"),
+            ("designer.canvas.context.cut", "Cut"),
+            ("designer.canvas.context.copy", "Copy"),
+            ("designer.canvas.context.paste", "Paste"),
+            ("", ""),
+            ("designer.canvas.context.align_left", "Align Left"),
+            ("designer.canvas.context.align_hcenter", "Align Horizontal Centers"),
+            ("designer.canvas.context.align_right", "Align Right"),
+            ("designer.canvas.context.align_top", "Align Top"),
+            ("designer.canvas.context.align_vcenter", "Align Vertical Centers"),
+            ("designer.canvas.context.align_bottom", "Align Bottom"),
+            ("designer.canvas.context.distribute_horizontal", "Distribute Horizontally"),
+            ("designer.canvas.context.distribute_vertical", "Distribute Vertically"),
+            ("designer.canvas.context.adjust_size", "Adjust Size"),
+        ):
+            if not action_id:
+                menu.addSeparator()
+                continue
+            action = QAction(label, menu)
+            action.setData(action_id)
+            menu.addAction(action)
+        chosen = menu.exec_(event.globalPos())
+        if chosen is None:
+            return
+        action_id = chosen.data()
+        if not action_id:
+            return
+        self._context_action_handler(str(action_id))
+
     def insert_widget_by_class_name(self, class_name: str) -> bool:
+        inserted, _error_message = self.try_insert_widget_by_class_name(class_name)
+        return inserted
+
+    def try_insert_widget_by_class_name(self, class_name: str) -> tuple[bool, str]:
         if self._model is None:
-            return False
+            return False, "No form model loaded."
         definition = self._palette_registry.lookup(class_name)
         if definition is None:
-            return False
-        parent_name = (
-            self._selection_controller.selected_object_name
-            if self._selection_controller is not None and self._selection_controller.selected_object_name
-            else self._model.root_widget.object_name
-        )
-        inserted = self.insert_palette_widget(parent_object_name=parent_name, definition=definition)
+            return False, "Widget insertion is not allowed for the selected parent."
+        parent_name = self._resolve_insert_parent_object_name(definition)
+        if not parent_name:
+            return False, "Widget insertion is not allowed for the selected parent."
+        try:
+            inserted = self.insert_palette_widget(parent_object_name=parent_name, definition=definition)
+        except ValueError as exc:
+            return False, str(exc)
         inserted_name = getattr(inserted, "object_name", "")
         if inserted_name and self._selection_controller is not None:
             self._selection_controller.set_selected_object_name(inserted_name)
-        return True
+        return True, ""
+
+    def _resolve_insert_parent_object_name(self, definition: PaletteWidgetDefinition) -> str | None:
+        if self._model is None:
+            return None
+        for candidate in self._candidate_insert_parents():
+            if can_insert_widget(
+                parent_class_name=candidate.class_name,
+                child_class_name=definition.class_name,
+                is_layout_item=definition.is_layout_item,
+                parent_has_layout=candidate.layout is not None,
+            ):
+                return candidate.object_name
+        return None
+
+    def _candidate_insert_parents(self) -> list[WidgetNode]:
+        assert self._model is not None
+        root = self._model.root_widget
+        selected_name = None if self._selection_controller is None else self._selection_controller.selected_object_name
+        if not selected_name:
+            return [root]
+        selection_path = self._find_selection_path(root, selected_name)
+        if not selection_path:
+            return [root]
+        if selection_path[-1].object_name != root.object_name:
+            selection_path.append(root)
+        return selection_path
+
+    def _find_selection_path(self, current: WidgetNode, target_name: str) -> list[WidgetNode]:
+        if current.object_name == target_name:
+            return [current]
+        descendants: list[WidgetNode] = list(current.children)
+        if current.layout is not None:
+            descendants.extend(item.widget for item in current.layout.items if item.widget is not None)
+        for child in descendants:
+            if child is None:
+                continue
+            path = self._find_selection_path(child, target_name)
+            if path:
+                path.append(current)
+                return path
+        return []
 
     def _generate_unique_object_name(self, prefix: str) -> str:
         assert self._model is not None
@@ -201,6 +315,11 @@ class FormCanvas(QWidget):
         selected_items = self._canvas_tree.selectedItems()
         selected_names = [item.data(0, TREE_ROLE_OBJECT_NAME) for item in selected_items if item.data(0, TREE_ROLE_OBJECT_NAME)]
         self._selection_controller.set_selected_object_names(selected_names)
+
+    def _handle_tree_item_double_clicked(self, _item: QTreeWidgetItem, _column: int) -> None:
+        if self._context_action_handler is None:
+            return
+        self._context_action_handler("designer.canvas.context.edit_text")
 
     def _handle_controller_selection_changed(self, object_name: str) -> None:
         if self._selection_controller is not None and len(self._selection_controller.selected_object_names) > 1:

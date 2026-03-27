@@ -6,9 +6,10 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QComboBox
 
 from app.designer.connections.connection_editor_panel import ConnectionEditorPanel
+from app.designer.connections.signal_slot_metadata import ConnectionObjectOption
 from app.designer.model import ConnectionModel
 
 pytestmark = pytest.mark.unit
@@ -24,6 +25,12 @@ def _ensure_qapp():  # type: ignore[no-untyped-def]
 
 def test_connection_panel_binds_connections_and_emits_actions() -> None:
     panel = ConnectionEditorPanel()
+    panel.bind_connection_context(
+        [
+            ConnectionObjectOption(object_name="Form", class_name="QWidget"),
+            ConnectionObjectOption(object_name="pushButton", class_name="QPushButton"),
+        ]
+    )
     panel.bind_connections(
         [
             ConnectionModel(
@@ -52,6 +59,13 @@ def test_connection_panel_binds_connections_and_emits_actions() -> None:
 
 def test_connection_panel_emits_field_edits() -> None:
     panel = ConnectionEditorPanel()
+    panel.bind_connection_context(
+        [
+            ConnectionObjectOption(object_name="Form", class_name="QWidget"),
+            ConnectionObjectOption(object_name="pushButton", class_name="QPushButton"),
+            ConnectionObjectOption(object_name="lineEdit", class_name="QLineEdit"),
+        ]
+    )
     panel.bind_connections(
         [
             ConnectionModel(
@@ -65,8 +79,72 @@ def test_connection_panel_emits_field_edits() -> None:
     seen: list[tuple[int, str, str]] = []
     panel.connection_edited.connect(lambda idx, field, value: seen.append((idx, field, value)))
 
-    item = panel._table.item(0, 3)  # type: ignore[attr-defined]
-    assert item is not None
-    item.setText("reject()")
+    receiver_combo = panel._table.cellWidget(0, 2)  # type: ignore[attr-defined]
+    slot_combo = panel._table.cellWidget(0, 3)  # type: ignore[attr-defined]
+    assert receiver_combo is not None
+    assert slot_combo is not None
+    receiver_combo.setCurrentIndex(receiver_combo.findData("lineEdit"))
+    slot_combo.setCurrentIndex(slot_combo.findData("clear()"))
 
-    assert seen[-1] == (0, "slot", "reject()")
+    assert "receiver" in {entry[1] for entry in seen}
+    assert seen[-1] == (0, "slot", "clear()")
+
+
+def test_connection_panel_shows_validation_warning_for_incompatible_legacy_pair() -> None:
+    panel = ConnectionEditorPanel()
+    panel.bind_connection_context(
+        [
+            ConnectionObjectOption(object_name="Form", class_name="QWidget"),
+            ConnectionObjectOption(object_name="pushButton", class_name="QPushButton"),
+        ]
+    )
+    panel.bind_connections(
+        [
+            ConnectionModel(
+                sender="pushButton",
+                signal="clicked(bool)",
+                receiver="Form",
+                slot="setText(QString)",
+            )
+        ]
+    )
+
+    assert panel._validation_label.text() != ""  # type: ignore[attr-defined]
+    assert "Potential mismatch" in panel._validation_label.text()  # type: ignore[attr-defined]
+
+
+def test_connection_panel_slot_options_are_filtered_by_signal_signature() -> None:
+    panel = ConnectionEditorPanel()
+    panel.bind_connection_context(
+        [
+            ConnectionObjectOption(object_name="Form", class_name="QWidget"),
+            ConnectionObjectOption(object_name="pushButton", class_name="QPushButton"),
+            ConnectionObjectOption(object_name="lineEdit", class_name="QLineEdit"),
+        ]
+    )
+    panel.bind_connections(
+        [
+            ConnectionModel(
+                sender="pushButton",
+                signal="clicked()",
+                receiver="lineEdit",
+                slot="setText(QString)",
+            )
+        ]
+    )
+    seen: list[tuple[int, str, str]] = []
+    panel.connection_edited.connect(lambda idx, field, value: seen.append((idx, field, value)))
+
+    signal_combo = panel._table.cellWidget(0, 1)  # type: ignore[attr-defined]
+    slot_combo = panel._table.cellWidget(0, 3)  # type: ignore[attr-defined]
+    assert isinstance(signal_combo, QComboBox)
+    assert isinstance(slot_combo, QComboBox)
+    assert slot_combo.findData("setText(QString)") >= 0
+
+    signal_combo.setCurrentIndex(signal_combo.findData("clicked(bool)"))
+    assert slot_combo.findData("setText(QString)") == -1
+    slot_index = slot_combo.findData("setEnabled(bool)")
+    assert slot_index >= 0
+    slot_combo.setCurrentIndex(slot_index)
+
+    assert seen[-1] == (0, "slot", "setEnabled(bool)")

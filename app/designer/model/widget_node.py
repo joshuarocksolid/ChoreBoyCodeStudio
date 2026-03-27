@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.designer.model.action_model import AddActionModel
 from app.designer.model.property_value import PropertyValue
 
 
@@ -16,6 +17,7 @@ class WidgetNode:
     properties: dict[str, PropertyValue] = field(default_factory=dict)
     children: list["WidgetNode"] = field(default_factory=list)
     layout: "LayoutNode | None" = None
+    add_actions: list[AddActionModel] = field(default_factory=list)
     unknown_children_xml: list[str] = field(default_factory=list)
 
     def find_by_object_name(self, object_name: str) -> "WidgetNode | None":

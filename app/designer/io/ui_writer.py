@@ -6,14 +6,20 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from app.designer.model import (
+    ActionGroupModel,
+    ActionModel,
+    AddActionModel,
+    ButtonGroupModel,
     ConnectionModel,
     CustomWidgetModel,
+    DesignerActionNode,
     LayoutItem,
     LayoutNode,
     PropertyValue,
     ResourceModel,
     UIModel,
     WidgetNode,
+    ZOrderModel,
 )
 
 
@@ -33,6 +39,11 @@ def write_ui_string(model: UIModel) -> str:
     ui_element.append(_build_resources(model.resources))
     ui_element.append(_build_custom_widgets(model.custom_widgets))
     ui_element.append(_build_connections(model.connections))
+    _append_action_nodes(ui_element, list(model.actions))
+    _append_action_nodes(ui_element, list(model.action_groups))
+    _append_add_action_nodes(ui_element, model.add_actions)
+    _append_zorder_nodes(ui_element, model.zorders)
+    _append_button_group_nodes(ui_element, model.button_groups)
     _append_unknown_top_level_nodes(ui_element, model.unknown_top_level_xml)
     _indent_xml(ui_element)
     xml_body = ET.tostring(ui_element, encoding="unicode")
@@ -47,6 +58,8 @@ def _build_widget(widget: WidgetNode) -> ET.Element:
         element.append(_build_widget(child))
     if widget.layout is not None:
         element.append(_build_layout(widget.layout))
+    for add_action in widget.add_actions:
+        element.append(_build_add_action_node(add_action))
     _append_unknown_children(element, widget.unknown_children_xml)
     return element
 
@@ -54,7 +67,7 @@ def _build_widget(widget: WidgetNode) -> ET.Element:
 def _build_layout(layout: LayoutNode) -> ET.Element:
     element = ET.Element("layout", attrib={"class": layout.class_name, "name": layout.object_name})
     for item in layout.items:
-        item_element = ET.SubElement(element, "item")
+        item_element = ET.SubElement(element, "item", attrib=dict(item.attributes))
         _append_layout_item(item_element, item)
     _append_unknown_children(element, layout.unknown_children_xml)
     return element
@@ -77,6 +90,27 @@ def _build_property(property_name: str, property_value: PropertyValue) -> ET.Ele
     property_element = ET.Element("property", attrib={"name": property_name})
     value_type = property_value.value_type
     value = property_value.value
+    if value_type == "sizepolicy" and isinstance(value, dict):
+        size_policy = ET.SubElement(
+            property_element,
+            "sizepolicy",
+            attrib={
+                "hsizetype": str(value.get("hsizetype", "Preferred")),
+                "vsizetype": str(value.get("vsizetype", "Preferred")),
+            },
+        )
+        hor_stretch = ET.SubElement(size_policy, "horstretch")
+        hor_stretch.text = str(int(value.get("horstretch", 0)))
+        ver_stretch = ET.SubElement(size_policy, "verstretch")
+        ver_stretch.text = str(int(value.get("verstretch", 0)))
+        return property_element
+    if value_type == "size" and isinstance(value, dict):
+        size_element = ET.SubElement(property_element, "size")
+        width = ET.SubElement(size_element, "width")
+        width.text = str(int(value.get("width", 0)))
+        height = ET.SubElement(size_element, "height")
+        height.text = str(int(value.get("height", 0)))
+        return property_element
     if value_type == "rect" and isinstance(value, dict):
         rect_element = ET.SubElement(property_element, "rect")
         for field in ("x", "y", "width", "height"):
@@ -123,6 +157,60 @@ def _build_connections(connections: list[ConnectionModel]) -> ET.Element:
         slot = ET.SubElement(connection_element, "slot")
         slot.text = connection.slot
     return connections_element
+
+
+def _append_action_nodes(parent: ET.Element, actions: list[DesignerActionNode]) -> None:
+    for node in actions:
+        if isinstance(node, ActionModel):
+            parent.append(_build_action_node(node))
+            continue
+        if isinstance(node, ActionGroupModel):
+            parent.append(_build_action_group_node(node))
+
+
+def _append_add_action_nodes(parent: ET.Element, add_actions: list[AddActionModel]) -> None:
+    for add_action in add_actions:
+        parent.append(_build_add_action_node(add_action))
+
+
+def _build_action_node(action: ActionModel) -> ET.Element:
+    element = ET.Element("action", attrib={"name": action.name})
+    for prop_name in sorted(action.properties):
+        element.append(_build_property(prop_name, action.properties[prop_name]))
+    for add_action in action.add_actions:
+        element.append(_build_add_action_node(add_action))
+    _append_unknown_children(element, action.unknown_children_xml)
+    return element
+
+
+def _build_action_group_node(group: ActionGroupModel) -> ET.Element:
+    element = ET.Element("actiongroup", attrib={"name": group.name})
+    for prop_name in sorted(group.properties):
+        element.append(_build_property(prop_name, group.properties[prop_name]))
+    for add_action in group.add_actions:
+        element.append(_build_add_action_node(add_action))
+    _append_unknown_children(element, group.unknown_children_xml)
+    return element
+
+
+def _build_add_action_node(add_action: AddActionModel) -> ET.Element:
+    element = ET.Element("addaction", attrib={"name": add_action.name})
+    return element
+
+
+def _append_zorder_nodes(parent: ET.Element, zorders: list[ZOrderModel]) -> None:
+    for zorder in zorders:
+        element = ET.SubElement(parent, "zorder")
+        element.text = zorder.name
+
+
+def _append_button_group_nodes(parent: ET.Element, button_groups: list[ButtonGroupModel]) -> None:
+    for button_group in button_groups:
+        attributes = {"name": button_group.name}
+        if button_group.exclusive is not None:
+            attributes["exclusive"] = "true" if button_group.exclusive else "false"
+        element = ET.SubElement(parent, "buttongroup", attrib=attributes)
+        _append_unknown_children(element, button_group.unknown_children_xml)
 
 
 def _build_tab_stops(tab_stops: list[str]) -> ET.Element:
