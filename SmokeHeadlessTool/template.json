@@ -1,0 +1,6 @@
+{
+  "template_id": "headless_tool",
+  "display_name": "Headless FreeCAD Tool",
+  "description": "Starter tool for FreeCAD-safe headless automation.",
+  "template_version": 1
+}

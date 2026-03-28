@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "main.py",
+  "env_overrides": {},
+  "name": "SmokeUtilityScript",
+  "project_id": "proj_f6fdb5eecd274c07b038bb3d0b9ba10c",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "blank_project",
+  "working_directory": "."
+}

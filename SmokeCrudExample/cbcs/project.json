@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "main.py",
+  "env_overrides": {},
+  "name": "SmokeCrudExample",
+  "project_id": "proj_390fa9ee17d5467ba7a49482cb1d3526",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "crud_showcase",
+  "working_directory": "."
+}

@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "main.py",
+  "env_overrides": {},
+  "name": "SmokeQtApp",
+  "project_id": "proj_44920d26bc5a4091a96b2595a7d30fca",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "qt_app",
+  "working_directory": "."
+}
