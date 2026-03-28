@@ -38,6 +38,8 @@ Thumbs.db
 
 # ChoreBoy Code Studio runtime artifacts
 choreboy_code_studio_state/
+/cbcs/project.json
+/cbcs/session.json
 **/cbcs/runs/
 **/cbcs/logs/
 **/cbcs/cache/

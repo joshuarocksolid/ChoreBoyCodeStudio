@@ -47,4 +47,15 @@ def test_tools_menu_registers_highlighting_actions(_ensure_qapp) -> None:  # typ
     assert registry.action("shell.action.tools.setLanguageMode") is not None
     assert registry.action("shell.action.tools.clearLanguageOverride") is not None
     assert registry.action("shell.action.tools.inspectToken") is not None
+    assert registry.action("shell.action.tools.dependencyInspector") is not None
+    assert registry.action("shell.action.tools.addDependency") is not None
+
+
+def test_view_menu_registers_test_explorer_action(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    window = QMainWindow()
+    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+
+    action = registry.action("shell.action.view.showTestExplorer")
+    assert action is not None
+    assert action.text() == "Show Test Explorer"
 

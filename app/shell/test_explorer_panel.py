@@ -106,6 +106,7 @@ class TestExplorerPanel(QWidget):
         self._tree.clear()
         if not result.succeeded:
             self._status_label.setText(f"Discovery error: {result.error_message}")
+            self._run_failed_btn.setEnabled(False)
             return
 
         item_map: dict[str, QTreeWidgetItem] = {}
@@ -134,6 +135,7 @@ class TestExplorerPanel(QWidget):
 
         total = len(result.function_nodes())
         self._status_label.setText(f"{total} test(s) discovered")
+        self._run_failed_btn.setEnabled(any(v == "failed" for v in self._outcomes.values()))
 
     def update_outcomes(self, outcomes: dict[str, str]) -> None:
         """Update per-test outcome indicators."""
@@ -141,6 +143,12 @@ class TestExplorerPanel(QWidget):
         self._update_outcome_display()
         has_failures = any(v == "failed" for v in self._outcomes.values())
         self._run_failed_btn.setEnabled(has_failures)
+
+    def set_outcomes(self, outcomes: dict[str, str]) -> None:
+        """Replace all tracked outcomes and refresh indicator state."""
+        self._outcomes = dict(outcomes)
+        self._update_outcome_display()
+        self._run_failed_btn.setEnabled(any(v == "failed" for v in self._outcomes.values()))
 
     def failed_node_ids(self) -> list[str]:
         """Return node IDs of tests that last failed."""

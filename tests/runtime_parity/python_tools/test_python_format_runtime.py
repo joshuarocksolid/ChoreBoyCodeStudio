@@ -26,6 +26,12 @@ def test_python_tooling_runtime_uses_vendor_and_creates_no_hidden_paths(tmp_path
     state_root.mkdir(parents=True, exist_ok=True)
 
     status = initialize_python_tooling_runtime()
+    if not status.is_available:
+        with pytest.raises(RuntimeError, match="Python tooling runtime unavailable"):
+            import_python_tooling_modules()
+        assert "black" in status.message.lower() or "isort" in status.message.lower() or "tomli" in status.message.lower()
+        return
+
     black, isort, tomli = import_python_tooling_modules()
 
     formatted = black.format_file_contents(

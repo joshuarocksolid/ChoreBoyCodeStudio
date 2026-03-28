@@ -270,3 +270,15 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
     ]
     assert deleted == []
     assert window_any._active_transient_entry_file_path == "/tmp/transient.py"
+
+
+def test_handle_rerun_last_debug_target_replays_test_node_debug() -> None:
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    calls: list[str] = []
+    window_any._last_debug_target = {"kind": "test_node", "node_id": "tests/test_demo.py::test_it"}
+    window_any._handle_debug_test_node_action = lambda node_id: calls.append(node_id)
+
+    MainWindow._handle_rerun_last_debug_target_action(window)
+
+    assert calls == ["tests/test_demo.py::test_it"]

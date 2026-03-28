@@ -95,7 +95,8 @@ from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
-from app.run.test_runner_service import PytestRunResult, run_pytest_project, run_pytest_target
+from app.run.test_discovery_service import DiscoveryResult, discover_tests, parse_test_results
+from app.run.test_runner_service import PytestRunResult
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
@@ -183,10 +184,13 @@ from app.shell.icon_provider import (
     refresh_icon,
 )
 from app.shell.activity_bar import ActivityBar
-from app.shell.icons import explorer_icon, search_icon
+from app.shell.icons import explorer_icon, search_icon, test_icon
+from app.shell.test_explorer_panel import TestExplorerPanel
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.plugins_panel import PluginManagerDialog
+from app.shell.dependency_panel import DependencyInspectorDialog
+from app.shell.dependency_wizard_dialog import AddDependencyWizardDialog
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.package_wizard_dialog import PackageProjectWizard
 from app.shell.python_console_history import load_python_console_history, save_python_console_history
@@ -337,9 +341,11 @@ class MainWindow(QMainWindow):
         self._activity_bar: ActivityBar | None = None
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
+        self._test_explorer_panel: TestExplorerPanel | None = None
         self._quick_open_dialog: QuickOpenDialog | None = None
         self._history_restore_picker_dialog: HistoryRestorePickerDialog | None = None
         self._plugin_manager_dialog: PluginManagerDialog | None = None
+        self._dependency_inspector_dialog: DependencyInspectorDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
         self._run_log_panel: RunLogPanel | None = None
         self._python_console_widget: PythonConsoleWidget | None = None
@@ -356,6 +362,8 @@ class MainWindow(QMainWindow):
         ) = self._load_runtime_onboarding_state()
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
+        self._test_discovery_result = DiscoveryResult()
+        self._test_outcomes_by_node_id: dict[str, str] = {}
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
             state_root=self._state_root,
         )
@@ -635,6 +643,8 @@ class MainWindow(QMainWindow):
                 on_lint_current_file=self._handle_lint_current_file_action,
                 on_apply_safe_fixes=self._handle_apply_safe_fixes_action,
                 on_open_plugin_manager=self._handle_open_plugin_manager_action,
+                on_open_dependency_inspector=self._handle_open_dependency_inspector_action,
+                on_add_dependency=self._handle_add_dependency_action,
                 on_rebuild_intelligence_cache=self._handle_rebuild_intelligence_cache_action,
                 on_refresh_runtime_modules=self._handle_refresh_runtime_modules_action,
                 on_runtime_center=self._handle_runtime_center_action,
@@ -649,6 +659,7 @@ class MainWindow(QMainWindow):
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
+                on_show_test_explorer=self._handle_show_test_explorer_action,
                 on_find_references=self._handle_find_references_action,
                 on_rename_symbol=self._handle_rename_symbol_action,
                 on_toggle_comment=self._handle_toggle_comment_action,
@@ -702,6 +713,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_test_discovery_async()
         self._reload_plugin_contributions()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
@@ -1094,6 +1106,21 @@ class MainWindow(QMainWindow):
                     text_primary=tokens.text_primary,
                     text_muted=tokens.text_muted,
                     badge_bg=tokens.badge_bg,
+                )
+            if self._activity_bar is not None:
+                normal = QColor(tokens.text_muted)
+                active = QColor(tokens.text_primary)
+                self._activity_bar.set_view_icon(
+                    "explorer",
+                    explorer_icon(color_normal=normal, color_active=active),
+                )
+                self._activity_bar.set_view_icon(
+                    "search",
+                    search_icon(color_normal=normal, color_active=active),
+                )
+                self._activity_bar.set_view_icon(
+                    "test_explorer",
+                    test_icon(color_normal=normal, color_active=active),
                 )
         finally:
             self._is_applying_theme_styles = False
@@ -1895,6 +1922,22 @@ class MainWindow(QMainWindow):
         if self._search_sidebar is not None and initial:
             self._search_sidebar.focus_search(initial)
 
+    def _handle_show_test_explorer_action(self) -> None:
+        if self._loaded_project is None:
+            QMessageBox.warning(self, "Test Explorer", "Open a project first.")
+            return
+        self._show_test_explorer_panel()
+        self._refresh_test_discovery_async()
+
+    def _show_test_explorer_panel(self) -> None:
+        if self._activity_bar is None:
+            return
+        self._activity_bar.set_active_view("test_explorer")
+        self._handle_sidebar_view_changed("test_explorer")
+
+    def _handle_test_explorer_navigate_to_test(self, file_path: str, line_number: int) -> None:
+        self._open_file_at_line(file_path, line_number, preview=False)
+
     def _handle_find_references_action(self) -> None:
         if self._loaded_project is None:
             QMessageBox.warning(self, "Find References", "Open a project first.")
@@ -2602,6 +2645,7 @@ class MainWindow(QMainWindow):
             )
         )
         self._persist_last_project_path(loaded_project.project_root)
+        self._refresh_test_discovery_async()
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
@@ -2814,6 +2858,7 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
             self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
+            self._refresh_test_discovery_async()
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
 
@@ -3547,6 +3592,147 @@ class MainWindow(QMainWindow):
         if started:
             self._last_debug_target = {"kind": "current_test", "target_path": str(target_path)}
 
+    def _refresh_test_discovery_async(self) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            self._test_discovery_result = DiscoveryResult()
+            self._test_outcomes_by_node_id.clear()
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.update_discovery(self._test_discovery_result)
+                self._test_explorer_panel.set_outcomes({})
+            return
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return discover_tests(loaded_project.project_root)
+
+        def on_success(result) -> None:  # type: ignore[no-untyped-def]
+            self._test_discovery_result = result
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.update_discovery(result)
+                self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Test discovery failed: %s", exc)
+            self._test_discovery_result = DiscoveryResult(error_message=str(exc))
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.update_discovery(self._test_discovery_result)
+                self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
+
+        self._background_tasks.run(
+            key="test_discovery",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _update_test_outcomes_from_pytest(self, result: PytestRunResult) -> None:
+        if not self._test_discovery_result.nodes:
+            return
+        parsed = parse_test_results(result.stdout)
+        if not parsed:
+            return
+        outcome_map = {item.node_id: item.outcome for item in parsed}
+        for node in self._test_discovery_result.function_nodes():
+            outcome = outcome_map.get(node.node_id)
+            if outcome is not None:
+                self._test_outcomes_by_node_id[node.node_id] = outcome
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
+
+    def _handle_run_test_node_action(self, node_id: str) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run Test", "Open a project first.")
+            return
+        normalized_node = node_id.strip()
+        if not normalized_node:
+            return
+        self._append_console_line(f"Running pytest node {normalized_node}", stream="system")
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_pytest_with_workflow(
+                self._workflow_broker,
+                project_root=loaded_project.project_root,
+                target_node_id=normalized_node,
+            )
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            provider, result = payload
+            self._append_console_line(f"Pytest node run completed via {provider.title}", stream="system")
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Pytest node run failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Run Test", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_node",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_run_failed_tests_action(self) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Rerun Failed", "Open a project first.")
+            return
+        failed_node_ids = [node_id for node_id, outcome in self._test_outcomes_by_node_id.items() if outcome == "failed"]
+        if not failed_node_ids:
+            QMessageBox.information(self, "Rerun Failed", "No failed tests recorded yet.")
+            return
+        self._append_console_line(f"Rerunning failed pytest nodes ({len(failed_node_ids)})", stream="system")
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return run_pytest_with_workflow(
+                self._workflow_broker,
+                project_root=loaded_project.project_root,
+                pytest_args=["-v"] + failed_node_ids,
+            )
+
+        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            provider, result = payload
+            self._append_console_line(f"Rerun failed completed via {provider.title}", stream="system")
+            self._handle_pytest_run_result(result)
+
+        def on_error(exc: Exception) -> None:
+            self._append_console_line(f"Rerun failed failed to start: {exc}", stream="stderr")
+            QMessageBox.warning(self, "Rerun Failed", f"Pytest run failed: {exc}")
+
+        self._background_tasks.run(
+            key="run_pytest_failed",
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _handle_debug_test_node_action(self, node_id: str) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Debug Test", "Open a project first.")
+            return
+        normalized_node = node_id.strip()
+        if not normalized_node:
+            return
+        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
+        run_tests_path = project_root_path / "run_tests.py"
+        if not run_tests_path.is_file():
+            QMessageBox.warning(
+                self,
+                "Debug Test",
+                "This project does not contain `run_tests.py`, so the pytest debug flow is unavailable.",
+            )
+            return
+        started = self._start_session(
+            mode=constants.RUN_MODE_PYTHON_DEBUG,
+            entry_file=str(run_tests_path),
+            argv=["-q", "--import-mode=importlib", normalized_node],
+            breakpoints=self._build_debug_breakpoints_for_launch(),
+            debug_exception_policy=self._debug_exception_policy,
+        )
+        if started:
+            self._last_debug_target = {"kind": "test_node", "node_id": normalized_node}
+
     def _handle_rerun_last_debug_target_action(self) -> None:
         target = self._last_debug_target
         if not target:
@@ -3576,6 +3762,11 @@ class MainWindow(QMainWindow):
                 if index >= 0:
                     self._editor_tabs_widget.setCurrentIndex(index)
             self._handle_debug_pytest_current_file_action()
+            return
+        if kind == "test_node":
+            node_id = str(target.get("node_id", "")).strip()
+            if node_id:
+                self._handle_debug_test_node_action(node_id)
 
     def _handle_run_with_configuration_action(self) -> None:
         if self._loaded_project is None:
@@ -3778,6 +3969,7 @@ class MainWindow(QMainWindow):
             f"Pytest run {status} (code={result.return_code}, elapsed_ms={result.elapsed_ms:.2f}).",
             stream="system",
         )
+        self._update_test_outcomes_from_pytest(result)
 
     def _handle_start_python_console_action(self) -> bool:
         self._repl_manager.restart()
@@ -4139,6 +4331,43 @@ class MainWindow(QMainWindow):
         self._plugin_manager_dialog.show()
         self._plugin_manager_dialog.raise_()
         self._plugin_manager_dialog.activateWindow()
+
+    def _handle_open_dependency_inspector_action(self) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Dependency Inspector", "Open a project first.")
+            return
+        dialog = self._dependency_inspector_dialog
+        project_root = loaded_project.project_root
+        if dialog is None or getattr(dialog, "_project_root", "") != project_root:
+            dialog = DependencyInspectorDialog(project_root=project_root, parent=self)
+            dialog.finished.connect(lambda _result: setattr(self, "_dependency_inspector_dialog", None))
+            dialog.dependency_changed.connect(self._reload_current_project)
+            self._dependency_inspector_dialog = dialog
+        dialog.refresh()
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _handle_add_dependency_action(self) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Add Dependency", "Open a project first.")
+            return
+        dialog = AddDependencyWizardDialog(project_root=loaded_project.project_root, parent=self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        result = dialog.last_result
+        if result is None:
+            return
+        QMessageBox.information(
+            self,
+            "Add Dependency",
+            f"Added dependency '{result.name}' ({result.classification}).",
+        )
+        self._reload_current_project()
+        if self._dependency_inspector_dialog is not None:
+            self._dependency_inspector_dialog.refresh()
 
     def _handle_plugin_safe_mode_changed(self, enabled: bool) -> None:
         self._set_plugin_safe_mode(enabled)
@@ -5501,8 +5730,24 @@ class MainWindow(QMainWindow):
         tokens = self._resolve_theme_tokens()
         normal = QColor(tokens.text_muted)
         active = QColor(tokens.text_primary)
-        self._activity_bar.add_view("explorer", "\U0001F4C1", "Explorer", icon=explorer_icon(color_normal=normal, color_active=active))
-        self._activity_bar.add_view("search", "\U0001F50D", "Search", icon=search_icon(color_normal=normal, color_active=active))
+        self._activity_bar.add_view(
+            "explorer",
+            "\U0001F4C1",
+            "Explorer",
+            icon=explorer_icon(color_normal=normal, color_active=active),
+        )
+        self._activity_bar.add_view(
+            "search",
+            "\U0001F50D",
+            "Search",
+            icon=search_icon(color_normal=normal, color_active=active),
+        )
+        self._activity_bar.add_view(
+            "test_explorer",
+            "\U0001F9EA",
+            "Test Explorer",
+            icon=test_icon(color_normal=normal, color_active=active),
+        )
         self._activity_bar.view_changed.connect(self._handle_sidebar_view_changed)
         outer_layout.addWidget(self._activity_bar)
 
@@ -5517,6 +5762,14 @@ class MainWindow(QMainWindow):
         self._search_sidebar.preview_file_at_line.connect(self._handle_search_preview_file_at_line)
         self._search_sidebar.open_file_at_line.connect(self._handle_search_open_file_at_line)
         self._sidebar_stack.addWidget(self._search_sidebar)
+
+        self._test_explorer_panel = TestExplorerPanel(panel)
+        self._test_explorer_panel.run_test_requested.connect(self._handle_run_test_node_action)
+        self._test_explorer_panel.debug_test_requested.connect(self._handle_debug_test_node_action)
+        self._test_explorer_panel.run_all_requested.connect(self._handle_run_pytest_project_action)
+        self._test_explorer_panel.run_failed_requested.connect(self._handle_run_failed_tests_action)
+        self._test_explorer_panel.navigate_to_test.connect(self._handle_test_explorer_navigate_to_test)
+        self._sidebar_stack.addWidget(self._test_explorer_panel)
 
         self._sidebar_stack.setCurrentIndex(0)
         panel.setMinimumWidth(220)
@@ -5592,6 +5845,8 @@ class MainWindow(QMainWindow):
             self._sidebar_stack.setCurrentIndex(1)
             if self._search_sidebar is not None:
                 self._search_sidebar.focus_search()
+        elif view_id == "test_explorer":
+            self._sidebar_stack.setCurrentIndex(2)
 
     def _handle_search_open_file_at_line(self, file_path: str, line_number: int) -> None:
         self._open_file_at_line(file_path, line_number, preview=False)
@@ -5934,13 +6189,29 @@ class MainWindow(QMainWindow):
                 entries.append((abs_path, rel_path, is_dir))
         return entries
 
+    def _tree_item_entry(self, item: QTreeWidgetItem | None) -> tuple[str, str, bool] | None:
+        if item is None:
+            return None
+        abs_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
+        if not abs_path:
+            return None
+        rel_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+        is_dir = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
+        return (abs_path, rel_path, is_dir)
+
     def _show_project_tree_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
         if self._project_tree_widget is None:
             return
         item = self._project_tree_widget.itemAt(position)
         if item is None:
             return
-
+        clicked_entry = self._tree_item_entry(item)
+        if clicked_entry is None:
+            return
+        if not item.isSelected():
+            self._project_tree_widget.clearSelection()
+            item.setSelected(True)
+            self._project_tree_widget.setCurrentItem(item)
         selected = self._get_selected_tree_paths()
         if not selected:
             return
@@ -5948,7 +6219,7 @@ class MainWindow(QMainWindow):
         if len(selected) > 1:
             self._show_bulk_context_menu(position, selected)
         else:
-            self._show_single_item_context_menu(position, selected[0])
+            self._show_single_item_context_menu(position, clicked_entry)
 
     def _show_single_item_context_menu(
         self, position: object, entry: tuple[str, str, bool],
@@ -6296,6 +6567,7 @@ class MainWindow(QMainWindow):
             )
         self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
+        self._refresh_test_discovery_async()
 
     def _open_file_in_editor(self, file_path: str, *, preview: bool = False) -> bool:
         if self._editor_tabs_widget is None:

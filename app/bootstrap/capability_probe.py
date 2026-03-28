@@ -186,6 +186,11 @@ def check_python_tooling_runtime() -> CapabilityCheckResult:
         "black_available": runtime_status.black_available,
         "isort_available": runtime_status.isort_available,
         "tomli_available": runtime_status.tomli_available,
+        "black_error": runtime_status.black_error,
+        "isort_error": runtime_status.isort_error,
+        "tomli_error": runtime_status.tomli_error,
+        "black_missing_apis": list(runtime_status.black_missing_apis),
+        "isort_missing_apis": list(runtime_status.isort_missing_apis),
     }
     if not runtime_status.is_available:
         return CapabilityCheckResult(
@@ -195,7 +200,15 @@ def check_python_tooling_runtime() -> CapabilityCheckResult:
             details=details,
         )
 
-    black_module, isort_module, tomli_module = import_python_tooling_modules()
+    try:
+        black_module, isort_module, tomli_module = import_python_tooling_modules()
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=PYTHON_TOOLING_RUNTIME_CHECK_ID,
+            is_available=False,
+            message=f"Vendored Python format/import tooling is unavailable: {exc}",
+            details=details,
+        )
     details.update(
         {
             "black_version": getattr(black_module, "__version__", ""),

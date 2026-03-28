@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from app.run.test_runner_service import parse_pytest_failures, run_pytest_project, run_pytest_target
+from app.run.test_runner_service import parse_pytest_failures, run_pytest_args, run_pytest_project, run_pytest_target
 
 pytestmark = pytest.mark.unit
 
@@ -86,6 +86,43 @@ def test_run_pytest_target_includes_target_argument(
     assert result.return_code == 0
     assert captured_command[:7] == ["/usr/bin/python3", "-m", "pytest", "-q", "--import-mode=importlib", "-p", "no:cacheprovider"]
     assert captured_command[-1] == str(target.resolve())
+
+
+def test_run_pytest_args_passes_through_explicit_pytest_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    captured_command: list[str] = []
+
+    def fake_run(*args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal captured_command
+        captured_command = list(args[0])
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="1 passed",
+            stderr="",
+        )
+
+    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/usr/bin/python3")
+    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+
+    result = run_pytest_args(str(project_root), ["-v", "tests/test_sample.py::test_ok"])
+
+    assert result.return_code == 0
+    assert captured_command == [
+        "/usr/bin/python3",
+        "-m",
+        "pytest",
+        "-v",
+        "--import-mode=importlib",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_sample.py::test_ok",
+    ]
 
 
 def test_run_pytest_project_uses_run_tests_py_when_present(

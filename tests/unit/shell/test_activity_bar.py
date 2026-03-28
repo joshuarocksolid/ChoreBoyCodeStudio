@@ -92,3 +92,25 @@ class TestActivityBar:
         btn = bar._buttons["explorer"]
         assert btn.icon().isNull()
         assert btn.text() == "E"
+
+    def test_set_view_icon_updates_existing_button_icon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        from PySide2.QtGui import QIcon, QPixmap
+
+        bar = ActivityBar()
+        bar.add_view("explorer", "E", "Explorer")
+        icon = QIcon(QPixmap(20, 20))
+
+        bar.set_view_icon("explorer", icon)
+
+        assert not bar._buttons["explorer"].icon().isNull()
+
+    def test_set_view_icon_ignores_missing_view_id(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        from PySide2.QtGui import QIcon, QPixmap
+
+        bar = ActivityBar()
+        bar.add_view("explorer", "E", "Explorer")
+        icon = QIcon(QPixmap(20, 20))
+
+        bar.set_view_icon("search", icon)
+
+        assert "search" not in bar._buttons

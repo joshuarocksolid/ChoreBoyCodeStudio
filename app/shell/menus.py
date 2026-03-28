@@ -43,6 +43,7 @@ class MenuCallbacks:
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None
     on_find_in_files: Callable[[], object] | None = None
+    on_show_test_explorer: Callable[[], object] | None = None
     on_find_references: Callable[[], object] | None = None
     on_rename_symbol: Callable[[], object] | None = None
     on_toggle_comment: Callable[[], object] | None = None
@@ -91,6 +92,8 @@ class MenuCallbacks:
     on_lint_current_file: Callable[[], object] | None = None
     on_apply_safe_fixes: Callable[[], object] | None = None
     on_open_plugin_manager: Callable[[], object] | None = None
+    on_open_dependency_inspector: Callable[[], object] | None = None
+    on_add_dependency: Callable[[], object] | None = None
     on_rebuild_intelligence_cache: Callable[[], object] | None = None
     on_refresh_runtime_modules: Callable[[], object] | None = None
     on_runtime_center: Callable[[], object] | None = None
@@ -644,6 +647,16 @@ def build_menu_stubs(
         "Reset Layout",
         callback=callback_registry.on_reset_layout,
     )
+    _register_menu_action(
+        view_menu,
+        actions,
+        "shell.action.view.showTestExplorer",
+        "Show Test Explorer",
+        "Ctrl+Shift+X",
+        enabled=True,
+        callback=callback_registry.on_show_test_explorer,
+        shortcut_overrides=shortcut_overrides,
+    )
     view_menu.addSeparator()
     theme_menu = view_menu.addMenu("Theme")
     theme_menu.setObjectName("shell.menu.view.theme")
@@ -709,6 +722,22 @@ def build_menu_stubs(
         "Plugin Manager...",
         enabled=True,
         callback=callback_registry.on_open_plugin_manager,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.dependencyInspector",
+        "Dependency Inspector...",
+        enabled=True,
+        callback=callback_registry.on_open_dependency_inspector,
+    )
+    _register_menu_action(
+        tools_menu,
+        actions,
+        "shell.action.tools.addDependency",
+        "Add Dependency...",
+        enabled=True,
+        callback=callback_registry.on_add_dependency,
     )
     tools_menu.addSeparator()
     _register_menu_action(
