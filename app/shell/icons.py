@@ -82,6 +82,38 @@ def _draw_search(painter: QPainter, size: int, color: QColor) -> None:
     painter.drawLine(QPointF(cx, cy), QPointF(end_x, end_y))
 
 
+def _draw_test_flask(painter: QPainter, size: int, color: QColor) -> None:
+    pen = QPen(color, 1.4)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+
+    m = size * 0.2
+    neck_left = size * 0.42
+    neck_right = size * 0.58
+    neck_top = m
+    neck_bottom = size * 0.42
+    base_bottom = size - m
+    base_left = size * 0.24
+    base_right = size * 0.76
+
+    painter.drawLine(QPointF(neck_left, neck_top), QPointF(neck_left, neck_bottom))
+    painter.drawLine(QPointF(neck_right, neck_top), QPointF(neck_right, neck_bottom))
+    painter.drawLine(QPointF(neck_left, neck_top), QPointF(neck_right, neck_top))
+
+    flask = QPolygonF(
+        [
+            QPointF(neck_left, neck_bottom),
+            QPointF(base_left, base_bottom),
+            QPointF(base_right, base_bottom),
+            QPointF(neck_right, neck_bottom),
+        ]
+    )
+    painter.drawPolyline(flask)
+    painter.drawLine(QPointF(base_left, base_bottom), QPointF(base_right, base_bottom))
+
+
 def explorer_icon(
     size: int = 20,
     *,
@@ -102,3 +134,14 @@ def search_icon(
     cn = color_normal or QColor("#ADB5BD")
     ca = color_active or QColor("#E9ECEF")
     return _build_icon(_draw_search, size, cn, ca)
+
+
+def test_icon(
+    size: int = 20,
+    *,
+    color_normal: QColor | None = None,
+    color_active: QColor | None = None,
+) -> QIcon:
+    cn = color_normal or QColor("#ADB5BD")
+    ca = color_active or QColor("#E9ECEF")
+    return _build_icon(_draw_test_flask, size, cn, ca)

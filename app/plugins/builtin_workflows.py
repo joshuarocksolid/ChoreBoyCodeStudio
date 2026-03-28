@@ -15,6 +15,7 @@ from app.python_tools.models import PythonTextTransformResult
 from app.run.problem_parser import ProblemEntry
 from app.run.test_runner_service import (
     PytestRunResult,
+    run_pytest_args,
     run_pytest_project,
     run_pytest_target,
 )
@@ -154,13 +155,26 @@ def _run_builtin_pytest_job(
     _ = is_cancelled
     project_root = _require_string(request, "project_root")
     target_path = _optional_string(request, "target_path")
+    target_node_id = _optional_string(request, "target_node_id")
+    explicit_pytest_args = _string_list(request.get("pytest_args"))
     timeout_seconds = int(request.get("timeout_seconds", 300))
-    emit_event("job_started", {"project_root": project_root, "target_path": target_path})
-    result = (
-        run_pytest_target(project_root, target_path, timeout_seconds=timeout_seconds)
-        if target_path
-        else run_pytest_project(project_root, timeout_seconds=timeout_seconds)
+    emit_event(
+        "job_started",
+        {
+            "project_root": project_root,
+            "target_path": target_path,
+            "target_node_id": target_node_id,
+            "pytest_args": list(explicit_pytest_args),
+        },
     )
+    if explicit_pytest_args:
+        result = run_pytest_args(project_root, list(explicit_pytest_args), timeout_seconds=timeout_seconds)
+    elif target_node_id:
+        result = run_pytest_args(project_root, ["-v", target_node_id], timeout_seconds=timeout_seconds)
+    elif target_path:
+        result = run_pytest_target(project_root, target_path, timeout_seconds=timeout_seconds)
+    else:
+        result = run_pytest_project(project_root, timeout_seconds=timeout_seconds)
     emit_event(
         "job_finished",
         {
@@ -322,6 +336,12 @@ def _mapping_value(payload: Mapping[str, Any], key: str) -> Mapping[str, Any] | 
     if isinstance(value, dict):
         return value
     return None
+
+
+def _string_list(raw_value: Any) -> list[str]:
+    if not isinstance(raw_value, list):
+        return []
+    return [item for item in raw_value if isinstance(item, str)]
 
 
 def _parse_project_metadata(raw_value: Any) -> ProjectMetadata | None:

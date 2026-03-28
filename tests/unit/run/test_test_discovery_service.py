@@ -7,6 +7,7 @@ from app.run.test_discovery_service import (
     DiscoveredTestNode,
     DiscoveredTestResult,
     DiscoveryResult,
+    _build_collect_command,
     _parse_collect_output,
     parse_test_results,
 )
@@ -68,6 +69,22 @@ tests/test_foo.py::test_bar
     func_nodes = [n for n in nodes if n.kind == "function"]
     assert len(func_nodes) == 1
     assert func_nodes[0].name == "test_bar"
+
+
+def test_build_collect_command_resolves_default_runtime_when_given_project_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved_inputs: list[object] = []
+
+    monkeypatch.setattr(
+        "app.run.test_discovery_service.resolve_runtime_executable",
+        lambda runtime_executable: resolved_inputs.append(runtime_executable) or "/usr/bin/python3",
+    )
+
+    command = _build_collect_command(project_root="/tmp/project")
+
+    assert resolved_inputs == [None]
+    assert command[:3] == ["/usr/bin/python3", "-m", "pytest"]
 
 
 # ---------------------------------------------------------------------------

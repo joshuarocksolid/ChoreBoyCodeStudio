@@ -55,6 +55,14 @@ class ActivityBar(QWidget):
         for vid, btn in self._buttons.items():
             btn.setChecked(vid == view_id)
 
+    def set_view_icon(self, view_id: str, icon: QIcon) -> None:
+        """Update icon for an existing view button."""
+        button = self._buttons.get(view_id)
+        if button is None or icon.isNull():
+            return
+        button.setIcon(icon)
+        button.setIconSize(QSize(20, 20))
+
     def active_view(self) -> str:
         return self._active_view
 

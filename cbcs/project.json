@@ -1,0 +1,12 @@
+{
+  "default_argv": [],
+  "default_entry": "dev_launch_editor.py",
+  "env_overrides": {},
+  "name": "workspace",
+  "project_id": "proj_928d1603596145e3b0ec3157af453542",
+  "project_notes": "",
+  "run_configs": [],
+  "schema_version": 1,
+  "template": "imported_external",
+  "working_directory": "."
+}

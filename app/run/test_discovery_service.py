@@ -106,7 +106,7 @@ def parse_test_results(output: str) -> list[DiscoveredTestResult]:
 
 
 def _build_collect_command(*, project_root: str) -> list[str]:
-    runtime_executable = resolve_runtime_executable(project_root)
+    runtime_executable = resolve_runtime_executable(None)
     args = ["--collect-only", "-q", "--import-mode=importlib"]
 
     if is_freecad_runtime_executable(runtime_executable):

@@ -94,15 +94,20 @@ def run_pytest_with_workflow(
     *,
     project_root: str,
     target_path: str | None = None,
+    target_node_id: str | None = None,
+    pytest_args: list[str] | None = None,
     timeout_seconds: int = 300,
     preferred_provider_key: str | None = None,
     on_event=None,
 ) -> tuple[WorkflowProviderDescriptor, PytestRunResult]:
+    normalized_pytest_args = [str(arg) for arg in (pytest_args or []) if str(arg).strip()]
     descriptor, result = broker.run_job(
         kind=constants.WORKFLOW_PROVIDER_KIND_TEST,
         request={
             "project_root": project_root,
             "target_path": target_path,
+            "target_node_id": target_node_id,
+            "pytest_args": normalized_pytest_args,
             "timeout_seconds": timeout_seconds,
         },
         preferred_provider_key=preferred_provider_key,

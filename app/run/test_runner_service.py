@@ -97,6 +97,13 @@ def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: i
     return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
 
 
+def run_pytest_args(project_root: str, pytest_args: list[str], *, timeout_seconds: int = 300) -> PytestRunResult:
+    """Run pytest with explicit argument list."""
+    normalized_root = str(Path(project_root).expanduser().resolve())
+    command = _build_pytest_command(project_root=normalized_root, pytest_args=pytest_args)
+    return _run_pytest_command(normalized_root, command, timeout_seconds=timeout_seconds)
+
+
 def _build_pytest_command(*, project_root: str, pytest_args: list[str]) -> list[str]:
     runtime_executable = _select_pytest_runtime(project_root=project_root)
     normalized_args = _normalized_pytest_args(pytest_args)

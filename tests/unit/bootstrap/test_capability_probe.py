@@ -180,6 +180,11 @@ def test_check_python_tooling_runtime_reports_versions_when_ready(monkeypatch: p
             black_available=True,
             isort_available=True,
             tomli_available=True,
+            black_error=None,
+            isort_error=None,
+            tomli_error=None,
+            black_missing_apis=(),
+            isort_missing_apis=(),
             message="ready",
         ),
     )
@@ -199,6 +204,35 @@ def test_check_python_tooling_runtime_reports_versions_when_ready(monkeypatch: p
     assert result.details["black_version"] == "25.11.0"
     assert result.details["isort_version"] == "6.1.0"
     assert result.details["tomli_version"] == "2.3.0"
+
+
+def test_check_python_tooling_runtime_reports_api_integrity_details_when_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        capability_probe,
+        "initialize_python_tooling_runtime",
+        lambda: SimpleNamespace(
+            is_available=False,
+            vendor_root=Path("/tmp/vendor"),
+            black_available=False,
+            isort_available=True,
+            tomli_available=True,
+            black_error=None,
+            isort_error=None,
+            tomli_error=None,
+            black_missing_apis=("Mode", "format_file_contents"),
+            isort_missing_apis=(),
+            message="Python tooling runtime unavailable: black missing APIs (Mode, format_file_contents)",
+        ),
+    )
+
+    result = capability_probe.check_python_tooling_runtime()
+
+    assert result.check_id == capability_probe.PYTHON_TOOLING_RUNTIME_CHECK_ID
+    assert result.is_available is False
+    assert result.details["black_missing_apis"] == ["Mode", "format_file_contents"]
+    assert result.details["isort_missing_apis"] == []
 
 
 def test_run_startup_capability_probe_returns_structured_failures_instead_of_raising(

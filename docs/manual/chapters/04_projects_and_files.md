@@ -20,6 +20,25 @@ Use `File > Open Recent`.
 
 This is the fastest way to get back to current work.
 
+## Test Explorer
+
+Use `View > Show Test Explorer` (shortcut: `Ctrl+Shift+X`) to open the Test Explorer in the left sidebar.
+
+From this panel you can:
+
+- Discover project tests
+- Run all tests
+- Re-run failed tests
+- Run or debug specific tests from the tree
+
+The test tree updates after project loads and Python file saves.
+
+## Dependency tools
+
+Use `Tools > Dependency Inspector...` to review dependencies configured for the current project.
+
+Use `Tools > Add Dependency...` to add a local package archive (`.whl` / `.zip`) or a package folder to your project.
+
 ## File tree actions
 
 Right-click files/folders in the tree for actions like:
