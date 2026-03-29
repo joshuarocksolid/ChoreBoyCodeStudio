@@ -102,8 +102,8 @@ def test_installed_launcher_bootstrap_runs_under_apprun_with_absolute_install_ro
         default_install_dirname="installed_test_v1.0.0",
         staging_parent="/home/default",
         app_run_path=constants.APP_RUN_PATH,
-        write_menu_entry=True,
-        write_desktop_shortcut=False,
+        write_menu_entry=False,
+        write_desktop_shortcut=True,
         checksums=tuple(),
     )
     desktop_content = installer_module.build_installed_desktop_entry(install_root, manifest)

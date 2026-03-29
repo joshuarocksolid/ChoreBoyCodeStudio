@@ -55,6 +55,9 @@ def test_main_window_save_creates_local_history_checkpoint(
     window_any._tab_index_for_path = lambda _path: -1
     window_any._apply_save_transforms = lambda *_args, **_kwargs: None
     window_any._intelligence_runtime_settings = SimpleNamespace()
+    window_any._background_tasks = SimpleNamespace(run=lambda **_kwargs: None)
+    window_any._test_explorer_panel = None
+    window_any._test_outcomes_by_node_id = {}
 
     monkeypatch.setattr("app.shell.main_window.should_refresh_index_after_save", lambda *_args, **_kwargs: False)
     monkeypatch.setattr("app.shell.main_window.QMessageBox.warning", lambda *_args, **_kwargs: None)

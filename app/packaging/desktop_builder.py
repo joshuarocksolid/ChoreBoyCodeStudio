@@ -98,12 +98,12 @@ def build_installable_install_text(
         "Installer behavior:\n"
         f"- default install folder: `{manifest.default_install_base}/{manifest.default_install_dirname}`\n"
         "- verifies checksums before copying payload files\n"
-        "- performs staged copy + launcher write before swapping menu/Desktop shortcuts\n"
-        "- can publish an application-menu launcher and optional Desktop shortcut\n"
+        "- performs staged copy + launcher write before swapping Desktop shortcuts\n"
+        "- can publish a Desktop shortcut and optional application-menu launcher\n"
         "- can keep older versions side-by-side or remove them after a successful upgrade\n"
         "\n"
         "After install, the launcher inside the installed folder becomes the source of truth.\n"
-        "Any application-menu entry points at that installed folder, not back at this staging package.\n"
+        "Any Desktop shortcut points at that installed folder, not back at this staging package.\n"
     )
 
 

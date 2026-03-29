@@ -44,8 +44,8 @@ def create_distribution_manifest(
     default_install_dirname: str | None = None,
     staging_parent: str = "/home/default",
     app_run_path: str = "/opt/freecad/AppRun",
-    write_menu_entry: bool = True,
-    write_desktop_shortcut: bool = False,
+    write_menu_entry: bool = False,
+    write_desktop_shortcut: bool = True,
 ) -> DistributionManifest:
     """Create a normalized manifest with stable defaults."""
     effective_display_name = display_name.strip()
@@ -171,8 +171,8 @@ def parse_distribution_manifest(payload: Mapping[str, Any]) -> DistributionManif
         default_install_dirname=str(payload.get("default_install_dirname", "")),
         staging_parent=str(payload.get("staging_parent", "/home/default")),
         app_run_path=str(payload.get("app_run_path", "/opt/freecad/AppRun")),
-        write_menu_entry=bool(payload.get("write_menu_entry", True)),
-        write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", False)),
+        write_menu_entry=bool(payload.get("write_menu_entry", False)),
+        write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", True)),
         checksum_algorithm=str(payload.get("checksum_algorithm", PACKAGE_CHECKSUM_ALGORITHM_SHA256)),
         checksums=tuple(checksums),
     )

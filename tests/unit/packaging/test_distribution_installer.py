@@ -48,8 +48,8 @@ def _build_installer_manifest(installer_module: ModuleType):
         default_install_dirname="choreboy_code_studio_v0.2.0",
         staging_parent="/home/default",
         app_run_path="/opt/freecad/AppRun",
-        write_menu_entry=True,
-        write_desktop_shortcut=False,
+        write_menu_entry=False,
+        write_desktop_shortcut=True,
         checksums=tuple(),
     )
 

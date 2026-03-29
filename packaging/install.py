@@ -113,8 +113,8 @@ def load_package_manifest(package_root: Path) -> PackageManifest:
         default_install_dirname=str(payload.get("default_install_dirname", "")),
         staging_parent=str(payload.get("staging_parent", "/home/default")),
         app_run_path=str(payload.get("app_run_path", "/opt/freecad/AppRun")),
-        write_menu_entry=bool(payload.get("write_menu_entry", True)),
-        write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", False)),
+        write_menu_entry=bool(payload.get("write_menu_entry", False)),
+        write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", True)),
         checksums=checksums,
     )
 

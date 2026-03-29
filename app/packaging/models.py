@@ -116,8 +116,8 @@ class DistributionManifest:
     default_install_dirname: str = ""
     staging_parent: str = "/home/default"
     app_run_path: str = "/opt/freecad/AppRun"
-    write_menu_entry: bool = True
-    write_desktop_shortcut: bool = False
+    write_menu_entry: bool = False
+    write_desktop_shortcut: bool = True
     checksum_algorithm: str = PACKAGE_CHECKSUM_ALGORITHM_SHA256
     checksums: tuple[ArtifactChecksum, ...] = field(default_factory=tuple)
 

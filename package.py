@@ -82,8 +82,8 @@ def build_product_manifest(*, version: str, staging_parent: str = CHOREBOY_STAGI
         default_install_dirname=f"choreboy_code_studio_v{version}",
         staging_parent=staging_parent,
         app_run_path=constants.APP_RUN_PATH,
-        write_menu_entry=True,
-        write_desktop_shortcut=False,
+        write_menu_entry=False,
+        write_desktop_shortcut=True,
     )
 
 

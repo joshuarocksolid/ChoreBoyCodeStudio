@@ -179,8 +179,8 @@ def _write_project_artifact(
         default_install_dirname="",
         staging_parent="/home/default",
         app_run_path=constants.APP_RUN_PATH,
-        write_menu_entry=True,
-        write_desktop_shortcut=False,
+        write_menu_entry=False,
+        write_desktop_shortcut=True,
     )
 
     readme_path = artifact_root / manifest.readme_filename
