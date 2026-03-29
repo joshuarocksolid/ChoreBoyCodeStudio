@@ -200,10 +200,7 @@ from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.shell.toolbar_icons import ensure_tab_close_icons
 from app.project.project_tree import build_project_tree
-from app.project.run_configs import (
-    RunConfiguration,
-    env_overrides_to_text,
-)
+from app.project.run_configs import RunConfiguration
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_excludes import (
@@ -259,6 +256,8 @@ from app.shell.status_bar import (
     create_shell_status_bar,
     map_startup_report_to_status,
 )
+from app.shell.run_target_shortcuts import resolve_run_target_shortcut_labels
+from app.shell.run_target_summary import RunTargetSummaryInput, build_run_target_summary
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
@@ -617,7 +616,6 @@ class MainWindow(QMainWindow):
                 on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
                 on_debug_pytest_current_file=self._handle_debug_pytest_current_file_action,
                 on_run_with_config=self._handle_run_with_configuration_action,
-                on_manage_run_configs=self._handle_manage_run_configurations_action,
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
                 on_rerun_last_debug_target=self._handle_rerun_last_debug_target_action,
@@ -695,10 +693,7 @@ class MainWindow(QMainWindow):
             on_startup_activated=self._handle_runtime_center_action,
         )
         self._refresh_python_tooling_status()
-        self._toolbar = build_run_toolbar_widget(
-            self._menu_registry,
-            on_target_summary_clicked=self._handle_manage_run_configurations_action,
-        )
+        self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
             center_panel = self.findChild(QWidget, "shell.centerPanel")
             if center_panel is not None:
@@ -759,9 +754,7 @@ class MainWindow(QMainWindow):
         project_root = Path(last_path.strip())
         if not project_root.is_dir() or not (project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME).is_file():
             return
-        opened = self._open_project_by_path(str(project_root))
-        if opened and self._should_show_runtime_onboarding():
-            QTimer.singleShot(0, self._handle_runtime_onboarding_action)
+        self._open_project_by_path(str(project_root))
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
@@ -859,9 +852,6 @@ class MainWindow(QMainWindow):
             bool(onboarding_payload.get(constants.UI_ONBOARDING_RUNTIME_GUIDE_COMPLETED_KEY, False)),
         )
 
-    def _should_show_runtime_onboarding(self) -> bool:
-        return not self._runtime_onboarding_dismissed and not self._runtime_onboarding_completed
-
     def _persist_runtime_onboarding_state(self, *, dismissed: bool | None = None, completed: bool | None = None) -> None:
         if dismissed is not None:
             self._runtime_onboarding_dismissed = dismissed
@@ -908,7 +898,7 @@ class MainWindow(QMainWindow):
         startup_status = map_startup_report_to_status(self._startup_report)
         widget.set_runtime_summary(startup_status.text, startup_status.details)
         widget.set_project_health_available(self._loaded_project is not None)
-        widget.set_onboarding_visible(force_show_onboarding or self._should_show_runtime_onboarding())
+        widget.set_onboarding_visible(force_show_onboarding)
 
     def _connect_welcome_widget_actions(
         self,
@@ -1122,6 +1112,8 @@ class MainWindow(QMainWindow):
                     "test_explorer",
                     test_icon(color_normal=normal, color_active=active),
                 )
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.apply_theme(tokens)
         finally:
             self._is_applying_theme_styles = False
 
@@ -3225,56 +3217,42 @@ class MainWindow(QMainWindow):
 
     def _update_run_target_summary(self) -> None:
         toolbar = self._toolbar
-        if toolbar is None or not hasattr(toolbar, "set_target_summary"):
+        if toolbar is None or not hasattr(toolbar, "set_run_target_view_model"):
             return
         active_tab = self._editor_manager.active_tab()
-        active_file_label = "open a Python file"
-        active_file_detail = "F5 Run needs an open Python file."
+        active_path: str | None = None
+        active_base: str | None = None
+        active_is_python = False
+        active_is_dirty = False
         if active_tab is not None:
             active_file_path = Path(active_tab.file_path).expanduser().resolve()
-            if active_file_path.suffix.lower() == ".py":
-                active_file_label = active_file_path.name
-                active_file_detail = str(active_file_path)
-                if active_tab.is_dirty:
-                    active_file_detail += " (dirty buffer runs through a transient file)"
-            else:
-                active_file_label = f"{active_file_path.name} (not Python)"
-                active_file_detail = f"{active_file_path}\nOpen a Python file before using F5 Run."
+            active_path = str(active_file_path)
+            active_base = active_file_path.name
+            active_is_python = active_file_path.suffix.lower() == ".py"
+            active_is_dirty = active_tab.is_dirty
 
-        project_label = "open project"
-        project_detail = "Shift+F5 Run Project needs an open project."
+        project_root: str | None = None
+        project_entry: str | None = None
+        project_cwd: str | None = None
         if self._loaded_project is not None:
-            project_label = self._loaded_project.metadata.default_entry
-            project_detail = (
-                f"Project root: {self._loaded_project.project_root}\n"
-                f"Default entry: {self._loaded_project.metadata.default_entry}\n"
-                f"Project working directory: {self._loaded_project.metadata.working_directory or '.'}"
-            )
+            project_root = str(self._loaded_project.project_root)
+            project_entry = self._loaded_project.metadata.default_entry
+            project_cwd = self._loaded_project.metadata.working_directory
 
         active_config = self._resolve_active_named_run_config()
-        config_label = "none"
-        config_detail = "No named run configuration is currently selected."
-        if active_config is not None:
-            config_label = active_config.name
-            config_detail = (
-                f"Name: {active_config.name}\n"
-                f"Entry: {active_config.entry_file}\n"
-                f"Working directory: {active_config.working_directory or '.'}\n"
-                f"Env overrides: {env_overrides_to_text(active_config.env_overrides) or '(none)'}"
-            )
-
-        summary_text = f"Targets: F5 {active_file_label} | Shift+F5 {project_label} | Config {config_label}"
-        summary_tooltip = (
-            f"F5 Run: {active_file_detail}\n\n"
-            f"Shift+F5 Run Project:\n{project_detail}\n\n"
-            f"Active named configuration:\n{config_detail}\n\n"
-            "Click to manage run configurations."
+        shortcuts = resolve_run_target_shortcut_labels(self._menu_registry)
+        inp = RunTargetSummaryInput(
+            shortcuts=shortcuts,
+            active_file_path=active_path,
+            active_file_basename=active_base,
+            active_is_python=active_is_python,
+            active_is_dirty=active_is_dirty,
+            project_root=project_root,
+            project_default_entry=project_entry,
+            project_working_directory=project_cwd,
+            named_config=active_config,
         )
-        toolbar.set_target_summary(
-            summary_text,
-            tooltip=summary_tooltip,
-            enabled=self._loaded_project is not None,
-        )
+        toolbar.set_run_target_view_model(build_run_target_summary(inp))
 
     def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
         report = RuntimeIssueReport(workflow="run", issues=list(issues))
@@ -3486,6 +3464,8 @@ class MainWindow(QMainWindow):
             return
         project_root = self._loaded_project.project_root
         self._append_console_line(f"Running pytest in {project_root}", stream="system")
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.set_running(True)
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return run_pytest_with_workflow(
@@ -3494,11 +3474,15 @@ class MainWindow(QMainWindow):
             )
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             provider, result = payload
             self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             self._append_console_line(f"Pytest run failed to start: {exc}", stream="stderr")
             QMessageBox.warning(self, "Run Project Tests", f"Pytest run failed: {exc}")
 
@@ -3530,6 +3514,8 @@ class MainWindow(QMainWindow):
             )
             return
         self._append_console_line(f"Running pytest for {target_path}", stream="system")
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.set_running(True)
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return run_pytest_with_workflow(
@@ -3539,11 +3525,15 @@ class MainWindow(QMainWindow):
             )
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             provider, result = payload
             self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             self._append_console_line(f"Pytest target run failed to start: {exc}", stream="stderr")
             QMessageBox.warning(self, "Run Current File Tests", f"Pytest run failed: {exc}")
 
@@ -3648,6 +3638,8 @@ class MainWindow(QMainWindow):
         if not normalized_node:
             return
         self._append_console_line(f"Running pytest node {normalized_node}", stream="system")
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.set_running(True)
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return run_pytest_with_workflow(
@@ -3657,11 +3649,15 @@ class MainWindow(QMainWindow):
             )
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             provider, result = payload
             self._append_console_line(f"Pytest node run completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             self._append_console_line(f"Pytest node run failed to start: {exc}", stream="stderr")
             QMessageBox.warning(self, "Run Test", f"Pytest run failed: {exc}")
 
@@ -3682,6 +3678,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Rerun Failed", "No failed tests recorded yet.")
             return
         self._append_console_line(f"Rerunning failed pytest nodes ({len(failed_node_ids)})", stream="system")
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.set_running(True)
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             return run_pytest_with_workflow(
@@ -3691,11 +3689,15 @@ class MainWindow(QMainWindow):
             )
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             provider, result = payload
             self._append_console_line(f"Rerun failed completed via {provider.title}", stream="system")
             self._handle_pytest_run_result(result)
 
         def on_error(exc: Exception) -> None:
+            if self._test_explorer_panel is not None:
+                self._test_explorer_panel.set_running(False)
             self._append_console_line(f"Rerun failed failed to start: {exc}", stream="stderr")
             QMessageBox.warning(self, "Rerun Failed", f"Pytest run failed: {exc}")
 
@@ -3777,7 +3779,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Run With Configuration",
-                "No run configurations are defined. Use 'Manage Run Configurations...' first.",
+                "This project has no saved run setups in its project file (run_configs). "
+                "Add entries to run_configs or use Run Project with the default entry.",
             )
             return
         names = [config.name for config in configs]
@@ -3810,143 +3813,6 @@ class MainWindow(QMainWindow):
             argv=selected_config.argv,
             working_directory=selected_config.working_directory,
             env_overrides=selected_config.env_overrides,
-        )
-
-    def _handle_manage_run_configurations_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Manage Run Configurations", "Open a project first.")
-            return
-        existing_configs = self._run_config_controller.load_configs(self._loaded_project)
-        choices = [config.name for config in existing_configs]
-        create_label = "<Create new configuration>"
-        choices.append(create_label)
-        selected_name, accepted_selection = QInputDialog.getItem(
-            self,
-            "Manage Run Configurations",
-            "Select configuration to edit:",
-            choices,
-            0,
-            False,
-        )
-        if not accepted_selection or not selected_name:
-            return
-        selected_config = next((config for config in existing_configs if config.name == selected_name), None)
-        if selected_config is not None:
-            action_choice, accepted_action = QInputDialog.getItem(
-                self,
-                "Manage Run Configurations",
-                f"Action for '{selected_config.name}':",
-                ["Edit", "Delete"],
-                0,
-                False,
-            )
-            if not accepted_action or not action_choice:
-                return
-            if action_choice == "Delete":
-                confirm = QMessageBox.question(
-                    self,
-                    "Manage Run Configurations",
-                    f"Delete run configuration '{selected_config.name}'?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
-                )
-                if confirm != QMessageBox.Yes:
-                    return
-                try:
-                    self._run_config_controller.delete_config(
-                        loaded_project=self._loaded_project,
-                        existing_configs=existing_configs,
-                        config_name=selected_config.name,
-                    )
-                except AppValidationError as exc:
-                    QMessageBox.warning(self, "Manage Run Configurations", str(exc))
-                    return
-                if self._active_named_run_config_name == selected_config.name:
-                    self._active_named_run_config_name = None
-                self._reload_current_project()
-                self._refresh_run_action_states()
-                QMessageBox.information(
-                    self,
-                    "Manage Run Configurations",
-                    f"Deleted configuration '{selected_config.name}'.",
-                )
-                return
-        if selected_name == create_label or selected_config is None:
-            selected_config = self._run_config_controller.build_default_config(self._loaded_project)
-
-        config_name, accepted_name = QInputDialog.getText(
-            self,
-            "Manage Run Configurations",
-            "Configuration name:",
-            QLineEdit.Normal,
-            selected_config.name,
-        )
-        if not accepted_name or not config_name.strip():
-            return
-        entry_file, accepted_entry = QInputDialog.getText(
-            self,
-            "Manage Run Configurations",
-            "Entry file (relative to project root):",
-            QLineEdit.Normal,
-            selected_config.entry_file,
-        )
-        if not accepted_entry or not entry_file.strip():
-            return
-        argv_text, accepted_argv = QInputDialog.getText(
-            self,
-            "Manage Run Configurations",
-            "Arguments (space-separated):",
-            QLineEdit.Normal,
-            " ".join(selected_config.argv),
-        )
-        if not accepted_argv:
-            return
-        working_directory_text, accepted_working_directory = QInputDialog.getText(
-            self,
-            "Manage Run Configurations",
-            "Working directory override (blank uses project default):",
-            QLineEdit.Normal,
-            "" if selected_config.working_directory is None else selected_config.working_directory,
-        )
-        if not accepted_working_directory:
-            return
-        env_overrides_text, accepted_env = QInputDialog.getText(
-            self,
-            "Manage Run Configurations",
-            "Env overrides (comma-separated KEY=VALUE):",
-            QLineEdit.Normal,
-            env_overrides_to_text(selected_config.env_overrides),
-        )
-        if not accepted_env:
-            return
-
-        try:
-            updated_config = self._run_config_controller.parse_config_input(
-                name=config_name,
-                entry_file=entry_file,
-                argv_text=argv_text,
-                working_directory_text=working_directory_text,
-                env_overrides_text=env_overrides_text,
-            )
-        except ValueError as exc:
-            QMessageBox.warning(self, "Manage Run Configurations", str(exc))
-            return
-        try:
-            self._run_config_controller.upsert_config(
-                loaded_project=self._loaded_project,
-                existing_configs=existing_configs,
-                updated_config=updated_config,
-            )
-        except AppValidationError as exc:
-            QMessageBox.warning(self, "Manage Run Configurations", str(exc))
-            return
-        self._reload_current_project()
-        self._active_named_run_config_name = updated_config.name
-        self._refresh_run_action_states()
-        QMessageBox.information(
-            self,
-            "Manage Run Configurations",
-            f"Saved configuration '{updated_config.name}'.",
         )
 
     def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
@@ -5769,6 +5635,7 @@ class MainWindow(QMainWindow):
         self._test_explorer_panel.run_all_requested.connect(self._handle_run_pytest_project_action)
         self._test_explorer_panel.run_failed_requested.connect(self._handle_run_failed_tests_action)
         self._test_explorer_panel.navigate_to_test.connect(self._handle_test_explorer_navigate_to_test)
+        self._test_explorer_panel.refresh_requested.connect(self._refresh_test_discovery_async)
         self._sidebar_stack.addWidget(self._test_explorer_panel)
 
         self._sidebar_stack.setCurrentIndex(0)

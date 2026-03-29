@@ -8,6 +8,7 @@ through QSvgRenderer.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from PySide2.QtCore import QByteArray, QRect, QSize, Qt
@@ -57,8 +58,40 @@ def _badge_icon(bg: str, label: str, fg: str = "#FFFFFF") -> QIcon:
 # Badge icons  (text on colored background)
 # ---------------------------------------------------------------------------
 
-def _python_icon() -> QIcon:
+_python_file_icon_cache: QIcon | None = None
+
+
+def _python_badge_fallback_icon() -> QIcon:
     return _badge_icon("#3572A5", "Py")
+
+
+def _build_python_logo_icon() -> QIcon:
+    """Rasterize bundled PSF two-snakes mark once; 16px + @2x for HiDPI trees."""
+    path = Path(__file__).resolve().parents[1] / "ui" / "icons" / "python-logo-only.svg"
+    if not path.is_file():
+        return _python_badge_fallback_icon()
+    renderer = QSvgRenderer(QByteArray(path.read_bytes()))
+    if not renderer.isValid():
+        return _python_badge_fallback_icon()
+    icon = QIcon()
+    for size, dpr in ((16, 1.0), (32, 2.0)):
+        pixmap = QPixmap(QSize(size, size))
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        renderer.render(painter)
+        painter.end()
+        pixmap.setDevicePixelRatio(dpr)
+        icon.addPixmap(pixmap)
+    return icon
+
+
+def _python_icon() -> QIcon:
+    global _python_file_icon_cache
+    if _python_file_icon_cache is None:
+        _python_file_icon_cache = _build_python_logo_icon()
+    return _python_file_icon_cache
 
 
 def _javascript_icon() -> QIcon:

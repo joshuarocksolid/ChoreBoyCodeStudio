@@ -39,6 +39,7 @@ class ShellThemeTokens:
     diag_error_color: str = ""
     diag_warning_color: str = ""
     diag_info_color: str = ""
+    test_passed_color: str = ""
     syntax_keyword: str = ""
     syntax_keyword_control: str = ""
     syntax_keyword_import: str = ""
@@ -124,6 +125,7 @@ def tokens_from_palette(
             diag_error_color="#FF6B6B",
             diag_warning_color="#E5A100",
             diag_info_color="#5B8CFF",
+            test_passed_color="#3FB950",
             **syntax_kwargs,
         )
     return ShellThemeTokens(
@@ -154,6 +156,7 @@ def tokens_from_palette(
         diag_error_color="#E03131",
         diag_warning_color="#D97706",
         diag_info_color="#3366FF",
+        test_passed_color="#1A7F37",
         **syntax_kwargs,
     )
 

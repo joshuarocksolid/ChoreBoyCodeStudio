@@ -6,10 +6,11 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from PySide2.QtCore import Qt  # noqa: E402
+from PySide2.QtWidgets import QApplication, QLabel  # noqa: E402
 
-from app.shell.toolbar import RunToolbarWidget, build_run_toolbar_widget  # noqa: E402
 from app.shell.menus import MenuStubRegistry  # noqa: E402
+from app.shell.toolbar import RunTargetSummaryPanel, RunToolbarWidget, build_run_toolbar_widget  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -97,6 +98,36 @@ def test_separator_hidden_when_all_group2_buttons_hidden() -> None:
     separator = widget.findChild(QFrame, "shell.toolbar.separator")
     assert separator is not None
     assert separator.isHidden()
+
+
+def test_run_target_summary_panel_noninteractive_by_default() -> None:
+    panel = RunTargetSummaryPanel()
+    assert panel.cursor().shape() == Qt.ArrowCursor
+    chevron = panel.findChild(QLabel, "shell.toolbar.runTarget.chevron")
+    assert chevron is not None
+    assert chevron.isHidden() is True
+
+
+def test_run_toolbar_without_click_handler_summary_is_noninteractive() -> None:
+    registry, _ = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry)
+    panel = widget.findChild(RunTargetSummaryPanel, "shell.toolbar.btn.runTarget")
+    assert panel is not None
+    assert panel.cursor().shape() == Qt.ArrowCursor
+    chevron = panel.findChild(QLabel, "shell.toolbar.runTarget.chevron")
+    assert chevron is not None
+    assert chevron.isHidden() is True
+
+
+def test_run_toolbar_with_click_handler_summary_is_interactive() -> None:
+    registry, _ = _make_registry_with_actions()
+    widget = RunToolbarWidget(registry, on_target_summary_clicked=lambda: None)
+    panel = widget.findChild(RunTargetSummaryPanel, "shell.toolbar.btn.runTarget")
+    assert panel is not None
+    assert panel.cursor().shape() == Qt.PointingHandCursor
+    chevron = panel.findChild(QLabel, "shell.toolbar.runTarget.chevron")
+    assert chevron is not None
+    assert chevron.isHidden() is False
 
 
 def test_python_console_action_is_not_rendered_in_top_toolbar() -> None:

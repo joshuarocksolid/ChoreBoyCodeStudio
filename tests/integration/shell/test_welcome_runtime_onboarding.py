@@ -33,7 +33,7 @@ def _write_valid_project(project_root: Path) -> None:
     )
 
 
-def test_runtime_onboarding_is_reachable_after_recent_project_autoload(
+def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_autoload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -69,13 +69,13 @@ def test_runtime_onboarding_is_reachable_after_recent_project_autoload(
 
         assert window._loaded_project is not None
         assert window._loaded_project.project_root == str(project_root.resolve())
-        assert onboarding_calls == ["opened"]
+        assert onboarding_calls == []
 
         assert window.menu_registry is not None
         action = window.menu_registry.action("shell.action.help.runtimeOnboarding")
         assert action is not None
         action.trigger()
 
-        assert onboarding_calls == ["opened", "opened"]
+        assert onboarding_calls == ["opened"]
     finally:
         shutdown_main_window_for_test(window)

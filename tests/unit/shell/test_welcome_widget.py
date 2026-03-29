@@ -33,7 +33,7 @@ def test_initial_state_shows_empty_label(widget: WelcomeWidget) -> None:
     """With no projects the empty-state label should be visible."""
     assert widget._empty_label.isVisible()
     assert not widget._project_list.isVisible()
-    assert widget._onboarding_card.isVisible()
+    assert not widget._onboarding_card.isVisible()
     assert widget._project_health_btn.isEnabled() is False
 
 
@@ -122,6 +122,7 @@ def test_runtime_summary_and_project_health_state_are_updateable(widget: Welcome
 
 
 def test_onboarding_action_signals_emit(widget: WelcomeWidget) -> None:
+    widget.set_onboarding_visible(True)
     emitted: list[str] = []
     widget.runtime_center_requested.connect(lambda: emitted.append("runtime_center"))
     widget.getting_started_requested.connect(lambda: emitted.append("getting_started"))

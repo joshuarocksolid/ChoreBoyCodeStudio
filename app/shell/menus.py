@@ -65,7 +65,6 @@ class MenuCallbacks:
     on_run_pytest_current_file: Callable[[], object] | None = None
     on_debug_pytest_current_file: Callable[[], object] | None = None
     on_run_with_config: Callable[[], object] | None = None
-    on_manage_run_configs: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_rerun_last_debug_target: Callable[[], object] | None = None
@@ -502,13 +501,6 @@ def build_menu_stubs(
         "shell.action.run.runWithConfig",
         "Run With Configuration...",
         callback=callback_registry.on_run_with_config,
-    )
-    _register_menu_action(
-        run_menu,
-        actions,
-        "shell.action.run.manageRunConfigs",
-        "Manage Run Configurations...",
-        callback=callback_registry.on_manage_run_configs,
     )
     _register_menu_action(
         run_menu,

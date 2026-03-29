@@ -71,8 +71,8 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
     monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
-    run_target_button = window.findChild(qt_widgets.QToolButton, "shell.toolbar.btn.runTarget")
-    assert run_target_button is not None
+    run_target_panel = window.findChild(qt_widgets.QFrame, "shell.toolbar.btn.runTarget")
+    assert run_target_panel is not None
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
         window._handle_set_theme(mode)
@@ -80,8 +80,8 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         assert "QDialog#shell\\.runtimeCenterDialog" in style_sheet
         assert "QWidget#shell\\.welcome\\.onboardingCard" in style_sheet
 
-        assert run_target_button.isEnabled() is True
-        assert "Run Project" in run_target_button.toolTip()
+        assert run_target_panel.isEnabled() is True
+        assert "Run Project" in run_target_panel.toolTip()
 
         window._handle_runtime_center_action()
         app.processEvents()

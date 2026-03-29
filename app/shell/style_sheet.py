@@ -24,6 +24,7 @@ from app.shell.style_sheet_sections import (
     shell_section_runtime_center_dialog,
     shell_section_search_sidebar,
     shell_section_tab_bar,
+    shell_section_test_explorer,
     shell_section_toolbar_buttons,
     shell_section_welcome,
     shell_section_workspace_tree_editors,
@@ -47,6 +48,7 @@ def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
         + shell_section_quick_open(tokens)
         + shell_section_activity_bar(tokens)
         + shell_section_search_sidebar(tokens)
+        + shell_section_test_explorer(tokens)
         + shell_section_help_dialog(tokens)
         + shell_section_runtime_center_dialog(tokens)
         + shell_section_package_wizard(tokens)

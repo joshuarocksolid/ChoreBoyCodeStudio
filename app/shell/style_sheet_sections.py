@@ -491,15 +491,40 @@ QToolButton[objectName^="shell.toolbar.btn"]:hover {{
 QToolButton[objectName^="shell.toolbar.btn"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-QToolButton#shell\\.toolbar\\.btn\\.runTarget {{
+QFrame#shell\\.toolbar\\.btn\\.runTarget {{
     background: {tokens.input_bg};
-    color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    padding: 5px 10px;
+    border-radius: 5px;
+    min-height: 36px;
 }}
-QToolButton#shell\\.toolbar\\.btn\\.runTarget:hover {{
+QFrame#shell\\.toolbar\\.btn\\.runTarget:hover {{
     background: {tokens.tree_hover_bg};
     border-color: {tokens.accent};
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget:focus {{
+    border-color: {tokens.accent};
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.line1 {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+    font-weight: 600;
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.line2 {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 500;
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.chevron {{
+    color: {tokens.text_muted};
+    font-size: 14px;
+    font-weight: 600;
+    padding-left: 2px;
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget[runTargetTone=\"muted\"] QLabel#shell\\.toolbar\\.runTarget\\.line1 {{
+    color: {tokens.text_muted};
+}}
+QFrame#shell\\.toolbar\\.btn\\.runTarget[runTargetTone=\"muted\"] QLabel#shell\\.toolbar\\.runTarget\\.line2 {{
+    color: {tokens.gutter_text};
 }}
 /* -- Run button (green accent) ------------------------------------------ */
 QToolButton#shell\\.toolbar\\.btn\\.run {{
@@ -1633,6 +1658,165 @@ QLabel#shell\\.settingsDialog\\.syntaxValidation {{
     border-radius: 4px;
     padding: 6px 10px;
     font-size: 12px;
+}}
+"""
+
+
+def shell_section_test_explorer(tokens: ShellThemeTokens) -> str:
+    passed_color = tokens.test_passed_color or tokens.debug_running_color
+    return f"""/* -- Test Explorer panel ------------------------------------------------ */
+QWidget#shell\\.testExplorer {{
+    background: {tokens.editor_bg};
+}}
+QWidget#shell\\.testExplorer\\.toolbar {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.testExplorer\\.title {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+    font-weight: bold;
+    padding: 0 2px;
+}}
+QToolButton#shell\\.testExplorer\\.runAllBtn,
+QToolButton#shell\\.testExplorer\\.runFailedBtn,
+QToolButton#shell\\.testExplorer\\.refreshBtn {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+}}
+QToolButton#shell\\.testExplorer\\.runAllBtn:hover,
+QToolButton#shell\\.testExplorer\\.runFailedBtn:hover,
+QToolButton#shell\\.testExplorer\\.refreshBtn:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.testExplorer\\.runAllBtn:pressed,
+QToolButton#shell\\.testExplorer\\.runFailedBtn:pressed,
+QToolButton#shell\\.testExplorer\\.refreshBtn:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QToolButton#shell\\.testExplorer\\.runAllBtn:disabled,
+QToolButton#shell\\.testExplorer\\.runFailedBtn:disabled,
+QToolButton#shell\\.testExplorer\\.refreshBtn:disabled {{
+    color: {tokens.border};
+}}
+/* -- filter bar -- */
+QWidget#shell\\.testExplorer\\.filterBar {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QToolButton#shell\\.testExplorer\\.filterPassed,
+QToolButton#shell\\.testExplorer\\.filterFailed,
+QToolButton#shell\\.testExplorer\\.filterSkipped,
+QToolButton#shell\\.testExplorer\\.filterErrors {{
+    color: {tokens.text_muted};
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 11px;
+}}
+QToolButton#shell\\.testExplorer\\.filterPassed:checked {{
+    color: {passed_color};
+    border-color: {passed_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.testExplorer\\.filterFailed:checked {{
+    color: {tokens.diag_error_color};
+    border-color: {tokens.diag_error_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.testExplorer\\.filterSkipped:checked {{
+    color: {tokens.text_muted};
+    border-color: {tokens.text_muted};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.testExplorer\\.filterErrors:checked {{
+    color: {tokens.diag_warning_color};
+    border-color: {tokens.diag_warning_color};
+    background: {tokens.row_alt_bg};
+}}
+QToolButton#shell\\.testExplorer\\.filterPassed:hover,
+QToolButton#shell\\.testExplorer\\.filterFailed:hover,
+QToolButton#shell\\.testExplorer\\.filterSkipped:hover,
+QToolButton#shell\\.testExplorer\\.filterErrors:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+/* -- tree -- */
+QTreeWidget#shell\\.testExplorer\\.tree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+}}
+QTreeWidget#shell\\.testExplorer\\.tree::item {{
+    padding: 2px 4px;
+}}
+QTreeWidget#shell\\.testExplorer\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.testExplorer\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+}}
+QTreeWidget#shell\\.testExplorer\\.tree::branch {{
+    background: transparent;
+}}
+QTreeWidget#shell\\.testExplorer\\.tree QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    padding: 2px 6px;
+    font-size: 11px;
+}}
+/* -- status bar -- */
+QWidget#shell\\.testExplorer\\.statusBar {{
+    background: {tokens.panel_bg};
+    border-top: 1px solid {tokens.border};
+}}
+QLabel#shell\\.testExplorer\\.statusText {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+}}
+QLabel#shell\\.testExplorer\\.emptyLabel {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+}}
+QLabel#shell\\.testExplorer\\.statusDot {{
+    border-radius: 4px;
+}}
+QLabel#shell\\.testExplorer\\.statusDot[testState="idle"] {{
+    background: {tokens.text_muted};
+}}
+QLabel#shell\\.testExplorer\\.statusDot[testState="pass"] {{
+    background: {passed_color};
+}}
+QLabel#shell\\.testExplorer\\.statusDot[testState="fail"] {{
+    background: {tokens.diag_error_color};
+}}
+QLabel#shell\\.testExplorer\\.statusDot[testState="running"] {{
+    background: {tokens.accent};
+}}
+QLabel#shell\\.testExplorer\\.statusDot[testState="error"] {{
+    background: {tokens.diag_warning_color};
+}}
+QLabel#shell\\.testExplorer\\.countPassed {{
+    color: {passed_color};
+    font-size: 11px;
+    font-weight: bold;
+}}
+QLabel#shell\\.testExplorer\\.countFailed {{
+    color: {tokens.diag_error_color};
+    font-size: 11px;
+    font-weight: bold;
+}}
+QLabel#shell\\.testExplorer\\.countSkipped {{
+    color: {tokens.text_muted};
+    font-size: 11px;
 }}
 """
 

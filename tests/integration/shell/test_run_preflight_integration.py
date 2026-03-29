@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QToolButton
+from PySide2.QtWidgets import QApplication, QFrame, QLabel
 
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
@@ -86,13 +86,17 @@ def test_run_toolbar_target_summary_reflects_selected_configuration(
         window._handle_run_with_configuration_action()
 
         assert window._active_named_run_config_name == "Tool"
-        toolbar_button = window.findChild(QToolButton, "shell.toolbar.btn.runTarget")
-        assert toolbar_button is not None
-        assert "F5 run.py" in toolbar_button.text()
-        assert "Shift+F5 run.py" in toolbar_button.text()
-        assert "Config Tool" in toolbar_button.text()
-        assert "Working directory: tools" in toolbar_button.toolTip()
-        assert "Env overrides: APP_ENV=dev" in toolbar_button.toolTip()
+        QApplication.processEvents()
+        run_summary = window.findChild(QFrame, "shell.toolbar.btn.runTarget")
+        assert run_summary is not None
+        line1 = run_summary.findChild(QLabel, "shell.toolbar.runTarget.line1")
+        line2 = run_summary.findChild(QLabel, "shell.toolbar.runTarget.line2")
+        assert line1 is not None and line2 is not None
+        assert "run.py" in line1.text()
+        assert "run.py" in line2.text()
+        assert "Tool" in line2.text()
+        assert "Working directory: tools" in run_summary.toolTip()
+        assert "Env overrides: APP_ENV=dev" in run_summary.toolTip()
         assert started and started[0]["entry_file"] == "tools/tool.py"
     finally:
         shutdown_main_window_for_test(window)

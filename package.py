@@ -45,6 +45,21 @@ INCLUDE_FILES = [
 ]
 PRUNE_DIR_NAMES = {"__pycache__", ".pyc"}
 PRUNE_DIR_SUFFIXES = {".dist-info"}
+VENDOR_ALLOWLIST = [
+    # Formatting
+    "black", "blib2to3", "click", "mypy_extensions.py",
+    "_black_version.py", "_black_version.pyi",
+    "pathspec", "platformdirs", "isort", "tomli",
+    # Linting
+    "pyflakes",
+    # Tree-sitter core + curated grammars
+    "tree_sitter", "tree_sitter_python", "tree_sitter_json",
+    "tree_sitter_html", "tree_sitter_xml", "tree_sitter_css",
+    "tree_sitter_bash", "tree_sitter_markdown", "tree_sitter_yaml",
+    "tree_sitter_javascript", "tree_sitter_toml",
+    # Intelligence (code completion, refactoring)
+    "jedi", "parso", "rope", "pytoolconfig",
+]
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
 CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
@@ -101,6 +116,17 @@ def _should_prune_dir(name: str) -> bool:
     return any(name.endswith(suffix) for suffix in PRUNE_DIR_SUFFIXES)
 
 
+_CPYTHON_SO_EXCLUDE_TAGS = ("cpython-312", "cpython-313", "cpython-314")
+
+
+def _should_skip_file(name: str) -> bool:
+    if name.endswith(".pyc"):
+        return True
+    if name.endswith(".so"):
+        return any(tag in name for tag in _CPYTHON_SO_EXCLUDE_TAGS)
+    return False
+
+
 def _copytree_filtered(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for entry in sorted(src.iterdir()):
@@ -109,9 +135,65 @@ def _copytree_filtered(src: Path, dst: Path) -> None:
                 continue
             _copytree_filtered(entry, dst / entry.name)
             continue
-        if entry.suffix == ".pyc":
+        if _should_skip_file(entry.name):
             continue
         shutil.copy2(str(entry), str(dst / entry.name))
+
+
+def _copy_vendor_allowlisted(vendor_src: Path, vendor_dst: Path) -> list[str]:
+    """Copy only allowlisted entries from vendor_src into vendor_dst.
+
+    Returns a list of allowlist entries that were not found in vendor_src.
+    """
+    vendor_dst.mkdir(parents=True, exist_ok=True)
+    missing: list[str] = []
+    for entry_name in VENDOR_ALLOWLIST:
+        src = vendor_src / entry_name
+        if src.is_dir():
+            _copytree_filtered(src, vendor_dst / entry_name)
+        elif src.is_file():
+            shutil.copy2(str(src), str(vendor_dst / entry_name))
+        else:
+            missing.append(entry_name)
+    return missing
+
+
+def _strip_shared_objects(root: Path) -> int:
+    """Strip debug symbols from all .so files under *root*.
+
+    Returns the number of files successfully stripped.
+    """
+    stripped = 0
+    for so_file in sorted(root.rglob("*.so")):
+        result = subprocess.run(
+            ["strip", str(so_file)], capture_output=True,
+        )
+        if result.returncode == 0:
+            stripped += 1
+    return stripped
+
+
+def _print_vendor_size_report(vendor_dir: Path) -> None:
+    """Print a per-package size breakdown of the staged vendor directory."""
+    entries: list[tuple[int, str]] = []
+    total = 0
+    for child in sorted(vendor_dir.iterdir()):
+        if child.is_dir():
+            size = sum(f.stat().st_size for f in child.rglob("*") if f.is_file())
+        elif child.is_file():
+            size = child.stat().st_size
+        else:
+            continue
+        entries.append((size, child.name))
+        total += size
+    print("Vendor size breakdown:")
+    for size, name in sorted(entries, key=lambda t: t[0], reverse=True):
+        if size >= 1024 * 1024:
+            print(f"  {size / (1024 * 1024):6.1f} MB  {name}")
+        else:
+            print(f"  {size / 1024:6.0f} KB  {name}")
+    print(f"  {'─' * 16}")
+    print(f"  {total / (1024 * 1024):6.1f} MB  total vendor")
 
 
 def archive_budget_bytes() -> int:
@@ -185,7 +267,12 @@ def main() -> int:
         print(f"ERROR: vendor directory not found at {vendor_src}")
         print("Set CBCS_ARTIFACTS_DIR or place vendor/ in the artifacts directory.")
         return 1
-    _copytree_filtered(vendor_src, payload_dir / "vendor")
+    vendor_missing = _copy_vendor_allowlisted(vendor_src, payload_dir / "vendor")
+    for name in vendor_missing:
+        print(f"WARNING: allowlisted vendor entry not found: {name}")
+    stripped = _strip_shared_objects(payload_dir / "vendor")
+    print(f"Stripped debug symbols from {stripped} .so file(s)")
+    _print_vendor_size_report(payload_dir / "vendor")
 
     for file_name in INCLUDE_FILES:
         src = REPO_ROOT / file_name

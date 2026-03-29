@@ -213,7 +213,6 @@ class RunSessionController:
             "shell.action.run.pytestProject",
             "shell.action.run.pytestCurrentFile",
             "shell.action.run.runWithConfig",
-            "shell.action.run.manageRunConfigs",
         )
         for action_id in project_gated_action_ids:
             action = menu_registry.action(action_id)

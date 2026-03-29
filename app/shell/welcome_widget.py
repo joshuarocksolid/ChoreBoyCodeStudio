@@ -228,6 +228,7 @@ class WelcomeWidget(QWidget):
         layout.addWidget(self._empty_label, 1)
 
         outer.addWidget(container, 1, Qt.AlignHCenter)
+        self.set_onboarding_visible(False)
 
     # -- Public API -----------------------------------------------------------
 
