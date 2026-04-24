@@ -7,12 +7,18 @@ Usage:
     python3 run_tests.py -v -k test_project_service
     CBCS_PYTEST_WORKERS=4 python3 run_tests.py -q tests/unit
 
+To run the demoted performance smokes (excluded from the default invocation):
+
+    python3 run_tests.py -m performance tests/integration/performance/
+
 Pytest args inherit `[tool.pytest.ini_options]` from pyproject.toml. This launcher
 also prepends ``--import-mode=importlib`` when the caller did not set
 ``--import-mode``, so duplicate test module basenames under tests/ collect
 correctly even if config discovery differs. When ``CBCS_PYTEST_WORKERS`` is set
 to a non-zero value and the caller did not provide explicit xdist worker flags,
-the launcher also prepends ``-n <value>``.
+the launcher also prepends ``-n <value>``. The launcher also injects
+``-m "not performance"`` unless the caller already passed ``-m`` or selected a
+path under ``tests/integration/performance/``.
 """
 from __future__ import annotations
 
@@ -32,6 +38,8 @@ def _pytest_argv() -> list[str]:
         args = ["-n", worker_count, *args]
     if not _has_import_mode_arg(args):
         args = ["--import-mode=importlib", *args]
+    if not _has_marker_arg(args) and not _selects_performance_path(args):
+        args = ["-m", "not performance", *args]
     return args
 
 
@@ -58,6 +66,19 @@ def _has_parallelism_arg(args: list[str]) -> bool:
         if arg.startswith("-n") and len(arg) > 2:
             return True
     return False
+
+
+def _has_marker_arg(args: list[str]) -> bool:
+    for arg in args:
+        if arg == "-m":
+            return True
+        if arg.startswith("-m") and len(arg) > 2:
+            return True
+    return False
+
+
+def _selects_performance_path(args: list[str]) -> bool:
+    return any("tests/integration/performance" in arg for arg in args)
 
 
 def main() -> int:

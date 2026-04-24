@@ -137,6 +137,9 @@ class _FakeQApplication:
         self.exec_calls += 1
         return 11
 
+    def processEvents(self) -> None:
+        self.process_events_calls = getattr(self, "process_events_calls", 0) + 1
+
 
 class _FakeMainWindow:
     created: list["_FakeMainWindow"] = []

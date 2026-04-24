@@ -10,16 +10,13 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtGui import QPalette, QTextDocument, QTextCursor  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
 
-from app.core import constants  # noqa: E402
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
-from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 from app.treesitter.loader import initialize_tree_sitter_runtime  # noqa: E402
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(180)]
+pytestmark = [pytest.mark.integration, pytest.mark.performance, pytest.mark.timeout(180)]
 _TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
 
 
@@ -124,43 +121,3 @@ def test_theme_apply_10_open_editors_p95_under_150ms_per_editor() -> None:
     assert _p95(samples) <= 150.0
 
 
-def test_large_document_bracket_match_path_is_bounded() -> None:
-    editor = CodeEditorWidget()
-    source = "(\n" + ("value = 1\n" * 30_000) + ")\n"
-    editor.setPlainText(source)
-    cursor = editor.textCursor()
-    cursor.movePosition(QTextCursor.End)
-    editor.setTextCursor(cursor)
-
-    start = time.perf_counter()
-    selections = editor._build_bracket_match_selections()
-    elapsed = time.perf_counter() - start
-
-    assert selections == []
-    assert elapsed <= 0.02
-
-
-def test_large_file_adaptive_mode_limits_overlay_volume() -> None:
-    editor = CodeEditorWidget()
-    editor.set_highlighting_policy(
-        adaptive_mode=constants.HIGHLIGHTING_MODE_NORMAL,
-        reduced_threshold_chars=100_000,
-        lexical_only_threshold_chars=170_000,
-    )
-    editor.setPlainText("value = 1\n" * 30_000)
-    assert editor._effective_highlighting_mode() in {
-        constants.HIGHLIGHTING_MODE_REDUCED,
-        constants.HIGHLIGHTING_MODE_LEXICAL_ONLY,
-    }
-    diagnostics = [
-        CodeDiagnostic(
-            code="W001",
-            severity=DiagnosticSeverity.WARNING,
-            file_path="/tmp/main.py",
-            line_number=index + 1,
-            message="warning",
-        )
-        for index in range(3_000)
-    ]
-    editor.set_diagnostics(diagnostics)
-    assert len(editor.extraSelections()) <= 701

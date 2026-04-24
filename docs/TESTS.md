@@ -19,6 +19,7 @@ It aligns with:
   - `integration`
   - `runtime_parity`
   - `manual_acceptance`
+  - `slow` — wall-time exceeds the agent fast-lane budget (subprocess polling, debug-session waits). Carries a `pytest.mark.timeout(180)` override; excluded from the `fast` shard.
 
 ## 3) Test layout
 
@@ -45,41 +46,47 @@ Implemented coverage includes:
 
 ## 5) Core commands
 
-Run full suite:
+This section is the canonical "how to run tests" instruction. Other docs (`AGENTS.md`, `tests/README.md`, `docs/SMOKE_WORKFLOW.md`, the per-task `Validation method:` snippets in `docs/TASKS.md`) point here.
+
+### 5.1 Agent inner loop — fast shard (~30 s)
 
 ```bash
-python3 run_tests.py -v --import-mode=importlib
+python3 testing/run_test_shard.py fast
 ```
 
-Run focused suites:
+Equivalent to `tests/unit + tests/integration -m "not slow" --ignore=tests/integration/performance`. Use this for every iterative AI-agent / TDD cycle. `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them manually.
+
+### 5.2 Pre-PR / CI — broader shards
 
 ```bash
-python3 run_tests.py -v --import-mode=importlib tests/unit
-python3 run_tests.py -v --import-mode=importlib tests/integration
-python3 run_tests.py -v --import-mode=importlib tests/integration/performance
-```
-
-Fast local feedback:
-
-```bash
-python3 testing/run_test_shard.py unit
-python3 testing/run_test_shard.py unit -- -k test_project_service
-```
-
-Named shards for local or CI-style parallel jobs:
-
-```bash
-python3 testing/run_test_shard.py unit
 python3 testing/run_test_shard.py integration
 python3 testing/run_test_shard.py performance
 python3 testing/run_test_shard.py runtime_parity
 ```
 
-- `integration` intentionally excludes `tests/integration/performance` so timing-sensitive checks can stay in their own serial lane.
-- `performance` should remain a dedicated serial invocation because those tests assert wall-clock thresholds.
-- `--workers <count>` is available for targeted experiments through `CBCS_PYTEST_WORKERS`, for example `python3 testing/run_test_shard.py unit --workers 4`, but serial shards remain the default.
+- `integration` is the full integration shard (slow + non-slow), excluding the performance subdirectory so timing-sensitive checks remain serial.
+- `performance` is its own serial shard because those tests assert wall-clock thresholds.
+- `runtime_parity` validates AppRun-specific paths.
+- `all` (`python3 testing/run_test_shard.py all`) runs everything, including `tests/integration/performance` and any `slow`-marked tests.
 
-Run static analysis:
+### 5.3 Targeted runs — specific path or `-k` expression
+
+```bash
+python3 run_tests.py tests/unit/some/test_module.py
+python3 run_tests.py -k test_project_service
+```
+
+`run_tests.py` is also what every shard ultimately invokes; reach for it directly only when you need to target a path that does not match a shard.
+
+### 5.4 Parallelism (opt-in, experimental)
+
+```bash
+python3 testing/run_test_shard.py fast --workers 2
+```
+
+`--workers <count>` forwards to `pytest-xdist` via `CBCS_PYTEST_WORKERS`. Per the audit in §10, multi-worker xdist is **not** the default because each worker pays its own AppRun + Qt cold-start cost; use it only for narrow-scope experiments.
+
+### 5.5 Static analysis
 
 ```bash
 npx pyright
@@ -90,11 +97,11 @@ npx pyright
 Before future editor-intelligence feature work, run the full automated gate and then execute `AT-72`:
 
 ```bash
-python3 run_tests.py -v --import-mode=importlib
+python3 testing/run_test_shard.py all
 npx pyright
 ```
 
-The full automated suite covers the unit, integration, runtime-parity, performance, and theme-related assertions that back the architecture-hygiene phase.
+`run_test_shard.py all` runs every test (unit, integration, performance, runtime_parity, including `slow`-marked subprocess and debug-session tests). It backs the same assertions that the architecture-hygiene phase requires.
 
 ## 7) Manual acceptance validation
 
@@ -112,29 +119,34 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 9) Current baseline result
 
-At latest validation checkpoint:
+Latest validation checkpoint (2026-04-24, fast-lane refactor branch):
 
-- `python3 run_tests.py -q --import-mode=importlib` -> **1189 passed, 1 skipped** (`tests/unit/editors/test_syntax_highlighters.py` skips when the optional SQL tree-sitter grammar is not vendored)
-- `npx pyright` -> **0 errors, 0 warnings, 0 informations**
+- `python3 testing/run_test_shard.py fast` -> **~32s wall time**, 1347 passed, 1 skipped (optional SQL tree-sitter grammar not vendored), 17 deselected via `-m "not slow"`, 5 pre-existing failures (`tests/unit/persistence/test_local_history_store.py` x3, `tests/integration/bootstrap/test_editor_startup_probe.py` x2). None of those failures were introduced by the fast-lane refactor.
+- `python3 testing/run_test_shard.py integration` -> **~37s wall time**, 59 passed (includes the four `slow`-marked subprocess + debug-session test files via their `pytest.mark.timeout(180)` overrides).
+- `python3 testing/run_test_shard.py performance` -> **~34s wall time**, 15 passed, 2 pre-existing failures in `test_local_history_performance.py` (timeline filtering regression tracked separately).
+- `python3 testing/run_test_shard.py runtime_parity` -> **~4s wall time**, 17 passed.
+- `npx pyright` -> 0 errors, 0 warnings, 0 informations.
 - `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need light/dark validation.
+
+Compared to the pre-refactor baseline of `~92s` for the full suite, the agent fast lane is now **~2.9x faster** while still exercising every Qt-touching unit test and every non-slow integration test.
 
 ## 10) Test speed notes
 
-Speed audit measurements captured on 2026-03-25 on the local dev host showed:
+Speed audit re-run on 2026-04-24 after the fast-lane refactor:
 
-- full suite wall time at roughly **156s** on the current branch
-- `tests/unit` dropping from roughly **79s** to **25s** after trimming an oversized syntax-highlighting fixture
-- `tests/integration` at roughly **75s**, with `tests/integration/performance` accounting for about **35s** of that total
-- `tests/runtime_parity` at roughly **4s**
+- `python3 testing/run_test_shard.py fast` -> **~32s** wall time (1354 passed, 17 deselected via `-m "not slow"`, 1 skipped). This is the agent default loop.
+- The full pre-refactor suite (`python3 run_tests.py`) was ~92s; the fast shard is roughly **2.9x** faster while still exercising every Qt-touching unit test and every non-slow integration test.
+- The `slow` marker now scopes the four worst offenders (`test_process_supervisor_integration`, `test_run_service_integration`, `test_breakpoint_stepping_flow`, `test_debug_session_integration`) with `pytest.mark.timeout(180)` overrides, so the new global `timeout = 30` applies cleanly to everything else.
 
-The same audit also piloted `pytest-xdist`, which is already available in the AppRun runtime:
+The 2026-03-25 audit had already flagged `pytest-xdist` as net-negative; the 2026-04-24 re-benchmark re-confirms it after the session-scoped `qapp` fixture and lazy tree-sitter init landed:
 
-- `tests/unit` with `CBCS_PYTEST_WORKERS=4` did not finish within **133s**, which was substantially slower than the **25s** serial shard
-- `tests/integration --ignore=tests/integration/performance` with `CBCS_PYTEST_WORKERS=2` did not finish within **70s**, which was already slower than the roughly **40s** serial non-performance portion
+- `python3 testing/run_test_shard.py fast --workers 2` failed to make progress within **>360s** (had to be killed). The two AppRun workers each pay their own Qt + tree-sitter bootstrap and serialize on offscreen-platform-plugin initialization, which dominates any parallelism win.
+- Earlier numbers held: `tests/unit` with `CBCS_PYTEST_WORKERS=4` did not finish within **133s** vs **~25s** serial; `tests/integration --ignore=tests/integration/performance` with `CBCS_PYTEST_WORKERS=2` did not finish within **70s**.
 
-Recommendation:
+Recommendations:
 
-- prefer shard-level parallelism first (`unit`, `integration`, `performance`, `runtime_parity`)
-- keep `pytest-xdist` opt-in only for targeted experiments on narrowly scoped subsets
-- keep `tests/integration/performance` in its own serial lane
+- Default to **serial shards** (`fast`, `integration`, `performance`, `runtime_parity`).
+- Treat `--workers <count>` as a per-shard experiment knob, not a steady-state speed-up.
+- Keep `tests/integration/performance` in its own serial lane (still excluded from the `integration` shard).
+- The global `timeout = 30` in `pyproject.toml` is the new safety net; tests legitimately needing longer carry `pytest.mark.timeout(...)` overrides instead of inflating the default.
 

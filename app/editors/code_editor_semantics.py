@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         _completion_request_generation: int
         _hover_request_generation: int
         _hover_request_global_pos: QPoint | None
+        _hover_tooltip_enabled: bool
         _signature_help_request_generation: int
         _completion_items_by_label: dict[str, CompletionItem]
         _completion_model: Any
@@ -140,6 +141,9 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     def show_hover_text_for_request(self, *, request_generation: int, text: str | None) -> None:
         """Apply hover tooltip result if the request is still current."""
         if request_generation != self._hover_request_generation:
+            return
+        if not self._hover_tooltip_enabled:
+            QToolTip.hideText()
             return
         if not text:
             QToolTip.hideText()

@@ -24,141 +24,147 @@ from app.shell.settings_models import (
 pytestmark = pytest.mark.unit
 
 
-def test_parse_editor_settings_snapshot_uses_defaults_for_invalid_payload() -> None:
-    snapshot = parse_editor_settings_snapshot({"editor": "bad-shape", "intelligence": []})
+_DEFAULT_PAYLOAD: dict = {"editor": "bad-shape", "intelligence": []}
 
-    assert snapshot.tab_width == 4
-    assert snapshot.font_size == 10
-    assert snapshot.font_family == "monospace"
-    assert snapshot.indent_style == "spaces"
-    assert snapshot.detect_indentation_from_file is True
-    assert snapshot.format_on_save is False
-    assert snapshot.organize_imports_on_save is False
-    assert snapshot.trim_trailing_whitespace_on_save is True
-    assert snapshot.insert_final_newline_on_save is True
-    assert snapshot.enable_preview is True
-    assert snapshot.auto_save is False
-    assert snapshot.completion_enabled is True
-    assert snapshot.completion_auto_trigger is False
-    assert snapshot.diagnostics_enabled is True
-    assert snapshot.diagnostics_realtime is True
-    assert snapshot.quick_fixes_enabled is True
-    assert snapshot.quick_fix_require_preview_for_multifile is True
-    assert snapshot.cache_enabled is True
-    assert snapshot.highlighting_adaptive_mode == "normal"
-    assert snapshot.highlighting_reduced_threshold_chars == 250_000
-    assert snapshot.highlighting_lexical_only_threshold_chars == 600_000
-    assert snapshot.theme_mode == "system"
-    assert snapshot.auto_open_console_on_run_output is True
-    assert snapshot.auto_open_problems_on_run_failure is True
-    assert snapshot.selected_linter == "default"
-    assert snapshot.shortcut_overrides == {}
-    assert snapshot.syntax_color_overrides_light == {}
-    assert snapshot.syntax_color_overrides_dark == {}
-    assert snapshot.lint_rule_overrides == {}
-    assert snapshot.local_history_max_checkpoints_per_file == 50
-    assert snapshot.local_history_retention_days == 30
-    assert snapshot.local_history_max_tracked_file_bytes == 1_000_000
-    assert snapshot.local_history_exclude_patterns == []
+_DEFAULT_FIELDS: list[tuple[str, object]] = [
+    ("tab_width", 4),
+    ("font_size", 10),
+    ("font_family", "monospace"),
+    ("indent_style", "spaces"),
+    ("detect_indentation_from_file", True),
+    ("format_on_save", False),
+    ("organize_imports_on_save", False),
+    ("trim_trailing_whitespace_on_save", True),
+    ("insert_final_newline_on_save", True),
+    ("enable_preview", True),
+    ("auto_save", False),
+    ("completion_enabled", True),
+    ("completion_auto_trigger", False),
+    ("diagnostics_enabled", True),
+    ("diagnostics_realtime", True),
+    ("quick_fixes_enabled", True),
+    ("quick_fix_require_preview_for_multifile", True),
+    ("cache_enabled", True),
+    ("highlighting_adaptive_mode", "normal"),
+    ("highlighting_reduced_threshold_chars", 250_000),
+    ("highlighting_lexical_only_threshold_chars", 600_000),
+    ("theme_mode", "system"),
+    ("auto_open_console_on_run_output", True),
+    ("auto_open_problems_on_run_failure", True),
+    ("selected_linter", "default"),
+    ("shortcut_overrides", {}),
+    ("syntax_color_overrides_light", {}),
+    ("syntax_color_overrides_dark", {}),
+    ("lint_rule_overrides", {}),
+    ("local_history_max_checkpoints_per_file", 50),
+    ("local_history_retention_days", 30),
+    ("local_history_max_tracked_file_bytes", 1_000_000),
+    ("local_history_exclude_patterns", []),
+]
 
 
-def test_parse_editor_settings_snapshot_reads_explicit_values() -> None:
-    snapshot = parse_editor_settings_snapshot(
-        {
-            "editor": {
-                "tab_width": 8,
-                "font_size": 14,
-                "font_family": "Courier New",
-                "indent_style": "tabs",
-                "indent_size": 1,
-                "detect_indentation_from_file": False,
-                "format_on_save": True,
-                "organize_imports_on_save": True,
-                "trim_trailing_whitespace_on_save": False,
-                "insert_final_newline_on_save": False,
-                "enable_preview": False,
-            },
-            "intelligence": {
-                "enable_completion": False,
-                "auto_trigger_completion": False,
-                "completion_min_chars": 3,
-                "enable_diagnostics": False,
-                "diagnostics_realtime": False,
-                "enable_quick_fixes": False,
-                "quick_fix_require_preview_for_multifile": False,
-                "cache_enabled": False,
-                "incremental_indexing": False,
-                "metrics_logging_enabled": False,
-                "force_full_reindex_on_open": True,
-                "highlighting_adaptive_mode": "reduced",
-                "highlighting_reduced_threshold_chars": 190000,
-                "highlighting_lexical_only_threshold_chars": 480000,
-            },
-            "output": {
-                "auto_open_console_on_run_output": False,
-                "auto_open_problems_on_run_failure": False,
-            },
-            "keybindings": {
-                "overrides": {
-                    "shell.action.run.run": "Ctrl+R",
-                }
-            },
-            "syntax_colors": {
-                "light": {"keyword": "#123456"},
-                "dark": {"keyword": "#654321"},
-            },
-            "linter": {
-                "enabled": False,
-                "selected_linter": "pyflakes",
-                "rule_overrides": {
-                    "PY220": {"enabled": False, "severity": "info"},
-                }
-            },
-            "local_history": {
-                "max_checkpoints_per_file": 12,
-                "retention_days": 45,
-                "max_tracked_file_bytes": 4096,
-                "exclude_patterns": ["*.bin", "exports/*.json"],
-            },
-        }
-    )
+_EXPLICIT_PAYLOAD: dict = {
+    "editor": {
+        "tab_width": 8,
+        "font_size": 14,
+        "font_family": "Courier New",
+        "indent_style": "tabs",
+        "indent_size": 1,
+        "detect_indentation_from_file": False,
+        "format_on_save": True,
+        "organize_imports_on_save": True,
+        "trim_trailing_whitespace_on_save": False,
+        "insert_final_newline_on_save": False,
+        "enable_preview": False,
+    },
+    "intelligence": {
+        "enable_completion": False,
+        "auto_trigger_completion": False,
+        "completion_min_chars": 3,
+        "enable_diagnostics": False,
+        "diagnostics_realtime": False,
+        "enable_quick_fixes": False,
+        "quick_fix_require_preview_for_multifile": False,
+        "cache_enabled": False,
+        "incremental_indexing": False,
+        "metrics_logging_enabled": False,
+        "force_full_reindex_on_open": True,
+        "highlighting_adaptive_mode": "reduced",
+        "highlighting_reduced_threshold_chars": 190000,
+        "highlighting_lexical_only_threshold_chars": 480000,
+    },
+    "output": {
+        "auto_open_console_on_run_output": False,
+        "auto_open_problems_on_run_failure": False,
+    },
+    "keybindings": {"overrides": {"shell.action.run.run": "Ctrl+R"}},
+    "syntax_colors": {
+        "light": {"keyword": "#123456"},
+        "dark": {"keyword": "#654321"},
+    },
+    "linter": {
+        "enabled": False,
+        "selected_linter": "pyflakes",
+        "rule_overrides": {"PY220": {"enabled": False, "severity": "info"}},
+    },
+    "local_history": {
+        "max_checkpoints_per_file": 12,
+        "retention_days": 45,
+        "max_tracked_file_bytes": 4096,
+        "exclude_patterns": ["*.bin", "exports/*.json"],
+    },
+}
 
-    assert snapshot.tab_width == 8
-    assert snapshot.font_size == 14
-    assert snapshot.font_family == "Courier New"
-    assert snapshot.indent_style == "tabs"
-    assert snapshot.indent_size == 1
-    assert snapshot.detect_indentation_from_file is False
-    assert snapshot.format_on_save is True
-    assert snapshot.organize_imports_on_save is True
-    assert snapshot.trim_trailing_whitespace_on_save is False
-    assert snapshot.insert_final_newline_on_save is False
-    assert snapshot.enable_preview is False
-    assert snapshot.completion_enabled is False
-    assert snapshot.completion_auto_trigger is False
-    assert snapshot.completion_min_chars == 3
-    assert snapshot.diagnostics_enabled is False
-    assert snapshot.diagnostics_realtime is False
-    assert snapshot.quick_fixes_enabled is False
-    assert snapshot.quick_fix_require_preview_for_multifile is False
-    assert snapshot.cache_enabled is False
-    assert snapshot.incremental_indexing is False
-    assert snapshot.metrics_logging_enabled is False
-    assert snapshot.force_full_reindex_on_open is True
-    assert snapshot.highlighting_adaptive_mode == "reduced"
-    assert snapshot.highlighting_reduced_threshold_chars == 190000
-    assert snapshot.highlighting_lexical_only_threshold_chars == 480000
-    assert snapshot.auto_open_console_on_run_output is False
-    assert snapshot.auto_open_problems_on_run_failure is False
-    assert snapshot.selected_linter == "pyflakes"
-    assert snapshot.shortcut_overrides == {"shell.action.run.run": "Ctrl+R"}
-    assert snapshot.syntax_color_overrides_light == {"keyword": "#123456"}
-    assert snapshot.syntax_color_overrides_dark == {"keyword": "#654321"}
-    assert snapshot.lint_rule_overrides == {"PY220": {"enabled": False, "severity": "info"}}
-    assert snapshot.local_history_max_checkpoints_per_file == 12
-    assert snapshot.local_history_retention_days == 45
-    assert snapshot.local_history_max_tracked_file_bytes == 4096
-    assert snapshot.local_history_exclude_patterns == ["*.bin", "exports/*.json"]
+_EXPLICIT_FIELDS: list[tuple[str, object]] = [
+    ("tab_width", 8),
+    ("font_size", 14),
+    ("font_family", "Courier New"),
+    ("indent_style", "tabs"),
+    ("indent_size", 1),
+    ("detect_indentation_from_file", False),
+    ("format_on_save", True),
+    ("organize_imports_on_save", True),
+    ("trim_trailing_whitespace_on_save", False),
+    ("insert_final_newline_on_save", False),
+    ("enable_preview", False),
+    ("completion_enabled", False),
+    ("completion_auto_trigger", False),
+    ("completion_min_chars", 3),
+    ("diagnostics_enabled", False),
+    ("diagnostics_realtime", False),
+    ("quick_fixes_enabled", False),
+    ("quick_fix_require_preview_for_multifile", False),
+    ("cache_enabled", False),
+    ("incremental_indexing", False),
+    ("metrics_logging_enabled", False),
+    ("force_full_reindex_on_open", True),
+    ("highlighting_adaptive_mode", "reduced"),
+    ("highlighting_reduced_threshold_chars", 190000),
+    ("highlighting_lexical_only_threshold_chars", 480000),
+    ("auto_open_console_on_run_output", False),
+    ("auto_open_problems_on_run_failure", False),
+    ("selected_linter", "pyflakes"),
+    ("shortcut_overrides", {"shell.action.run.run": "Ctrl+R"}),
+    ("syntax_color_overrides_light", {"keyword": "#123456"}),
+    ("syntax_color_overrides_dark", {"keyword": "#654321"}),
+    ("lint_rule_overrides", {"PY220": {"enabled": False, "severity": "info"}}),
+    ("local_history_max_checkpoints_per_file", 12),
+    ("local_history_retention_days", 45),
+    ("local_history_max_tracked_file_bytes", 4096),
+    ("local_history_exclude_patterns", ["*.bin", "exports/*.json"]),
+]
+
+
+@pytest.mark.parametrize(
+    ("payload", "field", "expected"),
+    [(_DEFAULT_PAYLOAD, field, value) for field, value in _DEFAULT_FIELDS]
+    + [(_EXPLICIT_PAYLOAD, field, value) for field, value in _EXPLICIT_FIELDS],
+)
+def test_parse_editor_settings_snapshot_field_value(
+    payload: dict, field: str, expected: object
+) -> None:
+    snapshot = parse_editor_settings_snapshot(payload)
+    assert getattr(snapshot, field) == expected
 
 
 def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() -> None:
@@ -425,6 +431,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         False,
         False,
         False,
+        False,
     )
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
@@ -607,7 +614,7 @@ def test_merge_auto_save_round_trip() -> None:
 
 def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
     grouped = parse_main_window_settings({"editor": {"auto_save": True}})
-    assert grouped.editor_preferences[-1] is True
+    assert grouped.editor_preferences[-2] is True
 
 
 def test_parse_main_window_settings_includes_local_history_policy() -> None:

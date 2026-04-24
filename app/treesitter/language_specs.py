@@ -32,10 +32,19 @@ _LANGUAGE_SPECS: tuple[TreeSitterLanguageSpec, ...] = (
     TreeSitterLanguageSpec(
         key="json",
         display_name="JSON",
-        extensions=(".json", ".jsonc", ".json5"),
+        extensions=(".json",),
         highlights_query_file="json.scm",
         language_name="json",
         package_name="tree_sitter_json",
+    ),
+    TreeSitterLanguageSpec(
+        key="jsonc",
+        display_name="JSON with Comments",
+        extensions=(".jsonc", ".json5"),
+        highlights_query_file="json.scm",
+        language_name="json",
+        package_name="tree_sitter_json",
+        injection_aliases=("json5",),
     ),
     TreeSitterLanguageSpec(
         key="html",

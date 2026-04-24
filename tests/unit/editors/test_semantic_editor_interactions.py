@@ -109,6 +109,7 @@ def test_typing_open_paren_shows_inline_signature_help(editor: CodeEditorWidget)
 
 
 def test_tooltip_event_uses_hover_provider_when_no_diagnostic(editor: CodeEditorWidget) -> None:
+    editor._hover_tooltip_enabled = True
     editor.set_hover_provider(lambda _source, _position: "Symbol: alpha")
     event = QHelpEvent(QEvent.ToolTip, editor.cursorRect().center(), editor.mapToGlobal(editor.cursorRect().center()))
 
@@ -132,6 +133,7 @@ def test_typing_open_paren_uses_async_signature_requester_when_available(editor:
 
 
 def test_tooltip_event_uses_async_hover_requester_when_available(editor: CodeEditorWidget) -> None:
+    editor._hover_tooltip_enabled = True
     calls: list[tuple[str, int, int]] = []
     editor.set_hover_requester(lambda source, position, generation: calls.append((source, position, generation)))
     event = QHelpEvent(QEvent.ToolTip, editor.cursorRect().center(), editor.mapToGlobal(editor.cursorRect().center()))
@@ -140,6 +142,60 @@ def test_tooltip_event_uses_async_hover_requester_when_available(editor: CodeEdi
 
     assert handled is True
     assert calls == [("alpha", 5, 1)]
+
+
+def test_tooltip_event_skips_hover_requester_when_hover_tooltip_disabled(editor: CodeEditorWidget) -> None:
+    editor._hover_tooltip_enabled = False
+    requester_calls: list[tuple[str, int, int]] = []
+    editor.set_hover_requester(
+        lambda source, position, generation: requester_calls.append((source, position, generation))
+    )
+    editor.set_hover_provider(lambda _source, _position: "Symbol: alpha")
+    event = QHelpEvent(
+        QEvent.ToolTip,
+        editor.cursorRect().center(),
+        editor.mapToGlobal(editor.cursorRect().center()),
+    )
+
+    with patch("app.editors.code_editor_diagnostics.QToolTip.showText") as show_text:
+        handled = editor.event(event)
+
+    assert handled is True
+    assert requester_calls == []
+    show_text.assert_not_called()
+
+
+def test_tooltip_event_still_shows_diagnostic_when_hover_tooltip_disabled(editor: CodeEditorWidget) -> None:
+    from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
+
+    editor._hover_tooltip_enabled = False
+    editor.set_hover_provider(lambda _source, _position: pytest.fail("hover provider must not be consulted"))
+    editor.set_diagnostics(
+        [
+            CodeDiagnostic(
+                code="T001",
+                severity=DiagnosticSeverity.WARNING,
+                file_path="/tmp/main.py",
+                line_number=1,
+                message="warning",
+                col_start=0,
+                col_end=5,
+            )
+        ]
+    )
+    cursor_at_start = editor.textCursor()
+    cursor_at_start.setPosition(1)
+    editor.setTextCursor(cursor_at_start)
+    pos = editor.cursorRect().topLeft()
+    event = QHelpEvent(QEvent.ToolTip, pos, editor.mapToGlobal(pos))
+
+    with patch("app.editors.code_editor_diagnostics.QToolTip.showText") as show_text:
+        handled = editor.event(event)
+
+    assert handled is True
+    show_text.assert_called_once()
+    args, _kwargs = show_text.call_args
+    assert "[T001] warning" in args[1]
 
 
 def test_show_calltip_for_stale_signature_request_is_ignored(editor: CodeEditorWidget) -> None:

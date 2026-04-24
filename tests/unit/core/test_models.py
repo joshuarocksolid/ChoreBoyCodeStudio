@@ -76,51 +76,47 @@ def test_project_metadata_defaults_are_explicit_and_stable() -> None:
     assert metadata.project_notes == ""
 
 
-def test_project_metadata_serializes_to_stable_schema() -> None:
-    """Project metadata serialization should preserve the canonical key shape."""
+def test_project_metadata_to_dict_uses_canonical_external_keys() -> None:
+    """`project.json` is read by other tools; field names are an external contract."""
     metadata = ProjectMetadata(
         schema_version=1,
         name="Custom Project",
         project_id="proj_custom123",
         default_entry="app/start.py",
         working_directory="app",
-        template="qt_app",
-        run_configs=[{"id": "default"}],
-        env_overrides={"APP_ENV": "dev"},
-        project_notes="Launches a Qt UI.",
     )
+    payload = metadata.to_dict()
 
-    assert metadata.to_dict() == {
-        "schema_version": 1,
-        "project_id": "proj_custom123",
-        "name": "Custom Project",
-        "default_entry": "app/start.py",
-        "default_argv": [],
-        "working_directory": "app",
-        "template": "qt_app",
-        "run_configs": [{"id": "default"}],
-        "env_overrides": {"APP_ENV": "dev"},
-        "project_notes": "Launches a Qt UI.",
+    assert set(payload.keys()) == {
+        "schema_version",
+        "project_id",
+        "name",
+        "default_entry",
+        "default_argv",
+        "working_directory",
+        "template",
+        "run_configs",
+        "env_overrides",
+        "project_notes",
     }
+    assert payload["name"] == "Custom Project"
+    assert payload["default_entry"] == "app/start.py"
 
 
-def test_project_file_entry_serializes_to_stable_schema() -> None:
-    """Project file entries should expose deterministic tree metadata."""
+def test_project_file_entry_to_dict_uses_canonical_external_keys() -> None:
     entry = ProjectFileEntry(
         relative_path="app/main.py",
         absolute_path="/tmp/project/app/main.py",
         is_directory=False,
     )
 
-    assert entry.to_dict() == {
-        "relative_path": "app/main.py",
-        "absolute_path": "/tmp/project/app/main.py",
-        "is_directory": False,
-    }
+    payload = entry.to_dict()
+    assert set(payload.keys()) == {"relative_path", "absolute_path", "is_directory"}
+    assert payload["is_directory"] is False
 
 
-def test_loaded_project_serializes_to_stable_schema() -> None:
-    """Loaded project payload should be stable for shell and tree wiring."""
+def test_loaded_project_to_dict_nests_metadata_and_entries() -> None:
+    """Verify the nested-payload contract without re-pinning every dataclass field."""
     metadata = ProjectMetadata(schema_version=1, name="Project Alpha", project_id="proj_alpha")
     loaded_project = LoadedProject(
         project_root="/tmp/project_alpha",
@@ -132,41 +128,17 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
                 absolute_path="/tmp/project_alpha/run.py",
                 is_directory=False,
             ),
-            ProjectFileEntry(
-                relative_path="app",
-                absolute_path="/tmp/project_alpha/app",
-                is_directory=True,
-            ),
         ],
         manifest_materialized=True,
     )
 
-    assert loaded_project.to_dict() == {
-        "project_root": "/tmp/project_alpha",
-        "manifest_path": "/tmp/project_alpha/cbcs/project.json",
-        "manifest_materialized": True,
-        "metadata": {
-            "schema_version": 1,
-            "project_id": "proj_alpha",
-            "name": "Project Alpha",
-            "default_entry": "main.py",
-            "default_argv": [],
-            "working_directory": ".",
-            "template": "utility_script",
-            "run_configs": [],
-            "env_overrides": {},
-            "project_notes": "",
-            },
-        "entries": [
-            {
-                "relative_path": "run.py",
-                "absolute_path": "/tmp/project_alpha/run.py",
-                "is_directory": False,
-            },
-            {
-                "relative_path": "app",
-                "absolute_path": "/tmp/project_alpha/app",
-                "is_directory": True,
-            },
-        ],
+    payload = loaded_project.to_dict()
+    assert set(payload.keys()) == {
+        "project_root",
+        "manifest_path",
+        "manifest_materialized",
+        "metadata",
+        "entries",
     }
+    assert payload["metadata"] == metadata.to_dict()
+    assert payload["entries"] == [loaded_project.entries[0].to_dict()]

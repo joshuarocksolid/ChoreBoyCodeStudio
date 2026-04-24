@@ -27,6 +27,7 @@ SYNTAX_COLOR_TOKENS: tuple[SyntaxColorToken, ...] = (
     SyntaxColorToken("keyword", "Keyword", "Lexical"),
     SyntaxColorToken("keyword_control", "Keyword Control", "Lexical"),
     SyntaxColorToken("keyword_import", "Keyword Import", "Lexical"),
+    SyntaxColorToken("keyword_operator", "Keyword Operator", "Lexical"),
     SyntaxColorToken("builtin", "Builtin", "Lexical"),
     SyntaxColorToken("escape", "Escape Sequence", "Lexical"),
     SyntaxColorToken("string", "String", "Lexical"),

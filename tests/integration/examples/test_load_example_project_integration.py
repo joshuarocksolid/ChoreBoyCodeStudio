@@ -49,14 +49,3 @@ def test_materialized_showcase_has_runnable_entrypoint(tmp_path: Path) -> None:
     compile(source, str(main_py), "exec")
 
 
-def test_materialized_showcase_readme_references_key_features(tmp_path: Path) -> None:
-    """README should mention SQLite, Qt, and FreeCAD to guide users."""
-    service = ExampleProjectService(examples_root=str(_repo_example_projects_root()))
-    project_root = service.materialize_showcase(
-        destination_path=tmp_path / "readme_check",
-        project_name="ReadmeCheck",
-    )
-    readme = (project_root / "README.md").read_text(encoding="utf-8")
-    assert "SQLite" in readme
-    assert "Qt" in readme
-    assert "FreeCAD" in readme

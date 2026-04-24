@@ -99,6 +99,7 @@ class CodeEditorWidget(
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
         self._hover_provider: Callable[[str, int], str | None] | None = None
         self._hover_requester: Callable[[str, int, int], None] | None = None
+        self._hover_tooltip_enabled = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
         self._signature_help_provider: Callable[[str, int], str | None] | None = None
         self._signature_help_requester: Callable[[str, int, int], None] | None = None
         self._completion_enabled = True
@@ -390,11 +391,13 @@ class CodeEditorWidget(
         font_family: str = DEFAULT_FONT_FAMILY,
         indent_style: str = "spaces",
         indent_size: int = DEFAULT_TAB_WIDTH,
+        hover_tooltip_enabled: bool = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT,
     ) -> None:
         """Apply tab width, font family, and font-size preferences."""
         self._tab_width = max(2, tab_width)
         self._indent_style = "tabs" if indent_style == "tabs" else "spaces"
         self._indent_size = max(1, indent_size)
+        self._hover_tooltip_enabled = bool(hover_tooltip_enabled)
         font = self.font()
         font.setFamily(font_family)
         font.setPointSize(max(8, font_point_size))

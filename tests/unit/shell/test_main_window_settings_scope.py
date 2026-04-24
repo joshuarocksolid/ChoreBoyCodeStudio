@@ -40,27 +40,6 @@ class _FakeSettingsService:
         return dict(self._project_payload)
 
 
-def test_load_effective_exclude_patterns_combines_global_and_project_patterns() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._settings_service = _FakeSettingsService(
-        global_payload={
-            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
-                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["__pycache__", ".git"],
-            }
-        },
-        project_payload={
-            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
-                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["build", ".git"],
-            }
-        },
-    )
-
-    effective = MainWindow._load_effective_exclude_patterns(window, "/tmp/project")
-
-    assert effective == ["__pycache__", ".git", "build"]
-
-
 def test_set_project_placeholder_appends_override_indicator() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)

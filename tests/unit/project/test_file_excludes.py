@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from app.core import constants
-from app.project.file_excludes import parse_project_exclude_patterns, should_exclude_relative_path
+from app.project.file_excludes import (
+    load_effective_exclude_patterns,
+    parse_project_exclude_patterns,
+    should_exclude_relative_path,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -35,3 +39,53 @@ def test_parse_project_exclude_patterns_parses_clean_nonempty_values() -> None:
         }
     }
     assert parse_project_exclude_patterns(payload) == ["*.tmp", "build"]
+
+
+class _StubSettingsService:
+    def __init__(self, *, global_payload: dict, project_payload: dict) -> None:
+        self._global_payload = global_payload
+        self._project_payload = project_payload
+
+    def load_global(self) -> dict:
+        return dict(self._global_payload)
+
+    def load_project(self, _project_root: str) -> dict:
+        return dict(self._project_payload)
+
+
+def test_load_effective_exclude_patterns_combines_global_and_project_patterns() -> None:
+    service = _StubSettingsService(
+        global_payload={
+            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
+                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["__pycache__", ".git"],
+            }
+        },
+        project_payload={
+            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
+                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["build", ".git"],
+            }
+        },
+    )
+
+    effective = load_effective_exclude_patterns(service, "/tmp/project")
+
+    assert effective == ["__pycache__", ".git", "build"]
+
+
+def test_load_effective_exclude_patterns_skips_project_payload_when_no_root() -> None:
+    service = _StubSettingsService(
+        global_payload={
+            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
+                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["__pycache__"],
+            }
+        },
+        project_payload={
+            constants.UI_FILE_EXCLUDES_SETTINGS_KEY: {
+                constants.UI_FILE_EXCLUDES_PATTERNS_KEY: ["should-not-appear"],
+            }
+        },
+    )
+
+    effective = load_effective_exclude_patterns(service, project_root=None)
+
+    assert effective == ["__pycache__"]

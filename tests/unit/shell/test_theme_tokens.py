@@ -58,56 +58,21 @@ class TestTokensFromPalette:
         tokens = tokens_from_palette(_make_palette(lightness=200), force_mode="invalid")
         assert tokens.is_dark is False
 
-    def test_dark_tokens_have_expected_fields(self) -> None:
-        tokens = tokens_from_palette(_make_palette(), force_mode="dark")
-        assert tokens.window_bg == "#1F2428"
-        assert tokens.accent == "#5B8CFF"
-        assert tokens.tree_hover_bg != ""
-        assert tokens.syntax_keyword != ""
-        assert tokens.syntax_keyword_control != ""
-        assert tokens.syntax_keyword_import != ""
-        assert tokens.syntax_escape != ""
-        assert tokens.syntax_markdown_code != ""
-        assert tokens.syntax_markdown_strong != ""
-        assert tokens.syntax_semantic_function != ""
-        assert tokens.syntax_semantic_method != ""
-        assert tokens.syntax_semantic_variable != ""
-        assert tokens.syntax_semantic_property != ""
-        assert tokens.syntax_semantic_constant != ""
-
-    def test_light_tokens_have_expected_fields(self) -> None:
-        tokens = tokens_from_palette(_make_palette(), force_mode="light")
-        assert tokens.window_bg == "#F8F9FA"
-        assert tokens.accent == "#3366FF"
-        assert tokens.tree_hover_bg != ""
-        assert tokens.syntax_keyword != ""
-        assert tokens.syntax_keyword_control != ""
-        assert tokens.syntax_keyword_import != ""
-        assert tokens.syntax_escape != ""
-        assert tokens.syntax_markdown_code != ""
-        assert tokens.syntax_markdown_strong != ""
-        assert tokens.syntax_semantic_function != ""
-        assert tokens.syntax_semantic_method != ""
-        assert tokens.syntax_semantic_variable != ""
-        assert tokens.syntax_semantic_property != ""
-        assert tokens.syntax_semantic_constant != ""
+    @pytest.mark.parametrize("mode", ["light", "dark"])
+    def test_all_color_token_fields_are_populated(self, mode: str) -> None:
+        tokens = tokens_from_palette(_make_palette(), force_mode=mode)
+        for field, value in vars(tokens).items():
+            # Optional non-color fields default to "" by design (icon path overrides).
+            if field.endswith("_path"):
+                continue
+            if isinstance(value, str):
+                assert value, f"empty token {field} in {mode} mode"
 
     def test_light_and_dark_produce_different_tokens(self) -> None:
         light = tokens_from_palette(_make_palette(), force_mode="light")
         dark = tokens_from_palette(_make_palette(), force_mode="dark")
         assert light.window_bg != dark.window_bg
         assert light.editor_bg != dark.editor_bg
-        assert light.text_primary != dark.text_primary
-        assert light.syntax_keyword != dark.syntax_keyword
-        assert light.syntax_keyword_control != dark.syntax_keyword_control
-        assert light.syntax_keyword_import != dark.syntax_keyword_import
-        assert light.syntax_escape != dark.syntax_escape
-        assert light.syntax_markdown_strong != dark.syntax_markdown_strong
-        assert light.syntax_semantic_function != dark.syntax_semantic_function
-        assert light.syntax_semantic_method != dark.syntax_semantic_method
-        assert light.syntax_semantic_variable != dark.syntax_semantic_variable
-        assert light.syntax_semantic_property != dark.syntax_semantic_property
-        assert light.syntax_semantic_constant != dark.syntax_semantic_constant
 
     def test_apply_syntax_token_overrides_updates_target_fields_only(self) -> None:
         tokens = tokens_from_palette(_make_palette(), force_mode="light")

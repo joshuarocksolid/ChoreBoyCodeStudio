@@ -788,7 +788,7 @@ This matrix provides the canonical test-layer + validation expectations for rema
 
 | Task | Automated test layer                           | Validation method (minimum)                                                            | Release class    |
 | ---- | ---------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------- |
-| B01  | integration (+ targeted unit)                  | `python -m pytest -m integration tests/integration/...` + UI open-project manual check | MVP-BLOCKING     |
+| B01  | integration (+ targeted unit)                  | `python3 testing/run_test_shard.py integration` + UI open-project manual check         | MVP-BLOCKING     |
 | B02  | integration (+ targeted unit)                  | integration test for menu wiring + restart persistence check                           | MVP-BLOCKING     |
 | B03  | unit + integration                             | tree model unit tests + integration refresh check                                      | MVP-BLOCKING     |
 | B04  | unit + integration                             | tab manager unit tests + tree-click integration check                                  | MVP-BLOCKING     |

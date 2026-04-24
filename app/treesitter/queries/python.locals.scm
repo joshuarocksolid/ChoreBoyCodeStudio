@@ -19,6 +19,14 @@
   (identifier) @local.definition
   (#set! local.role "semantic_parameter"))
 
+(parameters
+  (list_splat_pattern (identifier) @local.definition)
+  (#set! local.role "semantic_parameter"))
+
+(parameters
+  (dictionary_splat_pattern (identifier) @local.definition)
+  (#set! local.role "semantic_parameter"))
+
 (default_parameter
   name: (identifier) @local.definition
   (#set! local.role "semantic_parameter"))
@@ -65,8 +73,53 @@
   (#set! local.role "semantic_variable")
   (#set! local.color_definition "true"))
 
+(assignment
+  left: (pattern_list (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(assignment
+  left: (pattern_list (list_splat_pattern (identifier) @local.definition))
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(assignment
+  left: (tuple_pattern (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(assignment
+  left: (list_pattern (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
 (for_statement
   left: (identifier) @local.definition
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(for_statement
+  left: (pattern_list (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(for_statement
+  left: (tuple_pattern (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(for_in_clause
+  left: (identifier) @local.definition
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(for_in_clause
+  left: (pattern_list (identifier) @local.definition)
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(for_in_clause
+  left: (tuple_pattern (identifier) @local.definition)
   (#set! local.role "semantic_variable")
   (#set! local.color_definition "true"))
 

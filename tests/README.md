@@ -8,21 +8,21 @@ This directory contains the executable pytest suites for ChoreBoy Code Studio.
 
 ## Running tests
 
-```bash
-python3 run_tests.py -v
-```
-
-Use markers from `pyproject.toml` (`unit`, `integration`, `runtime_parity`, `manual_acceptance`) to target specific layers.
-
-For faster local feedback and CI-style process sharding, use the named shard runner:
+The canonical command catalog lives in [docs/TESTS.md §5](../docs/TESTS.md#5-core-commands). Quick reference:
 
 ```bash
-python3 testing/run_test_shard.py unit
-python3 testing/run_test_shard.py integration
-python3 testing/run_test_shard.py performance
-python3 testing/run_test_shard.py runtime_parity
+python3 testing/run_test_shard.py fast            # agent inner loop, ~30s
+python3 testing/run_test_shard.py integration     # pre-PR; includes slow subprocess tests
+python3 testing/run_test_shard.py performance     # wall-clock threshold checks (serial)
+python3 testing/run_test_shard.py runtime_parity  # AppRun-specific
+python3 testing/run_test_shard.py all             # everything, used for the architecture-hygiene gate
 ```
 
-- `integration` excludes `tests/integration/performance` so timing-sensitive assertions stay isolated.
-- `performance` should remain a dedicated serial invocation.
-- `--workers <count>` is available for targeted experiments, but serial shards are the default because measured `xdist` pilots were slower than the serial shard timings in this repo.
+Targeting a specific path or `-k` expression goes through `run_tests.py` directly:
+
+```bash
+python3 run_tests.py tests/unit/run/test_run_service.py
+python3 run_tests.py -k test_project_service
+```
+
+`run_tests.py` automatically applies `--import-mode=importlib` and `QT_QPA_PLATFORM=offscreen`; do not pass them by hand. Markers from `pyproject.toml` (`unit`, `integration`, `runtime_parity`, `manual_acceptance`, `slow`) can still be combined with `-m` for ad-hoc filtering, but prefer the shard names above for routine work.

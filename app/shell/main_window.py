@@ -8,7 +8,6 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-import uuid
 from typing import Any, Callable, Mapping, Optional, TypeVar, cast
 
 from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt
@@ -87,6 +86,7 @@ from app.persistence.autosave_store import AutosaveStore
 from app.persistence.history_models import LocalHistoryFileSummary
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.persistence.local_history_store import LocalHistoryStore
+from app.persistence.local_history_writer import record_local_history_transaction
 from app.persistence.settings_service import SettingsService
 from app.persistence.settings_store import project_settings_has_overrides
 from app.run.console_model import ConsoleModel
@@ -205,8 +205,7 @@ from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.project.file_excludes import (
     compute_effective_excludes,
-    parse_global_exclude_patterns,
-    parse_project_exclude_patterns,
+    load_effective_exclude_patterns,
 )
 from app.python_tools.black_adapter import format_python_text
 from app.python_tools.config import resolve_python_tooling_settings
@@ -428,6 +427,7 @@ class MainWindow(QMainWindow):
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
             self._editor_auto_save,
+            self._editor_hover_tooltip_enabled,
         ) = self._load_editor_preferences()
         self._pending_project_tree_preview_path: str | None = None
         self._project_tree_preview_click_timer = QTimer(self)
@@ -1330,7 +1330,7 @@ class MainWindow(QMainWindow):
             project_settings_payload,
         )
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, bool]:
         return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
@@ -1620,6 +1620,7 @@ class MainWindow(QMainWindow):
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
             self._editor_auto_save,
+            self._editor_hover_tooltip_enabled,
         ) = self._load_editor_preferences()
         self._sync_auto_save_menu_state()
         if not self._editor_auto_save:
@@ -2531,20 +2532,8 @@ class MainWindow(QMainWindow):
             exclude_patterns=self._load_effective_exclude_patterns(project_root),
         )
 
-    def _load_global_exclude_patterns(self) -> list[str]:
-        settings_payload = self._settings_service.load_global()
-        return parse_global_exclude_patterns(settings_payload)
-
-    def _load_project_exclude_patterns(self, project_root: str | None) -> list[str]:
-        if not project_root:
-            return []
-        project_settings_payload = self._settings_service.load_project(project_root)
-        return parse_project_exclude_patterns(project_settings_payload)
-
     def _load_effective_exclude_patterns(self, project_root: str | None = None) -> list[str]:
-        global_patterns = self._load_global_exclude_patterns()
-        project_patterns = self._load_project_exclude_patterns(project_root)
-        return compute_effective_excludes(global_patterns, project_patterns)
+        return load_effective_exclude_patterns(self._settings_service, project_root)
 
     def _refresh_open_recent_menu(self) -> None:
         self._project_controller.refresh_open_recent_menu(
@@ -2921,20 +2910,24 @@ class MainWindow(QMainWindow):
         source: str,
         label: str,
     ) -> None:
-        normalized_payloads = {path: payload for path, payload in payloads_by_path.items() if payload is not None}
-        if not normalized_payloads:
+        if not any(payload is not None for payload in payloads_by_path.values()):
             return
-        transaction_id = None
-        if len(normalized_payloads) > 1:
-            transaction_id = f"txn_{uuid.uuid4().hex}"
-        for file_path, payload in normalized_payloads.items():
-            self._record_local_history_checkpoint(
-                file_path,
-                payload,
-                source=source,
-                label=label,
-                transaction_id=transaction_id,
-            )
+        loaded_project = self._loaded_project
+        project_id = (
+            getattr(loaded_project.metadata, "project_id", None)
+            if loaded_project is not None
+            else None
+        )
+        project_root = loaded_project.project_root if loaded_project is not None else None
+        record_local_history_transaction(
+            getattr(self, "_local_history_store", None),
+            payloads_by_path,
+            project_id=project_id,
+            project_root=project_root,
+            source=source,
+            label=label,
+            logger=self._logger,
+        )
 
     def _capture_text_history_snapshots(self, target_paths: list[str]) -> dict[str, str]:
         snapshots: dict[str, str] = {}
@@ -6458,6 +6451,7 @@ class MainWindow(QMainWindow):
             font_family=self._editor_font_family,
             indent_style=self._editor_indent_style,
             indent_size=self._editor_indent_size,
+            hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
         )
         editor_widget.set_completion_preferences(
             enabled=self._completion_enabled,
@@ -6930,6 +6924,7 @@ class MainWindow(QMainWindow):
                 font_family=self._editor_font_family,
                 indent_style=editorconfig_indent.indent_style,
                 indent_size=max(1, editorconfig_indent.indent_size),
+                hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
             )
             return
         if not self._editor_detect_indentation_from_file:
@@ -6946,6 +6941,7 @@ class MainWindow(QMainWindow):
             font_family=self._editor_font_family,
             indent_style=style,
             indent_size=size,
+            hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
         )
 
     def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:

@@ -33,23 +33,35 @@ All application code must target **Python 3.9** syntax (see `.cursor/rules/pytho
 
 ### Running tests
 
-Use the project's `run_tests.py` which launches pytest inside AppRun:
+Default agent loop — fast lane (~30 s, all unit + non-slow integration through AppRun):
 
 ```bash
-python3 run_tests.py -v --import-mode=importlib
+python3 testing/run_test_shard.py fast
 ```
 
-- `--import-mode=importlib` is required because test directories lack `__init__.py` and have duplicate file names across `tests/unit/` and `tests/integration/`.
-- `QT_QPA_PLATFORM=offscreen` is set automatically by `run_tests.py`.
-- The `runtime_parity` test passes because AppRun is installed at the expected path.
-- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1386 passed, 1 skipped` (the skipped test requires the optional SQL tree-sitter grammar bundle).
-
-To run a subset:
+Pre-PR / CI lanes when you need the heavier coverage:
 
 ```bash
-python3 run_tests.py -v --import-mode=importlib tests/unit/
-python3 run_tests.py -v --import-mode=importlib -k test_project_service
+python3 testing/run_test_shard.py integration
+python3 testing/run_test_shard.py performance
+python3 testing/run_test_shard.py runtime_parity
 ```
+
+When you only need a specific path or expression (still through AppRun):
+
+```bash
+python3 run_tests.py tests/unit/some/test_module.py
+python3 run_tests.py -k test_project_service
+```
+
+`QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
+
+Latest checkpoint (2026-04-24, this branch):
+
+- `python3 testing/run_test_shard.py fast` -> ~34s, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
+- `python3 testing/run_test_shard.py integration` -> ~37s, **59 passed**.
+- `python3 testing/run_test_shard.py performance` -> ~34s, **15 passed, 2 pre-existing failures** (`test_local_history_performance` regressions tracked separately).
+- `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.
 
 ### Testing philosophy
 
@@ -141,7 +153,7 @@ This is necessary because `run_tests.py` imports pytest from within the AppRun p
 - `.venv-editor` may exist as legacy editor tooling scaffolding, but it is not a real Python environment and nothing should be run from it.
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
-- **Integration test hangs:** The full test suite (`tests/integration/`) may hang on subprocess-based tests (plugin host lifecycle, runner process tests). Running `tests/unit/` alone completes reliably. If the full suite hangs, kill the process and run unit and integration tests separately.
+- **Slow integration tests:** subprocess + debug-session integration tests are tagged `@pytest.mark.slow` and excluded from `python3 testing/run_test_shard.py fast`. They still run under the `integration` shard pre-PR, with per-test `pytest.mark.timeout(180)` overrides instead of the new global 30 s default.
 - `**vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).
 

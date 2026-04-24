@@ -196,6 +196,7 @@ class SettingsDialog(QDialog):
         _scroll_area.setWidgetResizable(True)
         _scroll_area.setObjectName("shell.settingsDialog.generalScroll")
         _scroll_content = QWidget()
+        _scroll_content.setObjectName("shell.settingsDialog.generalScrollContent")
         general_layout = QVBoxLayout(_scroll_content)
         general_layout.setContentsMargins(16, 12, 16, 12)
         general_layout.setSpacing(4)
@@ -293,6 +294,9 @@ class SettingsDialog(QDialog):
         self._auto_save_input = QCheckBox(editor_group)
         self._auto_save_input.setChecked(snapshot.auto_save)
         editor_form.addRow("Auto save", self._auto_save_input)
+        self._hover_tooltip_enabled_input = QCheckBox(editor_group)
+        self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
+        editor_form.addRow("Show hover tooltips in code editor", self._hover_tooltip_enabled_input)
         self._editor_reset_to_global_btn = QPushButton("Reset Editor Overrides to Global", editor_group)
         self._editor_reset_to_global_btn.setObjectName("shell.settingsDialog.editorResetGlobal")
         self._editor_reset_to_global_btn.clicked.connect(self._handle_reset_editor_group_to_global)
@@ -452,6 +456,7 @@ class SettingsDialog(QDialog):
             insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
             enable_preview=self._enable_preview_input.isChecked(),
             auto_save=self._auto_save_input.isChecked(),
+            hover_tooltip_enabled=self._hover_tooltip_enabled_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),
@@ -494,6 +499,7 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(snapshot.enable_preview)
         self._auto_save_input.setChecked(snapshot.auto_save)
+        self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
 
         self._completion_enabled_input.setChecked(snapshot.completion_enabled)
         self._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)

@@ -47,7 +47,14 @@ def test_local_history_store_creates_deduplicated_checkpoint_blobs(tmp_path: Pat
     project_root.mkdir()
     file_path = project_root / "main.py"
     file_path.write_text("print('original')\n", encoding="utf-8")
-    store = LocalHistoryStore(state_root=state_root)
+    store = LocalHistoryStore(
+        state_root=state_root,
+        retention_policy=LocalHistoryRetentionPolicy(
+            max_checkpoints_per_file=50,
+            retention_days=365,
+            max_tracked_file_bytes=1_000_000,
+        ),
+    )
 
     first = store.create_checkpoint(
         str(file_path),
@@ -82,7 +89,14 @@ def test_local_history_store_remaps_file_lineage_and_tracks_deletion(tmp_path: P
     renamed_path = project_root / "pkg" / "renamed.py"
     original_path.parent.mkdir(parents=True)
     original_path.write_text("VALUE = 1\n", encoding="utf-8")
-    store = LocalHistoryStore(state_root=state_root)
+    store = LocalHistoryStore(
+        state_root=state_root,
+        retention_policy=LocalHistoryRetentionPolicy(
+            max_checkpoints_per_file=50,
+            retention_days=365,
+            max_tracked_file_bytes=1_000_000,
+        ),
+    )
 
     original_checkpoint = store.create_checkpoint(
         str(original_path),
@@ -196,7 +210,14 @@ def test_local_history_store_lists_global_history_files_with_aliases_and_deleted
     renamed_path = project_root / "pkg" / "renamed.py"
     original_path.parent.mkdir(parents=True)
     original_path.write_text("VALUE = 1\n", encoding="utf-8")
-    store = LocalHistoryStore(state_root=state_root)
+    store = LocalHistoryStore(
+        state_root=state_root,
+        retention_policy=LocalHistoryRetentionPolicy(
+            max_checkpoints_per_file=50,
+            retention_days=365,
+            max_tracked_file_bytes=1_000_000,
+        ),
+    )
 
     store.create_checkpoint(
         str(original_path),

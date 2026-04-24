@@ -18,6 +18,7 @@ markers = [
     "runtime_parity: tests requiring /opt/freecad/AppRun or equivalent runtime",
     "manual_acceptance: links automated coverage to manual acceptance workflows",
     "slow: tests whose realistic wall time exceeds the agent fast-lane budget",
+    "performance: wall-clock benchmarks; excluded from default `run_tests.py`",
 ]
 # Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
 filterwarnings = [

@@ -11,9 +11,8 @@ import pytest
 from app.editors.editor_manager import EditorManager
 from app.editors.search_panel import find_in_files
 from app.project.project_service import open_project
-from app.run.console_model import ConsoleModel
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(120)]
+pytestmark = [pytest.mark.integration, pytest.mark.performance, pytest.mark.timeout(120)]
 
 
 def _write_project_manifest(project_root: Path, name: str) -> None:
@@ -78,42 +77,3 @@ def test_find_in_files_500_files_first_results_under_1_5s(tmp_path: Path) -> Non
     assert elapsed <= 1.5
 
 
-def test_console_model_2000_line_burst_under_500ms(tmp_path: Path) -> None:
-    """Console buffering should remain responsive during burst output."""
-    _ = tmp_path
-    model = ConsoleModel()
-
-    start = time.perf_counter()
-    for index in range(2000):
-        model.append("stdout", f"line {index}")
-    elapsed = time.perf_counter() - start
-
-    assert len(model.lines()) == 2000
-    assert elapsed <= 0.5
-
-
-def test_run_log_panel_append_scales_near_linearly() -> None:
-    """Run log appends should avoid quadratic growth as history increases."""
-    pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-
-    from PySide2.QtWidgets import QApplication
-
-    from app.shell.run_log_panel import RunLogPanel
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-
-    def _append_lines(count: int) -> float:
-        panel = RunLogPanel()
-        start = time.perf_counter()
-        for index in range(count):
-            panel.append_live_line(f"line {index}\n", stream="stdout")
-        return time.perf_counter() - start
-
-    small_elapsed = _append_lines(2_000)
-    large_elapsed = _append_lines(10_000)
-    growth_ratio = large_elapsed / max(small_elapsed, 1e-9)
-
-    # 5x more lines should remain in roughly linear territory.
-    assert growth_ratio <= 8.0

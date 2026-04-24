@@ -1581,6 +1581,14 @@ QDialog#shell\\.settingsDialog QScrollArea {{
     background: transparent;
     border: none;
 }}
+/* Qt's internal viewport child of the General-tab scroll area */
+QScrollArea#shell\\.settingsDialog\\.generalScroll > QWidget {{
+    background: {tokens.panel_bg};
+}}
+/* The user-supplied content widget set via QScrollArea.setWidget(...) */
+QWidget#shell\\.settingsDialog\\.generalScrollContent {{
+    background: {tokens.panel_bg};
+}}
 """
 
 def settings_section_scrollbars_shortcuts_validation(tokens: ShellThemeTokens) -> str:

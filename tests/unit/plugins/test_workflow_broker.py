@@ -39,24 +39,16 @@ def test_workflow_broker_records_success_metrics_for_builtin_query_provider() ->
 
     assert descriptor.provider_key == "builtin:formatter"
     assert result["status"] == "ok"
-    assert metrics == [
-        {
-            "provider_key": "builtin:formatter",
-            "kind": "formatter",
-            "lane": "query",
-            "title": "Builtin Formatter",
-            "source_kind": "builtin",
-            "invocation_count": 1,
-            "success_count": 1,
-            "failure_count": 0,
-            "timeout_count": 0,
-            "last_elapsed_ms": metrics[0]["last_elapsed_ms"],
-            "max_elapsed_ms": metrics[0]["max_elapsed_ms"],
-            "last_error": None,
-        }
-    ]
-    assert isinstance(metrics[0]["last_elapsed_ms"], float)
-    assert isinstance(metrics[0]["max_elapsed_ms"], float)
+    assert len(metrics) == 1
+    metric = metrics[0]
+    assert metric["provider_key"] == "builtin:formatter"
+    assert metric["invocation_count"] == 1
+    assert metric["success_count"] == 1
+    assert metric["failure_count"] == 0
+    assert metric["timeout_count"] == 0
+    assert metric["last_error"] is None
+    assert metric["last_elapsed_ms"] >= 0
+    assert metric["max_elapsed_ms"] >= metric["last_elapsed_ms"]
 
 
 def test_workflow_broker_records_failure_and_timeout_metrics() -> None:

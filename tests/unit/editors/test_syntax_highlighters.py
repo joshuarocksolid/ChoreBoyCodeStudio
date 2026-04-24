@@ -134,6 +134,35 @@ def test_markdown_tree_sitter_highlighter_formats_strong_and_markers() -> None:
     assert list_marker_color == DEFAULT_LIGHT_PALETTE["punctuation"].lower()
 
 
+def test_python_word_operators_use_dedicated_keyword_operator_color() -> None:
+    line0 = "if APP_DIR not in sys.path and FOO:"
+    line1 = "    Foo(app_dir=1, log_file=2)"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    not_color = _color_at(document, 0, line0.index("not"))
+    in_color = _color_at(document, 0, line0.index(" in ") + 1)
+    and_color = _color_at(document, 0, line0.index("and"))
+    expected = DEFAULT_LIGHT_PALETTE["keyword_operator"].lower()
+    assert not_color == expected
+    assert in_color == expected
+    assert and_color == expected
+    arithmetic_color = _color_at(document, 1, line1.index("="))
+    assert arithmetic_color == DEFAULT_LIGHT_PALETTE["operator"].lower()
+
+
+def test_python_keyword_argument_names_use_parameter_color() -> None:
+    line0 = "Foo(app_dir=1, log_file=2)"
+    source = f"{line0}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    app_dir_color = _color_at(document, 0, line0.index("app_dir"))
+    log_file_color = _color_at(document, 0, line0.index("log_file"))
+    expected = DEFAULT_LIGHT_PALETTE["parameter"].lower()
+    assert app_dir_color == expected
+    assert log_file_color == expected
+
+
 def test_python_tree_sitter_highlighter_formats_builtins_and_escapes() -> None:
     line0 = "def build(self):"
     line1 = '    print("line\\n")'
@@ -149,6 +178,73 @@ def test_python_tree_sitter_highlighter_formats_builtins_and_escapes() -> None:
     assert builtin_call_color == DEFAULT_LIGHT_PALETTE["builtin"].lower()
     assert self_usage_color == DEFAULT_LIGHT_PALETTE["builtin"].lower()
     assert escape_color == DEFAULT_LIGHT_PALETTE["escape"].lower()
+
+
+def test_python_match_case_keywords_are_highlighted_as_control() -> None:
+    line0 = "match value:"
+    line1 = "    case 1:"
+    line2 = "        pass"
+    source = "\n".join((line0, line1, line2)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    expected = DEFAULT_LIGHT_PALETTE["keyword_control"].lower()
+    assert _color_at(document, 0, line0.index("match")) == expected
+    assert _color_at(document, 1, line1.index("case")) == expected
+
+
+def test_python_args_and_kwargs_definitions_use_parameter_color() -> None:
+    line0 = "def call(*args, **kwargs):"
+    line1 = "    return args, kwargs"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    expected = DEFAULT_LIGHT_PALETTE["parameter"].lower()
+    assert _color_at(document, 0, line0.index("args")) == expected
+    assert _color_at(document, 0, line0.index("kwargs")) == expected
+
+
+def test_python_walrus_and_inplace_operators_use_operator_color() -> None:
+    line0 = "if (n := 1) > 0:"
+    line1 = "    n **= 2"
+    line2 = "    n //= 2"
+    line3 = "    y = a @ b"
+    source = "\n".join((line0, line1, line2, line3)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    expected = DEFAULT_LIGHT_PALETTE["operator"].lower()
+    assert _color_at(document, 0, line0.index(":=")) == expected
+    assert _color_at(document, 1, line1.index("**=")) == expected
+    assert _color_at(document, 2, line2.index("//=")) == expected
+    assert _color_at(document, 3, line3.index("@")) == expected
+
+
+def test_python_fstring_interpolation_contents_are_styled() -> None:
+    line0 = "name = 'alice'"
+    line1 = "value = f'hello {name!r:>10s}'"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    name_in_interp_color = _color_at(document, 1, line1.index("{name") + 1)
+    assert name_in_interp_color == DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
+    type_conversion_color = _color_at(document, 1, line1.index("!r"))
+    assert type_conversion_color == DEFAULT_LIGHT_PALETTE["decorator"].lower()
+
+
+def test_python_tree_sitter_highlighter_formats_builtin_exceptions_and_dunders() -> None:
+    line0 = "try:"
+    line1 = "    raise ValueError('x')"
+    line2 = "except Exception as err:"
+    line3 = "    pass"
+    line4 = ""
+    line5 = "if __name__ == '__main__':"
+    line6 = "    print(__file__)"
+    source = "\n".join([line0, line1, line2, line3, line4, line5, line6]) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    expected = DEFAULT_LIGHT_PALETTE["builtin"].lower()
+    assert _color_at(document, 1, line1.index("ValueError")) == expected
+    assert _color_at(document, 2, line2.index("Exception")) == expected
+    assert _color_at(document, 5, line5.index("__name__")) == expected
+    assert _color_at(document, 6, line6.index("__file__")) == expected
 
 
 def test_javascript_tree_sitter_highlighter_formats_builtin_and_constants() -> None:
@@ -299,6 +395,46 @@ def test_html_tree_sitter_injects_script_and_style_languages() -> None:
     assert _color_at(document, 0, line0.index("const")) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
     assert _color_at(document, 1, line1.index("body")) == DEFAULT_LIGHT_PALETTE["class"].lower()
     assert _color_at(document, 1, line1.index("color")) == DEFAULT_LIGHT_PALETTE["semantic_property"].lower()
+
+
+def test_jsonc_lexical_pass_colors_line_and_block_comments() -> None:
+    line0 = "{ // top-level comment"
+    line1 = '  "name": "alice", /* trailing */'
+    line2 = '  "url": "http://example.com"'
+    line3 = "}"
+    source = "\n".join((line0, line1, line2, line3)) + "\n"
+    document, _ = _render("/tmp/settings.jsonc", source, is_dark=False)
+    expected_comment = DEFAULT_LIGHT_PALETTE["comment"].lower()
+    assert _color_at(document, 0, line0.index("//")) == expected_comment
+    assert _color_at(document, 1, line1.index("/*")) == expected_comment
+    url_value_color = _color_at(document, 2, line2.index("http"))
+    assert url_value_color != expected_comment
+
+
+def test_html_tree_sitter_highlighter_styles_comments_and_entities() -> None:
+    line0 = "<!-- top -->"
+    line1 = "<p>hello&amp;world</p>"
+    source = f"{line0}\n{line1}\n"
+    document, _ = _render("/tmp/index.html", source, is_dark=False)
+    assert _color_at(document, 0, line0.index("top")) == DEFAULT_LIGHT_PALETTE["comment"].lower()
+    assert _color_at(document, 1, line1.index("&amp;")) == DEFAULT_LIGHT_PALETTE["escape"].lower()
+
+
+def test_css_tree_sitter_highlighter_styles_pseudo_and_important() -> None:
+    line0 = "a:hover { color: red !important; }"
+    source = f"{line0}\n"
+    document, _ = _render("/tmp/main.css", source, is_dark=False)
+    assert _color_at(document, 0, line0.index("hover")) == DEFAULT_LIGHT_PALETTE["keyword_control"].lower()
+    assert _color_at(document, 0, line0.index("!important")) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+
+
+def test_xml_tree_sitter_highlighter_styles_cdata_text() -> None:
+    line0 = "<root>"
+    line1 = "<![CDATA[raw payload]]>"
+    line2 = "</root>"
+    source = f"{line0}\n{line1}\n{line2}\n"
+    document, _ = _render("/tmp/doc.xml", source, is_dark=False)
+    assert _color_at(document, 1, line1.index("raw")) == DEFAULT_LIGHT_PALETTE["string"].lower()
 
 
 def test_markdown_tree_sitter_injects_fenced_python_code_blocks() -> None:

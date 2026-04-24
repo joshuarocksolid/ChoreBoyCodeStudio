@@ -124,6 +124,7 @@ def test_syntax_palette_includes_extended_semantic_keys() -> None:
     palette = syntax_palette_from_tokens(tokens)
     assert palette["keyword_control"] == tokens.syntax_keyword_control
     assert palette["keyword_import"] == tokens.syntax_keyword_import
+    assert palette["keyword_operator"] == tokens.syntax_keyword_operator
     assert palette["escape"] == tokens.syntax_escape
     assert palette["markdown_strong"] == tokens.syntax_markdown_strong
     assert palette["semantic_function"] == tokens.syntax_semantic_function
@@ -134,6 +135,17 @@ def test_syntax_palette_includes_extended_semantic_keys() -> None:
     assert palette["semantic_variable"] == tokens.syntax_semantic_variable
     assert palette["semantic_property"] == tokens.syntax_semantic_property
     assert palette["semantic_constant"] == tokens.syntax_semantic_constant
+
+
+def test_syntax_palette_keyword_operator_override_propagates() -> None:
+    """Custom keyword_operator color set by the user must reach the highlighter palette."""
+    custom_color = "#123456"
+    base_tokens = tokens_from_palette(QPalette(), force_mode="dark")
+    from dataclasses import replace
+
+    overridden_tokens = replace(base_tokens, syntax_keyword_operator=custom_color)
+    palette = syntax_palette_from_tokens(overridden_tokens)
+    assert palette["keyword_operator"] == custom_color
 
 
 def test_registry_returns_tree_sitter_for_multiple_languages() -> None:

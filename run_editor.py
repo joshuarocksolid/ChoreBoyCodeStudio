@@ -36,7 +36,7 @@ def _start_editor() -> int:
     _clear_qt_module_caches()
     application.processEvents()
 
-    os._exit(exit_code)
+    return exit_code
 
 
 def _clear_qt_module_caches() -> None:
@@ -165,4 +165,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    os._exit(main())

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import fnmatch
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from app.core import constants
+
+
+class SettingsServiceLike(Protocol):
+    """Protocol covering the settings-service surface needed for exclude resolution."""
+
+    def load_global(self) -> Mapping[str, Any]: ...
+    def load_project(self, project_root: str) -> Mapping[str, Any]: ...
 
 
 DEFAULT_EXCLUDE_PATTERNS: list[str] = [
@@ -61,6 +68,21 @@ def compute_effective_excludes(
             seen.add(stripped)
             result.append(stripped)
     return result
+
+
+def load_effective_exclude_patterns(
+    settings_service: SettingsServiceLike,
+    project_root: str | None = None,
+) -> list[str]:
+    """Resolve global + project exclude patterns through ``settings_service``."""
+    global_patterns = parse_global_exclude_patterns(settings_service.load_global())
+    if project_root:
+        project_patterns = parse_project_exclude_patterns(
+            settings_service.load_project(project_root)
+        )
+    else:
+        project_patterns = []
+    return compute_effective_excludes(global_patterns, project_patterns)
 
 
 def should_exclude_entry(

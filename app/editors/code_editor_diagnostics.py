@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         _hover_requester: Any
         _hover_request_generation: int
         _hover_request_global_pos: QPoint | None
+        _hover_tooltip_enabled: bool
 
         def _mark_overlay_cache_dirty(self) -> None: ...
         def _refresh_extra_selections(self) -> None: ...
@@ -114,6 +115,9 @@ class CodeEditorDiagnosticsMixin(_CodeEditorDiagnosticsBase):
                 if start <= cursor_pos < end:
                     QToolTip.showText(e.globalPos(), tooltip, self)  # type: ignore[union-attr]
                     return True
+            if not self._hover_tooltip_enabled:
+                QToolTip.hideText()
+                return True
             if self._hover_requester is not None:
                 self._hover_request_generation += 1
                 self._hover_request_global_pos = QPoint(e.globalPos())  # type: ignore[union-attr]

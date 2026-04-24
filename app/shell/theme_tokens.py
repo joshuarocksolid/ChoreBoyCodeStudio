@@ -43,6 +43,7 @@ class ShellThemeTokens:
     syntax_keyword: str = ""
     syntax_keyword_control: str = ""
     syntax_keyword_import: str = ""
+    syntax_keyword_operator: str = ""
     syntax_builtin: str = ""
     syntax_escape: str = ""
     syntax_string: str = ""
@@ -169,6 +170,7 @@ _SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
     "keyword": "syntax_keyword",
     "keyword_control": "syntax_keyword_control",
     "keyword_import": "syntax_keyword_import",
+    "keyword_operator": "syntax_keyword_operator",
     "builtin": "syntax_builtin",
     "escape": "syntax_escape",
     "string": "syntax_string",

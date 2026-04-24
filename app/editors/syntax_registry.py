@@ -128,6 +128,7 @@ def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
         "keyword": tokens.syntax_keyword,
         "keyword_control": tokens.syntax_keyword_control,
         "keyword_import": tokens.syntax_keyword_import,
+        "keyword_operator": tokens.syntax_keyword_operator,
         "builtin": tokens.syntax_builtin,
         "escape": tokens.syntax_escape,
         "string": tokens.syntax_string,

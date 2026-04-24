@@ -16,40 +16,55 @@ from app.intelligence.cache_controls import (
 pytestmark = pytest.mark.unit
 
 
-def test_parse_intelligence_runtime_settings_uses_defaults_for_missing_payload() -> None:
-    settings = parse_intelligence_runtime_settings({})
+_DEFAULT_FIELDS = {
+    "cache_enabled": True,
+    "incremental_indexing": True,
+    "metrics_logging_enabled": True,
+    "force_full_reindex_on_open": False,
+    "highlighting_adaptive_mode": "normal",
+    "highlighting_reduced_threshold_chars": 250_000,
+    "highlighting_lexical_only_threshold_chars": 600_000,
+}
 
-    assert settings.cache_enabled is True
-    assert settings.incremental_indexing is True
-    assert settings.metrics_logging_enabled is True
-    assert settings.force_full_reindex_on_open is False
-    assert settings.highlighting_adaptive_mode == "normal"
-    assert settings.highlighting_reduced_threshold_chars == 250_000
-    assert settings.highlighting_lexical_only_threshold_chars == 600_000
+_EXPLICIT_PAYLOAD = {
+    "intelligence": {
+        "cache_enabled": False,
+        "incremental_indexing": False,
+        "metrics_logging_enabled": False,
+        "force_full_reindex_on_open": True,
+        "highlighting_adaptive_mode": "reduced",
+        "highlighting_reduced_threshold_chars": 180000,
+        "highlighting_lexical_only_threshold_chars": 360000,
+    }
+}
+
+_EXPLICIT_FIELDS = {
+    "cache_enabled": False,
+    "incremental_indexing": False,
+    "metrics_logging_enabled": False,
+    "force_full_reindex_on_open": True,
+    "highlighting_adaptive_mode": "reduced",
+    "highlighting_reduced_threshold_chars": 180000,
+    "highlighting_lexical_only_threshold_chars": 360000,
+}
 
 
-def test_parse_intelligence_runtime_settings_reads_boolean_flags() -> None:
-    settings = parse_intelligence_runtime_settings(
-        {
-            "intelligence": {
-                "cache_enabled": False,
-                "incremental_indexing": False,
-                "metrics_logging_enabled": False,
-                "force_full_reindex_on_open": True,
-                "highlighting_adaptive_mode": "reduced",
-                "highlighting_reduced_threshold_chars": 180000,
-                "highlighting_lexical_only_threshold_chars": 360000,
-            }
-        }
-    )
-
-    assert settings.cache_enabled is False
-    assert settings.incremental_indexing is False
-    assert settings.metrics_logging_enabled is False
-    assert settings.force_full_reindex_on_open is True
-    assert settings.highlighting_adaptive_mode == "reduced"
-    assert settings.highlighting_reduced_threshold_chars == 180000
-    assert settings.highlighting_lexical_only_threshold_chars == 360000
+@pytest.mark.parametrize(
+    ("payload", "field", "expected"),
+    [
+        ({}, field, value)
+        for field, value in _DEFAULT_FIELDS.items()
+    ]
+    + [
+        (_EXPLICIT_PAYLOAD, field, value)
+        for field, value in _EXPLICIT_FIELDS.items()
+    ],
+)
+def test_parse_intelligence_runtime_settings_field_value(
+    payload: dict, field: str, expected: object
+) -> None:
+    settings = parse_intelligence_runtime_settings(payload)
+    assert getattr(settings, field) == expected
 
 
 def test_parse_intelligence_runtime_settings_clamps_invalid_highlighting_values() -> None:
