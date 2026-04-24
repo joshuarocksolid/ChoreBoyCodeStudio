@@ -543,23 +543,24 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
             return
 
         scope_ranges: list[tuple[int, int]] = [(0, len(source_bytes))]
-        pending_definitions: list[tuple[Any, str, bool]] = []
+        pending_definitions: list[tuple[Any, str, bool, bool]] = []
         pending_references: list[Any] = []
 
         for pattern_index, capture_map in matches:
             settings = self._query_settings(self._locals_query, pattern_index)
             role = str(settings.get("local.role", "semantic_variable"))
             color_definition = str(settings.get("local.color_definition", "")).lower() == "true"
+            scope_lift = str(settings.get("local.scope_lift", "")).lower() == "true"
             for scope_node in capture_map.get("local.scope", []):
                 scope_ranges.append((int(scope_node.start_byte), int(scope_node.end_byte)))
             for definition_node in capture_map.get("local.definition", []):
-                pending_definitions.append((definition_node, role, color_definition))
+                pending_definitions.append((definition_node, role, color_definition, scope_lift))
             for reference_node in capture_map.get("local.reference", []):
                 pending_references.append(reference_node)
 
         scopes = self._build_scope_records(scope_ranges)
         definitions_by_scope: dict[int, list[_LocalDefinition]] = {}
-        for definition_node, role, color_definition in pending_definitions:
+        for definition_node, role, color_definition, scope_lift in pending_definitions:
             name = self._node_text(node=definition_node, lines=lines)
             if not name:
                 continue
@@ -568,6 +569,8 @@ class TreeSitterHighlighter(ThemedSyntaxHighlighter):
                 start_byte=int(definition_node.start_byte),
                 end_byte=int(definition_node.end_byte),
             )
+            if scope_lift:
+                scope_index = scopes[scope_index].parent_index
             token_name = self._normalize_local_role(name=name, role=role)
             definition = _LocalDefinition(
                 name=name,

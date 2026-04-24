@@ -1,6 +1,6 @@
 """Shared constants for bootstrap/path contracts."""
 
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.3.0"
 
 APP_RUN_PATH = "/opt/freecad/AppRun"
 

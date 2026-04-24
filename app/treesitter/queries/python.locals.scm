@@ -9,11 +9,15 @@
 
 (function_definition
   name: (identifier) @local.definition
-  (#set! local.role "semantic_function"))
+  (#set! local.role "semantic_function")
+  (#set! local.scope_lift "true")
+  (#set! local.color_definition "true"))
 
 (class_definition
   name: (identifier) @local.definition
-  (#set! local.role "semantic_class"))
+  (#set! local.role "semantic_class")
+  (#set! local.scope_lift "true")
+  (#set! local.color_definition "true"))
 
 (parameters
   (identifier) @local.definition
@@ -132,6 +136,11 @@
 (except_clause
   value: (as_pattern
     alias: (as_pattern_target (identifier) @local.definition))
+  (#set! local.role "semantic_variable")
+  (#set! local.color_definition "true"))
+
+(named_expression
+  name: (identifier) @local.definition
   (#set! local.role "semantic_variable")
   (#set! local.color_definition "true"))
 

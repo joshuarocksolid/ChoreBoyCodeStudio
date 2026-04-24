@@ -253,7 +253,7 @@ class SemanticSession:
     ) -> SemanticHoverResult | None:
         """Resolve hover info on the semantic thread and wait for the result."""
         return cast(
-            SemanticHoverResult | None,
+            Optional[SemanticHoverResult],
             self._worker.call(
             key=f"hover_sync:{current_file_path}",
             task=lambda: self._semantic_facade.resolve_hover_info(
@@ -275,7 +275,7 @@ class SemanticSession:
     ) -> SemanticSignatureResult | None:
         """Resolve signature help on the semantic thread and wait for the result."""
         return cast(
-            SemanticSignatureResult | None,
+            Optional[SemanticSignatureResult],
             self._worker.call(
             key=f"signature_sync:{current_file_path}",
             task=lambda: self._semantic_facade.resolve_signature_help(

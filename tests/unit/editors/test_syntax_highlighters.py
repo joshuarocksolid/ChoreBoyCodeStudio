@@ -259,6 +259,30 @@ def test_javascript_tree_sitter_highlighter_formats_builtin_and_constants() -> N
     assert this_color == DEFAULT_LIGHT_PALETTE["builtin"].lower()
 
 
+def test_javascript_locals_color_module_level_function_reference() -> None:
+    if "javascript" not in _available_language_keys():
+        pytest.skip("Optional javascript tree-sitter grammar not vendored.")
+    line0 = "function helper() { return 1; }"
+    line1 = "run(helper);"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.js", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    reference_color = _color_at(document, 1, line1.index("helper"))
+    assert reference_color == DEFAULT_LIGHT_PALETTE["semantic_function"].lower()
+
+
+def test_javascript_locals_color_module_level_class_reference() -> None:
+    if "javascript" not in _available_language_keys():
+        pytest.skip("Optional javascript tree-sitter grammar not vendored.")
+    line0 = "class Widget {}"
+    line1 = "factory(Widget);"
+    source = f"{line0}\n{line1}\n"
+    document, highlighter = _render("/tmp/main.js", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    reference_color = _color_at(document, 1, line1.index("Widget"))
+    assert reference_color == DEFAULT_LIGHT_PALETTE["semantic_class"].lower()
+
+
 def test_yaml_tree_sitter_highlighter_formats_mapping_keys() -> None:
     source = "root:\n  child: 1\n{name: 2}\n"
     document, highlighter = _render("/tmp/config.yaml", source, is_dark=False)
@@ -357,6 +381,44 @@ def test_python_locals_color_parameter_references_without_capturing_every_identi
     assert keyword_color == DEFAULT_LIGHT_PALETTE["keyword"].lower()
     value_usage_color = _color_at(document, 1, line1.index("value"))
     assert value_usage_color == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
+
+
+def test_python_locals_color_module_level_function_reference() -> None:
+    line0 = "def helper():"
+    line1 = "    return 1"
+    line2 = ""
+    line3 = "run(helper)"
+    source = "\n".join((line0, line1, line2, line3)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    reference_color = _color_at(document, 3, line3.index("helper"))
+    assert reference_color == DEFAULT_LIGHT_PALETTE["semantic_function"].lower()
+
+
+def test_python_locals_color_module_level_class_reference() -> None:
+    line0 = "class Widget:"
+    line1 = "    pass"
+    line2 = ""
+    line3 = "factory(Widget)"
+    source = "\n".join((line0, line1, line2, line3)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    reference_color = _color_at(document, 3, line3.index("Widget"))
+    assert reference_color == DEFAULT_LIGHT_PALETTE["semantic_class"].lower()
+
+
+def test_python_locals_color_walrus_binding_references() -> None:
+    line0 = "if (count := compute()) > 0:"
+    line1 = "    print(count)"
+    line2 = "log(count)"
+    source = "\n".join((line0, line1, line2)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    inside_color = _color_at(document, 1, line1.index("count"))
+    after_color = _color_at(document, 2, line2.index("count"))
+    expected = DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
+    assert inside_color == expected
+    assert after_color == expected
 
 
 def test_python_freecad_macro_coloring() -> None:

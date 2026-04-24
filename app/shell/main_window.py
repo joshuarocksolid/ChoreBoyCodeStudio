@@ -221,7 +221,13 @@ from app.python_tools.models import (
 )
 from app.python_tools.vendor_runtime import initialize_python_tooling_runtime
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.project.project_service import create_blank_project, enumerate_project_entries, open_project
+from app.project.project_service import (
+    ProjectRootState,
+    assess_project_root,
+    create_blank_project,
+    enumerate_project_entries,
+    open_project,
+)
 from app.project.project_manifest import set_project_default_entry
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import GeneralTaskScheduler
@@ -545,7 +551,7 @@ class MainWindow(QMainWindow):
             get_pending_realtime_file_path=lambda: self._pending_realtime_lint_file_path,
             start_realtime_timer=self._realtime_lint_timer.start,
             get_active_tab_file_path=lambda: cast(
-                str | None,
+                Optional[str],
                 getattr(self._editor_manager.active_tab(), "file_path", None),
             ),
             render_lint_for_file=lambda file_path, trigger: self._render_lint_diagnostics_for_file(
@@ -739,7 +745,12 @@ class MainWindow(QMainWindow):
         run_editor.set_startup_report_refresh_callback(self._handle_startup_report_refresh)
 
     def _try_restore_last_project(self) -> None:
-        """Attempt to reopen the last project from the previous session."""
+        """Attempt to reopen the last project from the previous session.
+
+        Accepts both canonical projects (with ``cbcs/project.json``) and
+        importable roots so users who never explicitly initialized a
+        project still get the same auto-reopen behavior they had before.
+        """
         if self._is_shutting_down or self._loaded_project is not None:
             return
         try:
@@ -750,7 +761,13 @@ class MainWindow(QMainWindow):
         if not isinstance(last_path, str) or not last_path.strip():
             return
         project_root = Path(last_path.strip())
-        if not project_root.is_dir() or not (project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME).is_file():
+        if not project_root.is_dir():
+            return
+        try:
+            assessment = assess_project_root(project_root)
+        except Exception:
+            return
+        if assessment.state not in (ProjectRootState.CANONICAL, ProjectRootState.IMPORTABLE):
             return
         self._open_project_by_path(str(project_root))
 
@@ -1463,8 +1480,36 @@ class MainWindow(QMainWindow):
         if not file_paths:
             return
 
+        # When no project is loaded, auto-open the first file's parent directory
+        # as a project so the editor surface is populated and the file lives in a
+        # navigable workspace. Mirrors how Atom/Sublime/VS Code (no folder open)
+        # behave when a single file is opened from the menu.
+        if self._loaded_project is None:
+            self._maybe_open_parent_directory_as_project(file_paths[0])
+
         for file_path in file_paths:
             self._open_file_in_editor(file_path, preview=False)
+
+        # Always surface the editor screen — without this, opening a file from
+        # the welcome page leaves the welcome page visible even though the tab
+        # was actually added to the (hidden) editor stack.
+        self._show_editor_screen()
+
+    def _maybe_open_parent_directory_as_project(self, file_path: str) -> None:
+        """Open ``file_path``'s parent directory as a project, when valid."""
+        try:
+            parent_dir = Path(file_path).expanduser().resolve().parent
+        except OSError:
+            return
+        if not parent_dir.is_dir():
+            return
+        try:
+            assessment = assess_project_root(parent_dir)
+        except Exception:
+            return
+        if assessment.state not in (ProjectRootState.CANONICAL, ProjectRootState.IMPORTABLE):
+            return
+        self._open_project_by_path(str(parent_dir))
 
     def _handle_new_window_action(self) -> None:
         repo_root = self._resolve_repo_root_for_launch()
