@@ -1,27 +1,139 @@
 (comment) @comment
-(string) @string
+(marginalia) @comment
 
-(number) @number
+(literal) @string
 
-(from_clause (identifier) @class.def)
-(table_column name: (identifier) @property)
-(function_call function: (identifier) @function.call)
+(int) @number
 
-["SELECT" "FROM" "WHERE" "INSERT" "UPDATE" "DELETE" "CREATE" "DROP"
- "ALTER" "TABLE" "INTO" "VALUES" "SET" "JOIN" "LEFT" "RIGHT" "INNER"
- "OUTER" "ON" "AND" "OR" "NOT" "IN" "IS" "NULL" "AS" "ORDER" "BY"
- "GROUP" "HAVING" "LIMIT" "OFFSET" "DISTINCT" "UNION" "ALL" "EXISTS"
- "BETWEEN" "LIKE" "CASE" "WHEN" "THEN" "ELSE" "END" "BEGIN" "COMMIT"
- "ROLLBACK" "PRIMARY" "KEY" "FOREIGN" "REFERENCES" "INDEX" "VIEW"
- "select" "from" "where" "insert" "update" "delete" "create" "drop"
- "alter" "table" "into" "values" "set" "join" "left" "right" "inner"
- "outer" "on" "and" "or" "not" "in" "is" "null" "as" "order" "by"
- "group" "having" "limit" "offset" "distinct" "union" "all" "exists"
- "between" "like" "case" "when" "then" "else" "end" "begin" "commit"
- "rollback" "primary" "key" "foreign" "references" "index" "view"] @keyword
+[
+ (keyword_select)
+ (keyword_from)
+ (keyword_where)
+ (keyword_insert)
+ (keyword_update)
+ (keyword_delete)
+ (keyword_create)
+ (keyword_drop)
+ (keyword_alter)
+ (keyword_table)
+ (keyword_into)
+ (keyword_values)
+ (keyword_set)
+ (keyword_join)
+ (keyword_left)
+ (keyword_right)
+ (keyword_inner)
+ (keyword_full)
+ (keyword_cross)
+ (keyword_natural)
+ (keyword_using)
+ (keyword_on)
+ (keyword_and)
+ (keyword_or)
+ (keyword_not)
+ (keyword_in)
+ (keyword_is)
+ (keyword_null)
+ (keyword_as)
+ (keyword_order)
+ (keyword_by)
+ (keyword_group)
+ (keyword_having)
+ (keyword_limit)
+ (keyword_offset)
+ (keyword_distinct)
+ (keyword_union)
+ (keyword_intersect)
+ (keyword_except)
+ (keyword_all)
+ (keyword_exists)
+ (keyword_between)
+ (keyword_like)
+ (keyword_similar)
+ (keyword_case)
+ (keyword_when)
+ (keyword_then)
+ (keyword_else)
+ (keyword_end)
+ (keyword_begin)
+ (keyword_commit)
+ (keyword_rollback)
+ (keyword_primary)
+ (keyword_key)
+ (keyword_foreign)
+ (keyword_references)
+ (keyword_index)
+ (keyword_view)
+ (keyword_with)
+ (keyword_recursive)
+ (keyword_window)
+ (keyword_over)
+ (keyword_partition)
+ (keyword_row)
+ (keyword_rows)
+ (keyword_range)
+ (keyword_returning)
+ (keyword_materialized)
+ (keyword_lateral)
+ (keyword_nulls)
+ (keyword_first)
+ (keyword_last)
+ (keyword_if)
+ (keyword_cascade)
+ (keyword_restrict)
+ (keyword_check)
+ (keyword_constraint)
+ (keyword_unique)
+ (keyword_default)
+ (keyword_temporary)
+ (keyword_temp)
+ (keyword_truncate)
+ (keyword_conflict)
+ (keyword_do)
+ (keyword_nothing)
+ (keyword_asc)
+ (keyword_desc)
+ (keyword_replace)
+ (keyword_database)
+ (keyword_schema)
+ (keyword_function)
+ (keyword_procedure)
+ (keyword_trigger)
+] @keyword
 
-["=" "<" ">" "<=" ">=" "<>" "!=" "||" "+" "-" "*" "/"] @operator
+[
+ (keyword_int)
+ (keyword_boolean)
+ (keyword_text)
+ (keyword_varchar)
+ (keyword_numeric)
+ (keyword_timestamp)
+ (keyword_date)
+ (keyword_time)
+ (keyword_interval)
+ (keyword_jsonb)
+ (keyword_json)
+ (keyword_decimal)
+ (keyword_float)
+ (keyword_double)
+ (keyword_char)
+ (keyword_bigint)
+ (keyword_smallint)
+ (keyword_serial)
+ (keyword_bytea)
+ (keyword_uuid)
+] @class.def
+
+[
+ (keyword_true)
+ (keyword_false)
+] @number
+
+(invocation (object_reference (identifier) @function.call))
+(relation (object_reference (identifier) @class.def))
+(field (identifier) @property)
+(field (object_reference (identifier) @property))
+
+["=" "<" ">" "<=" ">=" "<>" "!=" "+" "-" "*" "/" "%"] @operator
 ["(" ")" "[" "]"] @punctuation.bracket
 ["," "." ";"] @punctuation.delimiter
-
-(identifier) @variable

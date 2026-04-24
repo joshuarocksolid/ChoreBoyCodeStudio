@@ -34,6 +34,18 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
     tree_sitter_dir.mkdir(parents=True)
     (tree_sitter_dir / "_binding.cpython-39-x86_64-linux-gnu.so").write_bytes(b"core")
 
+    fake_optional_spec = loader.TreeSitterLanguageSpec(
+        key="fake_optional",
+        display_name="Fake Optional",
+        extensions=(".fake",),
+        highlights_query_file="fake.scm",
+        language_name="fake_optional",
+        package_name="tree_sitter_fake_optional",
+        included_by_default=False,
+    )
+    patched_specs = loader.LANGUAGE_SPECS + (fake_optional_spec,)
+    monkeypatch.setattr(loader, "LANGUAGE_SPECS", patched_specs)
+
     def fake_load_extension_module(module_name: str, shared_object_path: Path, label: str) -> ModuleType:
         return ModuleType(module_name)
 
@@ -49,7 +61,7 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
             module = ModuleType(spec.package_name)
             module.language = lambda: 11  # type: ignore[attr-defined]
             return module
-        if spec.key == "sql":
+        if spec.key == "fake_optional":
             raise RuntimeError("broken optional package")
         return None
 
@@ -64,9 +76,9 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
     assert status.missing_default_language_keys == tuple(
         sorted(set(loader.DEFAULT_LANGUAGE_KEYS) - {"json", "python"})
     )
-    assert status.skipped_optional_language_keys == ("sql",)
+    assert status.skipped_optional_language_keys == ("fake_optional",)
     assert f"2/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in status.message
-    assert "optional skipped: sql" in status.message
+    assert "optional skipped: fake_optional" in status.message
 
 
 def test_load_language_module_requires_language_callable(
@@ -88,17 +100,18 @@ def test_load_language_module_requires_language_callable(
         loader._load_language_module(spec, vendor_root)
 
 
-def test_runtime_message_reports_optional_languages() -> None:
+def test_runtime_message_reports_optional_languages(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(loader, "OPTIONAL_LANGUAGE_KEYS", loader.OPTIONAL_LANGUAGE_KEYS + ("scheme",))
     message = loader._build_runtime_message(
         binding_name="_binding.cpython-39-x86_64-linux-gnu.so",
-        available_language_keys=("bash", "python", "sql", "toml"),
+        available_language_keys=("bash", "python", "scheme", "toml"),
         missing_default_language_keys=("css",),
         skipped_optional_language_keys=(),
     )
 
     assert f"3/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in message
     assert "missing bundled: css" in message
-    assert "optional installed: sql" in message
+    assert "optional installed: scheme" in message
 
 
 def test_resolve_extension_path_rejects_wrong_soabi_candidates(

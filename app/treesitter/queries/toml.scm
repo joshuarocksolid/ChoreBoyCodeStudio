@@ -14,7 +14,7 @@
   (local_date_time)
   (local_date)
   (local_time)
-] @string
+] @number
 
 (pair
   (bare_key) @json_key)

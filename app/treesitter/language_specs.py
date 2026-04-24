@@ -126,7 +126,6 @@ _LANGUAGE_SPECS: tuple[TreeSitterLanguageSpec, ...] = (
         highlights_query_file="sql.scm",
         language_name="sql",
         package_name="tree_sitter_sql",
-        included_by_default=False,
     ),
 )
 

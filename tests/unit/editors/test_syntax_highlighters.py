@@ -272,13 +272,33 @@ def test_yaml_tree_sitter_highlighter_formats_mapping_keys() -> None:
 
 
 def test_sql_tree_sitter_highlighter_formats_function_calls() -> None:
-    if "sql" not in _available_language_keys():
-        pytest.skip("Optional SQL tree-sitter grammar not vendored.")
     source = "SELECT COUNT(*) FROM items;\n"
     document, highlighter = _render("/tmp/query.sql", source, is_dark=False)
     assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
     function_color = _color_at(document, 0, source.index("COUNT"))
     assert function_color == DEFAULT_LIGHT_PALETTE["semantic_function"].lower()
+    table_color = _color_at(document, 0, source.index("items"))
+    assert table_color == DEFAULT_LIGHT_PALETTE["class"].lower()
+
+
+def test_sql_extended_keywords_are_styled_as_keywords() -> None:
+    source = (
+        "WITH RECURSIVE cte AS (SELECT 1) "
+        "SELECT name FROM events RETURNING id;\n"
+    )
+    document, _ = _render("/tmp/extended.sql", source, is_dark=False)
+    keyword_color = DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    assert _color_at(document, 0, source.index("WITH")) == keyword_color
+    assert _color_at(document, 0, source.index("RECURSIVE")) == keyword_color
+    assert _color_at(document, 0, source.index("RETURNING")) == keyword_color
+
+
+def test_sql_column_type_keyword_is_styled_as_class() -> None:
+    source = "CREATE TABLE log (id BIGINT PRIMARY KEY, body TEXT);\n"
+    document, _ = _render("/tmp/types.sql", source, is_dark=False)
+    type_color = DEFAULT_LIGHT_PALETTE["class"].lower()
+    assert _color_at(document, 0, source.index("BIGINT")) == type_color
+    assert _color_at(document, 0, source.index("TEXT")) == type_color
 
 
 def test_theme_switch_updates_tree_sitter_palette() -> None:
@@ -395,6 +415,29 @@ def test_html_tree_sitter_injects_script_and_style_languages() -> None:
     assert _color_at(document, 0, line0.index("const")) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
     assert _color_at(document, 1, line1.index("body")) == DEFAULT_LIGHT_PALETTE["class"].lower()
     assert _color_at(document, 1, line1.index("color")) == DEFAULT_LIGHT_PALETTE["semantic_property"].lower()
+
+
+def test_yaml_document_markers_and_tags_are_styled() -> None:
+    line0 = "%YAML 1.2"
+    line1 = "---"
+    line2 = "value: !!str hello"
+    source = "\n".join((line0, line1, line2)) + "\n"
+    document, _ = _render("/tmp/sample.yaml", source, is_dark=False)
+    assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword_import"].lower()
+    assert _color_at(document, 1, 0) == DEFAULT_LIGHT_PALETTE["punctuation"].lower()
+    assert _color_at(document, 2, line2.index("!!str")) == DEFAULT_LIGHT_PALETTE["decorator"].lower()
+
+
+def test_toml_datetime_uses_number_color_distinct_from_string() -> None:
+    line0 = 'name = "alice"'
+    line1 = "born = 2023-01-15T10:00:00Z"
+    source = f"{line0}\n{line1}\n"
+    document, _ = _render("/tmp/sample.toml", source, is_dark=False)
+    string_color = _color_at(document, 0, line0.index('"alice"'))
+    datetime_color = _color_at(document, 1, line1.index("2023"))
+    assert string_color == DEFAULT_LIGHT_PALETTE["string"].lower()
+    assert datetime_color == DEFAULT_LIGHT_PALETTE["number"].lower()
+    assert string_color != datetime_color
 
 
 def test_jsonc_lexical_pass_colors_line_and_block_comments() -> None:

@@ -61,7 +61,7 @@ VENDOR_ALLOWLIST = [
     "tree_sitter", "tree_sitter_python", "tree_sitter_json",
     "tree_sitter_html", "tree_sitter_xml", "tree_sitter_css",
     "tree_sitter_bash", "tree_sitter_markdown", "tree_sitter_yaml",
-    "tree_sitter_javascript", "tree_sitter_toml",
+    "tree_sitter_javascript", "tree_sitter_toml", "tree_sitter_sql",
     # Intelligence (code completion, refactoring)
     "jedi", "parso", "rope", "pytoolconfig",
 ]

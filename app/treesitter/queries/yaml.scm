@@ -14,3 +14,12 @@
 (null_scalar) @json_literal
 (anchor_name) @variable
 (alias_name) @variable
+
+(yaml_directive) @keyword.import
+(yaml_version) @number
+(tag) @decorator
+(tag_directive) @keyword.import
+[
+ "---"
+ "..."
+] @punctuation.delimiter

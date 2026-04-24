@@ -114,6 +114,7 @@ _CAPTURE_TOKEN_MAP: dict[str, str] = {
     "type": "semantic_class",
     "function.def": "function",
     "function.call": "semantic_function",
+    "function.builtin": "builtin",
     "method.call": "semantic_method",
     "class.def": "class",
     "import.symbol": "semantic_import",
