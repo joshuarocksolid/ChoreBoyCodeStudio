@@ -1,40 +1,48 @@
 ---
-description: Use red/green/refactor TDD for non-UI business logic
-alwaysApply: true
+description: Apply red/green/refactor TDD when implementing non-UI business logic that has already passed the testing_when_to_write gate
+alwaysApply: false
 ---
 
 # TDD for Business Logic (Non-UI)
 
-For backend and business-logic work, prefer a red -> green -> refactor workflow.
+This rule describes **how** to write a test once you have decided one is justified. Whether to write a test at all is a separate decision — see `testing_when_to_write.mdc` first. For the framework/runtime/marker setup, see `testing_strategy_setup.mdc`. For anti-patterns to avoid while writing, see `test_anti_patterns.mdc`.
 
-## Applies to
+## Precondition
 
-- Python business logic in services, models, forms, permissions, query helpers, and non-trivial view behavior.
-- Domain rules such as scheduling constraints, calculations, validation, and orchestration side effects.
+Do not start a TDD cycle unless the change passes `testing_when_to_write.mdc`'s decision gate. If it does not (e.g. you are renaming a constant, restyling a widget, or editing copy), skip TDD and just make the change.
 
 ## Workflow
 
-1. Write or update a focused failing test for the desired behavior (red).
-2. Implement the smallest code change needed to pass that test (green).
-3. Refactor for clarity and maintainability while tests stay green (refactor).
-4. Repeat per behavior and edge case.
+1. **Red.** Write or update a focused failing test for the desired behavior. One behavior per test. Assert outcomes, not implementation steps.
+2. **Green.** Implement the smallest code change that makes the test pass.
+3. **Refactor.** Clean up the code (and the test, if it grew) while tests stay green. If the refactor invalidates a previously-justified test, delete it in the same diff.
+4. Repeat per behavior or edge case.
 
-## Not the primary target
+## Applies to
 
-- Pure UI markup/styling changes
-- Copy-only content edits that do not alter business behavior.
+- Domain rules with branching: scheduling constraints, calculations, validation, orchestration side effects.
+- Code with irreversible effects: file delete/move, database write, subprocess spawn, money/auth/permissions.
+- Regression fixes — write the failing test that reproduces the bug first.
+
+## Does NOT apply to
+
+- Pure UI markup, styling, layout, or theming changes.
+- Copy-only edits.
+- Trivial passthroughs, getters/setters, constant renames.
+- Anything else the gate in `testing_when_to_write.mdc` excludes.
 
 ## Expectations
 
-- Test behavior and outcomes, not incidental implementation details.
-- Start with the narrowest relevant test scope, then broaden if the change is cross-cutting.
-- If legacy code is hard to test, add a characterization test before refactoring.
+- Test behavior and outcomes through the public API. If the seam is awkward, fix the seam — do not reach into private attributes.
+- Start with the narrowest relevant test scope (unit) and broaden only if the change is genuinely cross-cutting (integration).
+- If legacy code is hard to test, add a single characterization test before refactoring, then proceed normally.
+- Prefer parametrization over copy-pasted near-duplicate tests.
 
 ## Example cadence
 
 ```text
-1) Add failing test for a new scheduling rule
-2) Implement minimal rule logic to pass
-3) Refactor duplicated conditionals
-4) Run relevant scheduler tests
+1) Add failing test for a new scheduling rule (red)
+2) Implement the minimal rule logic (green)
+3) Refactor duplicated conditionals (refactor; tests still green)
+4) Run the relevant scheduler tests
 ```

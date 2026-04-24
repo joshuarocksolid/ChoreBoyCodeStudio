@@ -73,9 +73,9 @@ def main() -> int:
     pytest_args = repr(_pytest_argv())
 
     payload = (
-        "import sys;"
+        "import sys, os;"
         f"sys.path.insert(0, {repo_root!r});"
-        f"sys.exit(__import__('pytest').main({pytest_args}))"
+        f"os._exit(__import__('pytest').main({pytest_args}))"
     )
 
     env = os.environ.copy()

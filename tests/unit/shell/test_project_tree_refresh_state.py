@@ -19,11 +19,8 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp():  # type: ignore[no-untyped-def]
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _find_item_by_relative_path(window: MainWindow, relative_path: str) -> QTreeWidgetItem | None:

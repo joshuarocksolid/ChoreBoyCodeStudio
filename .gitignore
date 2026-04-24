@@ -44,6 +44,10 @@ choreboy_code_studio_state/
 **/cbcs/logs/
 **/cbcs/cache/
 
+# Generated icon intermediates (regenerate from SVG via scripts/generate_icon_pngs.py)
+app/ui/icons/app_icon_*.png
+app/ui/icons/installer_icon_*.png
+
 # Vendored dependencies (see vendor/README.md for setup)
 vendor/*
 !vendor/README.md

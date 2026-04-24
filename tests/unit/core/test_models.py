@@ -138,11 +138,13 @@ def test_loaded_project_serializes_to_stable_schema() -> None:
                 is_directory=True,
             ),
         ],
+        manifest_materialized=True,
     )
 
     assert loaded_project.to_dict() == {
         "project_root": "/tmp/project_alpha",
         "manifest_path": "/tmp/project_alpha/cbcs/project.json",
+        "manifest_materialized": True,
         "metadata": {
             "schema_version": 1,
             "project_id": "proj_alpha",

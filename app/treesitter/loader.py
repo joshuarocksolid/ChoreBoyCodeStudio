@@ -124,22 +124,38 @@ def _resolve_binding_path(tree_sitter_dir: Path) -> Path:
     return _resolve_extension_path(tree_sitter_dir, preferred_stem="_binding")
 
 
+def _current_soabi() -> str:
+    soabi = sysconfig.get_config_var("SOABI")
+    if not isinstance(soabi, str) or not soabi.strip():
+        raise RuntimeError("Python runtime did not report SOABI; cannot resolve tree-sitter extension exactly.")
+    return soabi.strip()
+
+
+def _expected_extension_names(package_dir: Path, *, preferred_stem: str) -> tuple[str, ...]:
+    if package_dir.name == "tree_sitter":
+        return (f"{preferred_stem}.{_current_soabi()}.so",)
+    return (f"{preferred_stem}.abi3.so",)
+
+
 def _resolve_extension_path(package_dir: Path, *, preferred_stem: str) -> Path:
+    expected_names = _expected_extension_names(package_dir, preferred_stem=preferred_stem)
+    expected_name = expected_names[0]
+    expected_path = package_dir / expected_name
     candidates = sorted(package_dir.glob(f"{preferred_stem}*.so"))
     if not candidates:
-        candidates = sorted(package_dir.glob("*.so"))
-    soabi = sysconfig.get_config_var("SOABI")
-    if soabi:
-        preferred_name = f"{preferred_stem}.{soabi}.so"
-        preferred_path = package_dir / preferred_name
-        if preferred_path.exists():
-            return preferred_path
-    for candidate in candidates:
-        if "cpython-39" in candidate.name:
-            return candidate
-    if candidates:
-        return candidates[0]
-    return package_dir / f"{preferred_stem}.cpython-39-x86_64-linux-gnu.so"
+        return expected_path
+    candidate_names = tuple(candidate.name for candidate in candidates)
+    if candidate_names == expected_names:
+        return expected_path
+    if any(name in candidate_names for name in expected_names):
+        raise RuntimeError(
+            f"expected one exact binding artifact {expected_name} in {package_dir}, "
+            f"found multiple candidates: {', '.join(candidate_names)}"
+        )
+    raise RuntimeError(
+        f"expected binding artifact {expected_name} in {package_dir}, "
+        f"found incompatible candidates: {', '.join(candidate_names)}"
+    )
 
 
 def _load_language_module(spec: TreeSitterLanguageSpec, vendor_root: Path) -> ModuleType | None:

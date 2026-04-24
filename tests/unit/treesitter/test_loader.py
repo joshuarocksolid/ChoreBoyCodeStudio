@@ -20,11 +20,16 @@ def _reset_loader_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(loader, "_LANGUAGE_MODULES", {})
 
 
+def _force_choreboy_soabi(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(loader, "_current_soabi", lambda: "cpython-39-x86_64-linux-gnu")
+
+
 def test_initialize_runtime_tracks_bundled_and_optional_languages(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     _reset_loader_state(monkeypatch)
+    _force_choreboy_soabi(monkeypatch)
     tree_sitter_dir = tmp_path / "vendor" / "tree_sitter"
     tree_sitter_dir.mkdir(parents=True)
     (tree_sitter_dir / "_binding.cpython-39-x86_64-linux-gnu.so").write_bytes(b"core")
@@ -68,10 +73,11 @@ def test_load_language_module_requires_language_callable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _force_choreboy_soabi(monkeypatch)
     vendor_root = tmp_path / "vendor"
     package_dir = vendor_root / "tree_sitter_python"
     package_dir.mkdir(parents=True)
-    (package_dir / "_binding.cpython-39-x86_64-linux-gnu.so").write_bytes(b"grammar")
+    (package_dir / "_binding.abi3.so").write_bytes(b"grammar")
 
     spec = next(spec for spec in loader.LANGUAGE_SPECS if spec.key == "python")
 
@@ -93,3 +99,30 @@ def test_runtime_message_reports_optional_languages() -> None:
     assert f"3/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in message
     assert "missing bundled: css" in message
     assert "optional installed: sql" in message
+
+
+def test_resolve_extension_path_rejects_wrong_soabi_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _force_choreboy_soabi(monkeypatch)
+    package_dir = tmp_path / "tree_sitter"
+    package_dir.mkdir(parents=True)
+    (package_dir / "_binding.cpython-311-x86_64-linux-gnu.so").write_bytes(b"wrong")
+
+    with pytest.raises(RuntimeError, match="expected binding artifact _binding.cpython-39-x86_64-linux-gnu.so"):
+        loader._resolve_extension_path(package_dir, preferred_stem="_binding")
+
+
+def test_resolve_extension_path_rejects_mixed_binding_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _force_choreboy_soabi(monkeypatch)
+    package_dir = tmp_path / "tree_sitter"
+    package_dir.mkdir(parents=True)
+    (package_dir / "_binding.cpython-39-x86_64-linux-gnu.so").write_bytes(b"right")
+    (package_dir / "_binding.cpython-311-x86_64-linux-gnu.so").write_bytes(b"wrong")
+
+    with pytest.raises(RuntimeError, match="expected one exact binding artifact"):
+        loader._resolve_extension_path(package_dir, preferred_stem="_binding")

@@ -15,15 +15,12 @@ from app.shell.status_bar import map_startup_report_to_status
 from app.shell.theme_tokens import tokens_from_palette
 from app.shell.welcome_widget import WelcomeWidget
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(120)]
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _build_runtime_report(issue_count: int) -> RuntimeIssueReport:

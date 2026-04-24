@@ -59,6 +59,7 @@ def test_load_recent_projects_prunes_invalid_entries(tmp_path: Path) -> None:
     non_directory.write_text("not a directory\n", encoding="utf-8")
     invalid_project = tmp_path / "invalid_project"
     invalid_project.mkdir()
+    (invalid_project / "cbcs").write_text("cbcs is not a directory\n", encoding="utf-8")
 
     recents_path.parent.mkdir(parents=True)
     recents_path.write_text(

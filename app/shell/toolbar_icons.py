@@ -12,11 +12,34 @@ from PySide2.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 _SIZE = 16
 
+_PAGE_COLOR = "#8A8F98"
+
 
 def _new_pixmap() -> QPixmap:
     pm = QPixmap(_SIZE, _SIZE)
     pm.fill(Qt.transparent)
     return pm
+
+
+def _draw_page_backdrop(p: QPainter) -> None:
+    """Draw a small document outline with a folded top-right corner."""
+    pen = QPen(QColor(_PAGE_COLOR))
+    pen.setWidthF(1.0)
+    pen.setJoinStyle(Qt.RoundJoin)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+
+    body = QPolygonF([
+        QPointF(2.5, 1.5),
+        QPointF(10.5, 1.5),
+        QPointF(13.5, 4.5),
+        QPointF(13.5, 14.5),
+        QPointF(2.5, 14.5),
+    ])
+    p.drawPolygon(body)
+    p.drawLine(QPointF(10.5, 1.5), QPointF(10.5, 4.5))
+    p.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 4.5))
 
 
 def icon_run(color: str = "#16A34A") -> QIcon:
@@ -54,6 +77,48 @@ def icon_debug(color: str = "#D97706") -> QIcon:
     p.drawLine(QPointF(4, 11), QPointF(1, 13))
     p.drawLine(QPointF(12, 8), QPointF(15, 6))
     p.drawLine(QPointF(12, 11), QPointF(15, 13))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_run_file(color: str = "#16A34A") -> QIcon:
+    """Run icon for the active file: play triangle on a page backdrop."""
+    pm = _new_pixmap()
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    _draw_page_backdrop(p)
+    p.setBrush(QColor(color))
+    p.setPen(Qt.NoPen)
+    p.drawPolygon(QPolygonF([
+        QPointF(6.0, 5.5),
+        QPointF(11.0, 8.5),
+        QPointF(6.0, 11.5),
+    ]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_debug_file(color: str = "#D97706") -> QIcon:
+    """Debug icon for the active file: small bug on a page backdrop."""
+    pm = _new_pixmap()
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    _draw_page_backdrop(p)
+    c = QColor(color)
+    p.setBrush(c)
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(QRectF(5.5, 7.0, 5.0, 6.0))
+    p.drawEllipse(QRectF(6.5, 4.5, 3.0, 3.0))
+    pen = QPen(c)
+    pen.setWidthF(0.9)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    p.drawLine(QPointF(6.7, 5.4), QPointF(5.4, 4.2))
+    p.drawLine(QPointF(9.3, 5.4), QPointF(10.6, 4.2))
+    p.drawLine(QPointF(5.5, 8.5), QPointF(4.0, 7.8))
+    p.drawLine(QPointF(5.5, 10.5), QPointF(4.0, 11.4))
+    p.drawLine(QPointF(10.5, 8.5), QPointF(12.0, 7.8))
+    p.drawLine(QPointF(10.5, 10.5), QPointF(12.0, 11.4))
     p.end()
     return QIcon(pm)
 
@@ -253,8 +318,8 @@ def icon_remove_all_breakpoints(color: str = "#DC2626") -> QIcon:
 
 # Maps action ID suffix -> icon factory (color provided at build time)
 _ICON_BUILDERS: dict[str, tuple[str, bool]] = {
-    "shell.action.run.run": ("run", False),
-    "shell.action.run.debug": ("debug", False),
+    "shell.action.run.run": ("run_file", False),
+    "shell.action.run.debug": ("debug_file", False),
     "shell.action.run.runProject": ("run", False),
     "shell.action.run.debugProject": ("debug", False),
     "shell.action.run.stop": ("stop", False),

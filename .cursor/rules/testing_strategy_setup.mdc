@@ -1,31 +1,35 @@
 ---
-description: Apply project testing strategy defaults
+description: Project test framework, runtime, and layering defaults
 alwaysApply: true
 ---
 
 # Testing Strategy Defaults
 
-Use this rule when planning or implementing tests.
+Use this rule for the **mechanics** of testing: framework, runtime, markers, and layer boundaries. Whether to write a given test at all is a separate decision — see `testing_when_to_write.mdc`. For the TDD workflow once a test is justified, see `tdd_business_logic_non_ui.mdc`.
 
-## Framework and markers
+## Framework and runtime
 
 - Use `pytest` as the default framework.
 - Tests run through FreeCAD AppRun via `run_tests.py`, using the real PySide2 runtime.
-- Follow marker taxonomy defined in `pyproject.toml`: `unit`, `integration`, `runtime_parity`, `manual_acceptance`.
-- Use `unittest.mock` only for unit-level isolation boundaries.
+- Use `unittest.mock` only for unit-level isolation boundaries; do not mock collaborators that you own.
+
+## Marker taxonomy
+
+Follow the markers defined in `pyproject.toml`:
+
+- `unit` — fast, in-process, no subprocess or real network.
+- `integration` — cross-module, real subprocess/filesystem/protocol behavior.
+- `runtime_parity` — tied to FreeCAD AppRun behavior; must fail with actionable diagnostics or skip clearly when prerequisites are missing.
+- `manual_acceptance` — broad UI workflow validation lives in `docs/ACCEPTANCE_TESTS.md`, not in pytest.
 
 ## Layering expectations
 
-- Start with fast unit tests for business logic and explicit contracts.
-- Add integration tests for editor/runner boundaries, subprocess lifecycle, stdout/stderr, exit codes, and run logs.
-- Keep broad UI workflow validation manual through `docs/ACCEPTANCE_TESTS.md` unless the user explicitly requests UI automation.
-
-## Runtime compatibility
-
-- All tests run inside the FreeCAD AppRun Python (3.11) with real PySide2.
-- Any test tied to FreeCAD AppRun behavior should be marked `runtime_parity`.
-- Runtime-parity tests should fail with actionable diagnostics or skip clearly when prerequisites are missing.
+- Unit tests cover business logic and explicit contracts.
+- Integration tests cover editor/runner boundaries, subprocess lifecycle, stdout/stderr, exit codes, and run logs.
+- Broad UI workflow validation stays manual via `docs/ACCEPTANCE_TESTS.md` unless the user explicitly requests UI automation.
+- An "integration" test that mocks out the integration boundary is really a unit test — put it under `tests/unit/`.
 
 ## Scope discipline
 
 - During setup-only requests, scaffold config/docs/directories without writing speculative test cases.
+- Never add a test purely to raise coverage. Coverage is not a goal; signal is.

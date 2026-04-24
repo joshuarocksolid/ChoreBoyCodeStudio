@@ -15,12 +15,8 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def _ensure_qapp(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def test_runtime_center_dialog_updates_details_and_help_button(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]

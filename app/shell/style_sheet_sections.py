@@ -491,41 +491,6 @@ QToolButton[objectName^="shell.toolbar.btn"]:hover {{
 QToolButton[objectName^="shell.toolbar.btn"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-QFrame#shell\\.toolbar\\.btn\\.runTarget {{
-    background: {tokens.input_bg};
-    border: 1px solid {tokens.border};
-    border-radius: 5px;
-    min-height: 36px;
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget:hover {{
-    background: {tokens.tree_hover_bg};
-    border-color: {tokens.accent};
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget:focus {{
-    border-color: {tokens.accent};
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.line1 {{
-    color: {tokens.text_primary};
-    font-size: 12px;
-    font-weight: 600;
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.line2 {{
-    color: {tokens.text_muted};
-    font-size: 11px;
-    font-weight: 500;
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget QLabel#shell\\.toolbar\\.runTarget\\.chevron {{
-    color: {tokens.text_muted};
-    font-size: 14px;
-    font-weight: 600;
-    padding-left: 2px;
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget[runTargetTone=\"muted\"] QLabel#shell\\.toolbar\\.runTarget\\.line1 {{
-    color: {tokens.text_muted};
-}}
-QFrame#shell\\.toolbar\\.btn\\.runTarget[runTargetTone=\"muted\"] QLabel#shell\\.toolbar\\.runTarget\\.line2 {{
-    color: {tokens.gutter_text};
-}}
 /* -- Run button (green accent) ------------------------------------------ */
 QToolButton#shell\\.toolbar\\.btn\\.run {{
     background: {"#1B3D1B" if tokens.is_dark else "#E6F4EA"};

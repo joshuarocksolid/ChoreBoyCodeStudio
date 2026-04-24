@@ -9,7 +9,7 @@ import pytest
 
 from app.intelligence.semantic_facade import SemanticFacade
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(180)]
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "semantic"
 

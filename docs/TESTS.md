@@ -5,6 +5,7 @@
 This document captures the **active** testing strategy and commands for the shipped implementation.
 
 It aligns with:
+
 - `AGENTS.md`
 - `docs/ARCHITECTURE.md`
 - `docs/ACCEPTANCE_TESTS.md`
@@ -136,3 +137,4 @@ Recommendation:
 - prefer shard-level parallelism first (`unit`, `integration`, `performance`, `runtime_parity`)
 - keep `pytest-xdist` opt-in only for targeted experiments on narrowly scoped subsets
 - keep `tests/integration/performance` in its own serial lane
+

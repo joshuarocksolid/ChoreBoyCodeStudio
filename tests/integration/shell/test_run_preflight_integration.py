@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QFrame, QLabel
+from PySide2.QtWidgets import QApplication
 
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
@@ -44,62 +44,6 @@ def _write_project(
         + "\n",
         encoding="utf-8",
     )
-
-
-def test_run_toolbar_target_summary_reflects_selected_configuration(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    _ = _ensure_qapplication(monkeypatch)
-    project_root = tmp_path / "project"
-    (project_root / "run.py").parent.mkdir(parents=True, exist_ok=True)
-    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
-    (project_root / "tools").mkdir(parents=True, exist_ok=True)
-    (project_root / "tools" / "tool.py").write_text("print('tool')\n", encoding="utf-8")
-    _write_project(
-        project_root,
-        default_entry="run.py",
-        run_configs=[
-            {
-                "name": "Tool",
-                "entry_file": "tools/tool.py",
-                "argv": ["--verbose"],
-                "working_directory": "tools",
-                "env_overrides": {"APP_ENV": "dev"},
-            }
-        ],
-    )
-
-    window = MainWindow(state_root=str(tmp_path.resolve()))
-    try:
-        assert window._open_project_by_path(str(project_root.resolve())) is True
-        assert window._open_file_in_editor(str((project_root / "run.py").resolve()), preview=False) is True
-
-        monkeypatch.setattr("app.shell.main_window.QInputDialog.getItem", lambda *_args, **_kwargs: ("Tool", True))
-        started: list[dict[str, object]] = []
-        monkeypatch.setattr(
-            window,
-            "_start_session",
-            lambda **kwargs: started.append(kwargs) or True,
-        )
-
-        window._handle_run_with_configuration_action()
-
-        assert window._active_named_run_config_name == "Tool"
-        QApplication.processEvents()
-        run_summary = window.findChild(QFrame, "shell.toolbar.btn.runTarget")
-        assert run_summary is not None
-        line1 = run_summary.findChild(QLabel, "shell.toolbar.runTarget.line1")
-        line2 = run_summary.findChild(QLabel, "shell.toolbar.runTarget.line2")
-        assert line1 is not None and line2 is not None
-        assert "run.py" in line1.text()
-        assert "run.py" in line2.text()
-        assert "Tool" in line2.text()
-        assert "Working directory: tools" in run_summary.toolTip()
-        assert "Env overrides: APP_ENV=dev" in run_summary.toolTip()
-        assert started and started[0]["entry_file"] == "tools/tool.py"
-    finally:
-        shutdown_main_window_for_test(window)
 
 
 def test_run_project_preflight_opens_runtime_center_for_missing_entry(

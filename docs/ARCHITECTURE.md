@@ -6,23 +6,23 @@ This document defines the target architecture for **ChoreBoy Code Studio**, a pr
 
 It translates the product intent from `PRD.md` and the runtime facts from `DISCOVERY.md` into a concrete technical design that is:
 
-* reliable on locked-down ChoreBoy systems
-* friendly to AI-assisted development
-* resilient to user-code crashes
-* simple enough to ship and support
-* extensible enough to grow beyond MVP
+- reliable on locked-down ChoreBoy systems
+- friendly to AI-assisted development
+- resilient to user-code crashes
+- simple enough to ship and support
+- extensible enough to grow beyond MVP
 
 This architecture is the canonical source of truth for:
 
-* process boundaries
-* module boundaries
-* runtime contracts
-* project layout
-* persistence strategy
-* run lifecycle
-* error handling
-* extension points
-* implementation sequencing
+- process boundaries
+- module boundaries
+- runtime contracts
+- project layout
+- persistence strategy
+- run lifecycle
+- error handling
+- extension points
+- implementation sequencing
 
 ---
 
@@ -46,11 +46,11 @@ Everything must run using what already exists on ChoreBoy, primarily the FreeCAD
 
 The codebase should be easy for Cursor and other AI agents to understand:
 
-* small modules
-* explicit contracts
-* minimal hidden coupling
-* strong conventions
-* thin vertical slices
+- small modules
+- explicit contracts
+- minimal hidden coupling
+- strong conventions
+- thin vertical slices
 
 ### 2.5 Progressive enhancement
 
@@ -92,11 +92,11 @@ Projects, settings, logs, run outputs, templates, and support bundles should all
 
 Whenever components communicate, prefer:
 
-* JSON files
-* JSON Lines
-* plain stdout/stderr
-* explicit paths
-* explicit exit codes
+- JSON files
+- JSON Lines
+- plain stdout/stderr
+- explicit paths
+- explicit exit codes
 
 Avoid magic imports, implicit globals, and hidden IPC complexity.
 
@@ -104,11 +104,11 @@ Avoid magic imports, implicit globals, and hidden IPC complexity.
 
 Because the AppRun launch environment is unusual, startup must be explicit:
 
-* known entry script
-* known working directory
-* known path setup
-* known log destination
-* known run manifest
+- known entry script
+- known working directory
+- known path setup
+- known log destination
+- known run manifest
 
 ## 4.5 Capability probing over assumption
 
@@ -118,13 +118,13 @@ At startup, the editor should probe what the local runtime supports and adapt or
 
 Subsystems should be independently swappable:
 
-* editor shell
-* project store
-* runner bridge
-* indexing
-* linting
-* templates
-* support bundle generation
+- editor shell
+- project store
+- runner bridge
+- indexing
+- linting
+- templates
+- support bundle generation
 
 ---
 
@@ -133,19 +133,15 @@ Subsystems should be independently swappable:
 The system consists of five major parts:
 
 1. **Editor Application**
-   The main Qt desktop app launched inside FreeCAD AppRun.
-
+  The main Qt desktop app launched inside FreeCAD AppRun.
 2. **Runner Process**
-   A separate AppRun-launched process used to execute user code safely.
-
+  A separate AppRun-launched process used to execute user code safely.
 3. **Project Workspace**
-   A folder on disk containing source files, project metadata, logs, and optional vendored libraries.
-
+  A folder on disk containing source files, project metadata, logs, and optional vendored libraries.
 4. **Global App State**
-   User-level settings, recents, cache, and optional indexes stored under a dedicated home directory.
-
+  User-level settings, recents, cache, and optional indexes stored under a dedicated home directory.
 5. **Templates and Support Assets**
-   Shipped starter projects, built-in help, and support bundle logic.
+  Shipped starter projects, built-in help, and support bundle logic.
 
 ### High-level flow
 
@@ -153,7 +149,7 @@ The system consists of five major parts:
 2. Editor performs startup capability probe.
 3. User opens or creates a project folder.
 4. Editor loads `cbcs/project.json` and project files.
-   If metadata is missing but the folder is a Python project, editor bootstraps canonical
+  If metadata is missing but the folder is a Python project, editor bootstraps canonical
    `cbcs/project.json` metadata on first open, then proceeds through normal load.
 5. User edits files in tabs.
 6. On run, editor creates a run manifest and launches a separate runner process.
@@ -170,17 +166,17 @@ The system consists of five major parts:
 
 The editor process is responsible for:
 
-* main window and menus
-* project tree
-* tabbed editors
-* save/autosave
-* search and quick open
-* run configuration UI
-* launching and supervising runner processes
-* displaying console/problems/logs
-* global and per-project settings
-* support bundle generation
-* capability probe and compatibility reporting
+- main window and menus
+- project tree
+- tabbed editors
+- save/autosave
+- search and quick open
+- run configuration UI
+- launching and supervising runner processes
+- displaying console/problems/logs
+- global and per-project settings
+- support bundle generation
+- capability probe and compatibility reporting
 
 The editor process must **never** execute arbitrary user project code directly.
 
@@ -188,14 +184,14 @@ The editor process must **never** execute arbitrary user project code directly.
 
 The runner process is responsible for:
 
-* receiving run instructions
-* setting up `sys.path`
-* choosing execution mode
-* executing the selected entry point
-* writing per-run logs
-* streaming stdout/stderr
-* surfacing exception tracebacks
-* returning a final exit status
+- receiving run instructions
+- setting up `sys.path`
+- choosing execution mode
+- executing the selected entry point
+- writing per-run logs
+- streaming stdout/stderr
+- surfacing exception tracebacks
+- returning a final exit status
 
 The runner is disposable and isolated. Each run gets a fresh process.
 
@@ -203,20 +199,20 @@ The runner is disposable and isolated. Each run gets a fresh process.
 
 For v1, background tasks should remain simple and in-process where possible. Examples:
 
-* file indexing
-* find-in-files
-* project health check
-* syntax/lint scans
+- file indexing
+- find-in-files
+- project health check
+- syntax/lint scans
 
 If a background job proves expensive, it can later be moved to a dedicated worker process. That should be a future optimization, not an MVP requirement.
 
 Current editor architecture uses two explicit in-process worker lanes instead of ad-hoc
 threads:
 
-* `GeneralTaskScheduler` for bounded keyed shell work such as linting and other blocking
-  coordination tasks
-* `SemanticSession` over `SemanticWorker` for all semantic-engine ownership and request
-  serialization
+- `GeneralTaskScheduler` for bounded keyed shell work such as linting and other blocking
+coordination tasks
+- `SemanticSession` over `SemanticWorker` for all semantic-engine ownership and request
+serialization
 
 This keeps shell work cancellable, avoids duplicated thread ownership of semantic engines,
 and makes shutdown behavior explicit.
@@ -231,9 +227,9 @@ All application launch should be rooted in real Python files, not long inline st
 
 Recommended pattern:
 
-* `launcher.py` or equivalent host-side bootstrap triggers AppRun
-* AppRun invokes a tiny stable boot file
-* boot file imports the real application package
+- `launcher.py` or equivalent host-side bootstrap triggers AppRun
+- AppRun invokes a tiny stable boot file
+- boot file imports the real application package
 
 ### Recommended boot style
 
@@ -255,11 +251,11 @@ This keeps the unusual AppRun invocation surface extremely small and pushes real
 
 Boot scripts must immediately normalize:
 
-* absolute app root
-* project root
-* working directory
-* log path
-* `sys.path` ordering
+- absolute app root
+- project root
+- working directory
+- log path
+- `sys.path` ordering
 
 No subsystem should rely on accidental current working directory behavior.
 
@@ -289,13 +285,13 @@ the editor.
 
 `python_debug` must follow a stricter contract than normal run mode:
 
-* stdout/stderr remain the user-facing output channel for program prints,
-  tracebacks, and run logs
-* debugger control and inspector state travel over a dedicated editor<->runner
-  debug channel, not over ad-hoc stdout markers
-* the editor process never executes debug-target project code directly
-* breakpoint, watch, frame, scope, and exception data are structured, bounded,
-  and explicit
+- stdout/stderr remain the user-facing output channel for program prints,
+tracebacks, and run logs
+- debugger control and inspector state travel over a dedicated editor<->runner
+debug channel, not over ad-hoc stdout markers
+- the editor process never executes debug-target project code directly
+- breakpoint, watch, frame, scope, and exception data are structured, bounded,
+and explicit
 
 Because ChoreBoy production heavily restricts subprocess execution, the debugger
 engine must pass a runtime-parity decision gate before cutover. The preferred
@@ -466,12 +462,12 @@ choreboy_code_studio/
 
 This layout intentionally separates:
 
-* app shell
-* project logic
-* run logic
-* persistence
-* bootstrapping
-* support tooling
+- app shell
+- project logic
+- run logic
+- persistence
+- bootstrapping
+- support tooling
 
 That makes the codebase more legible to both humans and AI agents.
 
@@ -512,15 +508,15 @@ The initialized file remains the single source of truth going forward.
 
 This file should be human-readable JSON and contain:
 
-* project name
-* stable project id
-* schema version
-* default entry point
-* default working directory
-* saved run configurations
-* template type
-* optional env overrides
-* optional project notes
+- project name
+- stable project id
+- schema version
+- default entry point
+- default working directory
+- saved run configurations
+- template type
+- optional env overrides
+- optional project notes
 
 ### Example
 
@@ -538,11 +534,11 @@ This file should be human-readable JSON and contain:
 
 ## 10.2 Why JSON, not SQLite, for primary project metadata
 
-* easy to inspect
-* easy to copy
-* easy for support
-* easy for AI agents
-* resilient under partial project transfer
+- easy to inspect
+- easy to copy
+- easy for support
+- easy for AI agents
+- resilient under partial project transfer
 
 SQLite can still be used for caches and indexes, but not for the project’s primary identity.
 
@@ -556,11 +552,11 @@ Per-project settings overrides are stored at:
 
 This file follows the same JSON shape as global settings, but only project-overridable root sections are honored:
 
-* `editor`
-* `intelligence`
-* `linter`
-* `file_excludes`
-* `output`
+- `editor`
+- `intelligence`
+- `linter`
+- `file_excludes`
+- `output`
 
 Effective settings resolution is:
 
@@ -601,24 +597,24 @@ Recommended contents:
 
 ## 11.1 What belongs here
 
-* recent projects
-* editor preferences (global defaults)
-* global shortcuts/preferences
-* syntax-color customization overrides (light/dark token maps)
-* linter runtime settings (global enable/disable + selected provider)
-* linter rule profile overrides (enablement + severity)
-* last-opened window layout
-* compatibility probe results cache
-* optional global search/index cache
-* editor crash logs
-* local history drafts, checkpoints, labels, and deleted-file tombstones
-* global plugin registry, installs, and plugin host logs
+- recent projects
+- editor preferences (global defaults)
+- global shortcuts/preferences
+- syntax-color customization overrides (light/dark token maps)
+- linter runtime settings (global enable/disable + selected provider)
+- linter rule profile overrides (enablement + severity)
+- last-opened window layout
+- compatibility probe results cache
+- optional global search/index cache
+- editor crash logs
+- local history drafts, checkpoints, labels, and deleted-file tombstones
+- global plugin registry, installs, and plugin host logs
 
 ## 11.2 What does not belong here
 
-* project source files
-* project logs that should travel with the project
-* project-specific run configs
+- project source files
+- project logs that should travel with the project
+- project-specific run configs
 
 ---
 
@@ -628,10 +624,10 @@ Recommended contents:
 
 Handles:
 
-* path normalization
-* environment detection
-* logging setup
-* capability checks
+- path normalization
+- environment detection
+- logging setup
+- capability checks
 
 No UI logic. No project logic.
 
@@ -650,92 +646,92 @@ It coordinates services but should not contain deep business logic.
 Current implementation keeps `MainWindow` as composition root and delegates
 domain orchestration to focused shell controllers:
 
-* `project_controller` for open/recent project flows
-* `run_session_controller` for run/debug/repl lifecycle control wiring
-* `project_tree_controller` for tree move/delete/remap side effects
-* `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
-* `editor_intelligence_controller` for semantic request routing and inline result formatting
-* `background_tasks` for keyed off-UI-thread task execution and replacement
-* `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
+- `project_controller` for open/recent project flows
+- `run_session_controller` for run/debug/repl lifecycle control wiring
+- `project_tree_controller` for tree move/delete/remap side effects
+- `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
+- `editor_intelligence_controller` for semantic request routing and inline result formatting
+- `background_tasks` for keyed off-UI-thread task execution and replacement
+- `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
 
 Key shell responsibilities include:
 
-* run/debug toolbar and action state mapping
-* split-pane layout persistence and reset behavior
-* project-tree context action wiring
-* bottom-pane composition (console, Python console, problems, debug inspector, run log)
-* runtime/onboarding presentation such as welcome surfaces, status summaries, drill-down actions, and help entry points
-* owning the worker/controller graph without becoming the implementation home for each workflow
+- run/debug toolbar and action state mapping
+- split-pane layout persistence and reset behavior
+- project-tree context action wiring
+- bottom-pane composition (console, Python console, problems, debug inspector, run log)
+- runtime/onboarding presentation such as welcome surfaces, status summaries, drill-down actions, and help entry points
+- owning the worker/controller graph without becoming the implementation home for each workflow
 
 ## 12.4 `editors`
 
 Text editing behavior:
 
-* `CodeEditorWidget` composed from focused mixins for semantics, search, editing transforms,
-  and diagnostics overlays
-* tabs
-* dirty state
-* syntax highlighting
-* tree-sitter-driven `QSyntaxHighlighter` pipeline with separate `highlights`, `locals`, and `injections` query layers
-* language/query registry (extension + sniff based) for deterministic tree-sitter language resolution, plus manual language override from the shell
-* incremental parse updates (`tree.edit` + `parser.parse(source, old_tree)`) with changed-range capture refresh
-* locals-aware semantic roles for parameters, imports, variables, classes, and constructors without reintroducing generic Python identifier coloring
-* embedded-language injections for HTML `<script>/<style>` blocks and Markdown fenced code / HTML blocks
-* adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
-* viewport-window query execution for large buffers (reduced + lexical_only modes)
-* no semantic `ExtraSelection` overlay pipeline in the editor path
-* token inspector action for capture/token debugging, plus `.desktop` / INI regex fallback when no practical tree-sitter wheel exists
-* line numbers and breakpoint gutter markers
-* search within file
-* quick open support
-* code-navigation affordances (go-to-definition, breadcrumbs)
+- `CodeEditorWidget` composed from focused mixins for semantics, search, editing transforms,
+and diagnostics overlays
+- tabs
+- dirty state
+- syntax highlighting
+- tree-sitter-driven `QSyntaxHighlighter` pipeline with separate `highlights`, `locals`, and `injections` query layers
+- language/query registry (extension + sniff based) for deterministic tree-sitter language resolution, plus manual language override from the shell
+- incremental parse updates (`tree.edit` + `parser.parse(source, old_tree)`) with changed-range capture refresh
+- locals-aware semantic roles for parameters, imports, variables, classes, and constructors without reintroducing generic Python identifier coloring
+- embedded-language injections for HTML `<script>/<style>` blocks and Markdown fenced code / HTML blocks
+- adaptive highlighting modes (`normal`, `reduced`, `lexical_only`) driven by shared document-size thresholds
+- viewport-window query execution for large buffers (reduced + lexical_only modes)
+- no semantic `ExtraSelection` overlay pipeline in the editor path
+- token inspector action for capture/token debugging, plus `.desktop` / INI regex fallback when no practical tree-sitter wheel exists
+- line numbers and breakpoint gutter markers
+- search within file
+- quick open support
+- code-navigation affordances (go-to-definition, breadcrumbs)
 
 ## 12.5 `project`
 
 Filesystem/project abstraction:
 
-* open project
-* enumerate files
-* validate project structure
-* read/write project metadata
+- open project
+- enumerate files
+- validate project structure
+- read/write project metadata
 
 ## 12.6 `run`
 
 Editor-side execution subsystem:
 
-* create run manifest
-* launch runner
-* read output
-* update run state
-* stop/terminate process
+- create run manifest
+- launch runner
+- read output
+- update run state
+- stop/terminate process
 
 ## 12.7 `runner`
 
 Runner-side subsystem:
 
-* load manifest
-* configure execution
-* redirect output
-* execute entrypoint
-* format failures
-* finalize run result
+- load manifest
+- configure execution
+- redirect output
+- execute entrypoint
+- format failures
+- finalize run result
 
 ## 12.8 `persistence`
 
 Stores:
 
-* settings
-  * keybinding overrides
-  * syntax-color overrides (theme-aware)
-  * linter provider selection + global lint enable state
-  * linter rule overrides
-* atomic text-write helpers used by editor save paths
-* autosave drafts
-* local history checkpoints
-* content-addressed revision blobs
-* history retention and pruning state
-* optional indexes
-* lightweight caches
+- settings
+  - keybinding overrides
+  - syntax-color overrides (theme-aware)
+  - linter provider selection + global lint enable state
+  - linter rule overrides
+- atomic text-write helpers used by editor save paths
+- autosave drafts
+- local history checkpoints
+- content-addressed revision blobs
+- history retention and pruning state
+- optional indexes
+- lightweight caches
 
 ## 12.9 `templates`
 
@@ -750,25 +746,25 @@ and other support workflows.
 
 Owns plugin lifecycle and contracts:
 
-* manifest validation
-* discovery and compatibility checks
-* install/uninstall registry persistence
-* declarative contribution registration
-* workflow provider catalog and broker selection
-* runtime plugin host IPC across query and job lanes
-* project-scoped plugin policy in `cbcs/plugins.json`
-* safe mode and failure quarantine controls
-* bundled first-party plugin discovery
+- manifest validation
+- discovery and compatibility checks
+- install/uninstall registry persistence
+- declarative contribution registration
+- workflow provider catalog and broker selection
+- runtime plugin host IPC across query and job lanes
+- project-scoped plugin policy in `cbcs/plugins.json`
+- safe mode and failure quarantine controls
+- bundled first-party plugin discovery
 
 ## 12.12 `intelligence`
 
 Owns trusted language intelligence and refactoring contracts:
 
-* semantic facade and typed result models
-* project-aware semantic sessions and worker scheduling
-* read-only semantic queries (completion, definition, hover, signatures, references)
-* refactor planning and preview/apply orchestration
-* coarse indexing and caches as acceleration only, never semantic truth
+- semantic facade and typed result models
+- project-aware semantic sessions and worker scheduling
+- read-only semantic queries (completion, definition, hover, signatures, references)
+- refactor planning and preview/apply orchestration
+- coarse indexing and caches as acceleration only, never semantic truth
 
 The intelligence layer should keep semantic engines behind narrow interfaces so the
 shell and editor widgets do not depend on library-specific APIs directly.
@@ -785,20 +781,20 @@ The editor should generate a **run manifest** as a JSON file before launch.
 
 Recommended manifest contents:
 
-* manifest version
-* run id
-* project root
-* entry file
-* working directory
-* execution mode
-* argv
-* environment overrides
-* log file path
-* timestamp
-* optional breakpoint payloads (for `python_debug`)
-* optional debug transport metadata (for `python_debug`)
-* optional exception-stop policy (for `python_debug`)
-* optional runtime source remap data (for dirty-buffer debug sessions)
+- manifest version
+- run id
+- project root
+- entry file
+- working directory
+- execution mode
+- argv
+- environment overrides
+- log file path
+- timestamp
+- optional breakpoint payloads (for `python_debug`)
+- optional debug transport metadata (for `python_debug`)
+- optional exception-stop policy (for `python_debug`)
+- optional runtime source remap data (for dirty-buffer debug sessions)
 
 ### Example
 
@@ -846,19 +842,19 @@ Recommended manifest contents:
 
 This architecture strongly prefers a manifest file over complex shell quoting because it is:
 
-* more robust
-* easier to debug
-* easier to log
-* easier for AI agents to generate and inspect
-* less fragile in unusual launcher environments
+- more robust
+- easier to debug
+- easier to log
+- easier for AI agents to generate and inspect
+- less fragile in unusual launcher environments
 
 ## 13.3 Runner launch isolation
 
 Runner subprocesses must be launched in a separate session:
 
-* use `subprocess.Popen(..., start_new_session=True)` for run, debug, and Python console modes
-* on stop, signal the runner process group so child processes are cleaned up with the session leader
-* treat negative return codes as signal termination and surface signal details in shell status output
+- use `subprocess.Popen(..., start_new_session=True)` for run, debug, and Python console modes
+- on stop, signal the runner process group so child processes are cleaned up with the session leader
+- treat negative return codes as signal termination and surface signal details in shell status output
 
 ## 13.4 Runner output protocol
 
@@ -868,9 +864,9 @@ For `python_debug`, stdout/stderr are reserved for user-visible program output,
 warnings, and tracebacks. Debugger traffic must use a dedicated structured
 channel so:
 
-* user prints do not corrupt debugger state
-* debugger requests/replies are not parsed from arbitrary text
-* the run log remains readable and supportable
+- user prints do not corrupt debugger state
+- debugger requests/replies are not parsed from arbitrary text
+- the run log remains readable and supportable
 
 Transition markers on stdout are acceptable only as short-lived migration aids;
 they are not the steady-state debugger contract.
@@ -879,16 +875,16 @@ they are not the steady-state debugger contract.
 
 Debug control should use a local loopback transport with explicit messages for:
 
-* session start/ready/error
-* threads
-* stack frames
-* scopes
-* variables
-* watch evaluation
-* continue/pause/step/disconnect
-* breakpoint verification updates
-* stop reasons (`breakpoint`, `pause`, `step`, `exception`)
-* exception payloads
+- session start/ready/error
+- threads
+- stack frames
+- scopes
+- variables
+- watch evaluation
+- continue/pause/step/disconnect
+- breakpoint verification updates
+- stop reasons (`breakpoint`, `pause`, `step`, `exception`)
+- exception payloads
 
 The protocol should be versioned, bounded, and resilient to partial failure. A
 broken debug transport must fail the debug session clearly without corrupting
@@ -898,11 +894,11 @@ normal run-mode output handling.
 
 Define clear meanings:
 
-* `0`: success
-* `1`: user code failed
-* `2`: runner bootstrap/config failure
-* `3`: manifest invalid
-* `130`: terminated by user
+- `0`: success
+- `1`: user code failed
+- `2`: runner bootstrap/config failure
+- `3`: manifest invalid
+- `130`: terminated by user
 
 ---
 
@@ -926,10 +922,10 @@ channel.
 
 The problems pane should show:
 
-* syntax errors
-* parse failures
-* optional lint results
-* runner-reported tracebacks summarized into clickable entries
+- syntax errors
+- parse failures
+- optional lint results
+- runner-reported tracebacks summarized into clickable entries
 
 ## 14.3 Run Log
 
@@ -958,10 +954,10 @@ Project run logs:
 
 All logs should include:
 
-* timestamp
-* level
-* subsystem
-* message
+- timestamp
+- level
+- subsystem
+- message
 
 Tracebacks should always be fully preserved in logs, even if the UI shows a summarized version.
 
@@ -973,32 +969,32 @@ Tracebacks should always be fully preserved in logs, even if the UI shows a summ
 
 Use clear categories:
 
-* bootstrap errors
-* project validation errors
-* editor UI errors
-* runner launch errors
-* user code errors
-* headless/GUI capability errors
-* filesystem permission errors
-* support bundle errors
+- bootstrap errors
+- project validation errors
+- editor UI errors
+- runner launch errors
+- user code errors
+- headless/GUI capability errors
+- filesystem permission errors
+- support bundle errors
 
 ## 15.2 User-facing failure principles
 
-* never fail silently
-* always preserve traceback somewhere
-* always preserve unsaved text when possible
-* surface actionable error messages
-* link errors to log file or support bundle
+- never fail silently
+- always preserve traceback somewhere
+- always preserve unsaved text when possible
+- surface actionable error messages
+- link errors to log file or support bundle
 
 ## 15.3 Crash popup
 
 A crash dialog should show:
 
-* short explanation
-* full traceback
-* copy-to-clipboard
-* open log folder
-* build support bundle
+- short explanation
+- full traceback
+- copy-to-clipboard
+- open log folder
+- build support bundle
 
 ---
 
@@ -1006,14 +1002,14 @@ A crash dialog should show:
 
 Each open tab should track:
 
-* file path
-* original contents hash
-* current contents
-* modified state
-* last save time
-* syntax mode
-* cursor position
-* scroll position
+- file path
+- original contents hash
+- current contents
+- modified state
+- last save time
+- syntax mode
+- cursor position
+- scroll position
 
 This allows stable reopen and recovery workflows.
 
@@ -1021,10 +1017,10 @@ This allows stable reopen and recovery workflows.
 
 Recommended v1 behavior:
 
-* autosave drafts to a recovery store
-* debounce draft writes to avoid per-keystroke disk churn
-* do not silently overwrite source files unless autosave-to-file is explicitly enabled
-* restore drafts after crash
+- autosave drafts to a recovery store
+- debounce draft writes to avoid per-keystroke disk churn
+- do not silently overwrite source files unless autosave-to-file is explicitly enabled
+- restore drafts after crash
 
 This is safer for support and easier to reason about.
 
@@ -1033,26 +1029,26 @@ This is safer for support and easier to reason about.
 Autosave drafts and local history solve related but different problems and should
 remain distinct in the architecture:
 
-* **drafts** protect the latest unsaved dirty-buffer state after crash or abnormal
-  exit
-* **checkpoints** provide a bounded timeline of durable, user-reviewable restore
-  points across saves and high-risk multi-file edits
+- **drafts** protect the latest unsaved dirty-buffer state after crash or abnormal
+exit
+- **checkpoints** provide a bounded timeline of durable, user-reviewable restore
+points across saves and high-risk multi-file edits
 
 The shipped local-history design should follow these rules:
 
-* store history in a visible global app-state location under
-  `~/choreboy_code_studio_state/history/`
-* use a metadata index plus content-addressed full-text blobs rather than
-  fragile patch chains as the canonical source of truth
-* treat diffs as a derived presentation layer, generated lazily for review UI
-* create durable checkpoints for successful saves, explicit snapshots/labels,
-  external-file reload decisions, and multi-file refactor/import-update applies
-* keep draft writes debounced and lightweight; do not turn every keystroke into a
-  durable history revision
-* restore history revisions into the editor buffer first, not directly onto disk,
-  so the user can review and save explicitly
-* keep restore and diff workflows independent of Git so the feature remains
-  understandable for ChoreBoy users who do not use version control
+- store history in a visible global app-state location under
+`~/choreboy_code_studio_state/history/`
+- use a metadata index plus content-addressed full-text blobs rather than
+fragile patch chains as the canonical source of truth
+- treat diffs as a derived presentation layer, generated lazily for review UI
+- create durable checkpoints for successful saves, explicit snapshots/labels,
+external-file reload decisions, and multi-file refactor/import-update applies
+- keep draft writes debounced and lightweight; do not turn every keystroke into a
+durable history revision
+- restore history revisions into the editor buffer first, not directly onto disk,
+so the user can review and save explicitly
+- keep restore and diff workflows independent of Git so the feature remains
+understandable for ChoreBoy users who do not use version control
 
 ## 16.3 File identity and path lineage
 
@@ -1060,13 +1056,13 @@ Local history must survive app-driven move, rename, and delete operations.
 
 That requires:
 
-* a stable project identity in canonical project metadata
-* a stable logical file key in the history index that is not just the current
-  absolute path
-* lineage updates on move/rename so a file keeps one timeline across path
-  changes
-* tombstones for deleted files so restore flows can recover them after the live
-  filesystem entry is gone
+- a stable project identity in canonical project metadata
+- a stable logical file key in the history index that is not just the current
+absolute path
+- lineage updates on move/rename so a file keeps one timeline across path
+changes
+- tombstones for deleted files so restore flows can recover them after the live
+filesystem entry is gone
 
 ---
 
@@ -1083,10 +1079,10 @@ file scans so cancellation and first-result latency remain responsive.
 
 If project size justifies it, use SQLite for:
 
-* file inventory
-* quick-open candidate cache
-* symbol cache
-* search acceleration
+- file inventory
+- quick-open candidate cache
+- symbol cache
+- search acceleration
 
 Current implementation stores per-file symbol index fingerprints
 (`mtime_ns` + file size) so symbol indexing can update incrementally instead of
@@ -1102,9 +1098,9 @@ Python intelligence must separate fast structural acceleration from semantic tru
 
 Current implementation already has a useful speed layer:
 
-* tree-sitter for lexical/editor structure
-* SQLite for project symbol cache and quick lookup
-* background workers for incremental refresh
+- tree-sitter for lexical/editor structure
+- SQLite for project symbol cache and quick lookup
+- background workers for incremental refresh
 
 That layer should remain, but only as an optimization layer. The source of truth for
 Python semantics should live in a dedicated semantic engine layer behind a facade.
@@ -1114,12 +1110,12 @@ Python semantics should live in a dedicated semantic engine layer behind a facad
 The shell and editors should talk to a focused semantic facade that returns typed
 results with explicit metadata such as:
 
-* engine
-* source
-* confidence
-* latency
-* stale/fallback state
-* unsupported reason
+- engine
+- source
+- confidence
+- latency
+- stale/fallback state
+- unsupported reason
 
 This keeps UI policy separate from library-specific implementation details and makes
 degradation states visible instead of silent.
@@ -1128,9 +1124,9 @@ degradation states visible instead of silent.
 
 For Python, the long-term architecture is:
 
-* a read-only semantic engine for completion, definition, hover, signatures, and references
-* a refactor engine for project-wide rename and related safe edits
-* SQLite/tree-sitter acceleration beneath those engines, not beside them as competing truth sources
+- a read-only semantic engine for completion, definition, hover, signatures, and references
+- a refactor engine for project-wide rename and related safe edits
+- SQLite/tree-sitter acceleration beneath those engines, not beside them as competing truth sources
 
 The editor must not silently combine lexical hits and semantic hits under the same
 feature label. If a result is approximate, the UI should say so explicitly.
@@ -1146,11 +1142,11 @@ threads.
 
 The concrete contract is:
 
-* `SemanticSession` owns the semantic facade and completion service
-* `SemanticWorker` is the only thread allowed to touch that owned semantic state
-* async and blocking semantic helpers both flow through that same worker so hover,
-  signature help, completion, definition, references, and rename planning share one
-  ownership model
+- `SemanticSession` owns the semantic facade and completion service
+- `SemanticWorker` is the only thread allowed to touch that owned semantic state
+- async and blocking semantic helpers both flow through that same worker so hover,
+signature help, completion, definition, references, and rename planning share one
+ownership model
 
 ### 17.4.4 Safety rules
 
@@ -1160,9 +1156,9 @@ process. Prefer static/project analysis APIs over interpreter-style execution.
 Project-local caches created by semantic engines must respect ChoreBoy filesystem
 constraints:
 
-* no hidden dot-prefixed directories
-* visible cache/state paths only
-* no silent creation of engine-owned metadata directories in user projects
+- no hidden dot-prefixed directories
+- visible cache/state paths only
+- no silent creation of engine-owned metadata directories in user projects
 
 ### 17.4.5 Refactor rule
 
@@ -1176,17 +1172,17 @@ The semantic trust improvement is delivered through a sequenced slice plan:
 
 1. **Contract lock** — architecture, acceptance, and backlog alignment (I01).
 2. **Fixture corpus** — representative test projects and failing contract tests
-   that expose heuristic trust gaps (I02).
+  that expose heuristic trust gaps (I02).
 3. **Runtime-parity spike** — Jedi/Rope validated under AppRun with no hidden
-   engine metadata paths (I03).
+  engine metadata paths (I03).
 4. **Facade hardening** — deterministic `sys.path`, typed confidence metadata,
-   explicit degradation states (I04).
+  explicit degradation states (I04).
 5. **Read-only cutover** — replace heuristic completion/definition/hover/signatures/
-   references with project-aware semantic queries (I05).
+  references with project-aware semantic queries (I05).
 6. **Rename cutover** — Rope-backed planner with grouped patch previews, rollback,
-   no token-replace fallback (I06).
+  no token-replace fallback (I06).
 7. **Trust UX and performance** — inline confidence indicators, async/cancellable
-   completion, latency gates (I07).
+  completion, latency gates (I07).
 
 Each slice updates tests and documentation before proceeding. Slices may not
 silently merge heuristic and semantic results under the same feature label.
@@ -1197,10 +1193,10 @@ Async editor results must be tied to the buffer revision they were requested fro
 
 That means:
 
-* editor-owned buffer revisions advance on every meaningful document replacement/edit
-* diagnostics and semantic callbacks must verify the current revision before applying UI
-  state
-* stale results are dropped instead of overwriting newer editor state
+- editor-owned buffer revisions advance on every meaningful document replacement/edit
+- diagnostics and semantic callbacks must verify the current revision before applying UI
+state
+- stale results are dropped instead of overwriting newer editor state
 
 ## 17.5 Real Python formatting and import management
 
@@ -1212,10 +1208,10 @@ whitespace cleanup.
 
 Python formatting and import management should follow a deterministic tool chain:
 
-* generic text hygiene for universal save concerns such as trailing whitespace and
-  final newline handling
-* import organization as a style/layout transform
-* Black as the final Python formatting authority
+- generic text hygiene for universal save concerns such as trailing whitespace and
+final newline handling
+- import organization as a style/layout transform
+- Black as the final Python formatting authority
 
 This keeps generic editor hygiene separate from Python-specific style transforms and
 ensures the final buffer matches user expectations for Black-formatted code.
@@ -1225,15 +1221,15 @@ ensures the final buffer matches user expectations for Black-formatted code.
 Phase-1 Python formatting/import management should honor only project-local
 `pyproject.toml` configuration for advanced tool behavior:
 
-* `[tool.black]`
-* `[tool.isort]`
-* `[project.requires-python]`
+- `[tool.black]`
+- `[tool.isort]`
+- `[project.requires-python]`
 
 Code Studio settings should control workflow toggles such as:
 
-* format on save
-* organize imports on save
-* status visibility
+- format on save
+- organize imports on save
+- status visibility
 
 They should not become a second full style-configuration system that competes with
 the Python ecosystem or silently composes with hidden per-user tool configs.
@@ -1242,18 +1238,18 @@ the Python ecosystem or silently composes with hidden per-user tool configs.
 
 The shipped formatter/import stack must respect ChoreBoy runtime constraints:
 
-* run in-process inside the editor runtime
-* prefer vendored pure-Python dependencies by default
-* do not depend on formatter/import CLI subprocesses
-* apply explicit size/latency guardrails before introducing background complexity
+- run in-process inside the editor runtime
+- prefer vendored pure-Python dependencies by default
+- do not depend on formatter/import CLI subprocesses
+- apply explicit size/latency guardrails before introducing background complexity
 
 Manual "Format Current File" and "Organize Imports" actions remain explicit user
 commands. Save-time automation may chain them, but save reliability outranks style
 automation:
 
-* formatting/import failures must not discard user edits
-* save should still write the current buffer when style tooling fails
-* failure states must be understandable and visible in the UI
+- formatting/import failures must not discard user edits
+- save should still write the current buffer when style tooling fails
+- failure states must be understandable and visible in the UI
 
 ### 17.5.4 Boundaries with semantic and structural tooling
 
@@ -1261,10 +1257,10 @@ Import sorting is a deterministic style tool, not semantic truth.
 
 That means:
 
-* do not present import sorting as proof that imports are resolved correctly
-* keep move/rename import rewrites separate from organize-imports behavior
-* keep unsafe unused-import cleanup out of the phase-1 organize-imports path
-* defer syntax-preserving structural import edits to the later semantic/refactor lane
+- do not present import sorting as proof that imports are resolved correctly
+- keep move/rename import rewrites separate from organize-imports behavior
+- keep unsafe unused-import cleanup out of the phase-1 organize-imports path
+- defer syntax-preserving structural import edits to the later semantic/refactor lane
 
 Future structural import-management work can converge with the trusted-semantics
 roadmap, but the initial formatting/import stack should stay small, predictable, and
@@ -1296,12 +1292,12 @@ For lightweight scripts and automation.
 
 Each template should include:
 
-* working entrypoint
-* example logging
-* example error handling
-* example project metadata
-* README with how to run
-* minimal consistent folder layout
+- working entrypoint
+- example logging
+- example error handling
+- example project metadata
+- README with how to run
+- minimal consistent folder layout
 
 ## 18.3 Template versioning
 
@@ -1324,13 +1320,13 @@ At editor startup, run a lightweight compatibility probe.
 Current startup checks should stay small, deterministic, and support-oriented. The
 baseline probe covers:
 
-* AppRun available
-* PySide2 importable
-* FreeCAD importable
-* writable global settings path
-* writable global log path
-* writable temp path
-* vendored Python tooling runtime availability
+- AppRun available
+- PySide2 importable
+- FreeCAD importable
+- writable global settings path
+- writable global log path
+- writable temp path
+- vendored Python tooling runtime availability
 
 The probe should generate a user-visible compatibility summary.
 
@@ -1349,27 +1345,27 @@ than scattered strings in status bars, message boxes, and docs.
 
 Runtime/onboarding explanation should be built from structured facts, not ad-hoc UI copy:
 
-* startup capability probe results
-* project health checks
-* runtime module inventory / importability probes
-* run-target and run-configuration metadata
-* packaging/export preflight results
+- startup capability probe results
+- project health checks
+- runtime module inventory / importability probes
+- run-target and run-configuration metadata
+- packaging/export preflight results
 
 ### 19.1.2 Ownership boundary
 
 Use a clear split:
 
-* `support` owns machine-readable explanation models, issue classification, and preflight/report building
-* `shell` owns summaries, drill-down presentation, quick actions, and welcome/help entry points
-* `ui/help` and the printed manual own durable teaching content keyed to the same explanation topics
+- `support` owns machine-readable explanation models, issue classification, and preflight/report building
+- `shell` owns summaries, drill-down presentation, quick actions, and welcome/help entry points
+- `ui/help` and the printed manual own durable teaching content keyed to the same explanation topics
 
 ### 19.1.3 Progressive disclosure rule
 
 The UX should follow three layers:
 
-* compact status summaries for everyday awareness
-* a dedicated drill-down surface for runtime/project explanation
-* deeper help/manual content for concepts and workflows
+- compact status summaries for everyday awareness
+- a dedicated drill-down surface for runtime/project explanation
+- deeper help/manual content for concepts and workflows
 
 This prevents the status bar from becoming noisy while still keeping supportable detail one click away.
 
@@ -1377,20 +1373,20 @@ This prevents the status bar from becoming noisy while still keeping supportable
 
 Runtime explanation must respect ChoreBoy constraints:
 
-* never require terminal access in user-facing recovery steps
-* never execute arbitrary user project code in the editor process to explain a problem
-* keep startup probes lightweight; deeper checks run in background or on demand
-* preserve structured issue IDs/evidence so support bundles and UI surfaces describe the same facts
+- never require terminal access in user-facing recovery steps
+- never execute arbitrary user project code in the editor process to explain a problem
+- keep startup probes lightweight; deeper checks run in background or on demand
+- preserve structured issue IDs/evidence so support bundles and UI surfaces describe the same facts
 
 ### 19.1.5 Run/package preflight rule
 
 For run and packaging workflows, explanation should happen before expensive or failure-prone
 actions when the blocker is already knowable from editor-side state. Typical examples include:
 
-* missing or invalid run target
-* invalid run-configuration metadata
-* package export path overlap
-* excluded or missing packaged entry file
+- missing or invalid run target
+- invalid run-configuration metadata
+- package export path overlap
+- excluded or missing packaged entry file
 
 These checks should be treated as deterministic editor-side preflight, not delayed until
 after a runner or packaging attempt fails.
@@ -1417,22 +1413,22 @@ No expensive operation should block the Qt UI thread for noticeable periods.
 
 ## 21.2 Candidate background tasks
 
-* find in files
-* indexing
-* support bundle creation
-* project health check
-* large file loading
-* local-history retention pruning
-* global history search over deleted/moved entries
+- find in files
+- indexing
+- support bundle creation
+- project health check
+- large file loading
+- local-history retention pruning
+- global history search over deleted/moved entries
 
 Current implementation explicitly offloads:
 
-* find-in-files
-* symbol indexing
-* go-to-definition cache refresh path
-* unresolved import analysis
-* project health checks
-* support bundle generation
+- find-in-files
+- symbol indexing
+- go-to-definition cache refresh path
+- unresolved import analysis
+- project health checks
+- support bundle generation
 
 to background workers/tasks to avoid blocking the UI thread.
 
@@ -1440,11 +1436,11 @@ to background workers/tasks to avoid blocking the UI thread.
 
 The editor highlighting contract is performance-gated with integration tests:
 
-* Python tree-sitter full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
-* incremental tree-sitter parse+capture refresh under typing-burst variants: p95 <= 140ms
-* theme-switch apply cost across 10 open editors: p95 <= 150ms per editor
-* large-file mode must keep capture-query work bounded (viewport-window query execution)
-* bracket-match path must remain bounded on large files (no unbounded cursor-move scans)
+- Python tree-sitter full rehighlight at ~2,000 LOC: p95 <= 300ms (single-run target <= 250ms)
+- incremental tree-sitter parse+capture refresh under typing-burst variants: p95 <= 140ms
+- theme-switch apply cost across 10 open editors: p95 <= 150ms per editor
+- large-file mode must keep capture-query work bounded (viewport-window query execution)
+- bracket-match path must remain bounded on large files (no unbounded cursor-move scans)
 
 These gates are part of release validation and should be updated only with explicit evidence.
 
@@ -1464,38 +1460,38 @@ That is especially consistent with the overall crash-isolation design.
 
 For:
 
-* manifest creation
-* settings parsing
-* project metadata
-* local-history index/blob helpers
-* history retention and lineage rules
-* problem parsing
-* capability probe helpers
+- manifest creation
+- settings parsing
+- project metadata
+- local-history index/blob helpers
+- history retention and lineage rules
+- problem parsing
+- capability probe helpers
 
 ### Integration tests
 
 For:
 
-* opening a project
-* saving a file
-* recording local-history checkpoints on save
-* draft recovery compare/restore
-* deleted-file recovery and path-lineage restore
-* creating a run manifest
-* launching runner
-* capturing stdout/stderr
-* handling traceback
-* stopping a process
+- opening a project
+- saving a file
+- recording local-history checkpoints on save
+- draft recovery compare/restore
+- deleted-file recovery and path-lineage restore
+- creating a run manifest
+- launching runner
+- capturing stdout/stderr
+- handling traceback
+- stopping a process
 
 ### Manual acceptance tests
 
 For:
 
-* full MVP workflow on actual ChoreBoy environment
-* template creation
-* headless-safe execution
-* log preservation
-* support bundle export
+- full MVP workflow on actual ChoreBoy environment
+- template creation
+- headless-safe execution
+- log preservation
+- support bundle export
 
 ## 22.2 Architecture rule
 
@@ -1509,13 +1505,13 @@ Critical contracts should be testable without bringing up the full editor UI whe
 
 The following should have explicit version numbers:
 
-* `cbcs/project.json`
-* `cbcs/package.json`
-* run manifest
-* support bundle format
-* template format
-* distribution package manifest
-* installed package marker
+- `cbcs/project.json`
+- `cbcs/package.json`
+- run manifest
+- support bundle format
+- template format
+- distribution package manifest
+- installed package marker
 
 ## 23.2 Migration policy
 
@@ -1533,8 +1529,8 @@ The architecture should tolerate partial feature degradation better than hard re
 
 v1 includes a first-class plugin platform with two extension types:
 
-* declarative contributions
-* runtime code plugins
+- declarative contributions
+- runtime code plugins
 
 Runtime code plugins execute in an isolated plugin host process using explicit IPC
 contracts. The editor process does not import plugin code directly.
@@ -1548,13 +1544,13 @@ rendering, and supportability.
 
 Plugin contracts are explicit and versioned:
 
-* plugin manifest schema (`plugin.json`)
-* plugin API version compatibility
-* declared capabilities, permissions, and activation events
-* project-scoped plugin policy in `cbcs/plugins.json`
-* typed workflow provider contracts for formatter/import-organizer/diagnostics/test/
-  template/packaging/runtime-explainer/FreeCAD-helper/dependency-audit lanes
-* deterministic lifecycle (discover → validate → enable → activate → disable)
+- plugin manifest schema (`plugin.json`)
+- plugin API version compatibility
+- declared capabilities, permissions, and activation events
+- project-scoped plugin policy in `cbcs/plugins.json`
+- typed workflow provider contracts for formatter/import-organizer/diagnostics/test/
+template/packaging/runtime-explainer/FreeCAD-helper/dependency-audit lanes
+- deterministic lifecycle (discover → validate → enable → activate → disable)
 
 v1 distribution is offline-first through local folder or zip installation.
 Publisher signing is not required in v1.
@@ -1562,18 +1558,18 @@ Bundled first-party plugins live in visible repo path `bundled_plugins/`.
 
 Per-project plugin overrides and pinning are now explicit architecture, not deferred:
 
-* projects can pin plugin versions
-* projects can enable/disable plugins without changing global registry state
-* projects can prefer specific workflow providers by kind/language
+- projects can pin plugin versions
+- projects can enable/disable plugins without changing global registry state
+- projects can prefer specific workflow providers by kind/language
 
 ## 24.3 Workflow provider topology
 
 The plugin host exposes two lanes:
 
-* query lane for fast structured requests such as formatting, diagnostics, template
-  metadata, and runtime explainers
-* job lane for long-running work such as pytest, packaging, dependency audit, and
-  FreeCAD helpers
+- query lane for fast structured requests such as formatting, diagnostics, template
+metadata, and runtime explainers
+- job lane for long-running work such as pytest, packaging, dependency audit, and
+FreeCAD helpers
 
 This keeps the editor responsive while allowing richer workflow plugins than a simple
 menu-command model would support.
@@ -1614,30 +1610,30 @@ Each project tracks third-party dependency decisions in a visible manifest:
 
 Schema fields per entry:
 
-* `name` — package name
-* `version` — declared or detected version
-* `source` — ingestion source type (`wheel`, `zip`, `folder`, `runtime`)
-* `classification` — `pure_python`, `native_extension`, or `runtime`
-* `status` — `active` or `removed`
-* `added_at` — ISO timestamp
+- `name` — package name
+- `version` — declared or detected version
+- `source` — ingestion source type (`wheel`, `zip`, `folder`, `runtime`)
+- `classification` — `pure_python`, `native_extension`, or `runtime`
+- `status` — `active` or `removed`
+- `added_at` — ISO timestamp
 
 ### 25a.2 Ingestion workflow
 
 The "Add Dependency" wizard accepts:
 
-* `.whl` files — extracted into `vendor/`
-* `.zip` files containing Python packages — extracted into `vendor/`
-* folders — copied into `vendor/`
+- `.whl` files — extracted into `vendor/`
+- `.zip` files containing Python packages — extracted into `vendor/`
+- folders — copied into `vendor/`
 
 Classification runs at ingestion time, detecting compiled extensions and flagging
 ChoreBoy compatibility risks.
 
 ### 25a.3 Safety rules
 
-* all dependency paths use visible (non-dot-prefixed) directories
-* ingestion never modifies system paths or global state
-* native-extension packages require explicit user acknowledgment
-* the manifest is the source of truth for packaging validation
+- all dependency paths use visible (non-dot-prefixed) directories
+- ingestion never modifies system paths or global state
+- native-extension packages require explicit user acknowledgment
+- the manifest is the source of truth for packaging validation
 
 ### 25a.4 Packaging integration
 
@@ -1655,11 +1651,11 @@ with file/class/function hierarchy and pytest node IDs for targeted execution.
 
 ### 25b.2 Run scopes
 
-* **Run All Tests** — project-wide pytest execution
-* **Run File Tests** — pytest execution scoped to one test file
-* **Run Test at Cursor** — pytest execution for one test function using node ID
-* **Rerun Failed** — re-execute only previously failed test node IDs
-* **Debug Failed Test** — launch the first failed test under debug mode
+- **Run All Tests** — project-wide pytest execution
+- **Run File Tests** — pytest execution scoped to one test file
+- **Run Test at Cursor** — pytest execution for one test function using node ID
+- **Rerun Failed** — re-execute only previously failed test node IDs
+- **Debug Failed Test** — launch the first failed test under debug mode
 
 ### 25b.3 Test explorer panel
 
@@ -1833,15 +1829,15 @@ and project packaging drift independently.
 
 To reduce ambiguity for humans and AI agents:
 
-* `PRD.md` defines **what** the product must do
-* `DISCOVERY.md` defines **what the environment supports**
-* `ARCHITECTURE.md` defines **how the system is structured**
-* `ACCEPTANCE_TESTS.md` defines **how success is validated**
-* `TASKS.md` defines **implementation slices**
-* `AGENTS.md` defines **how AI agents should work in this repo**
-* `PACKAGING.md` defines the **ChoreBoy-specific distribution packaging and installer contract**
-* `docs/designer/ARCHITECTURE_PLAN.md` defines the **Designer subsystem plan** (`.ui` builder module boundaries, contracts, and rollout), with companion wireframe/backlog docs in `docs/designer/`
-* `docs/plugins/PRD.md` defines the **Plugin subsystem plan** (manifest, lifecycle, host process, and rollout)
+- `PRD.md` defines **what** the product must do
+- `DISCOVERY.md` defines **what the environment supports**
+- `ARCHITECTURE.md` defines **how the system is structured**
+- `ACCEPTANCE_TESTS.md` defines **how success is validated**
+- `TASKS.md` defines **implementation slices**
+- `AGENTS.md` defines **how AI agents should work in this repo**
+- `PACKAGING.md` defines the **ChoreBoy-specific distribution packaging and installer contract**
+- `docs/designer/ARCHITECTURE_PLAN.md` defines the **Designer subsystem plan** (`.ui` builder module boundaries, contracts, and rollout), with companion wireframe/backlog docs in `docs/designer/`
+- `docs/plugins/PRD.md` defines the **Plugin subsystem plan** (manifest, lifecycle, host process, and rollout)
 
 If a change affects system structure, update `ARCHITECTURE.md`.
 
@@ -1851,12 +1847,12 @@ If a change affects system structure, update `ARCHITECTURE.md`.
 
 The optimal architecture for ChoreBoy Code Studio is:
 
-* a **Qt editor shell**
-* running inside **FreeCAD AppRun**
-* with a **strictly separate runner process**
-* using a **filesystem-first project model**
-* driven by **JSON manifests and logs**
-* with **SQLite only as an optional acceleration layer**
-* and designed for **thin-slice AI-assisted implementation**
+- a **Qt editor shell**
+- running inside **FreeCAD AppRun**
+- with a **strictly separate runner process**
+- using a **filesystem-first project model**
+- driven by **JSON manifests and logs**
+- with **SQLite only as an optional acceleration layer**
+- and designed for **thin-slice AI-assisted implementation**
 
 This is the highest-leverage architecture because it matches the environment, contains risk, stays supportable, and gives AI agents clean boundaries to work within.

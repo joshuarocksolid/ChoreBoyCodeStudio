@@ -9,14 +9,48 @@ from pathlib import Path
 from typing import Any, Mapping, NoReturn, Optional
 import uuid
 
-from app.bootstrap.paths import PathInput
+from app.bootstrap.paths import PathInput, project_manifest_path
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
-from app.persistence.atomic_write import atomic_write_text
 
 PROJECT_METADATA_SCHEMA_VERSION = 1
 PROJECT_ID_PREFIX = "proj_"
 _UNKNOWN_LEGACY_PROJECT_ID = f"{PROJECT_ID_PREFIX}legacy_unknown"
+
+
+def deterministic_project_id_for_root(project_root: PathInput) -> str:
+    """Return a stable project id derived from the resolved project root path.
+
+    Matches the strategy used by local history when no manifest is present so
+    editor metadata and history stay aligned before ``cbcs/project.json`` exists.
+    """
+    root = str(Path(project_root).expanduser().resolve())
+    digest = hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
+    return f"{PROJECT_ID_PREFIX}root_{digest}"
+
+
+def build_synthetic_project_metadata(
+    project_root: PathInput,
+    *,
+    default_entry: str,
+    template: str = "imported_external",
+) -> ProjectMetadata:
+    """Build in-memory project metadata when ``cbcs/project.json`` is not on disk yet."""
+    resolved = Path(project_root).expanduser().resolve()
+    project_name = resolved.name.strip() or "Imported Project"
+    payload = build_default_project_manifest_payload(
+        project_name=project_name,
+        project_id=deterministic_project_id_for_root(resolved),
+        default_entry=default_entry,
+        working_directory=".",
+        template=template,
+    )
+    return parse_project_manifest(payload, manifest_path=project_manifest_path(resolved))
+
+
+def materialize_project_manifest(manifest_path: PathInput, metadata: ProjectMetadata) -> None:
+    """Write ``cbcs/project.json``, creating ``cbcs`` if needed (alias for :func:`save_project_manifest`)."""
+    save_project_manifest(manifest_path, metadata)
 
 
 def build_default_project_manifest_payload(
@@ -111,6 +145,8 @@ def load_project_manifest(manifest_path: PathInput) -> ProjectMetadata:
 
 def save_project_manifest(manifest_path: PathInput, metadata: ProjectMetadata) -> None:
     """Persist canonical project metadata payload to disk."""
+    from app.persistence.atomic_write import atomic_write_text
+
     path = Path(manifest_path).expanduser().resolve()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,12 +155,27 @@ def save_project_manifest(manifest_path: PathInput, metadata: ProjectMetadata) -
         _raise_validation_error(f"Unable to write manifest file: {exc}", manifest_path=path)
 
 
-def set_project_default_entry(manifest_path: PathInput, *, default_entry: str) -> ProjectMetadata:
-    """Update `default_entry` and persist the updated manifest metadata."""
+def set_project_default_entry(
+    manifest_path: PathInput,
+    *,
+    default_entry: str,
+    metadata_if_absent: Optional[ProjectMetadata] = None,
+) -> ProjectMetadata:
+    """Update `default_entry` and persist the updated manifest metadata.
+
+    When ``cbcs/project.json`` does not exist yet, pass ``metadata_if_absent`` (typically
+    the in-memory metadata from :class:`~app.core.models.LoadedProject`) to materialize the file.
+    """
     normalized_entry = default_entry.strip()
     if not normalized_entry:
         raise ValueError("default_entry must be a non-empty string.")
-    metadata = load_project_manifest(manifest_path)
+    path = Path(manifest_path).expanduser().resolve()
+    if path.is_file():
+        metadata = load_project_manifest(manifest_path)
+    elif metadata_if_absent is not None:
+        metadata = metadata_if_absent
+    else:
+        _raise_validation_error("Manifest file not found.", manifest_path=path)
     updated_metadata = replace(metadata, default_entry=normalized_entry)
     save_project_manifest(manifest_path, updated_metadata)
     return updated_metadata

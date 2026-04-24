@@ -13,7 +13,7 @@ from app.editors.search_panel import find_in_files
 from app.project.project_service import open_project
 from app.run.console_model import ConsoleModel
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(120)]
 
 
 def _write_project_manifest(project_root: Path, name: str) -> None:

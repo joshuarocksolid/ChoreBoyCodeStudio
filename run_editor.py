@@ -3,6 +3,7 @@
 import faulthandler
 import logging
 import importlib
+import os
 import sys
 from typing import Callable
 from typing import Any, Optional
@@ -29,7 +30,24 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
-    return application.exec_()
+    exit_code = application.exec_()
+
+    del window
+    _clear_qt_module_caches()
+    application.processEvents()
+
+    os._exit(exit_code)
+
+
+def _clear_qt_module_caches() -> None:
+    """Release module-level QIcon caches before QApplication is destroyed."""
+    from app.shell.file_type_icons import clear_icon_caches as _clear_file_type
+    from app.shell.problems_panel import clear_icon_caches as _clear_problems
+    from app.shell.test_explorer_panel import clear_icon_caches as _clear_test_explorer
+
+    _clear_file_type()
+    _clear_problems()
+    _clear_test_explorer()
 
 
 def _load_qt_runtime() -> tuple[Any, Any]:

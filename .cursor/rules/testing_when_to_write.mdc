@@ -1,0 +1,47 @@
+---
+description: Risk-first gate that decides whether a test is justified before writing one
+alwaysApply: true
+---
+
+# When To Write A Test (Risk-First Gate)
+
+Apply this gate **before** writing any new test. The default is "do not test" until at least one decision-gate question is answered yes. A bad test costs more over time than no test.
+
+For test mechanics (framework, markers, runtime), see `testing_strategy_setup.mdc`. For the TDD red/green/refactor workflow once a test is justified, see `tdd_business_logic_non_ui.mdc`. For concrete BAD/GOOD examples of the anti-patterns below, see `test_anti_patterns.mdc`.
+
+## Decision gate
+
+Write a test only if you can answer **yes** to at least one:
+
+1. The code has non-trivial branching, loops, or edge cases (boundary values, empty/None, ordering, rounding, time/timezone).
+2. The behavior has irreversible or high-blast-radius effects: file delete/move, database write, subprocess spawn, network call, money, auth, permissions.
+3. The change is a regression fix for a real bug (write the failing test first, then fix).
+4. The code defines or consumes an external contract: serialization at a process/network/file boundary, plugin API, persisted schema with migrations.
+5. The behavior is hard to reason about: caching, concurrency, retries, eventual consistency, complex state machines.
+
+If none apply, **do not add a test**. Type checking (`pyright`), the linter, and the manual acceptance suite already cover the rest.
+
+## Do NOT write tests for
+
+Each item lists a real anti-pattern from this repo. If you find yourself writing one of these, stop.
+
+- **Constants pinned to literals.** Tests that just `assert MODULE.X == "literal"` for many constants. Anti-example: [`tests/unit/core/test_constants.py`](tests/unit/core/test_constants.py).
+- **`to_dict()` schema snapshots that mirror the dataclass.** If the assertion just re-states the constructor arguments, the test has no signal. Anti-example: [`tests/unit/core/test_models.py`](tests/unit/core/test_models.py). Test serialization only at true external boundaries (persisted JSON, IPC, plugin API).
+- **Source-text style or syntax checks.** If the test parses a source file and asserts on its tokens, it is a linter rule, not a test. Anti-example: [`tests/unit/compat/test_python39_typing_compat.py`](tests/unit/compat/test_python39_typing_compat.py). Add a `ruff`/`pyright` rule instead.
+- **Trivial getters, setters, and "function exists" tests.** Single-line passthroughs with no logic do not need tests; type checking covers their existence.
+- **`isinstance` of a class hierarchy declared in the same file.** Asserting `isinstance(MyError, ParentError)` when the `class MyError(ParentError)` line sits 5 lines above the test is tautological.
+- **Reaching into `_private_attr` to assert internal state.** If you cannot test through the public API, fix the seam first (extract a function, expose a method) — do not couple the test to the implementation.
+- **Mock-dominated tests.** If more than half of the test LOC is mock setup and the assertion is "the mock was called with X", you are testing the mock, not the code. Either test the real collaborator (integration) or extract the pure logic and test it directly.
+- **UI markup, styling, or copy-only edits.** Covered by manual acceptance in `docs/ACCEPTANCE_TESTS.md`. Do not add unit tests that poke `_buttons[...].property("...")` to validate visuals.
+- **Framework or third-party internals.** Test your boundary against them (with a real or fake), not their behavior.
+
+## Tests as a maintained API
+
+- **Deletion is a first-class action.** When a refactor removes the conditions a test guarded, delete the test in the same diff. Do not preserve dead tests "just in case."
+- **One behavior per test.** If a test name contains "and", split it.
+- **Prefer parametrization over copy-paste.** Five tests that differ only by input/expected output should be one parametrized test.
+- **Test behavior, not implementation.** Assert on outcomes (return values, recorded side effects, emitted events at the public seam), not on which private helper was called.
+
+## When in doubt
+
+Ask: *"If this code silently broke in production tomorrow, would this test have warned me?"* If the honest answer is no, do not write the test.

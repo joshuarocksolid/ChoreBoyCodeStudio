@@ -142,15 +142,15 @@ def _issue_from_diagnostic_item(check: DiagnosticItem) -> RuntimeIssue | None:
             workflow="project",
             severity="blocking",
             title="Selected folder is not ready as a project",
-            summary="The chosen folder does not currently look like a runnable Python project.",
+            summary="The chosen folder cannot be opened as a project (invalid path or layout).",
             why_it_happened=(
-                "Code Studio needs Python files or valid `cbcs/project.json` metadata to treat "
-                "a folder as a project."
+                "The folder failed basic project-root checks (for example missing directory, "
+                "invalid `cbcs` paths, or an unsupported temporary root)."
             ),
             next_steps=[
-                "Open a folder that contains runnable `.py` files.",
+                "Choose an existing folder under your home or project storage.",
                 "If you are starting fresh, use File > New Project to create a template project.",
-                "Re-run the health check after fixing the folder contents.",
+                "Re-run the health check after fixing the folder layout.",
             ],
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence={"check_id": check.check_id, "details": dict(check.details), "message": check.message},

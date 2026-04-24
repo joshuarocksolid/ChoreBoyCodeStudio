@@ -19,16 +19,13 @@ from app.editors.syntax_registry import default_syntax_highlighter_registry  # n
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 from app.treesitter.loader import initialize_tree_sitter_runtime  # noqa: E402
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(180)]
 _TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _large_python_source(line_count: int = 2000) -> str:

@@ -6,24 +6,28 @@
 
 ChoreBoy Code Studio runs entirely inside FreeCAD's bundled Python runtime. There is **no virtualenv** — all code (app, tests, runner) executes via `/opt/freecad/AppRun`. This mirrors the ChoreBoy production environment described in `docs/DISCOVERY.md`.
 
-| Component | Path |
-|---|---|
-| FreeCAD AppRun | `/opt/freecad/AppRun` |
-| Bundled Python | 3.11.13 (conda-forge) |
-| Bundled PySide2 | 5.15.15 |
+
+| Component            | Path                                             |
+| -------------------- | ------------------------------------------------ |
+| FreeCAD AppRun       | `/opt/freecad/AppRun`                            |
+| Bundled Python       | 3.11.13 (conda-forge)                            |
+| Bundled PySide2      | 5.15.15                                          |
 | Python site-packages | `/opt/freecad/usr/lib/python3.11/site-packages/` |
-| Vendored packages | `/workspace/vendor/` |
+| Vendored packages    | `/workspace/vendor/`                             |
+
 
 ### How the two environments compare
 
-| Aspect | ChoreBoy production | Cursor Cloud dev |
-|---|---|---|
-| AppRun path | `/opt/freecad/AppRun` | `/opt/freecad/AppRun` (same) |
-| Python version | 3.9.2 | 3.11.13 |
-| PySide2 | bundled in AppRun | bundled in AppRun |
-| Display | X11 desktop | X11 on `:1` |
-| Subprocess restrictions | AppArmor (only `/bin/sh`) | None |
-| Vendored `.so` wheels | cp39 | cp311 |
+
+| Aspect                  | ChoreBoy production       | Cursor Cloud dev             |
+| ----------------------- | ------------------------- | ---------------------------- |
+| AppRun path             | `/opt/freecad/AppRun`     | `/opt/freecad/AppRun` (same) |
+| Python version          | 3.9.2                     | 3.11.13                      |
+| PySide2                 | bundled in AppRun         | bundled in AppRun            |
+| Display                 | X11 desktop               | X11 on `:1`                  |
+| Subprocess restrictions | AppArmor (only `/bin/sh`) | None                         |
+| Vendored `.so` wheels   | cp39                      | cp311                        |
+
 
 All application code must target **Python 3.9** syntax (see `.cursor/rules/python39_compatibility.mdc`), even though the Cloud dev runtime is 3.11.
 
@@ -38,7 +42,7 @@ python3 run_tests.py -v --import-mode=importlib
 - `--import-mode=importlib` is required because test directories lack `__init__.py` and have duplicate file names across `tests/unit/` and `tests/integration/`.
 - `QT_QPA_PLATFORM=offscreen` is set automatically by `run_tests.py`.
 - The `runtime_parity` test passes because AppRun is installed at the expected path.
-- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1195 passed, 2 skipped` (the skipped tests require optional JavaScript and SQL tree-sitter grammar bundles).
+- Latest full-suite checkpoint: `python3 run_tests.py -q --import-mode=importlib` -> `1386 passed, 1 skipped` (the skipped test requires the optional SQL tree-sitter grammar bundle).
 
 To run a subset:
 
@@ -46,6 +50,10 @@ To run a subset:
 python3 run_tests.py -v --import-mode=importlib tests/unit/
 python3 run_tests.py -v --import-mode=importlib -k test_project_service
 ```
+
+### Testing philosophy
+
+This project favors **fewer, higher-value tests** over coverage chasing. Before adding a test, check the risk-first gate in `.cursor/rules/testing_when_to_write.mdc`; if no decision-gate question is answered yes, do not add the test. The anti-pattern catalog in `.cursor/rules/test_anti_patterns.mdc` lists the specific shapes (constant pinning, schema snapshots, lint-as-test, private-attr probing, mock-dominated tests) to avoid. The TDD workflow in `.cursor/rules/tdd_business_logic_non_ui.mdc` only kicks in once a test is justified. A standing audit of the existing suite lives at `docs/TEST_AUDIT.md`.
 
 ### Running the editor (dev mode)
 
@@ -73,7 +81,30 @@ npx pyright
 
 ### Vendored dependencies
 
-The `vendor/` directory is gitignored. If it exists as a dangling symlink (from local dev), remove it first (`rm vendor`). Populate it with:
+The `vendor/` directory is gitignored. If it exists as a dangling symlink (from
+local dev), remove it first (`rm vendor`).
+
+The shipped product has one supported native bundle contract:
+
+- ChoreBoy target runtime
+- Python `3.9.2`
+- SOABI `cpython-39-x86_64-linux-gnu`
+- curated bundle documented in `vendor/README.md`
+
+Any product artifact must use that `cp39` contract. Do not package or ship a
+`cp311` vendor tree.
+
+`package.py` enforces the contract at staging time and self-heals the
+`tree_sitter` core binding: it downloads the cp39 manylinux wheel via
+`pip download --python-version=3.9 --platform=manylinux_2_17_x86_64`, caches it
+under `<artifacts>/vendor_cp39_cache/`, and overlays
+`_binding.cpython-39-x86_64-linux-gnu.so` onto the staged payload. This means
+the local `vendor/tree_sitter/` may legitimately hold a cp311 binding for
+Cloud-dev use without breaking `python package.py`. Grammar wheels
+(`tree_sitter_*`) are `abi3` and version-agnostic, so they are not affected.
+
+For local Cursor Cloud development only, you can populate `vendor/` with the
+current per-language tree-sitter bundle for the Cloud AppRun runtime:
 
 ```bash
 mkdir -p vendor
@@ -90,7 +121,9 @@ pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
 
 **Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable.
 
-The `--python-version=3.11` and `--platform` flags ensure correct cp311 `.so` wheels matching FreeCAD's Python. See `vendor/README.md` for the full curated bundle contract and the Python 3.9 production guidance.
+The `--python-version=3.11` and `--platform` flags above are for Cloud dev
+only. See `vendor/README.md` for the shipped ChoreBoy bundle contract and the
+Python 3.9 production guidance.
 
 ### Installing dev tools into FreeCAD's Python
 
@@ -109,5 +142,6 @@ This is necessary because `run_tests.py` imports pytest from within the AppRun p
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
 - **Integration test hangs:** The full test suite (`tests/integration/`) may hang on subprocess-based tests (plugin host lifecycle, runner process tests). Running `tests/unit/` alone completes reliably. If the full suite hangs, kill the process and run unit and integration tests separately.
-- **`vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
+- `**vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).
+

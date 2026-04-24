@@ -37,14 +37,13 @@ def test_run_project_health_check_reports_valid_project_structure(tmp_path: Path
 
 def test_run_project_health_check_reports_invalid_project_structure(tmp_path: Path) -> None:
     """Invalid project roots should fail structure checks with diagnostics."""
-    invalid_project_root = tmp_path / "invalid_project"
-    invalid_project_root.mkdir()
+    missing_project_root = tmp_path / "missing_project"
 
-    report = run_project_health_check(invalid_project_root, state_root=tmp_path / "state")
+    report = run_project_health_check(missing_project_root, state_root=tmp_path / "state")
 
     structure_check = next(check for check in report.checks if check.check_id == "project_structure")
     assert structure_check.is_ok is False
-    assert "no Python files were found" in structure_check.message
+    assert "Project folder not found" in structure_check.message
     assert any(check.check_id.startswith("runtime.") for check in report.checks)
 
 
@@ -61,3 +60,5 @@ def test_run_project_health_check_flags_importable_python_folder_state(tmp_path:
     assert structure_check.details["state"] == "importable_python_folder"
     assert structure_check.details["inferred_entry"] == "run.py"
     assert manifest_check.is_ok is True
+    assert manifest_check.details["manifest_materialized"] is False
+    assert "in-memory" in manifest_check.message

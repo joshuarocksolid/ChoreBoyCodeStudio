@@ -183,6 +183,13 @@ def _file_group_icon(color_hex: str) -> QIcon:
     return icon
 
 
+def clear_icon_caches() -> None:
+    """Release all cached QIcon objects so Shiboken can tear down cleanly."""
+    _ICON_CACHE.clear()
+    _FILE_ICON_CACHE.clear()
+    _TAB_ICON_CACHE.clear()
+
+
 # ---------------------------------------------------------------------------
 # Filter toggle button
 # ---------------------------------------------------------------------------

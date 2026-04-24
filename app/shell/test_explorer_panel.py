@@ -223,6 +223,13 @@ def kind_icon(kind: str, color_hex: str) -> QIcon:
 _ACTION_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
 
 
+def clear_icon_caches() -> None:
+    """Release all cached QIcon objects so Shiboken can tear down cleanly."""
+    _OUTCOME_ICON_CACHE.clear()
+    _KIND_ICON_CACHE.clear()
+    _ACTION_ICON_CACHE.clear()
+
+
 def _make_play_icon(color_hex: str) -> QIcon:
     px = QPixmap(14, 14)
     px.fill(QColor(0, 0, 0, 0))

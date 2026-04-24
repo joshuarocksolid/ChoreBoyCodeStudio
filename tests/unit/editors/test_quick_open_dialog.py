@@ -11,12 +11,8 @@ from app.editors.quick_open_dialog import QuickOpenDialog
 
 
 @pytest.fixture
-def _ensure_qapp():
-    from PySide2.QtWidgets import QApplication
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 @pytest.fixture

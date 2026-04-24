@@ -194,6 +194,27 @@ def test_set_project_default_entry_updates_manifest_file(tmp_path: Path) -> None
     assert reloaded.project_id.startswith(PROJECT_ID_PREFIX)
 
 
+def test_set_project_default_entry_materializes_when_manifest_missing(tmp_path: Path) -> None:
+    from app.project.project_manifest import build_synthetic_project_metadata
+
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    base = build_synthetic_project_metadata(project_root, default_entry="main.py")
+    manifest_path = project_root / "cbcs" / "project.json"
+    assert not manifest_path.exists()
+
+    updated = set_project_default_entry(
+        manifest_path,
+        default_entry="app/entry.py",
+        metadata_if_absent=base,
+    )
+
+    assert updated.default_entry == "app/entry.py"
+    assert manifest_path.is_file()
+    reloaded = load_project_manifest(manifest_path)
+    assert reloaded.default_entry == "app/entry.py"
+
+
 def test_ensure_project_id_backfills_legacy_manifest(tmp_path: Path) -> None:
     manifest_path = tmp_path / "cbcs" / "project.json"
     manifest_path.parent.mkdir(parents=True)

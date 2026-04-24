@@ -13,11 +13,8 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def _ensure_qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _sample_discovery() -> DiscoveryResult:

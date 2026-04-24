@@ -23,11 +23,8 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 class _FakeAutosaveStore:

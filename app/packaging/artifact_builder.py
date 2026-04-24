@@ -199,11 +199,22 @@ def _write_project_artifact(
         shutil.copy2(installer_source, installer_root / "install.py")
 
         installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
+        installer_icon_value = ""
+        if manifest.icon_relative_path:
+            payload_icon = payload_root / manifest.icon_relative_path
+            if payload_icon.is_file():
+                installer_icon_value = str(
+                    Path(manifest.staging_parent)
+                    / artifact_root.name
+                    / manifest.payload_dirname
+                    / manifest.icon_relative_path
+                )
         launcher_path = artifact_root / installer_launcher_filename
         launcher_path.write_text(
             build_installer_package_launcher(
                 manifest=manifest,
                 package_root_name=artifact_root.name,
+                icon_value=installer_icon_value,
             ),
             encoding="utf-8",
         )

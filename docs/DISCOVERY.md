@@ -472,6 +472,19 @@ tree-sitter is a C parsing library that provides incremental, fault-tolerant syn
 - tree-sitter 0.21.3 (`cp39-cp39-manylinux_2_17_x86_64`)
 - tree-sitter-languages 1.10.2 (`cp39-cp39-manylinux_2_17_x86_64`)
 
+### Historical validation note
+
+This section proves that the memfd loading technique works on ChoreBoy for the
+older `0.21.3` monolithic grammar stack. It should not be treated as automatic
+proof for the newer size-optimized per-language `0.23.x` bundle now used by
+the editor.
+
+The current product target is still a ChoreBoy `cp39` bundle, but it ships a
+smaller set of per-language wheels instead of `tree-sitter-languages`. That
+bundle must be validated on the actual device in its own right. If a device log
+shows a symbol error during `_binding` import, the regression is in native
+compatibility of the shipped wheel set, not in the memfd strategy itself.
+
 **Probe results (probe2d):**
 
 | Step | What | Result |

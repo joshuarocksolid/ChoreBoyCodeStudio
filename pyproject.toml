@@ -2,7 +2,10 @@
 minversion = "8.0"
 addopts = "-ra --import-mode=importlib"
 # Requires pytest-timeout (install into the AppRun site-packages for run_tests.py).
-timeout = 300
+# Default timeout keeps the agent fast lane responsive; tests that legitimately
+# need longer (subprocess polling, supervisor lifecycle, debug session waits)
+# carry @pytest.mark.timeout(...) overrides locally.
+timeout = 30
 testpaths = ["tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]
@@ -14,6 +17,7 @@ markers = [
     "integration: multi-component tests with filesystem/subprocess boundaries",
     "runtime_parity: tests requiring /opt/freecad/AppRun or equivalent runtime",
     "manual_acceptance: links automated coverage to manual acceptance workflows",
+    "slow: tests whose realistic wall time exceeds the agent fast-lane budget",
 ]
 # Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
 filterwarnings = [

@@ -7,7 +7,7 @@ from typing import Any
 
 from app.bootstrap.capability_probe import run_startup_capability_probe
 from app.bootstrap.paths import PathInput
-from app.core.errors import AppValidationError
+from app.core.errors import AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError
 from app.project.project_service import ProjectRootState, assess_project_root, open_project
 
 
@@ -91,16 +91,26 @@ def run_project_health_check(
 
     try:
         loaded_project = open_project(project_root)
+    except (AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError) as exc:
+        checks.append(DiagnosticItem(check_id="project_manifest", is_ok=False, message=str(exc)))
+    else:
+        manifest_message = (
+            "Project manifest on disk."
+            if loaded_project.manifest_materialized
+            else "Project metadata loaded (in-memory; cbcs/project.json not written yet)."
+        )
         checks.append(
             DiagnosticItem(
                 check_id="project_manifest",
                 is_ok=True,
-                message="Project manifest parsed successfully.",
-                details={"project_name": loaded_project.metadata.name, "entry_count": len(loaded_project.entries)},
+                message=manifest_message,
+                details={
+                    "project_name": loaded_project.metadata.name,
+                    "entry_count": len(loaded_project.entries),
+                    "manifest_materialized": loaded_project.manifest_materialized,
+                },
             )
         )
-    except AppValidationError as exc:
-        checks.append(DiagnosticItem(check_id="project_manifest", is_ok=False, message=str(exc)))
 
     capability_report = run_startup_capability_probe(state_root=state_root, temp_root=temp_root)
     checks.extend(_capability_checks(capability_report))

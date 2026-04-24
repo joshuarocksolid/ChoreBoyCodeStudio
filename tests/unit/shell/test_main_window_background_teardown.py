@@ -22,11 +22,8 @@ def _shell_task_thread_count() -> int:
 
 
 @pytest.fixture
-def _qapp() -> QApplication:  # type: ignore[no-untyped-def]
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def test_shutdown_main_window_for_test_returns_executor_threads_to_baseline(

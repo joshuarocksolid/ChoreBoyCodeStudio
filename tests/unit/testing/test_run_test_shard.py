@@ -21,6 +21,36 @@ def test_build_command_targets_unit_shard() -> None:
         "-q",
         "--import-mode=importlib",
         "tests/unit",
+        "-m",
+        "not slow",
+    ]
+
+
+def test_build_command_targets_fast_shard_excluding_slow_and_performance() -> None:
+    command = run_test_shard.build_command("fast", python_executable="/usr/bin/python3")
+
+    assert command == [
+        "/usr/bin/python3",
+        str(run_test_shard.RUN_TESTS_PATH),
+        "-q",
+        "--import-mode=importlib",
+        "tests/unit",
+        "tests/integration",
+        "--ignore=tests/integration/performance",
+        "-m",
+        "not slow",
+    ]
+
+
+def test_build_command_targets_all_shard_for_full_suite() -> None:
+    command = run_test_shard.build_command("all", python_executable="/usr/bin/python3")
+
+    assert command == [
+        "/usr/bin/python3",
+        str(run_test_shard.RUN_TESTS_PATH),
+        "-q",
+        "--import-mode=importlib",
+        "tests",
     ]
 
 
@@ -102,6 +132,8 @@ def test_main_strips_remainder_separator_for_pytest_args(
         "-q",
         "--import-mode=importlib",
         "tests/unit",
+        "-m",
+        "not slow",
         "-k",
         "test_config",
     ]

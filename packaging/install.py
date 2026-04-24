@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from PySide2.QtCore import Qt, QThread, Signal
+from PySide2.QtGui import QIcon
 from PySide2.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -143,6 +144,7 @@ def build_installed_desktop_entry(install_dir: str | Path, manifest: PackageMani
         f"Comment={manifest.launcher_comment}\n"
         "Terminal=false\n"
         "Categories=Utility;Development;\n"
+        "StartupNotify=true\n"
         f"{icon_line}"
         f'Exec={manifest.app_run_path} -c "{bootstrap}"\n'
     )
@@ -296,7 +298,7 @@ class InstallWorker(QThread):
 
         launcher_path = stage_dir / self.manifest.launcher_filename
         launcher_path.write_text(
-            build_installed_desktop_entry(stage_dir, self.manifest),
+            build_installed_desktop_entry(self.install_dir, self.manifest),
             encoding="utf-8",
         )
         launcher_path.chmod(launcher_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -385,14 +387,16 @@ class DirectoryPage(QWizardPage):
 
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
-        self.path_edit = QLineEdit(build_default_install_dir(manifest))
+        self.path_edit = QLineEdit()
         row.addWidget(self.path_edit)
         browse_button = QPushButton("Browse...")
         browse_button.clicked.connect(self._browse)
         row.addWidget(browse_button)
         layout.addLayout(row)
         layout.addStretch()
-        self.registerField("install_dir*", self.path_edit)
+        self.registerField("install_dir", self.path_edit)
+        self.path_edit.textChanged.connect(self.completeChanged)
+        self.path_edit.setText(build_default_install_dir(manifest))
 
     def _browse(self) -> None:
         chosen = QFileDialog.getExistingDirectory(
@@ -402,6 +406,9 @@ class DirectoryPage(QWizardPage):
         )
         if chosen:
             self.path_edit.setText(str(Path(chosen) / self._manifest.default_install_dirname))
+
+    def isComplete(self) -> bool:
+        return bool(self.path_edit.text().strip())
 
     def validatePage(self) -> bool:
         staging_warning = build_staging_location_warning(_package_root(), self._manifest)
@@ -578,6 +585,10 @@ class Installer(QWizard):
         self.setWindowTitle(f"{manifest.display_name} Installer")
         self.setMinimumSize(620, 420)
         self.setWizardStyle(QWizard.ModernStyle)
+        if manifest.icon_relative_path:
+            icon_path = _payload_root(manifest) / manifest.icon_relative_path
+            if icon_path.is_file():
+                self.setWindowIcon(QIcon(str(icon_path)))
         self.addPage(WelcomePage(manifest))
         self.addPage(DirectoryPage(manifest))
         self.addPage(ConfirmPage(manifest))

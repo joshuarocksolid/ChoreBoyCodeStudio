@@ -20,11 +20,8 @@ _TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def test_language_detection_supports_shebang_without_extension() -> None:

@@ -23,12 +23,8 @@ from app.shell.search_sidebar_widget import (
 
 
 @pytest.fixture
-def _ensure_qapp():
-    from PySide2.QtWidgets import QApplication
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 @pytest.mark.unit

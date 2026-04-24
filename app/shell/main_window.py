@@ -256,8 +256,6 @@ from app.shell.status_bar import (
     create_shell_status_bar,
     map_startup_report_to_status,
 )
-from app.shell.run_target_shortcuts import resolve_run_target_shortcut_labels
-from app.shell.run_target_summary import RunTargetSummaryInput, build_run_target_summary
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
@@ -3215,45 +3213,6 @@ class MainWindow(QMainWindow):
         self._active_named_run_config_name = None
         return None
 
-    def _update_run_target_summary(self) -> None:
-        toolbar = self._toolbar
-        if toolbar is None or not hasattr(toolbar, "set_run_target_view_model"):
-            return
-        active_tab = self._editor_manager.active_tab()
-        active_path: str | None = None
-        active_base: str | None = None
-        active_is_python = False
-        active_is_dirty = False
-        if active_tab is not None:
-            active_file_path = Path(active_tab.file_path).expanduser().resolve()
-            active_path = str(active_file_path)
-            active_base = active_file_path.name
-            active_is_python = active_file_path.suffix.lower() == ".py"
-            active_is_dirty = active_tab.is_dirty
-
-        project_root: str | None = None
-        project_entry: str | None = None
-        project_cwd: str | None = None
-        if self._loaded_project is not None:
-            project_root = str(self._loaded_project.project_root)
-            project_entry = self._loaded_project.metadata.default_entry
-            project_cwd = self._loaded_project.metadata.working_directory
-
-        active_config = self._resolve_active_named_run_config()
-        shortcuts = resolve_run_target_shortcut_labels(self._menu_registry)
-        inp = RunTargetSummaryInput(
-            shortcuts=shortcuts,
-            active_file_path=active_path,
-            active_file_basename=active_base,
-            active_is_python=active_is_python,
-            active_is_dirty=active_is_dirty,
-            project_root=project_root,
-            project_default_entry=project_entry,
-            project_working_directory=project_cwd,
-            named_config=active_config,
-        )
-        toolbar.set_run_target_view_model(build_run_target_summary(inp))
-
     def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
         report = RuntimeIssueReport(workflow="run", issues=list(issues))
         self._open_runtime_center_dialog(title=title, report=report)
@@ -3450,11 +3409,18 @@ class MainWindow(QMainWindow):
             updated_metadata = set_project_default_entry(
                 loaded_project.manifest_path,
                 default_entry=normalized_relative,
+                metadata_if_absent=None
+                if loaded_project.manifest_materialized
+                else loaded_project.metadata,
             )
         except (ProjectManifestValidationError, ValueError) as exc:
             QMessageBox.warning(self, "Entry point", str(exc))
             return False
-        self._loaded_project = replace(loaded_project, metadata=updated_metadata)
+        self._loaded_project = replace(
+            loaded_project,
+            metadata=updated_metadata,
+            manifest_materialized=True,
+        )
         self._populate_project_tree(self._loaded_project, preserve_state=True)
         return True
 
@@ -5147,7 +5113,6 @@ class MainWindow(QMainWindow):
             exception_settings_action.setEnabled(
                 self._loaded_project is not None and not self._run_service.supervisor.is_running()
             )
-        self._update_run_target_summary()
 
     def _has_active_python_file(self) -> bool:
         active_tab = self._editor_manager.active_tab()
@@ -5498,6 +5463,8 @@ class MainWindow(QMainWindow):
         self._pending_realtime_lint_file_path = None
         if hasattr(self, "_run_event_timer"):
             self._run_event_timer.stop()
+        if hasattr(self, "_repl_event_timer"):
+            self._repl_event_timer.stop()
         if hasattr(self, "_external_change_poll_timer"):
             self._external_change_poll_timer.stop()
         if hasattr(self, "_restore_project_timer"):

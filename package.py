@@ -31,6 +31,11 @@ from app.packaging.models import (
     PACKAGE_KIND_PRODUCT,
     PACKAGE_PROFILE_INSTALLABLE,
 )
+from app.packaging.tree_sitter_cp39 import (
+    CP39_TREE_SITTER_SOABI,
+    stage_cp39_tree_sitter_core_binding,
+)
+from app.treesitter.language_specs import LANGUAGE_SPECS
 
 REPO_ROOT = Path(__file__).resolve().parent
 ARTIFACTS_DIR = Path(os.environ.get("CBCS_ARTIFACTS_DIR", "") or str(REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts"))
@@ -61,10 +66,30 @@ VENDOR_ALLOWLIST = [
     "jedi", "parso", "rope", "pytoolconfig",
 ]
 INSTALLER_SOURCE = REPO_ROOT / "packaging" / "install.py"
+INSTALLER_ICON_SOURCE = REPO_ROOT / "app" / "ui" / "icons" / "installer_icon.png"
 CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
 ZIP_COMPRESSION_LEVEL = 9
 ARCHIVE_PASSWORD = os.environ.get("CBCS_PACKAGE_ZIP_PASSWORD", "rsd")
+CHOREBOY_PRODUCT_TREE_SITTER_SOABI = CP39_TREE_SITTER_SOABI
+CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES = ("tree_sitter",) + tuple(
+    spec.package_name for spec in LANGUAGE_SPECS if spec.included_by_default
+)
+CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS = {
+    "tree_sitter": f"_binding.{CHOREBOY_PRODUCT_TREE_SITTER_SOABI}.so",
+    **{
+        spec.package_name: "_binding.abi3.so"
+        for spec in LANGUAGE_SPECS
+        if spec.included_by_default
+    },
+}
+CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES = tuple(
+    spec.package_name for spec in LANGUAGE_SPECS if not spec.included_by_default
+)
+APP_VERSION_PATTERN = re.compile(
+    r'^(?P<prefix>\s*APP_VERSION\s*=\s*)(?P<quote>["\'])(?P<version>[^"\']*)(?P=quote)(?P<suffix>.*)$',
+    re.MULTILINE,
+)
 
 
 def build_product_manifest(*, version: str, staging_parent: str = CHOREBOY_STAGING_ROOT):
@@ -106,8 +131,56 @@ def build_install_instructions() -> str:
 def _read_version() -> str:
     constants_path = REPO_ROOT / "app" / "core" / "constants.py"
     text = constants_path.read_text(encoding="utf-8")
-    match = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
-    return match.group(1) if match else "dev"
+    match = APP_VERSION_PATTERN.search(text)
+    return match.group("version") if match else "dev"
+
+
+def _suggest_next_version(current: str) -> str:
+    parts = current.split(".")
+    try:
+        normalized = [str(int(part)) for part in parts]
+    except ValueError:
+        return current
+    while len(normalized) < 3:
+        normalized.append("0")
+    normalized[2] = str(int(normalized[2]) + 1)
+    return ".".join(normalized)
+
+
+def _substitute_version_in_text(text: str, new_version: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        return (
+            f"{match.group('prefix')}"
+            f"{match.group('quote')}{new_version}{match.group('quote')}"
+            f"{match.group('suffix')}"
+        )
+
+    updated_text, replacements = APP_VERSION_PATTERN.subn(_replace, text, count=1)
+    if replacements != 1:
+        raise RuntimeError("APP_VERSION assignment not found in app/core/constants.py")
+    return updated_text
+
+
+def _write_version(new_version: str) -> None:
+    constants_path = REPO_ROOT / "app" / "core" / "constants.py"
+    text = constants_path.read_text(encoding="utf-8")
+    updated_text = _substitute_version_in_text(text, new_version)
+    constants_path.write_text(updated_text, encoding="utf-8")
+
+
+def _prompt_version() -> str:
+    current = _read_version()
+    suggested = _suggest_next_version(current)
+    print(f"Current version: {current}")
+    new_version = input(f"New version (Enter for '{suggested}'): ").strip()
+    if not new_version:
+        new_version = suggested
+    if new_version != current:
+        _write_version(new_version)
+        print(f"Version updated: {current} -> {new_version}")
+        return new_version
+    print(f"Keeping version: {current}")
+    return current
 
 
 def _should_prune_dir(name: str) -> bool:
@@ -156,6 +229,46 @@ def _copy_vendor_allowlisted(vendor_src: Path, vendor_dst: Path) -> list[str]:
         else:
             missing.append(entry_name)
     return missing
+
+
+def _expected_tree_sitter_binding_name(soabi: str = CHOREBOY_PRODUCT_TREE_SITTER_SOABI) -> str:
+    return f"_binding.{soabi}.so"
+
+
+def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
+    """Validate that staged tree-sitter extensions match the shipped ChoreBoy ABI."""
+    validated_bindings: list[dict[str, str]] = []
+    for package_name in CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES:
+        expected_binding_name = CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS[package_name]
+        package_dir = vendor_dir / package_name
+        if not package_dir.is_dir():
+            raise RuntimeError(f"missing required ChoreBoy tree-sitter package: {package_dir}")
+        candidates = tuple(sorted(path.name for path in package_dir.glob("_binding*.so")))
+        if not candidates:
+            raise RuntimeError(
+                f"missing required binding {expected_binding_name} in {package_dir}"
+            )
+        if candidates != (expected_binding_name,):
+            if expected_binding_name in candidates:
+                raise RuntimeError(
+                    f"tree-sitter package {package_name} must contain only "
+                    f"{expected_binding_name}; found {', '.join(candidates)}"
+                )
+            raise RuntimeError(
+                f"tree-sitter package {package_name} expected {expected_binding_name}; "
+                f"found incompatible bindings: {', '.join(candidates)}"
+            )
+        validated_bindings.append(
+            {"package": package_name, "binding": expected_binding_name}
+        )
+    return {
+        "product_target_runtime": "choreboy-freecad-python39",
+        "target_soabi": CHOREBOY_PRODUCT_TREE_SITTER_SOABI,
+        "required_packages": list(CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES),
+        "required_bindings": dict(CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS),
+        "optional_packages_not_shipped": list(CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES),
+        "validated_bindings": validated_bindings,
+    }
 
 
 def _strip_shared_objects(root: Path) -> int:
@@ -226,7 +339,14 @@ def _make_zip(source_dir: Path, output_path: Path, password: str = ARCHIVE_PASSW
     )
 
 
-def _write_product_report(*, report_path: Path, manifest, archive_path: Path, archive_size_bytes: int) -> None:
+def _write_product_report(
+    *,
+    report_path: Path,
+    manifest,
+    archive_path: Path,
+    archive_size_bytes: int,
+    tree_sitter_bundle: dict[str, object],
+) -> None:
     report_payload = {
         "package_kind": manifest.package_kind,
         "profile": manifest.profile,
@@ -236,12 +356,13 @@ def _write_product_report(*, report_path: Path, manifest, archive_path: Path, ar
         "archive_path": str(archive_path),
         "archive_size_bytes": archive_size_bytes,
         "archive_budget_bytes": archive_budget_bytes(),
+        "tree_sitter_bundle": tree_sitter_bundle,
     }
     report_path.write_text(json.dumps(report_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def main() -> int:
-    version = _read_version()
+    version = _prompt_version()
     manifest = build_product_manifest(version=version)
     package_name = f"choreboy_code_studio_installer_v{version}"
     installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
@@ -270,6 +391,18 @@ def main() -> int:
     vendor_missing = _copy_vendor_allowlisted(vendor_src, payload_dir / "vendor")
     for name in vendor_missing:
         print(f"WARNING: allowlisted vendor entry not found: {name}")
+    cp39_cache_dir = ARTIFACTS_DIR / "vendor_cp39_cache"
+    staged_cp39_binding = stage_cp39_tree_sitter_core_binding(
+        payload_dir / "vendor" / "tree_sitter",
+        cp39_cache_dir,
+    )
+    print(f"Staged cp39 tree-sitter core binding: {staged_cp39_binding.name}")
+    tree_sitter_bundle = validate_choreboy_tree_sitter_bundle(payload_dir / "vendor")
+    print(
+        "Validated ChoreBoy tree-sitter bundle: "
+        f"{tree_sitter_bundle['target_soabi']} "
+        f"({len(tree_sitter_bundle['validated_bindings'])} bindings)"
+    )
     stripped = _strip_shared_objects(payload_dir / "vendor")
     print(f"Stripped debug symbols from {stripped} .so file(s)")
     _print_vendor_size_report(payload_dir / "vendor")
@@ -285,9 +418,21 @@ def main() -> int:
     installer_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(INSTALLER_SOURCE), str(installer_dir / "install.py"))
 
+    installer_icon_value = ""
+    if INSTALLER_ICON_SOURCE.is_file():
+        installer_icon_filename = INSTALLER_ICON_SOURCE.name
+        shutil.copy2(str(INSTALLER_ICON_SOURCE), str(staging / installer_icon_filename))
+        installer_icon_value = f"{CHOREBOY_STAGING_ROOT}/{package_name}/{installer_icon_filename}"
+    else:
+        print(f"WARNING: installer icon not found: {INSTALLER_ICON_SOURCE}")
+
     installer_launcher_path = staging / installer_launcher_filename
     installer_launcher_path.write_text(
-        build_installer_package_launcher(manifest=manifest, package_root_name=package_name),
+        build_installer_package_launcher(
+            manifest=manifest,
+            package_root_name=package_name,
+            icon_value=installer_icon_value,
+        ),
         encoding="utf-8",
     )
     installer_launcher_path.chmod(installer_launcher_path.stat().st_mode | 0o755)
@@ -324,6 +469,7 @@ def main() -> int:
         manifest=manifest,
         archive_path=archive_path,
         archive_size_bytes=archive_size_bytes,
+        tree_sitter_bundle=tree_sitter_bundle,
     )
 
     archive_size_mb = archive_size_bytes / (1024 * 1024)

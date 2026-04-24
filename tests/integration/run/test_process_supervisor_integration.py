@@ -10,7 +10,7 @@ import pytest
 
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(180)]
 
 
 def _wait_until(predicate, timeout_seconds: float = 3.0) -> bool:

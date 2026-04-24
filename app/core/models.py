@@ -241,6 +241,7 @@ class LoadedProject:
     manifest_path: str
     metadata: ProjectMetadata
     entries: list[ProjectFileEntry] = field(default_factory=list)
+    manifest_materialized: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
@@ -249,4 +250,5 @@ class LoadedProject:
             "manifest_path": self.manifest_path,
             "metadata": self.metadata.to_dict(),
             "entries": [entry.to_dict() for entry in self.entries],
+            "manifest_materialized": self.manifest_materialized,
         }

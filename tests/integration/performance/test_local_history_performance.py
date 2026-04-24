@@ -14,15 +14,12 @@ from PySide2.QtWidgets import QApplication
 from app.persistence.local_history_store import LocalHistoryStore
 from app.shell.history_restore_picker import HistoryRestorePickerDialog
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(120)]
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _build_history_store_with_timelines(tmp_path: Path, count: int) -> LocalHistoryStore:

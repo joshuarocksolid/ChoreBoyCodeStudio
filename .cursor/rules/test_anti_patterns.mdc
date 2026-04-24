@@ -1,0 +1,242 @@
+---
+description: Concrete BAD/GOOD examples of test anti-patterns to consult when writing or reviewing pytest tests
+alwaysApply: false
+---
+
+# Test Anti-Patterns (Catalog)
+
+Use this rule when you are about to write a test, or when you are reviewing an existing test for value. The gate that decides whether a test should exist at all lives in `testing_when_to_write.mdc`; this rule shows you how to recognize and rewrite the patterns that gate forbids.
+
+Each section names the anti-pattern, shows a BAD example, and shows the GOOD alternative.
+
+## 1. Constant pinning
+
+A test that just re-states a constant adds no signal. If the constant changes intentionally, the test must change with it; if it changes accidentally, the call sites and type checker already break.
+
+BAD:
+
+```python
+def test_global_state_constant_values() -> None:
+    assert constants.APP_RUN_PATH == "/opt/freecad/AppRun"
+    assert constants.GLOBAL_STATE_DIRNAME == "choreboy_code_studio_state"
+    assert constants.GLOBAL_SETTINGS_FILENAME == "settings.json"
+    # ... 12 more lines like this
+```
+
+GOOD: delete the test. If a constant participates in a real external contract (filename written to disk, IPC key), test the contract that uses it:
+
+```python
+def test_global_state_dir_is_created_under_user_home(tmp_path: Path) -> None:
+    bootstrap.ensure_state_root(tmp_path)
+    assert (tmp_path / constants.GLOBAL_STATE_DIRNAME).is_dir()
+```
+
+## 2. Schema snapshot mirroring the dataclass
+
+Asserting `to_dict() == { ...every field copied from the constructor... }` does not test behavior — it duplicates the dataclass definition. The test only fails when someone renames a field, which type checking already catches.
+
+BAD:
+
+```python
+def test_project_metadata_serializes_to_stable_schema() -> None:
+    metadata = ProjectMetadata(schema_version=1, name="Custom", project_id="proj_1")
+    assert metadata.to_dict() == {
+        "schema_version": 1,
+        "project_id": "proj_1",
+        "name": "Custom",
+        "default_entry": "main.py",
+        "default_argv": [],
+        # ...every field, copy-pasted from the dataclass...
+    }
+```
+
+GOOD: only test serialization at a real boundary, and only test the parts that matter:
+
+```python
+def test_project_metadata_round_trips_through_disk(tmp_path: Path) -> None:
+    written = ProjectMetadata(schema_version=1, name="Custom").to_dict()
+    path = tmp_path / "project.json"
+    path.write_text(json.dumps(written))
+    loaded = ProjectMetadata.from_dict(json.loads(path.read_text()))
+    assert loaded.name == "Custom"
+    assert loaded.schema_version == 1
+```
+
+## 3. Lint-as-test
+
+Reading source files and parsing them to enforce a style rule is the linter's job. Tests that do this are slow, brittle, and live in the wrong tool.
+
+BAD:
+
+```python
+def test_syntax_registry_avoids_runtime_pipe_union_aliases() -> None:
+    source = Path("app/editors/syntax_registry.py").read_text()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            assert "|" not in (ast.get_source_segment(source, node.value) or "")
+```
+
+GOOD: configure `pyright` (`pythonVersion = "3.9"` will already flag PEP 604 unions in runtime contexts) or add a `ruff` rule (`UP007`). Delete the test.
+
+## 4. Trivial getter / "function exists"
+
+If the assertion mirrors the implementation, the test is noise.
+
+BAD:
+
+```python
+def test_calculate_discount_exists() -> None:
+    assert calculate_discount is not None
+
+def test_user_full_name_returns_first_plus_last() -> None:
+    user = User(first="Ada", last="Lovelace")
+    assert user.full_name == "Ada Lovelace"  # implementation: return f"{self.first} {self.last}"
+```
+
+GOOD: skip the test entirely. Type checking covers existence; the trivial concatenation cannot fail in a way the linter and type checker will not already catch.
+
+## 5. `isinstance` of a hierarchy declared in the same file
+
+```python
+class ProjectManifestValidationError(AppValidationError): ...
+
+# 5 lines later, in the same module's test file:
+def test_project_manifest_error_is_validation_error() -> None:
+    error = ProjectManifestValidationError("bad")
+    assert isinstance(error, AppValidationError)
+```
+
+GOOD: delete. If callers depend on the `except AppValidationError` branch catching subclasses, write a test of the *handler* exercising that branch with the real error.
+
+## 6. Reaching into private attributes
+
+Asserting on `obj._foo` couples the test to the implementation. The next refactor breaks the test even when behavior is unchanged.
+
+BAD:
+
+```python
+def test_segmented_control_first_button_is_marked_first() -> None:
+    ctrl = SegmentedControl()
+    ctrl.add_segment("A", "a")
+    ctrl.add_segment("B", "b")
+    assert ctrl._buttons["a"].property("segmentPosition") == "first"
+```
+
+GOOD: assert through the public API, or — if the behavior is purely visual — delete the test and rely on manual acceptance. If you genuinely need a programmatic seam, add a public method:
+
+```python
+def test_segmented_control_reports_active_selection() -> None:
+    ctrl = SegmentedControl()
+    ctrl.add_segment("A", "a")
+    ctrl.add_segment("B", "b")
+    ctrl.set_selected("b")
+    assert ctrl.selected_data() == "b"
+```
+
+## 7. Mock-dominated tests
+
+If most of the test is `Mock()` setup and the assertion is "the mock was called", you have tested your mocks, not your code.
+
+BAD:
+
+```python
+def test_run_service_calls_supervisor_correctly() -> None:
+    supervisor = Mock()
+    supervisor.start.return_value = Mock(pid=123)
+    supervisor.is_running.return_value = True
+    repo = Mock()
+    repo.load_manifest.return_value = Mock(entry="main.py", argv=[], env={})
+    logger = Mock()
+    service = RunService(supervisor=supervisor, repo=repo, logger=logger)
+
+    service.run("proj_1")
+
+    supervisor.start.assert_called_once()
+    assert supervisor.start.call_args.kwargs["entry"] == "main.py"
+```
+
+GOOD: extract the pure decision (which `RunRequest` to build) and unit-test it with no mocks; cover the supervisor handoff with one integration test using a real subprocess.
+
+```python
+def test_build_run_request_uses_manifest_entry_and_argv() -> None:
+    manifest = ProjectManifest(entry="main.py", argv=["--fast"], env={"X": "1"})
+    request = build_run_request(manifest)
+    assert request.entry == "main.py"
+    assert request.argv == ["--fast"]
+    assert request.env == {"X": "1"}
+```
+
+## 8. Duplicate coverage / parametrize candidate
+
+Five tests that differ only by input and expected output are one parametrized test.
+
+BAD:
+
+```python
+def test_format_diagnostics_counts_errors_and_warnings() -> None:
+    assert format_diagnostics_counts(2, 3) == "2 errors, 3 warnings"
+
+def test_format_diagnostics_counts_singular() -> None:
+    assert format_diagnostics_counts(1, 1) == "1 error, 1 warning"
+
+def test_format_diagnostics_counts_only_errors() -> None:
+    assert format_diagnostics_counts(5, 0) == "5 errors"
+
+def test_format_diagnostics_counts_only_warnings() -> None:
+    assert format_diagnostics_counts(0, 2) == "2 warnings"
+
+def test_format_diagnostics_counts_zero() -> None:
+    assert format_diagnostics_counts(0, 0) == ""
+```
+
+GOOD:
+
+```python
+@pytest.mark.parametrize(
+    ("errors", "warnings", "expected"),
+    [
+        (2, 3, "2 errors, 3 warnings"),
+        (1, 1, "1 error, 1 warning"),
+        (5, 0, "5 errors"),
+        (0, 2, "2 warnings"),
+        (0, 0, ""),
+    ],
+)
+def test_format_diagnostics_counts(errors: int, warnings: int, expected: str) -> None:
+    assert format_diagnostics_counts(errors, warnings) == expected
+```
+
+## 9. UI-detail testing where manual acceptance owns it
+
+Asserting on stylesheet strings, object names, segment positions, or `.property("...")` of widgets falls under manual acceptance per `testing_strategy_setup.mdc`. Add a manual acceptance step instead of a brittle Qt unit test.
+
+## 10. Tests with logic in them
+
+A test should not re-implement the production algorithm to compute its expected value.
+
+BAD:
+
+```python
+def test_apply_discount() -> None:
+    price, percent = 100, 10
+    expected = price - (price * percent / 100)  # mirrors the production formula
+    assert apply_discount(price, percent) == expected
+```
+
+GOOD: hard-code the expected result.
+
+```python
+def test_apply_discount_subtracts_percent_of_price() -> None:
+    assert apply_discount(100, 10) == 90
+```
+
+## When to keep a test that looks like one of these
+
+There are real exceptions:
+
+- A constant **does** participate in an external contract (a wire format, a persisted filename other tools depend on, an OS path with security implications). Test the contract, not the constant.
+- A `to_dict` lives at a real boundary (HTTP response, plugin payload, on-disk format with migrations). Test the boundary, ideally via round-trip plus a few key fields, not a full literal snapshot.
+- A private attribute is the only seam available **and** the behavior is high-risk. Refactor to expose a public seam first; if you cannot, document why in the test and keep the assertion narrow.
+
+If you need to keep one of these, add a one-line comment naming the exception so the next reader knows it was deliberate.

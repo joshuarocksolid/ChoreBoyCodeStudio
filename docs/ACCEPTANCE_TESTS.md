@@ -29,6 +29,7 @@ These acceptance tests focus on the first high-value vertical slice:
 8. stop a running script safely
 
 These tests are intentionally biased toward:
+
 - real user workflows
 - supportability
 - stability under ChoreBoy constraints
@@ -74,35 +75,44 @@ If any of the above are missing, MVP is not complete.
 The following sample projects should exist for acceptance testing:
 
 ### A. Simple Success Project
+
 A minimal project whose `main.py` prints output and exits successfully.
 
 Example behavior:
+
 - prints `START`
 - prints a few lines
 - exits with success
 
 ### B. Failure Project
+
 A minimal project whose `main.py` raises an exception.
 
 Example behavior:
+
 - prints one line
 - raises an exception with traceback
 
 ### C. Long-Running Project
+
 A minimal project whose `main.py` keeps running until stopped.
 
 Example behavior:
+
 - prints `tick` repeatedly
 - remains active long enough to test Stop behavior
 
 ### D. Invalid / Non-importable Project
+
 A folder that cannot be treated as a Python project, such as:
+
 - no `cbcs/project.json` and no `.py` files
 - corrupted/invalid `cbcs/project.json`
 
 Used to verify project validation and actionable errors.
 
 ### E. Importable Existing Python Folder
+
 A plain Python folder without `cbcs/project.json` that includes runnable `.py` files.
 
 Used to verify first-open metadata initialization and import-friendly open behavior.
@@ -132,14 +142,17 @@ A test passes only if the expected result is achieved without hand-waving.
 Verify that the application can start in the supported runtime.
 
 **Preconditions:**  
+
 - target runtime is available
 - launch path is correctly configured
 
 **Steps:**  
+
 1. Launch ChoreBoy Code Studio using the intended startup path.
 2. Wait for the main window to appear.
 
 **Expected Result:**  
+
 - the editor window opens successfully
 - the application does not crash on startup
 - the UI is responsive
@@ -153,13 +166,16 @@ Verify that the application can start in the supported runtime.
 Verify that runtime assumptions are checked explicitly.
 
 **Preconditions:**  
+
 - editor can launch
 
 **Steps:**  
+
 1. Start the editor.
 2. Observe startup behavior and any capability status output.
 
 **Expected Result:**  
+
 - capability checks run during startup or are available immediately after startup
 - missing capabilities are reported clearly
 - the app does not rely on silent assumptions about runtime features
@@ -172,16 +188,19 @@ Verify that runtime assumptions are checked explicitly.
 Verify that a normal project can be opened from disk.
 
 **Preconditions:**  
+
 - a valid test project exists, either:
   - already containing `cbcs/project.json`, or
   - a plain Python folder that can be imported on first open
 
 **Steps:**  
+
 1. Launch the editor.
 2. Choose **Open Project**.
 3. Select a valid test project folder.
 
 **Expected Result:**  
+
 - the project loads without restarting the app
 - project metadata is recognized
 - the project name or equivalent project state is visible in the UI
@@ -196,14 +215,17 @@ Verify that a normal project can be opened from disk.
 Verify that broken or non-importable folders fail safely and clearly.
 
 **Preconditions:**  
+
 - an invalid/non-importable test folder exists
 
 **Steps:**  
+
 1. Launch the editor.
 2. Choose **Open Project**.
 3. Select an invalid project folder.
 
 **Expected Result:**  
+
 - the project is not opened as if it were valid
 - the user receives a clear, actionable error
 - the editor remains stable
@@ -217,15 +239,18 @@ Verify that broken or non-importable folders fail safely and clearly.
 Verify that users can open normal Python folders that were not created by Code Studio.
 
 **Preconditions:**  
+
 - an importable existing Python folder exists
 - folder does not contain `cbcs/project.json`
 
 **Steps:**  
+
 1. Launch the editor.
 2. Choose **Open Project**.
 3. Select the importable Python folder.
 
 **Expected Result:**  
+
 - the folder opens as a project without manual metadata setup
 - `cbcs/project.json` is created with canonical defaults
 - inferred entrypoint is usable for Run
@@ -239,13 +264,16 @@ Verify that users can open normal Python folders that were not created by Code S
 Verify that users can browse project files.
 
 **Preconditions:**  
+
 - a valid project is open
 
 **Steps:**  
+
 1. Open a valid project.
 2. Inspect the project tree/sidebar.
 
 **Expected Result:**  
+
 - project folders/files are visible
 - the tree reflects the expected project structure
 - selecting a file is possible
@@ -259,13 +287,16 @@ Verify that users can browse project files.
 Verify that a selected file can be opened for editing.
 
 **Preconditions:**  
+
 - a valid project is open
 - project contains `main.py`
 
 **Steps:**  
+
 1. In the project tree, click `main.py`.
 
 **Expected Result:**  
+
 - `main.py` opens in an editor tab
 - file contents are visible
 - the current active file is clear in the UI
@@ -279,13 +310,16 @@ Verify that a selected file can be opened for editing.
 Verify editable state and unsaved-change tracking.
 
 **Preconditions:**  
+
 - `main.py` is open in an editor tab
 
 **Steps:**  
+
 1. Modify the contents of `main.py`.
 2. Observe the tab/editor state.
 
 **Expected Result:**  
+
 - the file contents change in the editor
 - the file is marked as modified/dirty in the UI
 - the modified state remains until the file is saved or reverted
@@ -298,13 +332,16 @@ Verify editable state and unsaved-change tracking.
 Verify that edits are persisted correctly.
 
 **Preconditions:**  
+
 - `main.py` is open and modified
 
 **Steps:**  
+
 1. Save the file.
 2. Confirm the file on disk reflects the new content.
 
 **Expected Result:**  
+
 - changes are written successfully to disk
 - dirty state clears after save
 - save failures are surfaced clearly if they occur
@@ -318,13 +355,16 @@ Verify that edits are persisted correctly.
 Verify multi-file save behavior.
 
 **Preconditions:**  
+
 - at least two project files are open and modified
 
 **Steps:**  
+
 1. Modify two files.
 2. Use **Save All**.
 
 **Expected Result:**  
+
 - all modified files are saved
 - dirty indicators clear appropriately
 - failures are reported clearly if any file cannot be saved
@@ -337,14 +377,17 @@ Verify multi-file save behavior.
 Verify the most important process boundary in the architecture.
 
 **Preconditions:**  
+
 - a valid project is open
 - `main.py` is runnable
 
 **Steps:**  
+
 1. Open the success test project.
 2. Press **Run**.
 
 **Expected Result:**  
+
 - user code is launched through a separate runner process
 - the editor process remains responsive while the run is active
 - a failure in user code would not terminate the editor process
@@ -358,13 +401,16 @@ Verify the most important process boundary in the architecture.
 Verify that normal output is visible to the user.
 
 **Preconditions:**  
+
 - success test project is open
 
 **Steps:**  
+
 1. Press **Run**.
 2. Observe the console/output area.
 
 **Expected Result:**  
+
 - stdout appears in the console/output panel
 - output is readable and associated with the current run
 - run completion is visible to the user
@@ -378,13 +424,16 @@ Verify that normal output is visible to the user.
 Verify that failures are visible and diagnosable.
 
 **Preconditions:**  
+
 - failure test project is open
 
 **Steps:**  
+
 1. Press **Run**.
 2. Observe the console and any problems/error UI.
 
 **Expected Result:**  
+
 - the failure is visible in the UI
 - traceback information is preserved and accessible
 - if file/line information is available, it is surfaced clearly
@@ -398,12 +447,15 @@ Verify that failures are visible and diagnosable.
 Verify that error output is not lost.
 
 **Preconditions:**  
+
 - test project produces stderr output or exception output
 
 **Steps:**  
+
 1. Run a project that writes to stderr or raises an exception.
 
 **Expected Result:**  
+
 - stderr is visible in the output UI
 - stderr is distinguishable enough from stdout to aid debugging
 - important failure details are not hidden
@@ -416,14 +468,17 @@ Verify that error output is not lost.
 Verify durable diagnostic logging.
 
 **Preconditions:**  
+
 - a project has been run at least once
 
 **Steps:**  
+
 1. Run a test project.
 2. Locate the project log directory.
 3. Inspect the newest run log.
 
 **Expected Result:**  
+
 - a per-run log file exists
 - the log file contains run output
 - failed runs preserve full traceback information
@@ -437,14 +492,17 @@ Verify durable diagnostic logging.
 Verify run control for long-running user code.
 
 **Preconditions:**  
+
 - long-running test project is open
 
 **Steps:**  
+
 1. Press **Run** on the long-running project.
 2. Wait until output confirms it is still running.
 3. Press **Stop**.
 
 **Expected Result:**  
+
 - the running process is terminated or stopped cleanly
 - the UI reflects that the run is no longer active
 - the editor remains stable and responsive
@@ -458,13 +516,16 @@ Verify run control for long-running user code.
 Verify crash isolation between editor and runner.
 
 **Preconditions:**  
+
 - failure test project is open
 
 **Steps:**  
+
 1. Run code that raises an exception or otherwise fails.
 2. After the run fails, continue using the editor.
 
 **Expected Result:**  
+
 - the editor stays open
 - the user can still open files, edit, and save after the failure
 - the failure is isolated to the run, not the whole app
@@ -477,15 +538,18 @@ Verify crash isolation between editor and runner.
 Verify basic app persistence for project-first workflow.
 
 **Preconditions:**  
+
 - at least one project has been opened successfully
 
 **Steps:**  
+
 1. Open a valid project.
 2. Close the editor.
 3. Relaunch the editor.
 4. Inspect the recent-projects UI or equivalent state.
 
 **Expected Result:**  
+
 - the recent project is remembered
 - invalid/missing project paths do not crash the editor
 - recent-project behavior is stable and predictable
@@ -498,14 +562,17 @@ Verify basic app persistence for project-first workflow.
 Verify that unsaved edits are recoverable after abnormal exit.
 
 **Preconditions:**  
+
 - recovery/autosave draft feature is implemented
 
 **Steps:**  
+
 1. Open and modify a file without saving.
 2. Simulate abnormal exit or crash.
 3. Relaunch the editor.
 
 **Expected Result:**  
+
 - unsaved draft content is recoverable
 - recovery does not silently overwrite the original source file
 - the recovery flow is understandable to the user
@@ -525,9 +592,11 @@ These may be executed after the core MVP slice is stable.
 Verify the simplest project creation flow.
 
 **Preconditions:**  
+
 - template system is implemented
 
 **Steps:**  
+
 1. Choose **New Project**.
 2. Select the `utility_script` template.
 3. Choose a destination.
@@ -535,6 +604,7 @@ Verify the simplest project creation flow.
 5. Open and run it.
 
 **Expected Result:**  
+
 - the project is created successfully
 - required files exist
 - project metadata is valid
@@ -548,14 +618,17 @@ Verify the simplest project creation flow.
 Verify GUI-template project creation.
 
 **Preconditions:**  
+
 - Qt template system is implemented
 
 **Steps:**  
+
 1. Create a new `qt_app` project from the template.
 2. Open the project.
 3. Run it using the intended execution path.
 
 **Expected Result:**  
+
 - the project is created successfully
 - project structure matches expectations
 - the Qt app launches using the supported runtime model
@@ -568,14 +641,17 @@ Verify GUI-template project creation.
 Verify headless-safe template project creation.
 
 **Preconditions:**  
+
 - headless template system is implemented
 
 **Steps:**  
+
 1. Create a new `headless_tool` project.
 2. Open the project.
 3. Run it.
 
 **Expected Result:**  
+
 - the project is created successfully
 - it follows documented headless-safe patterns
 - it does not rely on GUI-only FreeCAD behavior
@@ -590,13 +666,16 @@ Verify headless-safe template project creation.
 Verify pre-run diagnostics.
 
 **Preconditions:**  
+
 - health check feature is implemented
 
 **Steps:**  
+
 1. Open a valid project and run the health check.
 2. Open an invalid/broken project and run the health check.
 
 **Expected Result:**  
+
 - the health check identifies real issues
 - the results are understandable
 - users receive actionable next steps where possible
@@ -609,14 +688,17 @@ Verify pre-run diagnostics.
 Verify field-support workflow.
 
 **Preconditions:**  
+
 - support bundle feature is implemented
 - at least one run log exists
 
 **Steps:**  
+
 1. Generate a support bundle from the app.
 2. Inspect the output artifact.
 
 **Expected Result:**  
+
 - the support bundle is created successfully
 - expected diagnostic artifacts (app log, project metadata, latest run log when available) are included
 - the bundle is suitable for transfer and support review
@@ -631,15 +713,18 @@ Verify field-support workflow.
 Verify editor/tree/output pane proportions are practical on first launch and persist after user adjustment.
 
 **Preconditions:**  
+
 - editor can launch with a writable settings path
 
 **Steps:**  
+
 1. Launch editor on a clean settings profile.
 2. Verify initial tree/editor split is editor-favoring.
 3. Adjust splitter positions.
 4. Close and relaunch editor.
 
 **Expected Result:**  
+
 - initial default layout is productive (tree not oversized)
 - adjusted layout is restored on relaunch
 - reset-layout action restores known-good defaults
@@ -652,15 +737,18 @@ Verify editor/tree/output pane proportions are practical on first launch and per
 Verify users can execute interactive Python commands in a dedicated console session.
 
 **Preconditions:**  
+
 - editor is running (no project required)
 
 **Steps:**  
+
 1. Start Python Console mode.
 2. Submit single-line commands (e.g., `x = 2`, `print(x + 3)`).
 3. Submit a multiline block (e.g., `for` loop) and complete it with continuation semantics.
 4. Exit console session.
 
 **Expected Result:**  
+
 - Python Console is available whether or not a project is open
 - submitted commands are accepted via stdin bridge
 - multiline continuation prompt behavior matches normal REPL (`>>>` / `...`)
@@ -675,14 +763,17 @@ Verify users can execute interactive Python commands in a dedicated console sess
 Verify modern explorer actions are available and reliable from the project tree.
 
 **Preconditions:**  
+
 - project with nested files/folders is open
 
 **Steps:**  
+
 1. Use tree context menu for create/rename/move-to-trash/duplicate.
 2. Use cut/copy/paste and drag-drop move.
 3. Use copy path / copy relative path / reveal in file manager.
 
 **Expected Result:**  
+
 - filesystem operations complete successfully with clear confirmations on move-to-trash actions
 - deleted items are moved to trash (not permanently removed immediately)
 - tree refreshes to reflect resulting state
@@ -696,15 +787,18 @@ Verify modern explorer actions are available and reliable from the project tree.
 Verify Python import update workflow and policy controls for file move/rename.
 
 **Preconditions:**  
+
 - project has at least two Python modules with imports between them
 
 **Steps:**  
+
 1. Move/rename an imported module.
 2. Validate policy prompt default is **Ask every time**.
 3. Select Always and verify persistence on next move.
 4. Select Never and verify rewrites are skipped.
 
 **Expected Result:**  
+
 - Ask/Always/Never policy works as documented
 - import rewrites are previewed and applied only when permitted
 - no silent overwrite or hidden partial refactor behavior
@@ -717,15 +811,18 @@ Verify Python import update workflow and policy controls for file move/rename.
 Verify top-of-window Run/Debug controls are discoverable and state-coherent.
 
 **Preconditions:**  
+
 - project is open
 
 **Steps:**  
+
 1. Use toolbar to run and stop a normal script.
 2. Start debug session.
 3. Verify stepping/continue controls enable only when paused.
 4. Verify Pause control is enabled only while actively debugging/running.
 
 **Expected Result:**  
+
 - run/debug controls are visible and functional
 - invalid actions are disabled by state
 - toolbar behavior matches menu shortcuts
@@ -738,15 +835,18 @@ Verify top-of-window Run/Debug controls are discoverable and state-coherent.
 Verify practical debugging via gutter breakpoints and step controls.
 
 **Preconditions:**  
+
 - debug-eligible Python project open
 
 **Steps:**  
+
 1. Toggle breakpoint from editor gutter.
 2. Start Debug.
 3. Confirm execution pauses at breakpoint.
 4. Use continue/step commands and observe progress.
 
 **Expected Result:**  
+
 - breakpoints are honored by runner debug mode
 - paused/running transitions are visible
 - stepping commands function without crashing editor
@@ -759,14 +859,17 @@ Verify practical debugging via gutter breakpoints and step controls.
 Verify variable/stack inspection affordances in debug workflows.
 
 **Preconditions:**  
+
 - active paused debug session
 
 **Steps:**  
+
 1. Use debug inspector actions to request stack and locals.
 2. Add watch expressions and evaluate.
 3. Continue and stop debug session.
 
 **Expected Result:**  
+
 - inspector output updates with stack/locals command results
 - watch expressions can be evaluated in paused context
 - debug session exits cleanly and editor remains stable
@@ -779,10 +882,12 @@ Verify variable/stack inspection affordances in debug workflows.
 Verify that breakpoint properties are practical for real debugging workflows.
 
 **Preconditions:**  
+
 - debug-eligible Python project open
 - file contains a loop or repeated call site
 
 **Steps:**  
+
 1. Add a breakpoint from the gutter.
 2. Open breakpoint properties and set a condition.
 3. Run Debug and verify the breakpoint only pauses when the condition is true.
@@ -790,6 +895,7 @@ Verify that breakpoint properties are practical for real debugging workflows.
 5. Run Debug again and verify the breakpoint does not stop before the threshold.
 
 **Expected Result:**  
+
 - conditional breakpoints are evaluated in runner context without crashing the editor
 - hit-count thresholds are honored deterministically
 - breakpoint verification failures are visible and actionable
@@ -802,10 +908,12 @@ Verify that breakpoint properties are practical for real debugging workflows.
 Verify the runtime inspector presents paused state as navigable structured data.
 
 **Preconditions:**  
+
 - active paused debug session
 - sample program exposes at least one nested object and more than one stack frame
 
 **Steps:**  
+
 1. Pause at a breakpoint with a non-trivial call stack.
 2. Switch between available frames in the Debug panel.
 3. Inspect locals and globals by scope.
@@ -813,6 +921,7 @@ Verify the runtime inspector presents paused state as navigable structured data.
 5. Confirm large values are truncated rather than freezing the UI.
 
 **Expected Result:**  
+
 - the panel shows threads, frames, and scopes separately
 - selecting a frame updates the editor highlight and variable view coherently
 - nested variables load on demand instead of materializing the full object graph at once
@@ -826,16 +935,19 @@ Verify the runtime inspector presents paused state as navigable structured data.
 Verify uncaught exception stops are visible and configurable.
 
 **Preconditions:**  
+
 - debug-eligible Python project open
 - project contains one script that raises an uncaught exception and one that raises then catches an exception
 
 **Steps:**  
+
 1. Enable stop on uncaught exceptions and debug the uncaught-exception script.
 2. Confirm the session pauses with exception details before exit.
 3. Disable stop on raised exceptions and debug the caught-exception script.
 4. Enable stop on raised exceptions and debug the caught-exception script again.
 
 **Expected Result:**  
+
 - uncaught exceptions surface as a clear stop reason with traceback details
 - raised-exception behavior follows the configured policy
 - continuing after an exception stop behaves predictably and the session can still terminate cleanly
@@ -848,16 +960,19 @@ Verify uncaught exception stops are visible and configurable.
 Verify debug workflows cover both scripts and pytest targets without requiring manual command recreation.
 
 **Preconditions:**  
+
 - project contains at least one passing test file
 - an editor tab is open on that test file
 
 **Steps:**  
+
 1. Trigger **Debug Current Test** from the active test file.
 2. Pause on a breakpoint inside the test or code under test.
 3. Stop the session.
 4. Trigger **Rerun Last Debug Target**.
 
 **Expected Result:**  
+
 - current-file pytest debugging launches the intended target
 - breakpoint and inspector behavior matches normal debug sessions
 - rerun uses the last debug target without requiring the user to rebuild the launch intent
@@ -870,16 +985,19 @@ Verify debug workflows cover both scripts and pytest targets without requiring m
 Verify debugging unsaved editor changes still navigates back to the real editor file rather than a transient runtime copy.
 
 **Preconditions:**  
+
 - project is open
 - active Python file has unsaved edits
 
 **Steps:**  
+
 1. Add a breakpoint in the dirty active file.
 2. Start **Debug Active File** without manually saving first.
 3. Pause at the breakpoint and inspect the current frame.
 4. Navigate between stack frames from the Debug panel.
 
 **Expected Result:**  
+
 - the runner executes the dirty-buffer snapshot
 - editor navigation and current-line highlighting point at the real project file
 - breakpoint mapping remains coherent even though the runtime used a transient copy
@@ -892,17 +1010,20 @@ Verify debugging unsaved editor changes still navigates back to the real editor 
 Verify the structured debug transport remains supportable under normal runtime pressure.
 
 **Preconditions:**  
+
 - debug rollout enabled
 - editor can switch between light and dark mode
 - medium-size Python debug fixture is available
 
 **Steps:**  
+
 1. Start a debug session on the fixture and pause several times.
 2. Expand nested variables and evaluate watches while stdout/stderr continues to produce output.
 3. Switch between light and dark mode while the Debug panel is populated.
 4. Restart the debug target and stop it again.
 
 **Expected Result:**  
+
 - debugger state remains synchronized even while the program emits console output
 - pause-to-inspector updates feel responsive and do not stall the UI thread
 - debug controls, highlights, badges, and tree states remain readable in both themes
@@ -916,11 +1037,13 @@ Verify the structured debug transport remains supportable under normal runtime p
 Verify the tree-sitter highlighting pipeline delivers rich lexical/locals/injection coverage while preserving responsiveness under sustained edits and large files.
 
 **Preconditions:**  
+
 - project contains at least one medium Python file (~2,000 LOC) and one very large file (>250k chars)
 - project contains representative `.ui`, `pyproject.toml`, `.desktop`, HTML, and Markdown files
 - editor can switch between light and dark themes
 
 **Steps:**  
+
 1. Open the medium Python file and verify role-based highlighting for imports, decorators, async/await, annotations, constructor/type references, parameters, and local variable references.
 2. Open representative HTML and Markdown fixtures and verify embedded `<script>`, `<style>`, and fenced code blocks render with the injected language colors rather than a single markdown/html fallback color.
 3. Open `.ui`, `pyproject.toml`, and `.desktop` files and confirm they attach the expected XML, TOML, and INI/desktop highlighting modes.
@@ -930,6 +1053,7 @@ Verify the tree-sitter highlighting pipeline delivers rich lexical/locals/inject
 7. Switch light/dark theme with multiple editor tabs open and verify syntax readability remains consistent in both themes.
 
 **Expected Result:**  
+
 - lexical tokens are stateful/consistent (including multiline constructs and modern Python syntax)
 - locals-aware semantic roles stay stable while typing because they are rendered through the same tree-sitter highlighter path, not a delayed overlay
 - injection regions inherit the embedded language grammar without breaking outer-document highlighting
@@ -945,9 +1069,11 @@ Verify the tree-sitter highlighting pipeline delivers rich lexical/locals/inject
 Verify the Help > Load Example Project... flow creates a valid, runnable CRUD showcase project.
 
 **Preconditions:**  
+
 - editor is running
 
 **Steps:**  
+
 1. Choose **Help > Load Example Project...**
 2. Enter a project name (e.g. "My Example").
 3. Choose a destination folder.
@@ -958,6 +1084,7 @@ Verify the Help > Load Example Project... flow creates a valid, runnable CRUD sh
 8. Press **F5** to run the project (on systems with PySide2 available via AppRun).
 
 **Expected Result:**  
+
 - the project is created with valid `cbcs/project.json` metadata (template = `crud_showcase`)
 - all expected files are present
 - the project opens and displays correctly in the editor
@@ -971,9 +1098,11 @@ Verify the Help > Load Example Project... flow creates a valid, runnable CRUD sh
 Verify users can customize command shortcuts from Settings and observe immediate effect.
 
 **Preconditions:**  
+
 - editor is running
 
 **Steps:**  
+
 1. Open **File > Settings...** and set scope to **Global**.
 2. Open **Keybindings** tab.
 3. Change the **Run** shortcut from `F5` to another valid binding (e.g. `Ctrl+R`).
@@ -982,6 +1111,7 @@ Verify users can customize command shortcuts from Settings and observe immediate
 6. Reopen settings and verify the custom value persisted.
 
 **Expected Result:**  
+
 - updated shortcut appears in menu/action surfaces after save
 - keybinding value persists across settings reopen and app restart
 - conflicting assignments are prevented or explicitly resolved in-UI
@@ -994,9 +1124,11 @@ Verify users can customize command shortcuts from Settings and observe immediate
 Verify syntax token colors can be customized per theme and remain readable.
 
 **Preconditions:**  
+
 - editor is running
 
 **Steps:**  
+
 1. Open **File > Settings...** and set scope to **Global**.
 2. Open **Syntax Colors** tab.
 3. Select **Light Theme**, change one lexical token color (e.g. `keyword`), save.
@@ -1005,6 +1137,7 @@ Verify syntax token colors can be customized per theme and remain readable.
 6. Switch themes from **View > Theme** and verify editor remains readable in both modes.
 
 **Expected Result:**  
+
 - light and dark overrides are independently persisted
 - active editor theme reflects configured syntax colors
 - both themes preserve usable contrast and readability
@@ -1017,10 +1150,12 @@ Verify syntax token colors can be customized per theme and remain readable.
 Verify linter runtime controls (enable/disable + provider selection) and rule-level settings affect diagnostics output.
 
 **Preconditions:**  
+
 - project with Python file producing at least one `PY220` and one `PY230` diagnostic
 - project with Python file that triggers at least one Pyflakes-only diagnostic (for example undefined name)
 
 **Steps:**  
+
 1. Open **File > Settings...**.
 2. Set scope to **Project**.
 3. Open **Linter** tab.
@@ -1035,6 +1170,7 @@ Verify linter runtime controls (enable/disable + provider selection) and rule-le
 12. Use "Reset ... to Global" and verify baseline values are restored.
 
 **Expected Result:**  
+
 - linter enable toggle suppresses diagnostics when off and re-enables them when on
 - provider selection switches active lint backend between `default` and `pyflakes`
 - selected provider persists across settings reopen and app restart
@@ -1051,10 +1187,12 @@ Verify linter runtime controls (enable/disable + provider selection) and rule-le
 Verify global vs project scope controls, layered effective settings, and project-override status indication.
 
 **Preconditions:**  
+
 - editor is running
 - one project is open
 
 **Steps:**  
+
 1. Open **File > Settings...** with no project open and confirm **Project** scope is unavailable.
 2. Open a project and reopen **Settings**.
 3. Set scope to **Project** and change one project-overridable value (for example `editor.tab_width`).
@@ -1067,6 +1205,7 @@ Verify global vs project scope controls, layered effective settings, and project
 10. Verify status bar indicator clears.
 
 **Expected Result:**  
+
 - scope selector correctly gates editable controls by scope
 - effective runtime settings follow layered precedence (`defaults -> global -> project`)
 - project settings persist in `<project>/cbcs/settings.json`
@@ -1081,15 +1220,18 @@ Verify global vs project scope controls, layered effective settings, and project
 Verify offline plugin installation flow using local filesystem artifacts.
 
 **Preconditions:**  
+
 - editor is running
 - a valid local plugin package exists
 
 **Steps:**  
+
 1. Open Plugin Manager.
 2. Choose install from local package/folder.
 3. Select the plugin package.
 
 **Expected Result:**  
+
 - plugin manifest is validated before install
 - plugin appears in installed list with version and compatibility status
 - install errors are actionable when validation fails
@@ -1102,14 +1244,17 @@ Verify offline plugin installation flow using local filesystem artifacts.
 Verify runtime plugin code executes outside the editor process.
 
 **Preconditions:**  
+
 - a runtime plugin is installed and enabled
 
 **Steps:**  
+
 1. Trigger a plugin command backed by runtime code.
 2. Observe command result in UI.
 3. Force plugin runtime failure (controlled exception/crash path).
 
 **Expected Result:**  
+
 - plugin command executes successfully through plugin host process
 - editor remains responsive when plugin runtime fails
 - failure is surfaced in plugin status/log diagnostics
@@ -1122,15 +1267,18 @@ Verify runtime plugin code executes outside the editor process.
 Verify plugin lifecycle controls are deterministic and persistent.
 
 **Preconditions:**  
+
 - at least one installed plugin exists
 
 **Steps:**  
+
 1. Disable plugin in Plugin Manager.
 2. Confirm plugin contributions are removed.
 3. Re-enable plugin.
 4. Restart editor and verify state persistence.
 
 **Expected Result:**  
+
 - disable removes contributions without restart when supported
 - enable restores contributions
 - enabled/disabled state persists across restart
@@ -1143,14 +1291,17 @@ Verify plugin lifecycle controls are deterministic and persistent.
 Verify recovery path for bad plugins.
 
 **Preconditions:**  
+
 - at least one plugin capable of repeated startup/runtime failure
 
 **Steps:**  
+
 1. Start editor in safe mode.
 2. Verify plugins are not activated.
 3. Start normal mode and trigger repeated plugin failure threshold.
 
 **Expected Result:**  
+
 - safe mode launches editor with plugins disabled
 - repeated plugin failures auto-disable/quarantine offending plugin
 - user can re-enable explicitly after diagnosis
@@ -1163,14 +1314,17 @@ Verify recovery path for bad plugins.
 Verify declarative plugin contributions are validated and wired.
 
 **Preconditions:**  
+
 - plugin with declarative contributions (command/menu/keybinding) is installed
 
 **Steps:**  
+
 1. Enable declarative plugin.
 2. Verify contributed menu item appears.
 3. Execute contributed command via menu and keybinding.
 
 **Expected Result:**  
+
 - declarative contributions are visible and functional
 - invalid contribution payloads are rejected with clear diagnostics
 
@@ -1182,13 +1336,16 @@ Verify declarative plugin contributions are validated and wired.
 Verify manifest compatibility guards prevent invalid activation.
 
 **Preconditions:**  
+
 - plugin package with incompatible app/api version constraints
 
 **Steps:**  
+
 1. Attempt install/enable incompatible plugin.
 2. Review compatibility details in Plugin Manager.
 
 **Expected Result:**  
+
 - incompatible plugin does not activate
 - compatibility reason is clearly displayed
 - compatible plugins remain unaffected
@@ -1202,16 +1359,19 @@ Verify workflow-capable plugins participate in typed provider selection rather t
 menu-command registration.
 
 **Preconditions:**  
+
 - editor is running
 - at least one bundled or installed workflow provider is available
 - a Python project is open
 
 **Steps:**  
+
 1. Open Plugin Manager and confirm a workflow-capable plugin shows provider details.
 2. Trigger a Python workflow such as Format Current File, Organize Imports, or Run Project Tests.
 3. Observe the resulting success/progress surface.
 
 **Expected Result:**  
+
 - Plugin Manager shows provider ids, permissions, and source kind
 - the selected workflow runs through the provider broker rather than a raw menu command path
 - user-visible messaging shows which provider handled the workflow
@@ -1224,11 +1384,13 @@ menu-command registration.
 Verify `cbcs/plugins.json` controls project-scoped plugin policy and provider preference.
 
 **Preconditions:**  
+
 - editor is running
 - project is open
 - at least one workflow-capable plugin is available
 
 **Steps:**  
+
 1. Open Plugin Manager for the project.
 2. Pin a plugin version for the project.
 3. Enable or disable a plugin only for the project.
@@ -1236,6 +1398,7 @@ Verify `cbcs/plugins.json` controls project-scoped plugin policy and provider pr
 5. Reopen the project and inspect `cbcs/plugins.json`.
 
 **Expected Result:**  
+
 - `cbcs/plugins.json` is written under the visible project metadata folder
 - version pins and project enable/disable state persist across reopen
 - preferred provider selection is preserved and applied to matching workflows
@@ -1249,15 +1412,18 @@ Verify long-running workflow providers use streaming job IPC rather than blockin
  command flow.
 
 **Preconditions:**  
+
 - editor is running
 - project contains runnable tests or another long-running provider workflow
 
 **Steps:**  
+
 1. Start a workflow job such as Run Project Tests.
 2. Observe the shell while the job is active.
 3. Cancel or let the job finish.
 
 **Expected Result:**  
+
 - the editor remains responsive while the workflow job runs
 - progress and final completion/error state travel through job events
 - cancellation or terminal completion is handled deterministically
@@ -1270,15 +1436,18 @@ Verify long-running workflow providers use streaming job IPC rather than blockin
 Verify support bundles include enough provider context to diagnose workflow-plugin issues.
 
 **Preconditions:**  
+
 - editor is running
 - project is open
 - plugin/provider state exists
 
 **Steps:**  
+
 1. Generate a support bundle.
 2. Inspect the resulting archive.
 
 **Expected Result:**  
+
 - bundle includes `project/cbcs/plugins.json` when project plugin policy exists
 - bundle includes plugin registry/trust diagnostics and active provider inventory
 - recent plugin/provider failures are visible in the diagnostics payload
@@ -1291,14 +1460,17 @@ Verify support bundles include enough provider context to diagnose workflow-plug
 Verify phase-1 workflow plugin safety gates reject unsupported plugin assumptions early.
 
 **Preconditions:**  
+
 - local plugin package exists that violates phase-1 workflow rules (for example compiled
-  extension payloads, hidden-path assumptions, or unsupported subprocess expectations)
+extension payloads, hidden-path assumptions, or unsupported subprocess expectations)
 
 **Steps:**  
+
 1. Attempt to install the incompatible plugin package.
 2. Review the installation or compatibility diagnostics.
 
 **Expected Result:**  
+
 - installation or activation is blocked when the workflow plugin violates phase-1 safety rules
 - the reported reason is actionable and references the incompatible assumption
 - compatible pure-Python workflow plugins remain installable
@@ -1311,10 +1483,12 @@ Verify phase-1 workflow plugin safety gates reject unsupported plugin assumption
 Verify single-preview semantics, promotion behavior, and preview toggle across all supported file-open surfaces.
 
 **Preconditions:**  
+
 - project with multiple Python files is open
 - `editor.enable_preview` initially enabled
 
 **Steps:**  
+
 1. In Project Tree, single-click file A then single-click file B.
 2. In Project Tree, double-click file C.
 3. In Quick Open, single-click file D in results list, then press Enter.
@@ -1323,12 +1497,13 @@ Verify single-preview semantics, promotion behavior, and preview toggle across a
 6. In Debug panel (stack/breakpoint list), single-click an item then double-click an item.
 7. Use Run Log “Open Log” action.
 8. Open a preview tab and promote it via:
-   - tab-header double-click,
-   - first content edit,
-   - keep-preview-open shortcut.
+  - tab-header double-click,
+  - first content edit,
+  - keep-preview-open shortcut.
 9. Disable `editor.enable_preview` in Settings and repeat representative opens from tree/search/quick-open.
 
 **Expected Result:**  
+
 - only one preview tab exists at a time
 - each new preview replaces the previous preview tab
 - activation/double-click/Enter opens permanent tab for that source
@@ -1345,10 +1520,12 @@ Verify single-preview semantics, promotion behavior, and preview toggle across a
 Verify that the semantic engine resolves imported symbols reliably, including unsaved current-buffer edits.
 
 **Preconditions:**  
+
 - project with at least two Python modules and cross-file imports is open
 - semantic engine rollout is enabled
 
 **Steps:**  
+
 1. Open a file that imports a symbol from another project module.
 2. Invoke go-to-definition on the imported symbol.
 3. Request hover info for the same symbol.
@@ -1356,6 +1533,7 @@ Verify that the semantic engine resolves imported symbols reliably, including un
 5. Modify the current buffer without saving and repeat hover/signature where the edit changes the result.
 
 **Expected Result:**  
+
 - go-to-definition lands on the correct imported definition
 - hover and signature help reflect the imported symbol, not merely a same-name local/global match
 - unsaved current-buffer edits are respected for read-only semantic actions
@@ -1369,15 +1547,18 @@ Verify that the semantic engine resolves imported symbols reliably, including un
 Verify that same-name symbols in different scopes/modules do not silently collapse into one result.
 
 **Preconditions:**  
+
 - project fixture contains shadowed names and duplicate symbol names across files
 - semantic engine rollout is enabled
 
 **Steps:**  
+
 1. Open a fixture with a local symbol shadowing an imported or module-level symbol.
 2. Invoke go-to-definition and find-references on both occurrences.
 3. Invoke go-to-definition on a symbol with multiple valid targets.
 
 **Expected Result:**  
+
 - navigation and references respect binding identity rather than same-spelling token matches
 - unrelated homonyms are excluded from the semantic result set
 - when multiple valid targets exist, the user is prompted to choose instead of the editor silently opening the first match
@@ -1390,15 +1571,18 @@ Verify that same-name symbols in different scopes/modules do not silently collap
 Verify that completion behavior is semantic, cancellable, and clear about result provenance.
 
 **Preconditions:**  
+
 - project with cross-module imports and member accesses is open
 - semantic completion is enabled
 
 **Steps:**  
+
 1. Trigger completion on an imported module member.
 2. Trigger completion while rapidly typing to force stale requests.
 3. Inspect completion rows for detail/source/confidence metadata.
 
 **Expected Result:**  
+
 - imported/member completions are project-aware and relevant
 - stale completion responses are discarded rather than flashing outdated items
 - completion rows show useful semantic metadata such as kind, source, or confidence state
@@ -1412,15 +1596,18 @@ Verify that completion behavior is semantic, cancellable, and clear about result
 Verify that unsupported dynamic patterns degrade safely instead of pretending to be exact.
 
 **Preconditions:**  
+
 - project fixture includes deliberately dynamic code that the semantic engine cannot prove precisely
 - semantic engine rollout is enabled
 
 **Steps:**  
+
 1. Invoke definition/references on a symbol produced through dynamic behavior.
 2. Inspect the UI response.
 3. Follow the offered text-search or manual-search escape hatch.
 
 **Expected Result:**  
+
 - the editor does not silently present lexical/text results as semantic truth
 - the user sees an explicit unsupported or degraded message
 - the fallback path to text search is available and understandable
@@ -1433,16 +1620,19 @@ Verify that unsupported dynamic patterns degrade safely instead of pretending to
 Verify that project-wide rename is planned semantically, previewed clearly, and rolled back safely on failure.
 
 **Preconditions:**  
+
 - project fixture contains a renameable symbol used across multiple files
 - semantic rename is enabled
 
 **Steps:**  
+
 1. Invoke rename on the target symbol.
 2. Review the preview UI before applying.
 3. Apply the rename and inspect the touched files.
 4. Repeat with a simulated write failure or blocked unsafe rename case.
 
 **Expected Result:**  
+
 - the preview is grouped by file with patch-style changes rather than only filename/line lists
 - only semantically related occurrences are renamed
 - unsafe/ambiguous rename operations are blocked with a clear explanation
@@ -1456,15 +1646,18 @@ Verify that project-wide rename is planned semantically, previewed clearly, and 
 Verify that the chosen semantic/refactor engines operate safely under the real AppRun runtime and filesystem rules.
 
 **Preconditions:**  
+
 - test executed in the AppRun-based target or target-like runtime
 - semantic engine dependencies are present
 
 **Steps:**  
+
 1. Start the editor and open a semantic fixture project.
 2. Exercise completion, definition, references, and rename preview.
 3. Inspect project/global state directories after use.
 
 **Expected Result:**  
+
 - semantic features work without spawning unsupported sidecar binaries
 - no hidden engine metadata directories such as `.jedi` or `.ropeproject` are created
 - any semantic cache/state paths are visible and supportable
@@ -1478,16 +1671,19 @@ Verify that the chosen semantic/refactor engines operate safely under the real A
 Verify that semantic UI surfaces are legible in light/dark mode and remain responsive enough for real editing.
 
 **Preconditions:**  
+
 - semantic engine rollout is enabled
 - editor can switch between light and dark themes
 - medium-size fixture project is available
 
 **Steps:**  
+
 1. Trigger semantic completion, hover, signature help, references, and rename preview in light mode.
 2. Repeat in dark mode.
 3. Measure warm completion/navigation behavior on the medium fixture.
 
 **Expected Result:**  
+
 - all semantic labels, badges, lists, popups, and previews remain readable in both themes
 - semantic completion and navigation feel responsive enough for normal editing workflows
 - performance regressions are measurable and within the documented rollout targets
@@ -1500,15 +1696,18 @@ Verify that semantic UI surfaces are legible in light/dark mode and remain respo
 Verify that formatting a Python file performs recognizable Python formatting rather than only whitespace cleanup.
 
 **Preconditions:**  
+
 - formatter dependencies are available
 - a Python file with import/order/wrapping style issues is open in the editor
 
 **Steps:**  
+
 1. Open a Python file that needs more than trailing-whitespace cleanup.
 2. Invoke **Format Current File**.
 3. Inspect the updated buffer and save state.
 
 **Expected Result:**  
+
 - the resulting Python code matches the shipped Black-style formatting behavior
 - the editor does not claim success when only whitespace cleanup would have occurred
 - unchanged files report a no-op result instead of mutating the buffer
@@ -1522,18 +1721,21 @@ Verify that formatting a Python file performs recognizable Python formatting rat
 Verify that organize-imports is a separate trusted command that sorts imports without pretending to be a structural refactor engine.
 
 **Preconditions:**  
+
 - formatter/import dependencies are available
-- a Python file containing unsorted imports, comments, and `__future__` imports is open
+- a Python file containing unsorted imports, comments, and `__future`__ imports is open
 
 **Steps:**  
+
 1. Invoke **Organize Imports** on the file.
 2. Inspect the resulting import block.
 3. Repeat on a file with comments and multi-line imports.
 
 **Expected Result:**  
+
 - organize-imports is a separate command from format
 - imports are grouped and ordered in a Black-compatible way
-- `__future__` imports stay correctly ordered
+- `__future_`_ imports stay correctly ordered
 - surrounding comments are preserved
 - the command does not silently remove unused imports or perform broader refactors
 
@@ -1545,15 +1747,18 @@ Verify that organize-imports is a separate trusted command that sorts imports wi
 Verify that Python formatting/import behavior comes from project-local `pyproject.toml` settings instead of hidden global tool state.
 
 **Preconditions:**  
+
 - project contains a `pyproject.toml` with `[tool.black]`, `[tool.isort]`, or `[project.requires-python]`
 - formatter/import dependencies are available
 
 **Steps:**  
+
 1. Open the project and a Python file that exercises the configured style.
 2. Trigger **Format Current File** and **Organize Imports**.
 3. Inspect settings/status surfaces for detected formatter/import configuration.
 
 **Expected Result:**  
+
 - project-local `pyproject.toml` settings are honored for the supported formatter/import options
 - Python target-version-sensitive import grouping matches the declared project/runtime intent
 - the UI makes it clear that project-local config was detected
@@ -1567,16 +1772,19 @@ Verify that Python formatting/import behavior comes from project-local `pyprojec
 Verify that save reliability outranks style automation when a formatter/import step fails.
 
 **Preconditions:**  
+
 - save-time format or organize-imports automation is enabled
 - a Python file is open
 - create either a syntax-broken buffer or a deliberate formatter/import configuration failure
 
 **Steps:**  
+
 1. Edit the Python file into a state that causes organize-imports or format to fail.
 2. Save the file.
 3. Inspect the saved on-disk contents and the UI feedback.
 
 **Expected Result:**  
+
 - the current buffer contents are still written to disk
 - the editor remains stable and the file is not lost
 - the user sees a clear warning describing the formatting/import failure
@@ -1590,15 +1798,18 @@ Verify that save reliability outranks style automation when a formatter/import s
 Verify that the shipped Python formatter/import stack works under the AppRun runtime without violating ChoreBoy filesystem and subprocess constraints.
 
 **Preconditions:**  
+
 - test executed in the AppRun-based target or target-like runtime
 - formatter/import dependencies are present
 
 **Steps:**  
+
 1. Open a project with Python files and `pyproject.toml`.
 2. Run **Format Current File** and **Organize Imports**.
 3. Inspect project/global state directories and runtime behavior.
 
 **Expected Result:**  
+
 - formatting/import commands work without spawning unsupported formatter sidecar binaries
 - no hidden cache or metadata directories are created for the shipped formatter/import path
 - any formatter/import readiness status is reported clearly
@@ -1612,16 +1823,19 @@ Verify that the shipped Python formatter/import stack works under the AppRun run
 Verify that formatting/import actions preserve practical editor state and remain understandable in both light and dark themes.
 
 **Preconditions:**  
+
 - formatter/import rollout is enabled
 - editor can switch between light and dark mode
 - a Python file with selection/cursor state is open
 
 **Steps:**  
+
 1. Place the caret and selection inside a Python file.
 2. Trigger **Format Current File** and **Organize Imports**.
 3. Repeat in both light and dark modes while observing status/error surfaces.
 
 **Expected Result:**  
+
 - formatting/import actions preserve practical cursor, selection, scroll, and undo behavior
 - success, no-op, and failure states remain readable in both themes
 - the editor does not feel like it discarded the user’s working context after applying a full-buffer transform
@@ -1634,16 +1848,19 @@ Verify that formatting/import actions preserve practical editor state and remain
 Verify that the shipped Python formatting/import path remains responsive enough for normal editing workflows.
 
 **Preconditions:**  
+
 - formatter/import rollout is enabled
 - medium-size Python fixture file is available
 
 **Steps:**  
+
 1. Warm the formatter/import path on the medium fixture.
 2. Measure **Format Current File** latency.
 3. Measure **Organize Imports** latency.
 4. Measure save-time organize+format latency with both toggles enabled.
 
 **Expected Result:**  
+
 - manual format stays within the documented rollout target
 - organize-imports stays within the documented rollout target
 - combined save-time automation remains responsive enough for day-to-day editing
@@ -1659,17 +1876,20 @@ Verify that the shipped Python formatting/import path remains responsive enough 
 Verify that successful saves create durable local-history checkpoints that users can inspect and compare.
 
 **Preconditions:**  
+
 - local history is enabled
 - a project is open
 - an editable text file is open in the editor
 
 **Steps:**  
+
 1. Save the file once in a known baseline state.
 2. Make and save a second meaningful change.
 3. Open **Local History** for the active file.
 4. Compare the latest entry with the current file and with the previous entry.
 
 **Expected Result:**  
+
 - the file shows durable local-history checkpoints representing the saved states
 - the revision list includes timestamps and any relevant labels/source metadata
 - the UI can compare a selected entry with the current file and a previous entry
@@ -1683,10 +1903,12 @@ Verify that successful saves create durable local-history checkpoints that users
 Verify that draft recovery uses a reviewable recovery flow instead of blindly replacing the file.
 
 **Preconditions:**  
+
 - draft recovery and local history are enabled
 - a project file has unsaved edits
 
 **Steps:**  
+
 1. Modify a file without saving.
 2. Simulate abnormal exit or crash.
 3. Relaunch the editor and reopen the file.
@@ -1694,6 +1916,7 @@ Verify that draft recovery uses a reviewable recovery flow instead of blindly re
 5. Choose **Restore Draft to Buffer**.
 
 **Expected Result:**  
+
 - the recovery flow offers clear choices such as compare, restore to buffer, or keep disk version
 - the user can review the draft-versus-saved diff before restoring
 - restoring places the recovered contents into the editor buffer first
@@ -1707,16 +1930,19 @@ Verify that draft recovery uses a reviewable recovery flow instead of blindly re
 Verify that users can restore an older revision from local history without losing control of the current session.
 
 **Preconditions:**  
+
 - a file has at least two local-history checkpoints
 - the file is open in the editor
 
 **Steps:**  
+
 1. Open **Local History** for the file.
 2. Select an older revision and inspect the diff.
 3. Choose **Restore to Buffer** for that revision.
 4. Review the restored editor state before saving.
 
 **Expected Result:**  
+
 - the selected revision is restored into the active buffer rather than directly replacing the file on disk
 - cursor/scroll/undo behavior remains practical after the restore
 - the user can decide whether to save or discard the restored content
@@ -1730,9 +1956,11 @@ Verify that users can restore an older revision from local history without losin
 Verify that local history follows logical files across path changes and can recover deleted files.
 
 **Preconditions:**  
+
 - a project contains a file with at least one saved local-history checkpoint
 
 **Steps:**  
+
 1. Rename or move the file from the project tree.
 2. Confirm the file still shows its earlier local-history entries.
 3. Delete the file.
@@ -1740,6 +1968,7 @@ Verify that local history follows logical files across path changes and can reco
 5. Restore the deleted file through the explicit recovery workflow.
 
 **Expected Result:**  
+
 - local history follows the file across app-driven move/rename operations
 - the deleted file remains discoverable through global history search/picker UI
 - the restore workflow recreates or reopens the deleted content explicitly and safely
@@ -1753,16 +1982,19 @@ Verify that local history follows logical files across path changes and can reco
 Verify that high-risk multi-file edits appear as one understandable history event.
 
 **Preconditions:**  
+
 - a project fixture supports a semantic rename, import rewrite, or safe multi-file fix
 - local history is enabled
 
 **Steps:**  
+
 1. Perform a multi-file operation such as semantic rename or grouped import rewrite.
 2. Open local history for one affected file and inspect the relevant entry.
 3. Inspect the grouped transaction metadata and affected-file list.
 4. Restore the grouped change through the provided workflow.
 
 **Expected Result:**  
+
 - the multi-file change is represented as one labeled transaction rather than unrelated per-file mystery entries
 - the UI shows which files were affected by the grouped change
 - restoring the grouped transaction behaves deterministically and leaves the project in a coherent state
@@ -1776,16 +2008,19 @@ Verify that high-risk multi-file edits appear as one understandable history even
 Verify that local history storage remains bounded and supportable on constrained systems.
 
 **Preconditions:**  
+
 - local history settings are available
 - the project includes at least one excluded file pattern target and one oversized file fixture
 
 **Steps:**  
+
 1. Configure retention limits such as max entries per file or retention days.
 2. Save repeated revisions of one tracked file until pruning should occur.
 3. Save changes to an excluded file.
 4. Attempt to create local history entries for an oversized file.
 
 **Expected Result:**  
+
 - older entries are pruned according to the configured retention policy
 - excluded files do not generate local-history entries
 - oversized files are skipped or degraded according to the documented guardrails
@@ -1799,17 +2034,20 @@ Verify that local history storage remains bounded and supportable on constrained
 Verify that local-history workflows are usable in both themes and do not introduce unacceptable UI stalls.
 
 **Preconditions:**  
+
 - local history UI is implemented
 - editor can switch between light and dark mode
 - a medium-size file with multiple revisions is available
 
 **Steps:**  
+
 1. Open local history in light mode and inspect add/remove diff styling.
 2. Repeat in dark mode.
 3. Select several revisions in sequence and observe diff-loading responsiveness.
 4. Trigger a recovery compare flow from a draft or older checkpoint.
 
 **Expected Result:**  
+
 - diff colors, labels, buttons, and selection states are readable in both light and dark themes
 - revision switching and diff generation feel responsive for normal editing workflows
 - the history UI uses lazy loading or equivalent safeguards rather than freezing the editor on open
@@ -1825,17 +2063,20 @@ Verify that local-history workflows are usable in both themes and do not introdu
 Verify that the editor-architecture hardening slice remains reliable, responsive, and aligned with the repo's documented validation truth.
 
 **Preconditions:**  
+
 - architecture hygiene phase is implemented
 - medium semantic fixture project is available
 - editor can switch between light and dark themes
 
 **Steps:**  
+
 1. Run the architecture-focused automated validation lanes documented in `docs/TESTS.md`.
 2. Open the semantic fixture project and trigger completion, hover, signature help, find references, and rename preview while editing the active buffer.
 3. Switch between light and dark themes.
 4. Revisit the Settings dialog, search sidebar, help dialog, and semantic editor surfaces after the theme switch.
 
 **Expected Result:**  
+
 - the documented automated validation lanes pass
 - stale diagnostics or semantic results do not overwrite newer buffer state after edits
 - semantic/background work remains responsive without visible UI-thread freezes
@@ -1852,15 +2093,18 @@ Verify that the editor-architecture hardening slice remains reliable, responsive
 Verify that runtime readiness and project health are explained through one structured surface instead of terse status-only wording.
 
 **Preconditions:**  
+
 - runtime explanation surface is implemented
 - a valid project is available
 
 **Steps:**  
+
 1. Launch the editor and observe the startup status summary.
 2. Open the runtime explanation / health drill-down surface from the status bar or Tools/Help entry point.
 3. Open a valid project and revisit the same surface.
 
 **Expected Result:**  
+
 - startup readiness can be drilled into without reading logs directly
 - project/runtime checks are shown with understandable summaries and next steps
 - the same surface can be used for startup and project-health understanding
@@ -1873,16 +2117,19 @@ Verify that runtime readiness and project health are explained through one struc
 Verify that onboarding/help entry points remain easy to find even when the welcome screen is skipped by recent-project behavior.
 
 **Preconditions:**  
+
 - runtime onboarding flow is implemented
 - at least one recent project exists
 
 **Steps:**  
+
 1. Launch the editor with recent-project auto-load enabled.
 2. Confirm the editor opens the recent project instead of the welcome screen.
 3. Locate the onboarding entry point again from the visible UI.
 4. Open the onboarding/getting-started flow.
 
 **Expected Result:**  
+
 - onboarding/help is still reachable without hunting through the UI
 - the flow explains next steps for opening, running, diagnosing, and recovering work
 - discoverability does not depend on the welcome screen being visible
@@ -1895,17 +2142,19 @@ Verify that onboarding/help entry points remain easy to find even when the welco
 Verify that users can tell whether they are running the active file, project default entry, or a named run configuration before launching code.
 
 **Preconditions:**  
+
 - run-target clarity surface is implemented
 - a project with at least one alternate run configuration exists
 
 **Steps:**  
-1. Open the project and inspect the visible run-target summary.
+
+1. Open the project and confirm the active editor file and project default entry are discoverable from the visible UI (status bar / Run menu).
 2. Switch between active-file run, project run, and a named run configuration.
 3. Trigger a run preflight failure with an invalid or missing entry file.
 
 **Expected Result:**  
-- the current run target/configuration is visible before execution
-- the summary includes enough context to understand what Run will do
+
+- the active run target/configuration is identifiable from the menu and status surfaces before execution
 - invalid run metadata fails through clear preflight messaging rather than an opaque runner failure
 
 ---
@@ -1916,15 +2165,18 @@ Verify that users can tell whether they are running the active file, project def
 Verify that known ChoreBoy runtime limits are explained in-product when they are encountered.
 
 **Preconditions:**  
+
 - contextual runtime explainers are implemented
 - a project that triggers a known headless/GUI mismatch is available
 
 **Steps:**  
+
 1. Run a script that hits a GUI-only FreeCAD path in normal headless execution.
 2. Observe the surfaced explanation in the runtime/help/problem UI.
 3. Open the linked headless guidance content.
 
 **Expected Result:**  
+
 - the failure is explained as a headless/GUI mismatch, not just raw traceback text
 - the explanation includes actionable next steps
 - the guidance stays within ChoreBoy constraints and does not require terminal access
@@ -1937,15 +2189,18 @@ Verify that known ChoreBoy runtime limits are explained in-product when they are
 Verify that unresolved imports and runtime-module mismatches produce clear, ChoreBoy-aware explanations.
 
 **Preconditions:**  
+
 - import/runtime explainers are implemented
 - a project with at least one missing or unsupported import is available
 
 **Steps:**  
+
 1. Open the project and inspect diagnostics for the missing/unsupported import.
 2. Open the related runtime explanation.
 3. Compare the explanation with the project layout and any vendored dependency state.
 
 **Expected Result:**  
+
 - the app distinguishes likely causes such as missing project module, missing vendored dependency, or runtime-unavailable module
 - the explanation uses editor/project language rather than shell instructions
 - the result is understandable without reading low-level probe logs
@@ -1958,15 +2213,18 @@ Verify that unresolved imports and runtime-module mismatches produce clear, Chor
 Verify that known packaging/export blockers are surfaced before or during the packaging workflow in a supportable way.
 
 **Preconditions:**  
+
 - packaging preflight is implemented
 - a project that can trigger a known packaging blocker is available
 
 **Steps:**  
+
 1. Attempt to package a valid project.
 2. Attempt to package a project with a known blocker such as missing entry file or output overlap.
 3. Inspect the packaging explanation/preflight output.
 
 **Expected Result:**  
+
 - packaging readiness is explained before a confusing export failure when possible
 - common blockers are described in user-facing terms
 - successful packaging still explains what artifact was created and how it should be used on ChoreBoy
@@ -1979,15 +2237,18 @@ Verify that known packaging/export blockers are surfaced before or during the pa
 Verify that support artifacts include the same structured runtime explanation data shown in the UI.
 
 **Preconditions:**  
+
 - support bundle generation is implemented
 - runtime explanation system is implemented
 
 **Steps:**  
+
 1. Open a project and trigger at least one runtime/onboarding explanation state.
 2. Generate a support bundle.
 3. Inspect the diagnostics payloads inside the archive.
 
 **Expected Result:**  
+
 - the bundle includes a machine-readable runtime explanation snapshot in addition to existing health/log artifacts
 - the snapshot aligns with the issue summaries shown in the UI
 - a support reviewer can understand the runtime state without reproducing the exact session
@@ -2000,15 +2261,18 @@ Verify that support artifacts include the same structured runtime explanation da
 Verify that the richer onboarding/runtime UI remains usable in both themes and does not introduce visible responsiveness regressions.
 
 **Preconditions:**  
+
 - runtime onboarding surfaces are implemented
 - editor can switch between light and dark themes
 
 **Steps:**  
+
 1. Open the welcome/onboarding flow, Runtime Center, and run-target explanation surfaces in light mode.
 2. Repeat in dark mode.
 3. Trigger normal background refresh or explanation loading paths.
 
 **Expected Result:**  
+
 - labels, badges, actions, warnings, and help surfaces remain readable in both themes
 - explanation drill-down feels responsive and does not noticeably freeze the UI
 - cached/live state indicators remain understandable in both themes
@@ -2023,16 +2287,19 @@ Verify that the richer onboarding/runtime UI remains usable in both themes and d
 Verify that project packaging now defaults to an installable, manifest-driven export instead of a raw folder copy.
 
 **Preconditions:**  
+
 - packaging wizard is implemented
 - a valid project is available
 
 **Steps:**  
+
 1. Open `Run > Package Project...`.
 2. Choose the `installable` profile and an output folder outside the live project.
 3. Review package metadata and finish the export.
 4. Inspect the generated package folder.
 
 **Expected Result:**  
+
 - the workflow presents a packaging wizard rather than a one-shot folder picker
 - the export contains installer/runtime files, generated docs, `package_manifest.json`, and `package_report.json`
 - the package report captures validation and dependency-audit output
@@ -2046,16 +2313,19 @@ Verify that project packaging now defaults to an installable, manifest-driven ex
 Verify that installable packages have a clear, supportable install/upgrade story on ChoreBoy.
 
 **Preconditions:**  
+
 - installable package export exists
 - the target machine can run FreeCAD AppRun
 
 **Steps:**  
+
 1. Copy the installable package to `/home/default/`.
 2. Run the installer launcher and install the package.
 3. Re-run a newer version of the same package and choose a side-by-side or replacement-style install.
 4. Review launcher publishing and older-version cleanup behavior.
 
 **Expected Result:**  
+
 - the installer verifies package contents before copying files
 - the installed launcher hardcodes the final install directory
 - the installer can publish an application-menu launcher and optional Desktop shortcut
@@ -2069,15 +2339,18 @@ Verify that installable packages have a clear, supportable install/upgrade story
 Verify that portable packaging remains available only with a clear, explicit launcher contract.
 
 **Preconditions:**  
+
 - portable profile is implemented
 - a valid project is available
 
 **Steps:**  
+
 1. Export a project using the `portable` profile.
 2. Inspect the generated launcher and packaged files.
 3. Launch the portable package on the real AppRun runtime while keeping the `.desktop` file beside the export contents.
 
 **Expected Result:**  
+
 - the portable launcher uses a spec-compliant shell wrapper to hand package-root context into AppRun
 - the launcher resolves package root from the desktop-file location rather than a hardcoded install path
 - docs and UI clearly explain that portable mode requires the launcher to stay with the package contents
@@ -2090,15 +2363,18 @@ Verify that portable packaging remains available only with a clear, explicit lau
 Verify that the new packaging wizard/report surfaces stay usable and do not regress shell responsiveness.
 
 **Preconditions:**  
+
 - packaging wizard/report UI is implemented
 - editor can switch between light and dark themes
 
 **Steps:**  
+
 1. Open the packaging wizard in light mode and review its form fields, descriptions, and actions.
 2. Repeat in dark mode.
 3. Run a normal package export and observe validation/report handling.
 
 **Expected Result:**  
+
 - labels, inputs, warnings, and actions remain readable in both themes
 - packaging validation/export still runs on the background-task lane instead of freezing the UI
 - success and failure flows both explain what happened and where to find the generated package/report
@@ -2113,14 +2389,17 @@ Verify that the new packaging wizard/report surfaces stay usable and do not regr
 Verify that the project-local `cbcs/dependencies.json` manifest persists dependency metadata visibly.
 
 **Preconditions:**  
+
 - a project is open
 
 **Steps:**  
+
 1. Add a vendored dependency through the Add Dependency wizard.
 2. Inspect `cbcs/dependencies.json`.
 3. Remove the dependency and inspect the manifest again.
 
 **Expected Result:**  
+
 - the manifest is a human-readable JSON file under `cbcs/`
 - each entry records name, version, source, classification, and status
 - removed dependencies are marked as removed rather than silently deleted
@@ -2134,10 +2413,12 @@ Verify that the project-local `cbcs/dependencies.json` manifest persists depende
 Verify that users can add Python packages from local files without terminal access.
 
 **Preconditions:**  
+
 - a project is open
 - a local `.whl`, `.zip`, or folder containing a Python package is available
 
 **Steps:**  
+
 1. Open the Add Dependency wizard from the Tools menu.
 2. Select a local wheel file.
 3. Review the classification preview (pure-Python vs native extension).
@@ -2145,6 +2426,7 @@ Verify that users can add Python packages from local files without terminal acce
 5. Verify the package appears in `vendor/` and the manifest.
 
 **Expected Result:**  
+
 - the wizard accepts `.whl`, `.zip`, and folder sources
 - classification correctly identifies pure-Python vs native-extension packages
 - native-extension packages show a ChoreBoy compatibility warning
@@ -2159,13 +2441,16 @@ Verify that users can add Python packages from local files without terminal acce
 Verify that native-extension dependencies are flagged with ChoreBoy-specific warnings.
 
 **Preconditions:**  
+
 - a package containing compiled `.so` or `.pyd` files is available
 
 **Steps:**  
+
 1. Attempt to add the native-extension package through the wizard.
 2. Review the classification preview.
 
 **Expected Result:**  
+
 - the classification clearly identifies the package as containing native extensions
 - a ChoreBoy-specific warning explains the compatibility risk
 - the user can still proceed with an explicit acknowledgment
@@ -2178,13 +2463,16 @@ Verify that native-extension dependencies are flagged with ChoreBoy-specific war
 Verify that the dependency inspector surfaces all project dependencies with actionable metadata.
 
 **Preconditions:**  
+
 - a project with at least one managed dependency is open
 
 **Steps:**  
+
 1. Open the dependency inspector from the Tools menu or Runtime Center.
 2. Review the dependency list.
 
 **Expected Result:**  
+
 - each dependency shows name, version, classification, and source
 - active and removed dependencies are distinguishable
 - the inspector provides remove and re-audit actions
@@ -2197,14 +2485,17 @@ Verify that the dependency inspector surfaces all project dependencies with acti
 Verify that removing a dependency updates the manifest and optionally cleans the vendor directory.
 
 **Preconditions:**  
+
 - a project with a managed dependency is open
 
 **Steps:**  
+
 1. Select a dependency in the inspector.
 2. Remove it.
 3. Inspect the manifest and vendor directory.
 
 **Expected Result:**  
+
 - the manifest marks the dependency as removed
 - the user is offered the option to delete the vendor files
 - the vendor directory is cleaned if the user confirms
@@ -2217,13 +2508,16 @@ Verify that removing a dependency updates the manifest and optionally cleans the
 Verify that the packaging workflow uses the dependency manifest to validate export completeness.
 
 **Preconditions:**  
+
 - a project with managed dependencies is open
 
 **Steps:**  
+
 1. Remove a dependency from vendor but leave it in the manifest.
 2. Run the packaging wizard.
 
 **Expected Result:**  
+
 - the packaging preflight reports the missing vendor files
 - the user sees actionable guidance about resolving the dependency gap
 - import diagnostics link to the Add Dependency workflow for unresolved imports
@@ -2238,13 +2532,16 @@ Verify that the packaging workflow uses the dependency manifest to validate expo
 Verify that the test explorer discovers pytest-compatible tests and displays them in a tree.
 
 **Preconditions:**  
+
 - a project with pytest-compatible test files is open
 
 **Steps:**  
+
 1. Open the test explorer panel.
 2. Inspect the discovered test tree.
 
 **Expected Result:**  
+
 - test files, classes, and functions are organized in a hierarchy
 - each node shows its last-run status (pass/fail/not-run)
 - the tree refreshes when test files are saved
@@ -2257,14 +2554,17 @@ Verify that the test explorer discovers pytest-compatible tests and displays the
 Verify that users can run individual tests, test files, or all tests from the explorer.
 
 **Preconditions:**  
+
 - a project with discovered tests is open
 
 **Steps:**  
+
 1. Right-click a test function and select Run.
 2. Right-click a test file and select Run.
 3. Click "Run All Tests."
 
 **Expected Result:**  
+
 - targeted tests execute correctly
 - results update in the explorer tree
 - failures appear in the Problems pane with jump-to-source
@@ -2277,13 +2577,16 @@ Verify that users can run individual tests, test files, or all tests from the ex
 Verify that "Run Test at Cursor" identifies and executes the enclosing test function.
 
 **Preconditions:**  
+
 - a test file is open with the cursor inside a test function
 
 **Steps:**  
+
 1. Place cursor inside a test function.
 2. Invoke "Run Test at Cursor."
 
 **Expected Result:**  
+
 - only the targeted test runs
 - the result is displayed in the console and test explorer
 
@@ -2295,13 +2598,16 @@ Verify that "Run Test at Cursor" identifies and executes the enclosing test func
 Verify that rerun-failed and debug-failed-test workflows work correctly.
 
 **Preconditions:**  
+
 - a test run has completed with at least one failure
 
 **Steps:**  
+
 1. Click "Rerun Failed."
 2. Click "Debug Failed Test."
 
 **Expected Result:**  
+
 - rerun-failed executes only the previously failed tests
 - debug-failed-test launches the failed test under debug mode
 - both workflows respect the test explorer's failure tracking
@@ -2314,13 +2620,16 @@ Verify that rerun-failed and debug-failed-test workflows work correctly.
 Verify that test results survive editor restart.
 
 **Preconditions:**  
+
 - a test run has completed
 
 **Steps:**  
+
 1. Close and reopen the editor.
 2. Open the test explorer.
 
 **Expected Result:**  
+
 - last-run results are restored from persistent storage
 - the test explorer shows the cached pass/fail/skip status
 
@@ -2332,13 +2641,16 @@ Verify that test results survive editor restart.
 Verify that the test explorer UI remains usable in light and dark mode.
 
 **Preconditions:**  
+
 - test explorer is open with test results
 
 **Steps:**  
+
 1. Switch to light mode and inspect the explorer.
 2. Switch to dark mode and inspect the explorer.
 
 **Expected Result:**  
+
 - pass/fail/skip indicators are readable in both themes
 - selected, hovered, and disabled states maintain contrast
 
@@ -2392,6 +2704,7 @@ Update this file when:
 - implementation reveals a more accurate pass/fail condition
 
 Keep this file focused on:
+
 - user-visible behavior
 - runtime validation
 - end-to-end success criteria

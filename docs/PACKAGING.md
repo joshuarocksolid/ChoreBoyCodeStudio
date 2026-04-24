@@ -166,6 +166,13 @@ Supported behavior:
 4. enforce the product archive budget:
    - **15 MB maximum**
 
+During staging, `package.py` auto-fetches the cp39 manylinux `tree-sitter`
+wheel and overlays `_binding.cpython-39-x86_64-linux-gnu.so` onto
+`payload/vendor/tree_sitter/`. The wheel is cached under
+`CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are
+offline-friendly. This keeps the product bundle on the cp39 contract even
+when the local artifacts vendor was populated for Cloud-dev (cp311) use.
+
 The product archive budget applies to Code Studio distribution only.
 It does **not** define the size budget for user-project packages.
 
@@ -245,6 +252,10 @@ When packaging behavior changes, update the matching source files together:
 - `docs/TASKS.md`
 - `docs/ARCHITECTURE.md`
 - `vendor/README.md` when the product archive budget or shipped vendor bundle changes
+
+For shipped native dependencies, `vendor/README.md` is the canonical contract
+for the ChoreBoy product bundle, including the required tree-sitter ABI and the
+curated grammar set that must fit inside the installer archive budget.
 
 ## Summary
 

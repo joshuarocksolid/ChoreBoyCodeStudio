@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import replace
 from typing import Any
 
@@ -19,20 +20,37 @@ from app.treesitter.language_registry import default_tree_sitter_language_regist
 from app.treesitter.loader import available_language_keys as loader_available_language_keys, initialize_tree_sitter_runtime  # noqa: E402
 
 pytestmark = pytest.mark.unit
-_TREE_SITTER_AVAILABLE = initialize_tree_sitter_runtime().is_available
-_AVAILABLE_LANGUAGE_KEYS = set(loader_available_language_keys()) if _TREE_SITTER_AVAILABLE else set()
+
+
+@functools.lru_cache(maxsize=1)
+def _tree_sitter_state() -> tuple[bool, frozenset[str]]:
+    """Initialize the tree-sitter runtime lazily on first test access.
+
+    Module-level initialization adds noticeable cost to test *collection*; the
+    cache here moves that cost to the first test that actually needs it while
+    keeping the result consistent across the whole session.
+    """
+    runtime = initialize_tree_sitter_runtime()
+    if not runtime.is_available:
+        return False, frozenset()
+    return True, frozenset(loader_available_language_keys())
+
+
+def _tree_sitter_available() -> bool:
+    return _tree_sitter_state()[0]
+
+
+def _available_language_keys() -> frozenset[str]:
+    return _tree_sitter_state()[1]
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _qapp() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def _render(file_path: str, text: str, *, is_dark: bool = False) -> tuple[QTextDocument, Any]:
-    if not _TREE_SITTER_AVAILABLE:
+    if not _tree_sitter_available():
         pytest.skip("Tree-sitter runtime unavailable in this environment.")
     document = QTextDocument()
     registry = default_syntax_highlighter_registry()
@@ -134,7 +152,7 @@ def test_python_tree_sitter_highlighter_formats_builtins_and_escapes() -> None:
 
 
 def test_javascript_tree_sitter_highlighter_formats_builtin_and_constants() -> None:
-    if "javascript" not in _AVAILABLE_LANGUAGE_KEYS:
+    if "javascript" not in _available_language_keys():
         pytest.skip("Optional javascript tree-sitter grammar not vendored.")
     source = "const enabled = true;\nfunction read(){ return this.value; }\n"
     document, highlighter = _render("/tmp/main.js", source, is_dark=False)
@@ -158,7 +176,7 @@ def test_yaml_tree_sitter_highlighter_formats_mapping_keys() -> None:
 
 
 def test_sql_tree_sitter_highlighter_formats_function_calls() -> None:
-    if "sql" not in _AVAILABLE_LANGUAGE_KEYS:
+    if "sql" not in _available_language_keys():
         pytest.skip("Optional SQL tree-sitter grammar not vendored.")
     source = "SELECT COUNT(*) FROM items;\n"
     document, highlighter = _render("/tmp/query.sql", source, is_dark=False)

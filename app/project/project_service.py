@@ -23,7 +23,11 @@ from app.core.errors import AppValidationError, ProjectEnumerationError, Project
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
 from app.project.file_excludes import should_exclude_name
-from app.project.project_manifest import build_default_project_manifest_payload, ensure_project_id
+from app.project.project_manifest import (
+    build_default_project_manifest_payload,
+    build_synthetic_project_metadata,
+    ensure_project_id,
+)
 
 _TOML_MODULE = _toml_module
 
@@ -33,6 +37,7 @@ class ProjectRootState(str, Enum):
 
     CANONICAL = "canonical_project"
     IMPORTABLE = "importable_python_folder"
+    GENERIC_WORKSPACE = "generic_workspace"
     INVALID = "invalid_folder"
 
 
@@ -59,11 +64,32 @@ def open_project(
             project_root=resolved_root,
             manifest_path=project_manifest_path(resolved_root),
         )
-    _initialize_missing_project_metadata(resolved_root)
-    resolved_root = validate_project_structure(resolved_root)
+    resolved_root = validate_openable_project_root(resolved_root)
     manifest_path = project_manifest_path(resolved_root)
 
-    metadata = ensure_project_id(manifest_path)
+    if manifest_path.is_file():
+        metadata = ensure_project_id(manifest_path)
+        manifest_materialized = True
+    else:
+        resolved_entry = _resolve_default_entry_for_auto_import(resolved_root)
+        if resolved_entry is None:
+            raise ProjectStructureValidationError(
+                "Project metadata is missing and no runnable Python entry files were found. "
+                "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again.",
+                project_root=resolved_root,
+                manifest_path=manifest_path,
+            )
+        template = (
+            "imported_non_python_workspace"
+            if assessment.state == ProjectRootState.GENERIC_WORKSPACE
+            else "imported_external"
+        )
+        metadata = build_synthetic_project_metadata(
+            resolved_root,
+            default_entry=resolved_entry,
+            template=template,
+        )
+        manifest_materialized = False
 
     from app.project.file_excludes import compute_effective_excludes
     effective_excludes = compute_effective_excludes(
@@ -77,6 +103,7 @@ def open_project(
         manifest_path=str(manifest_path),
         metadata=metadata,
         entries=entries,
+        manifest_materialized=manifest_materialized,
     )
 
 
@@ -131,19 +158,20 @@ def assess_project_root(project_root: PathInput) -> ProjectRootAssessment:
             message=f"Unable to inspect project files for Python entrypoints: {exc}",
         )
     if inferred_entry is None:
-        message = (
-            "Project metadata is missing and no runnable Python entry files were found. "
-            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
-        )
         if not _contains_any_python_file(resolved_root):
-            message = (
-                "Project metadata is missing and no Python files were found. "
-                "Add a `.py` file (for example `main.py`) and try again."
+            return ProjectRootAssessment(
+                state=ProjectRootState.GENERIC_WORKSPACE,
+                project_root=resolved_root,
+                message="Project metadata is missing; opening as a workspace (placeholder run entry).",
+                inferred_entry="main.py",
             )
         return ProjectRootAssessment(
             state=ProjectRootState.INVALID,
             project_root=resolved_root,
-            message=message,
+            message=(
+                "Project metadata is missing and no runnable Python entry files were found. "
+                "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
+            ),
         )
 
     return ProjectRootAssessment(
@@ -216,6 +244,33 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
             raise AppValidationError(f"Unable to write main.py: {exc}") from exc
 
     return destination
+
+
+def validate_openable_project_root(project_root: PathInput) -> Path:
+    """Validate that a folder can be opened as a project (path + cbcs layout), without requiring manifest."""
+    resolved_root = _require_existing_project_root(project_root)
+
+    cbcs_dir = project_cbcs_dir(resolved_root)
+    manifest_path = project_manifest_path(resolved_root)
+    if cbcs_dir.exists() and not cbcs_dir.is_dir():
+        raise ProjectStructureValidationError(
+            "Project metadata path cbcs exists but is not a directory.",
+            project_root=resolved_root,
+        )
+    if manifest_path.exists() and not manifest_path.is_file():
+        raise ProjectStructureValidationError(
+            "Project manifest path cbcs/project.json exists but is not a file.",
+            project_root=resolved_root,
+            manifest_path=manifest_path,
+        )
+    if _is_shared_temp_root(resolved_root):
+        raise ProjectStructureValidationError(
+            "Shared temporary root folders cannot be opened as projects. "
+            "Choose a specific project directory instead.",
+            project_root=resolved_root,
+            manifest_path=manifest_path,
+        )
+    return resolved_root
 
 
 def validate_project_structure(project_root: PathInput) -> Path:
@@ -355,71 +410,13 @@ def _require_existing_project_root(project_root: PathInput) -> Path:
     return resolved_root
 
 
-def _initialize_missing_project_metadata(project_root: Path) -> None:
-    cbcs_dir = project_cbcs_dir(project_root)
-    manifest_path = project_manifest_path(project_root)
-
-    if cbcs_dir.exists() and not cbcs_dir.is_dir():
-        raise ProjectStructureValidationError(
-            "Project metadata path cbcs exists but is not a directory.",
-            project_root=project_root,
-        )
-    if manifest_path.exists() and not manifest_path.is_file():
-        raise ProjectStructureValidationError(
-            "Project manifest path cbcs/project.json exists but is not a file.",
-            project_root=project_root,
-            manifest_path=manifest_path,
-        )
-    if cbcs_dir.is_dir() and manifest_path.is_file():
-        return
-    if _is_shared_temp_root(project_root):
-        raise ProjectStructureValidationError(
-            "Shared temporary root folders cannot be opened as projects. "
-            "Choose a specific project directory instead.",
-            project_root=project_root,
-            manifest_path=manifest_path,
-        )
-
-    try:
-        inferred_entry = _infer_default_entry_file(project_root)
-    except OSError as exc:
-        raise ProjectStructureValidationError(
-            f"Unable to inspect project files for Python entrypoints: {exc}",
-            project_root=project_root,
-        ) from exc
-
-    if inferred_entry is None:
-        message = (
-            "Project metadata is missing and no runnable Python entry files were found. "
-            "Add a runnable `.py` file (for example `main.py` or `run.py`) and try again."
-        )
-        if not _contains_any_python_file(project_root):
-            message = (
-                "Project metadata is missing and no Python files were found. "
-                "Add a `.py` file (for example `main.py`) and try again."
-            )
-        raise ProjectStructureValidationError(
-            message,
-            project_root=project_root,
-            manifest_path=manifest_path,
-        )
-
-    payload = build_default_project_manifest_payload(
-        project_name=_derive_project_name(project_root),
-        default_entry=inferred_entry,
-        working_directory=".",
-        template="imported_external",
-    )
-
-    try:
-        cbcs_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(manifest_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    except OSError as exc:
-        raise ProjectStructureValidationError(
-            f"Unable to initialize project metadata at cbcs/project.json: {exc}",
-            project_root=project_root,
-            manifest_path=manifest_path,
-        ) from exc
+def _resolve_default_entry_for_auto_import(project_root: Path) -> str | None:
+    inferred = _infer_default_entry_file(project_root)
+    if inferred is not None:
+        return inferred
+    if not _contains_any_python_file(project_root):
+        return "main.py"
+    return None
 
 
 def _infer_default_entry_file(project_root: Path) -> str | None:

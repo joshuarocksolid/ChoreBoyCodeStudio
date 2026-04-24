@@ -14,11 +14,8 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(scope="module")
-def _ensure_qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
+    yield qapp
 
 
 @pytest.fixture()

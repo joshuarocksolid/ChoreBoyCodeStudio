@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core.models import LoadedProject, ProjectMetadata
-from app.project.project_manifest import load_project_manifest
+from app.project.project_manifest import build_synthetic_project_metadata, load_project_manifest
 from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.unit
@@ -38,6 +38,34 @@ def _loaded_project(tmp_path: Path, *, default_entry: str) -> LoadedProject:
         metadata=ProjectMetadata(schema_version=1, name="Entry Test", default_entry=default_entry),
         entries=[],
     )
+
+
+def test_set_project_entry_point_materializes_lazy_manifest(tmp_path: Path) -> None:
+    project_root = tmp_path / "lazy_proj"
+    project_root.mkdir()
+    meta = build_synthetic_project_metadata(project_root, default_entry="main.py")
+    manifest_path = project_root / "cbcs" / "project.json"
+    script_path = project_root / "scripts" / "entry.py"
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text("print('entry')\n", encoding="utf-8")
+
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str(manifest_path.resolve()),
+        metadata=meta,
+        entries=[],
+        manifest_materialized=False,
+    )
+
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._loaded_project = loaded_project
+    window_any._populate_project_tree = lambda *_a, **_k: None
+
+    assert MainWindow._set_project_entry_point(window, "scripts/entry.py") is True
+    assert manifest_path.is_file()
+    assert load_project_manifest(manifest_path).default_entry == "scripts/entry.py"
+    assert window_any._loaded_project.manifest_materialized is True
 
 
 def test_set_project_entry_point_persists_manifest_and_refreshes_tree(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ from typing import Optional
 from app.bootstrap.paths import PathInput, global_recent_projects_path
 from app.core.errors import ProjectStructureValidationError
 from app.persistence.settings_store import load_json_object, save_json_object
-from app.project.project_service import validate_project_structure
+from app.project.project_service import validate_openable_project_root
 
 RECENT_PROJECTS_SCHEMA_VERSION = 1
 OPEN_RECENT_MENU_LIMIT = 10
@@ -48,7 +48,7 @@ def remember_recent_project(
     """Add a valid project root to recents and return the updated list."""
     if max_entries is not None:
         _validate_max_entries(max_entries)
-    resolved_project_root = validate_project_structure(project_root)
+    resolved_project_root = validate_openable_project_root(project_root)
     recents = load_recent_projects(state_root=state_root, max_entries=max_entries)
     remembered = [str(resolved_project_root)] + [entry for entry in recents if entry != str(resolved_project_root)]
     limited = remembered[:max_entries] if max_entries is not None else remembered
@@ -84,7 +84,7 @@ def _prune_invalid_projects(project_paths: list[str]) -> list[str]:
 
 def _is_valid_project_root(project_path: str) -> bool:
     try:
-        validate_project_structure(project_path)
+        validate_openable_project_root(project_path)
     except (ProjectStructureValidationError, ValueError):
         return False
     return True

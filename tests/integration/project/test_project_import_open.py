@@ -29,8 +29,8 @@ def _runner_boot_path() -> str:
     return str((Path(__file__).resolve().parents[3] / "run_runner.py").resolve())
 
 
-def test_open_plain_python_folder_auto_initializes_manifest(tmp_path: Path) -> None:
-    """Opening a plain Python folder should auto-generate `cbcs/project.json`."""
+def test_open_plain_python_folder_keeps_manifest_lazy_until_materialized(tmp_path: Path) -> None:
+    """Opening a plain Python folder should not write `cbcs/project.json` until persisted."""
     project_root = tmp_path / "plain_python_project"
     project_root.mkdir(parents=True)
     (project_root / "run.py").write_text("print('IMPORT_OK')\n", encoding="utf-8")
@@ -39,14 +39,12 @@ def test_open_plain_python_folder_auto_initializes_manifest(tmp_path: Path) -> N
 
     loaded_project = open_project(project_root)
     manifest_path = project_root / "cbcs" / "project.json"
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert manifest_path.exists()
-    assert payload["template"] == "imported_external"
-    assert payload["default_entry"] == "run.py"
+    assert not manifest_path.exists()
+    assert loaded_project.manifest_materialized is False
+    assert loaded_project.metadata.template == "imported_external"
     assert loaded_project.metadata.default_entry == "run.py"
-    assert any(entry.relative_path == "cbcs" for entry in loaded_project.entries)
-    assert any(entry.relative_path == "cbcs/project.json" for entry in loaded_project.entries)
+    assert not any(entry.relative_path == "cbcs/project.json" for entry in loaded_project.entries)
 
 
 def test_open_plain_python_folder_infers_entry_from_pyproject_scripts(tmp_path: Path) -> None:

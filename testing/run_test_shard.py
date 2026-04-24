@@ -14,10 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_TESTS_PATH = REPO_ROOT / "run_tests.py"
 DEFAULT_PYTEST_ARGS = ["-q", "--import-mode=importlib"]
 TEST_SHARDS = {
-    "unit": ["tests/unit"],
+    "fast": [
+        "tests/unit",
+        "tests/integration",
+        "--ignore=tests/integration/performance",
+        "-m",
+        "not slow",
+    ],
+    "unit": ["tests/unit", "-m", "not slow"],
     "integration": ["tests/integration", "--ignore=tests/integration/performance"],
     "performance": ["tests/integration/performance"],
     "runtime_parity": ["tests/runtime_parity"],
+    "all": ["tests"],
 }
 
 

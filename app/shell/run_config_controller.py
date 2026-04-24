@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
+from dataclasses import replace
 from pathlib import Path
 
-from app.core.errors import AppValidationError
+from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import LoadedProject
+from app.project.project_manifest import save_project_manifest
 from app.project.run_configs import (
     RunConfiguration,
     parse_env_overrides_text,
@@ -76,9 +77,11 @@ class RunConfigController:
 
     def persist_run_configs(self, *, loaded_project: LoadedProject, run_configs: list[RunConfiguration]) -> None:
         manifest_path = Path(loaded_project.manifest_path)
-        payload = loaded_project.metadata.to_dict()
-        payload["run_configs"] = [config.to_payload() for config in run_configs]
+        merged = replace(
+            loaded_project.metadata,
+            run_configs=[config.to_payload() for config in run_configs],
+        )
         try:
-            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        except OSError as exc:
+            save_project_manifest(manifest_path, merged)
+        except (OSError, ProjectManifestValidationError) as exc:
             raise AppValidationError(f"Unable to save run configurations: {exc}") from exc

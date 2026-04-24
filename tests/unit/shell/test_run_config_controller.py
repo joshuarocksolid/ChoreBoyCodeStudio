@@ -74,6 +74,35 @@ def test_upsert_config_persists_updated_payload(tmp_path: Path) -> None:
     assert persisted["run_configs"] == [{"name": "Default", "entry_file": "app/main.py", "argv": ["--x"]}]
 
 
+def test_upsert_config_materializes_manifest_when_file_missing(tmp_path: Path) -> None:
+    from app.project.project_manifest import build_synthetic_project_metadata
+
+    controller = RunConfigController()
+    project_root = tmp_path / "lazy_proj"
+    project_root.mkdir()
+    manifest_path = project_root / "cbcs" / "project.json"
+    meta = build_synthetic_project_metadata(project_root, default_entry="main.py")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str(manifest_path.resolve()),
+        metadata=meta,
+        entries=[],
+        manifest_materialized=False,
+    )
+    assert not manifest_path.exists()
+
+    merged = controller.upsert_config(
+        loaded_project=loaded_project,
+        existing_configs=[],
+        updated_config=RunConfiguration(name="Default", entry_file="run.py", argv=["--x"]),
+    )
+
+    assert merged[0].entry_file == "run.py"
+    assert manifest_path.is_file()
+    persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert persisted["run_configs"] == [{"name": "Default", "entry_file": "run.py", "argv": ["--x"]}]
+
+
 def test_delete_config_removes_entry_and_persists_manifest(tmp_path: Path) -> None:
     controller = RunConfigController()
     loaded_project = _loaded_project(tmp_path)

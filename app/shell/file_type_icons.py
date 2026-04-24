@@ -513,3 +513,11 @@ def build_filename_icon_map() -> dict[str, QIcon]:
     if _cached_name_map is None:
         _cached_name_map = {name: builder() for name, builder in _FILENAME_ICON_BUILDERS.items()}
     return _cached_name_map
+
+
+def clear_icon_caches() -> None:
+    """Release all cached QIcon objects so Shiboken can tear down cleanly."""
+    global _python_file_icon_cache, _cached_ext_map, _cached_name_map
+    _python_file_icon_cache = None
+    _cached_ext_map = None
+    _cached_name_map = None

@@ -138,12 +138,3 @@ class TestHelpDialogSmoke:
         assert dlg.windowTitle() == "Shortcuts"
 
 
-@pytest.fixture()
-def qapp():
-    """Provide a QApplication instance for widget smoke tests."""
-    from PySide2.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app

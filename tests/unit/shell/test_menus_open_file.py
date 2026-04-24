@@ -16,14 +16,10 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def _ensure_qapp(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
     if not hasattr(qt_widgets, "QActionGroup"):
         qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-    app = qt_widgets.QApplication.instance()
-    if app is None:
-        app = qt_widgets.QApplication([])
-    return app
+    return qapp
 
 
 def test_open_file_action_is_registered_with_callback_and_shortcut(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]

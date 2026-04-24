@@ -24,7 +24,7 @@ from app.plugins.discovery import discover_installed_plugins
 from app.plugins.project_config import load_project_plugin_config
 from app.plugins.registry_store import load_plugin_registry
 from app.plugins.workflow_catalog import WorkflowProviderCatalog
-from app.project.project_manifest import load_project_manifest
+from app.project.project_manifest import deterministic_project_id_for_root, load_project_manifest
 from app.shell.settings_models import parse_effective_main_window_settings
 from app.support.diagnostics import ProjectHealthReport
 
@@ -104,18 +104,19 @@ def _build_local_history_diagnostics(
     if not history_index.exists():
         return None
 
-    project_id = None
     manifest_file = project_manifest_path(project_root)
     if manifest_file.exists():
         try:
             project_id = load_project_manifest(manifest_file).project_id
         except Exception:
-            project_id = None
+            project_id = deterministic_project_id_for_root(project_root)
+    else:
+        project_id = deterministic_project_id_for_root(project_root)
 
     settings_service = SettingsService(state_root=state_root)
     effective_settings = parse_effective_main_window_settings(
         settings_service.load_global(),
-        settings_service.load_project(project_root) if manifest_file.exists() else None,
+        settings_service.load_project(project_root),
     )
     history_store = LocalHistoryStore(
         state_root=state_root,

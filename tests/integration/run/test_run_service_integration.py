@@ -13,7 +13,12 @@ from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.core import constants
 
-pytestmark = [pytest.mark.integration, pytest.mark.runtime_parity]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.runtime_parity,
+    pytest.mark.slow,
+    pytest.mark.timeout(180),
+]
 
 
 def _wait_until(predicate, timeout_seconds: float = 5.0) -> bool:

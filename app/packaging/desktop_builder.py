@@ -12,6 +12,7 @@ def build_installer_package_launcher(
     *,
     manifest: DistributionManifest,
     package_root_name: str,
+    icon_value: str = "",
 ) -> str:
     """Return the staging-package launcher that runs the standalone installer."""
     package_root = os.path.join(manifest.staging_parent, package_root_name)
@@ -21,7 +22,7 @@ def build_installer_package_launcher(
         name=f"Install {manifest.display_name}",
         comment=f"Install {manifest.display_name} on this ChoreBoy system",
         exec_value=f'{manifest.app_run_path} -c "{bootstrap}"',
-        icon_value="",
+        icon_value=icon_value,
     )
 
 

@@ -11,12 +11,14 @@ from app.core.errors import AppValidationError, ProjectManifestValidationError, 
 from app.core.models import LoadedProject
 from app.project import project_service
 from app.project.project_manifest import PROJECT_ID_PREFIX
+from app.project.project_manifest import deterministic_project_id_for_root
 from app.project.project_service import (
     ProjectRootState,
     assess_project_root,
     create_blank_project,
     enumerate_project_entries,
     open_project,
+    validate_openable_project_root,
     validate_project_structure,
 )
 from app.project.recent_projects import load_recent_projects, remember_recent_project
@@ -50,6 +52,7 @@ def test_open_project_returns_loaded_project_for_valid_minimal_layout(tmp_path: 
     assert loaded_project.project_root == str(project_root.resolve())
     assert loaded_project.manifest_path == str((project_root / "cbcs" / "project.json").resolve())
     assert loaded_project.metadata.name == "Project Alpha"
+    assert loaded_project.manifest_materialized is True
     assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
     assert manifest_payload["project_id"] == loaded_project.metadata.project_id
     assert [entry.relative_path for entry in loaded_project.entries] == [
@@ -109,26 +112,24 @@ def test_create_blank_project_rejects_non_empty_destination(tmp_path: Path) -> N
         create_blank_project(destination, project_name="Existing Project")
 
 
-def test_open_project_auto_initializes_missing_cbcs_directory(tmp_path: Path) -> None:
-    """Opening a plain Python folder should create canonical project metadata."""
+def test_open_project_lazy_manifest_for_python_folder_without_cbcs(tmp_path: Path) -> None:
+    """Opening a plain Python folder should not write cbcs/project.json until materialized."""
     project_root = tmp_path / "project_without_cbcs"
     project_root.mkdir()
     (project_root / "run.py").write_text("print('hello')\n", encoding="utf-8")
 
     loaded_project = open_project(project_root)
     manifest_path = project_root / "cbcs" / "project.json"
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert loaded_project.metadata.name == "project_without_cbcs"
     assert loaded_project.metadata.default_entry == "run.py"
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
-    assert manifest_path.exists()
-    assert payload["project_id"].startswith(PROJECT_ID_PREFIX)
-    assert payload["template"] == "imported_external"
+    assert loaded_project.metadata.project_id == deterministic_project_id_for_root(project_root)
+    assert loaded_project.manifest_materialized is False
+    assert not manifest_path.exists()
 
 
-def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> None:
-    """Opening a folder with `cbcs` but no manifest should regenerate metadata."""
+def test_open_project_lazy_manifest_when_cbcs_exists_without_manifest(tmp_path: Path) -> None:
+    """Opening a folder with `cbcs` but no manifest should keep metadata in-memory only."""
     project_root = tmp_path / "project_without_manifest"
     (project_root / "cbcs").mkdir(parents=True)
     (project_root / "main.py").write_text("print('hello')\n", encoding="utf-8")
@@ -136,8 +137,9 @@ def test_open_project_auto_initializes_missing_manifest_file(tmp_path: Path) -> 
     loaded_project = open_project(project_root)
 
     assert loaded_project.metadata.default_entry == "main.py"
-    assert loaded_project.metadata.project_id.startswith(PROJECT_ID_PREFIX)
-    assert (project_root / "cbcs" / "project.json").exists()
+    assert loaded_project.metadata.project_id == deterministic_project_id_for_root(project_root)
+    assert loaded_project.manifest_materialized is False
+    assert not (project_root / "cbcs" / "project.json").exists()
 
 
 def test_open_project_auto_initialize_prefers_priority_entrypoint_names(tmp_path: Path) -> None:
@@ -276,16 +278,18 @@ def test_open_project_auto_initialize_prefers_recursive_package_main_before_gene
     assert loaded_project.metadata.default_entry == "src/package_a/__main__.py"
 
 
-def test_open_project_rejects_missing_metadata_when_no_python_files(tmp_path: Path) -> None:
-    """Metadata auto-init should fail clearly when folder has no Python files."""
+def test_open_project_allows_folder_with_no_python_files_lazy_manifest(tmp_path: Path) -> None:
+    """Non-Python folders open with placeholder metadata and no cbcs/project.json on disk."""
     project_root = tmp_path / "not_a_python_project"
     project_root.mkdir()
     (project_root / "README.md").write_text("# hello\n", encoding="utf-8")
 
-    with pytest.raises(ProjectStructureValidationError) as exc_info:
-        open_project(project_root)
+    loaded_project = open_project(project_root)
 
-    assert "no Python files were found" in str(exc_info.value)
+    assert loaded_project.metadata.default_entry == "main.py"
+    assert loaded_project.metadata.template == "imported_non_python_workspace"
+    assert loaded_project.manifest_materialized is False
+    assert not (project_root / "cbcs" / "project.json").exists()
 
 
 def test_validate_project_structure_rejects_missing_cbcs_directory(tmp_path: Path) -> None:
@@ -322,15 +326,15 @@ def test_assess_project_root_returns_importable_state_for_python_folder(tmp_path
     assert assessment.inferred_entry == "run.py"
 
 
-def test_assess_project_root_returns_invalid_state_for_non_python_folder(tmp_path: Path) -> None:
-    project_root = tmp_path / "invalid_folder"
+def test_assess_project_root_returns_generic_workspace_for_non_python_folder(tmp_path: Path) -> None:
+    project_root = tmp_path / "generic_folder"
     project_root.mkdir()
     (project_root / "README.md").write_text("# not python\n", encoding="utf-8")
 
     assessment = assess_project_root(project_root)
 
-    assert assessment.state == ProjectRootState.INVALID
-    assert "no Python files were found" in assessment.message
+    assert assessment.state == ProjectRootState.GENERIC_WORKSPACE
+    assert assessment.inferred_entry == "main.py"
 
 
 def test_assess_project_root_rejects_shared_temp_root_even_with_python_files(
