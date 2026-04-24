@@ -53,7 +53,7 @@ class MenuCallbacks:
     on_signature_help: Callable[[], object] | None = None
     on_hover_info: Callable[[], object] | None = None
     on_analyze_imports: Callable[[], object] | None = None
-    on_show_outline: Callable[[], object] | None = None
+    on_goto_symbol_in_file: Callable[[], object] | None = None
     on_set_language_mode: Callable[[], object] | None = None
     on_clear_language_override: Callable[[], object] | None = None
     on_inspect_token: Callable[[], object] | None = None
@@ -791,10 +791,12 @@ def build_menu_stubs(
     _register_menu_action(
         tools_menu,
         actions,
-        "shell.action.tools.showOutline",
-        "Show Current File Outline",
+        "shell.action.tools.gotoSymbolInFile",
+        "Go to Symbol in File",
+        "Ctrl+R",
         enabled=True,
-        callback=callback_registry.on_show_outline,
+        callback=callback_registry.on_goto_symbol_in_file,
+        shortcut_overrides=shortcut_overrides,
     )
     _register_menu_action(
         tools_menu,
@@ -918,6 +920,9 @@ def build_menu_stubs(
     qt_core = importlib.import_module("PySide2.QtCore")
     if quick_open_action is not None:
         quick_open_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
+    goto_symbol_action = actions.get("shell.action.tools.gotoSymbolInFile")
+    if goto_symbol_action is not None:
+        goto_symbol_action.setShortcutContext(qt_core.Qt.ApplicationShortcut)
     for m in (file_menu, open_recent_menu, edit_menu, run_menu,
               view_menu, theme_menu, tools_menu, help_menu):
         m.setAttribute(qt_core.Qt.WA_TranslucentBackground)

@@ -38,7 +38,16 @@ Helpful for traceback navigation and code review.
 Useful commands:
 
 - `F12` -> Go to Definition
-- `Tools > Show Current File Outline`
+- The **Outline** panel below the project tree in the Explorer sidebar shows a
+  live, hierarchical view of classes, functions, methods, properties, and
+  constants in the active Python file. Click a symbol to jump to it. The panel
+  follows your cursor by highlighting the innermost containing symbol. The
+  outline survives mid-edit syntax errors thanks to tree-sitter's incremental
+  parser.
+- `Ctrl+R` -> **Go to Symbol in File** opens a quick-pick listing every symbol
+  in the current Python file. Type to filter by name or qualified name; the
+  editor scrolls live as you move through matches. Press `Enter` to commit, or
+  `Esc` to cancel and return to your original cursor.
 
 Use these when moving between related functions/classes.
 

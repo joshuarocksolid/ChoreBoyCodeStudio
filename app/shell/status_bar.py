@@ -52,6 +52,19 @@ class PythonToolingStatusView:
     details: str
 
 
+@dataclass(frozen=True)
+class IndentStatusView:
+    """UI-friendly indentation state for the status bar.
+
+    `text` is empty when no editor is active. `details` populates the tooltip
+    so the user can tell *why* a particular indent setting is active (their
+    own settings, an `.editorconfig`, or auto-detection from file content).
+    """
+
+    text: str
+    details: str
+
+
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
     """Map capability probe output into deterministic status bar copy."""
     if report is None:
@@ -145,6 +158,29 @@ def map_run_status_view(status: str, *, return_code: int | None = None) -> RunSt
     )
 
 
+def map_indent_status_view(
+    *,
+    style: Optional[str],
+    size: Optional[int],
+    source: Optional[str],
+) -> IndentStatusView:
+    """Format active editor indentation into deterministic status copy."""
+    if style is None or size is None or source is None:
+        return IndentStatusView(text="", details="")
+
+    label = "Tabs" if style == "tabs" else "Spaces"
+    suffix = " (auto)" if source == "auto" else ""
+    text = f"{label}: {int(size)}{suffix}"
+
+    if source == "auto":
+        details = "Auto-detected from file content. Adjust 'detect indentation from file' in editor settings to override."
+    elif source == "editorconfig":
+        details = "Indent settings come from the project's .editorconfig file."
+    else:
+        details = "Indent settings come from your editor settings."
+    return IndentStatusView(text=text, details=details)
+
+
 def map_python_tooling_status_view(
     *,
     runtime_available: bool,
@@ -187,6 +223,7 @@ class ShellStatusBarController:
         project_label: "QLabel",
         editor_label: "QLabel",
         diagnostics_label: "QLabel",
+        indent_label: "QLabel",
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
@@ -195,6 +232,7 @@ class ShellStatusBarController:
         self._project_label = project_label
         self._editor_label = editor_label
         self._diagnostics_label = diagnostics_label
+        self._indent_label = indent_label
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Update startup status label from the latest probe output."""
@@ -239,6 +277,19 @@ class ShellStatusBarController:
         text = format_diagnostics_counts(errors, warnings)
         self._diagnostics_label.setText(text)
         self._diagnostics_label.setVisible(bool(text))
+
+    def set_indent_status(
+        self,
+        *,
+        style: Optional[str],
+        size: Optional[int],
+        source: Optional[str],
+    ) -> None:
+        """Update editor indentation copy in the status bar."""
+        view = map_indent_status_view(style=style, size=size, source=source)
+        self._indent_label.setText(view.text)
+        self._indent_label.setToolTip(view.details)
+        self._indent_label.setVisible(bool(view.text))
 
     def set_run_status(self, status: str, *, return_code: int | None = None) -> None:
         """Update run/debug lifecycle status in the status bar."""
@@ -292,6 +343,10 @@ def create_shell_status_bar(
     editor_label = QLabel("Editor: no file", status_bar)
     editor_label.setObjectName("shell.editorStatusLabel")
 
+    indent_label = QLabel("", status_bar)
+    indent_label.setObjectName("shell.indentStatusLabel")
+    indent_label.setVisible(False)
+
     run_label = QLabel("Run: idle", status_bar)
     run_label.setObjectName("shell.runStatusLabel")
 
@@ -300,6 +355,7 @@ def create_shell_status_bar(
     status_bar.addPermanentWidget(python_tooling_label, 0)
     status_bar.addPermanentWidget(run_label, 0)
     status_bar.addPermanentWidget(project_label, 0)
+    status_bar.addPermanentWidget(indent_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
     main_window.setStatusBar(status_bar)
 
@@ -311,6 +367,7 @@ def create_shell_status_bar(
         project_label,
         editor_label,
         diagnostics_label,
+        indent_label,
     )
     controller.set_startup_report(startup_report)
     controller.set_python_tooling_status(runtime_available=False, config_state="no_project")

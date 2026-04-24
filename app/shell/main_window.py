@@ -67,7 +67,11 @@ from app.intelligence.cache_controls import (
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
-from app.intelligence.outline_service import build_file_outline
+from app.intelligence.outline_service import (
+    OutlineSymbol,
+    build_outline_from_source,
+    flatten_symbols,
+)
 from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import CompletionItem
@@ -143,6 +147,10 @@ from app.support.support_bundle import build_support_bundle
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.examples.example_project_service import ExampleProjectService
 from app.shell.layout_persistence import (
+    DEFAULT_EXPLORER_SPLITTER_SIZES,
+    DEFAULT_OUTLINE_COLLAPSED,
+    DEFAULT_OUTLINE_FOLLOW_CURSOR,
+    DEFAULT_OUTLINE_SORT_MODE,
     DEFAULT_TOP_SPLITTER_SIZES,
     DEFAULT_VERTICAL_SPLITTER_SIZES,
     ShellLayoutState,
@@ -187,6 +195,7 @@ from app.shell.activity_bar import ActivityBar
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.test_explorer_panel import TestExplorerPanel
 from app.shell.debug_panel_widget import DebugPanelWidget
+from app.shell.outline_panel import OutlinePanel
 from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.dependency_panel import DependencyInspectorDialog
@@ -413,6 +422,7 @@ class MainWindow(QMainWindow):
         self._workspace_controller = EditorWorkspaceController()
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path = self._workspace_controller.editor_widgets_by_path
+        self._indent_source_by_path: dict[str, tuple[str, int, str]] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
         self._breakpoint_specs_by_key: dict[tuple[str, int], DebugBreakpoint] = {}
         self._debug_exception_policy = DebugExceptionPolicy()
@@ -493,6 +503,16 @@ class MainWindow(QMainWindow):
         self._realtime_lint_timer.setSingleShot(True)
         self._realtime_lint_timer.setInterval(300)
         self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
+        self._outline_panel: OutlinePanel | None = None
+        self._explorer_splitter: QSplitter | None = None
+        self._outline_symbols_by_path: dict[str, tuple[OutlineSymbol, ...]] = {}
+        self._outline_refresh_timer = QTimer(self)
+        self._outline_refresh_timer.setSingleShot(True)
+        self._outline_refresh_timer.setInterval(300)
+        self._outline_refresh_timer.timeout.connect(self._refresh_outline_for_active_tab)
+        self._outline_collapsed: bool = DEFAULT_OUTLINE_COLLAPSED
+        self._outline_follow_cursor: bool = DEFAULT_OUTLINE_FOLLOW_CURSOR
+        self._outline_sort_mode: str = DEFAULT_OUTLINE_SORT_MODE
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
@@ -671,7 +691,7 @@ class MainWindow(QMainWindow):
                 on_signature_help=self._handle_signature_help_action,
                 on_hover_info=self._handle_hover_info_action,
                 on_analyze_imports=self._handle_analyze_imports_action,
-                on_show_outline=self._handle_show_outline_action,
+                on_goto_symbol_in_file=self._handle_goto_symbol_in_file_action,
                 on_set_language_mode=self._handle_set_language_mode_action,
                 on_clear_language_override=self._handle_clear_language_override_action,
                 on_inspect_token=self._handle_inspect_token_action,
@@ -1029,6 +1049,13 @@ class MainWindow(QMainWindow):
             self._top_splitter.setSizes(list(layout_state.top_splitter_sizes))
         if self._vertical_splitter is not None:
             self._vertical_splitter.setSizes(list(layout_state.vertical_splitter_sizes))
+        if self._explorer_splitter is not None:
+            explorer_sizes = layout_state.explorer_splitter_sizes or DEFAULT_EXPLORER_SPLITTER_SIZES
+            self._explorer_splitter.setSizes(list(explorer_sizes))
+        self._outline_collapsed = bool(layout_state.outline_collapsed)
+        self._outline_follow_cursor = bool(layout_state.outline_follow_cursor)
+        self._outline_sort_mode = layout_state.outline_sort_mode
+        self._apply_outline_layout_state()
 
     def _persist_layout_to_settings(self) -> None:
         top_sizes = tuple(self._top_splitter.sizes()) if self._top_splitter is not None else DEFAULT_TOP_SPLITTER_SIZES
@@ -1041,12 +1068,21 @@ class MainWindow(QMainWindow):
             top_sizes = DEFAULT_TOP_SPLITTER_SIZES
         if len(vertical_sizes) != 2:
             vertical_sizes = DEFAULT_VERTICAL_SPLITTER_SIZES
+        explorer_sizes_tuple: tuple[int, int] | None = None
+        if self._explorer_splitter is not None:
+            raw_explorer = tuple(self._explorer_splitter.sizes())
+            if len(raw_explorer) == 2:
+                explorer_sizes_tuple = (int(raw_explorer[0]), int(raw_explorer[1]))
 
         layout_state = ShellLayoutState(
             width=self.width(),
             height=self.height(),
             top_splitter_sizes=(int(top_sizes[0]), int(top_sizes[1])),
             vertical_splitter_sizes=(int(vertical_sizes[0]), int(vertical_sizes[1])),
+            explorer_splitter_sizes=explorer_sizes_tuple,
+            outline_collapsed=bool(self._outline_collapsed),
+            outline_follow_cursor=bool(self._outline_follow_cursor),
+            outline_sort_mode=self._outline_sort_mode,
         )
         self._settings_service.update_global(
             lambda settings_payload: merge_layout_into_settings(settings_payload, layout_state)
@@ -1058,7 +1094,62 @@ class MainWindow(QMainWindow):
             self._top_splitter.setSizes(list(DEFAULT_TOP_SPLITTER_SIZES))
         if self._vertical_splitter is not None:
             self._vertical_splitter.setSizes(list(DEFAULT_VERTICAL_SPLITTER_SIZES))
+        if self._explorer_splitter is not None:
+            self._explorer_splitter.setSizes(list(DEFAULT_EXPLORER_SPLITTER_SIZES))
+        self._outline_collapsed = DEFAULT_OUTLINE_COLLAPSED
+        self._outline_follow_cursor = DEFAULT_OUTLINE_FOLLOW_CURSOR
+        self._outline_sort_mode = DEFAULT_OUTLINE_SORT_MODE
+        self._apply_outline_layout_state()
         self._persist_layout_to_settings()
+
+    def _apply_outline_layout_state(self) -> None:
+        if self._outline_panel is None:
+            return
+        self._outline_panel.set_follow_cursor(self._outline_follow_cursor)
+        self._outline_panel.set_sort_mode(self._outline_sort_mode)
+        self._outline_panel.set_collapsed(self._outline_collapsed)
+        self._apply_explorer_splitter_handle_state()
+
+    def _apply_explorer_splitter_handle_state(self) -> None:
+        """Disable the explorer splitter handle when the outline is collapsed.
+
+        The collapsed outline is a fixed-height strip; letting the handle stay
+        active invites the user to drag a divider that has nothing to give.
+        """
+        if self._explorer_splitter is None:
+            return
+        collapsed = bool(self._outline_collapsed)
+        self._explorer_splitter.setHandleWidth(0 if collapsed else 1)
+        handle = self._explorer_splitter.handle(1)
+        if handle is not None:
+            handle.setEnabled(not collapsed)
+
+    def _handle_outline_collapsed_changed(self, collapsed: bool) -> None:
+        if bool(collapsed) == self._outline_collapsed:
+            return
+        self._outline_collapsed = bool(collapsed)
+        self._apply_explorer_splitter_handle_state()
+        self._persist_layout_to_settings()
+
+    def _handle_outline_follow_cursor_changed(self, follow: bool) -> None:
+        if bool(follow) == self._outline_follow_cursor:
+            return
+        self._outline_follow_cursor = bool(follow)
+        self._persist_layout_to_settings()
+        if follow:
+            self._refresh_outline_for_active_tab()
+
+    def _handle_outline_sort_mode_changed(self, mode: str) -> None:
+        if not isinstance(mode, str) or mode == self._outline_sort_mode:
+            return
+        self._outline_sort_mode = mode
+        self._persist_layout_to_settings()
+
+    def _handle_outline_hide_requested(self) -> None:
+        if self._outline_panel is None:
+            return
+        if not self._outline_collapsed:
+            self._outline_panel.set_collapsed(True)
 
     def _load_import_update_policy(self) -> ImportUpdatePolicy:
         settings_payload = self._settings_service.load_global()
@@ -1129,6 +1220,8 @@ class MainWindow(QMainWindow):
                 )
             if self._test_explorer_panel is not None:
                 self._test_explorer_panel.apply_theme(tokens)
+            if self._outline_panel is not None:
+                self._outline_panel.apply_theme_tokens(tokens)
         finally:
             self._is_applying_theme_styles = False
 
@@ -2468,25 +2561,56 @@ class MainWindow(QMainWindow):
 
         self._background_tasks.run(key="analyze_imports", task=task, on_success=on_success, on_error=on_error)
 
-    def _handle_show_outline_action(self) -> None:
+    def _handle_goto_symbol_in_file_action(self) -> None:
         active_tab = self._editor_manager.active_tab()
         if active_tab is None:
-            QMessageBox.warning(self, "Outline", "Open a Python file first.")
-            return
-        symbols = build_file_outline(active_tab.file_path)
-        if self._problems_panel is None:
-            return
-        result_items = [
-            ResultItem(
-                label=f"{symbol.kind} {symbol.name}",
-                file_path=active_tab.file_path,
-                line_number=symbol.line_number,
+            QMessageBox.information(
+                self, "Go to Symbol", "Open a Python file first."
             )
-            for symbol in symbols
-        ]
-        self._problems_panel.set_results("Outline", result_items)
-        self._update_problems_tab_title(self._problems_panel.problem_count())
-        self._focus_problems_tab()
+            return
+        file_path = active_tab.file_path
+        if Path(file_path).suffix.lower() not in {".py", ".pyw", ".pyi"}:
+            QMessageBox.information(
+                self, "Go to Symbol", "Open a Python file first."
+            )
+            return
+        symbols = self._outline_symbols_by_path.get(file_path)
+        if symbols is None:
+            editor_widget = self._editor_widgets_by_path.get(
+                str(Path(file_path).expanduser().resolve())
+            )
+            source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
+            symbols = build_outline_from_source(source or "")
+            self._outline_symbols_by_path[file_path] = symbols
+        flat = flatten_symbols(symbols)
+        if not flat:
+            QMessageBox.information(
+                self, "Go to Symbol", "No symbols in this file."
+            )
+            return
+        editor_widget = self._editor_widgets_by_path.get(
+            str(Path(file_path).expanduser().resolve())
+        )
+        original_line = (
+            editor_widget.textCursor().blockNumber() + 1 if editor_widget is not None else 1
+        )
+
+        from app.shell.quick_symbol_dialog import QuickSymbolDialog
+
+        dialog = QuickSymbolDialog(flat, parent=self)
+
+        def _on_preview(line: int) -> None:
+            if editor_widget is not None:
+                editor_widget.go_to_line(line)
+
+        def _on_chosen(line: int) -> None:
+            self._open_file_at_line(file_path, line)
+
+        dialog.symbol_preview.connect(_on_preview)
+        dialog.symbol_chosen.connect(_on_chosen)
+        result = dialog.exec_()
+        if result != QDialog.Accepted and editor_widget is not None:
+            editor_widget.go_to_line(original_line)
 
     def _handle_set_language_mode_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -5704,7 +5828,26 @@ class MainWindow(QMainWindow):
         self._project_tree_widget.itemExpanded.connect(self._handle_tree_item_expanded)
         self._project_tree_widget.itemCollapsed.connect(self._handle_tree_item_collapsed)
         self._project_tree_widget.deleteRequested.connect(self._handle_project_tree_delete_key)
-        layout.addWidget(self._project_tree_widget, 1)
+
+        self._explorer_splitter = QSplitter(Qt.Vertical, page)
+        self._explorer_splitter.setObjectName("shell.explorerSplitter")
+        self._explorer_splitter.setChildrenCollapsible(True)
+        self._explorer_splitter.setHandleWidth(1)
+        self._explorer_splitter.addWidget(self._project_tree_widget)
+
+        self._outline_panel = OutlinePanel(page)
+        self._outline_panel.symbol_activated.connect(self._handle_outline_symbol_activated)
+        self._outline_panel.collapsed_changed.connect(self._handle_outline_collapsed_changed)
+        self._outline_panel.follow_cursor_changed.connect(self._handle_outline_follow_cursor_changed)
+        self._outline_panel.sort_mode_changed.connect(self._handle_outline_sort_mode_changed)
+        self._outline_panel.hide_requested.connect(self._handle_outline_hide_requested)
+        self._explorer_splitter.addWidget(self._outline_panel)
+        self._explorer_splitter.setStretchFactor(0, 7)
+        self._explorer_splitter.setStretchFactor(1, 3)
+        self._explorer_splitter.setSizes(list(DEFAULT_EXPLORER_SPLITTER_SIZES))
+        self._apply_outline_layout_state()
+
+        layout.addWidget(self._explorer_splitter, 1)
         self._update_explorer_buttons_enabled()
         return page
 
@@ -6596,6 +6739,34 @@ class MainWindow(QMainWindow):
             return
         editor_widget.go_to_line(line_number)
 
+    def _refresh_outline_for_active_tab(self) -> None:
+        if self._outline_panel is None:
+            return
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            self._outline_panel.set_unsupported_language("python")
+            return
+        file_path = active_tab.file_path
+        if Path(file_path).suffix.lower() not in {".py", ".pyw", ".pyi"}:
+            self._outline_panel.set_unsupported_language(
+                Path(file_path).suffix.lstrip(".") or "this"
+            )
+            self._outline_symbols_by_path.pop(file_path, None)
+            return
+        editor_widget = self._editor_widgets_by_path.get(
+            str(Path(file_path).expanduser().resolve())
+        )
+        source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
+        symbols = build_outline_from_source(source or "")
+        self._outline_symbols_by_path[file_path] = symbols
+        self._outline_panel.set_outline(symbols, file_path)
+        if editor_widget is not None and self._outline_follow_cursor:
+            line_number = editor_widget.textCursor().blockNumber() + 1
+            self._outline_panel.highlight_symbol_at_line(line_number)
+
+    def _handle_outline_symbol_activated(self, file_path: str, line_number: int) -> None:
+        self._open_file_at_line(file_path, line_number)
+
     def _tab_index_for_path(self, file_path: str) -> int:
         if self._editor_tabs_widget is None:
             return -1
@@ -6616,8 +6787,11 @@ class MainWindow(QMainWindow):
         widget = self._workspace_controller.pop_editor(file_path)
         if widget is not None:
             self._release_editor_widget(widget)
+        self._indent_source_by_path.pop(file_path, None)
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        if self._editor_tabs_widget.count() == 0 and self._status_controller is not None:
+            self._status_controller.set_indent_status(style=None, size=None, source=None)
 
     def _refresh_tab_presentation(self, file_path: str) -> None:
         if self._editor_tabs_widget is None:
@@ -6679,17 +6853,21 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
+        self._outline_refresh_timer.start()
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None or self._status_controller is None:
             return
+        line_number = editor_widget.textCursor().blockNumber() + 1
         self._status_controller.set_editor_status(
             file_name=tab_state.display_name,
-            line=editor_widget.textCursor().blockNumber() + 1,
+            line=line_number,
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
         )
+        if self._outline_panel is not None and self._outline_follow_cursor:
+            self._outline_panel.highlight_symbol_at_line(line_number)
 
     def _update_editor_status_for_path(self, file_path: str) -> None:
         if self._status_controller is None:
@@ -6825,8 +7003,11 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
         self._refresh_run_action_states()
         self._update_editor_status_for_path(tab_path)
+        self._update_indent_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
+        self._outline_refresh_timer.stop()
+        self._refresh_outline_for_active_tab()
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:
@@ -6917,10 +7098,12 @@ class MainWindow(QMainWindow):
         self._clear_debug_execution_indicator()
         self._workspace_controller.clear()
         self._editor_manager = EditorManager()
+        self._indent_source_by_path.clear()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            self._status_controller.set_indent_status(style=None, size=None, source=None)
 
     def _effective_font_size(self) -> int:
         return max(8, min(72, self._editor_font_size + self._zoom_delta))
@@ -6963,21 +7146,30 @@ class MainWindow(QMainWindow):
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
         editorconfig_indent = resolve_editorconfig_indentation(file_path, project_root=project_root)
         if editorconfig_indent is not None:
+            effective_style = editorconfig_indent.indent_style
+            effective_size = max(1, editorconfig_indent.indent_size)
             editor_widget.set_editor_preferences(
                 tab_width=max(1, editorconfig_indent.tab_width),
                 font_point_size=self._effective_font_size(),
                 font_family=self._editor_font_family,
-                indent_style=editorconfig_indent.indent_style,
-                indent_size=max(1, editorconfig_indent.indent_size),
+                indent_style=effective_style,
+                indent_size=effective_size,
                 hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
             )
+            self._record_indent_source(file_path, effective_style, effective_size, "editorconfig")
             return
-        if not self._editor_detect_indentation_from_file:
-            return
-        if not file_path.lower().endswith((".py", ".json", ".md", ".txt")):
+        if not self._editor_detect_indentation_from_file or not file_path.lower().endswith(
+            (".py", ".json", ".md", ".txt")
+        ):
+            self._record_indent_source(
+                file_path, self._editor_indent_style, self._editor_indent_size, "user"
+            )
             return
         detected = detect_indentation_style_and_size(source_text)
         if detected is None:
+            self._record_indent_source(
+                file_path, self._editor_indent_style, self._editor_indent_size, "user"
+            )
             return
         style, size = detected
         editor_widget.set_editor_preferences(
@@ -6988,6 +7180,32 @@ class MainWindow(QMainWindow):
             indent_size=size,
             hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
         )
+        self._record_indent_source(file_path, style, size, "auto")
+
+    def _record_indent_source(
+        self,
+        file_path: str,
+        style: str,
+        size: int,
+        source: str,
+    ) -> None:
+        self._indent_source_by_path[file_path] = (style, int(size), source)
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is not None and active_tab.file_path == file_path:
+            self._update_indent_status_for_path(file_path)
+
+    def _update_indent_status_for_path(self, file_path: str | None) -> None:
+        if self._status_controller is None:
+            return
+        if file_path is None:
+            self._status_controller.set_indent_status(style=None, size=None, source=None)
+            return
+        record = self._indent_source_by_path.get(file_path)
+        if record is None:
+            self._status_controller.set_indent_status(style=None, size=None, source=None)
+            return
+        style, size, source = record
+        self._status_controller.set_indent_status(style=style, size=size, source=source)
 
     def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
         for file_path in file_paths:

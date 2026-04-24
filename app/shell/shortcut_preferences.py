@@ -43,6 +43,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.edit.goToDefinition", "Go To Definition", "F12", "Edit"),
     ShortcutCommand("shell.action.edit.signatureHelp", "Signature Help", "Ctrl+Shift+Space", "Edit"),
     ShortcutCommand("shell.action.edit.hoverInfo", "Show Hover Info", "Ctrl+Shift+I", "Edit"),
+    ShortcutCommand("shell.action.tools.gotoSymbolInFile", "Go to Symbol in File", "Ctrl+R", "Tools"),
     ShortcutCommand("shell.action.run.run", "Run Active File", "F5", "Run"),
     ShortcutCommand("shell.action.run.debug", "Debug Active File", "Ctrl+F5", "Run"),
     ShortcutCommand("shell.action.run.runProject", "Run Project", "Shift+F5", "Run"),

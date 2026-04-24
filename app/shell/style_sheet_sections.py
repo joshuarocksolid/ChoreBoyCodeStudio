@@ -276,6 +276,138 @@ QLabel#shell\\.problemsPanel\\.emptyLabel {{
 }}
 """
 
+def shell_section_outline_panel(tokens: ShellThemeTokens) -> str:
+    return f"""/* -- Outline panel (VS Code-style) ------------------------------------- */
+QWidget#shell\\.outlinePanel {{
+    background: {tokens.panel_bg};
+}}
+QWidget#shell\\.outlinePanel\\.header {{
+    background: {tokens.panel_bg};
+    border-top: 1px solid {tokens.border};
+    border-bottom: 1px solid {tokens.border};
+    min-height: 28px;
+    padding: 2px 4px;
+}}
+QWidget#shell\\.outlinePanel\\.header[collapsed="true"] {{
+    background: {tokens.tree_hover_bg};
+    border-top: 1px solid {tokens.accent};
+    border-bottom: 1px solid {tokens.border};
+}}
+QWidget#shell\\.outlinePanel\\.header:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QLabel#shell\\.outlinePanel\\.title {{
+    color: {tokens.text_muted};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    padding-left: 2px;
+}}
+QLabel#shell\\.outlinePanel\\.fileLabel {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    padding-left: 4px;
+}}
+QToolButton#shell\\.outlinePanel\\.chevron {{
+    background: transparent;
+    border: none;
+    padding: 1px;
+    margin: 0px;
+}}
+QToolButton#shell\\.outlinePanel\\.chevron:hover {{
+    background: transparent;
+}}
+QToolButton#shell\\.outlinePanel\\.action\\.filter,
+QToolButton#shell\\.outlinePanel\\.action\\.follow,
+QToolButton#shell\\.outlinePanel\\.action\\.sort,
+QToolButton#shell\\.outlinePanel\\.action\\.collapseAll,
+QToolButton#shell\\.outlinePanel\\.action\\.more {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px;
+    margin: 0px 1px;
+    color: {tokens.text_muted};
+}}
+QToolButton#shell\\.outlinePanel\\.action\\.filter:hover,
+QToolButton#shell\\.outlinePanel\\.action\\.follow:hover,
+QToolButton#shell\\.outlinePanel\\.action\\.sort:hover,
+QToolButton#shell\\.outlinePanel\\.action\\.collapseAll:hover,
+QToolButton#shell\\.outlinePanel\\.action\\.more:hover {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.outlinePanel\\.action\\.filter:checked,
+QToolButton#shell\\.outlinePanel\\.action\\.follow:checked {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QToolButton#shell\\.outlinePanel\\.action\\.sort::menu-indicator,
+QToolButton#shell\\.outlinePanel\\.action\\.more::menu-indicator {{
+    image: none;
+    width: 0px;
+}}
+QWidget#shell\\.outlinePanel\\.filterRow {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLineEdit#shell\\.outlinePanel\\.filter {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 11px;
+    selection-background-color: {tokens.accent};
+}}
+QLineEdit#shell\\.outlinePanel\\.filter:focus {{
+    border-color: {tokens.accent};
+}}
+QWidget#shell\\.outlinePanel\\.body {{
+    background: {tokens.panel_bg};
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+    show-decoration-selected: 1;
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree::item {{
+    padding: 2px 4px;
+    border: 0px;
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree::item:selected:!active {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree::branch {{
+    background: transparent;
+}}
+QTreeWidget#shell\\.outlinePanel\\.tree QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    padding: 2px 6px;
+    font-size: 11px;
+}}
+QLabel#shell\\.outlinePanel\\.emptyLabel {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+    padding: 8px;
+}}
+"""
+
+
 def shell_section_debug_panel(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Debug panel -------------------------------------------------------- */
 QWidget#shell\\.debug\\.panel {{

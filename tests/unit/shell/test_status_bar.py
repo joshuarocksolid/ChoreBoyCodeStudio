@@ -6,6 +6,7 @@ from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.status_bar import (
     format_diagnostics_counts,
     map_editor_status_view,
+    map_indent_status_view,
     map_python_tooling_status_view,
     map_run_status_view,
     map_startup_report_to_status,
@@ -133,3 +134,32 @@ def test_map_python_tooling_status_view_handles_unavailable_runtime() -> None:
     view = map_python_tooling_status_view(runtime_available=False, config_state="defaults")
     assert view.severity == "warning"
     assert view.text == "Python: tools unavailable"
+
+
+def test_map_indent_status_view_handles_no_active_file() -> None:
+    view = map_indent_status_view(style=None, size=None, source=None)
+    assert view.text == ""
+    assert view.details == ""
+
+
+def test_map_indent_status_view_user_source_uses_settings_tooltip() -> None:
+    view = map_indent_status_view(style="spaces", size=4, source="user")
+    assert view.text == "Spaces: 4"
+    assert "settings" in view.details.lower()
+
+
+def test_map_indent_status_view_editorconfig_source_mentions_editorconfig() -> None:
+    view = map_indent_status_view(style="spaces", size=2, source="editorconfig")
+    assert view.text == "Spaces: 2"
+    assert ".editorconfig" in view.details.lower()
+
+
+def test_map_indent_status_view_auto_source_marks_text_and_details() -> None:
+    view = map_indent_status_view(style="spaces", size=4, source="auto")
+    assert view.text == "Spaces: 4 (auto)"
+    assert "auto-detected" in view.details.lower()
+
+
+def test_map_indent_status_view_tabs_render_with_tab_label() -> None:
+    view = map_indent_status_view(style="tabs", size=4, source="user")
+    assert view.text == "Tabs: 4"

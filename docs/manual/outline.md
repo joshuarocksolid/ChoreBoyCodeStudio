@@ -39,7 +39,8 @@
    - Find in files
    - Quick open
    - Go to line / go to definition
-   - Outline
+   - Outline panel (live tree of symbols in the active Python file)
+   - Go to Symbol in File quick-pick (`Ctrl+R`)
    - Preview tab behavior
 
 6. **Run, Debug, and Python Console**
