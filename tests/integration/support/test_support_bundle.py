@@ -15,17 +15,13 @@ from app.persistence.settings_service import SettingsService
 from app.project.project_manifest import load_project_manifest
 from app.support.diagnostics import run_project_health_check
 from app.support.support_bundle import build_support_bundle
+from tests.support.minimal_project import write_minimal_project
 
 pytestmark = pytest.mark.integration
 
 
 def _write_valid_project(project_root: Path) -> None:
-    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
-    (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / "cbcs" / "project.json").write_text(
-        json.dumps({"schema_version": 1, "name": "bundle_project"}, indent=2),
-        encoding="utf-8",
-    )
+    write_minimal_project(project_root, name="bundle_project")
 
 
 def test_build_support_bundle_includes_expected_artifacts(tmp_path: Path) -> None:
@@ -189,3 +185,36 @@ def test_build_support_bundle_includes_local_history_diagnostics(tmp_path: Path)
         assert payload["project_draft_count"] == 1
         assert payload["retention_policy"]["max_checkpoints_per_file"] == 7
         assert payload["retention_policy"]["excluded_glob_patterns"] == ["*.bin"]
+
+
+def test_build_support_bundle_local_history_falls_back_for_corrupt_manifest(tmp_path: Path) -> None:
+    """Corrupt project metadata should not block local-history diagnostics collection."""
+    project_root = tmp_path / "project"
+    state_root = tmp_path / "state"
+    _write_valid_project(project_root)
+    app_log_path = configure_app_logging(state_root=state_root).log_path
+    assert app_log_path is not None
+    manifest_path = project_root / "cbcs" / "project.json"
+    manifest = load_project_manifest(manifest_path)
+    history_store = LocalHistoryStore(state_root=state_root)
+    file_path = project_root / "run.py"
+    history_store.create_checkpoint(
+        str(file_path.resolve()),
+        "print('v1')\n",
+        project_id=manifest.project_id,
+        project_root=str(project_root.resolve()),
+        source="save",
+    )
+    manifest_path.write_text("{ not valid json", encoding="utf-8")
+
+    bundle_path = build_support_bundle(
+        project_root,
+        state_root=state_root,
+        destination_dir=tmp_path / "bundles",
+    )
+
+    with zipfile.ZipFile(bundle_path, "r") as archive:
+        payload = json.loads(archive.read("diagnostics/local_history.json").decode("utf-8"))
+        assert payload["project_id"]
+        assert payload["project_checkpoint_count"] == 0
+    assert "Falling back to deterministic project id" in app_log_path.read_text(encoding="utf-8")

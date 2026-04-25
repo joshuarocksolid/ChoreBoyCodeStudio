@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 from app.core.models import CapabilityProbeReport
+from app.shell.python_tooling_status_copy import format_python_tooling_status_copy
 from app.support.runtime_explainer import build_startup_issue_report
 
 if TYPE_CHECKING:
@@ -194,26 +195,13 @@ def map_python_tooling_status_view(
     config_error: str | None = None,
 ) -> PythonToolingStatusView:
     """Map Python tooling/runtime metadata into concise status-bar copy."""
-    if not runtime_available:
-        return PythonToolingStatusView(
-            severity="warning",
-            text="Python: tools unavailable",
-            details="Vendored Black/isort/tomli tooling is not ready.",
-        )
-
-    state_to_copy = {
-        "no_project": ("Python: tools ready | no project", "Open a project to detect project-local pyproject.toml."),
-        "defaults": ("Python: tools ready | defaults", "No project-local pyproject.toml detected."),
-        "pyproject": ("Python: tools ready | pyproject", "Project-local pyproject.toml detected."),
-        "pyproject_error": ("Python: tools ready | pyproject error", "Project-local pyproject.toml could not be parsed."),
-    }
-    text, details = state_to_copy.get(config_state, state_to_copy["defaults"])
-    if config_path:
-        details = f"{details} Path: {config_path}."
-    if config_error:
-        details = f"{details} Error: {config_error}"
-    severity = "warning" if config_state == "pyproject_error" else "ok"
-    return PythonToolingStatusView(severity=severity, text=text, details=details)
+    copy = format_python_tooling_status_copy(
+        runtime_available=runtime_available,
+        config_state=config_state,
+        config_path=config_path,
+        config_error=config_error,
+    )
+    return PythonToolingStatusView(severity=copy.severity, text=copy.text, details=copy.details)
 
 
 class ShellStatusBarController:

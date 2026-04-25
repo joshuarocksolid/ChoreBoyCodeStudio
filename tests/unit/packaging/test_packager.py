@@ -64,7 +64,12 @@ def test_portable_launcher_uses_direct_apprun_with_percent_k_argument() -> None:
     assert "%k" in content
     assert '" dummy %k' in content
     assert "/bin/sh -c" in content
-    assert 'os.path.join(root, \\"app_files/main.py\\")' in content
+    assert 'entry=os.path.abspath(os.path.join(root, \\"app_files/main.py\\"))' in content
+
+
+def test_portable_launcher_rejects_unsafe_entry_relative_path() -> None:
+    with pytest.raises(ValueError, match="entry_relative_path"):
+        _build_portable_desktop_entry("Unsafe Tool", "../main.py", "app_files")
 
 
 def test_package_project_builds_installable_artifact_by_default(tmp_path: Path) -> None:

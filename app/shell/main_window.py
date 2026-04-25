@@ -33,10 +33,10 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-import run_editor
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules, probe_and_cache_runtime_modules
+from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssueReport
@@ -129,6 +129,7 @@ from app.shell.layout_persistence import (
 )
 from app.shell.local_history_workflow import LocalHistoryWorkflow
 from app.shell.settings_dialog import SettingsDialog
+from app.shell.python_tooling_status_controller import PythonToolingStatusController
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
     MainWindowSettingsSnapshot,
@@ -179,9 +180,7 @@ from app.project.file_excludes import (
     load_effective_exclude_patterns,
 )
 from app.python_tools.black_adapter import format_python_text
-from app.python_tools.config import resolve_python_tooling_settings
 from app.python_tools.isort_adapter import organize_imports_text
-from app.python_tools.vendor_runtime import initialize_python_tooling_runtime
 from app.project.file_inventory import iter_python_files
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import (
@@ -325,6 +324,10 @@ class MainWindow(QMainWindow):
         self._runtime_support_workflow: RuntimeSupportWorkflow
         self._state_root = state_root
         self._logger = get_subsystem_logger("shell")
+        self._startup_capability_facade = StartupCapabilityFacade()
+        self._python_tooling_status_controller = PythonToolingStatusController(
+            current_project_root=self._current_project_root
+        )
         self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
         (
@@ -724,7 +727,7 @@ class MainWindow(QMainWindow):
         self._startup_probe_refresh_timer.setSingleShot(True)
         self._startup_probe_refresh_timer.timeout.connect(self._refresh_startup_capability_report_async)
         self._startup_probe_refresh_timer.start(0)
-        run_editor.set_startup_report_refresh_callback(self._handle_startup_report_refresh)
+        self._startup_capability_facade.set_refresh_callback(self._handle_startup_report_refresh)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session.
@@ -766,7 +769,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_startup_capability_report_async(self) -> None:
         def task(cancel_event):  # type: ignore[no-untyped-def]
-            report = run_editor.refresh_startup_capability_report()
+            report = self._startup_capability_facade.refresh_report()
             if cancel_event.is_set():
                 return None
             return report
@@ -1338,43 +1341,10 @@ class MainWindow(QMainWindow):
         return self._loaded_project.project_root
 
     def _current_python_tooling_status_context(self) -> tuple[bool, str, str | None, str | None]:
-        runtime_status = initialize_python_tooling_runtime()
-        project_root = self._current_project_root()
-        if project_root is None:
-            return runtime_status.is_available, "no_project", None, None
-
-        settings = resolve_python_tooling_settings(
-            project_root=project_root,
-            file_path=str(Path(project_root) / "__cbcs_python_tooling_status__.py"),
-        )
-        if settings.pyproject_path is None:
-            return runtime_status.is_available, "defaults", None, None
-        if settings.config_error is not None:
-            return runtime_status.is_available, "pyproject_error", str(settings.pyproject_path), settings.config_error
-        return runtime_status.is_available, "pyproject", str(settings.pyproject_path), None
+        return self._python_tooling_status_controller.current_status_context()
 
     def _settings_dialog_python_tooling_copy(self) -> tuple[str, str, str, str]:
-        runtime_status = initialize_python_tooling_runtime()
-        runtime_text = (
-            "Black/isort/tomli: available"
-            if runtime_status.is_available
-            else "Black/isort/tomli: unavailable"
-        )
-        runtime_details = f"{runtime_status.message} Vendor root: {runtime_status.vendor_root}"
-        _runtime_available, config_state, config_path, config_error = self._current_python_tooling_status_context()
-        if config_state == "no_project":
-            config_text = "Project pyproject.toml: no project"
-            config_details = "Open a project to detect project-local formatter/import settings."
-        elif config_state == "defaults":
-            config_text = "Project pyproject.toml: not detected"
-            config_details = "No project-local pyproject.toml was found for Python tooling."
-        elif config_state == "pyproject_error":
-            config_text = "Project pyproject.toml: parse error"
-            config_details = f"Path: {config_path}. Error: {config_error}"
-        else:
-            config_text = "Project pyproject.toml: detected"
-            config_details = f"Path: {config_path}"
-        return runtime_text, runtime_details, config_text, config_details
+        return self._python_tooling_status_controller.settings_dialog_copy()
 
     def _refresh_python_tooling_status(self) -> None:
         if self._status_controller is None:
@@ -3952,7 +3922,7 @@ class MainWindow(QMainWindow):
             self._runtime_probe_timer.stop()
         if hasattr(self, "_startup_probe_refresh_timer"):
             self._startup_probe_refresh_timer.stop()
-        run_editor.set_startup_report_refresh_callback(None)
+        self._startup_capability_facade.set_refresh_callback(None)
         self._drain_run_event_queue()
         self._background_tasks.cancel_all()
         self._background_tasks.shutdown(wait=False)

@@ -13,6 +13,8 @@ from typing import Mapping, Optional
 
 from app.persistence.local_history_store import LocalHistoryStore
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def resolve_local_history_context(
     file_path: str,
@@ -70,8 +72,8 @@ def record_local_history_checkpoint(
             transaction_id=transaction_id,
         )
     except Exception:
-        if logger is not None:
-            logger.warning("Local history checkpoint failed for %s", file_path, exc_info=True)
+        active_logger = logger or _LOGGER
+        active_logger.warning("Local history checkpoint failed for %s", file_path, exc_info=True)
         return None
 
 

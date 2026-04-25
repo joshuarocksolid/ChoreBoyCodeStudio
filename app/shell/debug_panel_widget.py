@@ -341,7 +341,8 @@ class DebugPanelWidget(QWidget):
 
         watch_input = QLineEdit(input_row)
         watch_input.setObjectName("shell.debug.watchInput")
-        watch_input.setPlaceholderText("Add expression...")
+        watch_input.setPlaceholderText("Add safe expression...")
+        watch_input.setToolTip("Watch expressions are evaluated in a safe read-only subset; function calls are blocked.")
         watch_input.returnPressed.connect(self._handle_add_watch)
         input_layout.addWidget(watch_input, 1)
 

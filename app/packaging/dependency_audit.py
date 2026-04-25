@@ -361,6 +361,23 @@ def _subprocess_issues(
                 },
             )
         )
+    for lineno in _shell_true_subprocess_calls(tree):
+        issues.append(
+            RuntimeIssue(
+                issue_id=f"package.subprocess.shell_true.{rel_file}.{lineno}",
+                workflow="package",
+                severity="blocking",
+                title="Package uses shell=True subprocess execution",
+                summary="A subprocess call opts into shell parsing, which is not part of the supported ChoreBoy packaging contract.",
+                why_it_happened="Shell-mediated subprocesses hide the executable boundary and are difficult to validate under ChoreBoy's restricted runtime.",
+                next_steps=[
+                    "Replace shell=True with an explicit argv-list launch.",
+                    "If a shell is required, call `/bin/sh` explicitly and document the command contract.",
+                ],
+                help_topic=HELP_TOPIC_PACKAGING,
+                evidence={"source_file": rel_file, "line_number": lineno},
+            )
+        )
     return issues
 
 
@@ -408,6 +425,22 @@ def _first_command_name(node: ast.Call) -> str:
         if isinstance(first_element, ast.Constant) and isinstance(first_element.value, str):
             return first_element.value.strip()
     return ""
+
+
+def _shell_true_subprocess_calls(tree: ast.AST) -> list[int]:
+    line_numbers: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
+            continue
+        if func.value.id != "subprocess" or func.attr not in _SUBPROCESS_CALL_NAMES:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
+                line_numbers.append(int(getattr(node, "lineno", 1) or 1))
+    return line_numbers
 
 
 def _append_issue(

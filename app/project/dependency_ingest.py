@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import zipfile
 
+from app.packaging.zip_safety import UnsafeArchiveError, safe_extract_zip
 from app.project.dependency_classifier import COMPILED_EXTENSION_SUFFIXES
 from app.project.dependency_manifest import (
     CLASSIFICATION_NATIVE_EXTENSION,
@@ -71,8 +72,8 @@ def ingest_wheel(
 
     try:
         with zipfile.ZipFile(str(source), "r") as zf:
-            zf.extractall(str(target_dir))
-    except (zipfile.BadZipFile, OSError) as exc:
+            safe_extract_zip(zf, target_dir)
+    except (zipfile.BadZipFile, OSError, UnsafeArchiveError) as exc:
         return IngestResult(False, effective_name, effective_version, classification, "", f"Extraction failed: {exc}")
 
     relative_vendor_path = f"vendor/{effective_name}"
@@ -101,8 +102,8 @@ def ingest_zip(
 
     try:
         with zipfile.ZipFile(str(source), "r") as zf:
-            zf.extractall(str(target_dir))
-    except (zipfile.BadZipFile, OSError) as exc:
+            safe_extract_zip(zf, target_dir)
+    except (zipfile.BadZipFile, OSError, UnsafeArchiveError) as exc:
         return IngestResult(False, name, version, classification, "", f"Extraction failed: {exc}")
 
     relative_vendor_path = f"vendor/{name}"

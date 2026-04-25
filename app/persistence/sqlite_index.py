@@ -7,6 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CURRENT_SYMBOL_INDEX_SCHEMA_VERSION = 2
+_SYMBOL_COLUMN_DEFINITIONS = {
+    "symbol_kind": "TEXT NOT NULL DEFAULT 'symbol'",
+    "container_name": "TEXT NOT NULL DEFAULT ''",
+    "signature_text": "TEXT NOT NULL DEFAULT ''",
+    "doc_excerpt": "TEXT NOT NULL DEFAULT ''",
+    "column_number": "INTEGER",
+    "fingerprint_version": "INTEGER NOT NULL DEFAULT 1",
+}
 
 
 @dataclass(frozen=True)
@@ -316,12 +324,8 @@ class SQLiteSymbolIndex:
                 )
                 """
             )
-            self._ensure_symbols_column(connection, "symbol_kind", "TEXT NOT NULL DEFAULT 'symbol'")
-            self._ensure_symbols_column(connection, "container_name", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_symbols_column(connection, "signature_text", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_symbols_column(connection, "doc_excerpt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_symbols_column(connection, "column_number", "INTEGER")
-            self._ensure_symbols_column(connection, "fingerprint_version", "INTEGER NOT NULL DEFAULT 1")
+            for column_name, definition in _SYMBOL_COLUMN_DEFINITIONS.items():
+                self._ensure_symbols_column(connection, column_name, definition)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS indexed_files(
@@ -346,6 +350,9 @@ class SQLiteSymbolIndex:
             connection.commit()
 
     def _ensure_symbols_column(self, connection: sqlite3.Connection, column_name: str, definition: str) -> None:
+        expected_definition = _SYMBOL_COLUMN_DEFINITIONS.get(column_name)
+        if expected_definition != definition:
+            raise ValueError(f"Unsupported symbols column migration: {column_name}")
         existing_columns = {
             str(row[1]) for row in connection.execute("PRAGMA table_info(symbols)").fetchall()
         }

@@ -135,12 +135,35 @@ def test_distribution_archive_zip_command_uses_compression() -> None:
     command = product_package.build_archive_zip_command(
         Path("/tmp/staging"),
         Path("/tmp/archive.zip"),
+        password="release-password",
     )
 
     assert "-9" in command
     assert "-0" not in command
     assert "archive.zip" in command
     assert "staging" in command
+    assert "release-password" in command
+
+
+def test_distribution_archive_zip_command_requires_explicit_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CBCS_PACKAGE_ZIP_PASSWORD", raising=False)
+
+    with pytest.raises(ValueError, match="CBCS_PACKAGE_ZIP_PASSWORD"):
+        product_package.build_archive_zip_command(
+            Path("/tmp/staging"),
+            Path("/tmp/archive.zip"),
+        )
+
+
+def test_distribution_archive_zip_command_uses_environment_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CBCS_PACKAGE_ZIP_PASSWORD", "env-release-password")
+
+    command = product_package.build_archive_zip_command(
+        Path("/tmp/staging"),
+        Path("/tmp/archive.zip"),
+    )
+
+    assert "env-release-password" in command
 
 
 def test_suggest_next_version_pads_two_part_to_three_and_bumps_patch() -> None:

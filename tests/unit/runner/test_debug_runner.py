@@ -86,6 +86,14 @@ def _event_messages(transport: _FakeTransport, event_name: str) -> list[Mapping[
     return events
 
 
+def _response_messages(transport: _FakeTransport, command_name: str) -> list[Mapping[str, object]]:
+    responses: list[Mapping[str, object]] = []
+    for message in transport.sent_messages:
+        if message.get("kind") == "response" and message.get("command") == command_name:
+            responses.append(message)
+    return responses
+
+
 def test_run_debug_session_returns_success_for_clean_script(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -184,6 +192,85 @@ def test_run_debug_session_invalid_breakpoint_is_reported_in_breakpoint_update(
     updated_breakpoint = breakpoint_updates[0]["breakpoints"][0]  # type: ignore[index]
     assert updated_breakpoint["verified"] is False
     assert str(updated_breakpoint["verification_message"]).strip()
+
+
+def test_run_debug_session_evaluate_defaults_to_safe_expression_subset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script_path = tmp_path / "run.py"
+    script_path.write_text("value = 41\nvalue = value + 1\n", encoding="utf-8")
+    manifest = _build_manifest(tmp_path, breakpoints=[build_breakpoint(str(script_path.resolve()), 2)])
+    _FakeTransport.instances.clear()
+    monkeypatch.setattr(
+        _FakeTransport,
+        "commands_on_stop",
+        [
+            {
+                "kind": "command",
+                "command": "evaluate",
+                "command_id": "cmd_evaluate",
+                "arguments": {"expression": "value + 1"},
+            },
+            {
+                "kind": "command",
+                "command": "continue",
+                "command_id": "cmd_continue",
+                "arguments": {},
+            },
+        ],
+    )
+    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+
+    def _entry_callable(path: str) -> None:
+        runpy.run_path(path, run_name="__main__")
+
+    exit_code = run_debug_session(manifest, _entry_callable, str(script_path.resolve()))
+
+    response = _response_messages(_FakeTransport.instances[-1], "evaluate")[-1]
+    body = response.get("body")
+    assert exit_code == constants.RUN_EXIT_SUCCESS
+    assert response["success"] is True
+    assert isinstance(body, Mapping)
+    assert body["unsafe"] is False
+
+
+def test_run_debug_session_evaluate_rejects_calls_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script_path = tmp_path / "run.py"
+    script_path.write_text("value = 41\nvalue = value + 1\n", encoding="utf-8")
+    manifest = _build_manifest(tmp_path, breakpoints=[build_breakpoint(str(script_path.resolve()), 2)])
+    _FakeTransport.instances.clear()
+    monkeypatch.setattr(
+        _FakeTransport,
+        "commands_on_stop",
+        [
+            {
+                "kind": "command",
+                "command": "evaluate",
+                "command_id": "cmd_evaluate",
+                "arguments": {"expression": "__import__('math').sqrt(4)"},
+            },
+            {
+                "kind": "command",
+                "command": "continue",
+                "command_id": "cmd_continue",
+                "arguments": {},
+            },
+        ],
+    )
+    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+
+    def _entry_callable(path: str) -> None:
+        runpy.run_path(path, run_name="__main__")
+
+    run_debug_session(manifest, _entry_callable, str(script_path.resolve()))
+
+    response = _response_messages(_FakeTransport.instances[-1], "evaluate")[-1]
+    assert response["success"] is False
+    assert "Unsafe expression" in str(response.get("error_message", ""))
 
 
 def test_run_debug_session_updates_breakpoints_without_mutating_manifest(

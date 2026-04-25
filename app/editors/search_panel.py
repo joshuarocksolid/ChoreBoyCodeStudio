@@ -37,10 +37,14 @@ class SearchOptions:
 
 
 _LOGGER = logging.getLogger(__name__)
+MAX_REGEX_QUERY_CHARS = 512
+MAX_SEARCH_LINE_CHARS = 20_000
 
 
 def _compile_pattern(query: str, options: SearchOptions) -> re.Pattern[str] | None:
     flags = 0 if options.case_sensitive else re.IGNORECASE
+    if options.regex and len(query) > MAX_REGEX_QUERY_CHARS:
+        return None
     if options.regex:
         try:
             return re.compile(query, flags)
@@ -110,6 +114,8 @@ def find_in_files(
                 for line_index, line in enumerate(handle, start=1):
                     if cancel_event is not None and cancel_event.is_set():
                         return results
+                    if len(line) > MAX_SEARCH_LINE_CHARS:
+                        continue
                     for m in pattern.finditer(line):
                         results.append(
                             SearchMatch(

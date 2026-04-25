@@ -70,6 +70,7 @@ from app.shell.settings_dialog_sections import (
     build_syntax_tab,
 )
 from app.shell.style_sheet import build_settings_style_sheet
+from app.shell.python_tooling_status_copy import UNKNOWN_SETTINGS_COPY
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.ui.segmented_control import SegmentedControl
 
@@ -89,10 +90,10 @@ class SettingsDialog(QDialog):
         project_snapshot: EditorSettingsSnapshot | None = None,
         project_scope_available: bool = False,
         initial_scope: str = SETTINGS_SCOPE_GLOBAL,
-        python_tooling_runtime_text: str = "Black/isort/tomli: unknown",
-        python_tooling_runtime_details: str = "",
-        python_tooling_config_text: str = "Project pyproject.toml: no project",
-        python_tooling_config_details: str = "",
+        python_tooling_runtime_text: str = UNKNOWN_SETTINGS_COPY.runtime_text,
+        python_tooling_runtime_details: str = UNKNOWN_SETTINGS_COPY.runtime_details,
+        python_tooling_config_text: str = UNKNOWN_SETTINGS_COPY.config_text,
+        python_tooling_config_details: str = UNKNOWN_SETTINGS_COPY.config_details,
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")

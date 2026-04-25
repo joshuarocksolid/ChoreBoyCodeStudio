@@ -76,6 +76,7 @@ CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES = tuple(
     spec.package_name for spec in LANGUAGE_SPECS if not spec.included_by_default
 )
 _CPYTHON_SO_EXCLUDE_TAGS = ("cpython-312", "cpython-313", "cpython-314")
+_ARCHIVE_PASSWORD_ENV_VAR = "CBCS_PACKAGE_ZIP_PASSWORD"
 
 
 @dataclass(frozen=True)
@@ -158,15 +159,26 @@ def build_archive_zip_command(
     *,
     password: str | None = None,
 ) -> list[str]:
+    archive_password = _resolve_archive_password(password)
     return [
         "zip",
         "-r",
         f"-{ZIP_COMPRESSION_LEVEL}",
         "-P",
-        password if password is not None else os.environ.get("CBCS_PACKAGE_ZIP_PASSWORD", "rsd"),
+        archive_password,
         output_path.name,
         source_dir.name,
     ]
+
+
+def _resolve_archive_password(password: str | None) -> str:
+    archive_password = password if password is not None else os.environ.get(_ARCHIVE_PASSWORD_ENV_VAR)
+    if archive_password is None or not archive_password.strip():
+        raise ValueError(
+            "Product archive password is required. Pass archive_password or set "
+            f"{_ARCHIVE_PASSWORD_ENV_VAR}."
+        )
+    return archive_password
 
 
 def build_product_artifact(

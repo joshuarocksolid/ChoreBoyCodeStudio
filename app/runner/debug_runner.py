@@ -15,6 +15,7 @@ from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.debug.debug_protocol import build_debug_event, build_debug_response
 from app.debug.debug_runtime_probe import probe_debug_runtime
+from app.debug.safe_eval import UnsafeExpressionError, safe_evaluate_expression
 from app.debug.debug_transport import RunnerDebugTransportClient
 from app.run.run_manifest import RunManifest
 
@@ -329,14 +330,28 @@ class _RunnerDebugHost:
             )
             return
         try:
-            value = eval(expression, frame.f_globals, frame.f_locals)  # noqa: S307 - debugger evaluate context
+            unsafe = bool(arguments.get("unsafe", False))
+            if unsafe:
+                value = eval(expression, frame.f_globals, frame.f_locals)  # noqa: S307 - explicit unsafe debugger mode
+            else:
+                value = safe_evaluate_expression(expression, frame.f_globals, frame.f_locals)
             result = self._serialize_variable(expression, value)
             self._transport.send_message(
                 build_debug_response(
                     command_name="evaluate",
                     command_id=command_id,
                     success=True,
-                    body={"expression": expression, "result": result},
+                    body={"expression": expression, "result": result, "unsafe": unsafe},
+                )
+            )
+        except UnsafeExpressionError as exc:
+            self._transport.send_message(
+                build_debug_response(
+                    command_name="evaluate",
+                    command_id=command_id,
+                    success=False,
+                    body={"expression": expression, "unsafe": False},
+                    error_message="Unsafe expression: %s" % (exc,),
                 )
             )
         except Exception as exc:

@@ -5,11 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib as _toml_module
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9 runtimes
-    _toml_module = None
-
+from app.bootstrap.toml_io import read_toml_mapping
 from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
 from app.python_tools.models import (
     PYTHON_TOOLING_CONFIG_SOURCE_DEFAULTS,
@@ -77,11 +73,7 @@ def resolve_python_tooling_settings(*, project_root: str, file_path: str) -> Pyt
 
 
 def _load_toml_payload(path: Path) -> dict[str, Any]:
-    if _toml_module is not None:
-        return _toml_module.loads(path.read_text(encoding="utf-8"))
-    import tomli  # type: ignore[import-not-found]
-
-    return tomli.loads(path.read_text(encoding="utf-8"))
+    return read_toml_mapping(path)
 
 
 def _resolve_black_target_versions(*, pyproject_payload: dict[str, Any], black_section: dict[str, Any]) -> tuple[str, ...]:

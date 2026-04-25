@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 import zipfile
 
-from app.bootstrap.logging_setup import get_active_log_path
+from app.bootstrap.logging_setup import get_active_log_path, get_subsystem_logger
 from app.bootstrap.paths import (
     PathInput,
     global_history_index_path,
@@ -27,6 +27,8 @@ from app.plugins.workflow_catalog import WorkflowProviderCatalog
 from app.project.project_manifest import deterministic_project_id_for_root, load_project_manifest
 from app.shell.settings_models import parse_effective_main_window_settings
 from app.support.diagnostics import ProjectHealthReport
+
+_LOGGER = get_subsystem_logger("support")
 
 
 def build_support_bundle(
@@ -49,6 +51,7 @@ def build_support_bundle(
     output_dir.mkdir(parents=True, exist_ok=True)
     bundle_name = f"cbcs_support_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     bundle_path = output_dir / bundle_name
+    _LOGGER.info("Building support bundle for %s", resolved_project_root)
 
     manifest_file = project_manifest_path(str(resolved_project_root))
     app_log_file = get_active_log_path(state_root=state_root)
@@ -92,6 +95,7 @@ def build_support_bundle(
         if plugin_diagnostics is not None:
             archive.writestr("diagnostics/plugins.json", json.dumps(plugin_diagnostics, indent=2, sort_keys=True))
 
+    _LOGGER.info("Support bundle written to %s", bundle_path)
     return bundle_path
 
 
@@ -108,7 +112,12 @@ def _build_local_history_diagnostics(
     if manifest_file.exists():
         try:
             project_id = load_project_manifest(manifest_file).project_id
-        except Exception:
+        except Exception as exc:
+            _LOGGER.warning(
+                "Falling back to deterministic project id for local-history diagnostics after manifest load failed for %s: %s",
+                manifest_file,
+                exc,
+            )
             project_id = deterministic_project_id_for_root(project_root)
     else:
         project_id = deterministic_project_id_for_root(project_root)

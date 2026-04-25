@@ -48,6 +48,19 @@ def test_dependency_audit_flags_direct_subprocess_binary(tmp_path: Path) -> None
     assert any(issue.issue_id.startswith("package.subprocess.literal_binary") for issue in report.issues)
 
 
+def test_dependency_audit_flags_shell_true_subprocess(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text(
+        "import subprocess\nsubprocess.run('echo unsafe', shell=True)\n",
+        encoding="utf-8",
+    )
+
+    report = run_dependency_audit(project_root=str(project_root), known_runtime_modules=frozenset())
+
+    assert any(issue.issue_id.startswith("package.subprocess.shell_true") for issue in report.issues)
+
+
 def test_dependency_audit_uses_known_runtime_modules_when_provided(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

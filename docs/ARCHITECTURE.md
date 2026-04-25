@@ -195,6 +195,12 @@ The runner process is responsible for:
 
 The runner is disposable and isolated. Each run gets a fresh process.
 
+Debugger watch evaluation is safe by default. Runner-side evaluation goes
+through an AST-validated read-only expression subset in `app.debug.safe_eval`;
+function calls, comprehensions, assignment, and dunder access are rejected unless
+an explicit protocol payload opts into unsafe evaluation. Unsafe evaluation is a
+debugger power-user path and executes in the debugged process.
+
 ## 6.3 Optional Background Workers
 
 For v1, background tasks should remain simple and in-process where possible. Examples:
@@ -203,6 +209,11 @@ For v1, background tasks should remain simple and in-process where possible. Exa
 - find-in-files
 - project health check
 - syntax/lint scans
+
+Find-in-files and editor-local regex search apply bounded pattern and input
+budgets before invoking Python's regex engine. These limits keep pathological
+user-provided expressions from monopolizing the editor process while preserving
+normal fixed-string and small regex workflows.
 
 If a background job proves expensive, it can later be moved to a dedicated worker process. That should be a future optimization, not an MVP requirement.
 
@@ -663,6 +674,8 @@ domain orchestration to focused shell controllers:
 - `test_runner_workflow` for pytest discovery, run scopes, explorer outcomes, and debug-test targeting
 - `plugin_activation_workflow` for plugin discovery/config refresh, contribution activation, workflow-provider catalog rebuilds, and runtime-plugin reloads
 - `background_tasks` for keyed off-UI-thread task execution and replacement
+- `startup_facade` for bootstrap capability-refresh hooks that cross into repo-root launch code
+- `python_tooling_status_controller` and `python_tooling_status_copy` for Python tooling status/config copy used by the status bar and settings dialog
 - `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
 
 Key shell responsibilities include:

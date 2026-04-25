@@ -8,6 +8,7 @@ import zipfile
 
 from app.core import constants
 from app.core.errors import AppValidationError
+from app.packaging.zip_safety import UnsafeArchiveError, safe_extract_zip
 
 
 def stage_plugin_source(source_path: str | Path) -> Path:
@@ -28,8 +29,11 @@ def stage_plugin_source(source_path: str | Path) -> Path:
     if resolved_source.suffix.lower() != ".zip":
         raise AppValidationError("Plugin source must be a directory or .zip archive.")
 
-    with zipfile.ZipFile(resolved_source, "r") as archive:
-        archive.extractall(target_root)
+    try:
+        with zipfile.ZipFile(resolved_source, "r") as archive:
+            safe_extract_zip(archive, target_root)
+    except UnsafeArchiveError as exc:
+        raise AppValidationError(str(exc)) from exc
     return target_root
 
 

@@ -8,15 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-try:  # Python 3.11+
-    import tomllib as _toml_module
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9 runtimes
-    try:
-        import tomli as _toml_module  # type: ignore[import-not-found]
-    except ModuleNotFoundError:  # pragma: no cover - no TOML parser available
-        _toml_module = None
-
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
+from app.bootstrap import toml_io
+from app.bootstrap.toml_io import TomlReadError
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
@@ -26,9 +20,6 @@ from app.project.project_manifest import (
     build_synthetic_project_metadata,
     ensure_project_id,
 )
-
-_TOML_MODULE = _toml_module
-
 
 class ProjectRootState(str, Enum):
     """Classification for project root metadata readiness."""
@@ -418,13 +409,9 @@ def _infer_entry_from_pyproject(project_root: Path) -> str | None:
     if not pyproject_path.exists() or not pyproject_path.is_file():
         return None
 
-    if _TOML_MODULE is None:
-        return None
-
-    toml_decode_error = getattr(_TOML_MODULE, "TOMLDecodeError", ValueError)
     try:
-        payload = _TOML_MODULE.loads(pyproject_path.read_text(encoding="utf-8"))
-    except (OSError, toml_decode_error):
+        payload = toml_io.read_toml_mapping(pyproject_path)
+    except TomlReadError:
         return None
 
     script_targets: list[str] = []
