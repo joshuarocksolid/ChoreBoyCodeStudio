@@ -67,6 +67,12 @@ class _FakeRunSessionController:
     def __init__(self, active_mode: str) -> None:
         self.active_session_mode = active_mode
 
+    def set_active_session_mode(self, mode: str | None) -> None:
+        self.active_session_mode = mode
+
+    def clear_active_session_mode(self) -> None:
+        self.active_session_mode = None
+
     def start_session(self, **_kwargs):  # type: ignore[no-untyped-def]
         return RunSessionStartResult(
             started=True,
@@ -108,7 +114,7 @@ class _FakeEditorWidget:
 def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_DEBUG
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_DEBUG)
     window_any._debug_session = DebugSession()
     window_any._active_run_output_tail = _TailBuffer()
     window_any._is_shutting_down = False
@@ -144,7 +150,7 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
 def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_SCRIPT)
     window_any._debug_session = DebugSession()
     window_any._active_run_output_tail = _TailBuffer()
     window_any._is_shutting_down = False
@@ -179,7 +185,7 @@ def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
 def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_SCRIPT)
     window_any._debug_session = DebugSession()
     window_any._is_shutting_down = False
     window_any._auto_open_problems_on_run_failure = True
@@ -196,8 +202,6 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
             message="RuntimeError: boom",
         )
     ]
-    window_any._run_session_controller = SimpleNamespace(clear_active_session_mode=lambda: None)
-
     problems_widget = object()
     window_any._problems_panel = problems_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({problems_widget: 3})
@@ -312,7 +316,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.run_debug_presenter.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -343,7 +347,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.run_debug_presenter.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 

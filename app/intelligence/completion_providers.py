@@ -9,10 +9,10 @@ import keyword
 from pathlib import Path
 import re
 
-from app.core import constants
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.persistence.sqlite_index import SQLiteSymbolIndex
+from app.project.file_inventory import iter_python_files
 
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _MODULE_MEMBER_CONTEXT_PATTERN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$")
@@ -185,9 +185,7 @@ def provide_project_module_items(
             _PROJECT_MODULE_CACHE[cache_key] = (cache_stamp, candidates)
             return _module_completion_items(_filter_module_names(candidates, prefix=prefix, limit=limit))
 
-    for file_path in root.rglob("*.py"):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
+    for file_path in iter_python_files(root):
         module_name = _module_name_from_path(root, file_path)
         if module_name is None:
             continue

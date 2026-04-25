@@ -5,10 +5,10 @@ from pathlib import Path
 
 from app.core.models import LoadedProject, RuntimeIssue, WorkflowPreflightResult
 from app.packaging.layout import (
+    is_packaging_excluded_path as _is_packaging_excluded,
     paths_overlap as _paths_overlap,
     resolve_entry_path as _resolve_entry_path,
     sanitize_project_name,
-    should_exclude_relative_path as _should_exclude,
 )
 
 
@@ -248,7 +248,7 @@ def build_package_preflight(
         )
     elif resolved_entry is not None:
         rel_entry = resolved_entry.relative_to(root)
-        if _should_exclude(rel_entry):
+        if _is_packaging_excluded(rel_entry):
             issues.append(
                 RuntimeIssue(
                     issue_id="package.entry_excluded",

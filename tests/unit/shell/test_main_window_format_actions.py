@@ -389,10 +389,10 @@ def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_save)
-    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format_save)
+    monkeypatch.setattr("app.shell.save_workflow.organize_imports_with_workflow", _fake_organize_save)
+    monkeypatch.setattr("app.shell.save_workflow.format_python_with_workflow", _fake_format_save)
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
 
@@ -429,13 +429,13 @@ def test_save_tab_still_saves_when_python_style_automation_fails(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_err)
+    monkeypatch.setattr("app.shell.save_workflow.organize_imports_with_workflow", _fake_organize_err)
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.save_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -458,21 +458,21 @@ def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
     window_any._editor_format_on_save = True
     warnings: list[tuple[str, str]] = []
 
-    monkeypatch.setattr("app.shell.main_window.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
+    monkeypatch.setattr("app.shell.save_workflow.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_with_workflow",
+        "app.shell.save_workflow.organize_imports_with_workflow",
         lambda *_a, **_kw: pytest.fail("Guardrail should skip organize imports"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_with_workflow",
+        "app.shell.save_workflow.format_python_with_workflow",
         lambda *_a, **_kw: pytest.fail("Guardrail should skip formatting"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.save_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -492,7 +492,7 @@ def test_save_tab_applies_generic_hygiene_without_python_format_on_save(
     window, editor_manager = _build_save_window("/tmp/project/notes.txt", "note   ")
 
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
 
@@ -515,19 +515,19 @@ def test_flush_auto_save_to_file_does_not_apply_save_transforms(
     window_any._editor_format_on_save = True
 
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_with_workflow",
+        "app.shell.save_workflow.organize_imports_with_workflow",
         lambda *_a, **_kw: pytest.fail("Auto-save must not invoke isort"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_with_workflow",
+        "app.shell.save_workflow.format_python_with_workflow",
         lambda *_a, **_kw: pytest.fail("Auto-save must not invoke Black"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_text_basic",
+        "app.shell.save_workflow.format_text_basic",
         lambda *_a, **_kw: pytest.fail("Auto-save must not invoke the basic formatter"),
     )
 

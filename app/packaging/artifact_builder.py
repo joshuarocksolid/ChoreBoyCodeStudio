@@ -28,8 +28,8 @@ from app.packaging.installer_manifest import (
 from app.packaging.layout import (
     build_artifact_root_name,
     build_installer_launcher_filename,
+    is_packaging_excluded_path,
     paths_overlap,
-    should_exclude_relative_path,
 )
 from app.packaging.models import (
     DistributionManifest,
@@ -388,7 +388,7 @@ def _write_project_artifact(
 def _copy_project_tree(source_root: Path, destination_root: Path) -> None:
     for path in sorted(source_root.rglob("*")):
         rel_path = path.relative_to(source_root)
-        if should_exclude_relative_path(rel_path):
+        if is_packaging_excluded_path(rel_path):
             continue
         target_path = destination_root / rel_path
         if path.is_dir():

@@ -10,10 +10,9 @@ import tempfile
 import time
 from typing import Any, Callable, Mapping, Optional, Protocol, TypeVar, cast
 
-from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt
-from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QMouseEvent
+from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt, QUrl
+from PySide2.QtGui import QCloseEvent, QColor, QDesktopServices, QIcon, QKeySequence
 from PySide2.QtWidgets import (
-    QApplication,
     QDialog,
     QHBoxLayout,
     QInputDialog,
@@ -26,14 +25,10 @@ from PySide2.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
-    QTabBar,
     QTabWidget,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
-    QStyle,
-    QStyleOptionTab,
-    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -63,7 +58,6 @@ from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for
 from app.intelligence.cache_controls import (
     IntelligenceRuntimeSettings,
     rebuild_symbol_cache,
-    should_refresh_index_after_save,
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
@@ -185,7 +179,7 @@ from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.test_explorer_panel import TestExplorerPanel
 from app.shell.debug_panel_widget import DebugPanelWidget
 from app.shell.outline_panel import OutlinePanel
-from app.shell.problems_panel import ProblemsPanel, ResultItem, tab_diagnostic_icon
+from app.shell.problems_panel import ProblemsPanel, ResultItem
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.dependency_panel import DependencyInspectorDialog
 from app.shell.dependency_wizard_dialog import AddDependencyWizardDialog
@@ -197,10 +191,9 @@ from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet import build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.shell.toolbar_icons import ensure_tab_close_icons
-from app.project.project_tree import build_project_tree
 from app.project.run_configs import RunConfiguration
 from app.project.project_tree_widget import ProjectTreeWidget
-from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
+from app.project.project_tree_presenter import ProjectTreeDisplayNode
 from app.project.file_excludes import (
     compute_effective_excludes,
     load_effective_exclude_patterns,
@@ -209,15 +202,13 @@ from app.python_tools.black_adapter import format_python_text
 from app.python_tools.config import resolve_python_tooling_settings
 from app.python_tools.isort_adapter import organize_imports_text
 from app.python_tools.models import (
-    PYTHON_TOOLING_STATUS_CONFIG_ERROR,
     PYTHON_TOOLING_STATUS_FORMATTED,
     PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED,
-    PYTHON_TOOLING_STATUS_SYNTAX_ERROR,
-    PYTHON_TOOLING_STATUS_TOOL_UNAVAILABLE,
     PYTHON_TOOLING_STATUS_UNCHANGED,
     PythonTextTransformResult,
 )
 from app.python_tools.vendor_runtime import initialize_python_tooling_runtime
+from app.project.file_inventory import iter_python_files
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.project.project_service import (
     ProjectRootState,
@@ -238,22 +229,32 @@ from app.shell.events import (
     RunProcessExitEvent,
     RunProcessOutputEvent,
     RunProcessStateEvent,
-    RunSessionStartedEvent,
     ShellEventBus,
 )
 from app.shell.menus import MenuCallbacks, MenuStubRegistry, build_menu_stubs
 from app.shell.project_controller import ProjectController
 from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.project_tree_controller import ProjectTreeController
+from app.shell.project_tree_presenter import ProjectTreePresenter as ShellProjectTreePresenter
+from app.shell.problems_controller import ProblemsController
 from app.shell.repl_session_manager import ReplSessionManager
-from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
+from app.shell.run_session_controller import RunSessionController
 from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
+from app.shell.run_debug_presenter import RunDebugPresenter
+from app.shell.save_workflow import SaveWorkflow
 from app.shell.editor_intelligence_controller import EditorIntelligenceController
+from app.shell.editor_tab_bar import MiddleClickTabBar
+from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
 from app.shell.help_controller import ShellHelpController
+from app.shell.main_window_layout import (
+    build_layout_shell,
+    configure_window_frame,
+    make_explorer_button,
+)
 from app.shell.status_bar import (
     ShellStatusBarController,
     create_shell_status_bar,
@@ -267,7 +268,6 @@ TREE_ROLE_ABSOLUTE_PATH = 256
 TREE_ROLE_IS_DIRECTORY = 257
 TREE_ROLE_RELATIVE_PATH = 258
 EVENT_QUEUE_BATCH_LIMIT = 200
-PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
 ShellEventT = TypeVar("ShellEventT")
 ReplEvent = tuple[str, object, object]
 
@@ -275,50 +275,6 @@ ReplEvent = tuple[str, object, object]
 class _ConnectableSignal(Protocol):
     def connect(self, slot: Callable[..., object]) -> object:
         ...
-
-
-class _MiddleClickTabBar(QTabBar):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._tab_double_click_callback: Callable[[int], None] | None = None
-
-    def set_tab_double_click_callback(self, callback: Callable[[int], None] | None) -> None:
-        self._tab_double_click_callback = callback
-
-    def mousePressEvent(self, arg__1: QMouseEvent) -> None:
-        if arg__1.button() == Qt.MiddleButton:
-            tab_index = self.tabAt(arg__1.pos())
-            if tab_index >= 0:
-                self.tabCloseRequested.emit(tab_index)
-        else:
-            super().mousePressEvent(arg__1)
-
-    def mouseDoubleClickEvent(self, arg__1: QMouseEvent) -> None:  # noqa: N802 - Qt signature
-        tab_index = self.tabAt(arg__1.pos())
-        if tab_index >= 0 and self._tab_double_click_callback is not None:
-            self._tab_double_click_callback(tab_index)
-            arg__1.accept()
-            return
-        super().mouseDoubleClickEvent(arg__1)
-
-    def paintEvent(self, arg__1: QEvent) -> None:  # noqa: N802 - Qt signature
-        painter = QStylePainter(self)
-        option = QStyleOptionTab()
-        for index in range(self.count()):
-            self.initStyleOption(option, index)
-            data = self.tabData(index)
-            is_preview = isinstance(data, dict) and bool(data.get("is_preview"))
-            if is_preview:
-                preview_font = QFont(self.font())
-                preview_font.setItalic(True)
-                option.fontMetrics = QFontMetrics(preview_font)
-                painter.save()
-                painter.setFont(preview_font)
-            painter.drawControl(QStyle.CE_TabBarTabShape, option)
-            painter.drawControl(QStyle.CE_TabBarTabLabel, option)
-            if is_preview:
-                painter.restore()
-        arg__1.accept()
 
 
 class MainWindow(QMainWindow):
@@ -342,7 +298,14 @@ class MainWindow(QMainWindow):
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
         self._tree_entrypoint_icon = icon_run("#16A34A")
+        self._project_tree_presenter = ShellProjectTreePresenter(
+            self,
+            absolute_path_role=TREE_ROLE_ABSOLUTE_PATH,
+            is_directory_role=TREE_ROLE_IS_DIRECTORY,
+            relative_path_role=TREE_ROLE_RELATIVE_PATH,
+        )
         self._editor_tabs_widget: QTabWidget | None = None
+        self._editor_tabs_coordinator = EditorTabsCoordinator(self)
         self._activity_bar: ActivityBar | None = None
         self._sidebar_stack: QStackedWidget | None = None
         self._search_sidebar: SearchSidebarWidget | None = None
@@ -350,6 +313,7 @@ class MainWindow(QMainWindow):
         self._quick_open_dialog: QuickOpenDialog | None = None
         self._local_history_workflow: LocalHistoryWorkflow
         self._plugin_activation_workflow: PluginActivationWorkflow
+        self._save_workflow: SaveWorkflow
         self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._dependency_inspector_dialog: DependencyInspectorDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
@@ -359,8 +323,10 @@ class MainWindow(QMainWindow):
         self._debug_panel: DebugPanelWidget | None = None
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
+        self._problems_controller = ProblemsController(self)
         self._test_runner_workflow: TestRunnerWorkflow
         self._state_root = state_root
+        self._logger = get_subsystem_logger("shell")
         self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
         (
@@ -497,6 +463,7 @@ class MainWindow(QMainWindow):
             state_root=self._state_root,
             history_store=local_history_store,
         )
+        self._save_workflow = SaveWorkflow(self)
         self._auto_save_to_file_timer = QTimer(self)
         self._auto_save_to_file_timer.setSingleShot(True)
         self._auto_save_to_file_timer.setInterval(1000)
@@ -537,6 +504,7 @@ class MainWindow(QMainWindow):
         self._run_output_coordinator: RunOutputCoordinator | None = None
         self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
         self._run_session_controller = RunSessionController(self._run_service)
+        self._run_debug_presenter = RunDebugPresenter(self)
         self._run_config_controller = RunConfigController()
         self._active_named_run_config_name: str | None = None
         self._repl_event_queue: queue.Queue[ReplEvent] = queue.Queue()
@@ -564,7 +532,6 @@ class MainWindow(QMainWindow):
         self._background_tasks = GeneralTaskScheduler(
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
-        self._logger = get_subsystem_logger("shell")
         self._local_history_workflow = LocalHistoryWorkflow(
             parent=self,
             local_history_store=local_history_store,
@@ -860,7 +827,8 @@ class MainWindow(QMainWindow):
             return
         try:
             settings = self._settings_service.load_global()
-        except Exception:
+        except Exception as exc:
+            self._logger.debug("Skipped last-project restore; global settings failed to load: %s", exc)
             return
         last_path = settings.get(constants.LAST_PROJECT_PATH_KEY)
         if not isinstance(last_path, str) or not last_path.strip():
@@ -870,7 +838,8 @@ class MainWindow(QMainWindow):
             return
         try:
             assessment = assess_project_root(project_root)
-        except Exception:
+        except Exception as exc:
+            self._logger.debug("Skipped last-project restore; project assessment failed for %s: %s", project_root, exc)
             return
         if assessment.state not in (ProjectRootState.CANONICAL, ProjectRootState.IMPORTABLE):
             return
@@ -962,7 +931,8 @@ class MainWindow(QMainWindow):
     def _load_runtime_onboarding_state(self) -> tuple[bool, bool]:
         try:
             settings_payload = self._settings_service.load_global()
-        except Exception:
+        except Exception as exc:
+            self._logger.debug("Runtime onboarding state unavailable; using defaults: %s", exc)
             return False, False
         onboarding_payload = settings_payload.get(constants.UI_ONBOARDING_SETTINGS_KEY)
         if not isinstance(onboarding_payload, Mapping):
@@ -1012,7 +982,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         try:
             recent_paths = load_recent_projects(state_root=self._state_root)
-        except Exception:
+        except Exception as exc:
+            self._logger.debug("Recent projects unavailable for welcome widget: %s", exc)
             recent_paths = []
         widget.set_recent_projects(recent_paths)
         startup_status = map_startup_report_to_status(self._startup_report)
@@ -1683,7 +1654,8 @@ class MainWindow(QMainWindow):
             return
         try:
             assessment = assess_project_root(parent_dir)
-        except Exception:
+        except Exception as exc:
+            self._logger.debug("Skipped parent project assessment for %s: %s", parent_dir, exc)
             return
         if assessment.state not in (ProjectRootState.CANONICAL, ProjectRootState.IMPORTABLE):
             return
@@ -2828,52 +2800,50 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
 
+    def _get_save_workflow(self) -> SaveWorkflow:
+        workflow = getattr(self, "_save_workflow", None)
+        if workflow is None:
+            workflow = SaveWorkflow(self)
+            self._save_workflow = workflow
+        return workflow
+
+    def _get_project_tree_presenter(self) -> ShellProjectTreePresenter:
+        presenter = getattr(self, "_project_tree_presenter", None)
+        if presenter is None:
+            presenter = ShellProjectTreePresenter(
+                self,
+                absolute_path_role=TREE_ROLE_ABSOLUTE_PATH,
+                is_directory_role=TREE_ROLE_IS_DIRECTORY,
+                relative_path_role=TREE_ROLE_RELATIVE_PATH,
+            )
+            self._project_tree_presenter = presenter
+        return presenter
+
+    def _get_editor_tabs_coordinator(self) -> EditorTabsCoordinator:
+        coordinator = getattr(self, "_editor_tabs_coordinator", None)
+        if coordinator is None:
+            coordinator = EditorTabsCoordinator(self)
+            self._editor_tabs_coordinator = coordinator
+        return coordinator
+
+    def _get_problems_controller(self) -> ProblemsController:
+        controller = getattr(self, "_problems_controller", None)
+        if controller is None:
+            controller = ProblemsController(self)
+            self._problems_controller = controller
+        return controller
+
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
-        dirty_tabs = [tab for tab in self._editor_manager.all_tabs() if tab.is_dirty]
-        if not dirty_tabs:
-            return True
-
-        response = QMessageBox.warning(
-            self,
-            "Unsaved changes",
-            (
-                f"You have {len(dirty_tabs)} unsaved file(s) before {action_description}.\n"
-                "Would you like to save changes first?"
-            ),
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-            QMessageBox.Save,
-        )
-
-        if response == QMessageBox.Cancel:
-            return False
-        if response == QMessageBox.Discard:
-            return True
-
-        return self._handle_save_all_action()
+        return self._get_save_workflow().confirm_proceed_with_unsaved_changes(action_description)
 
     def _handle_save_action(self) -> bool:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return False
-        return self._save_tab(active_tab.file_path)
+        return self._get_save_workflow().handle_save_action()
 
     def _handle_save_all_action(self) -> bool:
-        any_failure = False
-        for tab in self._editor_manager.all_tabs():
-            if not tab.is_dirty:
-                continue
-            if not self._save_tab(tab.file_path):
-                any_failure = True
-        self._refresh_save_action_states()
-        return not any_failure
+        return self._get_save_workflow().handle_save_all_action()
 
     def _handle_toggle_auto_save(self, checked: bool) -> None:
-        self._editor_auto_save = checked
-        self._settings_service.update_global(
-            lambda payload: _merge_auto_save_setting(payload, checked)
-        )
-        if not checked:
-            self._auto_save_to_file_timer.stop()
+        self._get_save_workflow().handle_toggle_auto_save(checked)
 
     def _sync_auto_save_menu_state(self) -> None:
         if self._menu_registry is None:
@@ -2888,20 +2858,7 @@ class MainWindow(QMainWindow):
         self._auto_save_to_file_timer.start()
 
     def _flush_auto_save_to_file(self) -> None:
-        if not self._editor_auto_save:
-            return
-        for tab in self._editor_manager.all_tabs():
-            if not tab.is_dirty:
-                continue
-            try:
-                self._save_tab(
-                    tab.file_path,
-                    show_style_warnings=False,
-                    checkpoint_source="auto_save_to_file",
-                    apply_transforms=False,
-                )
-            except Exception:
-                self._logger.warning("Auto-save to file failed for %s", tab.file_path, exc_info=True)
+        self._get_save_workflow().flush_auto_save_to_file()
 
     def _save_tab(
         self,
@@ -2911,45 +2868,12 @@ class MainWindow(QMainWindow):
         checkpoint_source: str = "save",
         apply_transforms: bool = True,
     ) -> bool:
-        path_existed_before_save = Path(file_path).expanduser().resolve().exists()
-        if apply_transforms:
-            self._apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
-        try:
-            saved_tab = self._editor_manager.save_tab(file_path)
-        except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Save failed", str(exc))
-            self._logger.warning("Save failed for %s: %s", file_path, exc)
-            return False
-
-        if self._editor_tabs_widget is not None:
-            tab_index = self._tab_index_for_path(saved_tab.file_path)
-            if tab_index >= 0:
-                self._refresh_tab_presentation(saved_tab.file_path)
-
-        self._local_history_workflow.discard_pending_autosave(saved_tab.file_path)
-        self._local_history_workflow.record_checkpoint(
-            saved_tab.file_path,
-            saved_tab.current_content,
-            source=checkpoint_source,
+        return self._get_save_workflow().save_tab(
+            file_path,
+            show_style_warnings=show_style_warnings,
+            checkpoint_source=checkpoint_source,
+            apply_transforms=apply_transforms,
         )
-        self._local_history_workflow.delete_draft(saved_tab.file_path)
-        project_id, _project_root = self._local_history_workflow.local_history_context_for_path(saved_tab.file_path)
-        if not path_existed_before_save and project_id is not None:
-            self._reload_current_project()
-        self._refresh_save_action_states()
-        self._update_editor_status_for_path(saved_tab.file_path)
-        if should_refresh_index_after_save(
-            self._intelligence_runtime_settings,
-            has_loaded_project=self._loaded_project is not None,
-        ) and self._loaded_project is not None:
-            self._start_symbol_indexing(self._loaded_project.project_root)
-        if saved_tab.file_path.lower().endswith(".py"):
-            self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
-            test_runner_workflow = getattr(self, "_test_runner_workflow", None)
-            if test_runner_workflow is not None:
-                test_runner_workflow.refresh_discovery()
-        self._logger.info("Saved file: %s", saved_tab.file_path)
-        return True
 
     def _resolve_python_tooling_project_root(self, file_path: str) -> str:
         normalized_file_path = Path(file_path).expanduser().resolve()
@@ -2964,19 +2888,10 @@ class MainWindow(QMainWindow):
         return str(normalized_file_path.parent)
 
     def _python_tooling_failure_message(self, action_label: str, result: PythonTextTransformResult) -> str:
-        if result.status == PYTHON_TOOLING_STATUS_SYNTAX_ERROR:
-            return f"{action_label} skipped because the file contains Python syntax errors."
-        if result.status == PYTHON_TOOLING_STATUS_CONFIG_ERROR:
-            details = f"\n\n{result.error_message}" if result.error_message else ""
-            return f"{action_label} skipped because project-local pyproject settings could not be parsed.{details}"
-        if result.status == PYTHON_TOOLING_STATUS_TOOL_UNAVAILABLE:
-            details = f"\n\n{result.error_message}" if result.error_message else ""
-            return f"{action_label} is unavailable because the vendored Python tooling could not be loaded.{details}"
-        details = f"\n\n{result.error_message}" if result.error_message else ""
-        return f"{action_label} failed.{details}"
+        return self._get_save_workflow().python_tooling_failure_message(action_label, result)
 
     def _should_skip_python_style_on_save(self, source_text: str) -> bool:
-        return len(source_text) > PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT
+        return self._get_save_workflow().should_skip_python_style_on_save(source_text)
 
     def _apply_text_to_open_tab(self, file_path: str, replacement_text: str) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
@@ -2997,76 +2912,15 @@ class MainWindow(QMainWindow):
         result: PythonTextTransformResult,
         warning_messages: list[str],
     ) -> str:
-        if result.status in {PYTHON_TOOLING_STATUS_FORMATTED, PYTHON_TOOLING_STATUS_IMPORTS_ORGANIZED}:
-            return result.formatted_text
-        if result.status == PYTHON_TOOLING_STATUS_UNCHANGED:
-            return current_text
-        warning_messages.append(self._python_tooling_failure_message(action_label, result))
-        return current_text
+        return self._get_save_workflow().consume_save_python_tool_result(
+            action_label=action_label,
+            current_text=current_text,
+            result=result,
+            warning_messages=warning_messages,
+        )
 
     def _apply_save_transforms(self, file_path: str, *, show_style_warnings: bool) -> None:
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is None:
-            return
-
-        original_text = tab_state.current_content
-        transformed_text = format_text_basic(
-            original_text,
-            trim_trailing_whitespace=self._editor_trim_trailing_whitespace_on_save,
-            ensure_final_newline=self._editor_insert_final_newline_on_save,
-        ).formatted_text
-
-        warning_messages: list[str] = []
-        is_python_file = file_path.lower().endswith(".py")
-        should_run_python_style = is_python_file and (
-            self._editor_organize_imports_on_save or self._editor_format_on_save
-        )
-        if should_run_python_style:
-            if self._should_skip_python_style_on_save(transformed_text):
-                warning_messages.append(
-                    "Python style automation was skipped on save because the file exceeds the size guardrail."
-                )
-            else:
-                project_root = self._resolve_python_tooling_project_root(file_path)
-                if self._editor_organize_imports_on_save:
-                    try:
-                        _provider, organize_result = organize_imports_with_workflow(
-                            self._workflow_broker,
-                            source_text=transformed_text,
-                            file_path=file_path,
-                            project_root=project_root,
-                        )
-                    except Exception as exc:
-                        warning_messages.append(f"Organize Imports on save failed: {exc}")
-                    else:
-                        transformed_text = self._consume_save_python_tool_result(
-                            action_label="Organize Imports on save",
-                            current_text=transformed_text,
-                            result=organize_result,
-                            warning_messages=warning_messages,
-                        )
-                if self._editor_format_on_save:
-                    try:
-                        _provider, format_result = format_python_with_workflow(
-                            self._workflow_broker,
-                            source_text=transformed_text,
-                            file_path=file_path,
-                            project_root=project_root,
-                        )
-                    except Exception as exc:
-                        warning_messages.append(f"Formatting on save failed: {exc}")
-                    else:
-                        transformed_text = self._consume_save_python_tool_result(
-                            action_label="Formatting on save",
-                            current_text=transformed_text,
-                            result=format_result,
-                            warning_messages=warning_messages,
-                        )
-
-        if transformed_text != original_text:
-            self._apply_text_to_open_tab(file_path, transformed_text)
-        if show_style_warnings and warning_messages:
-            QMessageBox.warning(self, "Save formatting", "\n\n".join(warning_messages))
+        self._get_save_workflow().apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
 
     def _refresh_save_action_states(self) -> None:
         if self._menu_registry is None:
@@ -3239,12 +3093,11 @@ class MainWindow(QMainWindow):
         if loaded_project is None:
             return None
         project_root = Path(loaded_project.project_root).expanduser().resolve()
-        candidates: list[str] = []
-        for candidate in sorted(project_root.rglob("*.py")):
-            if constants.PROJECT_META_DIRNAME in candidate.parts:
-                continue
-            if candidate.is_file():
-                candidates.append(candidate.relative_to(project_root).as_posix())
+        candidates: list[str] = [
+            candidate.relative_to(project_root).as_posix()
+            for candidate in iter_python_files(project_root)
+            if candidate.is_file()
+        ]
         if not candidates:
             QMessageBox.warning(
                 self,
@@ -3413,8 +3266,11 @@ class MainWindow(QMainWindow):
         source_maps: list[DebugSourceMap] | None = None,
         skip_save: bool = False,
     ) -> bool:
-        result = self._run_session_controller.start_session(
-            loaded_project=self._loaded_project,
+        presenter = getattr(self, "_run_debug_presenter", None)
+        if presenter is None:
+            presenter = RunDebugPresenter(self)
+            self._run_debug_presenter = presenter
+        return presenter.start_session(
             mode=mode,
             entry_file=entry_file,
             argv=argv,
@@ -3424,48 +3280,7 @@ class MainWindow(QMainWindow):
             debug_exception_policy=debug_exception_policy,
             source_maps=source_maps,
             skip_save=skip_save,
-            save_all=self._handle_save_all_action,
-            before_start=self._prepare_for_session_start,
-            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
-            append_python_console_line=self._append_python_console_line,
         )
-        if not result.started:
-            if result.failure_reason == RunSessionStartFailureReason.NO_PROJECT:
-                QMessageBox.warning(self, "Run unavailable", result.error_message or "No project is loaded.")
-            elif result.failure_reason == RunSessionStartFailureReason.SAVE_FAILED:
-                QMessageBox.warning(self, "Run cancelled", result.error_message or "Save was cancelled.")
-            elif result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING:
-                pass
-            elif result.error_message:
-                QMessageBox.warning(self, "Run failed to start", result.error_message)
-            self._set_run_status("idle")
-            self._refresh_run_action_states()
-            return False
-
-        if result.session is not None:
-            self._active_run_session_log_path = result.session.log_file_path
-            self._active_run_session_info = RunInfo(
-                run_id=result.session.run_id,
-                mode=result.session.mode,
-                entry_file=result.session.entry_file,
-            )
-            self._event_bus.publish(
-                RunSessionStartedEvent(
-                    run_id=result.session.run_id,
-                    mode=result.session.mode,
-                    entry_file=result.session.entry_file,
-                    project_root=result.session.project_root,
-                )
-            )
-        if self._debug_panel is not None:
-            self._debug_panel.set_command_input_enabled(
-                self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG
-            )
-        self._set_run_status("running")
-        if self._auto_open_console_on_run_output:
-            self._focus_run_log_tab()
-        self._refresh_run_action_states()
-        return True
 
     def _handle_stop_action(self) -> None:
         self._run_session_controller.stop_session(lambda text, stream: self._append_console_line(text, stream=stream))
@@ -3926,67 +3741,26 @@ class MainWindow(QMainWindow):
                 self._update_status_bar_diagnostics(active_diags)
 
     def _apply_lint_diagnostics_result(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
-        self._stored_lint_diagnostics[file_path] = diagnostics
-        self._push_diagnostics_to_editor(file_path, diagnostics)
-        self._update_tab_diagnostic_indicator(file_path, diagnostics)
-        self._render_merged_problems_panel()
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is not None and active_tab.file_path == file_path:
-            self._update_status_bar_diagnostics(diagnostics)
+        self._get_problems_controller().apply_lint_diagnostics_result(file_path, diagnostics)
 
     def _push_diagnostics_to_editor(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
-        editor_widget = self._editor_widgets_by_path.get(file_path)
-        if editor_widget is None:
-            return
-        editor_widget.set_diagnostics(diagnostics)
+        self._get_problems_controller().push_diagnostics_to_editor(file_path, diagnostics)
 
     def _update_tab_diagnostic_indicator(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        tab_index = self._tab_index_for_path(file_path)
-        if tab_index < 0:
-            return
-        has_error = any(d.severity == DiagnosticSeverity.ERROR for d in diagnostics)
-        has_warning = any(d.severity == DiagnosticSeverity.WARNING for d in diagnostics)
-        if has_error:
-            icon = tab_diagnostic_icon(DiagnosticSeverity.ERROR, "#E03131")
-        elif has_warning:
-            icon = tab_diagnostic_icon(DiagnosticSeverity.WARNING, "#D97706")
-        else:
-            icon = QIcon()
-        self._editor_tabs_widget.setTabIcon(tab_index, icon)
+        self._get_problems_controller().update_tab_diagnostic_indicator(file_path, diagnostics)
 
     def _clear_all_tab_diagnostic_indicators(self) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        empty = QIcon()
-        for index in range(self._editor_tabs_widget.count()):
-            self._editor_tabs_widget.setTabIcon(index, empty)
+        self._get_problems_controller().clear_all_tab_diagnostic_indicators()
 
     def _update_status_bar_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
-        if self._status_controller is None:
-            return
-        errors = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.ERROR)
-        warnings = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.WARNING)
-        self._status_controller.set_diagnostics_counts(errors, warnings)
+        self._get_problems_controller().update_status_bar_diagnostics(diagnostics)
 
     def _render_merged_problems_panel(self) -> None:
         """Rebuild the Problems panel from stored lint + runtime state."""
-        if self._problems_panel is None:
-            return
-        all_diags = [d for diags in self._stored_lint_diagnostics.values() for d in diags]
-        self._problems_panel.set_quick_fixes_enabled(self._quick_fixes_enabled)
-        self._problems_panel.set_diagnostics(all_diags, self._stored_runtime_problems)
-        self._update_problems_tab_title(self._problems_panel.problem_count())
+        self._get_problems_controller().render_merged_problems_panel()
 
     def _update_problems_tab_title(self, count: int) -> None:
-        if self._problems_tab_widget is None or self._problems_panel is None:
-            return
-        index = self._problems_tab_widget.indexOf(self._problems_panel)
-        if index < 0:
-            return
-        title = f"Problems ({count})" if count > 0 else "Problems"
-        self._problems_tab_widget.setTabText(index, title)
+        self._get_problems_controller().update_problems_tab_title(count)
 
     def _apply_safe_fixes_for_file(self, file_path: str) -> None:
         if not self._quick_fixes_enabled:
@@ -4743,21 +4517,12 @@ class MainWindow(QMainWindow):
         coordinator = getattr(self, "_run_output_coordinator", None)
         if coordinator is not None:
             return coordinator
-        run_session_controller = getattr(self, "_run_session_controller", None)
-        get_active_session_mode = (
-            (lambda: getattr(run_session_controller, "active_session_mode", None))
-            if run_session_controller is not None
-            else (lambda: getattr(self, "_active_session_mode", None))
-        )
-        set_active_session_mode = getattr(run_session_controller, "set_active_session_mode", None)
-        if set_active_session_mode is None:
-            set_active_session_mode = lambda mode: setattr(self, "_active_session_mode", mode)
         output_tail = getattr(self, "_active_run_output_tail", None)
         append_output_tail = output_tail.append if output_tail is not None else (lambda _chunk: None)
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._is_shutting_down,
-            get_active_session_mode=get_active_session_mode,
-            set_active_session_mode=set_active_session_mode,
+            get_active_session_mode=lambda: self._run_session_controller.active_session_mode,
+            set_active_session_mode=self._run_session_controller.set_active_session_mode,
             get_debug_session=lambda: self._debug_session,
             append_output_tail=append_output_tail,
             append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
@@ -5073,38 +4838,10 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
 
     def _configure_window_frame(self) -> None:
-        self.setObjectName("shell.mainWindow")
-        self.setWindowTitle(f"ChoreBoy Code Studio v{constants.APP_VERSION}")
-        self.resize(1280, 820)
-        self.setMinimumSize(960, 640)
+        configure_window_frame(self)
 
     def _build_layout_shell(self) -> None:
-        central = QWidget(self)
-        central.setObjectName("shell.centralWidget")
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        vertical_splitter = QSplitter(Qt.Vertical, central)
-        vertical_splitter.setObjectName("shell.verticalSplitter")
-        self._vertical_splitter = vertical_splitter
-
-        top_splitter = QSplitter(Qt.Horizontal, vertical_splitter)
-        top_splitter.setObjectName("shell.topSplitter")
-        self._top_splitter = top_splitter
-        top_splitter.addWidget(self._build_left_panel())
-        top_splitter.addWidget(self._build_center_panel())
-        top_splitter.setStretchFactor(0, 1)
-        top_splitter.setStretchFactor(1, 3)
-
-        vertical_splitter.addWidget(top_splitter)
-        vertical_splitter.addWidget(self._build_bottom_panel())
-        vertical_splitter.setStretchFactor(0, 4)
-        vertical_splitter.setStretchFactor(1, 2)
-        top_splitter.setSizes(list(DEFAULT_TOP_SPLITTER_SIZES))
-        vertical_splitter.setSizes(list(DEFAULT_VERTICAL_SPLITTER_SIZES))
-
-        layout.addWidget(vertical_splitter)
-        self.setCentralWidget(central)
+        build_layout_shell(self)
 
     def _build_left_panel(self) -> QWidget:
         panel = QWidget(self)
@@ -5257,13 +4994,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _make_explorer_button(parent: QWidget, tooltip: str, icon: QIcon) -> QToolButton:
-        btn = QToolButton(parent)
-        btn.setObjectName("shell.explorerAction")
-        btn.setToolTip(tooltip)
-        btn.setIcon(icon)
-        btn.setFixedSize(QSize(24, 24))
-        btn.setAutoRaise(True)
-        return btn
+        return make_explorer_button(parent, tooltip, icon)
 
     def _update_explorer_buttons_enabled(self) -> None:
         has_project = self._loaded_project is not None
@@ -5339,7 +5070,7 @@ class MainWindow(QMainWindow):
         editor_layout.addWidget(self._find_replace_bar, 0)
 
         self._editor_tabs_widget = QTabWidget(editor_page)
-        tab_bar = _MiddleClickTabBar(self._editor_tabs_widget)
+        tab_bar = MiddleClickTabBar(self._editor_tabs_widget)
         tab_bar.set_tab_double_click_callback(self._handle_editor_tab_header_double_click)
         tab_bar.setContextMenuPolicy(Qt.CustomContextMenu)
         tab_bar.customContextMenuRequested.connect(self._show_editor_tab_context_menu)
@@ -5430,119 +5161,26 @@ class MainWindow(QMainWindow):
         tabs.setTabToolTip(run_log_index, "Run/Debug output (stdout/stderr) and per-run log.")
         return tabs
 
-    def _create_placeholder_panel(self, title: str, body: str, object_name: str) -> QWidget:
-        panel = QWidget(self)
-        panel.setObjectName(object_name)
-
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-
-        title_label = QLabel(title, panel)
-        title_label.setObjectName(f"{object_name}.title")
-
-        body_label = QLabel(body, panel)
-        body_label.setObjectName(f"{object_name}.body")
-        body_label.setWordWrap(True)
-        body_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-
-        layout.addWidget(title_label)
-        layout.addWidget(body_label, 1)
-        return panel
-
     def _populate_project_tree(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
-        if self._project_tree_widget is None:
-            return
-
-        expanded_paths: set[str] = set()
-        selected_paths: set[str] = set()
-        if preserve_state:
-            expanded_paths, selected_paths = self._capture_project_tree_state()
-        self._project_tree_widget.clear()
-        root_nodes = build_project_tree(loaded_project.entries)
-        display_nodes = build_project_tree_display(root_nodes)
-        for display_node in display_nodes:
-            root_item = self._build_tree_item(display_node)
-            self._project_tree_widget.addTopLevelItem(root_item)
-            if not preserve_state and display_node.is_directory:
-                root_item.setExpanded(True)
-                root_item.setIcon(0, self._tree_folder_open_icon)
-        if preserve_state:
-            self._restore_project_tree_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
+        self._get_project_tree_presenter().populate(loaded_project, preserve_state=preserve_state)
 
     def _capture_project_tree_state(self) -> tuple[set[str], set[str]]:
-        if self._project_tree_widget is None:
-            return (set(), set())
-        expanded_paths: set[str] = set()
-        selected_paths: set[str] = set()
-        for item in self._iter_project_tree_items():
-            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
-            if not relative_path:
-                continue
-            if item.isExpanded():
-                expanded_paths.add(relative_path)
-            if item.isSelected():
-                selected_paths.add(relative_path)
-        return (expanded_paths, selected_paths)
+        return self._get_project_tree_presenter().capture_state()
 
     def _restore_project_tree_state(self, *, expanded_paths: set[str], selected_paths: set[str]) -> None:
-        if self._project_tree_widget is None:
-            return
-        for item in self._iter_project_tree_items():
-            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
-            if not relative_path:
-                continue
-            if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
-                item.setExpanded(relative_path in expanded_paths)
-                item.setIcon(0, self._tree_folder_open_icon if item.isExpanded() else self._tree_folder_icon)
-            item.setSelected(relative_path in selected_paths)
+        self._get_project_tree_presenter().restore_state(
+            expanded_paths=expanded_paths,
+            selected_paths=selected_paths,
+        )
 
     def _iter_project_tree_items(self) -> list[QTreeWidgetItem]:
-        if self._project_tree_widget is None:
-            return []
-        collected: list[QTreeWidgetItem] = []
-        for index in range(self._project_tree_widget.topLevelItemCount()):
-            root_item = self._project_tree_widget.topLevelItem(index)
-            if root_item is None:
-                continue
-            collected.extend(self._collect_tree_descendants(root_item))
-        return collected
+        return self._get_project_tree_presenter().iter_items()
 
     def _collect_tree_descendants(self, root_item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
-        collected = [root_item]
-        for child_index in range(root_item.childCount()):
-            child_item = root_item.child(child_index)
-            if child_item is None:
-                continue
-            collected.extend(self._collect_tree_descendants(child_item))
-        return collected
+        return self._get_project_tree_presenter().collect_descendants(root_item)
 
     def _build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([node.display_label])
-        item.setData(0, TREE_ROLE_ABSOLUTE_PATH, node.absolute_path)
-        item.setData(0, TREE_ROLE_IS_DIRECTORY, node.is_directory)
-        item.setData(0, TREE_ROLE_RELATIVE_PATH, node.relative_path)
-        if node.is_directory:
-            item.setIcon(0, self._tree_folder_icon)
-        else:
-            filename = Path(node.absolute_path).name.lower()
-            icon = self._tree_filename_icon_map.get(filename)
-            if icon is None:
-                ext = Path(node.absolute_path).suffix.lower()
-                icon = self._tree_file_icon_map.get(ext, self._tree_file_icon)
-            item.setIcon(0, icon)
-            if (
-                self._loaded_project is not None
-                and node.relative_path == self._loaded_project.metadata.default_entry
-            ):
-                font = item.font(0)
-                font.setBold(True)
-                item.setFont(0, font)
-                item.setIcon(0, self._tree_entrypoint_icon)
-
-        for child_node in node.children:
-            item.addChild(self._build_tree_item(child_node))
-        return item
+        return self._get_project_tree_presenter().build_tree_item(node)
 
     def _handle_project_tree_item_click(self, item: QTreeWidgetItem, _column: int) -> None:
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
@@ -5579,125 +5217,18 @@ class MainWindow(QMainWindow):
 
     def _get_selected_tree_paths(self) -> list[tuple[str, str, bool]]:
         """Return (absolute_path, relative_path, is_directory) for each selected tree item."""
-        if self._project_tree_widget is None:
-            return []
-        entries: list[tuple[str, str, bool]] = []
-        for item in self._project_tree_widget.selectedItems():
-            abs_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-            rel_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
-            is_dir = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
-            if abs_path:
-                entries.append((abs_path, rel_path, is_dir))
-        return entries
+        return self._get_project_tree_presenter().selected_paths()
 
     def _tree_item_entry(self, item: QTreeWidgetItem | None) -> tuple[str, str, bool] | None:
-        if item is None:
-            return None
-        abs_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-        if not abs_path:
-            return None
-        rel_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
-        is_dir = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
-        return (abs_path, rel_path, is_dir)
+        return self._get_project_tree_presenter().item_entry(item)
 
     def _show_project_tree_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
-        if self._project_tree_widget is None:
-            return
-        item = self._project_tree_widget.itemAt(position)
-        if item is None:
-            return
-        clicked_entry = self._tree_item_entry(item)
-        if clicked_entry is None:
-            return
-        if not item.isSelected():
-            self._project_tree_widget.clearSelection()
-            item.setSelected(True)
-            self._project_tree_widget.setCurrentItem(item)
-        selected = self._get_selected_tree_paths()
-        if not selected:
-            return
-
-        if len(selected) > 1:
-            self._show_bulk_context_menu(position, selected)
-        else:
-            self._show_single_item_context_menu(position, clicked_entry)
+        self._get_project_tree_presenter().show_context_menu(position)
 
     def _show_single_item_context_menu(
         self, position: object, entry: tuple[str, str, bool],
     ) -> None:
-        assert self._project_tree_widget is not None
-        absolute_path, relative_path, is_directory = entry
-
-        menu = QMenu(self)
-        new_file_action = menu.addAction("New File…")
-        new_folder_action = menu.addAction("New Folder…")
-        menu.addSeparator()
-        rename_action = menu.addAction("Rename…")
-        delete_action = menu.addAction("Move to Trash")
-        duplicate_action = menu.addAction("Duplicate")
-        menu.addSeparator()
-        copy_action = menu.addAction("Copy")
-        cut_action = menu.addAction("Cut")
-        paste_action = menu.addAction("Paste")
-        menu.addSeparator()
-        copy_path_action = menu.addAction("Copy Path")
-        copy_relative_path_action = menu.addAction("Copy Relative Path")
-        reveal_action = menu.addAction("Reveal in File Manager")
-        local_history_action = None
-        if not is_directory:
-            local_history_action = menu.addAction("Local History...")
-        run_file_action = None
-        set_entry_point_action = None
-        if (
-            not is_directory
-            and self._loaded_project is not None
-            and Path(absolute_path).suffix.lower() == ".py"
-        ):
-            menu.addSeparator()
-            run_file_action = menu.addAction("Run")
-            assert run_file_action is not None
-            run_file_action.setEnabled(not self._run_service.supervisor.is_running())
-            set_entry_point_action = menu.addAction("Set as Entry Point")
-            assert set_entry_point_action is not None
-            if relative_path == self._loaded_project.metadata.default_entry:
-                set_entry_point_action.setEnabled(False)
-
-        assert paste_action is not None
-        paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
-        chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
-        if chosen is None:
-            return
-
-        if chosen == new_file_action:
-            self._handle_tree_new_file(absolute_path if is_directory else str(Path(absolute_path).parent))
-        elif chosen == new_folder_action:
-            self._handle_tree_new_folder(absolute_path if is_directory else str(Path(absolute_path).parent))
-        elif chosen == rename_action:
-            self._handle_tree_rename(absolute_path)
-        elif chosen == delete_action:
-            self._handle_tree_delete(absolute_path)
-        elif chosen == duplicate_action:
-            self._handle_tree_duplicate(absolute_path)
-        elif chosen == copy_action:
-            self._tree_clipboard_paths = [absolute_path]
-            self._tree_clipboard_cut = False
-        elif chosen == cut_action:
-            self._tree_clipboard_paths = [absolute_path]
-            self._tree_clipboard_cut = True
-        elif chosen == paste_action:
-            self._handle_tree_paste(absolute_path if is_directory else str(Path(absolute_path).parent))
-        elif chosen == copy_path_action:
-            QApplication.clipboard().setText(absolute_path)
-        elif chosen == copy_relative_path_action:
-            QApplication.clipboard().setText(relative_path)
-        elif chosen == reveal_action:
-            self._reveal_path_in_file_manager(absolute_path)
-        elif not is_directory and local_history_action is not None and chosen == local_history_action:
-            self._local_history_workflow.show_local_history_for_path(absolute_path)
-        elif run_file_action is not None and chosen == run_file_action:
-            self._handle_tree_run_file(absolute_path)
-        elif set_entry_point_action is not None and chosen == set_entry_point_action:
-            self._set_project_entry_point(relative_path)
+        self._get_project_tree_presenter().show_single_item_context_menu(position, entry)
 
     def _handle_tree_run_file(self, absolute_path: str) -> bool:
         entry_path = Path(absolute_path).expanduser().resolve()
@@ -5711,45 +5242,7 @@ class MainWindow(QMainWindow):
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
     ) -> None:
-        assert self._project_tree_widget is not None
-        abs_paths = [entry[0] for entry in selected]
-
-        menu = QMenu(self)
-        delete_action = menu.addAction(f"Move {len(selected)} Items to Trash")
-        duplicate_action = menu.addAction(f"Duplicate {len(selected)} Items")
-        menu.addSeparator()
-        copy_action = menu.addAction("Copy")
-        cut_action = menu.addAction("Cut")
-        paste_action = menu.addAction("Paste")
-        menu.addSeparator()
-        copy_path_action = menu.addAction("Copy Paths")
-        copy_relative_path_action = menu.addAction("Copy Relative Paths")
-
-        assert paste_action is not None
-        paste_action.setEnabled(len(self._tree_clipboard_paths) > 0)
-        chosen = menu.exec_(self._project_tree_widget.viewport().mapToGlobal(position))
-        if chosen is None:
-            return
-
-        if chosen == delete_action:
-            self._handle_tree_bulk_delete(abs_paths)
-        elif chosen == duplicate_action:
-            self._handle_tree_bulk_duplicate(abs_paths)
-        elif chosen == copy_action:
-            self._tree_clipboard_paths = list(abs_paths)
-            self._tree_clipboard_cut = False
-        elif chosen == cut_action:
-            self._tree_clipboard_paths = list(abs_paths)
-            self._tree_clipboard_cut = True
-        elif chosen == paste_action:
-            first_abs, _, first_is_dir = selected[0]
-            dest = first_abs if first_is_dir else str(Path(first_abs).parent)
-            self._handle_tree_paste(dest)
-        elif chosen == copy_path_action:
-            QApplication.clipboard().setText("\n".join(abs_paths))
-        elif chosen == copy_relative_path_action:
-            rel_paths = [entry[1] for entry in selected]
-            QApplication.clipboard().setText("\n".join(rel_paths))
+        self._get_project_tree_presenter().show_bulk_context_menu(position, selected)
 
     def _handle_tree_new_file(self, destination_directory: str) -> None:
         file_name, ok = QInputDialog.getText(self, "New File", "File name:", QLineEdit.Normal, "")
@@ -5856,9 +5349,6 @@ class MainWindow(QMainWindow):
         return True
 
     def _reveal_path_in_file_manager(self, path: str) -> None:
-        from PySide2.QtCore import QUrl
-        from PySide2.QtGui import QDesktopServices
-
         target = Path(path).expanduser().resolve()
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
@@ -6157,14 +5647,7 @@ class MainWindow(QMainWindow):
         self._open_file_at_line(file_path, line_number)
 
     def _tab_index_for_path(self, file_path: str) -> int:
-        if self._editor_tabs_widget is None:
-            return -1
-
-        normalized_path = str(Path(file_path).expanduser().resolve())
-        for index in range(self._editor_tabs_widget.count()):
-            if self._editor_tabs_widget.tabToolTip(index) == normalized_path:
-                return index
-        return -1
+        return self._get_editor_tabs_coordinator().tab_index_for_path(file_path)
 
     def _remove_tab_widget_for_path(self, file_path: str) -> None:
         if self._editor_tabs_widget is None:
@@ -6183,37 +5666,13 @@ class MainWindow(QMainWindow):
             self._status_controller.set_indent_status(style=None, size=None, source=None)
 
     def _refresh_tab_presentation(self, file_path: str) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is None:
-            return
-        tab_index = self._tab_index_for_path(file_path)
-        if tab_index < 0:
-            return
-        suffix = " *" if tab_state.is_dirty else ""
-        self._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
-        tab_bar = self._editor_tabs_widget.tabBar()
-        if isinstance(tab_bar, QTabBar):
-            tab_bar.setTabData(
-                tab_index,
-                {"is_preview": tab_state.is_preview, "file_path": tab_state.file_path},
-            )
-            tab_bar.update()
+        self._get_editor_tabs_coordinator().refresh_tab_presentation(file_path)
 
     def _promote_preview_tab(self, file_path: str) -> bool:
-        promoted_tab = self._editor_manager.promote_tab(file_path)
-        if promoted_tab is None:
-            return False
-        if not promoted_tab.is_preview:
-            self._refresh_tab_presentation(promoted_tab.file_path)
-        return True
+        return self._get_editor_tabs_coordinator().promote_preview_tab(file_path)
 
     def _promote_existing_preview_tab(self) -> bool:
-        preview_tab = self._editor_manager.preview_tab()
-        if preview_tab is None:
-            return False
-        return self._promote_preview_tab(preview_tab.file_path)
+        return self._get_editor_tabs_coordinator().promote_existing_preview_tab()
 
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         if self._editor_manager.get_tab(file_path) is None:
@@ -6273,16 +5732,13 @@ class MainWindow(QMainWindow):
             is_dirty=tab_state.is_dirty,
         )
     def _active_editor_widget(self) -> CodeEditorWidget | None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return None
-        return self._editor_widgets_by_path.get(active_tab.file_path)
+        return cast(Optional[CodeEditorWidget], self._get_editor_tabs_coordinator().active_editor_widget())
 
     def _advance_editor_buffer_revision(self, file_path: str) -> int:
-        return self._workspace_controller.advance_buffer_revision(file_path)
+        return self._get_editor_tabs_coordinator().advance_buffer_revision(file_path)
 
     def _editor_buffer_revision(self, file_path: str) -> int | None:
-        return self._workspace_controller.buffer_revision(file_path)
+        return self._get_editor_tabs_coordinator().buffer_revision(file_path)
 
     def _request_editor_completions_async(
         self,
@@ -6707,14 +6163,6 @@ class MainWindow(QMainWindow):
         if self._is_shutting_down:
             return
         self._diagnostics_orchestrator.run_scheduled_realtime_lint()
-
-def _merge_auto_save_setting(payload: Mapping[str, Any], enabled: bool) -> dict[str, Any]:
-    merged = dict(payload)
-    editor = dict(merged.get(constants.UI_EDITOR_SETTINGS_KEY, {}))
-    editor[constants.UI_EDITOR_AUTO_SAVE_KEY] = enabled
-    merged[constants.UI_EDITOR_SETTINGS_KEY] = editor
-    return merged
-
 
 def _flat_python_repair_status_message(result: FlatPythonIndentRepairResult) -> str:
     if result.reason == "not a flat Python paste":

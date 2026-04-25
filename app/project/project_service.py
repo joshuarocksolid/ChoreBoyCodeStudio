@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
@@ -18,11 +17,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9 runtim
         _toml_module = None
 
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
-from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
-from app.project.file_excludes import should_exclude_name
+from app.project.file_inventory import iter_project_entries, iter_python_files
 from app.project.project_manifest import (
     build_default_project_manifest_payload,
     build_synthetic_project_metadata,
@@ -332,54 +330,13 @@ def enumerate_project_entries(
             project_root=resolved_root,
         )
 
-    entries: list[ProjectFileEntry] = []
-
-    def _on_walk_error(error: OSError) -> None:
-        raise ProjectEnumerationError(
-            f"Failed to enumerate project files: {error}",
-            project_root=resolved_root,
-        ) from error
-
     try:
-        root_text = str(resolved_root)
-        for current_dir, dir_names, file_names in os.walk(
-            resolved_root,
-            topdown=True,
-            onerror=_on_walk_error,
-            followlinks=False,
-        ):
-            current_relative_dir = os.path.relpath(current_dir, root_text)
-            if current_relative_dir == ".":
-                current_relative_dir = ""
-            _active_excludes = exclude_patterns or []
-            dir_names[:] = sorted(
-                name for name in dir_names
-                if not should_exclude_name(name, _active_excludes)
+        entries = list(
+            iter_project_entries(
+                resolved_root,
+                exclude_patterns=exclude_patterns or (),
             )
-            file_names = sorted(
-                name for name in file_names
-                if not should_exclude_name(name, _active_excludes)
-            )
-
-            for directory_name in dir_names:
-                entries.append(
-                    _build_project_entry_from_walk(
-                        current_dir=current_dir,
-                        current_relative_dir=current_relative_dir,
-                        entry_name=directory_name,
-                        is_directory=True,
-                    )
-                )
-
-            for file_name in file_names:
-                entries.append(
-                    _build_project_entry_from_walk(
-                        current_dir=current_dir,
-                        current_relative_dir=current_relative_dir,
-                        entry_name=file_name,
-                        is_directory=False,
-                    )
-                )
+        )
     except ProjectEnumerationError:
         raise
     except OSError as exc:
@@ -442,12 +399,10 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     if package_main_entry is not None:
         return package_main_entry
 
-    for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
-        current_path = Path(current_dir)
-        dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-        python_files = sorted(name for name in file_names if name.endswith(".py") and name != "__init__.py")
-        if python_files:
-            return (current_path / python_files[0]).relative_to(project_root).as_posix()
+    for python_file in iter_python_files(project_root):
+        if python_file.name == "__init__.py":
+            continue
+        return python_file.relative_to(project_root).as_posix()
     return None
 
 
@@ -515,8 +470,8 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
 
 
 def _infer_recursive_package_main(project_root: Path) -> str | None:
-    for candidate in sorted(project_root.rglob("__main__.py")):
-        if constants.PROJECT_META_DIRNAME in candidate.parts:
+    for candidate in iter_python_files(project_root):
+        if candidate.name != "__main__.py":
             continue
         if candidate.parent == project_root:
             continue
@@ -525,36 +480,7 @@ def _infer_recursive_package_main(project_root: Path) -> str | None:
 
 
 def _contains_any_python_file(project_root: Path) -> bool:
-    for current_dir, dir_names, file_names in os.walk(project_root, topdown=True, followlinks=False):
-        dir_names[:] = sorted(name for name in dir_names if name != constants.PROJECT_META_DIRNAME)
-        if any(name.endswith(".py") for name in file_names):
-            return True
-    return False
-
-
-def _build_project_entry(path: Path, project_root: Path, *, is_directory: bool) -> ProjectFileEntry:
-    relative_path = path.relative_to(project_root).as_posix()
-    return ProjectFileEntry(
-        relative_path=relative_path,
-        absolute_path=str(path.resolve()),
-        is_directory=is_directory,
-    )
-
-
-def _build_project_entry_from_walk(
-    *,
-    current_dir: str,
-    current_relative_dir: str,
-    entry_name: str,
-    is_directory: bool,
-) -> ProjectFileEntry:
-    relative_path = entry_name if not current_relative_dir else f"{current_relative_dir}/{entry_name}"
-    absolute_path = os.path.join(current_dir, entry_name)
-    return ProjectFileEntry(
-        relative_path=relative_path,
-        absolute_path=absolute_path,
-        is_directory=is_directory,
-    )
+    return next(iter(iter_python_files(project_root)), None) is not None
 
 
 def _resolve_project_root(project_root: PathInput) -> Path:

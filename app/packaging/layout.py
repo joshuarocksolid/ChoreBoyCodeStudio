@@ -90,8 +90,16 @@ def resolve_entry_path(*, root: Path, entry_file: str) -> tuple[Path | None, str
     return resolved_entry, None
 
 
-def should_exclude_relative_path(rel_path: Path) -> bool:
-    """Return True if *rel_path* should be excluded from a package export."""
+def is_packaging_excluded_path(rel_path: Path) -> bool:
+    """Return True if *rel_path* should be excluded from a package export.
+
+    This is the packaging-specific exclusion policy (hidden directories,
+    ``__pycache__``, ``cbcs/``, build artefacts, ``*.pyc`` etc.). Distinct from
+    :func:`app.project.file_excludes.should_exclude_relative_path`, which is
+    the user-pattern based exclusion used by editor search and project
+    enumeration. The two used to share the same name and were a real
+    name-collision footgun until Phase 2 of the maintainability audit.
+    """
     parts = rel_path.parts
     if any(part in _EXCLUDED_DIR_NAMES for part in parts):
         return True
