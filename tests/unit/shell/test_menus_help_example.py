@@ -31,7 +31,7 @@ def test_load_example_project_action_is_registered_with_callback(_ensure_qapp) -
     window = QMainWindow()
 
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(on_help_load_example_project=lambda: calls.append("triggered")),
     )
     action = registry.action("shell.action.help.loadExampleProject")
@@ -46,7 +46,7 @@ def test_load_example_project_action_is_registered_with_callback(_ensure_qapp) -
 
 def test_load_example_project_action_appears_in_help_menu(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    _ = build_menu_stubs(window, callbacks=MenuCallbacks())
+    _ = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     help_menu = window.findChild(qt_widgets.QMenu, "shell.menu.help")
     assert help_menu is not None

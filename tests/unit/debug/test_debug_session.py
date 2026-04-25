@@ -10,17 +10,6 @@ from app.debug.debug_session import DebugSession
 pytestmark = pytest.mark.unit
 
 
-def test_debug_session_ingests_legacy_output_markers_for_transition_path() -> None:
-    session = DebugSession()
-
-    paused_event = session.ingest_output_line("__CB_DEBUG_PAUSED__")
-    running_event = session.ingest_output_line("__CB_DEBUG_RUNNING__")
-
-    assert paused_event is not None
-    assert running_event is not None
-    assert session.state.execution_state.value == "running"
-
-
 def test_apply_protocol_message_tracks_session_ready_and_stopped_state() -> None:
     session = DebugSession()
     breakpoint_model = build_breakpoint("/tmp/project/main.py", 12, verified=True)

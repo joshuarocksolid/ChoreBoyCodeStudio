@@ -9,7 +9,11 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from app.packaging.layout import build_default_install_dirname, build_launcher_filename
+from app.packaging.layout import (
+    build_default_install_dirname,
+    build_launcher_filename,
+    validate_packaged_entry_relative_path,
+)
 from app.packaging.models import (
     ArtifactChecksum,
     DistributionManifest,
@@ -61,6 +65,7 @@ def create_distribution_manifest(
         if isinstance(default_install_dirname, str) and default_install_dirname.strip()
         else build_default_install_dirname(effective_display_name, version)
     )
+    normalized_entry = validate_packaged_entry_relative_path(entry_relative_path)
     return DistributionManifest(
         schema_version=PACKAGE_MANIFEST_SCHEMA_VERSION,
         package_kind=package_kind,
@@ -79,7 +84,7 @@ def create_distribution_manifest(
         launcher_name=effective_launcher_name,
         launcher_comment=effective_comment,
         launcher_mode=launcher_mode,
-        entry_relative_path=entry_relative_path.strip(),
+        entry_relative_path=normalized_entry,
         icon_relative_path=icon_relative_path.strip(),
         default_install_base=default_install_base,
         default_install_dirname=effective_install_dirname,

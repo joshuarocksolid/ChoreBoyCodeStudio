@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from PySide2.QtCore import QModelIndex, QRect, QSize, Qt, Signal
+from PySide2.QtCore import QModelIndex, QRect, QSize, QStringListModel, Qt, QTimer, Signal
 from PySide2.QtGui import (
     QColor,
     QFont,
@@ -45,6 +45,7 @@ _ICON_LEFT_MARGIN = 12
 _TEXT_LEFT_MARGIN = _ICON_LEFT_MARGIN + _ICON_SIZE + 8
 _RIGHT_MARGIN = 14
 _OPEN_DOT_RADIUS = 3
+_REFRESH_DEBOUNCE_MS = 80
 
 
 class _QuickOpenItemModel:
@@ -227,25 +228,26 @@ class QuickOpenDialog(QDialog):
     def __init__(
         self,
         parent: Optional[QWidget] = None,
-        tokens: Optional[ShellThemeTokens] = None,
+        *,
+        tokens: ShellThemeTokens,
         icon_map: Optional[Dict[str, QIcon]] = None,
         filename_icon_map: Optional[Dict[str, QIcon]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("shell.quickOpen")
-        from PySide2.QtCore import Qt as _Qt
-        self.setWindowFlags(_Qt.WindowType(int(_Qt.Popup) | int(_Qt.FramelessWindowHint)))
+        self.setWindowFlags(Qt.WindowType(int(Qt.Popup) | int(Qt.FramelessWindowHint)))
         self.setMinimumWidth(600)
         self.setMaximumHeight(460)
         self._candidates: List[QuickOpenCandidate] = []
         self._total_count = 0
 
-        self._tokens = tokens or ShellThemeTokens(
-            window_bg="#1F2428", panel_bg="#262C33", editor_bg="#1B1F23",
-            text_primary="#E9ECEF", text_muted="#ADB5BD", border="#3C434A",
-            accent="#5B8CFF", gutter_bg="#1F2428", gutter_text="#6C757D",
-            line_highlight="#252B33", is_dark=True,
-        )
+        self._tokens = tokens
+        self._candidate_generation = 0
+        self._rank_cache: Dict[tuple[int, str], List[RankedCandidate]] = {}
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(_REFRESH_DEBOUNCE_MS)
+        self._refresh_timer.timeout.connect(self._refresh_results)
         icon_color = self._tokens.icon_primary or self._tokens.text_muted
         self._icon_map = icon_map or {}
         self._filename_icon_map = filename_icon_map or {}
@@ -287,7 +289,6 @@ class QuickOpenDialog(QDialog):
         self._results_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._results_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        from PySide2.QtCore import QStringListModel
         self._list_model = QStringListModel(self)
         self._results_list.setModel(self._list_model)
 
@@ -320,6 +321,8 @@ class QuickOpenDialog(QDialog):
     def set_candidates(self, candidates: List[QuickOpenCandidate]) -> None:
         self._candidates = list(candidates)
         self._total_count = len(candidates)
+        self._candidate_generation += 1
+        self._rank_cache.clear()
         self._refresh_results()
 
     def open_dialog(self) -> None:
@@ -345,10 +348,12 @@ class QuickOpenDialog(QDialog):
             event.accept()
             return
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self._flush_pending_refresh()
             self._accept_current()
             event.accept()
             return
         if event.key() == Qt.Key_Down:
+            self._flush_pending_refresh()
             idx = self._results_list.currentIndex()
             row = idx.row() if idx.isValid() else -1
             total = self._list_model.rowCount()
@@ -358,6 +363,7 @@ class QuickOpenDialog(QDialog):
             event.accept()
             return
         if event.key() == Qt.Key_Up:
+            self._flush_pending_refresh()
             idx = self._results_list.currentIndex()
             row = idx.row() if idx.isValid() else 0
             if row > 0:
@@ -377,11 +383,29 @@ class QuickOpenDialog(QDialog):
         return (raw, None)
 
     def _on_text_changed(self, _text: str) -> None:
-        self._refresh_results()
+        self._schedule_refresh_results()
+
+    def _schedule_refresh_results(self) -> None:
+        self._refresh_timer.start()
+
+    def _flush_pending_refresh(self) -> None:
+        if self._refresh_timer.isActive():
+            self._refresh_timer.stop()
+            self._refresh_results()
+
+    def _rank_current_query(self, query: str) -> List[RankedCandidate]:
+        cache_key = (self._candidate_generation, query.strip().lower())
+        cached = self._rank_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+        ranked = rank_candidates(self._candidates, query, limit=50)
+        self._rank_cache[cache_key] = list(ranked)
+        return ranked
 
     def _refresh_results(self) -> None:
+        self._refresh_timer.stop()
         query, _line = self._parse_query_and_line()
-        ranked = rank_candidates(self._candidates, query, limit=50)
+        ranked = self._rank_current_query(query)
         self._item_data.set_items(ranked)
 
         labels = [r.candidate.relative_path for r in ranked]
@@ -405,6 +429,7 @@ class QuickOpenDialog(QDialog):
             self._count_label.setText(f"{self._total_count} files")
 
     def _on_item_activated(self, index: QModelIndex) -> None:
+        self._flush_pending_refresh()
         row = index.row()
         if 0 <= row < len(self._item_data.items):
             path = self._item_data.items[row].candidate.absolute_path
@@ -416,6 +441,7 @@ class QuickOpenDialog(QDialog):
             self.hide()
 
     def _on_item_preview(self, index: QModelIndex) -> None:
+        self._flush_pending_refresh()
         row = index.row()
         if 0 <= row < len(self._item_data.items):
             path = self._item_data.items[row].candidate.absolute_path
@@ -426,6 +452,8 @@ class QuickOpenDialog(QDialog):
                 self.file_preview_requested.emit(path)
 
     def _accept_current(self) -> None:
+        self._flush_pending_refresh()
         idx = self._results_list.currentIndex()
         if idx.isValid():
             self._on_item_activated(idx)
+

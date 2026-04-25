@@ -7,7 +7,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtWidgets import QApplication
 
-from app.run.test_discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
 
 pytestmark = pytest.mark.unit
 
@@ -196,6 +196,7 @@ class TestTestExplorerPanelConstruction:
         panel.update_discovery(_sample_discovery())
         panel.set_outcomes({"tests/test_foo.py::test_hello": "failed"})
         assert panel._run_failed_btn.isEnabled()
+        assert panel._debug_failed_btn.isEnabled()
 
     def test_set_outcomes_disables_rerun_when_none_failed(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         from app.shell.test_explorer_panel import TestExplorerPanel
@@ -203,6 +204,7 @@ class TestTestExplorerPanelConstruction:
         panel.update_discovery(_sample_discovery())
         panel.set_outcomes({"tests/test_foo.py::test_hello": "passed"})
         assert not panel._run_failed_btn.isEnabled()
+        assert not panel._debug_failed_btn.isEnabled()
 
     def test_failed_node_ids(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         from app.shell.test_explorer_panel import TestExplorerPanel

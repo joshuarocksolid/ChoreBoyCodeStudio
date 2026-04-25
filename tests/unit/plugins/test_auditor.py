@@ -26,7 +26,10 @@ def _manifest(*, runtime_entrypoint: str = "runtime.py") -> PluginManifest:
 def test_audit_plugin_package_rejects_native_extensions_and_hidden_paths(tmp_path: Path) -> None:
     plugin_root = tmp_path / "plugin"
     plugin_root.mkdir()
-    (plugin_root / "runtime.py").write_text("def handle_command(payload):\n    return payload\n", encoding="utf-8")
+    (plugin_root / "runtime.py").write_text(
+        "def handle_command(command_id, payload):\n    return {'command_id': command_id, 'payload': payload}\n",
+        encoding="utf-8",
+    )
     (plugin_root / ".hidden").mkdir()
     (plugin_root / ".hidden" / "secret.txt").write_text("x\n", encoding="utf-8")
     (plugin_root / "native.so").write_text("", encoding="utf-8")
@@ -42,11 +45,11 @@ def test_audit_plugin_package_rejects_python310_syntax_and_subprocess_usage(tmp_
     plugin_root.mkdir()
     (plugin_root / "runtime.py").write_text(
         "import subprocess\n\n"
-        "def handle_command(payload):\n"
+        "def handle_command(command_id, payload):\n"
         "    match payload:\n"
         "        case _:\n"
         "            subprocess.run(['echo', 'nope'])\n"
-        "    return payload\n",
+        "    return {'command_id': command_id, 'payload': payload}\n",
         encoding="utf-8",
     )
 

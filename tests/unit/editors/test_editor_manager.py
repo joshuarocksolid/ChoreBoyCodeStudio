@@ -17,6 +17,8 @@ def test_open_file_is_deduplicated_and_marks_active_tab(tmp_path: Path) -> None:
     file_path.write_text("print('hello')\n", encoding="utf-8")
     manager = EditorManager()
 
+    assert manager.active_file_path() is None
+
     first = manager.open_file(str(file_path))
     second = manager.open_file(str(file_path))
 
@@ -24,6 +26,7 @@ def test_open_file_is_deduplicated_and_marks_active_tab(tmp_path: Path) -> None:
     assert second.was_already_open is True
     assert len(manager.open_paths()) == 1
     assert manager.active_tab() is first.tab
+    assert manager.active_file_path() == str(file_path.resolve())
 
 
 def test_open_file_preview_marks_preview_state(tmp_path: Path) -> None:
@@ -225,6 +228,7 @@ def test_close_file_removes_tab_and_reassigns_active(tmp_path: Path) -> None:
 
     assert manager.get_tab(str(second.resolve())) is None
     assert manager.active_tab() is manager.get_tab(str(first.resolve()))
+    assert manager.active_file_path() == str(first.resolve())
 
 
 def test_open_file_records_last_known_disk_mtime(tmp_path: Path) -> None:

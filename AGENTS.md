@@ -89,7 +89,13 @@ Requires `DISPLAY` (available as `:1` in Cloud). The status bar should show "Run
 npx pyright
 ```
 
-`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages`. Latest checkpoint: `npx pyright` -> `0 errors, 0 warnings, 0 informations`.
+Focused test typing:
+
+```bash
+npx pyright -p pyrightconfig.tests.json
+```
+
+`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages`. `pyrightconfig.tests.json` is a staged, low-noise test coverage config. Latest checkpoint: both commands -> `0 errors, 0 warnings, 0 informations`.
 
 ### Vendored dependencies
 

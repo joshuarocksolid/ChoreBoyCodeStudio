@@ -27,7 +27,7 @@ def test_open_file_action_is_registered_with_callback_and_shortcut(_ensure_qapp)
     window = QMainWindow()
 
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(on_open_file=lambda: calls.append("triggered")),
     )
     open_file_action = registry.action("shell.action.file.openFile")
@@ -42,7 +42,7 @@ def test_open_file_action_is_registered_with_callback_and_shortcut(_ensure_qapp)
 
 def test_open_file_action_appears_in_file_menu_after_open_project(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    _ = build_menu_stubs(window, callbacks=MenuCallbacks())
+    _ = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     file_menu = window.findChild(qt_widgets.QMenu, "shell.menu.file")
     assert file_menu is not None

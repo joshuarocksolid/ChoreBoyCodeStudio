@@ -131,7 +131,7 @@ def test_packaging_preflight_opens_runtime_center_before_export(
                 return self._package_config
 
         opened_dialogs: list[dict[str, object]] = []
-        monkeypatch.setattr("app.shell.main_window.PackageProjectWizard", _FakeWizard)
+        monkeypatch.setattr("app.shell.runtime_support_workflow.PackageProjectWizard", _FakeWizard)
         monkeypatch.setattr(
             window,
             "_open_runtime_center_dialog",
@@ -149,7 +149,7 @@ def test_packaging_preflight_opens_runtime_center_before_export(
 
         monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
 
-        window._handle_package_project_action()
+        window._runtime_support_workflow.handle_package_project_action()
 
         assert len(opened_dialogs) == 1
         assert opened_dialogs[0]["title"] == "Packaging Failed"

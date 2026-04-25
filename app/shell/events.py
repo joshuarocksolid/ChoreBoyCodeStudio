@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+import logging
 from typing import Callable, TypeVar
 
 from app.run.process_supervisor import ProcessState
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -74,4 +76,5 @@ class ShellEventBus:
             try:
                 handler(event)
             except Exception:
+                logger.exception("event subscriber raised: %s", handler)
                 continue

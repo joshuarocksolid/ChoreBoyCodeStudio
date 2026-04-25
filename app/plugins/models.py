@@ -14,6 +14,43 @@ class PluginEngineConstraints:
 
 
 @dataclass(frozen=True)
+class PluginCommandContribution:
+    command_id: str
+    title: str
+    menu_id: str = "shell.menu.tools"
+    shortcut: str | None = None
+    status_tip: str | None = None
+    tool_tip: str | None = None
+    message: str | None = None
+    runtime: bool = False
+    runtime_payload: dict[str, Any] = field(default_factory=dict)
+    runtime_handler: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id": self.command_id,
+            "title": self.title,
+        }
+        if self.menu_id != "shell.menu.tools":
+            payload["menu_id"] = self.menu_id
+        if self.shortcut is not None:
+            payload["shortcut"] = self.shortcut
+        if self.status_tip is not None:
+            payload["status_tip"] = self.status_tip
+        if self.tool_tip is not None:
+            payload["tool_tip"] = self.tool_tip
+        if self.message is not None:
+            payload["message"] = self.message
+        if self.runtime:
+            payload["runtime"] = True
+        if self.runtime_payload:
+            payload["runtime_payload"] = dict(self.runtime_payload)
+        if self.runtime_handler is not None:
+            payload["runtime_handler"] = self.runtime_handler
+        return payload
+
+
+@dataclass(frozen=True)
 class PluginWorkflowProvider:
     provider_id: str
     kind: str
@@ -68,12 +105,17 @@ class PluginManifest:
     activation_events: list[str] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
     permissions: list[str] = field(default_factory=list)
+    command_contributions: list[PluginCommandContribution] = field(default_factory=list)
     workflow_providers: list[PluginWorkflowProvider] = field(default_factory=list)
     contributes: dict[str, Any] = field(default_factory=dict)
     engine: PluginEngineConstraints = field(default_factory=PluginEngineConstraints)
 
     def to_dict(self) -> dict[str, Any]:
         contributes_payload = dict(self.contributes)
+        if self.command_contributions:
+            contributes_payload["commands"] = [
+                command.to_dict() for command in self.command_contributions
+            ]
         if self.workflow_providers:
             contributes_payload["workflow_providers"] = [
                 provider.to_dict() for provider in self.workflow_providers

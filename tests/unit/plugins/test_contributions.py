@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from app.plugins.contributions import DeclarativeContributionManager
-from app.plugins.models import DiscoveredPlugin, PluginCompatibility, PluginManifest
+from app.plugins.manifest import parse_plugin_manifest
+from app.plugins.models import DiscoveredPlugin, PluginCompatibility
 from app.shell.events import RunSessionStartedEvent
 
 pytestmark = pytest.mark.unit
@@ -24,36 +25,39 @@ def test_apply_registers_commands_and_event_hooks() -> None:
         register_runtime_command=lambda command_id, _handler, _replace: registered_runtime_commands.append(command_id),
         register_runtime_menu_command=lambda **kwargs: registered_menu_commands.append(kwargs["command_id"]),
         unregister_runtime_menu_command=lambda _command_id: None,
-        execute_runtime_command=lambda command_id: executed.append(command_id),
+        execute_runtime_command=lambda command_id, _payload, _activation_event: executed.append(command_id),
         subscribe_shell_event=lambda event_type, _handler: subscribed_events.append(event_type),
         unsubscribe_shell_event=lambda event_type, _handler: unsubscribed_events.append(event_type),
         emit_message=lambda _message: None,
-        execute_plugin_runtime_command=lambda _command_id, payload: payload,
+        execute_plugin_runtime_command=lambda _command_id, payload, _activation_event: payload,
         on_runtime_command_success=lambda plugin_id, version: runtime_success.append((plugin_id, version)),
         on_runtime_command_failure=lambda plugin_id, version, error: runtime_failures.append((plugin_id, version, error)),
     )
 
-    manifest = PluginManifest(
-        plugin_id="acme.demo",
-        name="Demo Plugin",
-        version="1.0.0",
-        api_version=1,
-        contributes={
-            "commands": [
-                {
-                    "id": "acme.demo.hello",
-                    "title": "Hello",
-                    "runtime": True,
-                    "runtime_payload": {"value": 1},
-                }
-            ],
-            "event_hooks": [
-                {
-                    "event_type": "run_start",
-                    "command_id": "acme.demo.hello",
-                }
-            ],
-        },
+    manifest = parse_plugin_manifest(
+        {
+            "id": "acme.demo",
+            "name": "Demo Plugin",
+            "version": "1.0.0",
+            "api_version": 1,
+            "runtime": {"entrypoint": "runtime.py"},
+            "contributes": {
+                "commands": [
+                    {
+                        "id": "acme.demo.hello",
+                        "title": "Hello",
+                        "runtime": True,
+                        "runtime_payload": {"value": 1},
+                    }
+                ],
+                "event_hooks": [
+                    {
+                        "event_type": "run_start",
+                        "command_id": "acme.demo.hello",
+                    }
+                ],
+            },
+        }
     )
     discovered = DiscoveredPlugin(
         plugin_id="acme.demo",
@@ -84,11 +88,11 @@ def test_clear_unregisters_commands_and_unsubscribes_handlers() -> None:
         register_runtime_command=lambda _command_id, _handler, _replace: None,
         register_runtime_menu_command=lambda **_kwargs: None,
         unregister_runtime_menu_command=lambda command_id: unregistered_commands.append(command_id),
-        execute_runtime_command=lambda _command_id: None,
+        execute_runtime_command=lambda _command_id, _payload, _activation_event: None,
         subscribe_shell_event=lambda event_type, handler: subscriptions.append((event_type, handler)),
         unsubscribe_shell_event=lambda event_type, _handler: unsubscribed_events.append(event_type),
         emit_message=lambda _message: None,
-        execute_plugin_runtime_command=lambda _command_id, _payload: None,
+        execute_plugin_runtime_command=lambda _command_id, _payload, _activation_event: None,
         on_runtime_command_success=lambda _plugin_id, _version: None,
         on_runtime_command_failure=lambda _plugin_id, _version, _error: None,
     )
@@ -117,34 +121,36 @@ def test_apply_continues_when_one_menu_registration_fails() -> None:
         register_runtime_command=lambda command_id, _handler, _replace: registered_runtime_commands.append(command_id),
         register_runtime_menu_command=_register_menu_command,
         unregister_runtime_menu_command=lambda _command_id: None,
-        execute_runtime_command=lambda _command_id: None,
+        execute_runtime_command=lambda _command_id, _payload, _activation_event: None,
         subscribe_shell_event=lambda _event_type, _handler: None,
         unsubscribe_shell_event=lambda _event_type, _handler: None,
         emit_message=lambda _message: None,
-        execute_plugin_runtime_command=lambda _command_id, payload: payload,
+        execute_plugin_runtime_command=lambda _command_id, payload, _activation_event: payload,
         on_runtime_command_success=lambda _plugin_id, _version: None,
         on_runtime_command_failure=lambda _plugin_id, _version, _error: None,
     )
 
-    manifest = PluginManifest(
-        plugin_id="acme.demo",
-        name="Demo Plugin",
-        version="1.0.0",
-        api_version=1,
-        contributes={
-            "commands": [
-                {
-                    "id": "acme.demo.invalid",
-                    "title": "Invalid Menu",
-                    "menu_id": "shell.menu.unknown",
-                },
-                {
-                    "id": "acme.demo.valid",
-                    "title": "Valid Command",
-                    "menu_id": "shell.menu.tools",
-                },
-            ],
-        },
+    manifest = parse_plugin_manifest(
+        {
+            "id": "acme.demo",
+            "name": "Demo Plugin",
+            "version": "1.0.0",
+            "api_version": 1,
+            "contributes": {
+                "commands": [
+                    {
+                        "id": "acme.demo.invalid",
+                        "title": "Invalid Menu",
+                        "menu_id": "shell.menu.unknown",
+                    },
+                    {
+                        "id": "acme.demo.valid",
+                        "title": "Valid Command",
+                        "menu_id": "shell.menu.tools",
+                    },
+                ]
+            },
+        }
     )
     discovered = DiscoveredPlugin(
         plugin_id="acme.demo",
@@ -160,3 +166,62 @@ def test_apply_continues_when_one_menu_registration_fails() -> None:
     assert "acme.demo.invalid" in registered_runtime_commands
     assert "acme.demo.valid" in registered_runtime_commands
     assert registered_menu_commands == ["acme.demo.valid"]
+
+
+def test_event_hook_failures_are_logged_with_plugin_and_hook_id(caplog: pytest.LogCaptureFixture) -> None:
+    subscriptions: list[tuple[type[object], object]] = []
+
+    manager = DeclarativeContributionManager(
+        register_runtime_command=lambda _command_id, _handler, _replace: None,
+        register_runtime_menu_command=lambda **_kwargs: None,
+        unregister_runtime_menu_command=lambda _command_id: None,
+        execute_runtime_command=lambda _command_id, _payload, _activation_event: (_ for _ in ()).throw(
+            RuntimeError("boom")
+        ),
+        subscribe_shell_event=lambda event_type, handler: subscriptions.append((event_type, handler)),
+        unsubscribe_shell_event=lambda _event_type, _handler: None,
+        emit_message=lambda _message: None,
+        execute_plugin_runtime_command=lambda _command_id, _payload, _activation_event: None,
+        on_runtime_command_success=lambda _plugin_id, _version: None,
+        on_runtime_command_failure=lambda _plugin_id, _version, _error: None,
+    )
+    manifest = parse_plugin_manifest(
+        {
+            "id": "acme.demo",
+            "name": "Demo Plugin",
+            "version": "1.0.0",
+            "api_version": 1,
+            "contributes": {
+                "event_hooks": [
+                    {
+                        "event_type": "run_start",
+                        "command_id": "acme.demo.hello",
+                    }
+                ]
+            },
+        }
+    )
+    discovered = DiscoveredPlugin(
+        plugin_id="acme.demo",
+        version="1.0.0",
+        install_path="/tmp/demo",
+        manifest_path="/tmp/demo/plugin.json",
+        manifest=manifest,
+        compatibility=PluginCompatibility(is_compatible=True, reasons=[]),
+    )
+    manager.apply([discovered], enabled_map={("acme.demo", "1.0.0"): True})
+
+    with caplog.at_level("WARNING", logger="app.plugins.contributions"):
+        event_type, handler = subscriptions[0]
+        assert event_type is RunSessionStartedEvent
+        handler(
+            RunSessionStartedEvent(
+                run_id="session-1",
+                mode="normal",
+                entry_file="main.py",
+                project_root="/tmp/project",
+            )
+        )
+
+    assert "Plugin event hook run_start:acme.demo.hello failed for acme.demo@1.0.0" in caplog.text
+    assert "boom" in caplog.text

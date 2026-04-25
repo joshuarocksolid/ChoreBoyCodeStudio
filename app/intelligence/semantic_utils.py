@@ -5,6 +5,19 @@ from bisect import bisect_right
 from pathlib import Path
 
 
+def extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
+    """Return the identifier token at a 0-based cursor offset."""
+    safe_cursor = max(0, min(cursor_position, len(source_text)))
+    left = safe_cursor
+    while left > 0 and _is_symbol_character(source_text[left - 1]):
+        left -= 1
+    right = safe_cursor
+    while right < len(source_text) and _is_symbol_character(source_text[right]):
+        right += 1
+    symbol = source_text[left:right].strip()
+    return symbol if symbol.isidentifier() else ""
+
+
 def offset_to_line_column(source_text: str, cursor_position: int) -> tuple[int, int]:
     """Convert a 0-based character offset into Jedi-style line/column coordinates."""
     safe_position = max(0, min(cursor_position, len(source_text)))
@@ -61,6 +74,10 @@ def changed_line_numbers(before_text: str, after_text: str) -> list[int]:
         if before_line != after_line:
             changed.append(index + 1)
     return changed
+
+
+def _is_symbol_character(character: str) -> bool:
+    return character.isalnum() or character == "_"
 
 
 def _line_starts(source_text: str) -> list[int]:

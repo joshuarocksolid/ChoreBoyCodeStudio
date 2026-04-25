@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -24,6 +23,10 @@ def test_tree_delete_confirmation_uses_move_to_trash_copy(monkeypatch: pytest.Mo
     window_any._project_tree_action_coordinator = SimpleNamespace(
         handle_delete=lambda path: handled_paths.append(path) or None
     )
+    window_any._local_history_workflow = SimpleNamespace(
+        capture_text_history_snapshots=lambda _paths: {},
+        record_transaction=lambda *_args, **_kwargs: None,
+    )
 
     prompts: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -43,9 +46,11 @@ def test_tree_bulk_delete_failure_warning_uses_move_to_trash_title(monkeypatch: 
     window_any._project_tree_action_coordinator = SimpleNamespace(
         handle_bulk_delete=lambda _paths: (["one.py: permission denied"], [])
     )
-    window_any._capture_text_history_snapshots = lambda _paths: []
-    window_any._record_local_history_transaction = lambda *_args, **_kwargs: None
-    window_any._filter_snapshots_for_paths = lambda snapshots, _paths: snapshots
+    window_any._local_history_workflow = SimpleNamespace(
+        capture_text_history_snapshots=lambda _paths: {},
+        record_transaction=lambda *_args, **_kwargs: None,
+        filter_snapshots_for_paths=lambda snapshots, _paths: snapshots,
+    )
 
     prompts: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []

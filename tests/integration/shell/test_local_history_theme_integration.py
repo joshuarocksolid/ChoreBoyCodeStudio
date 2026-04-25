@@ -67,7 +67,7 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     assert window._open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 
-    window._local_history_store.create_checkpoint(
+    window._local_history_workflow.local_history_store.create_checkpoint(
         str(file_path.resolve()),
         "print('saved')\n",
         project_id=window._loaded_project.metadata.project_id,
@@ -90,13 +90,14 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
         window._handle_set_theme(mode)
-        window._show_local_history_for_path(str(file_path.resolve()))
-        window._handle_open_global_history_action()
-        assert _wait_for(lambda: window._history_restore_picker_dialog is not None, app)
+        window._local_history_workflow.show_local_history_for_path(str(file_path.resolve()))
+        window._local_history_workflow.open_global_history()
+        assert _wait_for(lambda: window._local_history_workflow.history_restore_picker_dialog is not None, app)
 
-        assert window._history_restore_picker_dialog is not None
-        assert window._history_restore_picker_dialog._results.topLevelItemCount() == 1
-        assert window._history_restore_picker_dialog._search_input is not None
+        picker_dialog = window._local_history_workflow.history_restore_picker_dialog
+        assert picker_dialog is not None
+        assert picker_dialog._results.topLevelItemCount() == 1
+        assert picker_dialog._search_input is not None
 
     assert len(opened_history_dialogs) == 2
     _dispose_window(window, app)

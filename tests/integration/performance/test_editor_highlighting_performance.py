@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtGui import QPalette, QTextDocument, QTextCursor  # noqa: E402
+from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
@@ -61,15 +62,24 @@ def _create_python_highlighter(document: QTextDocument) -> object:
     return highlighter
 
 
+def _dispose_highlighter(highlighter: object) -> None:
+    set_document = getattr(highlighter, "setDocument", None)
+    if callable(set_document):
+        set_document(None)
+    QApplication.processEvents()
+
+
 def test_python_rehighlight_2000_loc_under_250ms() -> None:
     source = _large_python_source(2000)
     document = QTextDocument()
     highlighter = _create_python_highlighter(document)
     document.setPlainText(source)
-
-    start = time.perf_counter()
-    highlighter.rehighlight()
-    elapsed = time.perf_counter() - start
+    try:
+        start = time.perf_counter()
+        highlighter.rehighlight()
+        elapsed = time.perf_counter() - start
+    finally:
+        _dispose_highlighter(highlighter)
 
     assert elapsed <= 0.25
 
@@ -81,9 +91,12 @@ def test_python_rehighlight_2000_loc_p95_under_300ms() -> None:
         document = QTextDocument()
         highlighter = _create_python_highlighter(document)
         document.setPlainText(source)
-        start = time.perf_counter()
-        highlighter.rehighlight()
-        samples.append((time.perf_counter() - start) * 1000.0)
+        try:
+            start = time.perf_counter()
+            highlighter.rehighlight()
+            samples.append((time.perf_counter() - start) * 1000.0)
+        finally:
+            _dispose_highlighter(highlighter)
     assert _p95(samples) <= 300.0
 
 
@@ -92,16 +105,18 @@ def test_tree_sitter_rehighlight_typing_burst_p95_under_140ms() -> None:
     document = QTextDocument()
     highlighter = _create_python_highlighter(document)
     document.setPlainText(source)
-    highlighter.rehighlight()
-
-    samples: list[float] = []
-    for iteration in range(18):
-        cursor = QTextCursor(document)
-        cursor.movePosition(QTextCursor.End)
-        cursor.insertText(f"# edit {iteration}\n")
-        start = time.perf_counter()
+    try:
         highlighter.rehighlight()
-        samples.append((time.perf_counter() - start) * 1000.0)
+        samples: list[float] = []
+        for iteration in range(18):
+            cursor = QTextCursor(document)
+            cursor.movePosition(QTextCursor.End)
+            cursor.insertText(f"# edit {iteration}\n")
+            start = time.perf_counter()
+            highlighter.rehighlight()
+            samples.append((time.perf_counter() - start) * 1000.0)
+    finally:
+        _dispose_highlighter(highlighter)
     assert _p95(samples) <= 140.0
 
 
@@ -110,14 +125,19 @@ def test_theme_apply_10_open_editors_p95_under_150ms_per_editor() -> None:
     samples: list[float] = []
     for _ in range(6):
         editors = [CodeEditorWidget() for _ in range(10)]
-        for editor in editors:
-            editor.setPlainText(_large_python_source(600))
-            editor.set_language_for_path("/tmp/test.py")
-        start = time.perf_counter()
-        for editor in editors:
-            editor.apply_theme(tokens)
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        samples.append(elapsed_ms / len(editors))
+        try:
+            for editor in editors:
+                editor.setPlainText(_large_python_source(600))
+                editor.set_language_for_path("/tmp/test.py")
+            start = time.perf_counter()
+            for editor in editors:
+                editor.apply_theme(tokens)
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            samples.append(elapsed_ms / len(editors))
+        finally:
+            for editor in editors:
+                editor.deleteLater()
+            QApplication.processEvents()
     assert _p95(samples) <= 150.0
 
 

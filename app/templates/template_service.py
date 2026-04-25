@@ -8,10 +8,9 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from app.bootstrap.paths import resolve_app_root
-from app.core import constants
+from app.bootstrap.paths import project_manifest_path, resolve_app_root
 from app.core.errors import AppValidationError
-from app.project.project_manifest import build_default_project_manifest_payload
+from app.project.project_manifest import build_default_project_manifest_payload, parse_project_manifest, save_project_manifest
 
 TEMPLATE_METADATA_FILENAME = "template.json"
 LEGACY_HIDDEN_METADATA_DIRS = (
@@ -112,8 +111,7 @@ class TemplateService:
     def _inject_project_manifest(self, *, destination: Path, project_name: str, template_id: str) -> None:
         if not project_name.strip():
             raise AppValidationError("project_name must be a non-empty string.")
-        manifest_path = destination / constants.PROJECT_META_DIRNAME / constants.PROJECT_MANIFEST_FILENAME
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path = project_manifest_path(destination)
         try:
             payload = build_default_project_manifest_payload(
                 project_name=project_name.strip(),
@@ -123,7 +121,8 @@ class TemplateService:
             )
         except ValueError as exc:
             raise AppValidationError(str(exc)) from exc
-        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        metadata = parse_project_manifest(payload, manifest_path=manifest_path)
+        save_project_manifest(manifest_path, metadata)
 
 
 def _require_non_empty_string(payload: dict[str, Any], field_name: str) -> str:

@@ -1,0 +1,43 @@
+{
+  "pythonVersion": "3.9",
+  "verboseOutput": true,
+  "include": [
+    "tests/support",
+    "tests/unit/debug/test_safe_eval.py",
+    "tests/unit/packaging/test_dependency_audit.py",
+    "tests/unit/shell/test_python_tooling_status_copy.py"
+  ],
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        ".",
+        "vendor",
+        "/opt/freecad/usr/lib/python3.11/site-packages"
+      ]
+    }
+  ],
+  "exclude": [
+    ".git",
+    ".venv",
+    ".venv-editor",
+    "vendor",
+    "node_modules",
+    "build",
+    "dist",
+    ".cache",
+    "squashfs-root",
+    "docs",
+    "manual",
+    ".cursor",
+    "example_projects",
+    "packaging",
+    "templates",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+    "**/.tox",
+    "**/.nox"
+  ]
+}

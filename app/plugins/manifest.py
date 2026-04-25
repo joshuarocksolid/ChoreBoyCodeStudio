@@ -7,7 +7,12 @@ from typing import Any, Mapping, NoReturn
 
 from app.core import constants
 from app.core.errors import PluginManifestValidationError
-from app.plugins.models import PluginEngineConstraints, PluginManifest, PluginWorkflowProvider
+from app.plugins.models import (
+    PluginCommandContribution,
+    PluginEngineConstraints,
+    PluginManifest,
+    PluginWorkflowProvider,
+)
 
 PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 PLUGIN_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -58,6 +63,16 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
         contributes = {}
     if not isinstance(contributes, dict):
         _raise_error("contributes must be an object.", field="contributes", manifest_path=manifest_path)
+    command_contributions = _parse_command_contributions(
+        contributes.get("commands", []),
+        manifest_path=manifest_path,
+    )
+    if any(command.runtime for command in command_contributions) and runtime_entrypoint is None:
+        _raise_error(
+            "runtime.entrypoint is required when runtime commands are declared.",
+            field="runtime.entrypoint",
+            manifest_path=manifest_path,
+        )
     workflow_providers = _parse_workflow_providers(
         contributes.get("workflow_providers", []),
         manifest_path=manifest_path,
@@ -69,6 +84,10 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
             manifest_path=manifest_path,
         )
     normalized_contributes = dict(contributes)
+    if command_contributions or "commands" in contributes:
+        normalized_contributes["commands"] = [
+            command.to_dict() for command in command_contributions
+        ]
     if workflow_providers:
         normalized_contributes["workflow_providers"] = [provider.to_dict() for provider in workflow_providers]
 
@@ -112,6 +131,7 @@ def parse_plugin_manifest(payload: Mapping[str, Any], *, manifest_path: Path | N
         activation_events=activation_events,
         capabilities=capabilities,
         permissions=permissions,
+        command_contributions=command_contributions,
         workflow_providers=workflow_providers,
         contributes=normalized_contributes,
         engine=PluginEngineConstraints(
@@ -159,6 +179,84 @@ def _parse_string_list(
         if stripped not in values:
             values.append(stripped)
     return values
+
+
+def _parse_command_contributions(
+    raw_value: object,
+    *,
+    manifest_path: Path | None,
+) -> list[PluginCommandContribution]:
+    if not isinstance(raw_value, list):
+        _raise_error(
+            "contributes.commands must be a list of objects.",
+            field="contributes.commands",
+            manifest_path=manifest_path,
+        )
+    commands: list[PluginCommandContribution] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(raw_value):
+        if not isinstance(item, dict):
+            _raise_error(
+                f"contributes.commands[{index}] must be an object.",
+                field="contributes.commands",
+                manifest_path=manifest_path,
+            )
+        command_id = _require_non_empty_string(item, "id", manifest_path=manifest_path)
+        if command_id in seen_ids:
+            _raise_error(
+                f"Duplicate command id: {command_id}",
+                field="contributes.commands",
+                manifest_path=manifest_path,
+            )
+        seen_ids.add(command_id)
+        if not PLUGIN_ID_PATTERN.fullmatch(command_id):
+            _raise_error(
+                "command id must use only letters, numbers, dots, underscores, or hyphens.",
+                field="contributes.commands",
+                manifest_path=manifest_path,
+            )
+        title = _require_non_empty_string(item, "title", manifest_path=manifest_path)
+        menu_id = _optional_non_empty_string(item, "menu_id", manifest_path=manifest_path)
+        shortcut = _optional_non_empty_string(item, "shortcut", manifest_path=manifest_path)
+        status_tip = _optional_non_empty_string(item, "status_tip", manifest_path=manifest_path)
+        tool_tip = _optional_non_empty_string(item, "tool_tip", manifest_path=manifest_path)
+        message = _optional_non_empty_string(item, "message", manifest_path=manifest_path)
+        runtime = item.get("runtime", False)
+        if not isinstance(runtime, bool):
+            _raise_error(
+                "runtime must be a boolean.",
+                field="contributes.commands.runtime",
+                manifest_path=manifest_path,
+            )
+        runtime_payload = item.get("runtime_payload", {})
+        if not isinstance(runtime_payload, dict):
+            _raise_error(
+                "runtime_payload must be an object.",
+                field="contributes.commands.runtime_payload",
+                manifest_path=manifest_path,
+            )
+        runtime_handler = _optional_non_empty_string(
+            item,
+            "runtime_handler",
+            manifest_path=manifest_path,
+        )
+        if runtime and runtime_handler is None:
+            runtime_handler = "handle_command"
+        commands.append(
+            PluginCommandContribution(
+                command_id=command_id,
+                title=title,
+                menu_id=menu_id if menu_id is not None else "shell.menu.tools",
+                shortcut=shortcut,
+                status_tip=status_tip,
+                tool_tip=tool_tip,
+                message=message,
+                runtime=runtime,
+                runtime_payload=dict(runtime_payload),
+                runtime_handler=runtime_handler,
+            )
+        )
+    return commands
 
 
 def _parse_workflow_providers(

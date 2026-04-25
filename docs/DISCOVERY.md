@@ -14,16 +14,17 @@ The approach is:
 
 1. Use LibrePy (inside LibreOffice) as a **launcher** (or any Python context that can call subprocess).
 2. Spawn FreeCAD’s `AppRun` in console mode:
-   - `'/opt/freecad/AppRun', '-c', 'import os,runpy,sys; ...; runpy.run_path(".../main.py", run_name="__main__")'`
+  - `'/opt/freecad/AppRun', '-c', 'import os,runpy,sys; ...; runpy.run_path(".../main.py", run_name="__main__")'`
 3. The executed script can:
-   - `import PySide2` and create a `QApplication()`
-   - show windows and run a Qt event loop
-   - log to disk
-   - `import FreeCAD` for headless backend work (geometry/document creation)
+  - `import PySide2` and create a `QApplication()`
+  - show windows and run a Qt event loop
+  - log to disk
+  - `import FreeCAD` for headless backend work (geometry/document creation)
 4. The launched app can be detached so it survives LibreOffice closing:
-   - `subprocess.Popen(..., start_new_session=True)`
+  - `subprocess.Popen(..., start_new_session=True)`
 
 This effectively creates a new “application platform” for ChoreBoy:
+
 - **Qt UI frontend**
 - **FreeCAD headless backend engine**
 - **SQLite local persistence**
@@ -49,10 +50,12 @@ Key implications:
 ## 2. Why This Matters
 
 ### LibreOffice / LibrePy limitations (current pain)
+
 - PyBrex and LibreOffice UI tooling have limitations: awkward layouting, limited docs, and debugging is painful.
 - LibrePy is powerful for scripting, but not ideal for building rich native UIs.
 
 ### Qt via FreeCAD solves the biggest issues
+
 - Qt is a mature UI framework with enormous documentation and patterns.
 - PySide2 provides a professional UI stack (menus, dialogs, layouts, docking, etc.).
 - FreeCAD already ships PySide2 and its own Python runtime; we reuse what exists on the machine.
@@ -62,7 +65,9 @@ Key implications:
 ## 3. Core Mechanism (How It Works)
 
 ### Key runtime: FreeCAD embedded Python
+
 ChoreBoy includes FreeCAD, which ships:
+
 - `/opt/freecad/AppRun`
 - embedded Python runtime
 - PySide2
@@ -103,9 +108,9 @@ We confirmed the ChoreBoy desktop environment can launch our Qt apps directly us
 
 1. Rename `main.py` to `main.py` and treat it as the single entrypoint.
 2. Create a `.desktop` file whose `Exec=` runs FreeCAD’s runtime and uses deterministic bootstrap:
-   - normalize `sys.path`
-   - set `cwd`
-   - launch with `runpy.run_path(...)`
+  - normalize `sys.path`
+  - set `cwd`
+  - launch with `runpy.run_path(...)`
 
 ### Example `.desktop` (MyApp)
 
@@ -144,70 +149,65 @@ These probes were run and verified on ChoreBoy:
 
 ### ✅ Python Runtime / Paths
 
-* `sys.version`: **3.9.2** (see [section 1A](#1a-hard-constraint-python-39) — all code must target 3.9)
-* `sys.executable`: `/opt/freecad/usr/bin/FreeCAD`
-* `sys.path` includes `/home/default/myapp` and FreeCAD Mod directories
+- `sys.version`: **3.9.2** (see [section 1A](#1a-hard-constraint-python-39) — all code must target 3.9)
+- `sys.executable`: `/opt/freecad/usr/bin/FreeCAD`
+- `sys.path` includes `/home/default/myapp` and FreeCAD Mod directories
 
 ### ✅ Filesystem Write
 
-* Can write to `/home/default/myapp/logs/*`
-* Logging to `logs/app.log` works
+- Can write to `/home/default/myapp/logs/`*
+- Logging to `logs/app.log` works
 
 ### ✅ SQLite
 
-* Can create and write SQLite database:
-
-  * `/home/default/myapp/logs/probe.sqlite3`
-* Insert/select worked
+- Can create and write SQLite database:
+  - `/home/default/myapp/logs/probe.sqlite3`
+- Insert/select worked
 
 ### ✅ Subprocess (severely restricted)
 
-* `/bin/sh` is the **only** binary that can be executed via subprocess.
-* Shell builtins (`echo`) work because they run inside `/bin/sh` itself.
-* All other binaries are blocked by AppArmor — including `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`, `/usr/bin/id`, Java, `pg_dump`, `at`, `systemd-run`.
-* Several common utilities do not exist in the AppImage filesystem at all: `uname`, `cat`, `ssh`, `soffice`.
-* See pg_backup_probe probe 9 for the full execution whitelist (14 binaries tested, only `/bin/sh` allowed).
+- `/bin/sh` is the **only** binary that can be executed via subprocess.
+- Shell builtins (`echo`) work because they run inside `/bin/sh` itself.
+- All other binaries are blocked by AppArmor — including `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`, `/usr/bin/id`, Java, `pg_dump`, `at`, `systemd-run`.
+- Several common utilities do not exist in the AppImage filesystem at all: `uname`, `cat`, `ssh`, `soffice`.
+- See pg_backup_probe probe 9 for the full execution whitelist (14 binaries tested, only `/bin/sh` allowed).
 
 ### ✅ Qt UI Designer Loading
 
-* `PySide2.QtUiTools` is available
-* Confirmed working with a real `.ui` file (`myapp/ui/probe.ui`)
-* Proven workflow:
-
-  * design `.ui` files on a normal machine
-  * copy to ChoreBoy
-  * load at runtime on ChoreBoy via `QtUiTools.QUiLoader`
+- `PySide2.QtUiTools` is available
+- Confirmed working with a real `.ui` file (`myapp/ui/probe.ui`)
+- Proven workflow:
+  - design `.ui` files on a normal machine
+  - copy to ChoreBoy
+  - load at runtime on ChoreBoy via `QtUiTools.QUiLoader`
 
 ### ✅ FreeCAD Headless Backend
 
-* `import FreeCAD` works in the launched script
-* Can create a document and save:
-
-  * `/home/default/myapp/logs/probe_box.FCStd`
+- `import FreeCAD` works in the launched script
+- Can create a document and save:
+  - `/home/default/myapp/logs/probe_box.FCStd`
 
 ### ✅ FreeCAD Export (Partial)
 
-* STL export worked:
-
-  * `/home/default/myapp/logs/probe_box.stl`
-* STEP and SVG export attempts failed because they relied on GUI-only modules:
-
-  * Error: `Cannot load Gui module in console application.`
+- STL export worked:
+  - `/home/default/myapp/logs/probe_box.stl`
+- STEP and SVG export attempts failed because they relied on GUI-only modules:
+  - Error: `Cannot load Gui module in console application.`
 
 **Implication:** Some export formats require headless-safe export paths (e.g., Part module export) or running FreeCAD with GUI.
 
 ### ✅ Postgres Reachability (Network)
 
-* `localhost:5432` TCP connectivity works (port reachable)
+- `localhost:5432` TCP connectivity works (port reachable)
 
 ### PostgreSQL Version
 
-* **Version: 9.3.5** (confirmed via `server_version` parameter status)
-* Released September 2013, **end-of-life November 2018**
-* Django 4.2 requires PostgreSQL 12+; Django 2.2 requires 9.4+
-* No Django version supports both Python 3.9 and PostgreSQL 9.3
-* Raw pg8000 connectivity works (probe 6 confirmed)
-* Django ORM over PostgreSQL is **blocked** until PG is upgraded
+- **Version: 9.3.5** (confirmed via `server_version` parameter status)
+- Released September 2013, **end-of-life November 2018**
+- Django 4.2 requires PostgreSQL 12+; Django 2.2 requires 9.4+
+- No Django version supports both Python 3.9 and PostgreSQL 9.3
+- Raw pg8000 connectivity works (probe 6 confirmed)
+- Django ORM over PostgreSQL is **blocked** until PG is upgraded
 
 **Implication:** PostgreSQL-backed Django projects cannot run on ChoreBoy
 with the current PG 9.3 installation. SQLite remains the only viable Django
@@ -215,8 +215,8 @@ database backend. For direct PostgreSQL access, use raw pg8000.
 
 ### ❌ Postgres Python Drivers (Not Present)
 
-* `psycopg2` / `psycopg` not installed in FreeCAD runtime
-* `psql` not available on PATH
+- `psycopg2` / `psycopg` not installed in FreeCAD runtime
+- `psql` not available on PATH
 
 **Implication:** Direct Postgres requires vendoring a pure-Python client (recommended: pg8000) or implementing a bridge.
 
@@ -230,9 +230,9 @@ database backend. For direct PostgreSQL access, use raw pg8000.
 
 Hidden (dot-prefixed) directories such as `.cbcs/` or `.choreboy_code_studio/` are **not reliably usable** on the ChoreBoy locked-down environment. Observed problems include:
 
-* The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
-* Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
-* Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
+- The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
+- Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
+- Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
 
 ### Evidence
 
@@ -242,8 +242,8 @@ Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for l
 
 All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
 
-* Use `cbcs/` instead of `.cbcs/` for per-project metadata.
-* Use `choreboy_code_studio/` instead of `.choreboy_code_studio/` for global app state.
+- Use `cbcs/` instead of `.cbcs/` for per-project metadata.
+- Use `choreboy_code_studio_state/` instead of `.choreboy_code_studio/` for global app state.
 
 This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
 
@@ -251,8 +251,8 @@ This keeps project internals inspectable by users and avoids ChoreBoy filesystem
 
 The migration is complete in current code:
 
-* `PROJECT_META_DIRNAME = "cbcs"`
-* `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
+- `PROJECT_META_DIRNAME = "cbcs"`
+- `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
 
 in `app/core/constants.py`, so new project metadata and app state paths are visible (non-dot-prefixed).
 
@@ -281,9 +281,9 @@ ChoreBoy does **not** provide users with a terminal emulator, shell prompt, or a
   2. Use Run > Run With Configuration (when available) to select a different entry file.
   3. Use Run > Run Current File Tests for pytest targets.
   4. Execute the file from the Python Console REPL, e.g.:
-     ```python
+    ```python
      import runpy; runpy.run_path("/home/default/myapp/script.py", run_name="__main__")
-     ```
+    ```
 - Any feature that assumes shell access (e.g., "run this terminal command") must be redesigned to work through the runner or REPL.
 
 ---
@@ -293,23 +293,22 @@ ChoreBoy does **not** provide users with a terminal emulator, shell prompt, or a
 ### Confirmed blockers
 
 1. **Python 3.9 runtime typing crash was a real startup blocker**
-   - Crash signature:
-     - `TypeError: unsupported operand type(s) for |: 'types.GenericAlias' and 'NoneType'`
-   - Triggered by runtime-evaluated type alias expression in `syntax_registry.py`.
-   - Any runtime-evaluated typing expression using `|` must remain Python 3.9-safe.
-
+  - Crash signature:
+    - `TypeError: unsupported operand type(s) for |: 'types.GenericAlias' and 'NoneType'`
+  - Triggered by runtime-evaluated type alias expression in `syntax_registry.py`.
+  - Any runtime-evaluated typing expression using `|` must remain Python 3.9-safe.
 2. **“Silent” launch failures were often logging-channel mismatch**
-   - Global home log path may be unwritable.
-   - Fallback logs land under `/tmp/choreboy_code_studio/logs/app.log`.
-   - Debug workflow must inspect active fallback log path, not only expected home path.
-
+  - Global home log path may be unwritable.
+  - Fallback logs land under `/tmp/choreboy_code_studio/logs/app.log`.
+  - Debug workflow must inspect active fallback log path, not only expected home path.
 3. **Capability probe can report FreeCAD false negatives**
-   - Subprocess probe attempting to execute `/opt/freecad/usr/bin/FreeCAD` may fail with `Permission denied`.
-   - Treat this as probe-launch constraint, not definitive proof that in-process `import FreeCAD` is impossible.
+  - Subprocess probe attempting to execute `/opt/freecad/usr/bin/FreeCAD` may fail with `Permission denied`.
+  - Treat this as probe-launch constraint, not definitive proof that in-process `import FreeCAD` is impossible.
 
 ### Launch contract refinement
 
 Preferred launch style for ChoreBoy:
+
 - avoid `exec(open(...).read())` boot patterns;
 - use explicit bootstrap (`sys.path`, `cwd`) + `runpy.run_path`;
 - route failures to known log path and/or stderr-visible channel.
@@ -343,21 +342,23 @@ cp to /tmp + execute  →  PermissionError (code -13)
 
 Every step of the JasperReports pipeline has been validated on ChoreBoy:
 
-| Probe | Capability | Status | Detail |
-|---|---|---|---|
-| 1B | `ctypes.CDLL(libjvm.so)` | PASS | Library loads cleanly |
-| 2 | `JNI_CreateJavaVM` | PASS | Returns 0, JNI version 10.0 |
-| 2 | Stdlib class loading | PASS | `java/lang/String`, `java/lang/System` |
-| 2 | User class loading | PASS | `HelloJava` loaded from classpath |
-| 2 | Method execution + stdout capture | PASS | `HelloJava.main()` output captured via fd pipe |
-| 3 | Shared JNI helper (`jni_helper.py`) | PASS | JVM reuse across probes via `JNI_GetCreatedJavaVMs` |
-| 4 | JDBC PostgreSQL connectivity | PASS | Driver loaded, connected, 78 tables in `classicaccounting` |
-| 5 | JasperReports JRXML compile | PASS | `hello_static.jrxml` → 22,439-byte `.jasper` |
-| 6 | Report fill (empty datasource) | PASS | 1 page filled |
-| 6 | PDF export | PASS | 1,646 bytes |
-| 6 | PNG export (2x zoom) | PASS | 52,661 bytes (1224x1584 pixels) |
-| 6 | Report fill (JDBC datasource) | PASS | Connected, 0 pages (expected: static report has no query) |
-| 7 | PySide2 QPrintPreviewDialog | PASS | Displayed probe 6 PNG, user closed dialog |
+
+| Probe | Capability                          | Status | Detail                                                     |
+| ----- | ----------------------------------- | ------ | ---------------------------------------------------------- |
+| 1B    | `ctypes.CDLL(libjvm.so)`            | PASS   | Library loads cleanly                                      |
+| 2     | `JNI_CreateJavaVM`                  | PASS   | Returns 0, JNI version 10.0                                |
+| 2     | Stdlib class loading                | PASS   | `java/lang/String`, `java/lang/System`                     |
+| 2     | User class loading                  | PASS   | `HelloJava` loaded from classpath                          |
+| 2     | Method execution + stdout capture   | PASS   | `HelloJava.main()` output captured via fd pipe             |
+| 3     | Shared JNI helper (`jni_helper.py`) | PASS   | JVM reuse across probes via `JNI_GetCreatedJavaVMs`        |
+| 4     | JDBC PostgreSQL connectivity        | PASS   | Driver loaded, connected, 78 tables in `classicaccounting` |
+| 5     | JasperReports JRXML compile         | PASS   | `hello_static.jrxml` → 22,439-byte `.jasper`               |
+| 6     | Report fill (empty datasource)      | PASS   | 1 page filled                                              |
+| 6     | PDF export                          | PASS   | 1,646 bytes                                                |
+| 6     | PNG export (2x zoom)                | PASS   | 52,661 bytes (1224x1584 pixels)                            |
+| 6     | Report fill (JDBC datasource)       | PASS   | Connected, 0 pages (expected: static report has no query)  |
+| 7     | PySide2 QPrintPreviewDialog         | PASS   | Displayed probe 6 PNG, user closed dialog                  |
+
 
 ### JVM details
 
@@ -411,11 +412,13 @@ The JVM installs its own `SIGSEGV` handler (used internally for safepoint pollin
 
 ChoreBoy mounts every writable filesystem with the `noexec` flag:
 
-| Path | `noexec`? |
-|---|---|
-| `/home/default/` | YES |
-| `/tmp/` | YES |
-| `/opt/freecad/` | no (read-only, but executable) |
+
+| Path             | `noexec`?                      |
+| ---------------- | ------------------------------ |
+| `/home/default/` | YES                            |
+| `/tmp/`          | YES                            |
+| `/opt/freecad/`  | no (read-only, but executable) |
+
 
 Any attempt to `import` a Python C extension (`.so` file) from `/home/default/` or `/tmp/` fails:
 
@@ -469,6 +472,7 @@ After this, `import package` (the pure-Python wrapper) finds `_binding` already 
 tree-sitter is a C parsing library that provides incremental, fault-tolerant syntax parsing. It requires two compiled components: a Python C extension (`_binding.so`) and a grammar library (`languages.so`). Both were loaded successfully via memfd.
 
 **Versions tested:**
+
 - tree-sitter 0.21.3 (`cp39-cp39-manylinux_2_17_x86_64`)
 - tree-sitter-languages 1.10.2 (`cp39-cp39-manylinux_2_17_x86_64`)
 
@@ -487,17 +491,19 @@ compatibility of the shipped wheel set, not in the memfd strategy itself.
 
 **Probe results (probe2d):**
 
-| Step | What | Result |
-|---|---|---|
-| 1 | `ctypes.CDLL` from memfd baseline | PASS |
-| 2 | `_binding.so` loaded as Python module via `ExtensionFileLoader` | PASS |
-| 3 | `import tree_sitter` (pure Python, finds `_binding` in `sys.modules`) | PASS |
-| 4 | `languages.so` (84.6 MB grammar blob) loaded via memfd `ctypes.CDLL` | PASS |
-| 5 | `Language` object constructed from ctypes function pointer | PASS |
-| 6 | Full parse of Python source code (40-node AST) | PASS |
-| 7 | Highlight query captures (12 captures with correct positions) | PASS |
-| 8 | `tree_sitter_languages` convenience API | FAIL (not needed) |
-| 9 | Additional languages: JS, C, C++, Rust, JSON, HTML, CSS, Bash | PASS (8/8) |
+
+| Step | What                                                                  | Result            |
+| ---- | --------------------------------------------------------------------- | ----------------- |
+| 1    | `ctypes.CDLL` from memfd baseline                                     | PASS              |
+| 2    | `_binding.so` loaded as Python module via `ExtensionFileLoader`       | PASS              |
+| 3    | `import tree_sitter` (pure Python, finds `_binding` in `sys.modules`) | PASS              |
+| 4    | `languages.so` (84.6 MB grammar blob) loaded via memfd `ctypes.CDLL`  | PASS              |
+| 5    | `Language` object constructed from ctypes function pointer            | PASS              |
+| 6    | Full parse of Python source code (40-node AST)                        | PASS              |
+| 7    | Highlight query captures (12 captures with correct positions)         | PASS              |
+| 8    | `tree_sitter_languages` convenience API                               | FAIL (not needed) |
+| 9    | Additional languages: JS, C, C++, Rust, JSON, HTML, CSS, Bash         | PASS (8/8)        |
+
 
 **Memory cost:** ~82 MB in memfds (one-time at startup, dominated by `languages.so`).
 
@@ -533,11 +539,13 @@ This opens the door to vendoring other compiled Python packages that were previo
 
 The memfd technique for C extensions mirrors the JNI in-process loading discovery for Java: both bypass the binary execution block by loading compiled code as a shared library within the Python process rather than trying to execute a binary via the filesystem.
 
-| Approach | Java (section 4D) | C extensions (this section) |
-|---|---|---|
-| Blocked path | `subprocess.run(["java", ...])` | `import module` from `/home/default/` |
-| Bypass | `ctypes.CDLL("libjvm.so")` + JNI | `os.memfd_create()` + `ctypes.CDLL` / `ExtensionFileLoader` |
-| Runs inside | Python process (shared library) | Python process (shared library in RAM) |
+
+| Approach     | Java (section 4D)                | C extensions (this section)                                 |
+| ------------ | -------------------------------- | ----------------------------------------------------------- |
+| Blocked path | `subprocess.run(["java", ...])`  | `import module` from `/home/default/`                       |
+| Bypass       | `ctypes.CDLL("libjvm.so")` + JNI | `os.memfd_create()` + `ctypes.CDLL` / `ExtensionFileLoader` |
+| Runs inside  | Python process (shared library)  | Python process (shared library in RAM)                      |
+
 
 ---
 
@@ -549,11 +557,13 @@ The memfd technique for C extensions mirrors the JNI in-process loading discover
 
 PostgreSQL's native client library (`libpq.so`) can be loaded via `ctypes.CDLL` from the system library path, but **not** from the PostgreSQL installation directory.
 
-| Path | Exists | Loadable | Owner |
-|---|---|---|---|
-| `/opt/PostgreSQL/9.3/lib/libpq.so` | YES | NO (Permission denied) | root:daemon (gid=1) |
-| `/opt/PostgreSQL/9.3/lib/libpq.so.5` | YES | NO (Permission denied) | root:daemon (gid=1) |
-| `/usr/lib/x86_64-linux-gnu/libpq.so` | YES | **YES** | root:root (gid=0) |
+
+| Path                                 | Exists | Loadable               | Owner               |
+| ------------------------------------ | ------ | ---------------------- | ------------------- |
+| `/opt/PostgreSQL/9.3/lib/libpq.so`   | YES    | NO (Permission denied) | root:daemon (gid=1) |
+| `/opt/PostgreSQL/9.3/lib/libpq.so.5` | YES    | NO (Permission denied) | root:daemon (gid=1) |
+| `/usr/lib/x86_64-linux-gnu/libpq.so` | YES    | **YES**                | root:root (gid=0)   |
+
 
 ### Why `/opt/` is blocked but `/usr/lib/` is not
 
@@ -563,22 +573,22 @@ AppArmor whitelists the system library path (`/usr/lib/`) for `dlopen()` calls, 
 
 `libpq.so` provides the full PostgreSQL wire protocol implementation in C, including:
 
-* `PQconnectdb()` — connect to PostgreSQL
-* `PQexec()` — execute queries
-* `PQgetResult()` — retrieve results
-* `PQputCopyData()` / `PQgetCopyData()` — COPY protocol at native speed
+- `PQconnectdb()` — connect to PostgreSQL
+- `PQexec()` — execute queries
+- `PQgetResult()` — retrieve results
+- `PQputCopyData()` / `PQgetCopyData()` — COPY protocol at native speed
 
 This could be used as a high-performance alternative to pg8000 for bulk data operations (COPY export/import). However, pg8000 already achieves ~26 MB/s throughput on ChoreBoy, which is more than sufficient for the ~36 MB of total database content.
 
 ### Current status
 
-Validated and **actively used** by psycopg 3 binary (see section 4H). The bundled libpq 17.0.5 from psycopg\_binary is loaded via memfd and provides full C-accelerated PostgreSQL connectivity.
+Validated and **actively used** by psycopg 3 binary (see section 4H). The bundled libpq 17.0.5 from psycopgbinary is loaded via memfd and provides full C-accelerated PostgreSQL connectivity.
 
 ---
 
 ## 4H. psycopg 3 with C Acceleration via memfd (2026-03-07)
 
-**Date discovered:** 2026-03-07 (psycopg3\_probe, probes 1-6)
+**Date discovered:** 2026-03-07 (psycopg3probe, probes 1-6)
 
 ### Finding
 
@@ -599,32 +609,36 @@ This is the most complex memfd loading achieved on ChoreBoy: a 14-library depend
 
 ### Key details
 
-| Property | Value |
-|---|---|
-| psycopg version | 3.2.9 (last to support Python 3.9) |
-| Bundled libpq | **17.0.5** (connects to PG 9.3 server) |
-| Bundled OpenSSL | **3.5.0** |
-| pq.\_\_impl\_\_ | `binary` (Cython C acceleration active) |
-| Total memfd usage | ~10.4 MB |
-| Vendor size on disk | ~13 MB |
-| Integration tests | **41/41 passed** |
+
+| Property            | Value                                   |
+| ------------------- | --------------------------------------- |
+| psycopg version     | 3.2.9 (last to support Python 3.9)      |
+| Bundled libpq       | **17.0.5** (connects to PG 9.3 server)  |
+| Bundled OpenSSL     | **3.5.0**                               |
+| pq.impl             | `binary` (Cython C acceleration active) |
+| Total memfd usage   | ~10.4 MB                                |
+| Vendor size on disk | ~13 MB                                  |
+| Integration tests   | **41/41 passed**                        |
+
 
 ### Performance vs pg8000
 
-| Metric | psycopg binary | pg8000 | Winner |
-|---|---|---|---|
-| Simple SELECT x2000 | 6,499 q/s | 12,974 q/s | pg8000 (2x) |
-| Parameterized x1000 | 7,732 q/s | 4,849 q/s | **psycopg (1.59x)** |
+
+| Metric              | psycopg binary | pg8000     | Winner              |
+| ------------------- | -------------- | ---------- | ------------------- |
+| Simple SELECT x2000 | 6,499 q/s      | 12,974 q/s | pg8000 (2x)         |
+| Parameterized x1000 | 7,732 q/s      | 4,849 q/s  | **psycopg (1.59x)** |
+
 
 pg8000 is faster for trivial queries (zero FFI overhead), but psycopg binary is **59% faster for parameterized queries** where Cython's compiled marshaling outperforms pure Python. For real-world workloads with complex queries and large result sets, psycopg binary is the clear winner.
 
 ### Issues resolved
 
-1. **`find_library` broken**: ChoreBoy's ldconfig cache doesn't include libpq or libc. Patched to return known paths.
+1. `**find_library` broken**: ChoreBoy's ldconfig cache doesn't include libpq or libc. Patched to return known paths.
 2. **Extension loading order**: `pq.so` must load before `_psycopg.so` (which imports pq during init).
 3. **Circular import**: `_psycopg` init triggers `import_from_libpq()` before psycopg is ready. Fixed by re-calling `import_from_libpq()` after import.
-4. **SQL\_ASCII encoding**: PG 9.3 returns text as bytes. Application code must decode explicitly.
-5. **`version.py` exception handler**: Broadened from `PackageNotFoundError` to `Exception`.
+4. **SQLASCII encoding**: PG 9.3 returns text as bytes. Application code must decode explicitly.
+5. `**version.py` exception handler**: Broadened from `PackageNotFoundError` to `Exception`.
 
 ---
 
@@ -638,22 +652,24 @@ The FreeCAD AppImage's AppArmor profile enforces a near-total execution whitelis
 
 ### Complete whitelist map
 
-| Binary | Exists | Executable | Notes |
-|---|---|---|---|
-| `/bin/sh` | YES | **YES** | The ONLY allowed binary |
-| `/bin/bash` | YES | NO | Blocked despite `rwxr-xr-x` |
-| `/usr/bin/env` | YES | NO | Blocked |
-| `/usr/bin/uname` | NO | — | Not present in AppImage filesystem |
-| `/usr/bin/id` | YES | NO | Blocked |
-| `/usr/bin/cat` | NO | — | Not present in AppImage filesystem |
-| `/usr/bin/python3` | YES | NO | Blocked (5.4 MB binary exists but can't run) |
-| `/usr/bin/soffice` | NO | — | Not present in AppImage filesystem |
-| `/usr/bin/libreoffice` | NO | — | Not present in AppImage filesystem |
-| `/usr/lib/jvm/.../java` | YES | NO | Blocked |
-| `/opt/PostgreSQL/.../pg_dump` | YES | NO | Blocked, and binary can't even be read |
-| `/usr/bin/ssh` | NO | — | Not present in AppImage filesystem |
-| `/usr/bin/at` | YES | NO | Blocked |
-| `/usr/bin/systemd-run` | YES | NO | Blocked |
+
+| Binary                        | Exists | Executable | Notes                                        |
+| ----------------------------- | ------ | ---------- | -------------------------------------------- |
+| `/bin/sh`                     | YES    | **YES**    | The ONLY allowed binary                      |
+| `/bin/bash`                   | YES    | NO         | Blocked despite `rwxr-xr-x`                  |
+| `/usr/bin/env`                | YES    | NO         | Blocked                                      |
+| `/usr/bin/uname`              | NO     | —          | Not present in AppImage filesystem           |
+| `/usr/bin/id`                 | YES    | NO         | Blocked                                      |
+| `/usr/bin/cat`                | NO     | —          | Not present in AppImage filesystem           |
+| `/usr/bin/python3`            | YES    | NO         | Blocked (5.4 MB binary exists but can't run) |
+| `/usr/bin/soffice`            | NO     | —          | Not present in AppImage filesystem           |
+| `/usr/bin/libreoffice`        | NO     | —          | Not present in AppImage filesystem           |
+| `/usr/lib/jvm/.../java`       | YES    | NO         | Blocked                                      |
+| `/opt/PostgreSQL/.../pg_dump` | YES    | NO         | Blocked, and binary can't even be read       |
+| `/usr/bin/ssh`                | NO     | —          | Not present in AppImage filesystem           |
+| `/usr/bin/at`                 | YES    | NO         | Blocked                                      |
+| `/usr/bin/systemd-run`        | YES    | NO         | Blocked                                      |
+
 
 ### Security context
 
@@ -687,24 +703,233 @@ The shell does NOT transition to an unconfined AppArmor profile. It inherits the
 
 ---
 
+## 4I. CTS Direct Printing: Java `lpr` Fails, Direct CUPS Works (2026-04-24)
+
+**Date discovered:** 2026-04-24 / 2026-04-25  
+**Probe bundle:** `cts_print_probe`  
+**Primary finding:** The current Java/`javax.print` path can fail on CTS because OpenJDK internally executes `/usr/bin/lpr`, but direct in-process CUPS submission through `libcups.so.2` works from FreeCAD AppRun.
+
+### Problem
+
+After recent `jasper_bridge` changes, direct printing used Java print APIs:
+
+```text
+Report.print()
+  -> jasper_bridge.printing.print_report()
+  -> JasperBridge.handlePrint()
+  -> printPdfPassthrough() or printVector()
+  -> javax.print / OpenJDK UnixPrintJob
+  -> /usr/bin/lpr
+```
+
+On CTS, this fails:
+
+```text
+java.io.IOException: Cannot run program "/usr/bin/lpr": error=13, Permission denied
+```
+
+This is consistent with section 4G: `/usr/bin/lpr`, `/usr/bin/lp`, `/usr/bin/lpstat`, `/usr/bin/java`, and similar binaries are blocked by the FreeCAD AppRun security profile even though their Unix file permissions look executable.
+
+### Key distinction
+
+The failure is not "CUPS is unavailable." The failure is specifically **child process execution** of `/usr/bin/lpr`.
+
+There are two ways applications can submit print jobs on Linux:
+
+1. Shell/command path: run `/usr/bin/lpr` or `/usr/bin/lp`
+2. Library/API path: load `libcups.so.2` and call CUPS APIs in-process
+
+CTS blocks the first path but allows the second path:
+
+```text
+Blocked: execve("/usr/bin/lpr", ...)
+Works:   ctypes.CDLL("/usr/lib/x86_64-linux-gnu/libcups.so.2").cupsPrintFile(...)
+```
+
+This mirrors the broader ChoreBoy pattern:
+
+
+| Problem           | Blocked path           | Working path                          |
+| ----------------- | ---------------------- | ------------------------------------- |
+| Java              | Execute `java` binary  | Load `libjvm.so` via `ctypes` / JNI   |
+| PostgreSQL backup | Execute `pg_dump`      | Use Python/Postgres protocol directly |
+| Printing          | Execute `/usr/bin/lpr` | Load `libcups.so.2` via `ctypes`      |
+
+
+### Probe results
+
+The `cts_print_probe` bundle found:
+
+
+| Capability         | Result  | Detail                                          |
+| ------------------ | ------- | ----------------------------------------------- |
+| FreeCAD runtime    | PASS    | Python 3.9.2 via `/opt/freecad/usr/bin/FreeCAD` |
+| `/usr/bin/lpr`     | BLOCKED | `PermissionError: [Errno 13] Permission denied` |
+| `/usr/bin/lp`      | BLOCKED | Same execution policy failure                   |
+| `/usr/bin/lpstat`  | BLOCKED | Same execution policy failure                   |
+| `/usr/bin/java`    | BLOCKED | Same execution policy failure                   |
+| `libjvm.so`        | PASS    | Loadable via `ctypes.CDLL()`                    |
+| `libcups.so.2`     | PASS    | Loadable via `ctypes.CDLL()`                    |
+| CUPS socket        | PASS    | `127.0.0.1:631` reachable                       |
+| Qt print support   | PASS    | `PySide2.QtPrintSupport`, Qt 5.15.2             |
+| Jasper fill/export | PASS    | JRXML filled and exported to PDF                |
+| CUPS destination   | PASS    | `PDF-Printer` visible                           |
+| IPP attributes     | PASS    | `Get-Printer-Attributes` returned IPP status 0  |
+
+
+### Mock printer confirmation
+
+Because no physical printer was available, we validated against the VM's CUPS-PDF queue:
+
+```text
+Printer target: PDF-Printer
+libcups loaded: /usr/lib/x86_64-linux-gnu/libcups.so.2
+CUPS destination: PDF-Printer
+cupsPrintFile job id: 155
+cupsPrintFile submitted: True
+CUPS last error: {'code': 0, 'message': 'successful-ok'}
+```
+
+CUPS-PDF then wrote a real output PDF:
+
+```text
+/home/default/PDF/CTS_Mock_Printer_Confirmation...pdf
+```
+
+The generated PDF opened successfully in Okular and displayed the expected confirmation page:
+
+```text
+CTS Mock Printer Confirmation
+This page was submitted directly through CUPS from FreeCAD AppRun.
+No lpr, lp, Java ProcessBuilder, or shell command should be required.
+Printer target: PDF-Printer
+```
+
+This proves the FreeCAD AppRun process can submit a print job through CUPS without executing `/usr/bin/lpr`.
+
+### Reference implementation
+
+The proof script is `cts_print_probe/confirm_mock_printer.py`. The critical operation is:
+
+```python
+lib = ctypes.CDLL("/usr/lib/x86_64-linux-gnu/libcups.so.2")
+
+job_id = lib.cupsPrintFile(
+    printer.encode("utf-8"),
+    pdf_path.encode("utf-8"),
+    title.encode("utf-8"),
+    0,
+    None,
+)
+```
+
+`cupsPrintFile()` returns a positive job ID on success. On the confirmed VM run, it returned job ID `155`.
+
+### Recommended `jasper_bridge` strategy
+
+Do **not** use Java printing on CTS. Keep Java/JasperReports for compile, fill, and export, but replace the final print submission step:
+
+```text
+JRXML -> JasperPrint -> PDF -> libcups -> CUPS queue
+```
+
+Recommended backend behavior:
+
+1. Fill the report through the existing JNI/Jasper pipeline.
+2. Export the filled report to PDF.
+3. Submit that PDF through an in-process CUPS backend using `libcups.so.2`.
+4. Return the CUPS job ID and selected printer name to the caller.
+
+Printer selection should be explicit whenever possible:
+
+1. If caller passes `printer`, use it.
+2. Else use `cupsGetDefault()`.
+3. Else if exactly one CUPS destination exists, use that.
+4. Else raise an error listing available CUPS destinations.
+
+This matters because the probe found `PDF-Printer` but no default printer.
+
+### Suggested API direction
+
+Keep the current user-facing API:
+
+```python
+report.print(
+    title="Print Report",
+    printer="PDF-Printer",
+    copies=1,
+    strategy="auto",
+)
+```
+
+Internally add a print backend concept:
+
+```text
+backend="auto" | "cups" | "java" | "ipp"
+```
+
+Recommended behavior:
+
+
+| Backend | Use case                                                          |
+| ------- | ----------------------------------------------------------------- |
+| `cups`  | CTS / ChoreBoy direct printing                                    |
+| `java`  | Non-CTS systems where Java print services are acceptable          |
+| `ipp`   | Future fallback if `libcups` is missing but CUPS/IPP is reachable |
+| `auto`  | Prefer `cups` on Linux/CTS when `libcups.so.2` is loadable        |
+
+
+### Future improvement
+
+The first implementation can use a temporary PDF file plus `cupsPrintFile()`. That is already proven.
+
+The probe also found these CUPS symbols available:
+
+```text
+cupsCreateJob
+cupsStartDocument
+cupsWriteRequestData
+cupsFinishDocument
+cupsCreateDestJob
+cupsStartDestDocument
+cupsFinishDestDocument
+```
+
+That means a later implementation can avoid temporary files by streaming PDF bytes directly:
+
+```text
+JasperPrint -> PDF bytes -> cupsWriteRequestData()
+```
+
+### Decision
+
+**Use direct in-process CUPS submission for CTS printing.**
+
+This is the same architectural pattern that has worked elsewhere on ChoreBoy:
+
+- Avoid blocked executables.
+- Load allowed system libraries in-process.
+- Communicate with local services through libraries or protocols.
+
+---
+
 ## 5. Postgres Strategy (Deep Dive)
 
 ### What we know
 
-* Network connection to `localhost:5432` works
-* **PostgreSQL version is 9.3.5** (EOL November 2018)
-* No default Postgres Python drivers exist inside the FreeCAD AppRun runtime:
-
-  * `psycopg2` / `psycopg` not installed
-  * `psql` not available on PATH
+- Network connection to `localhost:5432` works
+- **PostgreSQL version is 9.3.5** (EOL November 2018)
+- No default Postgres Python drivers exist inside the FreeCAD AppRun runtime:
+  - `psycopg2` / `psycopg` not installed
+  - `psql` not available on PATH
 
 ### Django + PostgreSQL limitation
 
 No Django version supports both Python 3.9 and PostgreSQL 9.3:
 
-* Django 2.0 was the last to support PG 9.3, but it only supports Python 3.4-3.7
-* Django 2.2+ supports Python 3.9 but requires PG 9.4+
-* Django 4.2 (our vendored version) requires PG 12+
+- Django 2.0 was the last to support PG 9.3, but it only supports Python 3.4-3.7
+- Django 2.2+ supports Python 3.9 but requires PG 9.4+
+- Django 4.2 (our vendored version) requires PG 12+
 
 **Result:** Django ORM cannot be used with PostgreSQL on ChoreBoy until PG is
 upgraded. Django + SQLite remains fully functional (probes 1-5 confirmed).
@@ -715,34 +940,38 @@ upgraded. Django + SQLite remains fully functional (probes 1-5 confirmed).
 
 **Why psycopg 3 binary:**
 
-* **C-accelerated**: Cython-compiled marshaling is 59% faster than pg8000 for parameterized queries
-* **Bundled libpq 17**: ships its own modern libpq, independent of the ancient system version
-* **Full feature set**: COPY protocol, typed error handling, prepared statements, savepoints, async support
-* **Industry standard**: psycopg is the most widely used Python PostgreSQL adapter
-* **Proven on ChoreBoy**: 41/41 integration tests pass with C acceleration active (psycopg3\_probe)
+- **C-accelerated**: Cython-compiled marshaling is 59% faster than pg8000 for parameterized queries
+- **Bundled libpq 17**: ships its own modern libpq, independent of the ancient system version
+- **Full feature set**: COPY protocol, typed error handling, prepared statements, savepoints, async support
+- **Industry standard**: psycopg is the most widely used Python PostgreSQL adapter
+- **Proven on ChoreBoy**: 41/41 integration tests pass with C acceleration active (psycopg3probe)
 
 **The trade-off:** Requires the memfd bootstrap (~10.4 MB in memory, ~13 MB on disk). pg8000 remains available as a zero-complexity fallback for simple cases.
 
 ### Benchmark comparison (confirmed on ChoreBoy)
 
-| Metric | psycopg 3 binary | pg8000 | Winner |
-|---|---|---|---|
-| Simple SELECT x2000 | 6,499 q/s | **12,974 q/s** | pg8000 (2x) |
-| Parameterized x1000 | **7,732 q/s** | 4,849 q/s | psycopg (1.59x) |
-| INSERT x1000 | 281 inserts/s | (not tested) | — |
-| COPY FROM STDIN | native | not supported | psycopg |
+
+| Metric              | psycopg 3 binary | pg8000         | Winner          |
+| ------------------- | ---------------- | -------------- | --------------- |
+| Simple SELECT x2000 | 6,499 q/s        | **12,974 q/s** | pg8000 (2x)     |
+| Parameterized x1000 | **7,732 q/s**    | 4,849 q/s      | psycopg (1.59x) |
+| INSERT x1000        | 281 inserts/s    | (not tested)   | —               |
+| COPY FROM STDIN     | native           | not supported  | psycopg         |
+
 
 pg8000 is faster for trivial `SELECT 1` queries (zero FFI overhead vs libpq call overhead). psycopg binary wins on parameterized queries and will scale better on complex workloads with large result sets.
 
 ### When to use which driver
 
-| Use case | Recommended driver |
-|---|---|
-| Production applications | **psycopg 3 binary** |
-| Parameterized queries, complex workloads | **psycopg 3 binary** |
-| Bulk data operations (COPY) | **psycopg 3 binary** |
-| Simple scripts, quick prototypes | **pg8000** (zero setup) |
-| Environments where memfd is unavailable | **pg8000** (pure Python) |
+
+| Use case                                 | Recommended driver       |
+| ---------------------------------------- | ------------------------ |
+| Production applications                  | **psycopg 3 binary**     |
+| Parameterized queries, complex workloads | **psycopg 3 binary**     |
+| Bulk data operations (COPY)              | **psycopg 3 binary**     |
+| Simple scripts, quick prototypes         | **pg8000** (zero setup)  |
+| Environments where memfd is unavailable  | **pg8000** (pure Python) |
+
 
 ### How to bootstrap psycopg 3 binary on ChoreBoy
 
@@ -771,10 +1000,10 @@ print(conn.run("select version()"))
 
 ### Operational notes (for max performance with either driver)
 
-* Prefer **one connection per worker/thread** (or a small pool) rather than reconnecting frequently.
-* Wrap multiple statements in a **transaction** to reduce round trips.
-* Batch inserts/updates when possible.
-* With psycopg: use `COPY FROM STDIN` for bulk inserts instead of individual `INSERT` statements.
+- Prefer **one connection per worker/thread** (or a small pool) rather than reconnecting frequently.
+- Wrap multiple statements in a **transaction** to reduce round trips.
+- Batch inserts/updates when possible.
+- With psycopg: use `COPY FROM STDIN` for bulk inserts instead of individual `INSERT` statements.
 
 ### ORM: SQLAlchemy 2.0.x with full Cython acceleration (validated)
 
@@ -790,21 +1019,21 @@ with safe defaults:
 1. `cb_psycopg.bootstrap()` — psycopg 3 binary C acceleration + libpq via memfd
 2. `_greenlet.bootstrap()` — greenlet C extension via memfd (enables async ORM)
 3. `_cext.bootstrap()` — `sys.meta_path` import hook that loads 5
-   SQLAlchemy Cython modules (`cyextension/*`) from memfd on demand
+  SQLAlchemy Cython modules (`cyextension/`*) from memfd on demand
 
 After bootstrap, both sync and async ORM paths work:
 
-* **Sync**: `cb_sqlalchemy.create_engine("postgresql+psycopg://...")` — full ORM
-  surface validated (CRUD, joinedload, savepoints, bulk insert, reflection,
-  stream\_results, UTF-8, advanced patterns, stress/edge cases)
-* **Async**: `cb_sqlalchemy.create_async_engine("postgresql+psycopg://...")` —
-  async CRUD, selectinload, rollback, AsyncConnection all pass
+- **Sync**: `cb_sqlalchemy.create_engine("postgresql+psycopg://...")` — full ORM
+surface validated (CRUD, joinedload, savepoints, bulk insert, reflection,
+streamresults, UTF-8, advanced patterns, stress/edge cases)
+- **Async**: `cb_sqlalchemy.create_async_engine("postgresql+psycopg://...")` —
+async CRUD, selectinload, rollback, AsyncConnection all pass
 
 Production engine defaults (`CHOREBOY_ENGINE_DEFAULTS`):
 
-* `pool_pre_ping=True`, `pool_size=2`, `max_overflow=0`, `echo=False`
-* `client_encoding=utf8` — passed to dialect and enforced via connect event hook
-* `pool_size`/`max_overflow` auto-stripped when using `NullPool` or `StaticPool`
+- `pool_pre_ping=True`, `pool_size=2`, `max_overflow=0`, `echo=False`
+- `client_encoding=utf8` — passed to dialect and enforced via connect event hook
+- `pool_size`/`max_overflow` auto-stripped when using `NullPool` or `StaticPool`
 
 ### SQLAlchemy performance on ChoreBoy
 
@@ -812,12 +1041,14 @@ Benchmarked on live ChoreBoy (PG 9.3.6, psycopg 3.2.9 binary, SA 2.0.48 with
 Cython acceleration active, `cb_sqlalchemy_test` probe 6, 1500 simple / 800
 parameterized iterations):
 
-| Layer | SELECT 1 (q/s) | Parameterized (q/s) | vs raw psycopg |
-|---|---|---|---|
-| Raw psycopg | 10,045 | 8,576 | 1.00x |
-| SA Core | 4,994 | 3,396 | 0.50x / 0.40x |
-| SA ORM | 4,215 | 3,197 | 0.42x / 0.37x |
-| SA Async | 2,598 | — | 0.26x |
+
+| Layer       | SELECT 1 (q/s) | Parameterized (q/s) | vs raw psycopg |
+| ----------- | -------------- | ------------------- | -------------- |
+| Raw psycopg | 10,045         | 8,576               | 1.00x          |
+| SA Core     | 4,994          | 3,396               | 0.50x / 0.40x  |
+| SA ORM      | 4,215          | 3,197               | 0.42x / 0.37x  |
+| SA Async    | 2,598          | —                   | 0.26x          |
+
 
 ORM overhead is roughly 2-2.5x versus raw psycopg — typical for SQLAlchemy with
 Cython acceleration. Async adds greenlet context-switch overhead; suitable for
@@ -829,27 +1060,29 @@ Probe 5 mapped which SQL features work and which are blocked on PG 9.3:
 
 **Works on PG 9.3:**
 
-* JSON type and `->` / `->>` operators
-* Materialized views (`CREATE MATERIALIZED VIEW` / `REFRESH`)
-* `LATERAL` joins
-* Full ORM surface: CRUD, relationships, transactions, savepoints, bulk insert,
-  schema reflection, streaming results, UTF-8 string roundtrip
+- JSON type and `->` / `->>` operators
+- Materialized views (`CREATE MATERIALIZED VIEW` / `REFRESH`)
+- `LATERAL` joins
+- Full ORM surface: CRUD, relationships, transactions, savepoints, bulk insert,
+schema reflection, streaming results, UTF-8 string roundtrip
 
 **Unavailable on PG 9.3 (expected failures, not blockers):**
 
-| Feature | Minimum PG | Error |
-|---|---|---|
-| `JSONB` type cast | 9.4 | `type "jsonb" does not exist` |
-| `ON CONFLICT` (upsert) | 9.5 | `syntax error at or near "ON"` |
-| `GENERATED ALWAYS AS ... STORED` | 12 | `syntax error at or near "GENERATED"` |
-| `int4multirange` type cast | 14 | `type "int4multirange" does not exist` |
+
+| Feature                          | Minimum PG | Error                                  |
+| -------------------------------- | ---------- | -------------------------------------- |
+| `JSONB` type cast                | 9.4        | `type "jsonb" does not exist`          |
+| `ON CONFLICT` (upsert)           | 9.5        | `syntax error at or near "ON"`         |
+| `GENERATED ALWAYS AS ... STORED` | 12         | `syntax error at or near "GENERATED"`  |
+| `int4multirange` type cast       | 14         | `type "int4multirange" does not exist` |
+
 
 Application code must avoid these constructs when targeting PG 9.3.
 
 ### Probe evidence
 
-* Initial validation (6 probes): `sqlalchemy_probe/SUMMARY.md`
-* Full test suite (8 probes, 87 tests): `cb_sqlalchemy_test/SUMMARY.md`
+- Initial validation (6 probes): `sqlalchemy_probe/SUMMARY.md`
+- Full test suite (8 probes, 87 tests): `cb_sqlalchemy_test/SUMMARY.md`
 
 ## 6. FreeCAD Export Strategy (Headless vs GUI)
 
@@ -857,14 +1090,13 @@ Application code must avoid these constructs when targeting PG 9.3.
 
 GUI-based exporters (ImportGui) fail under console mode:
 
-* “Cannot load Gui module in console application.”
+- “Cannot load Gui module in console application.”
 
 ### Next tests
 
-* Use headless export paths:
-
-  * Part module: `shape.exportStep(...)` (candidate)
-* If necessary, run a FreeCAD GUI session for export-only actions
+- Use headless export paths:
+  - Part module: `shape.exportStep(...)` (candidate)
+- If necessary, run a FreeCAD GUI session for export-only actions
 
 ---
 
@@ -890,10 +1122,10 @@ myapp/
 
 Key ideas:
 
-* `launcher.py`: spawns AppRun detached
-* `main.py`: bootstraps sys.path, logging, crash window, launches Qt
-* `backend.py`: contains all probes and backend actions
-* `main_window.py`: Qt UI that triggers probes and displays output
+- `launcher.py`: spawns AppRun detached
+- `main.py`: bootstraps sys.path, logging, crash window, launches Qt
+- `backend.py`: contains all probes and backend actions
+- `main_window.py`: Qt UI that triggers probes and displays output
 
 ---
 
@@ -930,25 +1162,25 @@ This avoids “silent failures” and makes iterative development realistic.
 
 ### FreeCAD Exports
 
-* [ ] Attempt STEP export without GUI dependencies (Part-based)
-* [ ] Decide if GUI mode is required for certain exporters
+- Attempt STEP export without GUI dependencies (Part-based)
+- Decide if GUI mode is required for certain exporters
 
 ### UI Builder Workflow
 
-* [x] Create a `.ui` file on dev machine (Qt Designer)
-* [x] Copy to ChoreBoy and load using `QtUiTools.QUiLoader`
+- Create a `.ui` file on dev machine (Qt Designer)
+- Copy to ChoreBoy and load using `QtUiTools.QUiLoader`
 
 ### Threading / Responsiveness
 
-* [ ] Add a long-running FreeCAD operation and ensure UI stays responsive (QThread)
+- Add a long-running FreeCAD operation and ensure UI stays responsive (QThread)
 
 ### Choose first real app
 
 Once Postgres + export limits are known, select a first production target:
 
-* Qt tool + SQLite config
-* FreeCAD-backed generator tool (geometry + STL output)
-* Mini IDE / Runner for ChoreBoy Qt scripts
+- Qt tool + SQLite config
+- FreeCAD-backed generator tool (geometry + STL output)
+- Mini IDE / Runner for ChoreBoy Qt scripts
 
 ---
 
@@ -961,3 +1193,6 @@ We have confirmed a new capability on ChoreBoy:
 This is a major upgrade over LibreOffice-only UI approaches and likely becomes the preferred path for complex apps on ChoreBoy going forward.
 
 ```
+
+```
+

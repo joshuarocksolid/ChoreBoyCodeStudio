@@ -38,6 +38,8 @@ _DEFAULT_FIELDS: list[tuple[str, object]] = [
     ("insert_final_newline_on_save", True),
     ("enable_preview", True),
     ("auto_save", False),
+    ("hover_tooltip_enabled", False),
+    ("auto_reindent_flat_python_paste", False),
     ("completion_enabled", True),
     ("completion_auto_trigger", False),
     ("diagnostics_enabled", True),
@@ -76,6 +78,8 @@ _EXPLICIT_PAYLOAD: dict = {
         "trim_trailing_whitespace_on_save": False,
         "insert_final_newline_on_save": False,
         "enable_preview": False,
+        "hover_tooltip_enabled": True,
+        "auto_reindent_flat_python_paste": True,
     },
     "intelligence": {
         "enable_completion": False,
@@ -127,6 +131,8 @@ _EXPLICIT_FIELDS: list[tuple[str, object]] = [
     ("trim_trailing_whitespace_on_save", False),
     ("insert_final_newline_on_save", False),
     ("enable_preview", False),
+    ("hover_tooltip_enabled", True),
+    ("auto_reindent_flat_python_paste", True),
     ("completion_enabled", False),
     ("completion_auto_trigger", False),
     ("completion_min_chars", 3),
@@ -180,6 +186,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         trim_trailing_whitespace_on_save=False,
         insert_final_newline_on_save=False,
         enable_preview=False,
+        hover_tooltip_enabled=True,
+        auto_reindent_flat_python_paste=True,
         completion_enabled=False,
         completion_auto_trigger=False,
         completion_min_chars=3,
@@ -217,6 +225,8 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
     assert merged["editor"]["enable_preview"] is False
+    assert merged["editor"]["hover_tooltip_enabled"] is True
+    assert merged["editor"]["auto_reindent_flat_python_paste"] is True
     assert merged["intelligence"]["enable_completion"] is False
     assert merged["intelligence"]["enable_diagnostics"] is False
     assert merged["intelligence"]["diagnostics_realtime"] is False
@@ -432,6 +442,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         False,
         False,
         False,
+        False,
     )
     assert grouped.completion_preferences == (False, False, 4)
     assert grouped.diagnostics_preferences == (False, False, False, False)
@@ -614,7 +625,7 @@ def test_merge_auto_save_round_trip() -> None:
 
 def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
     grouped = parse_main_window_settings({"editor": {"auto_save": True}})
-    assert grouped.editor_preferences[-2] is True
+    assert grouped.editor_preferences[-3] is True
 
 
 def test_parse_main_window_settings_includes_local_history_policy() -> None:

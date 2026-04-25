@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
@@ -17,19 +18,16 @@ from PySide2.QtWidgets import (
 )
 
 from app.bootstrap.paths import PathInput, global_plugins_logs_dir
-from app.plugins.discovery import discover_installed_plugins
 from app.plugins.exporter import export_installed_plugin
 from app.plugins.installer import install_plugin, set_plugin_enabled, uninstall_plugin
 from app.plugins.project_config import (
-    load_project_plugin_config,
-    preferred_provider_key,
     set_project_plugin_enabled,
     set_project_preferred_provider,
     set_project_plugin_version_pin,
 )
-from app.plugins.registry_store import load_plugin_registry
 from app.plugins.trust_store import is_runtime_plugin_trusted, set_runtime_plugin_trust
 from app.shell.file_dialogs import choose_existing_directory, choose_open_file
+from app.shell.plugin_activation_workflow import PluginActivationSnapshot, provider_preference_options
 
 
 class PluginManagerDialog(QDialog):
@@ -38,6 +36,7 @@ class PluginManagerDialog(QDialog):
         *,
         state_root: PathInput | None = None,
         project_root: str | None = None,
+        activation_snapshot_provider: Callable[[], PluginActivationSnapshot],
         on_plugins_changed=None,
         safe_mode_enabled: bool = False,
         on_safe_mode_changed=None,
@@ -46,6 +45,7 @@ class PluginManagerDialog(QDialog):
         super().__init__(parent)
         self._state_root = state_root
         self._project_root = project_root
+        self._activation_snapshot_provider = activation_snapshot_provider
         self._on_plugins_changed = on_plugins_changed
         self._on_safe_mode_changed = on_safe_mode_changed
         self._plugins_tree = QTreeWidget(self)
@@ -125,43 +125,13 @@ class PluginManagerDialog(QDialog):
 
     def refresh_plugins(self) -> None:
         self._plugins_tree.clear()
-        registry = load_plugin_registry(self._state_root)
-        project_config = None
-        if self._project_root:
-            try:
-                project_config = load_project_plugin_config(self._project_root)
-            except Exception:
-                project_config = None
-        registry_map = {
-            (entry.plugin_id, entry.version): entry
-            for entry in registry.entries
-        }
-        enabled_map = {
-            (entry.plugin_id, entry.version): entry.enabled
-            for entry in registry.entries
-        }
-        discovered_plugins = discover_installed_plugins(
-            state_root=self._state_root,
-            include_bundled=True,
-        )
-        for discovered in discovered_plugins:
+        snapshot = self._activation_snapshot_provider()
+        for discovered in snapshot.discovered_plugins:
             key = (discovered.plugin_id, discovered.version)
-            registry_entry = registry_map.get(key)
-            enabled = enabled_map.get(key, True)
-            effective_enabled = enabled
-            project_status = "-"
-            if project_config is not None:
-                pinned_version = project_config.pinned_versions.get(discovered.plugin_id)
-                if pinned_version is not None:
-                    project_status = f"pinned {pinned_version}"
-                    if pinned_version != discovered.version:
-                        effective_enabled = False
-                if discovered.plugin_id in project_config.enabled_plugins:
-                    effective_enabled = True
-                    project_status = "enabled"
-                if discovered.plugin_id in project_config.disabled_plugins:
-                    effective_enabled = False
-                    project_status = "disabled"
+            registry_entry = snapshot.registry_map.get(key)
+            display_state = snapshot.display_state_for(discovered)
+            effective_enabled = display_state.effective_enabled
+            project_status = display_state.project_status
             if discovered.compatibility is None:
                 compatibility_text = "invalid"
             elif discovered.compatibility.is_compatible:
@@ -181,16 +151,10 @@ class PluginManagerDialog(QDialog):
                     providers_text = ", ".join(provider_ids)
                 if discovered.manifest.permissions:
                     permissions_text = ", ".join(discovered.manifest.permissions)
-            preferred_selectors: list[str] = []
-            if project_config is not None and discovered.manifest is not None:
-                preferred_selectors = self._matching_preferred_selector_keys(
-                    project_config.preferred_providers,
-                    discovered.plugin_id,
-                    provider_entries,
-                )
-                if preferred_selectors:
-                    preferred_text = ", ".join(preferred_selectors)
-                    project_status = preferred_text if project_status == "-" else f"{project_status}; {preferred_text}"
+            preferred_selectors = list(display_state.preferred_selectors)
+            if preferred_selectors:
+                preferred_text = ", ".join(preferred_selectors)
+                project_status = preferred_text if project_status == "-" else f"{project_status}; {preferred_text}"
             detail_lines = [
                 f"Plugin: {discovered.plugin_id}@{discovered.version}",
                 f"Source: {source_text}",
@@ -328,6 +292,11 @@ class PluginManagerDialog(QDialog):
         install_path = selected_items[0].data(5, Qt.UserRole)
         return install_path if isinstance(install_path, str) else None
 
+    def _notify_plugins_changed(self) -> None:
+        if self._on_plugins_changed is not None:
+            self._on_plugins_changed()
+        self.refresh_plugins()
+
     def _handle_install(self) -> None:
         source_path = self._select_source_path()
         if source_path is None:
@@ -337,9 +306,7 @@ class PluginManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "Plugin Install Failed", str(exc))
             return
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
         QMessageBox.information(
             self,
             "Plugin Installed",
@@ -382,9 +349,7 @@ class PluginManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "Plugin Uninstall Failed", str(exc))
             return
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
         QMessageBox.information(
             self,
             "Plugin Uninstalled",
@@ -436,9 +401,7 @@ class PluginManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "Plugin Enable Failed", str(exc))
             return
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_disable(self) -> None:
         selected = self._selected_plugin_key()
@@ -457,9 +420,7 @@ class PluginManagerDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(self, "Plugin Disable Failed", str(exc))
             return
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_safe_mode_toggled(self, checked: bool) -> None:
         if self._on_safe_mode_changed is not None:
@@ -498,9 +459,7 @@ class PluginManagerDialog(QDialog):
             return
         plugin_id, version = selected
         set_project_plugin_version_pin(self._project_root, plugin_id, version)
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_clear_pin(self) -> None:
         if not self._project_root:
@@ -510,9 +469,7 @@ class PluginManagerDialog(QDialog):
             return
         plugin_id, _version = selected
         set_project_plugin_version_pin(self._project_root, plugin_id, None)
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_project_enable(self) -> None:
         if not self._project_root:
@@ -522,9 +479,7 @@ class PluginManagerDialog(QDialog):
             return
         plugin_id, _version = selected
         set_project_plugin_enabled(self._project_root, plugin_id, enabled=True)
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_project_disable(self) -> None:
         if not self._project_root:
@@ -534,9 +489,7 @@ class PluginManagerDialog(QDialog):
             return
         plugin_id, _version = selected
         set_project_plugin_enabled(self._project_root, plugin_id, enabled=False)
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_prefer_provider(self) -> None:
         if not self._project_root:
@@ -571,9 +524,7 @@ class PluginManagerDialog(QDialog):
             selected_option["selector_key"],
             selected_option["provider_key"],
         )
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
+        self._notify_plugins_changed()
 
     def _handle_clear_provider_preference(self) -> None:
         if not self._project_root:
@@ -595,67 +546,18 @@ class PluginManagerDialog(QDialog):
                 return
             selected_selector = chosen_selector
         set_project_preferred_provider(self._project_root, selected_selector, None)
-        self.refresh_plugins()
-        if self._on_plugins_changed is not None:
-            self._on_plugins_changed()
-
-    @staticmethod
-    def _matching_preferred_selector_keys(
-        preferred_providers: dict[str, str],
-        plugin_id: str,
-        provider_entries: list[dict[str, object]],
-    ) -> list[str]:
-        matched: list[str] = []
-        for option in PluginManagerDialog._provider_preference_options(plugin_id, provider_entries):
-            selector_key = option["selector_key"]
-            provider_key = option["provider_key"]
-            if preferred_providers.get(selector_key) == provider_key and selector_key not in matched:
-                matched.append(selector_key)
-        return matched
+        self._notify_plugins_changed()
 
     @staticmethod
     def _provider_preference_options(
         plugin_id: str,
         provider_entries: list[dict[str, object]],
     ) -> list[dict[str, str]]:
-        options: list[dict[str, str]] = []
-        seen: set[tuple[str, str]] = set()
-        for provider_entry in provider_entries:
-            provider_id = provider_entry.get("id")
-            kind = provider_entry.get("kind")
-            title = provider_entry.get("title")
-            languages = provider_entry.get("languages", [])
-            if not isinstance(provider_id, str) or not provider_id.strip():
-                continue
-            if not isinstance(kind, str) or not kind.strip():
-                continue
-            label_prefix = title.strip() if isinstance(title, str) and title.strip() else provider_id.strip()
-            provider_key = f"{plugin_id}:{provider_id.strip()}"
-            generic_selector = preferred_provider_key(kind)
-            generic_key = (generic_selector, provider_key)
-            if generic_key not in seen:
-                options.append(
-                    {
-                        "label": f"{label_prefix} ({kind}, all languages)",
-                        "selector_key": generic_selector,
-                        "provider_key": provider_key,
-                    }
-                )
-                seen.add(generic_key)
-            if isinstance(languages, list):
-                for language in languages:
-                    if not isinstance(language, str) or not language.strip():
-                        continue
-                    scoped_selector = preferred_provider_key(kind, language=language)
-                    scoped_key = (scoped_selector, provider_key)
-                    if scoped_key in seen:
-                        continue
-                    options.append(
-                        {
-                            "label": f"{label_prefix} ({kind}, {language.strip().lower()})",
-                            "selector_key": scoped_selector,
-                            "provider_key": provider_key,
-                        }
-                    )
-                    seen.add(scoped_key)
-        return options
+        return [
+            {
+                "label": option.label,
+                "selector_key": option.selector_key,
+                "provider_key": option.provider_key,
+            }
+            for option in provider_preference_options(plugin_id, provider_entries)
+        ]

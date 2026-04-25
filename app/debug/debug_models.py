@@ -120,10 +120,11 @@ class DebugWatchResult:
 
 @dataclass(frozen=True)
 class DebugEvent:
-    """Normalized legacy debug event payload.
+    """Normalized debug event payload for editor-side session state.
 
-    The new debugger path uses structured transport messages, but these event
-    objects remain for the transitional stdout-marker parser and tests.
+    The runner speaks over the structured debug transport; editor code and tests
+    use :class:`DebugEvent` to aggregate or replay debugger updates into
+    :class:`DebugSessionState`.
     """
 
     event_type: str
@@ -163,7 +164,7 @@ class DebugSessionState:
         return list(self.variables_by_reference.get(int(variables_reference), []))
 
     def apply_event(self, event: DebugEvent) -> None:
-        """Apply legacy stdout-marker event into session state."""
+        """Merge a :class:`DebugEvent` into live session state (frames, variables, status)."""
         if event.event_type == "paused":
             self.execution_state = DebugExecutionState.PAUSED
             self.stop_reason = "breakpoint"

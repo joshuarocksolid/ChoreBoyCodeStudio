@@ -18,61 +18,16 @@ from app.intelligence.lint_profile import (
     resolve_lint_rule_settings,
 )
 from app.intelligence.runtime_import_probe import (
-    is_runtime_module_importable,
     probe_runtime_module_importability,
 )
+from app.project.dependency_classifier import (
+    has_compiled_extension_candidate,
+    is_module_resolvable,
+)
+from app.project.file_inventory import iter_python_files
 
 _logger = logging.getLogger(__name__)
 _pyflakes_import_warning_emitted = False
-
-# Defensive fallback: well-known Python 3.9 stdlib top-level module names.
-# Used when the runtime probe has not yet completed or failed, so that
-# common imports like ``os``, ``sys``, ``json`` are never flagged as
-# unresolved.  This is intentionally a broad but not exhaustive set —
-# the runtime probe provides the authoritative list once available.
-_STDLIB_FALLBACK: frozenset[str] = frozenset({
-    "abc", "argparse", "array", "ast", "asyncio", "atexit",
-    "base64", "binascii", "bisect", "builtins", "bz2",
-    "cProfile", "calendar", "cmath", "cmd", "code", "codecs",
-    "codeop", "collections", "colorsys", "compileall", "concurrent",
-    "configparser", "contextlib", "contextvars", "copy", "copyreg", "csv",
-    "ctypes", "curses",
-    "dataclasses", "datetime", "dbm", "decimal", "difflib", "dis", "doctest",
-    "email", "encodings", "enum", "errno",
-    "faulthandler", "fcntl", "filecmp", "fileinput", "fnmatch",
-    "fractions", "ftplib", "functools",
-    "gc", "getopt", "getpass", "gettext", "glob", "graphlib", "grp", "gzip",
-    "hashlib", "heapq", "hmac", "html", "http",
-    "idlelib", "imaplib", "importlib", "inspect", "io", "ipaddress",
-    "itertools",
-    "json",
-    "keyword",
-    "linecache", "locale", "logging", "lzma",
-    "mailbox", "marshal", "math", "mimetypes", "mmap", "modulefinder",
-    "multiprocessing",
-    "netrc", "numbers",
-    "operator", "optparse", "os",
-    "pathlib", "pdb", "pickle", "pickletools", "pkgutil", "platform",
-    "plistlib", "poplib", "posixpath", "pprint", "profile", "pstats",
-    "pty", "pwd", "py_compile", "pyclbr", "pydoc",
-    "queue", "quopri",
-    "random", "re", "readline", "reprlib", "resource", "rlcompleter",
-    "runpy",
-    "sched", "secrets", "select", "selectors", "shelve", "shlex",
-    "shutil", "signal", "site", "smtplib", "socket", "socketserver",
-    "sqlite3", "ssl", "stat", "statistics", "string", "stringprep",
-    "struct", "subprocess", "symtable", "sys", "sysconfig", "syslog",
-    "tarfile", "tempfile", "termios", "textwrap", "threading", "time",
-    "timeit", "tkinter", "token", "tokenize", "trace",
-    "traceback", "tracemalloc", "tty", "turtle", "types", "typing",
-    "unicodedata", "unittest", "urllib", "uuid",
-    "venv",
-    "warnings", "wave", "weakref", "webbrowser",
-    "wsgiref",
-    "xml", "xmlrpc",
-    "zipfile", "zipimport", "zlib", "zoneinfo",
-})
-_COMPILED_EXTENSION_SUFFIXES = (".so", ".pyd", ".dll", ".dylib")
 
 
 @dataclass(frozen=True)
@@ -138,9 +93,7 @@ def find_unresolved_imports(
         for p, src in source_overrides.items():
             resolved_overrides[str(Path(p).expanduser().resolve())] = src
     diagnostics: list[ImportDiagnostic] = []
-    for file_path in sorted(root.rglob("*.py")):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
+    for file_path in iter_python_files(root):
         override = resolved_overrides.get(str(file_path.resolve()))
         diagnostics.extend(
             _diagnostics_for_file(
@@ -268,27 +221,6 @@ def _end_col_offset(node: ast.AST) -> int | None:
     return int(value) if value is not None else None
 
 
-def _is_import_resolvable(
-    project_root: Path,
-    module_name: str,
-    known_runtime_modules: frozenset[str] | None = None,
-    allow_runtime_import_probe: bool = False,
-) -> bool:
-    top_level = module_name.split(".")[0]
-    effective_modules = known_runtime_modules if known_runtime_modules else _STDLIB_FALLBACK
-    if top_level in effective_modules:
-        return True
-    module_path = Path(*module_name.split("."))
-    for base in (project_root, project_root / "vendor"):
-        if (base / module_path).with_suffix(".py").exists():
-            return True
-        if (base / module_path / "__init__.py").exists():
-            return True
-    if allow_runtime_import_probe and is_runtime_module_importable(top_level):
-        return True
-    return False
-
-
 def explain_unresolved_import(
     project_root: str,
     module_name: str,
@@ -306,7 +238,7 @@ def explain_unresolved_import(
 
     project_prefix_exists = _module_path_prefix_exists(root, module_name)
     vendor_prefix_exists = _module_path_prefix_exists(vendor_root, module_name)
-    compiled_extension_candidate = _has_compiled_extension_candidate(root, top_level) or _has_compiled_extension_candidate(
+    compiled_extension_candidate = has_compiled_extension_candidate(root, top_level) or has_compiled_extension_candidate(
         vendor_root,
         top_level,
     )
@@ -403,17 +335,6 @@ def _module_path_prefix_exists(base: Path, module_name: str) -> bool:
     return False
 
 
-def _has_compiled_extension_candidate(base: Path, top_level: str) -> bool:
-    if not top_level or not base.exists():
-        return False
-    for suffix in _COMPILED_EXTENSION_SUFFIXES:
-        if any(base.glob(f"{top_level}*{suffix}")):
-            return True
-        if any((base / top_level).glob(f"*{suffix}")):
-            return True
-    return False
-
-
 def _looks_like_runtime_specific_module(top_level: str) -> bool:
     if not top_level:
         return False
@@ -439,10 +360,10 @@ def _unresolved_import_diagnostics(
     for node in ast.walk(syntax_tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if _is_import_resolvable(
+                if is_module_resolvable(
                     project_root,
                     alias.name,
-                    known_runtime_modules,
+                    known_runtime_modules=known_runtime_modules,
                     allow_runtime_import_probe=allow_runtime_import_probe,
                 ):
                     continue
@@ -460,10 +381,10 @@ def _unresolved_import_diagnostics(
         elif isinstance(node, ast.ImportFrom):
             if node.module is None or node.level > 0:
                 continue
-            if _is_import_resolvable(
+            if is_module_resolvable(
                 project_root,
                 node.module,
-                known_runtime_modules,
+                known_runtime_modules=known_runtime_modules,
                 allow_runtime_import_probe=allow_runtime_import_probe,
             ):
                 continue

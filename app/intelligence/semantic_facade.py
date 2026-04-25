@@ -16,6 +16,7 @@ from app.intelligence.semantic_models import (
     SemanticSignatureResult,
     unsupported_metadata,
 )
+from app.intelligence.semantic_utils import extract_symbol_under_cursor
 
 
 class SemanticFacade:
@@ -99,7 +100,7 @@ class SemanticFacade:
         )
         if result is not None:
             return result
-        symbol_name = _extract_symbol_under_cursor(source_text, cursor_position)
+        symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
         if not symbol_name:
             return None
         return SemanticHoverResult(
@@ -140,7 +141,7 @@ class SemanticFacade:
         min_prefix_chars: int,
         max_results: int,
     ) -> list[CompletionItem]:
-        prefix = _extract_symbol_under_cursor(source_text, cursor_position)
+        prefix = extract_symbol_under_cursor(source_text, cursor_position)
         if not trigger_is_manual and len(prefix) < max(1, int(min_prefix_chars)):
             return []
         return self._jedi_engine.complete(
@@ -160,7 +161,7 @@ class SemanticFacade:
         cursor_position: int,
         new_symbol: str,
     ) -> SemanticRenamePlan | None:
-        old_symbol = _extract_symbol_under_cursor(source_text, cursor_position)
+        old_symbol = extract_symbol_under_cursor(source_text, cursor_position)
         if not old_symbol or old_symbol == new_symbol:
             return None
         if not new_symbol.isidentifier():
@@ -206,18 +207,3 @@ class SemanticFacade:
         """Clear cached Jedi projects so the next query rebuilds paths."""
         self._jedi_engine.invalidate_project_cache(project_root)
 
-
-def _extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
-    safe_cursor = max(0, min(cursor_position, len(source_text)))
-    left = safe_cursor
-    while left > 0 and _is_symbol_character(source_text[left - 1]):
-        left -= 1
-    right = safe_cursor
-    while right < len(source_text) and _is_symbol_character(source_text[right]):
-        right += 1
-    symbol = source_text[left:right].strip()
-    return symbol if symbol.isidentifier() else ""
-
-
-def _is_symbol_character(character: str) -> bool:
-    return character.isalnum() or character == "_"

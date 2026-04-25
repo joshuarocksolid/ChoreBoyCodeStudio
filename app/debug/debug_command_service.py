@@ -33,12 +33,18 @@ def expand_variable_command(variables_reference: int) -> tuple[str, dict[str, ob
     return ("expand_variable", {"variables_reference": int(variables_reference)})
 
 
-def evaluate_command(expression: str, *, frame_id: int = 0) -> tuple[str, dict[str, object]]:
+def evaluate_command(
+    expression: str,
+    *,
+    frame_id: int = 0,
+    unsafe: bool = False,
+) -> tuple[str, dict[str, object]]:
     return (
         "evaluate",
         {
             "expression": expression.strip(),
             "frame_id": int(frame_id),
+            "unsafe": bool(unsafe),
         },
     )
 

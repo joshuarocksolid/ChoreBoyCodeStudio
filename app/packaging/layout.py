@@ -19,6 +19,7 @@ _EXCLUDED_SUFFIXES = {
     ".pyc",
     ".pyo",
 }
+_UNSAFE_ENTRY_CHARS = {'"', "'", "\n", "\r", "\t", "\x00"}
 
 
 def sanitize_project_name(name: str) -> str:
@@ -90,8 +91,31 @@ def resolve_entry_path(*, root: Path, entry_file: str) -> tuple[Path | None, str
     return resolved_entry, None
 
 
-def should_exclude_relative_path(rel_path: Path) -> bool:
-    """Return True if *rel_path* should be excluded from a package export."""
+def validate_packaged_entry_relative_path(entry_relative_path: str) -> str:
+    """Return a normalized package entry path or raise for unsafe values."""
+    normalized = entry_relative_path.strip().replace("\\", "/")
+    if not normalized:
+        raise ValueError("entry_relative_path must be a non-empty relative path.")
+    if any(char in normalized for char in _UNSAFE_ENTRY_CHARS):
+        raise ValueError("entry_relative_path contains unsafe shell or control characters.")
+    path = Path(normalized)
+    if path.is_absolute():
+        raise ValueError("entry_relative_path must be relative.")
+    if any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("entry_relative_path must not contain empty, current, or parent segments.")
+    return path.as_posix()
+
+
+def is_packaging_excluded_path(rel_path: Path) -> bool:
+    """Return True if *rel_path* should be excluded from a package export.
+
+    This is the packaging-specific exclusion policy (hidden directories,
+    ``__pycache__``, ``cbcs/``, build artefacts, ``*.pyc`` etc.). Distinct from
+    :func:`app.project.file_excludes.should_exclude_relative_path`, which is
+    the user-pattern based exclusion used by editor search and project
+    enumeration. The two used to share the same name and were a real
+    name-collision footgun until Phase 2 of the maintainability audit.
+    """
     parts = rel_path.parts
     if any(part in _EXCLUDED_DIR_NAMES for part in parts):
         return True

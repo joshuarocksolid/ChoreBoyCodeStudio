@@ -9,6 +9,8 @@ from PySide2.QtWidgets import QTextEdit
 
 from app.editors.find_replace_bar import FindOptions
 
+MAX_EDITOR_REGEX_QUERY_CHARS = 512
+MAX_EDITOR_SEARCH_TEXT_CHARS = 1_000_000
 
 if TYPE_CHECKING:
     from PySide2.QtWidgets import QPlainTextEdit
@@ -46,6 +48,9 @@ class CodeEditorSearchMixin(_CodeEditorSearchBase):
             return 0
 
         text = self.toPlainText()
+        if len(text) > MAX_EDITOR_SEARCH_TEXT_CHARS and options.regex:
+            self._refresh_extra_selections()
+            return 0
         for match in pattern.finditer(text):
             start, end = match.start(), match.end()
             self._search_match_positions.append((start, end))
@@ -174,6 +179,8 @@ class CodeEditorSearchMixin(_CodeEditorSearchBase):
     @staticmethod
     def _compile_search_pattern(query: str, options: FindOptions) -> re.Pattern[str] | None:
         flags = 0 if options.case_sensitive else re.IGNORECASE
+        if options.regex and len(query) > MAX_EDITOR_REGEX_QUERY_CHARS:
+            return None
         if options.regex:
             try:
                 return re.compile(query, flags)

@@ -28,7 +28,7 @@ def test_goto_symbol_in_file_action_is_registered(_ensure_qapp) -> None:  # type
     window = QMainWindow()
 
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(on_goto_symbol_in_file=lambda: calls.append("triggered")),
     )
     action = registry.action("shell.action.tools.gotoSymbolInFile")
@@ -44,5 +44,5 @@ def test_goto_symbol_in_file_action_is_registered(_ensure_qapp) -> None:  # type
 
 def test_legacy_show_outline_action_no_longer_registered(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+    registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
     assert registry.action("shell.action.tools.showOutline") is None

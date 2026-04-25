@@ -92,6 +92,17 @@ python3 testing/run_test_shard.py fast --workers 2
 npx pyright
 ```
 
+Focused test typing is available separately:
+
+```bash
+npx pyright -p pyrightconfig.tests.json
+```
+
+This config intentionally starts with low-noise helper/security tests instead of
+type-checking the whole historical test suite at once. Ruff, Vulture, Radon,
+and Lizard remain report-only recommendations until their dependencies are
+approved and installed outside the AppRun pytest lane.
+
 ## 6) Architecture hygiene validation gate
 
 Before future editor-intelligence feature work, run the full automated gate and then execute `AT-72`:
@@ -119,13 +130,14 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 9) Current baseline result
 
-Latest validation checkpoint (2026-04-24, fast-lane refactor branch):
+Latest validation checkpoint (2026-04-25, end-to-end maintainability refactor branch):
 
-- `python3 testing/run_test_shard.py fast` -> **~32s wall time**, 1347 passed, 1 skipped (optional SQL tree-sitter grammar not vendored), 17 deselected via `-m "not slow"`, 5 pre-existing failures (`tests/unit/persistence/test_local_history_store.py` x3, `tests/integration/bootstrap/test_editor_startup_probe.py` x2). None of those failures were introduced by the fast-lane refactor.
-- `python3 testing/run_test_shard.py integration` -> **~37s wall time**, 59 passed (includes the four `slow`-marked subprocess + debug-session test files via their `pytest.mark.timeout(180)` overrides).
-- `python3 testing/run_test_shard.py performance` -> **~34s wall time**, 15 passed, 2 pre-existing failures in `test_local_history_performance.py` (timeline filtering regression tracked separately).
-- `python3 testing/run_test_shard.py runtime_parity` -> **~4s wall time**, 17 passed.
+- `python3 testing/run_test_shard.py fast` -> **~36-45s wall time**, passed.
+- `python3 testing/run_test_shard.py integration` -> **~43s wall time**, passed.
+- `python3 testing/run_test_shard.py runtime_parity` -> **~6s wall time**, passed.
+- `python3 testing/run_test_shard.py performance` -> baseline pass in this branch.
 - `npx pyright` -> 0 errors, 0 warnings, 0 informations.
+- `npx pyright -p pyrightconfig.tests.json` -> 0 errors, 0 warnings, 0 informations.
 - `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need light/dark validation.
 
 Compared to the pre-refactor baseline of `~92s` for the full suite, the agent fast lane is now **~2.9x faster** while still exercising every Qt-touching unit test and every non-slow integration test.

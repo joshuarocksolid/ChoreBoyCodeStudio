@@ -334,7 +334,7 @@ def test_analyze_python_file_runtime_probe_can_resolve_imports(
     file_path.write_text("import FreeCAD\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "app.intelligence.diagnostics_service.is_runtime_module_importable",
+        "app.project.dependency_classifier.is_runtime_module_importable",
         lambda module_name: module_name == "FreeCAD",
     )
     diagnostics = analyze_python_file(

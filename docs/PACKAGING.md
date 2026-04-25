@@ -156,6 +156,12 @@ Developer-side build entrypoint:
 
 - `package.py`
 
+`package.py` is intentionally thin: it prompts for the release version and delegates
+to `app.packaging.product_builder.build_product_artifact(...)`. The shared
+installable artifact layout is written by `app.packaging.artifact_builder`, while
+`product_builder` owns product-specific payload selection, vendor staging, cp39
+tree-sitter validation, archive creation, and budget enforcement.
+
 Supported behavior:
 
 1. build a manifest-driven installable package for Code Studio itself
@@ -166,7 +172,12 @@ Supported behavior:
 4. enforce the product archive budget:
    - **15 MB maximum**
 
-During staging, `package.py` auto-fetches the cp39 manylinux `tree-sitter`
+Product release archives no longer have a built-in password fallback. Release
+builders must pass `archive_password` to `build_product_artifact(...)` or set
+`CBCS_PACKAGE_ZIP_PASSWORD`; otherwise archive creation fails with an explicit
+configuration error. This keeps release credentials out of source defaults.
+
+During staging, the product builder auto-fetches the cp39 manylinux `tree-sitter`
 wheel and overlays `_binding.cpython-39-x86_64-linux-gnu.so` onto
 `payload/vendor/tree_sitter/`. The wheel is cached under
 `CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are
@@ -199,6 +210,7 @@ Validation covers:
 - package metadata completeness
 - dependency audit against project files, `vendor/`, and AppRun
 - direct subprocess assumptions that are likely unsafe on ChoreBoy
+- `shell=True` subprocess calls, which are blocked by the dependency audit
 
 Packaging excludes transient/support content such as:
 
@@ -227,6 +239,12 @@ Portable launchers:
 - pass `%k` as a separate desktop-file argument
 - resolve package root from the launcher path before execing AppRun
 - must not hide `%k` inside the quoted Python command body passed to AppRun
+- validate that packaged entry paths are relative, contain no parent traversal,
+  and resolve to files under the package root before running
+
+Both launcher profiles reject unsafe `entry_relative_path` values at manifest
+creation time. The generated bootstrap also re-checks that the resolved runtime
+entry remains inside an absolute package root.
 
 ## ChoreBoy Staging Rule
 

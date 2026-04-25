@@ -61,6 +61,10 @@ def test_load_runtime_handlers_skips_untrusted_runtime_plugins(tmp_path: Path) -
                 "contributes": {
                     "commands": [
                         {
+                            "id": "acme.demo.local",
+                            "title": "Local Only",
+                        },
+                        {
                             "id": "acme.demo.echo",
                             "title": "Echo",
                             "runtime": True,
@@ -137,9 +141,58 @@ def test_load_runtime_handlers_allows_trusted_runtime_plugins(tmp_path: Path) ->
     handlers = load_runtime_command_handlers(state_root=state_root)
 
     assert "acme.demo.echo" in handlers
+    assert "acme.demo.local" not in handlers
     assert handlers["acme.demo.echo"]({"value": 7}) == {
         "ok": True,
         "command_id": "acme.demo.echo",
         "payload": {"value": 7},
     }
+
+
+def test_runtime_command_handlers_use_canonical_two_argument_signature(tmp_path: Path) -> None:
+    state_root = str((tmp_path / "state").resolve())
+    install_path = plugin_install_dir("acme.demo", "1.0.0", state_root)
+    install_path.mkdir(parents=True, exist_ok=True)
+    (install_path / constants.PLUGIN_MANIFEST_FILENAME).write_text(
+        json.dumps(
+            {
+                "id": "acme.demo",
+                "name": "Demo",
+                "version": "1.0.0",
+                "api_version": constants.PLUGIN_API_VERSION,
+                "runtime": {"entrypoint": "runtime.py"},
+                "contributes": {
+                    "commands": [
+                        {
+                            "id": "acme.demo.echo",
+                            "title": "Echo",
+                            "runtime": True,
+                            "runtime_handler": "handle_command",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (install_path / "runtime.py").write_text(
+        "def handle_command(payload):\n    return {'payload': payload}\n",
+        encoding="utf-8",
+    )
+    upsert_registry_entry(
+        PluginRegistryEntry(
+            plugin_id="acme.demo",
+            version="1.0.0",
+            install_path=str(install_path.resolve()),
+            enabled=True,
+            installed_at="2026-03-08T00:00:00",
+        ),
+        state_root=state_root,
+    )
+    set_runtime_plugin_trust("acme.demo", "1.0.0", trusted=True, state_root=state_root)
+
+    handlers = load_runtime_command_handlers(state_root=state_root)
+
+    with pytest.raises(TypeError):
+        handlers["acme.demo.echo"]({"value": 7})
 

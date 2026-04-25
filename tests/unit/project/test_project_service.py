@@ -9,6 +9,7 @@ import pytest
 
 from app.core.errors import AppValidationError, ProjectManifestValidationError, ProjectStructureValidationError
 from app.core.models import LoadedProject
+from app.bootstrap import toml_io
 from app.project import project_service
 from app.project.project_manifest import PROJECT_ID_PREFIX
 from app.project.project_manifest import deterministic_project_id_for_root
@@ -175,6 +176,37 @@ def test_open_project_auto_initialize_prefers_pyproject_script_module_entrypoint
     assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
 
 
+def test_open_project_auto_initialize_reads_poetry_script_entrypoint(tmp_path: Path) -> None:
+    """Poetry script targets are part of the importable-project entrypoint contract."""
+    project_root = tmp_path / "poetry_script_project"
+    (project_root / "src" / "my_app").mkdir(parents=True)
+    (project_root / "src" / "my_app" / "cli.py").write_text("def main():\n    return 0\n", encoding="utf-8")
+    (project_root / "pyproject.toml").write_text(
+        "[tool.poetry]\n"
+        "name = \"my-app\"\n"
+        "[tool.poetry.scripts]\n"
+        "my-app = \"my_app.cli:main\"\n",
+        encoding="utf-8",
+    )
+    (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "src/my_app/cli.py"
+
+
+def test_open_project_auto_initialize_ignores_invalid_pyproject_toml(tmp_path: Path) -> None:
+    """Invalid pyproject TOML should not crash importable-project entry inference."""
+    project_root = tmp_path / "invalid_pyproject_project"
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_text("[project\n", encoding="utf-8")
+    (project_root / "run.py").write_text("print('fallback')\n", encoding="utf-8")
+
+    loaded_project = open_project(project_root)
+
+    assert loaded_project.metadata.default_entry == "run.py"
+
+
 def test_open_project_auto_initialize_skips_package_callable_pyproject_target(tmp_path: Path) -> None:
     """Package-callable pyproject targets should not silently map to __init__.py."""
     project_root = tmp_path / "pyproject_package_target_project"
@@ -235,7 +267,7 @@ def test_open_project_auto_initialize_skips_pyproject_inference_without_toml_par
     )
     (project_root / "run.py").write_text("print('legacy run')\n", encoding="utf-8")
 
-    monkeypatch.setattr(project_service, "_TOML_MODULE", None)
+    monkeypatch.setattr(toml_io, "_toml_module", None)
 
     loaded_project = open_project(project_root)
 

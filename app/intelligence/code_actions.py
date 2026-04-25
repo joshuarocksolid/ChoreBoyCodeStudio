@@ -12,9 +12,9 @@ import difflib
 from pathlib import Path
 import re
 
-from app.core import constants
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.persistence.atomic_write import atomic_write_text
+from app.project.file_inventory import iter_python_files
 
 
 @dataclass(frozen=True)
@@ -266,9 +266,7 @@ def _suggest_module_replacement(project_root: str, unresolved_module: str) -> st
 def _discover_project_modules(project_root: str) -> set[str]:
     root = Path(project_root).expanduser().resolve()
     discovered: set[str] = set()
-    for file_path in root.rglob("*.py"):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
+    for file_path in iter_python_files(root):
         relative = file_path.relative_to(root)
         if relative.name == "__init__.py":
             module_name = ".".join(relative.parts[:-1])

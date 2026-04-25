@@ -69,11 +69,11 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     monkeypatch.setattr(window, "_refresh_save_action_states", lambda: None)
     monkeypatch.setattr(window, "_update_editor_status_for_path", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_render_lint_diagnostics_for_file", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(window, "_schedule_autosave", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(window._local_history_workflow, "schedule_autosave", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 
-    window._local_history_store.create_checkpoint(
+    window._local_history_workflow.local_history_store.create_checkpoint(
         str(file_path.resolve()),
         "print('recovered')\n",
         project_id=window._loaded_project.metadata.project_id,
@@ -82,7 +82,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
         label="Recovered Revision",
     )
     file_path.unlink()
-    window._local_history_store.record_deleted_path(
+    window._local_history_workflow.local_history_store.record_deleted_path(
         project_id=window._loaded_project.metadata.project_id,
         project_root=window._loaded_project.project_root,
         deleted_path=str(file_path.resolve()),
@@ -97,7 +97,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
 
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_exec)
 
-    window._handle_open_global_history_action()
+    window._local_history_workflow.open_global_history()
     assert _wait_for(
         lambda: window._editor_manager.get_tab(str(file_path.resolve())) is not None,
         app,

@@ -18,7 +18,12 @@ from app.intelligence.semantic_models import (
     SemanticSignatureResult,
     exact_metadata,
 )
-from app.intelligence.semantic_utils import first_doc_line, line_text_at, offset_to_line_column
+from app.intelligence.semantic_utils import (
+    extract_symbol_under_cursor,
+    first_doc_line,
+    line_text_at,
+    offset_to_line_column,
+)
 
 
 class JediEngine:
@@ -42,7 +47,7 @@ class JediEngine:
         cursor_position: int,
     ) -> SemanticDefinitionResult:
         started_at = time.perf_counter()
-        symbol_name = _extract_symbol_under_cursor(source_text, cursor_position)
+        symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
         if not symbol_name:
             return SemanticDefinitionResult(symbol_name="", locations=[], metadata=exact_metadata("jedi"))
 
@@ -77,7 +82,7 @@ class JediEngine:
         cursor_position: int,
     ) -> SemanticReferenceResult:
         started_at = time.perf_counter()
-        symbol_name = _extract_symbol_under_cursor(source_text, cursor_position)
+        symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
         if not symbol_name:
             return SemanticReferenceResult(symbol_name="", hits=[], metadata=exact_metadata("jedi"))
 
@@ -138,7 +143,7 @@ class JediEngine:
         cursor_position: int,
     ) -> SemanticHoverResult | None:
         started_at = time.perf_counter()
-        symbol_name = _extract_symbol_under_cursor(source_text, cursor_position)
+        symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
         if not symbol_name:
             return None
 
@@ -327,22 +332,6 @@ class JediEngine:
                 int(getattr(item, "column", 0) or 0),
             ),
         )
-
-
-def _extract_symbol_under_cursor(source_text: str, cursor_position: int) -> str:
-    safe_cursor = max(0, min(cursor_position, len(source_text)))
-    left = safe_cursor
-    while left > 0 and _is_symbol_character(source_text[left - 1]):
-        left -= 1
-    right = safe_cursor
-    while right < len(source_text) and _is_symbol_character(source_text[right]):
-        right += 1
-    symbol = source_text[left:right].strip()
-    return symbol if symbol.isidentifier() else ""
-
-
-def _is_symbol_character(character: str) -> bool:
-    return character.isalnum() or character == "_"
 
 
 def _location_from_name(name: Any) -> SemanticLocation:

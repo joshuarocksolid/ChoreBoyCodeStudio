@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import bdb
+from dataclasses import replace
+import logging
 import queue
 import sys
 import threading
@@ -13,8 +15,11 @@ from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.debug.debug_protocol import build_debug_event, build_debug_response
 from app.debug.debug_runtime_probe import probe_debug_runtime
+from app.debug.safe_eval import UnsafeExpressionError, safe_evaluate_expression
 from app.debug.debug_transport import RunnerDebugTransportClient
 from app.run.run_manifest import RunManifest
+
+_LOGGER = logging.getLogger(__name__)
 
 _MAX_TOP_LEVEL_VARS = 100
 _MAX_CHILD_VARS = 100
@@ -127,7 +132,8 @@ class _RunnerDebugHost:
                 build_debug_event("session_ended", {"message": "Debug session ended."})
             )
         except Exception:
-            pass
+            # Best-effort: transport may already be closed or the peer gone.
+            _LOGGER.debug("Failed to send session_ended on debug transport close", exc_info=True)
         self._transport.close()
 
     def pause_at_frame(
@@ -324,14 +330,28 @@ class _RunnerDebugHost:
             )
             return
         try:
-            value = eval(expression, frame.f_globals, frame.f_locals)  # noqa: S307 - debugger evaluate context
+            unsafe = bool(arguments.get("unsafe", False))
+            if unsafe:
+                value = eval(expression, frame.f_globals, frame.f_locals)  # noqa: S307 - explicit unsafe debugger mode
+            else:
+                value = safe_evaluate_expression(expression, frame.f_globals, frame.f_locals)
             result = self._serialize_variable(expression, value)
             self._transport.send_message(
                 build_debug_response(
                     command_name="evaluate",
                     command_id=command_id,
                     success=True,
-                    body={"expression": expression, "result": result},
+                    body={"expression": expression, "result": result, "unsafe": unsafe},
+                )
+            )
+        except UnsafeExpressionError as exc:
+            self._transport.send_message(
+                build_debug_response(
+                    command_name="evaluate",
+                    command_id=command_id,
+                    success=False,
+                    body={"expression": expression, "unsafe": False},
+                    error_message="Unsafe expression: %s" % (exc,),
                 )
             )
         except Exception as exc:
@@ -347,7 +367,7 @@ class _RunnerDebugHost:
 
     def _handle_update_breakpoints(self, *, command_id: str, arguments: Mapping[str, object]) -> None:
         breakpoints = _parse_breakpoints(arguments.get("breakpoints", []))
-        self._manifest.breakpoints[:] = breakpoints  # type: ignore[misc]
+        self._manifest = replace(self._manifest, breakpoints=breakpoints)
         updated = self._apply_breakpoints(breakpoints)
         self._transport.send_message(
             build_debug_event("breakpoints_updated", {"breakpoints": updated})

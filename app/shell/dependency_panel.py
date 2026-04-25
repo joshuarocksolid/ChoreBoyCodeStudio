@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtWidgets import (
@@ -28,6 +28,11 @@ from app.project.dependency_manifest import (
     DependencyManifest,
     load_dependency_manifest,
 )
+
+
+class _EmittableSignal(Protocol):
+    def emit(self) -> None:
+        ...
 
 
 class DependencyInspectorDialog(QDialog):
@@ -140,7 +145,7 @@ class DependencyInspectorDialog(QDialog):
             delete_files=delete_files,
         )
         if success:
-            self.dependency_changed.emit()
+            cast(_EmittableSignal, self.dependency_changed).emit()
             self.refresh()
         else:
             QMessageBox.warning(self, "Remove Dependency", f"Could not remove '{dep_name}'.")

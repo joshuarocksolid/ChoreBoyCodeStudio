@@ -51,14 +51,14 @@ def _ensure_line_buffering() -> None:
     if callable(stdout_reconfigure):
         try:
             stdout_reconfigure(line_buffering=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[runner] failed to enable stdout line buffering: {exc}", file=sys.stderr)
     stderr_reconfigure = getattr(sys.stderr, "reconfigure", None)
     if callable(stderr_reconfigure):
         try:
             stderr_reconfigure(line_buffering=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[runner] failed to enable stderr line buffering: {exc}", file=sys.stderr)
 
 
 def execute_manifest(manifest: RunManifest) -> int:

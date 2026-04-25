@@ -6,6 +6,22 @@ Out of scope (this pass): `tests/`, `scripts/`, `bundled_plugins/`, `templates/`
 Owner: Codebase quality
 Audience: any agent or human picking up one of the eleven work briefs in section 6
 
+## Current closeout status (2026-04-25)
+
+This file stays useful as a **historical playbook** and as the **Agent A–L progress log** in section 6. **Do not treat the quantitative section 5 snapshot as current inventory**; re-run the metric sweep before planning work. For **what remains** after the original app audit, use [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md).
+
+**Metric sweep (re-baselined 2026-04-25, repo `app/` tree):**
+
+- Total Python source lines: **56,999** (`find app -name '*.py' -not -path '*__pycache__*' -exec wc -l {} + | tail -1`)
+- [`app/shell/main_window.py`](../../app/shell/main_window.py): **6,176** lines; **363** `def` entries matching `^    def ` (method-like surface; not a perfect OO method count)
+- Bare `except Exception:` lines: **29** (`rg` on `app/**/*.py`)
+- `# type: ignore` lines: **95** (`rg` on `app/**/*.py`)
+- Old hard-cutover string hits (`__CB_DEBUG_`, `ingest_output_line`, `debug_event_protocol`, `app.run.test_(runner|discovery)_service`): **0** across `app/`, `tests/`, `bundled_plugins/`
+
+**Test and type-check checkpoints** are maintained in [AGENTS.md](../../AGENTS.md) (e.g. fast shard ~**1445** passed, **0** pyright diagnostics as of the latest checkpoint on that branch). Section 4.6 below may cite older numbers; **prefer AGENTS.md** for current counts.
+
+**Superseded §5 findings (historical only):** Items such as orphan intelligence modules, the empty `app/designer/` tree, `pytest` service `test_*` names, the stdout debug marker path, and similar issues were addressed by Agents A–L (see their **Progress** blocks in section 6 and the summary in the handoff). Section 5.1–5.3 still describes the *audit-era* tree shape for archaeology.
+
 ---
 
 ## 1. Purpose
@@ -95,7 +111,7 @@ python3 run_tests.py -v --import-mode=importlib tests/unit/<area>/
 python3 run_tests.py -q --import-mode=importlib tests/unit/
 ```
 
-`npx pyright` must remain at zero errors. Latest checkpoint per `AGENTS.md`: `1386 passed, 1 skipped`, `0 errors, 0 warnings, 0 informations`.
+`npx pyright` must remain at zero errors. Latest checkpoint: see [AGENTS.md](../../AGENTS.md) (test counts and pyright stats are updated there; do not trust a frozen number in this document).
 
 ### 4.7 Architecture is the source of truth
 
@@ -116,6 +132,8 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
 ---
 
 ## 5. Findings overview
+
+> **Historical snapshot:** subsection 5.1–5.3 reflects metrics gathered during the original audit pass. The **Current closeout status** at the top of this document and [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md) reflect the live tree.
 
 ### 5.1 Quantitative shape of `app/`
 
@@ -181,6 +199,15 @@ Effort labels: **S** = under a day, **M** = one to three days, **L** = three to 
 ---
 
 ### Agent A — Quick-wins sweep (S)
+
+**Progress.** Completed 2026-04-24. The implementation made the targeted silent-failure paths visible, centralized best-effort project plugin config loading, added the typed active-file-path contract, tightened semantic request forwarding, and removed two `MainWindow` pass-through methods. Final verification passed:
+
+- `python3 run_tests.py tests/unit/plugins/test_project_config.py tests/unit/shell/test_events.py tests/unit/editors/test_editor_manager.py`
+- `python3 run_tests.py tests/unit/shell/test_main_window_session_restore.py tests/unit/shell/test_main_window_semantic_navigation_actions.py tests/unit/shell/test_main_window_reference_rename_actions.py tests/unit/editors/test_syntax_highlighters.py tests/unit/runner/test_repl_console.py tests/unit/runner/test_run_runner_entrypoint.py tests/integration/runner/test_runner_main.py`
+- `python3 run_tests.py -q --import-mode=importlib tests/unit/`
+- `npx pyright`
+
+Metrics for this phase: `MainWindow` methods `396 -> 395`, `except Exception:` lines in `app/` `46 -> 37`, and `# type: ignore` lines in `app/` `117 -> 108`.
 
 **Goal.** Eliminate the easily-fixable silent failures and a small number of type escapes uncovered during the audit. This brief is intentionally a single small PR so it can land first and be referenced from later PRs as evidence the rules are being followed.
 
@@ -284,6 +311,16 @@ def _ensure_line_buffering() -> None:
 
 ### Agent B — Shell `menus.py` split (M)
 
+**Progress.** Completed 2026-04-24. The implementation split `build_menu_stubs` into focused builders for file, edit, run, view/theme, tools, and help menus, added `MenuBuildContext` plus a shared action-registration helper, and cut the public builder over to a `QMenuBar` argument with `MenuCallbacks.on_exit` replacing the former `MainWindow` dependency. `Theme` intentionally remains a submenu under `View`, matching the existing UI. Final verification passed:
+
+- `python3 run_tests.py -v tests/unit/shell/test_menus.py tests/unit/shell/test_menus_goto_symbol.py tests/unit/shell/test_menus_shortcut_overrides.py tests/unit/shell/test_menus_open_file.py tests/unit/shell/test_menus_global_history.py tests/unit/shell/test_menus_quick_open.py tests/unit/shell/test_menus_registry.py tests/unit/shell/test_menus_help_example.py`
+- `python3 run_tests.py -q tests/unit/shell/`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- Automated Qt smoke for `Run > Run Active File`, `Edit > Find`, and `Help > About` action triggers and shortcuts
+
+Metrics for this phase: `build_menu_stubs` span `794 -> 34` lines, `app/shell/menus.py` `957 -> 200` lines, new menu builder/helper files all `<= 166` lines, `MainWindow` methods `395 -> 395`, `except Exception:` lines in `app/` `37 -> 37`, and `# type: ignore` lines in `app/` `108 -> 108`.
+
 **Goal.** Decompose the ~780-line god function `build_menu_stubs` into per-menu builders so menu wiring stops being a merge-conflict magnet and so the upcoming `MainWindow` decomposition (Agents C, D, E) has a stable interface to register against.
 
 **Files in scope.**
@@ -340,6 +377,15 @@ Refactor to:
 
 ### Agent C — `MainWindow` decomposition wave 1: local history & autosave workflow (L)
 
+**Progress.** Completed 2026-04-24. The implementation introduced `LocalHistoryWorkflow` as the single owner for local-history checkpoints/transactions, draft autosave, global-history picker orchestration, and per-project editor session persistence/restore. `MainWindow` now wires the workflow directly into save/reload/delete/refactor/tab/menu/session paths without retaining one-line delegator methods; restore-to-buffer-first behavior remains covered by workflow and shell integration tests. Final verification passed:
+
+- `python3 run_tests.py tests/unit/shell/test_local_history_workflow.py tests/unit/shell/test_local_history_recovery_ui.py tests/unit/shell/test_session_persistence.py tests/unit/persistence/test_local_history_store.py tests/unit/persistence/test_local_history_checkpoints.py tests/unit/shell/test_main_window_format_actions.py tests/unit/shell/test_main_window_reference_rename_actions.py tests/unit/shell/test_main_window_tree_delete_copy.py tests/integration/shell/test_main_window_session_persistence_integration.py tests/integration/shell/test_global_history_restore.py tests/integration/shell/test_local_history_theme_integration.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- `python3 run_tests.py tests/integration/shell/test_local_history_theme_integration.py` for the light/dark local-history dialog and global-history picker smoke
+
+Metrics for this phase: `MainWindow` methods `395 -> 377`, `app/` LOC `55,249 -> 55,404`, `except Exception:` lines in `app/` `37 -> 37`, and `# type: ignore` lines in `app/` `108 -> 108`. The original "drop by at least 30 methods" target was intentionally not padded with unrelated editor/save/tab methods; this PR moves the cohesive Agent C workflow and leaves broader editor tab materialization for a later shell split.
+
 **Goal.** Lift the local history and autosave/session orchestration out of `MainWindow` into a dedicated controller, in line with AD-015 and the architecture's listed controller modules.
 
 **Files in scope.**
@@ -387,6 +433,17 @@ Refactor to:
 
 ### Agent D — `MainWindow` decomposition wave 2: pytest workflow (L)
 
+**Progress.** Completed 2026-04-24. The implementation hard-renamed the production pytest services to `app/run/pytest_runner_service.py` and `app/run/pytest_discovery_service.py` with no import shims, introduced `TestRunnerWorkflow` as the owner of pytest discovery/run/result/debug orchestration, and wired menus plus `TestExplorerPanel` directly to the workflow. The UI now exposes the architecture's canonical Run Test at Cursor and Debug Failed Test paths while preserving run-all, run-file, explorer-node run/debug, and rerun-failed behavior. Final verification passed:
+
+- `python3 run_tests.py tests/unit/run/test_pytest_runner_service.py tests/unit/run/test_pytest_discovery_service.py tests/unit/plugins/test_builtin_workflows_pytest.py tests/unit/shell/test_test_runner_workflow.py tests/unit/shell/test_test_explorer_panel.py tests/integration/shell/test_run_debug_toolbar_integration.py`
+- `python3 run_tests.py --collect-only -q` -> `1576` items before and after
+- `python3 testing/run_test_shard.py fast`
+- `python3 testing/run_test_shard.py integration`
+- `npx pyright`
+- IDE lints for edited files
+
+Metrics for this phase: `MainWindow` methods `377 -> 365`, `app/` LOC `55,404 -> 55,627`, `except Exception:` lines in `app/` `37 -> 37`, and `# type: ignore` lines in `app/` `108 -> 98`. Exact old service import/path references under `app/`, `tests/`, `bundled_plugins/`, and `docs/TASKS.md` are `0`. Manual light/dark Qt validation was not run in this environment; affected styling uses existing theme-aware test explorer icons/buttons.
+
 **Goal.** Lift the in-app pytest discovery and execution orchestration out of `MainWindow` into a dedicated controller, and resolve the `app/run/test_`* naming collision in the same PR series.
 
 **Files in scope.**
@@ -412,7 +469,7 @@ Refactor to:
 
 **Approach.**
 
-1. Rename the two `test_`* services in `app/run/` to `pytest_*`. Use a hard cutover: rename the file, update all importers in the same commit, do not add a re-export shim. This eliminates the long-standing collision with pytest test files.
+1. Rename the two `test_`* services in `app/run/` to `pytest_`*. Use a hard cutover: rename the file, update all importers in the same commit, do not add a re-export shim. This eliminates the long-standing collision with pytest test files.
 2. Build `PytestWorkflow` (or `TestRunnerWorkflow` if you prefer the panel name) in `app/shell/test_runner_workflow.py` taking dependencies: `pytest_runner_service`, `pytest_discovery_service`, `RunSessionController`, `TestExplorerPanel`, `ProblemsPanel`, `Logger`.
 3. Move methods following the same per-method TDD pattern as Agent C.
 4. The `TestExplorerPanel` should talk to the workflow directly (signal + slot) rather than going through `MainWindow`. After this brief, `MainWindow` should not be on the call path between the panel and the runner service.
@@ -430,12 +487,21 @@ Refactor to:
 
 **Suggested PR boundary.** Two PRs:
 
-- PR1: rename only (`app/run/test_`* → `app/run/pytest_*`), no behavior change.
+- PR1: rename only (`app/run/test_`* → `app/run/pytest_`*), no behavior change.
 - PR2: workflow extraction.
 
 ---
 
 ### Agent E — `MainWindow` decomposition wave 3: plugin contributions reload (M)
+
+**Progress.** Completed 2026-04-24. The implementation introduced `PluginActivationWorkflow` as the single owner for plugin registry/config/discovery refresh, effective enabled-map computation, declarative contribution activation, workflow-provider catalog rebuilds, safe-mode clearing, and runtime plugin reload. `MainWindow._reload_plugin_contributions` was removed, and `PluginManagerDialog` now renders from the same workflow snapshot instead of re-deriving registry and project plugin state. Pinned-version mismatches are now canonical: a discovered plugin version that does not match the project pin is treated as disabled even if the project enable list contains that plugin id. Final verification passed:
+
+- `python3 run_tests.py tests/unit/shell/test_plugin_activation_workflow.py tests/unit/shell/test_plugins_panel_uninstall.py tests/unit/plugins/test_project_config.py tests/unit/plugins/test_workflow_catalog.py tests/unit/plugins/test_contributions.py tests/unit/plugins/test_runtime_manager.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- IDE lints for edited files
+
+Metrics for this phase: `MainWindow` methods `365 -> 364`, bare `except Exception:` lines in `app/` `37 -> 37`, and `# type: ignore` lines in `app/` `98 -> 98`. Manual light/dark Plugin Manager validation was not run in this environment; the changed UI path reuses existing Qt widgets and theme styling.
 
 **Goal.** Eliminate the duplicated plugin-list logic that lives in both `MainWindow._reload_plugin_contributions` and `app/shell/plugins_panel.py`, and finish the plugin activation workflow by giving it one owner.
 
@@ -470,6 +536,16 @@ Refactor to:
 
 ### Agent F — Intelligence orphan kill (L)
 
+**Progress.** Completed 2026-04-24. The implementation hard-deleted the parallel intelligence engines (`hover_service`, `signature_service`, `navigation_service`, `refactor_service`, and `reference_service`) with no import shims, moved symbol-under-cursor extraction into `semantic_utils`, and kept production coverage on `SemanticFacade`, `SemanticSession`, and `RopeRefactorEngine`. Rope project construction now uses the documented `ropefolder=None` contract, backed by a partial third-party stub, and the new normal integration test asserts semantic rename planning creates no dot-prefixed project metadata. Final verification passed:
+
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/`
+- `python3 run_tests.py -v --import-mode=importlib tests/integration/intelligence/test_no_hidden_metadata.py`
+- `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/intelligence/test_semantic_engine_runtime.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+
+Metrics for this phase: `app/` LOC `55,821 -> 54,802`, `MainWindow` methods `364 -> 364`, bare `except Exception:` lines in `app/` `37 -> 35`, and `# type: ignore` lines in `app/` `98 -> 98`. The orphan import grep now returns no matches under `app/` or `tests/`.
+
 **Goal.** Eliminate parallel intelligence engines that exist only because tests import them, and consolidate around `SemanticSession` / `SemanticFacade` per AD-016.
 
 **Files in scope.**
@@ -484,8 +560,9 @@ Refactor to:
 - `tests/unit/intelligence/test_navigation_service.py`
 - `tests/unit/intelligence/test_refactor_service.py`
 - `tests/unit/intelligence/test_reference_service.py`
-- `tests/integration/intelligence/test_semantic_navigation_integration.py`
-- `tests/integration/intelligence/test_semantic_rename_integration.py`
+- `tests/unit/intelligence/test_semantic_navigation_integration.py`
+- `tests/unit/intelligence/test_semantic_rename_integration.py`
+- `tests/integration/intelligence/test_no_hidden_metadata.py`
 - `app/intelligence/refactor_engine.py` line 49 — the `cast(Any, None)` for Rope `ropefolder`
 
 **Verification before deletion.** The grep evidence used to identify these as orphans is:
@@ -526,6 +603,19 @@ That is, only intra-intelligence references. The shell and editors do not import
 ---
 
 ### Agent G — Intelligence completion honesty (M)
+
+**Progress.** Completed 2026-04-24. The implementation introduced `CompletionEnvelope` and `CompletionRequestResult` so completion degradation metadata now travels from `CompletionService` through `SemanticSession` and `EditorIntelligenceController` to the shell. Semantic completion failures are logged and tagged as `degradation_reason="semantic_engine_error"` while approximate candidates still rank for usability; approximate provider items remain explicitly stamped with approximate source/confidence metadata, and `MainWindow` now shows a one-shot status-bar notice for the degradation instead of silently presenting the result as normal semantic completion. The unused synchronous `MainWindow._request_editor_completions` helper was removed. Final verification passed:
+
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_completion_service.py tests/unit/intelligence/test_semantic_session.py`
+- `python3 run_tests.py --import-mode=importlib tests/unit/intelligence/`
+- `python3 run_tests.py --import-mode=importlib tests/unit/intelligence/test_semantic_facade.py -k completion`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- IDE lints for edited files
+
+Validation caveat: `tests/unit/editors/test_completion_triggers.py` and `tests/unit/editors/test_semantic_editor_interactions.py` both passed their assertions, but this FreeCAD/PySide runtime segfaulted during Qt teardown when those files were run directly; the broader fast shard completed successfully. Manual light/dark UI validation was not run in this environment; the changed UI path uses the existing status bar and completion item detail rendering.
+
+Metrics for this phase: direct Agent G deltas were `MainWindow` methods `-1`, bare `except Exception:` lines in `app/` `-1`, and `# type: ignore` lines in `app/` `-1`. The current full metric sweep after this phase reports `app/` Python LOC `52,310`, `MainWindow` methods `363`, bare `except Exception:` lines `31`, and `# type: ignore` lines `96`.
 
 **Goal.** Make completion-engine degradation visible per ARCHITECTURE §17.4.1 / §17.4.2 instead of silently masking it as "no semantic results".
 
@@ -580,6 +670,16 @@ That is, only intra-intelligence references. The shell and editors do not import
 ---
 
 ### Agent H — Plugins manifest + host cleanup (M)
+
+**Progress.** Completed 2026-04-24. The implementation introduced `PluginCommandContribution` as the canonical typed model for `contributes.commands`, moved command validation into `parse_plugin_manifest`, cut `DeclarativeContributionManager` and `RuntimePluginIndex` over to the typed manifest data, logged plugin event-hook failures with hook/plugin identity, and removed the plugin host `TypeError` arity fallback ladders in favor of documented canonical handler signatures. Final verification passed:
+
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins/test_manifest.py tests/unit/plugins/test_contributions.py tests/unit/plugins/test_host_runtime.py tests/unit/plugins/test_installer.py tests/unit/plugins/test_discovery.py tests/unit/plugins/test_auditor.py`
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/plugins/ tests/integration/plugins/test_support_bundle_plugins_integration.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- IDE lints for edited files
+
+Metrics for this phase: bare `except Exception:` lines in `app/` `35 -> 34`, `# type: ignore` lines in `app/` `97 -> 97`, and no `MainWindow` changes from this phase. The current full metric sweep after this phase reports `app/` Python LOC `55,333`, `MainWindow` methods `365`, bare `except Exception:` lines `34`, and `# type: ignore` lines `97`.
 
 **Goal.** Tighten manifest validation drift, log instead of swallow plugin event errors, and plan removal of the `_call_runtime_callable` arg-count probe.
 
@@ -643,6 +743,18 @@ This is a long-lived compatibility chain that hides plugin signature drift. Deci
 ---
 
 ### Agent I — Editors widget split (L)
+
+**Progress.** Completed 2026-04-24. The implementation extracted gutter/breakpoint/debug-line chrome into `CodeEditorChromeMixin`, moved bounded bracket matching into `CodeEditorBracketOverlayMixin`, and reduced `CodeEditorWidget` below the target size. Bracket matching now uses a fixed 2,000-character scan budget for both forward and backward searches, returning no match when the partner is outside the budget. Quick Open now debounces typed refreshes, flushes pending results before selection/navigation, caches exact query rankings per candidate generation, hoists inline Qt imports, and requires caller-provided theme tokens instead of a hardcoded dark fallback. Final verification passed:
+
+- `python3 run_tests.py tests/unit/editors/test_code_editor_widget_highlighting.py tests/unit/editors/test_debug_execution_line.py tests/unit/editors/test_code_editor_widget_editing.py tests/unit/editors/test_quick_open.py tests/unit/editors/test_quick_open_dialog.py tests/unit/shell/test_main_window_quick_open.py`
+- `python3 run_tests.py tests/integration/shell/test_main_window_quick_open_integration.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+- IDE lints for edited files
+
+Validation caveat: `python3 run_tests.py tests/integration/performance/test_editor_highlighting_performance.py` passed all four collected test assertions, but the FreeCAD/PySide runtime segfaulted during pytest teardown with `TreeSitterHighlighter` already deleted. This is a teardown/runtime failure after the assertions, not a measured threshold failure in the performance tests.
+
+Metrics for this phase: `app/editors/code_editor_widget.py` `774 -> 528` lines, `app/` Python LOC `55,333 -> 56,065`, `MainWindow` methods `365 -> 365`, bare `except Exception:` lines in `app/` `34 -> 34`, and `# type: ignore` lines in `app/` `97 -> 94`. New editor mixin files are `232` and `116` lines. Final `pyright` validation also required a narrow type-safe count fix in `app/packaging/product_builder.py` for the existing tree-sitter bundle validation report.
 
 **Goal.** Continue the mixin decomposition of `CodeEditorWidget` per ARCHITECTURE §12.4 and bound the bracket-match scan distance.
 
@@ -719,11 +831,15 @@ Add a `QTimer.singleShot(80, self._refresh_results)` debounce. For projects with
 - `app/persistence/local_history_schema.py` (new)
 - `app/persistence/local_history_blob_store.py` (new)
 - `app/persistence/local_history_repository.py` (new)
+- `app/persistence/local_history_identity.py` (new)
+- `app/persistence/local_history_rows.py` (new)
 - `app/persistence/autosave_store.py` (sunset legacy helpers)
-- `app/treesitter/highlighter.py` (split target)
 - `app/treesitter/highlighter_core.py` (new)
 - `app/treesitter/capture_pipeline.py` (new)
 - `app/treesitter/injection_highlights.py` (new)
+- `app/treesitter/local_semantics.py` (new)
+- `app/treesitter/jsonc_lexical.py` (new)
+- `app/treesitter/python_tokens.py` (new)
 - `app/treesitter/markdown_lexical.py` (new)
 - `tests/unit/persistence/` and `tests/unit/treesitter/`
 
@@ -801,9 +917,43 @@ Use `errors="replace"` so invalid UTF-8 is surfaced as replacement characters (v
 - PR2: highlighter split
 - PR3: autosave legacy sunset (after the one-release telemetry window)
 
+**Progress.** Completed 2026-04-24. `LocalHistoryStore` is now a 273-line facade over focused schema, blob, identity, row-adapter, and repository modules; `list_global_history_files` uses a CTE/window-function query and is covered by a 500-file / 5,000-checkpoint performance test. The old `app/treesitter/highlighter.py` file was hard-cut instead of left as a re-export shim; `TreeSitterHighlighter` now lives in `highlighter_core.py`, with capture execution, local semantic resolution, injections, JSONC lexical comments, Markdown lexical helpers, and Python token constants split into owning modules. Injection source decoding now uses `errors="replace"` while byte-column partial UTF-8 decoding remains unchanged. Autosave legacy JSON migration remains intentionally supported for one release and now emits persistence telemetry whenever a legacy draft is migrated.
+
+Final file-size outcomes:
+
+- `app/persistence/local_history_store.py`: 1,237 -> 273 lines
+- largest `app/persistence/local_history_*.py`: `local_history_repository.py` at 678 lines
+- `app/treesitter/highlighter.py`: 1,542 -> deleted
+- largest `app/treesitter/*.py`: `capture_pipeline.py` at 660 lines
+
+Final verification passed:
+
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/persistence/test_local_history_store.py tests/unit/persistence/test_autosave_store.py tests/runtime_parity/persistence/test_local_history_runtime.py`
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/editors/test_syntax_highlighters.py tests/unit/treesitter/test_query_contract.py tests/unit/editors/test_syntax_registry.py tests/unit/editors/test_code_editor_widget_highlighting.py`
+- `python3 run_tests.py -v --import-mode=importlib tests/integration/performance/test_local_history_performance.py tests/integration/performance/test_editor_highlighting_performance.py`
+- `python3 testing/run_test_shard.py fast`
+- `npx pyright`
+
+Follow-up: after one release with no legacy autosave migration telemetry, delete `_legacy_draft_root`, `_delete_legacy_draft`, `_migrate_legacy_draft`, `_migrate_all_legacy_drafts`, `_load_legacy_draft`, `_load_legacy_draft_payload`, and `_legacy_draft_path` from `AutosaveStore`.
+
 ---
 
 ### Agent K — Packaging consolidation (L)
+
+**Progress.** Completed 2026-04-24. The implementation introduced `app.packaging.product_builder.build_product_artifact(...)` as the owner of product staging, vendor allowlisting, cp39 tree-sitter validation, archive creation, budget enforcement, and product reporting; `package.py` is now a 98-line version-prompt CLI that delegates to the builder. Installable project exports now use the same shared artifact writer for installer layout, docs, report, checksums, and manifest generation, while product and project payload selection remain separate by design. The production-only `packager.build_desktop_entry` compatibility wrapper was removed and its launcher assertions now build manifests directly in tests.
+
+Final verification passed:
+
+- `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/ tests/integration/packaging/ tests/runtime_parity/packaging/`
+- `python3 testing/run_test_shard.py fast`
+- `python3 testing/run_test_shard.py integration`
+- `python3 testing/run_test_shard.py runtime_parity`
+- `npx pyright app/packaging/artifact_builder.py app/packaging/product_builder.py app/packaging/packager.py package.py tests/unit/packaging/test_distribution_installer.py tests/unit/packaging/test_packager.py tests/runtime_parity/packaging/test_launcher_profiles_runtime.py`
+- IDE lints for edited files
+
+Validation caveat: full `npx pyright` is currently blocked by pre-existing tree-sitter mixin diagnostics in `app/treesitter/capture_pipeline.py`, `app/treesitter/injection_highlights.py`, and `app/treesitter/markdown_lexical.py`; the edited packaging files report `0 errors`.
+
+Metrics for this phase: `app/` Python LOC `55,550 -> 56,075`, `MainWindow` methods `365 -> 365`, bare `except Exception:` lines in `app/` `34 -> 34`, and `# type: ignore` lines in `app/` `100 -> 95`. `package.py` is `98` lines. Exact `.cbcs` / hardcoded `"cbcs"` packaging references are `0`; `dependency_audit.py` skips project metadata through `constants.PROJECT_META_DIRNAME`.
 
 **Goal.** Per AD-019, the product distribution and in-app project export should share one manifest-driven substrate. Today they partially overlap: both build a manifest via `create_distribution_manifest`, but the repo-root `package.py` owns its own staging, vendor allowlist, and zip logic.
 
@@ -845,6 +995,23 @@ Use `errors="replace"` so invalid UTF-8 is surfaced as replacement characters (v
 
 ### Agent L — Cleanup pass (S)
 
+**Progress.** Completed 2026-04-24. The implementation removed the empty `app/designer/` directory, corrected the no-hidden-folder rule and discovery docs to the completed visible-path migration (`cbcs/` and `choreboy_code_studio_state/`), aligned the architecture manifest example with the `debug_exception_policy` wire format, routed template manifest injection through `project_manifest_path` + `parse_project_manifest` + `save_project_manifest`, deleted the legacy stdout debug marker protocol, and replaced the frozen `RunManifest` breakpoint list mutation with `dataclasses.replace`.
+
+Final verification passed for:
+
+- `python3 run_tests.py tests/unit/templates/test_template_service.py tests/integration/templates/test_template_generation.py`
+- `python3 run_tests.py tests/unit/debug/test_debug_session.py tests/unit/runner/test_debug_runner.py tests/unit/run/test_run_manifest.py`
+- `python3 run_tests.py tests/integration/debug/test_debug_session_integration.py tests/integration/debug/test_breakpoint_stepping_flow.py`
+- `python3 run_tests.py -q --import-mode=importlib tests/unit/`
+- `python3 testing/run_test_shard.py fast`
+- `rg "__CB_DEBUG_" app/`
+- `rg "ingest_output_line" app/`
+- `rg "debug_event_protocol" app/ tests/`
+
+Validation caveat: `npx pyright` currently fails on two files outside the Agent L edit set: `app/editors/code_editor_widget.py` (`resizeEvent` parameter-name mismatch) and `app/packaging/product_builder.py` (`len(object)` type narrowing). IDE lints for edited Agent L Python files reported no errors.
+
+Metrics for this phase: Agent L scoped `app/` diff `-94` LOC, `MainWindow` methods `365 -> 365`, bare `except Exception:` lines `34 -> 34`, and `# type: ignore` lines `97 -> 94`. The full working-tree LOC sweep in the already-dirty tree measured `55,333 -> 55,934`.
+
 **Goal.** Knock out the small cleanups: delete the dead `app/designer/` tree, fix the stale rule documentation, align the architecture example with the implementation, route template manifest writes through the canonical writer, cut over the vestigial debug stdout marker path, and fix the immutable-manifest-mutation footgun.
 
 **Files in scope.**
@@ -869,7 +1036,7 @@ Use `errors="replace"` so invalid UTF-8 is surfaced as replacement characters (v
    Do not commit a placeholder. The plan in `docs/designer/` continues to describe the intended subsystem; this directory will be created when implementation actually begins.
 2. Update [.cursor/rules/no_hidden_folders.mdc](../../.cursor/rules/no_hidden_folders.mdc) "Current migration status" section. The rule currently states:
   > `app/core/constants.py` still defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"`. These are known legacy values tracked for migration to visible names.
-   The actual constants are:
+  >  The actual constants are:
 
 ```7:7:app/core/constants.py
 GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"
@@ -934,8 +1101,7 @@ PROJECT_META_DIRNAME = "cbcs"
 
 - Option A (preferred): replace with `self._manifest = replace(self._manifest, breakpoints=breakpoints)` — `dataclasses.replace` already imported by `MainWindow`; add to `debug_runner.py` imports.
 - Option B: drop `frozen=True` from `RunManifest` if mutation is genuinely intentional. Document why in the dataclass docstring.
-
-   Pick A unless an integration test demonstrates that the manifest needs to retain object identity across the mutation. Remove the `# type: ignore[misc]`.
+ Pick A unless an integration test demonstrates that the manifest needs to retain object identity across the mutation. Remove the `# type: ignore[misc]`.
 
 **Anti-patterns this brief targets.** Documentation lying (#6), test–implementation coupling (#4), parallel implementation (#1), contract footgun (#3).
 
@@ -1020,7 +1186,7 @@ Every brief inherits these acceptance criteria in addition to its own:
 4. **No regression on slop metrics.** Run section 9.1 before and after the change. None of the metrics may increase.
 5. **No silent failures introduced.** `rg "except Exception:\s*$" app/` count must not increase. `rg "except.*:\s*\n\s*pass" -U app/` count must not increase.
 6. **No new hidden directories at runtime.** `rg "\.\w[\w-]+/" app/ --type py | rg -v "(\.git|\.\w+\.pyc|\\\.cursor|\\\.venv|\\\.pytest|\\\.ruff|\\\.vscode|\\\.gitignore|\\\.desktop|\\\.so|\\\.json|\\\.py|\\\.md|\\\.toml)"` should not surface a new dot-prefixed runtime path.
-7. **No re-export shims.** Hard cutover rule: when a module moves, every importer is updated in the same PR. Do not add `from old_module import `* aliases.
+7. **No re-export shims.** Hard cutover rule: when a module moves, every importer is updated in the same PR. Do not add `from old_module import` * aliases.
 8. **MainWindow shrinks if touched.** If a brief touches `app/shell/main_window.py`, the method count `rg "    def " app/shell/main_window.py | wc -l` must be lower at the end of the PR than at the start.
 9. **Documentation updates land in the same PR.** Architecture changes, rule updates, and significant module renames must be reflected in their respective docs in the same commit series.
 10. **PR description includes the metric sweep.** Use the table in Appendix B.

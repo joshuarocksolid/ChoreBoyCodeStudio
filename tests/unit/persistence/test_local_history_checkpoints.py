@@ -148,6 +148,29 @@ def test_record_local_history_checkpoint_logs_and_swallows_store_failures(
     assert any("Local history checkpoint failed" in record.message for record in caplog.records)
 
 
+def test_record_local_history_checkpoint_logs_with_module_logger_when_logger_omitted(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Checkpoint persistence failures should remain observable without caller logging."""
+
+    class _FailingStore:
+        def create_checkpoint(self, *_args, **_kwargs):
+            raise RuntimeError("disk full")
+
+    with caplog.at_level(logging.WARNING, logger="app.persistence.local_history_writer"):
+        result = record_local_history_checkpoint(
+            _FailingStore(),  # type: ignore[arg-type]
+            file_path=str(tmp_path / "main.py"),
+            content="x\n",
+            project_id="proj_x",
+            project_root=str(tmp_path),
+            source="save",
+        )
+
+    assert result is None
+    assert any("Local history checkpoint failed" in record.message for record in caplog.records)
+
+
 def test_record_local_history_transaction_groups_multi_file_entries(tmp_path: Path) -> None:
     history_store, project_id, project_root, project_dir = _setup_project(tmp_path)
     alpha = project_dir / "alpha.py"

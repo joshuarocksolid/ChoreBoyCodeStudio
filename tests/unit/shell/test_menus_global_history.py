@@ -27,7 +27,7 @@ def test_global_history_action_is_registered_with_callback(_ensure_qapp) -> None
     window = QMainWindow()
 
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(on_open_global_history=lambda: calls.append("triggered")),
     )
     action = registry.action("shell.action.file.globalHistory")
@@ -41,7 +41,7 @@ def test_global_history_action_is_registered_with_callback(_ensure_qapp) -> None
 
 def test_global_history_action_is_only_in_file_menu(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    _ = build_menu_stubs(window, callbacks=MenuCallbacks())
+    _ = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     file_menu = window.findChild(qt_widgets.QMenu, "shell.menu.file")
     edit_menu = window.findChild(qt_widgets.QMenu, "shell.menu.edit")

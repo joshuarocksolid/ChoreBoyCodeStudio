@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from app.packaging.layout import validate_packaged_entry_relative_path
 from app.packaging.models import DistributionManifest
 
 
@@ -146,33 +147,48 @@ def build_portable_install_text(manifest: DistributionManifest) -> str:
 
 
 def _build_absolute_root_bootstrap(root_path: str, entry_relative_path: str) -> str:
+    entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
     return (
         "import os,runpy,sys;"
         f"root={root_path!r};"
+        "root=os.path.abspath(root);"
+        f"entry=os.path.abspath(os.path.join(root, {entry_relative_path!r}));"
+        "sys.exit('Invalid package root') if not os.path.isdir(root) else None;"
+        "sys.exit('Invalid package entry') if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;"
         "sys.path.insert(0, root) if root not in sys.path else None;"
         "os.chdir(root);"
-        f"runpy.run_path(os.path.join(root, {entry_relative_path!r}), run_name='__main__')"
+        "runpy.run_path(entry, run_name='__main__')"
     )
 
 
 def _build_portable_root_bootstrap(entry_relative_path: str) -> str:
+    entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
     return (
         "import os,runpy,sys;"
         "desktop_path = sys.argv[1] if len(sys.argv) > 1 else '';"
         "root = os.path.dirname(os.path.abspath(desktop_path)) if desktop_path else os.getcwd();"
+        "root=os.path.abspath(root);"
+        f"entry=os.path.abspath(os.path.join(root, {entry_relative_path!r}));"
+        "sys.exit('Invalid package root') if not os.path.isdir(root) else None;"
+        "sys.exit('Invalid package entry') if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;"
         "sys.path.insert(0, root) if root not in sys.path else None;"
         "os.chdir(root);"
-        f"runpy.run_path(os.path.join(root, {entry_relative_path!r}), run_name='__main__')"
+        "runpy.run_path(entry, run_name='__main__')"
     )
 
 
 def _build_portable_shell_wrapper(*, app_run_path: str, entry_relative_path: str) -> str:
+    entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
     python_code = (
         "import os,runpy,sys;"
         'root=os.environ.get("CBCS_PACKAGE_ROOT", os.getcwd());'
+        "root=os.path.abspath(root);"
+        f'entry=os.path.abspath(os.path.join(root, "{entry_relative_path}"));'
+        'sys.exit("Invalid package root") if not os.path.isdir(root) else None;'
+        'sys.exit("Invalid package entry") if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;'
         "sys.path.insert(0, root) if root not in sys.path else None;"
         "os.chdir(root);"
-        f'runpy.run_path(os.path.join(root, "{entry_relative_path}"), run_name="__main__")'
+        'runpy.run_path(entry, run_name="__main__")'
     )
     shell_script = (
         'desktop_path="$1";'

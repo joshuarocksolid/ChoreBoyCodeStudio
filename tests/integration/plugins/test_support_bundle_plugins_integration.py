@@ -10,17 +10,13 @@ import pytest
 
 from app.plugins.project_config import set_project_plugin_version_pin, set_project_preferred_provider
 from app.support.support_bundle import build_support_bundle
+from tests.support.minimal_project import write_minimal_project
 
 pytestmark = pytest.mark.integration
 
 
 def _write_valid_project(project_root: Path) -> None:
-    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
-    (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / "cbcs" / "project.json").write_text(
-        json.dumps({"schema_version": 1, "name": "plugin_bundle_project"}, indent=2),
-        encoding="utf-8",
-    )
+    write_minimal_project(project_root, name="plugin_bundle_project")
 
 
 def test_support_bundle_includes_plugin_project_config_and_provider_inventory(tmp_path: Path) -> None:

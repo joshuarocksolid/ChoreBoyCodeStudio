@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
+from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.completion_providers import provide_project_module_items
 from app.intelligence.completion_service import CompletionRequest, CompletionService
@@ -52,7 +55,7 @@ def test_completion_service_prefers_current_file_symbols(tmp_path: Path) -> None
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
 
     assert completions
     assert completions[0].insert_text == "alpha_local"
@@ -82,9 +85,84 @@ def test_completion_service_manual_trigger_allows_short_prefix(tmp_path: Path) -
         min_prefix_chars=3,
     )
 
-    assert service.complete(automatic_request) == []
-    manual = service.complete(manual_request)
+    assert service.complete(automatic_request).items == []
+    manual = service.complete(manual_request).items
     assert any(item.insert_text == "import" for item in manual)
+
+
+def test_completion_service_reports_semantic_degradation_and_keeps_approximate_items(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FailingSemanticFacade:
+        def complete(self, **_kwargs: object) -> list[CompletionItem]:
+            raise RuntimeError("jedi crashed")
+
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    current_file = tmp_path / "main.py"
+    source = "def alpha_local():\n    return 1\n\nalp"
+    service = CompletionService(
+        cache_db_path=str(cache_path),
+        semantic_facade=cast(Any, _FailingSemanticFacade()),
+    )
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(current_file.resolve()),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    caplog.set_level(logging.WARNING, logger="app.intelligence.completion_service")
+
+    envelope = service.complete(request)
+
+    assert envelope.degradation_reason == "semantic_engine_error"
+    assert any(item.insert_text == "alpha_local" for item in envelope.items)
+    assert all(item.source != "semantic" for item in envelope.items)
+    assert "semantic completion failed" in caplog.text
+
+
+def test_completion_service_preserves_semantic_item_metadata(tmp_path: Path) -> None:
+    semantic_item = CompletionItem(
+        label="alpha_semantic",
+        insert_text="alpha_semantic",
+        kind=CompletionKind.SYMBOL,
+        detail="function",
+        engine="jedi",
+        source="semantic",
+        confidence="exact",
+        semantic_kind="function",
+    )
+
+    class _SemanticFacade:
+        def complete(self, **_kwargs: object) -> list[CompletionItem]:
+            return [semantic_item]
+
+    cache_path = tmp_path / "state" / "symbols.sqlite3"
+    current_file = tmp_path / "main.py"
+    source = "def alpha_local():\n    return 1\n\nalp"
+    service = CompletionService(
+        cache_db_path=str(cache_path),
+        semantic_facade=cast(Any, _SemanticFacade()),
+    )
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(current_file.resolve()),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=2,
+    )
+
+    envelope = service.complete(request)
+
+    semantic_result = next(item for item in envelope.items if item.insert_text == "alpha_semantic")
+    assert semantic_result.engine == "jedi"
+    assert semantic_result.source == "semantic"
+    assert semantic_result.confidence == "exact"
+    assert "approximate" not in semantic_result.detail
 
 
 def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path: Path) -> None:
@@ -110,7 +188,7 @@ def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path:
         min_prefix_chars=2,
     )
 
-    completions = [item for item in service.complete(request) if item.insert_text == "helper"]
+    completions = [item for item in service.complete(request).items if item.insert_text == "helper"]
 
     assert len(completions) == 1
 
@@ -141,12 +219,12 @@ def test_completion_service_boosts_recently_accepted_items(tmp_path: Path) -> No
         min_prefix_chars=2,
     )
 
-    initial = service.complete(request)
+    initial = service.complete(request).items
     assert initial[0].insert_text == "alpha_one"
     preferred = next(item for item in initial if item.insert_text == "alpha_two")
     service.record_acceptance(preferred)
 
-    boosted = service.complete(request)
+    boosted = service.complete(request).items
     assert boosted[0].insert_text == "alpha_two"
 
 
@@ -172,7 +250,7 @@ def test_completion_service_suggests_members_for_direct_import(tmp_path: Path) -
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
     inserts = {item.insert_text for item in completions}
 
     assert "entrypoint" in inserts
@@ -199,7 +277,7 @@ def test_completion_service_suggests_members_for_import_alias(tmp_path: Path) ->
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
 
     assert any(item.insert_text == "run_task" for item in completions)
 
@@ -226,7 +304,7 @@ def test_completion_service_suggests_members_for_from_imported_module(tmp_path: 
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
 
     assert any(item.insert_text == "helper" for item in completions)
 
@@ -246,7 +324,7 @@ def test_completion_service_module_member_completion_returns_empty_for_unresolve
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
 
     assert completions == []
 
@@ -271,7 +349,7 @@ def test_completion_service_module_member_completion_uses_parse_recovery(tmp_pat
         min_prefix_chars=2,
     )
 
-    completions = service.complete(request)
+    completions = service.complete(request).items
 
     assert any(item.insert_text == "recovered" for item in completions)
 

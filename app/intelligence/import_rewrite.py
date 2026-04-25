@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from app.core import constants
 from app.persistence.atomic_write import atomic_write_text
+from app.project.file_inventory import iter_python_files
 
 
 @dataclass(frozen=True)
@@ -38,9 +38,7 @@ def plan_import_rewrites(project_root: str, old_relative_path: str, new_relative
 
     root = Path(project_root).expanduser().resolve()
     previews: list[ImportRewritePreview] = []
-    for file_path in sorted(root.rglob("*.py")):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
+    for file_path in iter_python_files(root):
         original_text = file_path.read_text(encoding="utf-8")
         rewritten_text, changed_lines = _rewrite_import_lines(original_text, old_module, new_module)
         if rewritten_text == original_text:

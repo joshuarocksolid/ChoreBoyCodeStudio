@@ -8,7 +8,7 @@ from app.packaging.packager import PackageResult
 from app.packaging.models import DependencyAuditReport
 from app.python_tools.models import PythonTextTransformResult
 from app.run.problem_parser import ProblemEntry
-from app.run.test_runner_service import PytestRunResult
+from app.run.pytest_runner_service import PytestRunResult
 from app.support.diagnostics import ProjectHealthReport
 from app.templates.template_service import TemplateMetadata
 

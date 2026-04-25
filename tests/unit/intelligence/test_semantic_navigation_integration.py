@@ -6,8 +6,7 @@ import shutil
 
 import pytest
 
-from app.intelligence.navigation_service import lookup_definition_with_cache
-from app.intelligence.reference_service import find_references
+from app.intelligence.semantic_facade import SemanticFacade
 
 pytestmark = pytest.mark.unit
 
@@ -21,16 +20,24 @@ def _copy_fixture(tmp_path: Path, fixture_name: str) -> Path:
     return target
 
 
+def _build_facade(tmp_path: Path) -> SemanticFacade:
+    state_root = (tmp_path / "state").resolve()
+    state_root.mkdir(parents=True, exist_ok=True)
+    return SemanticFacade(
+        cache_db_path=str(state_root / "symbols.sqlite3"),
+        state_root=str(state_root),
+    )
+
+
 def test_lookup_definition_with_cache_resolves_imported_symbol_from_source_context(tmp_path: Path) -> None:
     project_root = _copy_fixture(tmp_path, "imported_project")
+    facade = _build_facade(tmp_path)
     consumer_path = (project_root / "consumer.py").resolve()
     source = consumer_path.read_text(encoding="utf-8")
 
-    result = lookup_definition_with_cache(
+    result = facade.lookup_definition(
         project_root=str(project_root.resolve()),
         current_file_path=str(consumer_path),
-        symbol_name="helper",
-        cache_db_path=str((tmp_path / "state" / "symbols.sqlite3").resolve()),
         source_text=source,
         cursor_position=source.rfind("helper") + 2,
     )
@@ -42,10 +49,11 @@ def test_lookup_definition_with_cache_resolves_imported_symbol_from_source_conte
 
 def test_find_references_uses_semantic_binding_identity(tmp_path: Path) -> None:
     project_root = _copy_fixture(tmp_path, "shadowing_project")
+    facade = _build_facade(tmp_path)
     main_path = (project_root / "main.py").resolve()
     source = main_path.read_text(encoding="utf-8")
 
-    result = find_references(
+    result = facade.find_references(
         project_root=str(project_root.resolve()),
         current_file_path=str(main_path),
         source_text=source,

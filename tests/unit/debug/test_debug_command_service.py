@@ -35,9 +35,13 @@ def test_control_command_helpers_return_structured_commands() -> None:
 def test_evaluate_command_trims_expression_and_carries_frame_id() -> None:
     assert evaluate_command(" value + 1 ", frame_id=22) == (
         "evaluate",
-        {"expression": "value + 1", "frame_id": 22},
+        {"expression": "value + 1", "frame_id": 22, "unsafe": False},
     )
-    assert evaluate_command("  ") == ("evaluate", {"expression": "", "frame_id": 0})
+    assert evaluate_command("  ") == ("evaluate", {"expression": "", "frame_id": 0, "unsafe": False})
+    assert evaluate_command("danger()", unsafe=True) == (
+        "evaluate",
+        {"expression": "danger()", "frame_id": 0, "unsafe": True},
+    )
 
 
 def test_update_breakpoints_command_serializes_breakpoint_models() -> None:

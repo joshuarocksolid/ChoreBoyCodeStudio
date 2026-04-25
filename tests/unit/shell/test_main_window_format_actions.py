@@ -20,6 +20,8 @@ from app.python_tools.models import (
     PythonToolingSettings,
 )
 from app.shell.main_window import MainWindow
+from app.shell.python_style_workflow import PythonStyleWorkflow
+from app.shell.save_workflow import SaveWorkflow
 
 pytestmark = pytest.mark.unit
 
@@ -50,6 +52,9 @@ class _FakeEditorManager:
 
     def active_tab(self) -> object:
         return self._tab
+
+    def all_tabs(self) -> list[object]:
+        return [self._tab]
 
     def get_tab(self, file_path: str) -> object | None:
         return self._tab if self._tab.file_path == file_path else None
@@ -99,6 +104,8 @@ def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWid
     window_any._editor_widgets_by_path = {file_path: editor_widget}
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
     window_any._workflow_broker = object()
+    window_any._save_workflow = SaveWorkflow(window)
+    window_any._python_style_workflow = PythonStyleWorkflow(window)
     return window, editor_widget
 
 
@@ -113,8 +120,12 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
     window_any._editor_organize_imports_on_save = False
     window_any._editor_format_on_save = False
     window_any._editor_tabs_widget = None
-    window_any._pending_autosave_payloads = {}
-    window_any._autosave_store = SimpleNamespace(delete_draft=lambda *_args, **_kwargs: None)
+    window_any._local_history_workflow = SimpleNamespace(
+        discard_pending_autosave=lambda *_args, **_kwargs: None,
+        record_checkpoint=lambda *_args, **_kwargs: None,
+        delete_draft=lambda *_args, **_kwargs: None,
+        local_history_context_for_path=lambda *_args, **_kwargs: (None, None),
+    )
     window_any._refresh_save_action_states = lambda: None
     window_any._update_editor_status_for_path = lambda *_args, **_kwargs: None
     window_any._intelligence_runtime_settings = SimpleNamespace()
@@ -126,6 +137,7 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
     window_any._render_lint_diagnostics_for_file = lambda *_args, **_kwargs: None
     window_any._start_symbol_indexing = lambda *_args, **_kwargs: None
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
+    window_any._save_workflow = SaveWorkflow(window)
     return window, editor_manager
 
 
@@ -162,21 +174,21 @@ def test_handle_format_current_file_action_uses_black_for_python_files(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format)
+    monkeypatch.setattr("app.shell.python_style_workflow.format_python_with_workflow", _fake_format)
     monkeypatch.setattr(
-        "app.shell.main_window.format_text_basic",
+        "app.shell.python_style_workflow.format_text_basic",
         lambda *_args, **_kwargs: pytest.fail("Non-Python formatter should not run for .py files"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.information",
+        "app.shell.python_style_workflow.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.python_style_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    MainWindow._handle_format_current_file_action(window)
+    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
 
     assert calls == [
         {
@@ -197,19 +209,19 @@ def test_handle_format_current_file_action_uses_basic_formatter_for_non_python_f
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_with_workflow",
+        "app.shell.python_style_workflow.format_python_with_workflow",
         lambda *_a, **_kw: pytest.fail("Python formatter should not run for non-Python files"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_text_basic",
+        "app.shell.python_style_workflow.format_text_basic",
         lambda *_args, **_kwargs: SimpleNamespace(changed=True, formatted_text="alpha\n"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.information",
+        "app.shell.python_style_workflow.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    MainWindow._handle_format_current_file_action(window)
+    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
 
     assert editor_widget.replacements == ["alpha\n"]
     assert infos == [("Format Current File", "Formatting applied.")]
@@ -240,13 +252,13 @@ def test_handle_format_current_file_action_surfaces_python_syntax_errors(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format)
+    monkeypatch.setattr("app.shell.python_style_workflow.format_python_with_workflow", _fake_format)
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.python_style_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    MainWindow._handle_format_current_file_action(window)
+    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
 
     assert editor_widget.replacements == []
     assert warnings == [
@@ -289,13 +301,13 @@ def test_handle_organize_imports_action_uses_isort_for_python_files(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize)
+    monkeypatch.setattr("app.shell.python_style_workflow.organize_imports_with_workflow", _fake_organize)
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.information",
+        "app.shell.python_style_workflow.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    MainWindow._handle_organize_imports_action(window)
+    cast(Any, window)._python_style_workflow.handle_organize_imports_action()
 
     assert calls == [
         {
@@ -315,15 +327,15 @@ def test_handle_organize_imports_action_rejects_non_python_files(
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_with_workflow",
+        "app.shell.python_style_workflow.organize_imports_with_workflow",
         lambda *_a, **_kw: pytest.fail("isort should not run for non-Python files"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.information",
+        "app.shell.python_style_workflow.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    MainWindow._handle_organize_imports_action(window)
+    cast(Any, window)._python_style_workflow.handle_organize_imports_action()
 
     assert editor_widget.replacements == []
     assert infos == [
@@ -382,14 +394,14 @@ def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_save)
-    monkeypatch.setattr("app.shell.main_window.format_python_with_workflow", _fake_format_save)
+    monkeypatch.setattr("app.shell.save_workflow.organize_imports_with_workflow", _fake_organize_save)
+    monkeypatch.setattr("app.shell.save_workflow.format_python_with_workflow", _fake_format_save)
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
 
-    assert MainWindow._save_tab(window, "/tmp/project/main.py") is True
+    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
     assert organize_calls == ["import b\nimport a\n"]
     assert format_calls == ["import a\nimport b\n"]
     assert editor_manager.saved_contents == ["import a\n\nimport b\n"]
@@ -422,17 +434,17 @@ def test_save_tab_still_saves_when_python_style_automation_fails(
             ),
         )
 
-    monkeypatch.setattr("app.shell.main_window.organize_imports_with_workflow", _fake_organize_err)
+    monkeypatch.setattr("app.shell.save_workflow.organize_imports_with_workflow", _fake_organize_err)
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.save_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    assert MainWindow._save_tab(window, "/tmp/project/main.py") is True
+    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
     assert editor_manager.saved_contents == ["import b\nimport a\n"]
     assert warnings == [
         (
@@ -451,25 +463,25 @@ def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
     window_any._editor_format_on_save = True
     warnings: list[tuple[str, str]] = []
 
-    monkeypatch.setattr("app.shell.main_window.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
+    monkeypatch.setattr("app.shell.save_workflow.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
     monkeypatch.setattr(
-        "app.shell.main_window.organize_imports_with_workflow",
+        "app.shell.save_workflow.organize_imports_with_workflow",
         lambda *_a, **_kw: pytest.fail("Guardrail should skip organize imports"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.format_python_with_workflow",
+        "app.shell.save_workflow.format_python_with_workflow",
         lambda *_a, **_kw: pytest.fail("Guardrail should skip formatting"),
     )
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.save_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    assert MainWindow._save_tab(window, "/tmp/project/main.py") is True
+    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
     assert editor_manager.saved_contents == ["import b\nimport a\n"]
     assert warnings == [
         (
@@ -485,9 +497,45 @@ def test_save_tab_applies_generic_hygiene_without_python_format_on_save(
     window, editor_manager = _build_save_window("/tmp/project/notes.txt", "note   ")
 
     monkeypatch.setattr(
-        "app.shell.main_window.should_refresh_index_after_save",
+        "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
 
-    assert MainWindow._save_tab(window, "/tmp/project/notes.txt") is True
+    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/notes.txt") is True
     assert editor_manager.saved_contents == ["note\n"]
+
+
+def test_flush_auto_save_to_file_does_not_apply_save_transforms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Buffer ends in 4 trailing spaces, simulating a freshly auto-indented blank line
+    # the user is sitting on. If auto-save runs trim_trailing_whitespace_on_save the
+    # spaces vanish and the cursor jumps to column 0 (the bug Clair reported).
+    file_path = "/tmp/project/main.py"
+    buffer_with_trailing_indent = "def foo():\n    "
+    window, editor_manager = _build_save_window(file_path, buffer_with_trailing_indent)
+    window_any = cast(Any, window)
+    window_any._editor_auto_save = True
+    window_any._editor_organize_imports_on_save = True
+    window_any._editor_format_on_save = True
+
+    monkeypatch.setattr(
+        "app.shell.save_workflow.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        "app.shell.save_workflow.organize_imports_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke isort"),
+    )
+    monkeypatch.setattr(
+        "app.shell.save_workflow.format_python_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke Black"),
+    )
+    monkeypatch.setattr(
+        "app.shell.save_workflow.format_text_basic",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke the basic formatter"),
+    )
+
+    cast(Any, window)._save_workflow.flush_auto_save_to_file()
+
+    assert editor_manager.saved_contents == [buffer_with_trailing_indent]

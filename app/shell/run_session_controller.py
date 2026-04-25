@@ -212,6 +212,8 @@ class RunSessionController:
         project_gated_action_ids = (
             "shell.action.run.pytestProject",
             "shell.action.run.pytestCurrentFile",
+            "shell.action.run.pytestAtCursor",
+            "shell.action.run.debugPytestFailed",
             "shell.action.run.runWithConfig",
         )
         for action_id in project_gated_action_ids:

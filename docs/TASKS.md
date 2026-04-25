@@ -968,11 +968,11 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
 - Objective: provide go-to-definition and unresolved import analysis workflow.
 - Primary files:
   - `app/intelligence/symbol_index.py`
-  - `app/intelligence/navigation_service.py`
+  - `app/intelligence/semantic_facade.py`
   - `app/intelligence/diagnostics_service.py`
   - `app/shell/main_window.py`
   - `tests/unit/intelligence/test_symbol_index.py`
-  - `tests/unit/intelligence/test_navigation_service.py`
+  - `tests/unit/intelligence/test_semantic_navigation_integration.py`
   - `tests/unit/intelligence/test_diagnostics_service.py`
 
 ### G08 — Debugger workflow baseline
@@ -1259,7 +1259,10 @@ Release class default for this section: `RELEASE-CRITICAL` unless noted.
   - `app/editors/syntax_registry.py`
   - `app/treesitter/loader.py`
   - `app/treesitter/language_registry.py`
-  - `app/treesitter/highlighter.py`
+  - `app/treesitter/highlighter_core.py`
+  - `app/treesitter/capture_pipeline.py`
+  - `app/treesitter/injection_highlights.py`
+  - `app/treesitter/local_semantics.py`
   - `app/treesitter/queries/*.scm`
   - `vendor/tree_sitter/*`
   - `docs/ARCHITECTURE.md`
@@ -1398,10 +1401,10 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Primary files:
   - `tests/fixtures/semantic/**`
   - `tests/unit/intelligence/test_semantic_facade.py`
-  - `tests/integration/intelligence/test_semantic_navigation_integration.py`
+  - `tests/unit/intelligence/test_semantic_navigation_integration.py`
   - existing intelligence unit tests under `tests/unit/intelligence/`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/integration/intelligence/`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/`
 - Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-49`, `AT-50`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `I01`
@@ -1446,15 +1449,15 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Status: `DONE`
 - Objective: replace heuristic completion, definition, hover, signature help, and references with project-aware semantic queries while preserving unsaved-buffer support.
 - Primary files:
-  - `app/intelligence/navigation_service.py`
+  - `app/intelligence/semantic_facade.py`
+  - `app/intelligence/semantic_session.py`
+  - `app/intelligence/jedi_engine.py`
+  - `app/intelligence/semantic_utils.py`
   - `app/intelligence/completion_service.py`
-  - `app/intelligence/hover_service.py`
-  - `app/intelligence/signature_service.py`
-  - `app/intelligence/reference_service.py`
   - `app/editors/code_editor_widget.py`
   - `app/shell/main_window.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/integration/intelligence/`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/ tests/integration/intelligence/test_no_hidden_metadata.py`
 - Acceptance linkage: `AT-45`, `AT-46`, `AT-47`, `AT-48`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `I03`, `I04`
@@ -1465,14 +1468,14 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Status: `DONE`
 - Objective: hard-cut rename to a trusted project-wide planner with grouped patch previews, rollback, and no token-replace fallback.
 - Primary files:
-  - `app/intelligence/refactor_service.py`
+  - `app/intelligence/semantic_facade.py`
   - `app/intelligence/refactor_engine.py`
   - `app/intelligence/import_rewrite.py`
   - `app/shell/main_window.py`
-  - `tests/unit/intelligence/test_refactor_service.py`
-  - `tests/integration/intelligence/test_semantic_rename_integration.py`
+  - `tests/unit/intelligence/test_refactor_engine.py`
+  - `tests/unit/intelligence/test_semantic_rename_integration.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_refactor_service.py tests/integration/intelligence/test_semantic_rename_integration.py`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/intelligence/test_refactor_engine.py tests/unit/intelligence/test_semantic_rename_integration.py tests/integration/intelligence/test_no_hidden_metadata.py`
 - Acceptance linkage: `AT-49`, `AT-50`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `I03`, `I04`, `I05`
@@ -1781,7 +1784,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
   - `app/shell/menus.py`
   - `app/shell/toolbar.py`
   - `app/shell/main_window.py`
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_runner_service.py`
   - `app/shell/actions.py`
 - Automated test layer: `unit`, `integration`
 - Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/shell/ tests/integration/shell/ tests/integration/debug/`
@@ -1871,6 +1874,9 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Primary files:
   - `app/persistence/history_models.py`
   - `app/persistence/local_history_store.py`
+  - `app/persistence/local_history_schema.py`
+  - `app/persistence/local_history_repository.py`
+  - `app/persistence/local_history_blob_store.py`
   - `app/persistence/history_retention.py`
   - `app/persistence/autosave_store.py`
   - `tests/unit/persistence/test_local_history_store.py`
@@ -2583,12 +2589,12 @@ todo ids.
   - `app/plugins/discovery.py`
   - `app/plugins/installer.py`
   - `app/plugins/host_runtime.py`
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_runner_service.py`
   - `tests/unit/plugins/test_auditor.py`
   - `tests/unit/plugins/test_discovery.py`
   - `tests/unit/plugins/test_installer.py`
 - Automated test layer: `unit`, `runtime_parity`
-- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py tests/unit/run/test_test_runner_service.py`
+- Validation method: `python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/ tests/runtime_parity/plugins/test_workflow_plugin_runtime.py tests/unit/run/test_pytest_runner_service.py`
 - Acceptance linkage: `AT-40`, `AT-87`, `AT-89`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `P04`, `P07`
@@ -2723,7 +2729,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 
 This phase addresses the #3 strategic gap from `docs/NEXT_LEVEL_PYTHON_EDITOR_ANALYSIS.md`:
 a discoverable test explorer with run-current-test, rerun-failed, debug-failed, and
-persistent results on top of the existing `test_runner_service.py`.
+persistent results on top of the existing `pytest_runner_service.py`.
 
 ### R01 — Testing workflow contract and acceptance coverage
 
@@ -2745,10 +2751,10 @@ persistent results on top of the existing `test_runner_service.py`.
 - Status: `DONE`
 - Objective: build pytest-based test discovery that collects file/class/test nodes into a tree model.
 - Primary files:
-  - `app/run/test_discovery_service.py`
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_discovery_service.py`
+  - `app/run/pytest_runner_service.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_discovery_service.py`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_pytest_discovery_service.py`
 - Acceptance linkage: `AT-96`, `AT-97`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `R01`
@@ -2774,12 +2780,12 @@ persistent results on top of the existing `test_runner_service.py`.
 - Status: `DONE`
 - Objective: add caret-level "Run This Test" and file-level "Run File Tests" targeting.
 - Primary files:
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_runner_service.py`
   - `app/shell/main_window.py`
   - `app/shell/menus.py`
   - `app/shell/actions.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_pytest_runner_service.py`
 - Acceptance linkage: `AT-98`, `AT-99`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `R02`
@@ -2790,11 +2796,11 @@ persistent results on top of the existing `test_runner_service.py`.
 - Status: `DONE`
 - Objective: add rerun-failed-only workflow and tight debug follow-up from test failures.
 - Primary files:
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_runner_service.py`
   - `app/shell/test_explorer_panel.py`
   - `app/shell/main_window.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_pytest_runner_service.py`
 - Acceptance linkage: `AT-99`, `AT-100`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `R02`, `R03`
@@ -2805,10 +2811,10 @@ persistent results on top of the existing `test_runner_service.py`.
 - Status: `DONE`
 - Objective: persist test results across sessions and integrate with Problems pane and editor gutters.
 - Primary files:
-  - `app/run/test_runner_service.py`
+  - `app/run/pytest_runner_service.py`
   - `app/shell/problems_panel.py`
 - Automated test layer: `unit`, `integration`
-- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_test_runner_service.py`
+- Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/run/test_pytest_runner_service.py`
 - Acceptance linkage: `AT-100`, `AT-101`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `R02`, `R04`

@@ -96,8 +96,12 @@ Top-level schema:
 Rules:
 
 * `id` and `title` are required.
-* `runtime: true` routes the command through the plugin host.
+* `runtime` defaults to `false`.
+* `runtime: true` routes the command through the plugin host and requires
+  `runtime.entrypoint`.
 * `runtime: false` leaves execution entirely declarative inside the shell.
+* Command contribution shape is validated when the manifest is parsed; invalid
+  command entries fail plugin load instead of being skipped during activation.
 
 ## 3. Event hook API
 
@@ -167,49 +171,28 @@ Runtime module entrypoint path is `runtime.entrypoint`.
 
 ### Command handlers
 
-Accepted command signatures:
+Command handlers use this signature:
 
 ```python
 def handle_command(command_id, payload):
     ...
 ```
 
-or:
-
-```python
-def handle_command(payload):
-    ...
-```
-
 ### Query provider handlers
 
-Accepted query-provider signatures:
+Query-provider handlers use this signature:
 
 ```python
 def handle_formatter_query(provider_key, request):
     ...
 ```
 
-or:
-
-```python
-def handle_formatter_query(request):
-    ...
-```
-
 ### Job provider handlers
 
-Accepted job-provider signatures:
+Job-provider handlers use this signature:
 
 ```python
 def handle_pytest_job(provider_key, request, emit_event, is_cancelled):
-    ...
-```
-
-or:
-
-```python
-def handle_pytest_job(request, emit_event, is_cancelled):
     ...
 ```
 

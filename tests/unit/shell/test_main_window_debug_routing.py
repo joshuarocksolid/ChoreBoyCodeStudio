@@ -17,6 +17,7 @@ from app.debug.debug_session import DebugSession  # noqa: E402
 from app.run.problem_parser import ProblemEntry  # noqa: E402
 from app.run.process_supervisor import ProcessEvent  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402
+from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.run_session_controller import RunSessionStartFailureReason, RunSessionStartResult  # noqa: E402
 
@@ -67,6 +68,12 @@ class _FakeRunSessionController:
     def __init__(self, active_mode: str) -> None:
         self.active_session_mode = active_mode
 
+    def set_active_session_mode(self, mode: str | None) -> None:
+        self.active_session_mode = mode
+
+    def clear_active_session_mode(self) -> None:
+        self.active_session_mode = None
+
     def start_session(self, **_kwargs):  # type: ignore[no-untyped-def]
         return RunSessionStartResult(
             started=True,
@@ -108,7 +115,7 @@ class _FakeEditorWidget:
 def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_DEBUG
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_DEBUG)
     window_any._debug_session = DebugSession()
     window_any._active_run_output_tail = _TailBuffer()
     window_any._is_shutting_down = False
@@ -144,7 +151,7 @@ def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:
 def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_SCRIPT)
     window_any._debug_session = DebugSession()
     window_any._active_run_output_tail = _TailBuffer()
     window_any._is_shutting_down = False
@@ -179,7 +186,7 @@ def test_apply_run_event_auto_focuses_run_log_tab_when_enabled() -> None:
 def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_session_mode = constants.RUN_MODE_PYTHON_SCRIPT
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_SCRIPT)
     window_any._debug_session = DebugSession()
     window_any._is_shutting_down = False
     window_any._auto_open_problems_on_run_failure = True
@@ -196,8 +203,6 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
             message="RuntimeError: boom",
         )
     ]
-    window_any._run_session_controller = SimpleNamespace(clear_active_session_mode=lambda: None)
-
     problems_widget = object()
     window_any._problems_panel = problems_widget
     window_any._bottom_tabs_widget = _FakeBottomTabs({problems_widget: 3})
@@ -240,7 +245,7 @@ def test_start_session_in_debug_enables_debug_input() -> None:
     window_any._loaded_project = object()
     window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_DEBUG)
     window_any._debug_panel = _FakeDebugPanel()
-    window_any._handle_save_all_action = lambda: True
+    window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
     window_any._prepare_for_session_start = lambda: None
     window_any._append_console_line = lambda _text, _stream="stdout": None
     window_any._append_python_console_line = lambda _text, _stream="stdout": None
@@ -255,41 +260,6 @@ def test_start_session_in_debug_enables_debug_input() -> None:
 
     assert started is True
     assert debug_panel.enabled_calls == [True]
-
-
-def test_handle_debug_pytest_current_file_action_starts_debug_test_session(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
-    project_root.mkdir(parents=True)
-    run_tests_path = project_root / "run_tests.py"
-    run_tests_path.write_text("print('tests')\n", encoding="utf-8")
-    test_file = project_root / "tests_sample.py"
-    test_file.write_text("def test_sample():\n    assert True\n", encoding="utf-8")
-
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    start_calls: list[dict[str, object]] = []
-    policy = SimpleNamespace(name="policy")
-    window_any._loaded_project = SimpleNamespace(project_root=str(project_root.resolve()))
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(file_path=str(test_file.resolve()))
-    )
-    window_any._build_debug_breakpoints_for_launch = lambda: ["bp"]
-    window_any._debug_exception_policy = policy
-    window_any._last_debug_target = None
-    window_any._start_session = lambda **kwargs: start_calls.append(kwargs) or True
-
-    MainWindow._handle_debug_pytest_current_file_action(window)
-
-    assert len(start_calls) == 1
-    assert start_calls[0]["mode"] == constants.RUN_MODE_PYTHON_DEBUG
-    assert start_calls[0]["entry_file"] == str(run_tests_path)
-    assert start_calls[0]["argv"] == ["-q", "--import-mode=importlib", str(test_file.resolve())]
-    assert start_calls[0]["breakpoints"] == ["bp"]
-    assert start_calls[0]["debug_exception_policy"] is policy
-    assert window_any._last_debug_target == {
-        "kind": "current_test",
-        "target_path": str(test_file.resolve()),
-    }
 
 
 def test_handle_rerun_last_debug_target_replays_project_debug() -> None:
@@ -309,10 +279,14 @@ def test_handle_rerun_last_debug_target_replays_current_test_debug() -> None:
     window_any = cast(Any, window)
     calls: list[tuple[str, object]] = []
     window_any._last_debug_target = {"kind": "current_test", "target_path": "/tmp/project/test_sample.py"}
-    window_any._open_file_in_editor = lambda file_path, preview=False: calls.append(("open", file_path)) or True
+    window_any._editor_tab_factory = SimpleNamespace(
+        open_file_in_editor=lambda file_path, preview=False: calls.append(("open", file_path)) or True
+    )
     window_any._editor_tabs_widget = SimpleNamespace(setCurrentIndex=lambda index: calls.append(("tab", index)))
     window_any._tab_index_for_path = lambda _file_path: 2
-    window_any._handle_debug_pytest_current_file_action = lambda: calls.append(("debug", "current_test"))
+    window_any._test_runner_workflow = SimpleNamespace(
+        debug_current_file_tests=lambda: calls.append(("debug", "current_test"))
+    )
 
     MainWindow._handle_rerun_last_debug_target_action(window)
 
@@ -335,7 +309,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
         )
     )
     window_any._debug_panel = None
-    window_any._handle_save_all_action = lambda: True
+    window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
     window_any._prepare_for_session_start = lambda: None
     window_any._append_console_line = lambda _text, _stream="stdout": None
     window_any._append_python_console_line = lambda _text, _stream="stdout": None
@@ -345,7 +319,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.run_debug_presenter.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -366,7 +340,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
         )
     )
     window_any._debug_panel = None
-    window_any._handle_save_all_action = lambda: True
+    window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
     window_any._prepare_for_session_start = lambda: None
     window_any._append_console_line = lambda _text, _stream="stdout": None
     window_any._append_python_console_line = lambda _text, _stream="stdout": None
@@ -376,7 +350,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.run_debug_presenter.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -394,6 +368,7 @@ def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation
     window_any._debug_execution_editor = None
     window_any._editor_widgets_by_path = {}
     window_any._clear_debug_execution_indicator = lambda: None
+    window_any._debug_control_workflow = DebugControlWorkflow(window)
 
     state = DebugSessionState(
         execution_state=DebugExecutionState.PAUSED,
@@ -421,7 +396,7 @@ def test_handle_debug_navigate_preview_ignores_non_project_file() -> None:
     open_calls: list[tuple[str, int | None]] = []
     window_any._open_file_at_line = lambda file_path, line_number: open_calls.append((file_path, line_number))
 
-    MainWindow._handle_debug_navigate_preview(window, "/tmp/ide/app/shell/main_window.py", 99)
+    DebugControlWorkflow(window).handle_debug_navigate_preview("/tmp/ide/app/shell/main_window.py", 99)
 
     assert open_calls == []
 
@@ -435,7 +410,7 @@ def test_handle_debug_navigate_preview_opens_project_file_as_preview() -> None:
         lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
     )
 
-    MainWindow._handle_debug_navigate_preview(window, "/tmp/project/app/main.py", 17)
+    DebugControlWorkflow(window).handle_debug_navigate_preview("/tmp/project/app/main.py", 17)
 
     assert open_calls == [("/tmp/project/app/main.py", 17, True)]
 
@@ -449,7 +424,7 @@ def test_handle_debug_navigate_permanent_opens_project_file_as_permanent() -> No
         lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
     )
 
-    MainWindow._handle_debug_navigate_permanent(window, "/tmp/project/app/main.py", 18)
+    DebugControlWorkflow(window).handle_debug_navigate_permanent("/tmp/project/app/main.py", 18)
 
     assert open_calls == [("/tmp/project/app/main.py", 18, False)]
 

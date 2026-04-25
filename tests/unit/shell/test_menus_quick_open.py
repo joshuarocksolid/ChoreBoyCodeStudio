@@ -28,7 +28,7 @@ def test_quick_open_action_is_registered_with_callback_and_shortcut(_ensure_qapp
     window = QMainWindow()
 
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(on_quick_open=lambda: calls.append("triggered")),
     )
     quick_open_action = registry.action("shell.action.file.quickOpen")
@@ -44,7 +44,7 @@ def test_quick_open_action_is_registered_with_callback_and_shortcut(_ensure_qapp
 
 def test_quick_open_action_is_only_in_file_menu(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    _ = build_menu_stubs(window, callbacks=MenuCallbacks())
+    _ = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     file_menu = window.findChild(qt_widgets.QMenu, "shell.menu.file")
     edit_menu = window.findChild(qt_widgets.QMenu, "shell.menu.edit")

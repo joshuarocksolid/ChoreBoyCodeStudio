@@ -10,7 +10,7 @@ from PySide2.QtGui import QTextDocument
 
 from app.editors.ini_highlighter import IniSyntaxHighlighter
 from app.editors.syntax_engine import SyntaxPalette
-from app.treesitter.highlighter import TreeSitterHighlighter
+from app.treesitter.highlighter_core import TreeSitterHighlighter
 from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
 
 _DEFAULT_REGISTRY: SyntaxHighlighterRegistry | None = None

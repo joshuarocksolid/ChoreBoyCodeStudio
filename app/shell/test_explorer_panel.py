@@ -19,7 +19,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from app.run.test_discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
 
 if TYPE_CHECKING:
     from app.shell.theme_tokens import ShellThemeTokens
@@ -352,6 +352,7 @@ class TestExplorerPanel(QWidget):
     debug_test_requested: Any = Signal(str)
     run_all_requested: Any = Signal()
     run_failed_requested: Any = Signal()
+    debug_failed_requested: Any = Signal()
     refresh_requested: Any = Signal()
     navigate_to_test: Any = Signal(str, int)
 
@@ -421,6 +422,17 @@ class TestExplorerPanel(QWidget):
         self._run_failed_btn.setEnabled(False)
         self._run_failed_btn.clicked.connect(self.run_failed_requested.emit)
         tb_layout.addWidget(self._run_failed_btn)
+
+        self._debug_failed_btn = QToolButton()
+        self._debug_failed_btn.setObjectName("shell.testExplorer.debugFailedBtn")
+        self._debug_failed_btn.setIcon(_action_icon("rerun", self._action_color))
+        self._debug_failed_btn.setText("Debug Failed")
+        self._debug_failed_btn.setToolTip("Debug the first failed test")
+        self._debug_failed_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._debug_failed_btn.setAutoRaise(True)
+        self._debug_failed_btn.setEnabled(False)
+        self._debug_failed_btn.clicked.connect(self.debug_failed_requested.emit)
+        tb_layout.addWidget(self._debug_failed_btn)
 
         root.addWidget(self._toolbar)
 
@@ -542,6 +554,7 @@ class TestExplorerPanel(QWidget):
         self._refresh_btn.setIcon(_action_icon("refresh", self._action_color))
         self._run_all_btn.setIcon(_action_icon("play", self._action_color))
         self._run_failed_btn.setIcon(_action_icon("rerun", self._action_color))
+        self._debug_failed_btn.setIcon(_action_icon("rerun", self._action_color))
 
         self._refresh_outcome_icons()
         self._refresh_summary_colors()
@@ -558,6 +571,7 @@ class TestExplorerPanel(QWidget):
             self._set_status_dot_state("error")
             self._discovery_count = 0
             self._run_failed_btn.setEnabled(False)
+            self._debug_failed_btn.setEnabled(False)
             self._filter_bar.setVisible(False)
             return
 
@@ -597,7 +611,7 @@ class TestExplorerPanel(QWidget):
             self._empty_label.setText("No tests found in this project")
             self._stack_layout.setCurrentWidget(self._empty_label)
 
-        self._run_failed_btn.setEnabled(any(v == "failed" for v in self._outcomes.values()))
+        self._refresh_failed_action_states()
         self._refresh_filter_counts()
         self._apply_filters()
         self._refresh_summary()
@@ -606,7 +620,7 @@ class TestExplorerPanel(QWidget):
         """Update per-test outcome indicators."""
         self._outcomes.update(outcomes)
         self._refresh_outcome_icons()
-        self._run_failed_btn.setEnabled(any(v == "failed" for v in self._outcomes.values()))
+        self._refresh_failed_action_states()
         self._refresh_filter_counts()
         self._apply_filters()
         self._refresh_summary()
@@ -615,7 +629,7 @@ class TestExplorerPanel(QWidget):
         """Replace all tracked outcomes and refresh indicator state."""
         self._outcomes = dict(outcomes)
         self._refresh_outcome_icons()
-        self._run_failed_btn.setEnabled(any(v == "failed" for v in self._outcomes.values()))
+        self._refresh_failed_action_states()
         self._refresh_filter_counts()
         self._apply_filters()
         self._refresh_summary()
@@ -624,7 +638,7 @@ class TestExplorerPanel(QWidget):
         """Toggle running-state visual feedback."""
         self._is_running = running
         self._run_all_btn.setEnabled(not running)
-        self._run_failed_btn.setEnabled(not running and any(v == "failed" for v in self._outcomes.values()))
+        self._refresh_failed_action_states()
         self._refresh_btn.setEnabled(not running)
         if running:
             self._set_status_dot_state("running")
@@ -646,6 +660,12 @@ class TestExplorerPanel(QWidget):
         return [nid for nid, outcome in self._outcomes.items() if outcome == "failed"]
 
     # -- internal: icon / outcome refresh -----------------------------------
+
+    def _refresh_failed_action_states(self) -> None:
+        has_failed = any(v == "failed" for v in self._outcomes.values())
+        enabled = not self._is_running and has_failed
+        self._run_failed_btn.setEnabled(enabled)
+        self._debug_failed_btn.setEnabled(enabled)
 
     def _refresh_outcome_icons(self) -> None:
         for i in range(self._tree.topLevelItemCount()):

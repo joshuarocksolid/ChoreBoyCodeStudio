@@ -13,7 +13,7 @@ from app.python_tools.black_adapter import format_python_text
 from app.python_tools.isort_adapter import organize_imports_text
 from app.python_tools.models import PythonTextTransformResult
 from app.run.problem_parser import ProblemEntry
-from app.run.test_runner_service import (
+from app.run.pytest_runner_service import (
     PytestRunResult,
     run_pytest_args,
     run_pytest_project,

@@ -46,3 +46,22 @@ def test_resolve_python_tooling_settings_defaults_to_py39_without_pyproject() ->
     assert settings.black_line_length == 88
     assert settings.isort_profile == "black"
     assert settings.isort_line_length == 88
+
+
+def test_resolve_python_tooling_settings_records_pyproject_parse_errors(tmp_path: Path) -> None:
+    project_root = tmp_path / "bad_config_project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('ok')\n", encoding="utf-8")
+    (project_root / "pyproject.toml").write_text("[tool.black\n", encoding="utf-8")
+
+    settings = resolve_python_tooling_settings(
+        project_root=str(project_root),
+        file_path=str(file_path),
+    )
+
+    assert settings.config_source == "project_pyproject"
+    assert settings.pyproject_path == project_root / "pyproject.toml"
+    assert settings.config_error
+    assert settings.python_target_minor == 39
+    assert settings.black_line_length == 88

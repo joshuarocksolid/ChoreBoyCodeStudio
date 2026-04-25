@@ -118,11 +118,7 @@ class RuntimePluginIndex:
             raise RuntimeError(
                 f"Runtime handler '{binding.handler_name}' not found for command '{command_id}'."
             )
-        return _call_runtime_callable(
-            runtime_callable,
-            command_id,
-            payload,
-        )
+        return runtime_callable(command_id, payload)
 
     def invoke_query(
         self,
@@ -156,11 +152,7 @@ class RuntimePluginIndex:
             raise RuntimeError(
                 f"Query handler '{handler_name}' not found for provider '{provider_id}'."
             )
-        return _call_runtime_callable(
-            runtime_callable,
-            provider_id,
-            request,
-        )
+        return runtime_callable(provider_id, request)
 
     def run_job(
         self,
@@ -196,13 +188,7 @@ class RuntimePluginIndex:
             raise RuntimeError(
                 f"Job handler '{handler_name}' not found for provider '{provider_id}'."
             )
-        return _call_job_runtime_callable(
-            runtime_callable,
-            provider_id,
-            request,
-            emit_event,
-            is_cancelled,
-        )
+        return runtime_callable(provider_id, request, emit_event, is_cancelled)
 
     def _build_index(self, *, app_version: str, api_version: int) -> None:
         registry = load_plugin_registry(self._state_root)
@@ -237,24 +223,13 @@ class RuntimePluginIndex:
         manifest = plugin.manifest
         if manifest is None:
             return
-        contributes = manifest.contributes.get("commands", [])
-        if not isinstance(contributes, list):
-            return
-        for command_payload in contributes:
-            if not isinstance(command_payload, dict):
+        for command in manifest.command_contributions:
+            if not command.runtime:
                 continue
-            command_id = command_payload.get("id")
-            runtime_flag = command_payload.get("runtime", True)
-            runtime_handler_name = command_payload.get("runtime_handler", "handle_command")
-            if not isinstance(command_id, str) or not command_id.strip():
-                continue
-            if runtime_flag is False:
-                continue
-            if not isinstance(runtime_handler_name, str) or not runtime_handler_name.strip():
-                continue
-            self._command_bindings[command_id.strip()] = _RuntimeCommandBinding(
-                command_id=command_id.strip(),
-                handler_name=runtime_handler_name.strip(),
+            handler_name = command.runtime_handler or "handle_command"
+            self._command_bindings[command.command_id] = _RuntimeCommandBinding(
+                command_id=command.command_id,
+                handler_name=handler_name,
                 manifest=manifest,
                 install_path=Path(plugin.install_path).expanduser().resolve(),
                 source_kind=plugin.source_kind,
@@ -367,34 +342,3 @@ def _activation_matches(
     return False
 
 
-def _call_runtime_callable(runtime_callable: Callable[..., Any], *args: Any) -> Any:
-    try:
-        return runtime_callable(*args)
-    except TypeError:
-        if len(args) >= 2:
-            try:
-                return runtime_callable(args[-1])
-            except TypeError:
-                pass
-        if len(args) >= 1:
-            return runtime_callable(args[0])
-        raise
-
-
-def _call_job_runtime_callable(
-    runtime_callable: Callable[..., Any],
-    provider_id: str,
-    request: dict[str, Any],
-    emit_event: RuntimeJobEventEmitter,
-    is_cancelled: Callable[[], bool],
-) -> Any:
-    try:
-        return runtime_callable(provider_id, request, emit_event, is_cancelled)
-    except TypeError:
-        try:
-            return runtime_callable(request, emit_event, is_cancelled)
-        except TypeError:
-            try:
-                return runtime_callable(provider_id, request)
-            except TypeError:
-                return runtime_callable(request)

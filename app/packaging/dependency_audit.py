@@ -6,17 +6,40 @@ import ast
 from collections import Counter
 from pathlib import Path
 
-from app.core import constants
 from app.core.models import RuntimeIssue
-from app.intelligence.diagnostics_service import _STDLIB_FALLBACK
-from app.intelligence.import_resolver import resolve_project_import
-from app.intelligence.runtime_import_probe import is_runtime_module_importable
-from app.packaging.layout import should_exclude_relative_path
+from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import DependencyAuditRecord, DependencyAuditReport
+from app.project.dependency_classifier import (
+    CATEGORY_FIRST_PARTY,
+    CATEGORY_MISSING,
+    CATEGORY_RUNTIME,
+    CATEGORY_STDLIB,
+    CATEGORY_VENDORED,
+    CATEGORY_VENDORED_NATIVE,
+    classify_module,
+)
+from app.project.file_inventory import iter_python_files
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
 
-_COMPILED_EXTENSION_SUFFIXES = (".so", ".pyd", ".dll", ".dylib")
 _SUBPROCESS_CALL_NAMES = {"Popen", "call", "check_call", "check_output", "run"}
+
+_CATEGORY_DETAILS: dict[str, str] = {
+    CATEGORY_STDLIB: "Python standard library import.",
+    CATEGORY_FIRST_PARTY: "Project-local module resolved from source tree.",
+    CATEGORY_VENDORED: "Vendored dependency included under project vendor/.",
+    CATEGORY_VENDORED_NATIVE: "Vendored dependency appears to ship a compiled extension.",
+    CATEGORY_RUNTIME: "Resolved from AppRun runtime module inventory.",
+    CATEGORY_MISSING: "Import is not resolved from project files, vendor/, or the AppRun runtime.",
+}
+
+_CATEGORY_TO_CLASSIFICATION: dict[str, str] = {
+    CATEGORY_STDLIB: "stdlib",
+    CATEGORY_FIRST_PARTY: "first_party",
+    CATEGORY_VENDORED: "vendored",
+    CATEGORY_VENDORED_NATIVE: "vendored_native",
+    CATEGORY_RUNTIME: "runtime",
+    CATEGORY_MISSING: "missing",
+}
 
 
 def run_dependency_audit(
@@ -32,13 +55,9 @@ def run_dependency_audit(
     issue_keys: set[tuple[str, str, str]] = set()
     classification_counts: Counter[str] = Counter()
 
-    for file_path in sorted(root.rglob("*.py")):
+    for file_path in iter_python_files(root, extra_top_level_skips=("vendor",)):
         rel_path = file_path.relative_to(root)
-        if rel_path.parts and rel_path.parts[0] == "vendor":
-            continue
-        if constants.PROJECT_META_DIRNAME in rel_path.parts:
-            continue
-        if should_exclude_relative_path(rel_path):
+        if is_packaging_excluded_path(rel_path):
             continue
         try:
             source = file_path.read_text(encoding="utf-8")
@@ -164,78 +183,29 @@ def _classify_import(
     known_runtime_modules: frozenset[str] | None,
     allow_runtime_import_probe: bool,
 ) -> DependencyAuditRecord:
-    top_level = module_name.split(".")[0].strip()
     rel_file = file_path.relative_to(project_root).as_posix()
-
-    if top_level in _STDLIB_FALLBACK:
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=module_name,
-            classification="stdlib",
-            detail="Python standard library import.",
-        )
-
-    resolution = resolve_project_import(
-        str(project_root),
-        module_name,
-        known_runtime_modules=frozenset(),
-        allow_runtime_import_probe=False,
+    classification = classify_module(
+        project_root=project_root,
+        module_name=module_name,
+        known_runtime_modules=known_runtime_modules,
+        allow_runtime_import_probe=allow_runtime_import_probe,
     )
-    if resolution.is_resolved and resolution.resolved_path:
-        resolved_path = Path(resolution.resolved_path).resolve()
-        classification = "vendored" if "vendor" in resolved_path.parts else "first_party"
-        detail = (
-            "Vendored dependency included under project vendor/."
-            if classification == "vendored"
-            else "Project-local module resolved from source tree."
-        )
-        if classification == "vendored" and _has_compiled_extension_candidate(project_root / "vendor", top_level):
-            classification = "vendored_native"
-            detail = "Vendored dependency appears to ship a compiled extension."
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=module_name,
-            classification=classification,
-            resolved_path=str(resolved_path),
-            detail=detail,
-        )
-
-    if known_runtime_modules and top_level in known_runtime_modules:
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=module_name,
-            classification="runtime",
-            detail="Resolved from cached AppRun runtime module inventory.",
-        )
-
-    if allow_runtime_import_probe and top_level and is_runtime_module_importable(top_level):
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=module_name,
-            classification="runtime",
-            detail="Resolved by direct AppRun import probe.",
-        )
-
-    if _has_compiled_extension_candidate(project_root / "vendor", top_level):
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=module_name,
-            classification="vendored_native",
-            detail="Vendored native extension detected without an approved in-process loader declaration.",
-        )
-
     return DependencyAuditRecord(
         source_file=rel_file,
         line_number=line_number,
         module_name=module_name,
-        classification="missing",
-        detail="Import is not resolved from project files, vendor/, or the AppRun runtime.",
+        classification=_CATEGORY_TO_CLASSIFICATION[classification.category],
+        resolved_path=classification.resolved_path,
+        detail=_audit_detail_for(classification.category, classification.resolved_path),
     )
+
+
+def _audit_detail_for(category: str, resolved_path: str | None) -> str:
+    if category == CATEGORY_VENDORED_NATIVE and resolved_path is None:
+        return (
+            "Vendored native extension detected without an approved in-process loader declaration."
+        )
+    return _CATEGORY_DETAILS[category]
 
 
 def _classify_relative_import(
@@ -391,6 +361,23 @@ def _subprocess_issues(
                 },
             )
         )
+    for lineno in _shell_true_subprocess_calls(tree):
+        issues.append(
+            RuntimeIssue(
+                issue_id=f"package.subprocess.shell_true.{rel_file}.{lineno}",
+                workflow="package",
+                severity="blocking",
+                title="Package uses shell=True subprocess execution",
+                summary="A subprocess call opts into shell parsing, which is not part of the supported ChoreBoy packaging contract.",
+                why_it_happened="Shell-mediated subprocesses hide the executable boundary and are difficult to validate under ChoreBoy's restricted runtime.",
+                next_steps=[
+                    "Replace shell=True with an explicit argv-list launch.",
+                    "If a shell is required, call `/bin/sh` explicitly and document the command contract.",
+                ],
+                help_topic=HELP_TOPIC_PACKAGING,
+                evidence={"source_file": rel_file, "line_number": lineno},
+            )
+        )
     return issues
 
 
@@ -440,15 +427,20 @@ def _first_command_name(node: ast.Call) -> str:
     return ""
 
 
-def _has_compiled_extension_candidate(base: Path, top_level: str) -> bool:
-    if not top_level or not base.exists():
-        return False
-    for suffix in _COMPILED_EXTENSION_SUFFIXES:
-        if any(base.glob(f"{top_level}*{suffix}")):
-            return True
-        if (base / top_level).exists() and any((base / top_level).glob(f"*{suffix}")):
-            return True
-    return False
+def _shell_true_subprocess_calls(tree: ast.AST) -> list[int]:
+    line_numbers: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
+            continue
+        if func.value.id != "subprocess" or func.attr not in _SUBPROCESS_CALL_NAMES:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
+                line_numbers.append(int(getattr(node, "lineno", 1) or 1))
+    return line_numbers
 
 
 def _append_issue(

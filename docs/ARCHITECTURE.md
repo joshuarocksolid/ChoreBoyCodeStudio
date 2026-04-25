@@ -195,6 +195,12 @@ The runner process is responsible for:
 
 The runner is disposable and isolated. Each run gets a fresh process.
 
+Debugger watch evaluation is safe by default. Runner-side evaluation goes
+through an AST-validated read-only expression subset in `app.debug.safe_eval`;
+function calls, comprehensions, assignment, and dunder access are rejected unless
+an explicit protocol payload opts into unsafe evaluation. Unsafe evaluation is a
+debugger power-user path and executes in the debugged process.
+
 ## 6.3 Optional Background Workers
 
 For v1, background tasks should remain simple and in-process where possible. Examples:
@@ -203,6 +209,11 @@ For v1, background tasks should remain simple and in-process where possible. Exa
 - find-in-files
 - project health check
 - syntax/lint scans
+
+Find-in-files and editor-local regex search apply bounded pattern and input
+budgets before invoking Python's regex engine. These limits keep pathological
+user-provided expressions from monopolizing the editor process while preserving
+normal fixed-string and small regex workflows.
 
 If a background job proves expensive, it can later be moved to a dedicated worker process. That should be a future optimization, not an MVP requirement.
 
@@ -375,7 +386,12 @@ choreboy_code_studio/
       __init__.py
       loader.py
       language_registry.py
-      highlighter.py
+      highlighter_core.py
+      capture_pipeline.py
+      local_semantics.py
+      injection_highlights.py
+      jsonc_lexical.py
+      markdown_lexical.py
       queries/
         python.scm
         python.locals.scm
@@ -650,8 +666,16 @@ domain orchestration to focused shell controllers:
 - `run_session_controller` for run/debug/repl lifecycle control wiring
 - `project_tree_controller` for tree move/delete/remap side effects
 - `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
+- `editor_tab_factory` for editor widget materialization and per-tab signal wiring
 - `editor_intelligence_controller` for semantic request routing and inline result formatting
+- `debug_control_workflow` for breakpoint state, debug panel command routing, and debugger transport commands
+- `runtime_support_workflow` for project health checks, support bundles, and project packaging UI actions
+- `python_style_workflow` and `save_workflow` for explicit formatting/import/lint actions and save-time transforms
+- `test_runner_workflow` for pytest discovery, run scopes, explorer outcomes, and debug-test targeting
+- `plugin_activation_workflow` for plugin discovery/config refresh, contribution activation, workflow-provider catalog rebuilds, and runtime-plugin reloads
 - `background_tasks` for keyed off-UI-thread task execution and replacement
+- `startup_facade` for bootstrap capability-refresh hooks that cross into repo-root launch code
+- `python_tooling_status_controller` and `python_tooling_status_copy` for Python tooling status/config copy used by the status bar and settings dialog
 - `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
 
 Key shell responsibilities include:
@@ -673,6 +697,8 @@ and diagnostics overlays
 - dirty state
 - syntax highlighting
 - tree-sitter-driven `QSyntaxHighlighter` pipeline with separate `highlights`, `locals`, and `injections` query layers
+- tree-sitter implementation split across `highlighter_core`, `capture_pipeline`,
+`local_semantics`, `injection_highlights`, `jsonc_lexical`, and `markdown_lexical`
 - language/query registry (extension + sniff based) for deterministic tree-sitter language resolution, plus manual language override from the shell
 - incremental parse updates (`tree.edit` + `parser.parse(source, old_tree)`) with changed-range capture refresh
 - locals-aware semantic roles for parameters, imports, variables, classes, and constructors without reintroducing generic Python identifier coloring
@@ -727,7 +753,7 @@ Stores:
   - linter rule overrides
 - atomic text-write helpers used by editor save paths
 - autosave drafts
-- local history checkpoints
+- local history facade, schema, repository, row adapters, file identity, and checkpoint queries
 - content-addressed revision blobs
 - history retention and pruning state
 - optional indexes
@@ -813,9 +839,10 @@ Recommended manifest contents:
     "protocol": "cbcs_debug_v1",
     "host": "127.0.0.1",
     "port": 47123,
-    "session_token": "debug_20260228_153500_001"
+    "session_token": "debug_20260228_153500_001",
+    "connect_timeout_ms": 8000
   },
-  "debug_options": {
+  "debug_exception_policy": {
     "stop_on_uncaught_exceptions": true,
     "stop_on_raised_exceptions": false
   },
@@ -1548,8 +1575,14 @@ Plugin contracts are explicit and versioned:
 - plugin API version compatibility
 - declared capabilities, permissions, and activation events
 - project-scoped plugin policy in `cbcs/plugins.json`
+- manifest-validated command contributions; `runtime` defaults to `false`, and
+  runtime commands require `runtime.entrypoint`
 - typed workflow provider contracts for formatter/import-organizer/diagnostics/test/
 template/packaging/runtime-explainer/FreeCAD-helper/dependency-audit lanes
+- runtime handler signatures are single-shape contracts:
+  `handle_command(command_id, payload)`, query handlers as
+  `(provider_key, request)`, and job handlers as
+  `(provider_key, request, emit_event, is_cancelled)`
 - deterministic lifecycle (discover → validate → enable → activate → disable)
 
 v1 distribution is offline-first through local folder or zip installation.
@@ -1797,10 +1830,13 @@ safer than racing newer buffer state.
 ## AD-019: Packaging is manifest-driven with installable as the default profile
 
 **Decision:** product distribution and in-app project exports share one
-manifest-driven packaging substrate. Project-side packaging metadata lives in
-`cbcs/package.json`, installable packages are the supported default, and portable
-packages remain a stricter profile that resolves package root from the launcher
-location.
+manifest-driven packaging substrate. `app.packaging.artifact_builder` owns the
+shared installable artifact writer, and `app.packaging.product_builder` owns the
+product-specific payload, vendor, cp39 tree-sitter, archive, and budget policy
+behind the thin repo-root `package.py` CLI. Project-side packaging metadata lives
+in `cbcs/package.json`, installable packages are the supported default, and
+portable packages remain a stricter profile that resolves package root from the
+launcher location.
 **Why:** ChoreBoy packaging has to stay AppRun-native, supportable, and explicit
 about upgrade/install behavior under `noexec`, offline-first, and no-terminal
 constraints. A shared manifest/installer contract is safer than letting product

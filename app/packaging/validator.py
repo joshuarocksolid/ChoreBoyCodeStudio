@@ -8,7 +8,7 @@ from pathlib import Path
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core.models import RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
 from app.packaging.dependency_audit import run_dependency_audit
-from app.packaging.layout import should_exclude_relative_path
+from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import (
     DependencyAuditReport,
     PACKAGE_PROFILE_PORTABLE,
@@ -300,7 +300,7 @@ def _validate_icon_path(*, root: Path, icon_path: str) -> RuntimeIssue | None:
             help_topic=HELP_TOPIC_PACKAGING,
             evidence={"icon_path": icon_path, "relative_path": relative_path.as_posix()},
         )
-    if should_exclude_relative_path(relative_path):
+    if is_packaging_excluded_path(relative_path):
         return RuntimeIssue(
             issue_id="package.config.icon_excluded",
             workflow="package",

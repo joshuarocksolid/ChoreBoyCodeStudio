@@ -4,7 +4,7 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-from app.plugins.models import DiscoveredPlugin
+from app.plugins.models import DiscoveredPlugin, PluginCommandContribution
 from app.shell.events import (
     ProjectOpenFailedEvent,
     ProjectOpenedEvent,
@@ -69,50 +69,34 @@ class DeclarativeContributionManager:
             if not enabled_map.get((discovered.plugin_id, discovered.version), True):
                 continue
             contributes = discovered.manifest.contributes
-            commands_payload = contributes.get("commands", [])
-            if isinstance(commands_payload, list):
-                self._apply_commands(discovered.plugin_id, discovered.version, commands_payload)
+            self._apply_commands(
+                discovered.plugin_id,
+                discovered.version,
+                discovered.manifest.command_contributions,
+            )
             hooks_payload = contributes.get("event_hooks", [])
             if isinstance(hooks_payload, list):
-                self._apply_event_hooks(hooks_payload)
+                self._apply_event_hooks(
+                    plugin_id=discovered.plugin_id,
+                    version=discovered.version,
+                    hooks_payload=hooks_payload,
+                )
 
-    def _apply_commands(self, plugin_id: str, version: str, commands_payload: list[Any]) -> None:
-        for command_payload in commands_payload:
-            if not isinstance(command_payload, dict):
-                continue
-            command_id = command_payload.get("id")
-            title = command_payload.get("title")
-            if not isinstance(command_id, str) or not command_id.strip():
-                continue
-            if not isinstance(title, str) or not title.strip():
-                continue
-            menu_id = command_payload.get("menu_id")
-            if not isinstance(menu_id, str) or not menu_id.strip():
-                menu_id = "shell.menu.tools"
-            shortcut = command_payload.get("shortcut")
-            if not isinstance(shortcut, str):
-                shortcut = None
-            status_tip = command_payload.get("status_tip")
-            if not isinstance(status_tip, str):
-                status_tip = None
-            tool_tip = command_payload.get("tool_tip")
-            if not isinstance(tool_tip, str):
-                tool_tip = None
-            message = command_payload.get("message")
-            if not isinstance(message, str) or not message.strip():
-                message = f"{plugin_id}: {command_id}"
-            normalized_command_id = command_id.strip()
-            if not normalized_command_id:
-                continue
-            runtime_flag = bool(command_payload.get("runtime", False))
-            runtime_payload = command_payload.get("runtime_payload", {})
-            if not isinstance(runtime_payload, dict):
-                runtime_payload = {}
+    def _apply_commands(
+        self,
+        plugin_id: str,
+        version: str,
+        commands: list[PluginCommandContribution],
+    ) -> None:
+        for command in commands:
+            command_id = command.command_id
+            message = command.message or f"{plugin_id}: {command_id}"
+            runtime_payload = dict(command.runtime_payload)
             try:
-                if runtime_flag:
+                if command.runtime:
                     self._register_runtime_command(
-                        normalized_command_id,
-                        lambda extra_payload=None, activation_event=None, cid=normalized_command_id, payload=dict(runtime_payload), pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
+                        command_id,
+                        lambda extra_payload=None, activation_event=None, cid=command_id, payload=runtime_payload, pid=plugin_id, ver=version: self._execute_runtime_command_with_quarantine(
                             plugin_id=pid,
                             version=ver,
                             command_id=cid,
@@ -123,31 +107,31 @@ class DeclarativeContributionManager:
                     )
                 else:
                     self._register_runtime_command(
-                        normalized_command_id,
+                        command_id,
                         lambda text=message: self._emit_message(text),
                         True,
                     )
 
                 self._register_runtime_menu_command(
-                    command_id=normalized_command_id,
-                    menu_id=menu_id.strip(),
-                    label=title.strip(),
-                    handler=lambda cid=normalized_command_id: self._execute_runtime_command(
+                    command_id=command_id,
+                    menu_id=command.menu_id,
+                    label=command.title,
+                    handler=lambda cid=command_id: self._execute_runtime_command(
                         cid,
                         None,
                         None,
                     ),
-                    shortcut=shortcut,
+                    shortcut=command.shortcut,
                     enabled=True,
-                    status_tip=status_tip,
-                    tool_tip=tool_tip,
+                    status_tip=command.status_tip,
+                    tool_tip=command.tool_tip,
                     replace=True,
                 )
-                self._registered_command_ids.add(normalized_command_id)
+                self._registered_command_ids.add(command_id)
             except Exception as exc:
                 _LOGGER.warning(
                     "Failed to register declarative command '%s' from plugin %s@%s: %s",
-                    normalized_command_id,
+                    command_id,
                     plugin_id,
                     version,
                     exc,
@@ -171,7 +155,13 @@ class DeclarativeContributionManager:
         self._on_runtime_command_success(plugin_id, version)
         return result
 
-    def _apply_event_hooks(self, hooks_payload: list[Any]) -> None:
+    def _apply_event_hooks(
+        self,
+        *,
+        plugin_id: str,
+        version: str,
+        hooks_payload: list[Any],
+    ) -> None:
         for hook_payload in hooks_payload:
             if not isinstance(hook_payload, dict):
                 continue
@@ -186,11 +176,13 @@ class DeclarativeContributionManager:
             if not normalized_command_id:
                 continue
             normalized_event_type_name = event_type_name.strip()
+            hook_id = f"{normalized_event_type_name}:{normalized_command_id}"
 
             def _handler(
                 _event: object,
                 cid: str = normalized_command_id,
                 event_name: str = normalized_event_type_name,
+                hook_name: str = hook_id,
             ) -> None:
                 try:
                     event_payload = _event_to_payload(_event)
@@ -199,8 +191,15 @@ class DeclarativeContributionManager:
                         event_payload,
                         f"on_event:{event_name}",
                     )
-                except Exception:
-                    return
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "Plugin event hook %s failed for %s@%s: %s",
+                        hook_name,
+                        plugin_id,
+                        version,
+                        exc,
+                        exc_info=True,
+                    )
 
             self._subscribe_shell_event(event_type, _handler)
             self._event_subscriptions.append((event_type, _handler))

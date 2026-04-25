@@ -140,6 +140,21 @@ def test_ingest_zip_extracts_and_updates_manifest(tmp_path: Path) -> None:
     assert manifest.find_by_name("sample_pkg") is not None
 
 
+def test_ingest_zip_rejects_archive_members_outside_vendor_target(tmp_path: Path) -> None:
+    project = _project_root(tmp_path)
+    zip_path = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(str(zip_path), "w") as zf:
+        zf.writestr("../outside.py", "print('escape')\n")
+        zf.writestr("safe_pkg/__init__.py", "# safe\n")
+
+    result = ingest_zip(project_root=str(project), zip_path=str(zip_path), name="safe_pkg", version="1.0")
+
+    assert result.success is False
+    assert "Unsafe archive member" in result.message
+    assert not (project / "vendor" / "outside.py").exists()
+    assert not (project.parent / "outside.py").exists()
+
+
 # ---------------------------------------------------------------------------
 # Folder ingestion tests
 # ---------------------------------------------------------------------------

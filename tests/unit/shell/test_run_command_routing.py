@@ -46,11 +46,14 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
     window_any._editor_manager = SimpleNamespace(
         active_tab=lambda: SimpleNamespace(file_path="/tmp/project/debug.py", is_dirty=False, current_content="")
     )
-    window_any._all_breakpoints = lambda: [
+    breakpoints = [
         build_breakpoint("/tmp/project/debug.py", 2),
         build_breakpoint("/tmp/project/debug.py", 9),
         build_breakpoint("/tmp/project/other.py", 1),
     ]
+    window_any._debug_control_workflow = SimpleNamespace(
+        build_debug_breakpoints_for_launch=lambda **_kwargs: breakpoints,
+    )
     window_any._debug_exception_policy = DebugExceptionPolicy()
 
     calls: list[dict[str, object]] = []
@@ -240,11 +243,17 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
             current_content="print('dirty')\n",
         )
     )
-    window_any._all_breakpoints = lambda: [
+    breakpoints = [
         build_breakpoint("/tmp/project/dirty.py", 2),
         build_breakpoint("/tmp/project/dirty.py", 9),
         build_breakpoint("/tmp/project/other.py", 1),
     ]
+    window_any._debug_control_workflow = SimpleNamespace(
+        build_debug_breakpoints_for_launch=lambda **_kwargs: [
+            build_breakpoint("/tmp/transient.py" if bp.file_path == "/tmp/project/dirty.py" else bp.file_path, bp.line_number)
+            for bp in breakpoints
+        ],
+    )
     window_any._debug_exception_policy = DebugExceptionPolicy()
     window_any._active_transient_entry_file_path = None
     window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
@@ -277,7 +286,7 @@ def test_handle_rerun_last_debug_target_replays_test_node_debug() -> None:
     window_any = cast(Any, window)
     calls: list[str] = []
     window_any._last_debug_target = {"kind": "test_node", "node_id": "tests/test_demo.py::test_it"}
-    window_any._handle_debug_test_node_action = lambda node_id: calls.append(node_id)
+    window_any._test_runner_workflow = SimpleNamespace(debug_test_node=lambda node_id: calls.append(node_id))
 
     MainWindow._handle_rerun_last_debug_target_action(window)
 

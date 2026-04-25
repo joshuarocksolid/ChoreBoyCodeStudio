@@ -127,6 +127,17 @@ def test_find_in_files_regex(tmp_path: Path) -> None:
     assert len(matches) == 2
 
 
+def test_find_in_files_rejects_overlong_regex_query(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "a.py").write_text("needle\n", encoding="utf-8")
+
+    opts = SearchOptions(regex=True)
+    matches = find_in_files(project_root, "a" * 513, options=opts)
+
+    assert matches == []
+
+
 def test_find_in_files_include_globs(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

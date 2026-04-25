@@ -4,12 +4,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide2.QtGui import QTextCursor
+from PySide2.QtWidgets import QApplication
 
 from app.editors.text_editing import (
+    FlatPythonIndentRepairResult,
     indent_lines,
     map_offset_through_text_change,
     next_line_indentation,
     outdent_lines,
+    repair_flat_python_indentation,
     smart_backspace_columns,
     toggle_comment_lines,
 )
@@ -56,6 +59,49 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
         cursor.insertText(updated)
         self.setTextCursor(cursor)
 
+    def paste_reindented_flat_python(self) -> FlatPythonIndentRepairResult:
+        """Paste clipboard text, repairing flattened Python indentation when detected."""
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+        result = repair_flat_python_indentation(text, indent_text=self._indent_text())
+        should_apply_repair = result.reason != "not a flat Python paste"
+        insert_text = result.text if should_apply_repair else text
+        self._insert_text_as_paste(insert_text, prefix_subsequent_lines=should_apply_repair)
+        return result
+
+    def reindent_flat_python_selection(self) -> FlatPythonIndentRepairResult:
+        """Repair flattened Python indentation in the selection or most recent paste."""
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            cursor = self._expand_selection_to_full_lines(cursor)
+        else:
+            paste_range = getattr(self, "_last_paste_range", None)
+            if not paste_range:
+                return FlatPythonIndentRepairResult(
+                    text="",
+                    changed=False,
+                    confidence="low",
+                    parse_ok=False,
+                    reason="no selection or recent paste",
+                )
+            start, end = paste_range
+            cursor = QTextCursor(self.document())
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
+
+        selected = cursor.selectedText().replace("\u2029", "\n")
+        result = repair_flat_python_indentation(selected, indent_text=self._indent_text())
+        if result.reason == "not a flat Python paste":
+            return result
+        start = cursor.selectionStart()
+        cursor.beginEditBlock()
+        cursor.insertText(result.text)
+        cursor.endEditBlock()
+        end = cursor.position()
+        self.setTextCursor(cursor)
+        setattr(self, "_last_paste_range", (start, end))
+        return result
+
     def _expand_selection_to_full_lines(self, cursor: QTextCursor) -> QTextCursor:
         start = cursor.selectionStart()
         end = cursor.selectionEnd()
@@ -75,6 +121,26 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
             cursor.select(QTextCursor.LineUnderCursor)
         cursor.insertText(replacement_text)
         self.setTextCursor(cursor)
+
+    def _insert_text_as_paste(self, text: str, *, prefix_subsequent_lines: bool = False) -> None:
+        cursor = self.textCursor()
+        start = cursor.selectionStart() if cursor.hasSelection() else cursor.position()
+        insert_text = self._prefix_paste_subsequent_lines(text) if prefix_subsequent_lines else text
+        cursor.beginEditBlock()
+        cursor.insertText(insert_text)
+        cursor.endEditBlock()
+        end = cursor.position()
+        self.setTextCursor(cursor)
+        setattr(self, "_last_paste_range", (start, end))
+
+    def _prefix_paste_subsequent_lines(self, text: str) -> str:
+        if "\n" not in text:
+            return text
+        cursor = self.textCursor()
+        line_prefix = cursor.block().text()[: cursor.positionInBlock()]
+        if not line_prefix or line_prefix.strip():
+            return text
+        return text.replace("\n", f"\n{line_prefix}")
 
     def replace_document_text(self, replacement_text: str) -> bool:
         """Replace the full document in one undo step while preserving editor context."""

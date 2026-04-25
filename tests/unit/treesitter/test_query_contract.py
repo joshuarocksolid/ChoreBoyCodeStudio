@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.shell.syntax_color_preferences import SYNTAX_COLOR_TOKENS
-from app.treesitter.highlighter import _CAPTURE_TOKEN_MAP
+from app.treesitter.capture_pipeline import _CAPTURE_TOKEN_MAP
 
 pytestmark = pytest.mark.unit
 

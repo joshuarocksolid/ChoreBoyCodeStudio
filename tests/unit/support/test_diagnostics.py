@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from app.support.diagnostics import run_project_health_check
+from tests.support.minimal_project import write_minimal_project
 
 pytestmark = pytest.mark.unit
 
 
 def _write_valid_project(project_root: Path) -> None:
-    (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
-    (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / "cbcs" / "project.json").write_text(
-        json.dumps({"schema_version": 1, "name": "diag_project"}, indent=2),
-        encoding="utf-8",
-    )
+    write_minimal_project(project_root, name="diag_project")
 
 
 def test_run_project_health_check_reports_valid_project_structure(tmp_path: Path) -> None:

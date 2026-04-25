@@ -8,8 +8,8 @@ from pathlib import Path
 import threading
 from typing import Callable
 
-from app.core import constants
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
+from app.project.file_inventory import iter_python_files
 
 
 @dataclass(frozen=True)
@@ -184,13 +184,7 @@ def _extract_symbols(file_path: Path) -> list[SymbolLocation]:
 
 
 def _list_python_source_files(project_root: str | Path) -> list[Path]:
-    root = Path(project_root).expanduser().resolve()
-    python_files: list[Path] = []
-    for file_path in sorted(root.rglob("*.py")):
-        if constants.PROJECT_META_DIRNAME in file_path.parts:
-            continue
-        python_files.append(file_path)
-    return python_files
+    return list(iter_python_files(project_root))
 
 
 def _file_fingerprint(file_path: Path) -> tuple[int, int]:
