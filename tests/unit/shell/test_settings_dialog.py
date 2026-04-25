@@ -185,6 +185,14 @@ def test_settings_dialog_snapshot_includes_organize_imports_on_save_toggle() -> 
     assert snapshot.organize_imports_on_save is True
 
 
+def test_settings_dialog_snapshot_includes_auto_reindent_flat_python_paste_toggle() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot(auto_reindent_flat_python_paste=False))
+    dialog._auto_reindent_flat_python_paste_input.setChecked(True)
+
+    snapshot = dialog.snapshot()
+    assert snapshot.auto_reindent_flat_python_paste is True
+
+
 def test_settings_dialog_shows_python_tooling_status_labels() -> None:
     dialog = SettingsDialog(
         EditorSettingsSnapshot(),

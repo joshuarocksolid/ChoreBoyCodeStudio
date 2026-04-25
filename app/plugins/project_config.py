@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import project_plugins_path
 from app.core import constants
 from app.persistence.settings_store import load_json_object, save_json_object
+
+_LOGGER = get_subsystem_logger("plugins")
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,19 @@ def load_project_plugin_config(project_root: str) -> ProjectPluginConfig:
         },
     )
     return parse_project_plugin_config(payload)
+
+
+def load_project_plugin_config_or_none(project_root: str) -> ProjectPluginConfig | None:
+    try:
+        return load_project_plugin_config(project_root)
+    except Exception as exc:
+        _LOGGER.warning(
+            "Failed to load project plugin config for %s: %s",
+            project_root,
+            exc,
+            exc_info=True,
+        )
+        return None
 
 
 def save_project_plugin_config(config: ProjectPluginConfig, project_root: str) -> None:

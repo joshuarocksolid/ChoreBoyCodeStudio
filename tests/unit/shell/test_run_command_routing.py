@@ -277,7 +277,7 @@ def test_handle_rerun_last_debug_target_replays_test_node_debug() -> None:
     window_any = cast(Any, window)
     calls: list[str] = []
     window_any._last_debug_target = {"kind": "test_node", "node_id": "tests/test_demo.py::test_it"}
-    window_any._handle_debug_test_node_action = lambda node_id: calls.append(node_id)
+    window_any._test_runner_workflow = SimpleNamespace(debug_test_node=lambda node_id: calls.append(node_id))
 
     MainWindow._handle_rerun_last_debug_target_action(window)
 

@@ -21,7 +21,7 @@ from app.core.models import RuntimeIssueReport
 from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
 from app.plugins.discovery import discover_installed_plugins
-from app.plugins.project_config import load_project_plugin_config
+from app.plugins.project_config import load_project_plugin_config_or_none
 from app.plugins.registry_store import load_plugin_registry
 from app.plugins.workflow_catalog import WorkflowProviderCatalog
 from app.project.project_manifest import deterministic_project_id_for_root, load_project_manifest
@@ -157,10 +157,7 @@ def _build_plugin_diagnostics(
         (entry.plugin_id, entry.version): entry.enabled
         for entry in registry.entries
     }
-    try:
-        project_config = load_project_plugin_config(str(project_root))
-    except Exception:
-        project_config = None
+    project_config = load_project_plugin_config_or_none(str(project_root))
     catalog = WorkflowProviderCatalog.from_plugins(
         discovered,
         enabled_map=registry_enabled_map,

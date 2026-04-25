@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -66,9 +68,12 @@ def test_autosave_store_migrates_legacy_json_draft_on_load(tmp_path: Path) -> No
     )
 
     store = AutosaveStore(state_root=state_root)
-    loaded = store.load_draft(str(file_path))
+    logger = logging.getLogger("choreboy_code_studio.persistence")
+    with patch.object(logger, "info") as log_info:
+        loaded = store.load_draft(str(file_path))
 
     assert loaded is not None
     assert loaded.content == "print('legacy draft')\n"
     assert legacy_path.exists() is False
     assert store.list_drafts()[0].file_path == normalized_path
+    log_info.assert_called_once_with("Migrating legacy autosave draft for %s", normalized_path)

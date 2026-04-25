@@ -243,7 +243,7 @@ Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for l
 All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
 
 * Use `cbcs/` instead of `.cbcs/` for per-project metadata.
-* Use `choreboy_code_studio/` instead of `.choreboy_code_studio/` for global app state.
+* Use `choreboy_code_studio_state/` instead of `.choreboy_code_studio/` for global app state.
 
 This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
 

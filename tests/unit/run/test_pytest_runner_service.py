@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from app.run.test_runner_service import parse_pytest_failures, run_pytest_args, run_pytest_project, run_pytest_target
+from app.run.pytest_runner_service import parse_pytest_failures, run_pytest_args, run_pytest_project, run_pytest_target
 
 pytestmark = pytest.mark.unit
 
@@ -45,8 +45,8 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
             stderr="",
         )
 
-    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
-    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+    monkeypatch.setattr("app.run.pytest_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_project(str(project_root))
 
@@ -78,8 +78,8 @@ def test_run_pytest_target_includes_target_argument(
             stderr="",
         )
 
-    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/usr/bin/python3")
-    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+    monkeypatch.setattr("app.run.pytest_runner_service._select_pytest_runtime", lambda **_kwargs: "/usr/bin/python3")
+    monkeypatch.setattr("app.run.pytest_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_target(str(project_root), str(target))
 
@@ -107,8 +107,8 @@ def test_run_pytest_args_passes_through_explicit_pytest_arguments(
             stderr="",
         )
 
-    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/usr/bin/python3")
-    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+    monkeypatch.setattr("app.run.pytest_runner_service._select_pytest_runtime", lambda **_kwargs: "/usr/bin/python3")
+    monkeypatch.setattr("app.run.pytest_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_args(str(project_root), ["-v", "tests/test_sample.py::test_ok"])
 
@@ -139,8 +139,8 @@ def test_run_pytest_project_uses_run_tests_py_when_present(
         captured_command = list(args[0])
         return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="1 passed", stderr="")
 
-    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
-    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+    monkeypatch.setattr("app.run.pytest_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.subprocess.run", fake_run)
 
     result = run_pytest_project(str(project_root))
 
@@ -166,8 +166,8 @@ def test_run_pytest_project_includes_import_mode_for_apprun_payload(
         captured_command = list(args[0])
         return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("app.run.test_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
-    monkeypatch.setattr("app.run.test_runner_service.subprocess.run", fake_run)
+    monkeypatch.setattr("app.run.pytest_runner_service._select_pytest_runtime", lambda **_kwargs: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.subprocess.run", fake_run)
 
     run_pytest_project(str(project_root))
 
@@ -186,13 +186,13 @@ def test_select_pytest_runtime_prefers_env_override_before_apprun(
     custom_python.write_text("", encoding="utf-8")
 
     monkeypatch.setenv("CBCS_PYTEST_EXECUTABLE", str(custom_python.resolve()))
-    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
     monkeypatch.setattr(
-        "app.run.test_runner_service._runtime_supports_pytest",
+        "app.run.pytest_runner_service._runtime_supports_pytest",
         lambda runtime, **_kwargs: runtime == str(custom_python.resolve()),
     )
 
-    from app.run.test_runner_service import _select_pytest_runtime
+    from app.run.pytest_runner_service import _select_pytest_runtime
 
     selected = _select_pytest_runtime(project_root=str(project_root.resolve()))
 
@@ -206,10 +206,10 @@ def test_select_pytest_runtime_raises_when_no_runtime_supports_pytest(
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     monkeypatch.delenv("CBCS_PYTEST_EXECUTABLE", raising=False)
-    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
-    monkeypatch.setattr("app.run.test_runner_service._runtime_supports_pytest", lambda _runtime, **_kwargs: False)
+    monkeypatch.setattr("app.run.pytest_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service._runtime_supports_pytest", lambda _runtime, **_kwargs: False)
 
-    from app.run.test_runner_service import _select_pytest_runtime
+    from app.run.pytest_runner_service import _select_pytest_runtime
 
     with pytest.raises(RuntimeError, match="Pytest is not available in detected runtimes"):
         _select_pytest_runtime(project_root=str(project_root.resolve()))
@@ -222,13 +222,13 @@ def test_select_pytest_runtime_falls_back_to_apprun(
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     monkeypatch.delenv("CBCS_PYTEST_EXECUTABLE", raising=False)
-    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
     monkeypatch.setattr(
-        "app.run.test_runner_service._runtime_supports_pytest",
+        "app.run.pytest_runner_service._runtime_supports_pytest",
         lambda runtime, **_kwargs: runtime == "/opt/freecad/AppRun",
     )
 
-    from app.run.test_runner_service import _select_pytest_runtime
+    from app.run.pytest_runner_service import _select_pytest_runtime
 
     selected = _select_pytest_runtime(project_root=str(project_root.resolve()))
 
@@ -242,9 +242,9 @@ def test_candidate_pytest_runtimes_do_not_include_venv_paths(
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     monkeypatch.delenv("CBCS_PYTEST_EXECUTABLE", raising=False)
-    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
 
-    from app.run.test_runner_service import _candidate_pytest_runtimes
+    from app.run.pytest_runner_service import _candidate_pytest_runtimes
 
     candidates = _candidate_pytest_runtimes(str(project_root.resolve()))
 
@@ -261,13 +261,13 @@ def test_select_pytest_runtime_preserves_env_override_symlink_path(
     custom_python.symlink_to("/usr/bin/python3")
 
     monkeypatch.setenv("CBCS_PYTEST_EXECUTABLE", str(custom_python))
-    monkeypatch.setattr("app.run.test_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    monkeypatch.setattr("app.run.pytest_runner_service.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
     monkeypatch.setattr(
-        "app.run.test_runner_service._runtime_supports_pytest",
+        "app.run.pytest_runner_service._runtime_supports_pytest",
         lambda runtime, **_kwargs: runtime.endswith("custom_python"),
     )
 
-    from app.run.test_runner_service import _select_pytest_runtime
+    from app.run.pytest_runner_service import _select_pytest_runtime
 
     selected = _select_pytest_runtime(project_root=str(project_root.resolve()))
 
@@ -280,7 +280,7 @@ def test_select_pytest_runtime_preserves_env_override_symlink_path(
 
 
 def test_identify_test_at_cursor_finds_enclosing_test() -> None:
-    from app.run.test_runner_service import identify_test_at_cursor
+    from app.run.pytest_runner_service import identify_test_at_cursor
 
     source = """\
 def test_hello():
@@ -297,7 +297,7 @@ def test_goodbye():
 
 
 def test_identify_test_at_cursor_returns_none_outside_tests() -> None:
-    from app.run.test_runner_service import identify_test_at_cursor
+    from app.run.pytest_runner_service import identify_test_at_cursor
 
     source = """\
 import os
@@ -313,7 +313,7 @@ def test_foo():
 
 
 def test_identify_test_at_cursor_handles_syntax_error() -> None:
-    from app.run.test_runner_service import identify_test_at_cursor
+    from app.run.pytest_runner_service import identify_test_at_cursor
 
     source = "def test_broken(\n"
     assert identify_test_at_cursor(source, 1) is None

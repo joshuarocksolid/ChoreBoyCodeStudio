@@ -143,6 +143,13 @@ class EditorManager:
             return None
         return self._tabs_by_path.get(self._active_file_path)
 
+    def active_file_path(self) -> str | None:
+        """Return the active tab's file path, if an active tab is still open."""
+        active_tab = self.active_tab()
+        if active_tab is None:
+            return None
+        return active_tab.file_path
+
     def update_tab_content(self, file_path: str, content: str) -> EditorTabState:
         """Update tab content and return resulting state."""
         normalized_path = str(Path(file_path).expanduser().resolve())

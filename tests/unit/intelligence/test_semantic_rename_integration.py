@@ -6,7 +6,7 @@ import shutil
 
 import pytest
 
-from app.intelligence.refactor_service import apply_rename_plan, plan_rename_symbol
+from app.intelligence.semantic_facade import SemanticFacade
 
 pytestmark = pytest.mark.unit
 
@@ -20,12 +20,22 @@ def _copy_fixture(tmp_path: Path, fixture_name: str) -> Path:
     return target
 
 
+def _build_facade(tmp_path: Path) -> SemanticFacade:
+    state_root = (tmp_path / "state").resolve()
+    state_root.mkdir(parents=True, exist_ok=True)
+    return SemanticFacade(
+        cache_db_path=str(state_root / "symbols.sqlite3"),
+        state_root=str(state_root),
+    )
+
+
 def test_plan_rename_symbol_builds_patch_style_preview(tmp_path: Path) -> None:
     project_root = _copy_fixture(tmp_path, "imported_project")
+    facade = _build_facade(tmp_path)
     consumer_path = (project_root / "consumer.py").resolve()
     source = consumer_path.read_text(encoding="utf-8")
 
-    plan = plan_rename_symbol(
+    plan = facade.plan_rename(
         project_root=str(project_root.resolve()),
         current_file_path=str(consumer_path),
         source_text=source,
@@ -41,10 +51,11 @@ def test_plan_rename_symbol_builds_patch_style_preview(tmp_path: Path) -> None:
 
 def test_apply_rename_plan_updates_related_files_only(tmp_path: Path) -> None:
     project_root = _copy_fixture(tmp_path, "imported_project")
+    facade = _build_facade(tmp_path)
     consumer_path = (project_root / "consumer.py").resolve()
     source = consumer_path.read_text(encoding="utf-8")
 
-    plan = plan_rename_symbol(
+    plan = facade.plan_rename(
         project_root=str(project_root.resolve()),
         current_file_path=str(consumer_path),
         source_text=source,
@@ -53,7 +64,7 @@ def test_apply_rename_plan_updates_related_files_only(tmp_path: Path) -> None:
     )
     assert plan is not None
 
-    result = apply_rename_plan(plan)
+    result = facade.apply_rename(plan)
 
     assert result.changed_occurrences >= 2
     assert "renamed_helper" in (project_root / "lib.py").read_text(encoding="utf-8")

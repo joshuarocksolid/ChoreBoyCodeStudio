@@ -51,6 +51,9 @@ class _FakeEditorManager:
     def active_tab(self) -> object:
         return self._tab
 
+    def all_tabs(self) -> list[object]:
+        return [self._tab]
+
     def get_tab(self, file_path: str) -> object | None:
         return self._tab if self._tab.file_path == file_path else None
 
@@ -113,8 +116,12 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
     window_any._editor_organize_imports_on_save = False
     window_any._editor_format_on_save = False
     window_any._editor_tabs_widget = None
-    window_any._pending_autosave_payloads = {}
-    window_any._autosave_store = SimpleNamespace(delete_draft=lambda *_args, **_kwargs: None)
+    window_any._local_history_workflow = SimpleNamespace(
+        discard_pending_autosave=lambda *_args, **_kwargs: None,
+        record_checkpoint=lambda *_args, **_kwargs: None,
+        delete_draft=lambda *_args, **_kwargs: None,
+        local_history_context_for_path=lambda *_args, **_kwargs: (None, None),
+    )
     window_any._refresh_save_action_states = lambda: None
     window_any._update_editor_status_for_path = lambda *_args, **_kwargs: None
     window_any._intelligence_runtime_settings = SimpleNamespace()
@@ -491,3 +498,39 @@ def test_save_tab_applies_generic_hygiene_without_python_format_on_save(
 
     assert MainWindow._save_tab(window, "/tmp/project/notes.txt") is True
     assert editor_manager.saved_contents == ["note\n"]
+
+
+def test_flush_auto_save_to_file_does_not_apply_save_transforms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Buffer ends in 4 trailing spaces, simulating a freshly auto-indented blank line
+    # the user is sitting on. If auto-save runs trim_trailing_whitespace_on_save the
+    # spaces vanish and the cursor jumps to column 0 (the bug Clair reported).
+    file_path = "/tmp/project/main.py"
+    buffer_with_trailing_indent = "def foo():\n    "
+    window, editor_manager = _build_save_window(file_path, buffer_with_trailing_indent)
+    window_any = cast(Any, window)
+    window_any._editor_auto_save = True
+    window_any._editor_organize_imports_on_save = True
+    window_any._editor_format_on_save = True
+
+    monkeypatch.setattr(
+        "app.shell.main_window.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        "app.shell.main_window.organize_imports_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke isort"),
+    )
+    monkeypatch.setattr(
+        "app.shell.main_window.format_python_with_workflow",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke Black"),
+    )
+    monkeypatch.setattr(
+        "app.shell.main_window.format_text_basic",
+        lambda *_a, **_kw: pytest.fail("Auto-save must not invoke the basic formatter"),
+    )
+
+    MainWindow._flush_auto_save_to_file(window)
+
+    assert editor_manager.saved_contents == [buffer_with_trailing_indent]

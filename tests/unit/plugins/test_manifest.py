@@ -37,6 +37,113 @@ def test_parse_plugin_manifest_accepts_runtime_and_engine_constraints() -> None:
     assert manifest.runtime_entrypoint == "runtime.py"
     assert manifest.engine.min_app_version == "0.1.0"
     assert manifest.engine.max_api_version == 2
+    assert manifest.command_contributions[0].command_id == "acme.demo.hello"
+    assert manifest.command_contributions[0].runtime is False
+
+
+def test_parse_plugin_manifest_validates_command_contributions() -> None:
+    manifest = parse_plugin_manifest(
+        {
+            "id": "acme.demo",
+            "name": "Demo Plugin",
+            "version": "1.2.3",
+            "api_version": 1,
+            "runtime": {"entrypoint": "runtime.py"},
+            "contributes": {
+                "commands": [
+                    {
+                        "id": "acme.demo.hello",
+                        "title": "Hello",
+                        "menu_id": "shell.menu.tools",
+                        "shortcut": "Ctrl+Alt+H",
+                        "status_tip": "Say hello",
+                        "tool_tip": "Say hello from Acme",
+                        "message": "Hello",
+                    },
+                    {
+                        "id": "acme.demo.runtime",
+                        "title": "Runtime",
+                        "runtime": True,
+                        "runtime_payload": {"value": 1},
+                        "runtime_handler": "run_command",
+                    },
+                ]
+            },
+        }
+    )
+
+    assert [command.command_id for command in manifest.command_contributions] == [
+        "acme.demo.hello",
+        "acme.demo.runtime",
+    ]
+    assert manifest.command_contributions[0].runtime is False
+    assert manifest.command_contributions[0].runtime_handler is None
+    assert manifest.command_contributions[1].runtime is True
+    assert manifest.command_contributions[1].runtime_payload == {"value": 1}
+    assert manifest.command_contributions[1].runtime_handler == "run_command"
+    assert manifest.contributes["commands"][1]["runtime_handler"] == "run_command"
+
+
+@pytest.mark.parametrize(
+    ("commands_payload", "match"),
+    [
+        ({"id": "acme.demo.hello"}, "contributes.commands must be a list of objects"),
+        ([None], "contributes.commands\\[0\\] must be an object"),
+        ([{"title": "Missing Id"}], "Missing required field: id"),
+        ([{"id": "bad slash", "title": "Bad"}], "command id must use only"),
+        (
+            [
+                {"id": "acme.demo.hello", "title": "Hello"},
+                {"id": "acme.demo.hello", "title": "Duplicate"},
+            ],
+            "Duplicate command id",
+        ),
+        ([{"id": "acme.demo.hello", "title": "Hello", "runtime": "yes"}], "runtime must be a boolean"),
+        (
+            [{"id": "acme.demo.hello", "title": "Hello", "runtime_payload": []}],
+            "runtime_payload must be an object",
+        ),
+        (
+            [{"id": "acme.demo.hello", "title": "Hello", "runtime_handler": ""}],
+            "runtime_handler must be a non-empty string",
+        ),
+    ],
+)
+def test_parse_plugin_manifest_rejects_invalid_command_contributions(
+    commands_payload: object,
+    match: str,
+) -> None:
+    with pytest.raises(PluginManifestValidationError, match=match):
+        parse_plugin_manifest(
+            {
+                "id": "acme.demo",
+                "name": "Demo Plugin",
+                "version": "1.2.3",
+                "api_version": 1,
+                "contributes": {"commands": commands_payload},
+            }
+        )
+
+
+def test_parse_plugin_manifest_rejects_runtime_command_without_runtime_entrypoint() -> None:
+    with pytest.raises(PluginManifestValidationError, match="runtime.entrypoint is required"):
+        parse_plugin_manifest(
+            {
+                "id": "acme.demo",
+                "name": "Demo Plugin",
+                "version": "1.2.3",
+                "api_version": 1,
+                "contributes": {
+                    "commands": [
+                        {
+                            "id": "acme.demo.runtime",
+                            "title": "Runtime",
+                            "runtime": True,
+                        }
+                    ]
+                },
+            }
+        )
 
 
 def test_parse_plugin_manifest_rejects_missing_required_id() -> None:

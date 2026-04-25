@@ -71,10 +71,10 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     window._breakpoints_by_file[file_one_path] = {2, 5}
     window._breakpoints_by_file[file_two_path] = {3}
 
-    window._persist_session_state()
+    window._local_history_workflow.persist_session_state()
     window._reset_editor_tabs()
     window._breakpoints_by_file.clear()
-    window._restore_session_state(str(project_root.resolve()))
+    window._local_history_workflow.restore_session_state(str(project_root.resolve()))
     app.processEvents()
 
     assert window._editor_manager.open_paths() == [file_one_path, file_two_path]

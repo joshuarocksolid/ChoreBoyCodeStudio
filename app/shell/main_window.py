@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from typing import Any, Callable, Mapping, Optional, TypeVar, cast
+from typing import Any, Callable, Mapping, Optional, Protocol, TypeVar, cast
 
 from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt
 from PySide2.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QMouseEvent
@@ -74,10 +74,9 @@ from app.intelligence.outline_service import (
 )
 from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
-from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_models import CompletionItem, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest
 from app.editors.editor_manager import EditorManager, OpenedTabResult
-from app.editors.editor_tab import EditorTabState
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
@@ -86,11 +85,10 @@ from app.editors.formatting_service import format_text_basic
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
+from app.editors.text_editing import FlatPythonIndentRepairResult
 from app.persistence.autosave_store import AutosaveStore
-from app.persistence.history_models import LocalHistoryFileSummary
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.persistence.local_history_store import LocalHistoryStore
-from app.persistence.local_history_writer import record_local_history_transaction
 from app.persistence.settings_service import SettingsService
 from app.persistence.settings_store import project_settings_has_overrides
 from app.run.console_model import ConsoleModel
@@ -99,25 +97,22 @@ from app.run.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
-from app.run.test_discovery_service import DiscoveryResult, discover_tests, parse_test_results
-from app.run.test_runner_service import PytestRunResult
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
     resolve_runtime_executable,
 )
 from app.shell.run_log_panel import RunInfo, RunLogPanel
+from app.shell.test_runner_workflow import ActiveTestEditor, TestRunnerWorkflow
+from app.shell.plugin_activation_workflow import PluginActivationWorkflow
 from app.packaging.config import resolve_project_package_config
 from app.packaging.layout import resolve_entry_path
 from app.packaging.packager import package_project
 from app.plugins.api_broker import PluginApiBroker
 from app.plugins.builtin_workflows import register_builtin_workflow_providers
 from app.plugins.contributions import DeclarativeContributionManager
-from app.plugins.discovery import discover_installed_plugins
-from app.plugins.project_config import load_project_plugin_config
 from app.plugins.registry_store import (
     clear_registry_entry_failures,
-    load_plugin_registry,
     record_registry_entry_failure,
 )
 from app.plugins.runtime_manager import PluginRuntimeManager
@@ -157,13 +152,7 @@ from app.shell.layout_persistence import (
     merge_layout_into_settings,
     parse_shell_layout_state,
 )
-from app.shell.history_restore_picker import (
-    HISTORY_RESTORE_ACTION_OPEN_TIMELINE,
-    HISTORY_RESTORE_ACTION_RESTORE_LATEST,
-    HistoryRestorePickerDialog,
-)
-from app.shell.local_history_dialog import DraftRecoveryDialog, LocalHistoryDialog
-from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
+from app.shell.local_history_workflow import LocalHistoryWorkflow
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
@@ -283,6 +272,11 @@ ShellEventT = TypeVar("ShellEventT")
 ReplEvent = tuple[str, object, object]
 
 
+class _ConnectableSignal(Protocol):
+    def connect(self, slot: Callable[..., object]) -> object:
+        ...
+
+
 class _MiddleClickTabBar(QTabBar):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -354,7 +348,8 @@ class MainWindow(QMainWindow):
         self._search_sidebar: SearchSidebarWidget | None = None
         self._test_explorer_panel: TestExplorerPanel | None = None
         self._quick_open_dialog: QuickOpenDialog | None = None
-        self._history_restore_picker_dialog: HistoryRestorePickerDialog | None = None
+        self._local_history_workflow: LocalHistoryWorkflow
+        self._plugin_activation_workflow: PluginActivationWorkflow
         self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._dependency_inspector_dialog: DependencyInspectorDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
@@ -364,6 +359,7 @@ class MainWindow(QMainWindow):
         self._debug_panel: DebugPanelWidget | None = None
         self._problems_panel: ProblemsPanel | None = None
         self._problems_tab_widget: QTabWidget | None = None
+        self._test_runner_workflow: TestRunnerWorkflow
         self._state_root = state_root
         self._python_console_history_path = global_python_console_history_path(self._state_root)
         self._settings_service = SettingsService(state_root=self._state_root)
@@ -373,8 +369,6 @@ class MainWindow(QMainWindow):
         ) = self._load_runtime_onboarding_state()
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._stored_runtime_problems: list[ProblemEntry] = []
-        self._test_discovery_result = DiscoveryResult()
-        self._test_outcomes_by_node_id: dict[str, str] = {}
         self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
             state_root=self._state_root,
         )
@@ -418,6 +412,18 @@ class MainWindow(QMainWindow):
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._system_dark_theme_preference: bool | None = None
         self._loaded_project: LoadedProject | None = None
+        self._plugin_activation_workflow = PluginActivationWorkflow(
+            state_root=self._state_root,
+            project_root_provider=lambda: None
+            if self._loaded_project is None
+            else self._loaded_project.project_root,
+            safe_mode_enabled=lambda: self._plugin_safe_mode,
+            contribution_manager=self._declarative_contribution_manager,
+            runtime_manager=self._plugin_runtime_manager,
+            plugin_api_broker=self._plugin_api_broker,
+            workflow_broker=self._workflow_broker,
+            on_catalog_changed=lambda catalog: setattr(self, "_workflow_provider_catalog", catalog),
+        )
         self._project_tree_structure_signature: tuple[str, ...] | None = None
         self._workspace_controller = EditorWorkspaceController()
         self._editor_manager = EditorManager()
@@ -444,6 +450,7 @@ class MainWindow(QMainWindow):
             self._editor_enable_preview,
             self._editor_auto_save,
             self._editor_hover_tooltip_enabled,
+            self._editor_auto_reindent_flat_python_paste,
         ) = self._load_editor_preferences()
         self._pending_project_tree_preview_path: str | None = None
         self._project_tree_preview_click_timer = QTimer(self)
@@ -456,6 +463,7 @@ class MainWindow(QMainWindow):
             self._completion_auto_trigger,
             self._completion_min_chars,
         ) = self._load_completion_preferences()
+        self._reported_completion_degradation_reasons: set[str] = set()
         (
             self._diagnostics_enabled,
             self._diagnostics_realtime,
@@ -481,19 +489,14 @@ class MainWindow(QMainWindow):
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
-        self._local_history_store = LocalHistoryStore(
+        local_history_store = LocalHistoryStore(
             state_root=self._state_root,
             retention_policy=self._local_history_retention_policy,
         )
-        self._autosave_store = AutosaveStore(
+        autosave_store = AutosaveStore(
             state_root=self._state_root,
-            history_store=self._local_history_store,
+            history_store=local_history_store,
         )
-        self._pending_autosave_payloads: dict[str, str] = {}
-        self._autosave_timer = QTimer(self)
-        self._autosave_timer.setSingleShot(True)
-        self._autosave_timer.setInterval(500)
-        self._autosave_timer.timeout.connect(self._flush_pending_autosaves)
         self._auto_save_to_file_timer = QTimer(self)
         self._auto_save_to_file_timer.setSingleShot(True)
         self._auto_save_to_file_timer.setInterval(1000)
@@ -562,6 +565,30 @@ class MainWindow(QMainWindow):
             dispatch_to_main_thread=self._dispatch_to_main_thread
         )
         self._logger = get_subsystem_logger("shell")
+        self._local_history_workflow = LocalHistoryWorkflow(
+            parent=self,
+            local_history_store=local_history_store,
+            autosave_store=autosave_store,
+            loaded_project=lambda: self._loaded_project,
+            editor_manager=self._editor_manager,
+            editor_widget_for_path=self._workspace_controller.widget_for_path,
+            open_file_in_editor=lambda file_path: self._open_file_in_editor(file_path, preview=False),
+            open_restored_history_buffer=self._open_restored_history_buffer,
+            apply_text_to_open_tab=self._apply_text_to_open_tab,
+            tab_index_for_path=self._tab_index_for_path,
+            refresh_tab_presentation=self._refresh_tab_presentation,
+            set_current_tab_index=lambda tab_index: self._editor_tabs_widget.setCurrentIndex(tab_index)
+            if self._editor_tabs_widget is not None
+            else None,
+            show_status_message=lambda message, timeout: self.statusBar().showMessage(message, timeout),
+            logger=self._logger,
+            background_tasks=self._background_tasks,
+            retention_policy=self._local_history_retention_policy,
+            ensure_breakpoint_spec=self._ensure_breakpoint_spec,
+            breakpoints_by_file=self._breakpoints_by_file,
+            breakpoint_specs_by_key=self._breakpoint_specs_by_key,
+            refresh_breakpoints_list=self._refresh_breakpoints_list,
+        )
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
             diagnostics_enabled=lambda: self._diagnostics_enabled,
             diagnostics_realtime=lambda: self._diagnostics_realtime,
@@ -570,10 +597,7 @@ class MainWindow(QMainWindow):
             ),
             get_pending_realtime_file_path=lambda: self._pending_realtime_lint_file_path,
             start_realtime_timer=self._realtime_lint_timer.start,
-            get_active_tab_file_path=lambda: cast(
-                Optional[str],
-                getattr(self._editor_manager.active_tab(), "file_path", None),
-            ),
+            get_active_tab_file_path=self._editor_manager.active_file_path,
             render_lint_for_file=lambda file_path, trigger: self._render_lint_diagnostics_for_file(
                 file_path,
                 trigger=trigger,
@@ -613,16 +637,72 @@ class MainWindow(QMainWindow):
             update_widget_language=self._update_widget_language_for_path,
             maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
             reload_project=self._reload_current_project,
-            record_deleted_path=self._record_deleted_local_history_path,
-            remap_file_lineage=self._remap_local_history_file_lineage,
+            record_deleted_path=self._local_history_workflow.record_deleted_path,
+            remap_file_lineage=self._local_history_workflow.remap_file_lineage,
         )
 
         self._configure_window_frame()
         self._build_layout_shell()
+
+        def active_test_editor() -> ActiveTestEditor | None:
+            active_tab = self._editor_manager.active_tab()
+            editor_widget = self._active_editor_widget()
+            if active_tab is None or editor_widget is None:
+                return None
+            return ActiveTestEditor(
+                file_path=active_tab.file_path,
+                source_text=active_tab.current_content,
+                cursor_line=editor_widget.textCursor().blockNumber() + 1,
+            )
+
+        self._test_runner_workflow = TestRunnerWorkflow(
+            loaded_project_provider=lambda: self._loaded_project,
+            active_editor_provider=active_test_editor,
+            workflow_broker=self._workflow_broker,
+            background_tasks=self._background_tasks,
+            test_explorer_panel=self._test_explorer_panel,
+            run_pytest_with_workflow=run_pytest_with_workflow,
+            start_debug_session=self._start_session,
+            build_debug_breakpoints=self._build_debug_breakpoints_for_launch,
+            debug_exception_policy_provider=lambda: self._debug_exception_policy,
+            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
+            set_problems=self._set_problems,
+            focus_run_log_tab=self._focus_run_log_tab,
+            focus_problems_tab=self._focus_problems_tab,
+            show_warning=lambda title, message: QMessageBox.warning(self, title, message),
+            show_information=lambda title, message: QMessageBox.information(self, title, message),
+            record_debug_target=lambda target: setattr(self, "_last_debug_target", dict(target)),
+            auto_open_console_on_output=lambda: self._auto_open_console_on_run_output,
+            auto_open_problems_on_failure=lambda: self._auto_open_problems_on_run_failure,
+            logger=self._logger,
+        )
+
+        def show_test_explorer_action() -> None:
+            if self._loaded_project is None:
+                QMessageBox.warning(self, "Test Explorer", "Open a project first.")
+                return
+            if self._activity_bar is not None:
+                self._activity_bar.set_active_view("test_explorer")
+            self._test_runner_workflow.refresh_discovery()
+
+        def navigate_to_test(file_path: str, line_number: int) -> None:
+            if self._open_file_in_editor(file_path, preview=False):
+                editor_widget = self._editor_widgets_by_path.get(str(Path(file_path).expanduser().resolve()))
+                if editor_widget is not None:
+                    editor_widget.go_to_line(max(1, line_number))
+
+        if self._test_explorer_panel is not None:
+            self._test_explorer_panel.run_test_requested.connect(self._test_runner_workflow.run_test_node)
+            self._test_explorer_panel.debug_test_requested.connect(self._test_runner_workflow.debug_test_node)
+            self._test_explorer_panel.run_all_requested.connect(self._test_runner_workflow.run_all_tests)
+            self._test_explorer_panel.run_failed_requested.connect(self._test_runner_workflow.rerun_failed_tests)
+            self._test_explorer_panel.debug_failed_requested.connect(self._test_runner_workflow.debug_failed_test)
+            self._test_explorer_panel.refresh_requested.connect(self._test_runner_workflow.refresh_discovery)
+            self._test_explorer_panel.navigate_to_test.connect(navigate_to_test)
         self._configure_close_tab_shortcut()
         self._configure_keep_preview_open_shortcut()
         self._menu_registry = build_menu_stubs(
-            self,
+            self.menuBar(),
             callbacks=MenuCallbacks(
                 on_open_project=self._handle_open_project_action,
                 on_open_file=self._handle_open_file_action,
@@ -632,13 +712,16 @@ class MainWindow(QMainWindow):
                 on_save_all=self._handle_save_all_action,
                 on_toggle_auto_save=self._handle_toggle_auto_save,
                 on_open_settings=self._handle_open_settings_action,
+                on_exit=self.close,
                 on_run=self._handle_run_action,
                 on_debug=self._handle_debug_action,
                 on_run_project=self._handle_run_project_action,
                 on_debug_project=self._handle_debug_project_action,
-                on_run_pytest_project=self._handle_run_pytest_project_action,
-                on_run_pytest_current_file=self._handle_run_pytest_current_file_action,
-                on_debug_pytest_current_file=self._handle_debug_pytest_current_file_action,
+                on_run_pytest_project=self._test_runner_workflow.run_all_tests,
+                on_run_pytest_current_file=self._test_runner_workflow.run_file_tests,
+                on_run_pytest_at_cursor=self._test_runner_workflow.run_test_at_cursor,
+                on_debug_pytest_current_file=self._test_runner_workflow.debug_current_file_tests,
+                on_debug_pytest_failed=self._test_runner_workflow.debug_failed_test,
                 on_run_with_config=self._handle_run_with_configuration_action,
                 on_stop=self._handle_stop_action,
                 on_restart=self._handle_restart_action,
@@ -676,17 +759,19 @@ class MainWindow(QMainWindow):
                 on_new_project=self._handle_new_project_action,
                 on_new_project_from_template=self._handle_new_project_from_template_action,
                 on_quick_open=self._handle_quick_open_action,
-                on_open_global_history=self._handle_open_global_history_action,
+                on_open_global_history=self._local_history_workflow.open_global_history,
                 on_find=self._handle_find_action,
                 on_replace=self._handle_replace_action,
                 on_go_to_line=self._handle_go_to_line_action,
                 on_find_in_files=self._handle_find_in_files_action,
-                on_show_test_explorer=self._handle_show_test_explorer_action,
+                on_show_test_explorer=show_test_explorer_action,
                 on_find_references=self._handle_find_references_action,
                 on_rename_symbol=self._handle_rename_symbol_action,
                 on_toggle_comment=self._handle_toggle_comment_action,
                 on_indent=self._handle_indent_action,
                 on_outdent=self._handle_outdent_action,
+                on_paste_reindented_flat_python=self._handle_paste_reindented_flat_python_action,
+                on_reindent_flat_python_selection=self._handle_reindent_flat_python_selection_action,
                 on_go_to_definition=self._handle_go_to_definition_action,
                 on_signature_help=self._handle_signature_help_action,
                 on_hover_info=self._handle_hover_info_action,
@@ -732,8 +817,8 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
-        self._refresh_test_discovery_async()
-        self._reload_plugin_contributions()
+        self._test_runner_workflow.refresh_discovery()
+        self._plugin_activation_workflow.reload()
         self._run_event_timer = QTimer(self)
         self._run_event_timer.setInterval(50)
         self._run_event_timer.timeout.connect(self._process_queued_run_events)
@@ -1440,7 +1525,7 @@ class MainWindow(QMainWindow):
             project_settings_payload,
         )
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, bool]:
+    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, bool, bool]:
         return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
@@ -1759,6 +1844,7 @@ class MainWindow(QMainWindow):
             self._editor_enable_preview,
             self._editor_auto_save,
             self._editor_hover_tooltip_enabled,
+            self._editor_auto_reindent_flat_python_paste,
         ) = self._load_editor_preferences()
         self._sync_auto_save_menu_state()
         if not self._editor_auto_save:
@@ -1779,7 +1865,7 @@ class MainWindow(QMainWindow):
             self._auto_open_problems_on_run_failure,
         ) = self._load_output_preferences()
         self._local_history_retention_policy = self._load_local_history_retention_policy()
-        self._local_history_store.set_retention_policy(self._local_history_retention_policy, apply_now=True)
+        self._local_history_workflow.set_retention_policy(self._local_history_retention_policy, apply_now=True)
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._syntax_color_overrides = self._load_syntax_color_overrides()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
@@ -1882,63 +1968,6 @@ class MainWindow(QMainWindow):
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
 
-    def _handle_open_global_history_action(self) -> None:
-        history_store = getattr(self, "_local_history_store", None)
-        if history_store is None:
-            return
-
-        def task(cancel_event):  # type: ignore[no-untyped-def]
-            summaries = history_store.list_global_history_files()
-            if cancel_event.is_set():
-                return None
-            return summaries
-
-        def on_success(payload: object) -> None:
-            if not isinstance(payload, list):
-                return
-            summaries = payload
-            if not summaries:
-                QMessageBox.information(
-                    self,
-                    "Global History",
-                    "No saved local-history entries are available yet.",
-                )
-                return
-
-            if self._history_restore_picker_dialog is None:
-                self._history_restore_picker_dialog = HistoryRestorePickerDialog(self)
-
-            self._history_restore_picker_dialog.set_entries(summaries)
-            result = self._history_restore_picker_dialog.open_dialog()
-            if result != QDialog.Accepted:
-                return
-
-            selected_entry = self._history_restore_picker_dialog.selected_entry()
-            if selected_entry is None:
-                return
-
-            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
-                latest_content = history_store.load_checkpoint_content(selected_entry.latest_revision_id)
-                if latest_content is None:
-                    QMessageBox.warning(self, "Global History", "Could not load the latest saved revision.")
-                    return
-                self._restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
-                return
-
-            if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
-                self._show_local_history_for_entry(selected_entry)
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Failed to load global history entries: %s", exc)
-            QMessageBox.warning(self, "Global History", f"Could not load global history:\n{exc}")
-
-        self._background_tasks.run(
-            key="global_history_list",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
     def _handle_find_action(self) -> None:
         editor_widget = self._active_editor_widget()
         if editor_widget is None:
@@ -2024,6 +2053,22 @@ class MainWindow(QMainWindow):
             return
         editor_widget.outdent_selection()
 
+    def _handle_paste_reindented_flat_python_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Paste and Re-indent Flat Python", "Open a file tab first.")
+            return
+        result = editor_widget.paste_reindented_flat_python()
+        self.statusBar().showMessage(_flat_python_repair_status_message(result), 4000)
+
+    def _handle_reindent_flat_python_selection_action(self) -> None:
+        editor_widget = self._active_editor_widget()
+        if editor_widget is None:
+            QMessageBox.warning(self, "Re-indent Flat Python Selection", "Open a file tab first.")
+            return
+        result = editor_widget.reindent_flat_python_selection()
+        self.statusBar().showMessage(_flat_python_repair_status_message(result), 4000)
+
     def _handle_go_to_line_action(self) -> None:
         editor_widget = self._active_editor_widget()
         if editor_widget is None:
@@ -2050,22 +2095,6 @@ class MainWindow(QMainWindow):
             initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
         if self._search_sidebar is not None and initial:
             self._search_sidebar.focus_search(initial)
-
-    def _handle_show_test_explorer_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Test Explorer", "Open a project first.")
-            return
-        self._show_test_explorer_panel()
-        self._refresh_test_discovery_async()
-
-    def _show_test_explorer_panel(self) -> None:
-        if self._activity_bar is None:
-            return
-        self._activity_bar.set_active_view("test_explorer")
-        self._handle_sidebar_view_changed("test_explorer")
-
-    def _handle_test_explorer_navigate_to_test(self, file_path: str, line_number: int) -> None:
-        self._open_file_at_line(file_path, line_number, preview=False)
 
     def _handle_find_references_action(self) -> None:
         if self._loaded_project is None:
@@ -2243,7 +2272,7 @@ class MainWindow(QMainWindow):
                 return
 
             def on_apply_success(result) -> None:  # type: ignore[no-untyped-def]
-                self._record_local_history_transaction(
+                self._local_history_workflow.record_transaction(
                     {patch.file_path: patch.updated_content for patch in plan.preview_patches},
                     source="semantic_rename",
                     label=f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'",
@@ -2426,12 +2455,6 @@ class MainWindow(QMainWindow):
             cursor_position=cursor_position,
         )
 
-    def _format_inline_signature_text(self, signature) -> str | None:  # type: ignore[no-untyped-def]
-        return self._intelligence_controller.format_inline_signature_text(signature)
-
-    def _format_inline_hover_text(self, hover_info) -> str | None:  # type: ignore[no-untyped-def]
-        return self._intelligence_controller.format_inline_hover_text(hover_info)
-
     def _request_inline_signature_text_async(
         self,
         *,
@@ -2450,7 +2473,7 @@ class MainWindow(QMainWindow):
                 return
             editor_widget.show_calltip_for_request(
                 request_generation=generation,
-                text=self._format_inline_signature_text(signature),
+                text=self._intelligence_controller.format_inline_signature_text(signature),
             )
 
         def on_error(exc: Exception) -> None:
@@ -2484,7 +2507,7 @@ class MainWindow(QMainWindow):
                 return
             editor_widget.show_hover_text_for_request(
                 request_generation=generation,
-                text=self._format_inline_hover_text(hover_info),
+                text=self._intelligence_controller.format_inline_hover_text(hover_info),
             )
 
         def on_error(exc: Exception) -> None:
@@ -2741,7 +2764,7 @@ class MainWindow(QMainWindow):
         self._cancel_pending_project_tree_preview()
         previous_project_root = self._loaded_project.project_root if self._loaded_project is not None else None
         if previous_project_root is not None:
-            self._persist_session_state(project_root=previous_project_root)
+            self._local_history_workflow.persist_session_state(project_root=previous_project_root)
         self._loaded_project = loaded_project
         self._latest_health_report = None
         self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
@@ -2752,7 +2775,7 @@ class MainWindow(QMainWindow):
         self._active_named_run_config_name = None
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
-        self._reload_plugin_contributions()
+        self._plugin_activation_workflow.reload()
         self._refresh_python_tooling_status()
         self._show_editor_screen()
         self.set_project_placeholder(loaded_project.metadata.name)
@@ -2771,7 +2794,7 @@ class MainWindow(QMainWindow):
             )
             self._search_sidebar.set_exclude_patterns(effective_excludes)
         self._breakpoints_by_file.clear()
-        self._restore_session_state(loaded_project.project_root)
+        self._local_history_workflow.restore_session_state(loaded_project.project_root)
         self._lint_all_open_files()
         self._refresh_breakpoints_list()
         self._refresh_open_recent_menu()
@@ -2793,7 +2816,9 @@ class MainWindow(QMainWindow):
             )
         )
         self._persist_last_project_path(loaded_project.project_root)
-        self._refresh_test_discovery_async()
+        test_runner_workflow = getattr(self, "_test_runner_workflow", None)
+        if test_runner_workflow is not None:
+            test_runner_workflow.refresh_discovery()
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
@@ -2802,91 +2827,6 @@ class MainWindow(QMainWindow):
             )
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
-
-    def _persist_session_state(self, project_root: str | None = None) -> None:
-        target_project_root = project_root
-        if target_project_root is None:
-            if self._loaded_project is None:
-                return
-            target_project_root = self._loaded_project.project_root
-
-        open_files: list[SessionFileState] = []
-        for file_path in self._editor_manager.open_paths():
-            cursor_line = 1
-            cursor_column = 1
-            scroll_position = 0
-            editor_widget = self._editor_widgets_by_path.get(file_path)
-            if editor_widget is not None:
-                cursor = editor_widget.textCursor()
-                cursor_line = cursor.blockNumber() + 1
-                cursor_column = cursor.positionInBlock() + 1
-                scroll_position = editor_widget.verticalScrollBar().value()
-            open_files.append(
-                SessionFileState(
-                    file_path=file_path,
-                    cursor_line=cursor_line,
-                    cursor_column=cursor_column,
-                    scroll_position=scroll_position,
-                    breakpoints=tuple(sorted(self._breakpoints_by_file.get(file_path, set()))),
-                )
-            )
-
-        active_tab = self._editor_manager.active_tab()
-        active_file_path = None if active_tab is None else active_tab.file_path
-        session_state = SessionState(open_files=tuple(open_files), active_file_path=active_file_path)
-        try:
-            save_session_file(target_project_root, session_state)
-        except Exception as exc:
-            self._logger.warning("Failed to persist project session state for %s: %s", target_project_root, exc)
-
-    def _restore_session_state(self, project_root: str) -> None:
-        try:
-            session_state = load_session_file(project_root)
-        except Exception as exc:
-            self._logger.warning("Failed to load project session state for %s: %s", project_root, exc)
-            return
-        if session_state is None:
-            return
-
-        self._breakpoints_by_file.clear()
-        self._breakpoint_specs_by_key.clear()
-        for file_state in session_state.open_files:
-            if file_state.breakpoints:
-                self._breakpoints_by_file[file_state.file_path] = set(file_state.breakpoints)
-                for line_number in file_state.breakpoints:
-                    self._ensure_breakpoint_spec(file_state.file_path, line_number)
-
-        for file_state in session_state.open_files:
-            if not self._open_file_in_editor(file_state.file_path):
-                self._breakpoints_by_file.pop(file_state.file_path, None)
-                continue
-            editor_widget = self._editor_widgets_by_path.get(file_state.file_path)
-            if editor_widget is None:
-                continue
-            self._restore_editor_cursor_and_scroll(editor_widget, file_state)
-
-        if session_state.active_file_path is not None and self._editor_tabs_widget is not None:
-            active_index = self._tab_index_for_path(session_state.active_file_path)
-            if active_index >= 0:
-                self._editor_tabs_widget.setCurrentIndex(active_index)
-        self._refresh_breakpoints_list()
-
-    def _restore_editor_cursor_and_scroll(self, editor_widget: CodeEditorWidget, file_state: SessionFileState) -> None:
-        target_line = max(1, file_state.cursor_line)
-        target_column = max(1, file_state.cursor_column)
-        document = editor_widget.document()
-        block = document.findBlockByNumber(target_line - 1)
-        if block.isValid():
-            max_column_offset = max(0, block.length() - 1)
-            column_offset = min(target_column - 1, max_column_offset)
-            target_position = block.position() + column_offset
-        else:
-            target_position = max(0, document.characterCount() - 1)
-        cursor = editor_widget.textCursor()
-        cursor.setPosition(target_position)
-        editor_widget.setTextCursor(cursor)
-        scroll_position = max(0, file_state.scroll_position)
-        QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
 
     def _confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
         dirty_tabs = [tab for tab in self._editor_manager.all_tabs() if tab.is_dirty]
@@ -2958,6 +2898,7 @@ class MainWindow(QMainWindow):
                     tab.file_path,
                     show_style_warnings=False,
                     checkpoint_source="auto_save_to_file",
+                    apply_transforms=False,
                 )
             except Exception:
                 self._logger.warning("Auto-save to file failed for %s", tab.file_path, exc_info=True)
@@ -2968,9 +2909,11 @@ class MainWindow(QMainWindow):
         *,
         show_style_warnings: bool = True,
         checkpoint_source: str = "save",
+        apply_transforms: bool = True,
     ) -> bool:
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
-        self._apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
+        if apply_transforms:
+            self._apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
         try:
             saved_tab = self._editor_manager.save_tab(file_path)
         except (OSError, ValueError) as exc:
@@ -2983,18 +2926,14 @@ class MainWindow(QMainWindow):
             if tab_index >= 0:
                 self._refresh_tab_presentation(saved_tab.file_path)
 
-        self._pending_autosave_payloads.pop(saved_tab.file_path, None)
-        self._record_local_history_checkpoint(
+        self._local_history_workflow.discard_pending_autosave(saved_tab.file_path)
+        self._local_history_workflow.record_checkpoint(
             saved_tab.file_path,
             saved_tab.current_content,
             source=checkpoint_source,
         )
-        project_id, project_root = self._local_history_context_for_path(saved_tab.file_path)
-        self._autosave_store.delete_draft(
-            saved_tab.file_path,
-            project_id=project_id,
-            project_root=project_root,
-        )
+        self._local_history_workflow.delete_draft(saved_tab.file_path)
+        project_id, _project_root = self._local_history_workflow.local_history_context_for_path(saved_tab.file_path)
         if not path_existed_before_save and project_id is not None:
             self._reload_current_project()
         self._refresh_save_action_states()
@@ -3006,231 +2945,11 @@ class MainWindow(QMainWindow):
             self._start_symbol_indexing(self._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
             self._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
-            self._refresh_test_discovery_async()
+            test_runner_workflow = getattr(self, "_test_runner_workflow", None)
+            if test_runner_workflow is not None:
+                test_runner_workflow.refresh_discovery()
         self._logger.info("Saved file: %s", saved_tab.file_path)
         return True
-
-    def _local_history_context_for_path(self, file_path: str) -> tuple[Optional[str], Optional[str]]:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            return (None, None)
-        metadata = getattr(loaded_project, "metadata", None)
-        project_id = None if metadata is None else getattr(metadata, "project_id", None)
-        normalized_file_path = Path(file_path).expanduser().resolve()
-        project_root = Path(loaded_project.project_root).expanduser().resolve()
-        try:
-            normalized_file_path.relative_to(project_root)
-        except ValueError:
-            return (None, None)
-        return (project_id, str(project_root))
-
-    def _record_local_history_checkpoint(
-        self,
-        file_path: str,
-        content: str,
-        *,
-        source: str,
-        label: str = "",
-        transaction_id: Optional[str] = None,
-    ) -> None:
-        history_store = getattr(self, "_local_history_store", None)
-        if history_store is None:
-            return
-        project_id, project_root = self._local_history_context_for_path(file_path)
-        try:
-            checkpoint = history_store.create_checkpoint(
-                file_path,
-                content,
-                project_id=project_id,
-                project_root=project_root,
-                source=source,
-                label=label,
-                transaction_id=transaction_id,
-            )
-        except Exception:
-            self._logger.warning("Local history checkpoint failed for %s", file_path, exc_info=True)
-            return
-        if checkpoint is None:
-            skip_reason = history_store.checkpoint_skip_reason(
-                file_path,
-                content,
-                project_root=project_root,
-            )
-            if skip_reason == "excluded":
-                self.statusBar().showMessage(
-                    f"Local history skipped for {Path(file_path).name}: file matches a local-history exclude pattern.",
-                    5000,
-                )
-            elif skip_reason == "too_large":
-                max_bytes = self._local_history_retention_policy.max_tracked_file_bytes
-                self.statusBar().showMessage(
-                    (
-                        f"Local history skipped for {Path(file_path).name}: "
-                        f"file exceeds the {max_bytes} byte tracking limit."
-                    ),
-                    5000,
-                )
-            self._logger.info("Local history checkpoint skipped for %s", file_path)
-
-    def _record_local_history_transaction(
-        self,
-        payloads_by_path: Mapping[str, str],
-        *,
-        source: str,
-        label: str,
-    ) -> None:
-        if not any(payload is not None for payload in payloads_by_path.values()):
-            return
-        loaded_project = self._loaded_project
-        project_id = (
-            getattr(loaded_project.metadata, "project_id", None)
-            if loaded_project is not None
-            else None
-        )
-        project_root = loaded_project.project_root if loaded_project is not None else None
-        record_local_history_transaction(
-            getattr(self, "_local_history_store", None),
-            payloads_by_path,
-            project_id=project_id,
-            project_root=project_root,
-            source=source,
-            label=label,
-            logger=self._logger,
-        )
-
-    def _capture_text_history_snapshots(self, target_paths: list[str]) -> dict[str, str]:
-        snapshots: dict[str, str] = {}
-        for target_path in target_paths:
-            path = Path(target_path).expanduser().resolve()
-            if path.is_file():
-                candidate_paths = [path]
-            elif path.is_dir():
-                candidate_paths = sorted(child for child in path.rglob("*") if child.is_file())
-            else:
-                continue
-            for candidate in candidate_paths:
-                try:
-                    snapshots[str(candidate.resolve())] = candidate.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-        return snapshots
-
-    def _filter_snapshots_for_paths(
-        self,
-        snapshots_by_path: Mapping[str, str],
-        accepted_paths: list[str],
-    ) -> dict[str, str]:
-        accepted_prefixes = [str(Path(path).expanduser().resolve()) for path in accepted_paths]
-        filtered: dict[str, str] = {}
-        for file_path, payload in snapshots_by_path.items():
-            normalized_path = str(Path(file_path).expanduser().resolve())
-            if any(
-                normalized_path == prefix or normalized_path.startswith(f"{prefix}/")
-                for prefix in accepted_prefixes
-            ):
-                filtered[normalized_path] = payload
-        return filtered
-
-    def _record_deleted_local_history_path(self, deleted_path: str) -> None:
-        history_store = getattr(self, "_local_history_store", None)
-        if history_store is None:
-            return
-        project_id, project_root = self._local_history_context_for_path(deleted_path)
-        if project_id is None:
-            return
-        try:
-            history_store.record_deleted_path(
-                project_id=project_id,
-                project_root=project_root,
-                deleted_path=deleted_path,
-            )
-        except Exception:
-            self._logger.warning("Local history delete tracking failed for %s", deleted_path, exc_info=True)
-
-    def _remap_local_history_file_lineage(self, path_mapping: dict[str, str]) -> None:
-        history_store = getattr(self, "_local_history_store", None)
-        if history_store is None or not path_mapping:
-            return
-        first_path = next(iter(path_mapping.values()))
-        project_id, project_root = self._local_history_context_for_path(first_path)
-        if project_id is None:
-            return
-        try:
-            history_store.remap_file_lineage(
-                project_id=project_id,
-                project_root=project_root,
-                path_mapping=path_mapping,
-            )
-        except Exception:
-            self._logger.warning("Local history path remap failed for %s", path_mapping, exc_info=True)
-
-    def _current_text_for_history_path(self, file_path: str) -> str:
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is not None:
-            return tab_state.current_content
-        try:
-            return Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return ""
-
-    def _restore_local_history_content_to_buffer(self, file_path: str, content: str) -> None:
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is None:
-            target_path = Path(file_path).expanduser().resolve()
-            if target_path.exists():
-                self._open_file_in_editor(file_path, preview=False)
-            else:
-                self._open_restored_history_buffer(file_path, content)
-            tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is None:
-            QMessageBox.warning(self, "Local History", f"Could not open {Path(file_path).name} for restore.")
-            return
-        self._apply_text_to_open_tab(file_path, content)
-        updated_tab = self._editor_manager.update_tab_content(file_path, content)
-        tab_index = self._tab_index_for_path(file_path)
-        if self._editor_tabs_widget is not None and tab_index >= 0:
-            self._refresh_tab_presentation(updated_tab.file_path)
-        self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
-
-    def _show_local_history_for_entry(self, summary: LocalHistoryFileSummary) -> None:
-        self._show_local_history_for_path(
-            summary.file_path,
-            project_id=summary.project_id,
-            project_root=summary.project_root,
-            file_name=Path(summary.display_path or summary.file_path).name,
-        )
-
-    def _show_local_history_for_path(
-        self,
-        file_path: str,
-        *,
-        project_id: Optional[str] = None,
-        project_root: Optional[str] = None,
-        file_name: Optional[str] = None,
-    ) -> None:
-        history_store = getattr(self, "_local_history_store", None)
-        if history_store is None:
-            return
-        if project_id is None and project_root is None:
-            project_id, project_root = self._local_history_context_for_path(file_path)
-        checkpoints = history_store.list_checkpoints(
-            file_path,
-            project_id=project_id,
-            project_root=project_root,
-            include_deleted=True,
-        )
-        if not checkpoints:
-            QMessageBox.information(self, "Local History", "No local-history entries are available for this file yet.")
-            return
-        dialog = LocalHistoryDialog(
-            file_name=file_name or Path(file_path).name,
-            checkpoints=checkpoints,
-            current_text=self._current_text_for_history_path(file_path),
-            checkpoint_content_loader=history_store.load_checkpoint_content,
-            restore_to_buffer=lambda content: self._restore_local_history_content_to_buffer(file_path, content),
-            parent=self,
-        )
-        dialog.exec_()
 
     def _resolve_python_tooling_project_root(self, file_path: str) -> str:
         normalized_file_path = Path(file_path).expanduser().resolve()
@@ -3586,282 +3305,6 @@ class MainWindow(QMainWindow):
         self._populate_project_tree(self._loaded_project, preserve_state=True)
         return True
 
-    def _handle_run_pytest_project_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Run Project Tests", "Open a project first.")
-            return
-        project_root = self._loaded_project.project_root
-        self._append_console_line(f"Running pytest in {project_root}", stream="system")
-        if self._test_explorer_panel is not None:
-            self._test_explorer_panel.set_running(True)
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return run_pytest_with_workflow(
-                self._workflow_broker,
-                project_root=project_root,
-            )
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            provider, result = payload
-            self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
-            self._handle_pytest_run_result(result)
-
-        def on_error(exc: Exception) -> None:
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            self._append_console_line(f"Pytest run failed to start: {exc}", stream="stderr")
-            QMessageBox.warning(self, "Run Project Tests", f"Pytest run failed: {exc}")
-
-        self._background_tasks.run(
-            key="run_pytest_project",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_run_pytest_current_file_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Run Current File Tests", "Open a project first.")
-            return
-        loaded_project = self._loaded_project
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            QMessageBox.warning(self, "Run Current File Tests", "Open a file tab first.")
-            return
-        target_path = Path(active_tab.file_path).expanduser().resolve()
-        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
-        try:
-            target_path.relative_to(project_root_path)
-        except ValueError:
-            QMessageBox.warning(
-                self,
-                "Run Current File Tests",
-                "Current file is outside project root and cannot be run as a test target.",
-            )
-            return
-        self._append_console_line(f"Running pytest for {target_path}", stream="system")
-        if self._test_explorer_panel is not None:
-            self._test_explorer_panel.set_running(True)
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return run_pytest_with_workflow(
-                self._workflow_broker,
-                project_root=loaded_project.project_root,
-                target_path=str(target_path),
-            )
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            provider, result = payload
-            self._append_console_line(f"Pytest completed via {provider.title}", stream="system")
-            self._handle_pytest_run_result(result)
-
-        def on_error(exc: Exception) -> None:
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            self._append_console_line(f"Pytest target run failed to start: {exc}", stream="stderr")
-            QMessageBox.warning(self, "Run Current File Tests", f"Pytest run failed: {exc}")
-
-        self._background_tasks.run(
-            key="run_pytest_target",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_debug_pytest_current_file_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Debug Current Test", "Open a project first.")
-            return
-        loaded_project = self._loaded_project
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            QMessageBox.warning(self, "Debug Current Test", "Open a file tab first.")
-            return
-        target_path = Path(active_tab.file_path).expanduser().resolve()
-        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
-        try:
-            target_path.relative_to(project_root_path)
-        except ValueError:
-            QMessageBox.warning(
-                self,
-                "Debug Current Test",
-                "Current file is outside project root and cannot be debugged as a pytest target.",
-            )
-            return
-        run_tests_path = project_root_path / "run_tests.py"
-        if not run_tests_path.is_file():
-            QMessageBox.warning(
-                self,
-                "Debug Current Test",
-                "This project does not contain `run_tests.py`, so the pytest debug flow is unavailable.",
-            )
-            return
-        started = self._start_session(
-            mode=constants.RUN_MODE_PYTHON_DEBUG,
-            entry_file=str(run_tests_path),
-            argv=["-q", "--import-mode=importlib", str(target_path)],
-            breakpoints=self._build_debug_breakpoints_for_launch(),
-            debug_exception_policy=self._debug_exception_policy,
-        )
-        if started:
-            self._last_debug_target = {"kind": "current_test", "target_path": str(target_path)}
-
-    def _refresh_test_discovery_async(self) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            self._test_discovery_result = DiscoveryResult()
-            self._test_outcomes_by_node_id.clear()
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.update_discovery(self._test_discovery_result)
-                self._test_explorer_panel.set_outcomes({})
-            return
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return discover_tests(loaded_project.project_root)
-
-        def on_success(result) -> None:  # type: ignore[no-untyped-def]
-            self._test_discovery_result = result
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.update_discovery(result)
-                self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Test discovery failed: %s", exc)
-            self._test_discovery_result = DiscoveryResult(error_message=str(exc))
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.update_discovery(self._test_discovery_result)
-                self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
-
-        self._background_tasks.run(
-            key="test_discovery",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _update_test_outcomes_from_pytest(self, result: PytestRunResult) -> None:
-        if not self._test_discovery_result.nodes:
-            return
-        parsed = parse_test_results(result.stdout)
-        if not parsed:
-            return
-        outcome_map = {item.node_id: item.outcome for item in parsed}
-        for node in self._test_discovery_result.function_nodes():
-            outcome = outcome_map.get(node.node_id)
-            if outcome is not None:
-                self._test_outcomes_by_node_id[node.node_id] = outcome
-        if self._test_explorer_panel is not None:
-            self._test_explorer_panel.set_outcomes(self._test_outcomes_by_node_id)
-
-    def _handle_run_test_node_action(self, node_id: str) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Run Test", "Open a project first.")
-            return
-        normalized_node = node_id.strip()
-        if not normalized_node:
-            return
-        self._append_console_line(f"Running pytest node {normalized_node}", stream="system")
-        if self._test_explorer_panel is not None:
-            self._test_explorer_panel.set_running(True)
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return run_pytest_with_workflow(
-                self._workflow_broker,
-                project_root=loaded_project.project_root,
-                target_node_id=normalized_node,
-            )
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            provider, result = payload
-            self._append_console_line(f"Pytest node run completed via {provider.title}", stream="system")
-            self._handle_pytest_run_result(result)
-
-        def on_error(exc: Exception) -> None:
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            self._append_console_line(f"Pytest node run failed to start: {exc}", stream="stderr")
-            QMessageBox.warning(self, "Run Test", f"Pytest run failed: {exc}")
-
-        self._background_tasks.run(
-            key="run_pytest_node",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_run_failed_tests_action(self) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Rerun Failed", "Open a project first.")
-            return
-        failed_node_ids = [node_id for node_id, outcome in self._test_outcomes_by_node_id.items() if outcome == "failed"]
-        if not failed_node_ids:
-            QMessageBox.information(self, "Rerun Failed", "No failed tests recorded yet.")
-            return
-        self._append_console_line(f"Rerunning failed pytest nodes ({len(failed_node_ids)})", stream="system")
-        if self._test_explorer_panel is not None:
-            self._test_explorer_panel.set_running(True)
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return run_pytest_with_workflow(
-                self._workflow_broker,
-                project_root=loaded_project.project_root,
-                pytest_args=["-v"] + failed_node_ids,
-            )
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            provider, result = payload
-            self._append_console_line(f"Rerun failed completed via {provider.title}", stream="system")
-            self._handle_pytest_run_result(result)
-
-        def on_error(exc: Exception) -> None:
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.set_running(False)
-            self._append_console_line(f"Rerun failed failed to start: {exc}", stream="stderr")
-            QMessageBox.warning(self, "Rerun Failed", f"Pytest run failed: {exc}")
-
-        self._background_tasks.run(
-            key="run_pytest_failed",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_debug_test_node_action(self, node_id: str) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Debug Test", "Open a project first.")
-            return
-        normalized_node = node_id.strip()
-        if not normalized_node:
-            return
-        project_root_path = Path(loaded_project.project_root).expanduser().resolve()
-        run_tests_path = project_root_path / "run_tests.py"
-        if not run_tests_path.is_file():
-            QMessageBox.warning(
-                self,
-                "Debug Test",
-                "This project does not contain `run_tests.py`, so the pytest debug flow is unavailable.",
-            )
-            return
-        started = self._start_session(
-            mode=constants.RUN_MODE_PYTHON_DEBUG,
-            entry_file=str(run_tests_path),
-            argv=["-q", "--import-mode=importlib", normalized_node],
-            breakpoints=self._build_debug_breakpoints_for_launch(),
-            debug_exception_policy=self._debug_exception_policy,
-        )
-        if started:
-            self._last_debug_target = {"kind": "test_node", "node_id": normalized_node}
 
     def _handle_rerun_last_debug_target_action(self) -> None:
         target = self._last_debug_target
@@ -3891,12 +3334,12 @@ class MainWindow(QMainWindow):
                 index = self._tab_index_for_path(file_path)
                 if index >= 0:
                     self._editor_tabs_widget.setCurrentIndex(index)
-            self._handle_debug_pytest_current_file_action()
+            self._test_runner_workflow.debug_current_file_tests()
             return
         if kind == "test_node":
             node_id = str(target.get("node_id", "")).strip()
             if node_id:
-                self._handle_debug_test_node_action(node_id)
+                self._test_runner_workflow.debug_test_node(node_id)
 
     def _handle_run_with_configuration_action(self) -> None:
         if self._loaded_project is None:
@@ -3943,27 +3386,6 @@ class MainWindow(QMainWindow):
             env_overrides=selected_config.env_overrides,
         )
 
-    def _handle_pytest_run_result(self, result: PytestRunResult) -> None:
-        if result.stdout.strip():
-            for line in result.stdout.splitlines():
-                self._append_console_line(line, stream="stdout")
-        if result.stderr.strip():
-            for line in result.stderr.splitlines():
-                self._append_console_line(line, stream="stderr")
-        if self._auto_open_console_on_run_output and (result.stdout.strip() or result.stderr.strip()):
-            self._focus_run_log_tab()
-        if result.failures:
-            self._set_problems(result.failures)
-            if self._auto_open_problems_on_run_failure:
-                self._focus_problems_tab()
-        else:
-            self._set_problems([])
-        status = "passed" if result.succeeded else "failed"
-        self._append_console_line(
-            f"Pytest run {status} (code={result.return_code}, elapsed_ms={result.elapsed_ms:.2f}).",
-            stream="system",
-        )
-        self._update_test_outcomes_from_pytest(result)
 
     def _handle_start_python_console_action(self) -> bool:
         self._repl_manager.restart()
@@ -4309,7 +3731,10 @@ class MainWindow(QMainWindow):
             self._plugin_manager_dialog = PluginManagerDialog(
                 state_root=self._state_root,
                 project_root=None if self._loaded_project is None else self._loaded_project.project_root,
-                on_plugins_changed=self._reload_plugin_contributions,
+                activation_snapshot_provider=lambda: self._plugin_activation_workflow.snapshot(
+                    project_root=None if self._loaded_project is None else self._loaded_project.project_root
+                ),
+                on_plugins_changed=self._plugin_activation_workflow.reload,
                 safe_mode_enabled=self._plugin_safe_mode,
                 on_safe_mode_changed=self._handle_plugin_safe_mode_changed,
                 parent=self,
@@ -4336,7 +3761,7 @@ class MainWindow(QMainWindow):
         if dialog is None or getattr(dialog, "_project_root", "") != project_root:
             dialog = DependencyInspectorDialog(project_root=project_root, parent=self)
             dialog.finished.connect(lambda _result: setattr(self, "_dependency_inspector_dialog", None))
-            dialog.dependency_changed.connect(self._reload_current_project)
+            cast(_ConnectableSignal, dialog.dependency_changed).connect(self._reload_current_project)
             self._dependency_inspector_dialog = dialog
         dialog.refresh()
         dialog.show()
@@ -4365,56 +3790,7 @@ class MainWindow(QMainWindow):
 
     def _handle_plugin_safe_mode_changed(self, enabled: bool) -> None:
         self._set_plugin_safe_mode(enabled)
-        self._reload_plugin_contributions()
-
-    def _reload_plugin_contributions(self) -> None:
-        if self._plugin_safe_mode:
-            self._declarative_contribution_manager.clear()
-            self._plugin_runtime_manager.stop()
-            self._workflow_provider_catalog = WorkflowProviderCatalog([])
-            self._workflow_broker.set_plugin_catalog(self._workflow_provider_catalog)
-            return
-        registry = load_plugin_registry(self._state_root)
-        enabled_map = {
-            (entry.plugin_id, entry.version): entry.enabled
-            for entry in registry.entries
-        }
-        project_plugin_config = None
-        if self._loaded_project is not None:
-            try:
-                project_plugin_config = load_project_plugin_config(self._loaded_project.project_root)
-            except Exception:
-                project_plugin_config = None
-        discovered_plugins = discover_installed_plugins(
-            state_root=self._state_root,
-            include_bundled=True,
-        )
-        effective_enabled_map = dict(enabled_map)
-        if project_plugin_config is not None:
-            for discovered in discovered_plugins:
-                default_enabled = effective_enabled_map.get((discovered.plugin_id, discovered.version), True)
-                pinned_version = project_plugin_config.pinned_versions.get(discovered.plugin_id)
-                if pinned_version is not None and pinned_version != discovered.version:
-                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = False
-                    continue
-                if discovered.plugin_id in project_plugin_config.enabled_plugins:
-                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = True
-                if discovered.plugin_id in project_plugin_config.disabled_plugins:
-                    effective_enabled_map[(discovered.plugin_id, discovered.version)] = False
-        self._declarative_contribution_manager.apply(
-            discovered_plugins,
-            enabled_map=effective_enabled_map,
-        )
-        self._workflow_provider_catalog = WorkflowProviderCatalog.from_plugins(
-            discovered_plugins,
-            enabled_map=effective_enabled_map,
-            project_config=project_plugin_config,
-        )
-        self._workflow_broker.set_plugin_catalog(
-            self._workflow_provider_catalog,
-            project_config=project_plugin_config,
-        )
-        self._plugin_api_broker.reload_runtime_plugins()
+        self._plugin_activation_workflow.reload()
 
     def _execute_plugin_runtime_command(self, command_id: str, payload: dict[str, object]) -> object:
         result = self._plugin_api_broker.invoke_runtime_command(command_id, payload)
@@ -4439,7 +3815,7 @@ class MainWindow(QMainWindow):
                 "Plugin Disabled",
                 f"{plugin_id}@{version} was disabled after repeated runtime failures.",
             )
-            self._reload_plugin_contributions()
+            self._plugin_activation_workflow.reload()
 
     def _clear_plugin_runtime_failure(self, plugin_id: str, version: str) -> None:
         clear_registry_entry_failures(
@@ -4662,8 +4038,8 @@ class MainWindow(QMainWindow):
             return
 
         affected_files = sorted(path for path in affected_paths if path)
-        self._record_local_history_transaction(
-            self._capture_text_history_snapshots(affected_files),
+        self._local_history_workflow.record_transaction(
+            self._local_history_workflow.capture_text_history_snapshots(affected_files),
             source="quick_fix",
             label="Apply Safe Fixes",
         )
@@ -4771,8 +4147,8 @@ class MainWindow(QMainWindow):
         if self._repl_manager.is_running:
             try:
                 self._repl_manager.send_input("\x03")
-            except Exception:
-                pass
+            except Exception as exc:
+                self._logger.warning("REPL interrupt failed: %s", exc)
 
     def _restore_python_console_history(self) -> None:
         if self._python_console_widget is None:
@@ -5265,6 +4641,22 @@ class MainWindow(QMainWindow):
                 and self._has_active_python_file()
                 and not self._run_service.supervisor.is_running()
             )
+        run_test_at_cursor_action = self._menu_registry.action("shell.action.run.pytestAtCursor")
+        if run_test_at_cursor_action is not None:
+            run_test_at_cursor_action.setEnabled(
+                self._loaded_project is not None
+                and self._has_active_python_file()
+                and not self._run_service.supervisor.is_running()
+            )
+        debug_failed_test_action = self._menu_registry.action("shell.action.run.debugPytestFailed")
+        if debug_failed_test_action is not None:
+            test_runner_workflow = getattr(self, "_test_runner_workflow", None)
+            debug_failed_test_action.setEnabled(
+                self._loaded_project is not None
+                and test_runner_workflow is not None
+                and test_runner_workflow.has_failed_tests()
+                and not self._run_service.supervisor.is_running()
+            )
         rerun_last_debug_action = self._menu_registry.action("shell.action.run.rerunLastDebugTarget")
         if rerun_last_debug_action is not None:
             rerun_last_debug_action.setEnabled(
@@ -5606,18 +4998,18 @@ class MainWindow(QMainWindow):
             self._stop_active_run_before_close()
             if self._editor_auto_save:
                 self._flush_auto_save_to_file()
-            self._flush_pending_autosaves()
+            self._local_history_workflow.flush_pending_autosaves()
             if self._status_controller is not None:
                 self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._persist_layout_to_settings()
-            self._persist_session_state()
+            self._local_history_workflow.persist_session_state()
             self._persist_python_console_history()
             event.accept()
             return
         event.ignore()
 
     def _begin_shutdown_teardown(self) -> None:
-        self._autosave_timer.stop()
+        self._local_history_workflow.stop_autosave_timer()
         self._auto_save_to_file_timer.stop()
         self._realtime_lint_timer.stop()
         self._project_tree_preview_click_timer.stop()
@@ -5759,12 +5151,6 @@ class MainWindow(QMainWindow):
         self._sidebar_stack.addWidget(self._search_sidebar)
 
         self._test_explorer_panel = TestExplorerPanel(panel)
-        self._test_explorer_panel.run_test_requested.connect(self._handle_run_test_node_action)
-        self._test_explorer_panel.debug_test_requested.connect(self._handle_debug_test_node_action)
-        self._test_explorer_panel.run_all_requested.connect(self._handle_run_pytest_project_action)
-        self._test_explorer_panel.run_failed_requested.connect(self._handle_run_failed_tests_action)
-        self._test_explorer_panel.navigate_to_test.connect(self._handle_test_explorer_navigate_to_test)
-        self._test_explorer_panel.refresh_requested.connect(self._refresh_test_discovery_async)
         self._sidebar_stack.addWidget(self._test_explorer_panel)
 
         self._sidebar_stack.setCurrentIndex(0)
@@ -6307,7 +5693,7 @@ class MainWindow(QMainWindow):
         elif chosen == reveal_action:
             self._reveal_path_in_file_manager(absolute_path)
         elif not is_directory and local_history_action is not None and chosen == local_history_action:
-            self._show_local_history_for_path(absolute_path)
+            self._local_history_workflow.show_local_history_for_path(absolute_path)
         elif run_file_action is not None and chosen == run_file_action:
             self._handle_tree_run_file(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
@@ -6409,12 +5795,12 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
-        delete_snapshots = self._capture_text_history_snapshots([target_path])
+        delete_snapshots = self._local_history_workflow.capture_text_history_snapshots([target_path])
         error_message = self._project_tree_action_coordinator.handle_delete(target_path)
         if error_message is not None:
             QMessageBox.warning(self, "Move to Trash", error_message)
             return
-        self._record_local_history_transaction(
+        self._local_history_workflow.record_transaction(
             delete_snapshots,
             source="delete",
             label=f"Delete '{Path(target_path).name}'",
@@ -6436,10 +5822,10 @@ class MainWindow(QMainWindow):
         )
         if confirmation != QMessageBox.Yes:
             return
-        delete_snapshots = self._capture_text_history_snapshots(paths)
+        delete_snapshots = self._local_history_workflow.capture_text_history_snapshots(paths)
         failed, deleted_paths = self._project_tree_action_coordinator.handle_bulk_delete(paths)
-        self._record_local_history_transaction(
-            self._filter_snapshots_for_paths(delete_snapshots, deleted_paths),
+        self._local_history_workflow.record_transaction(
+            self._local_history_workflow.filter_snapshots_for_paths(delete_snapshots, deleted_paths),
             source="delete",
             label="Bulk delete from project tree",
         )
@@ -6510,7 +5896,7 @@ class MainWindow(QMainWindow):
 
     def _handle_import_rewrites_applied(self, previews) -> None:  # type: ignore[no-untyped-def]
         payloads = {preview.file_path: preview.updated_content for preview in previews}
-        self._record_local_history_transaction(
+        self._local_history_workflow.record_transaction(
             payloads,
             source="import_rewrite",
             label="Update imports after move/rename",
@@ -6569,7 +5955,7 @@ class MainWindow(QMainWindow):
             self._loaded_project.project_root,
             exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
         )
-        self._reload_plugin_contributions()
+        self._plugin_activation_workflow.reload()
         self._refresh_python_tooling_status()
         self._populate_project_tree(self._loaded_project, preserve_state=True)
         if self._search_sidebar is not None:
@@ -6582,7 +5968,9 @@ class MainWindow(QMainWindow):
             )
         self._project_tree_structure_signature = tuple(entry.relative_path for entry in self._loaded_project.entries)
         self._start_symbol_indexing(self._loaded_project.project_root)
-        self._refresh_test_discovery_async()
+        test_runner_workflow = getattr(self, "_test_runner_workflow", None)
+        if test_runner_workflow is not None:
+            test_runner_workflow.refresh_discovery()
 
     def _open_file_in_editor(self, file_path: str, *, preview: bool = False) -> bool:
         if self._editor_tabs_widget is None:
@@ -6640,6 +6028,7 @@ class MainWindow(QMainWindow):
             indent_style=self._editor_indent_style,
             indent_size=self._editor_indent_size,
             hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
+            auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
         )
         editor_widget.set_completion_preferences(
             enabled=self._completion_enabled,
@@ -6714,7 +6103,7 @@ class MainWindow(QMainWindow):
         self._editor_tabs_widget.setCurrentIndex(tab_index)
         self._refresh_tab_presentation(opened_result.tab.file_path)
         if restore_draft:
-            self._maybe_restore_draft(opened_result.tab, editor_widget)
+            self._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
         self._apply_detected_indentation_for_widget(
             opened_result.tab.file_path,
             editor_widget,
@@ -6844,12 +6233,12 @@ class MainWindow(QMainWindow):
             return
         self._refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
-            self._schedule_autosave(tab_state.file_path, tab_state.current_content)
+            self._local_history_workflow.schedule_autosave(tab_state.file_path, tab_state.current_content)
             if self._editor_auto_save:
                 self._schedule_auto_save_to_file()
         else:
-            self._pending_autosave_payloads.pop(tab_state.file_path, None)
-            self._autosave_store.delete_draft(tab_state.file_path)
+            self._local_history_workflow.discard_pending_autosave(tab_state.file_path)
+            self._local_history_workflow.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
         self._schedule_realtime_lint(tab_state.file_path)
@@ -6895,43 +6284,6 @@ class MainWindow(QMainWindow):
     def _editor_buffer_revision(self, file_path: str) -> int | None:
         return self._workspace_controller.buffer_revision(file_path)
 
-    def _request_editor_completions(
-        self,
-        *,
-        file_path: str,
-        source_text: str,
-        cursor_position: int,
-        manual_trigger: bool,
-    ) -> list[CompletionItem]:
-        started_at = time.perf_counter()
-        request = CompletionRequest(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            current_file_path=file_path,
-            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
-            trigger_is_manual=manual_trigger,
-            min_prefix_chars=self._completion_min_chars,
-            max_results=100,
-        )
-        completions = self._intelligence_controller.complete_blocking(request=request)
-        if self._intelligence_runtime_settings.metrics_logging_enabled:
-            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-            if elapsed_ms > 150.0:
-                self._logger.warning(
-                    "Completion latency warning: file=%s elapsed_ms=%.2f count=%s",
-                    file_path,
-                    elapsed_ms,
-                    len(completions),
-                )
-            else:
-                self._logger.info(
-                    "Completion telemetry: file=%s elapsed_ms=%.2f count=%s",
-                    file_path,
-                    elapsed_ms,
-                    len(completions),
-                )
-        return completions
-
     def _request_editor_completions_async(
         self,
         *,
@@ -6954,11 +6306,20 @@ class MainWindow(QMainWindow):
             max_results=100,
         )
 
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            generation, completion_prefix, completions = payload
+        def on_success(result: CompletionRequestResult) -> None:
+            generation = result.request_generation
+            completion_prefix = result.prefix
+            completions = result.envelope.items
             active_widget = self._editor_widgets_by_path.get(file_path)
             if active_widget is not editor_widget:
                 return
+            degradation_reason = result.envelope.degradation_reason
+            if degradation_reason and degradation_reason not in self._reported_completion_degradation_reasons:
+                self._reported_completion_degradation_reasons.add(degradation_reason)
+                self.statusBar().showMessage(
+                    "Python completion is using approximate results; semantic engine failed. See app log.",
+                    5000,
+                )
             if self._intelligence_runtime_settings.metrics_logging_enabled:
                 elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 if elapsed_ms > 150.0:
@@ -7042,7 +6403,7 @@ class MainWindow(QMainWindow):
         close_action = menu.addAction("Close")
         chosen = menu.exec_(tab_bar.mapToGlobal(position))
         if chosen == local_history_action:
-            self._show_local_history_for_path(file_path)
+            self._local_history_workflow.show_local_history_for_path(file_path)
         elif chosen == close_action:
             self._handle_tab_close_requested(tab_index)
 
@@ -7090,14 +6451,15 @@ class MainWindow(QMainWindow):
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
             self._editor_tabs_widget.clear()
-        self._autosave_timer.stop()
+        self._local_history_workflow.stop_autosave_timer()
         self._auto_save_to_file_timer.stop()
         self._realtime_lint_timer.stop()
-        self._pending_autosave_payloads.clear()
+        self._local_history_workflow.clear_pending_autosaves()
         self._pending_realtime_lint_file_path = None
         self._clear_debug_execution_indicator()
         self._workspace_controller.clear()
         self._editor_manager = EditorManager()
+        self._local_history_workflow.set_editor_manager(self._editor_manager)
         self._indent_source_by_path.clear()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
@@ -7117,6 +6479,8 @@ class MainWindow(QMainWindow):
                 font_family=self._editor_font_family,
                 indent_style=self._editor_indent_style,
                 indent_size=self._editor_indent_size,
+                hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
+                auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
             )
             self._apply_detected_indentation_for_widget(file_path, editor_widget, editor_widget.toPlainText())
             editor_widget.set_completion_preferences(
@@ -7155,6 +6519,7 @@ class MainWindow(QMainWindow):
                 indent_style=effective_style,
                 indent_size=effective_size,
                 hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
+                auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
             )
             self._record_indent_source(file_path, effective_style, effective_size, "editorconfig")
             return
@@ -7179,6 +6544,7 @@ class MainWindow(QMainWindow):
             indent_style=style,
             indent_size=size,
             hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
+            auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
         )
         self._record_indent_source(file_path, style, size, "auto")
 
@@ -7268,7 +6634,7 @@ class MainWindow(QMainWindow):
 
         if choice == QMessageBox.Yes:
             if tab_state.is_dirty and tab_state.current_content != disk_content:
-                self._record_local_history_checkpoint(
+                self._local_history_workflow.record_checkpoint(
                     file_path,
                     tab_state.current_content,
                     source="external_reload_discarded_buffer",
@@ -7283,19 +6649,14 @@ class MainWindow(QMainWindow):
             tab_index = self._tab_index_for_path(file_path)
             if self._editor_tabs_widget is not None and tab_index >= 0:
                 self._refresh_tab_presentation(file_path)
-            self._pending_autosave_payloads.pop(file_path, None)
-            self._record_local_history_checkpoint(
+            self._local_history_workflow.discard_pending_autosave(file_path)
+            self._local_history_workflow.record_checkpoint(
                 file_path,
                 disk_content,
                 source="external_reload",
                 label="Reloaded from disk after external change",
             )
-            project_id, project_root = self._local_history_context_for_path(file_path)
-            self._autosave_store.delete_draft(
-                file_path,
-                project_id=project_id,
-                project_root=project_root,
-            )
+            self._local_history_workflow.delete_draft(file_path)
             self._refresh_save_action_states()
             self._update_editor_status_for_path(file_path)
             return
@@ -7337,43 +6698,6 @@ class MainWindow(QMainWindow):
         )
         return tuple(entry.relative_path for entry in entries)
 
-    def _maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
-        project_id, project_root = self._local_history_context_for_path(tab_state.file_path)
-        draft_entry = self._autosave_store.load_draft(
-            tab_state.file_path,
-            project_id=project_id,
-            project_root=project_root,
-        )
-        if draft_entry is None or draft_entry.content == tab_state.current_content:
-            return
-
-        dialog = DraftRecoveryDialog(
-            file_name=tab_state.display_name,
-            disk_text=tab_state.current_content,
-            draft_text=draft_entry.content,
-            parent=self,
-        )
-        response = dialog.exec_()
-        if response != QDialog.Accepted:
-            if dialog.discard_draft:
-                self._autosave_store.delete_draft(
-                    tab_state.file_path,
-                    project_id=project_id,
-                    project_root=project_root,
-                )
-            return
-
-        editor_widget.replace_document_text(draft_entry.content)
-        updated_tab = self._editor_manager.update_tab_content(tab_state.file_path, draft_entry.content)
-        tab_index = self._tab_index_for_path(tab_state.file_path)
-        if self._editor_tabs_widget is not None and tab_index >= 0:
-            self._refresh_tab_presentation(updated_tab.file_path)
-        self._schedule_autosave(updated_tab.file_path, updated_tab.current_content)
-
-    def _schedule_autosave(self, file_path: str, content: str) -> None:
-        self._pending_autosave_payloads[file_path] = content
-        self._autosave_timer.start()
-
     def _schedule_realtime_lint(self, file_path: str) -> None:
         if self._is_shutting_down:
             return
@@ -7384,27 +6708,21 @@ class MainWindow(QMainWindow):
             return
         self._diagnostics_orchestrator.run_scheduled_realtime_lint()
 
-    def _flush_pending_autosaves(self) -> None:
-        if not self._pending_autosave_payloads:
-            return
-        pending_items = list(self._pending_autosave_payloads.items())
-        self._pending_autosave_payloads.clear()
-        for file_path, content in pending_items:
-            try:
-                project_id, project_root = self._local_history_context_for_path(file_path)
-                self._autosave_store.save_draft(
-                    file_path,
-                    content,
-                    project_id=project_id,
-                    project_root=project_root,
-                )
-            except OSError as exc:
-                self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)
-
-
 def _merge_auto_save_setting(payload: Mapping[str, Any], enabled: bool) -> dict[str, Any]:
     merged = dict(payload)
     editor = dict(merged.get(constants.UI_EDITOR_SETTINGS_KEY, {}))
     editor[constants.UI_EDITOR_AUTO_SAVE_KEY] = enabled
     merged[constants.UI_EDITOR_SETTINGS_KEY] = editor
     return merged
+
+
+def _flat_python_repair_status_message(result: FlatPythonIndentRepairResult) -> str:
+    if result.reason == "not a flat Python paste":
+        return "Inserted unchanged: not a flat Python paste."
+    if result.reason == "no selection or recent paste":
+        return "Select pasted Python lines before running re-indent."
+    if result.changed and result.parse_ok:
+        return "Re-indented flat Python paste."
+    if result.changed:
+        return f"Applied best-effort Python re-indent ({result.confidence} confidence)."
+    return "Flat Python indentation did not need changes."

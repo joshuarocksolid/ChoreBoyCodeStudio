@@ -6,10 +6,17 @@ from pathlib import Path
 
 import pytest
 
+from app.core import constants
+from app.packaging.desktop_builder import build_portable_launcher
+from app.packaging.installer_manifest import create_distribution_manifest
+from app.packaging.models import (
+    LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
+    PACKAGE_KIND_PROJECT,
+    PACKAGE_PROFILE_PORTABLE,
+)
 from app.packaging.packager import (
     PackageResult,
     _paths_overlap,
-    build_desktop_entry,
     package_project,
     sanitize_project_name,
 )
@@ -26,6 +33,21 @@ def _make_project(path: Path) -> Path:
     return path
 
 
+def _build_portable_desktop_entry(project_name: str, entry_file: str, install_dir: str) -> str:
+    manifest = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_PORTABLE,
+        package_id=sanitize_project_name(project_name),
+        display_name=project_name,
+        version="0.1.0",
+        description="",
+        entry_relative_path=Path(install_dir, entry_file).as_posix(),
+        launcher_mode=LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
+        app_run_path=constants.APP_RUN_PATH,
+    )
+    return build_portable_launcher(manifest)
+
+
 def test_sanitize_project_name_normalizes_expected_cases() -> None:
     assert sanitize_project_name("My Cool App") == "my_cool_app"
     assert sanitize_project_name("app@v2!#test") == "app_v2_test"
@@ -33,8 +55,8 @@ def test_sanitize_project_name_normalizes_expected_cases() -> None:
     assert sanitize_project_name("!!!") == "project"
 
 
-def test_build_desktop_entry_uses_direct_apprun_with_percent_k_argument() -> None:
-    content = build_desktop_entry("Cool Tool", "main.py", "app_files")
+def test_portable_launcher_uses_direct_apprun_with_percent_k_argument() -> None:
+    content = _build_portable_desktop_entry("Cool Tool", "main.py", "app_files")
 
     assert "[Desktop Entry]" in content
     assert "Name=Cool Tool" in content

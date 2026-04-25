@@ -6,12 +6,14 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-from PySide2.QtCore import QPoint, QPointF, QRect, QSize, QStringListModel, Qt
-from PySide2.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
+from PySide2.QtCore import QMimeData, QPoint, QStringListModel, Qt
+from PySide2.QtGui import QColor, QTextCursor, QTextFormat
 from PySide2.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
+from app.editors.code_editor_bracket_overlay_mixin import CodeEditorBracketOverlayMixin
+from app.editors.code_editor_chrome_mixin import CodeEditorChromeMixin
 from app.editors.code_editor_diagnostics import CodeEditorDiagnosticsMixin
 from app.editors.code_editor_editing import CodeEditorEditingMixin
 from app.editors.code_editor_search import CodeEditorSearchMixin
@@ -21,6 +23,7 @@ from app.editors.editor_overlay_policy import (
     is_large_document,
     visible_document_window,
 )
+from app.editors.text_editing import FLAT_PYTHON_CONFIDENCE_HIGH, repair_flat_python_indentation
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
@@ -40,24 +43,9 @@ THEME_APPLY_WARNING_MS = 90.0
 OVERLAY_REFRESH_WARNING_MS = 24.0
 
 
-class _LineNumberArea(QWidget):
-    def __init__(self, editor: "CodeEditorWidget") -> None:
-        super().__init__(editor)
-        self._editor = editor
-
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt signature
-        return QSize(self._editor.line_number_area_width(), 0)
-
-    def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        self._editor.paint_line_number_area(event)
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.button() != Qt.LeftButton:
-            return super().mousePressEvent(event)
-        self._editor.toggle_breakpoint_at_y(event.pos().y())
-
-
 class CodeEditorWidget(
+    CodeEditorChromeMixin,
+    CodeEditorBracketOverlayMixin,
     CodeEditorDiagnosticsMixin,
     CodeEditorSemanticsMixin,
     CodeEditorSearchMixin,
@@ -80,12 +68,8 @@ class CodeEditorWidget(
         self._language_attach_latency = RollingLatencyTracker("editor_language_attach_ms", window_size=120, snapshot_interval=30)
         self._theme_apply_latency = RollingLatencyTracker("editor_theme_apply_ms", window_size=120, snapshot_interval=30)
         self._overlay_refresh_latency = RollingLatencyTracker("editor_overlay_refresh_ms", window_size=180, snapshot_interval=75)
-        self._line_number_area = _LineNumberArea(self)
-        self._breakpoints: set[int] = set()
-        self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
-        self._debug_execution_line: int | None = None
-        self._debug_execution_color = QColor("#D97706")
-        self._debug_execution_line_bg = QColor("#D0E2FF")
+        self._init_chrome_state()
+        self._init_bracket_overlay_state()
         self._highlighter: object | None = None
         self._syntax_theme_refresh_pending = False
         self._syntax_registry = default_syntax_highlighter_registry()
@@ -94,6 +78,8 @@ class CodeEditorWidget(
         self._comment_prefix = "#"
         self._indent_style = "spaces"
         self._indent_size = DEFAULT_TAB_WIDTH
+        self._auto_reindent_flat_python_paste = constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_DEFAULT
+        self._last_paste_range: tuple[int, int] | None = None
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
         self._completion_requester: Callable[[str, str, int, bool, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
@@ -117,11 +103,7 @@ class CodeEditorWidget(
         self._completion_popup.activated.connect(self._insert_completion_from_label)
 
         self._is_dark = False
-        self._gutter_bg = QColor("#F1F3F5")
-        self._gutter_text = QColor("#ADB5BD")
         self._line_highlight = QColor("#EEF7FF")
-        self._bracket_match_color = QColor("#FFD8A8")
-        self._breakpoint_color = QColor("#E03131")
 
         self._search_match_bg = QColor("#FFE066")
         self._search_current_match_bg = QColor("#FF922B")
@@ -143,11 +125,8 @@ class CodeEditorWidget(
         self._last_applied_effective_mode = ""
 
         self.setMouseTracking(True)
-        self.blockCountChanged.connect(self._update_line_number_area_width)
-        self.updateRequest.connect(self._update_line_number_area)
         self.cursorPositionChanged.connect(self._highlight_current_line)
         self.verticalScrollBar().valueChanged.connect(self._handle_viewport_changed)
-        self._update_line_number_area_width(0)
         self._highlight_current_line()
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.set_editor_preferences(
@@ -161,13 +140,9 @@ class CodeEditorWidget(
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         started_at = time.perf_counter()
         self._is_dark = tokens.is_dark
-        self._gutter_bg = QColor(tokens.gutter_bg)
-        self._gutter_text = QColor(tokens.gutter_text)
+        self._apply_chrome_theme(tokens)
         self._line_highlight = QColor(tokens.line_highlight)
-        self._bracket_match_color = QColor("#5C3D1A") if tokens.is_dark else QColor("#FFD8A8")
-        self._breakpoint_color = QColor("#FF6B6B") if tokens.is_dark else QColor("#E03131")
-        self._debug_execution_color = QColor(tokens.debug_paused_color) if tokens.debug_paused_color else self._debug_execution_color
-        self._debug_execution_line_bg = QColor(tokens.debug_current_frame_bg) if tokens.debug_current_frame_bg else self._debug_execution_line_bg
+        self._apply_bracket_overlay_theme(is_dark=tokens.is_dark)
         if tokens.search_match_bg:
             self._search_match_bg = QColor(tokens.search_match_bg)
         if tokens.search_current_match_bg:
@@ -250,56 +225,6 @@ class CodeEditorWidget(
     def _handle_viewport_changed(self, _value: int) -> None:
         self._notify_highlighter_viewport_lines()
         self._refresh_extra_selections()
-
-    def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
-        self._breakpoint_toggled_callback = callback
-
-    def set_breakpoints(self, breakpoints: set[int]) -> None:
-        self._breakpoints = set(breakpoints)
-        self._line_number_area.update()
-
-    def breakpoints(self) -> set[int]:
-        return set(self._breakpoints)
-
-    def toggle_breakpoint(self, line_number: int) -> bool:
-        if line_number <= 0:
-            return False
-        if line_number in self._breakpoints:
-            self._breakpoints.remove(line_number)
-            is_enabled = False
-        else:
-            self._breakpoints.add(line_number)
-            is_enabled = True
-        self._line_number_area.update()
-        if self._breakpoint_toggled_callback is not None:
-            self._breakpoint_toggled_callback(line_number, is_enabled)
-        return is_enabled
-
-    def set_debug_execution_line(self, line_number: int | None) -> None:
-        if self._debug_execution_line == line_number:
-            return
-        self._debug_execution_line = line_number
-        self._mark_overlay_cache_dirty()
-        self._line_number_area.update()
-        self._highlight_current_line()
-
-    def clear_debug_execution_line(self) -> None:
-        self.set_debug_execution_line(None)
-
-    def toggle_breakpoint_at_y(self, y_coordinate: int) -> None:
-        block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
-        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
-        bottom = top + int(self.blockBoundingRect(block).height())
-
-        while block.isValid() and top <= y_coordinate:
-            if block.isVisible() and bottom >= y_coordinate:
-                self.toggle_breakpoint(block_number + 1)
-                return
-            block = block.next()
-            block_number += 1
-            top = bottom
-            bottom = top + int(self.blockBoundingRect(block).height())
 
     def set_language_for_path(self, file_path: str) -> None:
         started_at = time.perf_counter()
@@ -392,41 +317,33 @@ class CodeEditorWidget(
         indent_style: str = "spaces",
         indent_size: int = DEFAULT_TAB_WIDTH,
         hover_tooltip_enabled: bool = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT,
+        auto_reindent_flat_python_paste: bool = constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_DEFAULT,
     ) -> None:
         """Apply tab width, font family, and font-size preferences."""
         self._tab_width = max(2, tab_width)
         self._indent_style = "tabs" if indent_style == "tabs" else "spaces"
         self._indent_size = max(1, indent_size)
         self._hover_tooltip_enabled = bool(hover_tooltip_enabled)
+        self._auto_reindent_flat_python_paste = bool(auto_reindent_flat_python_paste)
         font = self.font()
         font.setFamily(font_family)
         font.setPointSize(max(8, font_point_size))
         self.setFont(font)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * self._tab_width)
 
-    _ICON_ZONE_WIDTH = 20
+    def insertFromMimeData(self, source: QMimeData) -> None:  # noqa: N802 - Qt signature
+        """Customize paste only when opt-in flat-Python repair is confident."""
+        if self._auto_reindent_flat_python_paste and source.hasText():
+            text = source.text()
+            result = repair_flat_python_indentation(text, indent_text=self._indent_text())
+            if result.changed and result.parse_ok and result.confidence == FLAT_PYTHON_CONFIDENCE_HIGH:
+                self._insert_text_as_paste(result.text, prefix_subsequent_lines=True)
+                return
 
-    def line_number_area_width(self) -> int:
-        digits = len(str(max(1, self.blockCount())))
-        return self._ICON_ZONE_WIDTH + 8 + self.fontMetrics().horizontalAdvance("9") * digits
-
-    def _update_line_number_area_width(self, _new_block_count: int) -> None:
-        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
-
-    def _update_line_number_area(self, rect: QRect, dy: int) -> None:
-        if dy:
-            self._line_number_area.scroll(0, dy)
-        else:
-            self._line_number_area.update(0, rect.y(), self._line_number_area.width(), rect.height())
-
-        if rect.contains(self.viewport().rect()):
-            self._update_line_number_area_width(0)
-
-    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        super().resizeEvent(event)
-        cr = self.contentsRect()
-        self._line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
-        self._notify_highlighter_viewport_lines()
+        start = self.textCursor().selectionStart() if self.textCursor().hasSelection() else self.textCursor().position()
+        super().insertFromMimeData(source)
+        end = self.textCursor().position()
+        self._last_paste_range = (start, end)
 
     def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         super().showEvent(event)
@@ -436,71 +353,6 @@ class CodeEditorWidget(
             self._highlighter.rehighlight()  # type: ignore[union-attr]
         self._syntax_theme_refresh_pending = False
         self._notify_highlighter_viewport_lines()
-
-    def paint_line_number_area(self, event) -> None:
-        painter = QPainter(self._line_number_area)
-        try:
-            painter.fillRect(event.rect(), self._gutter_bg)
-
-            block = self.firstVisibleBlock()
-            block_number = block.blockNumber()
-            top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
-            bottom = top + int(self.blockBoundingRect(block).height())
-            icon_zone = self._ICON_ZONE_WIDTH
-
-            while block.isValid() and top <= event.rect().bottom():
-                if block.isVisible() and bottom >= event.rect().top():
-                    line_number = block_number + 1
-                    number_text = str(line_number)
-                    color = self._gutter_text
-                    font_height = self.fontMetrics().height()
-                    center_y = top + font_height // 2
-
-                    if line_number in self._breakpoints:
-                        color = self._breakpoint_color
-                        marker_radius = 4
-                        painter.setBrush(color)
-                        painter.setPen(Qt.NoPen)
-                        painter.drawEllipse(2, center_y - marker_radius, marker_radius * 2, marker_radius * 2)
-
-                    if line_number == self._debug_execution_line:
-                        color = self._debug_execution_color
-                        arrow_size = 5
-                        arrow_x = icon_zone - arrow_size - 3
-                        arrow = QPolygonF([
-                            QPointF(arrow_x, center_y - arrow_size),
-                            QPointF(arrow_x + arrow_size, center_y),
-                            QPointF(arrow_x, center_y + arrow_size),
-                        ])
-                        painter.setBrush(self._debug_execution_color)
-                        painter.setPen(Qt.NoPen)
-                        painter.drawPolygon(arrow)
-
-                    diag_severity = self._diagnostic_lines.get(line_number)
-                    if diag_severity is not None and line_number not in self._breakpoints:
-                        diag_color = self._diag_color_for_severity(diag_severity)
-                        painter.setBrush(diag_color)
-                        painter.setPen(Qt.NoPen)
-                        tri_size = 4
-                        painter.drawPolygon(QPolygonF([
-                            QPointF(2, center_y - tri_size),
-                            QPointF(2 + tri_size + 2, center_y),
-                            QPointF(2, center_y + tri_size),
-                        ]))
-
-                    painter.setPen(color)
-                    painter.drawText(
-                        QRect(icon_zone, top, self._line_number_area.width() - icon_zone - 4, font_height),  # type: ignore
-                        int(Qt.AlignRight),
-                        number_text,
-                    )  # type: ignore[call-overload]
-
-                block = block.next()
-                block_number += 1
-                top = bottom
-                bottom = top + int(self.blockBoundingRect(block).height())
-        finally:
-            painter.end()
 
     def _highlight_current_line(self) -> None:
         if self.isReadOnly():
@@ -545,7 +397,7 @@ class CodeEditorWidget(
         line_selection.cursor.clearSelection()
         selections.append(line_selection)
 
-        if effective_mode == constants.HIGHLIGHTING_MODE_NORMAL and not self._is_large_document():
+        if effective_mode == constants.HIGHLIGHTING_MODE_NORMAL:
             selections.extend(self._build_bracket_match_selections())
 
         if effective_mode != constants.HIGHLIGHTING_MODE_LEXICAL_ONLY:
@@ -575,16 +427,9 @@ class CodeEditorWidget(
 
     def _build_non_cursor_extra_selections(self) -> list[QTextEdit.ExtraSelection]:
         selections: list[QTextEdit.ExtraSelection] = []
-        if self._debug_execution_line is not None:
-            debug_sel = cast(Any, QTextEdit.ExtraSelection())
-            debug_sel.format.setBackground(self._debug_execution_line_bg)
-            debug_sel.format.setProperty(QTextFormat.FullWidthSelection, True)
-            block = self.document().findBlockByNumber(self._debug_execution_line - 1)
-            if block.isValid():
-                debug_cursor = QTextCursor(block)
-                debug_cursor.clearSelection()
-                debug_sel.cursor = debug_cursor
-                selections.append(debug_sel)
+        debug_selection = self._debug_execution_extra_selection()
+        if debug_selection is not None:
+            selections.append(debug_selection)
         selections.extend(self._diagnostic_selections)
         selections.extend(self._bounded_search_selections())
         return selections
@@ -681,75 +526,3 @@ class CodeEditorWidget(
                 snapshot.max_ms,
             )
 
-    def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]:
-        if self._is_large_document():
-            return []
-        cursor = self.textCursor()
-        document = self.document()
-        max_index = max(0, document.characterCount() - 1)
-        position = cursor.position()
-        if max_index <= 0 or position <= 0:
-            return []
-        pairs = {"(": ")", "[": "]", "{": "}"}
-        inverse_pairs = {")": "(", "]": "[", "}": "{"}
-        current_char = str(document.characterAt(position - 1))
-        if current_char in pairs:
-            match_position = self._find_matching_bracket(document, position - 1, current_char, pairs[current_char], max_index)
-            if match_position is not None:
-                return [self._selection_for_position(position - 1), self._selection_for_position(match_position)]
-        if current_char in inverse_pairs:
-            match_position = self._find_matching_bracket_backward(
-                document,
-                position - 1,
-                inverse_pairs[current_char],
-                current_char,
-            )
-            if match_position is not None:
-                return [self._selection_for_position(position - 1), self._selection_for_position(match_position)]
-        return []
-
-    def _selection_for_position(self, position: int) -> QTextEdit.ExtraSelection:
-        selection = cast(Any, QTextEdit.ExtraSelection())
-        selection.format.setBackground(self._bracket_match_color)
-        cursor = self.textCursor()
-        cursor.setPosition(position)
-        cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, 1)
-        selection.cursor = cursor
-        return selection
-
-    def _find_matching_bracket(
-        self,
-        document,  # type: ignore[no-untyped-def]
-        start: int,
-        opening: str,
-        closing: str,
-        max_index: int,
-    ) -> int | None:
-        depth = 0
-        for index in range(start, max_index):
-            character = str(document.characterAt(index))
-            if character == opening:
-                depth += 1
-            elif character == closing:
-                depth -= 1
-                if depth == 0:
-                    return index
-        return None
-
-    def _find_matching_bracket_backward(
-        self,
-        document,  # type: ignore[no-untyped-def]
-        start: int,
-        opening: str,
-        closing: str,
-    ) -> int | None:
-        depth = 0
-        for index in range(start, -1, -1):
-            character = str(document.characterAt(index))
-            if character == closing:
-                depth += 1
-            elif character == opening:
-                depth -= 1
-                if depth == 0:
-                    return index
-        return None

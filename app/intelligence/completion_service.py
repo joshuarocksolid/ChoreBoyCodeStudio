@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 
-from app.intelligence.completion_models import CompletionItem, CompletionKind, RankedCompletionItem
+from app.intelligence.completion_models import (
+    COMPLETION_DEGRADATION_SEMANTIC_ENGINE_ERROR,
+    CompletionEnvelope,
+    CompletionItem,
+    CompletionKind,
+    RankedCompletionItem,
+)
 from app.intelligence.completion_providers import (
     detect_module_member_completion_context,
     extract_completion_prefix,
@@ -17,6 +24,8 @@ from app.intelligence.completion_providers import (
     provide_project_symbol_items,
 )
 from app.intelligence.semantic_facade import SemanticFacade
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,14 +49,15 @@ class CompletionService:
         self._acceptance_scores: dict[str, int] = {}
         self._semantic_facade = semantic_facade or SemanticFacade(cache_db_path=self._cache_db_path)
 
-    def complete(self, request: CompletionRequest) -> list[CompletionItem]:
+    def complete(self, request: CompletionRequest) -> CompletionEnvelope:
         """Return ranked completion candidates for one editor query."""
         prefix = extract_completion_prefix(request.source_text, request.cursor_position)
         module_context = detect_module_member_completion_context(request.source_text, request.cursor_position)
         effective_prefix = module_context.member_prefix if module_context is not None else prefix
         if not request.trigger_is_manual and len(effective_prefix) < max(1, request.min_prefix_chars):
-            return []
+            return CompletionEnvelope(items=[])
 
+        degradation_reason = ""
         try:
             semantic_candidates = self._semantic_facade.complete(
                 project_root=request.project_root,
@@ -58,8 +68,10 @@ class CompletionService:
                 min_prefix_chars=request.min_prefix_chars,
                 max_results=request.max_results * 2,
             )
-        except Exception:
+        except Exception as exc:
+            _logger.warning("semantic completion failed: %s", exc)
             semantic_candidates = []
+            degradation_reason = COMPLETION_DEGRADATION_SEMANTIC_ENGINE_ERROR
         project_limit = max(request.max_results * 2, 120)
         if module_context is not None:
             module_candidates = provide_module_member_items(
@@ -69,15 +81,18 @@ class CompletionService:
                 limit=project_limit,
             )
             if not semantic_candidates and not module_candidates:
-                return []
+                return CompletionEnvelope(items=[], degradation_reason=degradation_reason)
             ranked = self._rank_candidates(
-                [*semantic_candidates, *_mark_as_approximate(module_candidates)],
+                [*semantic_candidates, *_tag_approximate_items(module_candidates)],
                 prefix=effective_prefix,
                 current_file_path=request.current_file_path,
             )
-            return [entry.item for entry in ranked[: request.max_results]]
+            return CompletionEnvelope(
+                items=[entry.item for entry in ranked[: request.max_results]],
+                degradation_reason=degradation_reason,
+            )
 
-        raw_candidates = [*semantic_candidates, *_mark_as_approximate([
+        approximate_candidates = _tag_approximate_items([
             *provide_current_file_symbol_items(
                 request.source_text,
                 prefix=prefix,
@@ -97,10 +112,14 @@ class CompletionService:
             ),
             *provide_builtin_items(prefix),
             *provide_keyword_items(prefix),
-        ])]
+        ])
+        raw_candidates = [*semantic_candidates, *approximate_candidates]
 
         ranked = self._rank_candidates(raw_candidates, prefix=effective_prefix, current_file_path=request.current_file_path)
-        return [entry.item for entry in ranked[: request.max_results]]
+        return CompletionEnvelope(
+            items=[entry.item for entry in ranked[: request.max_results]],
+            degradation_reason=degradation_reason,
+        )
 
     def _rank_candidates(
         self,
@@ -178,7 +197,7 @@ def _source_score(candidate: CompletionItem, *, current_file_path: str) -> int:
     return 0
 
 
-def _mark_as_approximate(candidates: list[CompletionItem]) -> list[CompletionItem]:
+def _tag_approximate_items(candidates: list[CompletionItem]) -> list[CompletionItem]:
     marked: list[CompletionItem] = []
     for candidate in candidates:
         detail = candidate.detail

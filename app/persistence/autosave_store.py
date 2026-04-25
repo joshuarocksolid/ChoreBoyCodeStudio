@@ -8,10 +8,12 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import PathInput, ensure_directory, global_cache_dir
 from app.persistence.local_history_store import LocalHistoryStore
 
 AUTOSAVE_DIRECTORY_NAME = "autosave_drafts"
+_LOGGER = get_subsystem_logger("persistence")
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,7 @@ class AutosaveStore:
         legacy_entry = self._load_legacy_draft(file_path)
         if legacy_entry is None:
             return
+        _LOGGER.info("Migrating legacy autosave draft for %s", legacy_entry.file_path)
         self._history_store.save_draft(
             legacy_entry.file_path,
             legacy_entry.content,
@@ -130,6 +133,7 @@ class AutosaveStore:
             legacy_entry = self._load_legacy_draft_payload(legacy_path)
             if legacy_entry is None:
                 continue
+            _LOGGER.info("Migrating legacy autosave draft for %s", legacy_entry.file_path)
             self._history_store.save_draft(
                 legacy_entry.file_path,
                 legacy_entry.content,

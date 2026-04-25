@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -11,6 +12,7 @@ from app.plugins.project_config import (
     is_plugin_enabled_in_project,
     is_plugin_version_pinned,
     load_project_plugin_config,
+    load_project_plugin_config_or_none,
     preferred_provider_for,
     preferred_provider_key,
     set_project_plugin_enabled,
@@ -31,6 +33,38 @@ def test_load_project_plugin_config_defaults_when_missing(tmp_path: Path) -> Non
     assert config.disabled_plugins == ()
     assert config.pinned_versions == {}
     assert config.preferred_providers == {}
+
+
+def test_load_project_plugin_config_or_none_logs_and_returns_none_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    warnings: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    class RecordingLogger:
+        def warning(self, message: str, *args: object, **kwargs: object) -> None:
+            warnings.append((message, args, kwargs))
+
+    def raise_config_error(_project_root: str) -> NoReturn:
+        raise ValueError("bad project plugin config")
+
+    monkeypatch.setattr(
+        "app.plugins.project_config.load_project_plugin_config",
+        raise_config_error,
+    )
+    monkeypatch.setattr("app.plugins.project_config._LOGGER", RecordingLogger())
+
+    config = load_project_plugin_config_or_none(str(project_root))
+
+    assert config is None
+    assert len(warnings) == 1
+    message, args, kwargs = warnings[0]
+    assert message == "Failed to load project plugin config for %s: %s"
+    assert args[0] == str(project_root)
+    assert str(args[1]) == "bad project plugin config"
+    assert kwargs == {"exc_info": True}
 
 
 def test_project_plugin_config_persists_enable_pin_and_provider_preferences(tmp_path: Path) -> None:

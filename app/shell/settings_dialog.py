@@ -297,6 +297,12 @@ class SettingsDialog(QDialog):
         self._hover_tooltip_enabled_input = QCheckBox(editor_group)
         self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
         editor_form.addRow("Show hover tooltips in code editor", self._hover_tooltip_enabled_input)
+        self._auto_reindent_flat_python_paste_input = QCheckBox(editor_group)
+        self._auto_reindent_flat_python_paste_input.setChecked(snapshot.auto_reindent_flat_python_paste)
+        editor_form.addRow(
+            "Automatically repair flat Python indentation on paste (experimental)",
+            self._auto_reindent_flat_python_paste_input,
+        )
         self._editor_reset_to_global_btn = QPushButton("Reset Editor Overrides to Global", editor_group)
         self._editor_reset_to_global_btn.setObjectName("shell.settingsDialog.editorResetGlobal")
         self._editor_reset_to_global_btn.clicked.connect(self._handle_reset_editor_group_to_global)
@@ -457,6 +463,7 @@ class SettingsDialog(QDialog):
             enable_preview=self._enable_preview_input.isChecked(),
             auto_save=self._auto_save_input.isChecked(),
             hover_tooltip_enabled=self._hover_tooltip_enabled_input.isChecked(),
+            auto_reindent_flat_python_paste=self._auto_reindent_flat_python_paste_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
             completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
             completion_min_chars=int(self._completion_min_chars_input.value()),
@@ -500,6 +507,7 @@ class SettingsDialog(QDialog):
         self._enable_preview_input.setChecked(snapshot.enable_preview)
         self._auto_save_input.setChecked(snapshot.auto_save)
         self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
+        self._auto_reindent_flat_python_paste_input.setChecked(snapshot.auto_reindent_flat_python_paste)
 
         self._completion_enabled_input.setChecked(snapshot.completion_enabled)
         self._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
@@ -657,6 +665,8 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input.setChecked(baseline.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(baseline.enable_preview)
         self._auto_save_input.setChecked(baseline.auto_save)
+        self._hover_tooltip_enabled_input.setChecked(baseline.hover_tooltip_enabled)
+        self._auto_reindent_flat_python_paste_input.setChecked(baseline.auto_reindent_flat_python_paste)
 
     def _handle_reset_intelligence_group_to_global(self) -> None:
         baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]

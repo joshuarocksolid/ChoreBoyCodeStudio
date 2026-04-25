@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Mapping
 
 from app.debug.debug_breakpoints import build_breakpoint
-from app.debug.debug_event_protocol import parse_debug_output_line
 from app.debug.debug_models import (
     DebugBreakpoint,
     DebugEvent,
@@ -22,7 +21,7 @@ from app.debug.debug_models import (
 
 
 class DebugSession:
-    """Tracks debug state from runner output or structured transport messages."""
+    """Tracks debug state from structured transport messages."""
 
     def __init__(self) -> None:
         self._state = DebugSessionState()
@@ -30,15 +29,6 @@ class DebugSession:
     @property
     def state(self) -> DebugSessionState:
         return self._state
-
-    def ingest_output_line(self, line: str) -> DebugEvent | None:
-        """Parse legacy output line and apply debug events when present."""
-
-        event = parse_debug_output_line(line)
-        if event is None:
-            return None
-        self._state.apply_event(event)
-        return event
 
     def apply_protocol_message(self, payload: Mapping[str, object]) -> None:
         """Apply one structured transport message."""

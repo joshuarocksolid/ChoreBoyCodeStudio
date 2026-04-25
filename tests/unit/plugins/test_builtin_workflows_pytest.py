@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.plugins import builtin_workflows
-from app.run.test_runner_service import PytestRunResult
+from app.run.pytest_runner_service import PytestRunResult
 
 pytestmark = pytest.mark.unit
 

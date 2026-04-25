@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+COMPLETION_DEGRADATION_SEMANTIC_ENGINE_ERROR = "semantic_engine_error"
+
+
 class CompletionKind(str, Enum):
     """Categorizes completion entries for ranking and display."""
 
@@ -28,6 +31,23 @@ class CompletionItem:
     source: str = ""
     confidence: str = ""
     semantic_kind: str = ""
+
+
+@dataclass(frozen=True)
+class CompletionEnvelope:
+    """Completion candidates plus request-level degradation metadata."""
+
+    items: list[CompletionItem]
+    degradation_reason: str = ""
+
+
+@dataclass(frozen=True)
+class CompletionRequestResult:
+    """Async completion result paired with the editor request identity."""
+
+    request_generation: int
+    prefix: str
+    envelope: CompletionEnvelope
 
 
 @dataclass(frozen=True)

@@ -22,7 +22,7 @@ Never use dot-prefixed directory names for project metadata, app state, logs, ca
 Use visible (non-dot-prefixed) directory names:
 
 - `cbcs/` not `.cbcs/` for per-project metadata.
-- `choreboy_code_studio/` not `.choreboy_code_studio/` for global app state.
+- `choreboy_code_studio_state/` not `.choreboy_code_studio/` for global app state.
 - Same principle for any new directories: logs, caches, run state, etc.
 
 ## Scope
@@ -31,4 +31,4 @@ Applies to both per-project metadata directories and global app state directorie
 
 ## Current migration status
 
-`app/core/constants.py` still defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"`. These are known legacy values tracked for migration to visible names.
+Migration complete: `app/core/constants.py` defines `PROJECT_META_DIRNAME = "cbcs"` and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`. Agents must not introduce new dot-prefixed paths.

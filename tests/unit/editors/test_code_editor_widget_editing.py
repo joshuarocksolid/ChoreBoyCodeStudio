@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, Qt  # noqa: E402
+from PySide2.QtCore import QEvent, QMimeData, Qt  # noqa: E402
 from PySide2.QtGui import QKeyEvent, QTextCursor  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
@@ -79,3 +79,68 @@ def test_replace_document_text_preserves_single_undo_step(editor: CodeEditorWidg
     editor.undo()
 
     assert editor.toPlainText() == "import b\nimport a\n"
+
+
+def test_paste_reindented_flat_python_inserts_repaired_text_and_undoes(editor: CodeEditorWidget) -> None:
+    QApplication.clipboard().setText("def first():\nreturn 1")
+
+    result = editor.paste_reindented_flat_python()
+
+    assert result.parse_ok is True
+    assert editor.toPlainText() == "def first():\n    return 1"
+
+    editor.undo()
+
+    assert editor.toPlainText() == ""
+
+
+def test_paste_reindented_flat_python_uses_tab_preference(editor: CodeEditorWidget) -> None:
+    editor.set_editor_preferences(
+        tab_width=4,
+        font_point_size=10,
+        indent_style="tabs",
+        indent_size=4,
+    )
+    QApplication.clipboard().setText("def first():\nreturn 1")
+
+    editor.paste_reindented_flat_python()
+
+    assert editor.toPlainText() == "def first():\n\treturn 1"
+
+
+def test_reindent_flat_python_selection_changes_only_selected_lines(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("before = True\ndef first():\nreturn 1\nafter = True")
+    cursor = editor.textCursor()
+    cursor.setPosition(len("before = True\n"))
+    cursor.setPosition(len("before = True\ndef first():\nreturn 1"), QTextCursor.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    result = editor.reindent_flat_python_selection()
+
+    assert result.parse_ok is True
+    assert editor.toPlainText() == "before = True\ndef first():\n    return 1\nafter = True"
+
+
+def test_insert_from_mime_data_leaves_paste_literal_when_auto_repair_disabled(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+
+    editor.insertFromMimeData(mime)
+
+    assert editor.toPlainText() == "def first():\nreturn 1"
+
+
+def test_insert_from_mime_data_repairs_only_high_confidence_when_enabled(editor: CodeEditorWidget) -> None:
+    editor.set_editor_preferences(
+        tab_width=4,
+        font_point_size=10,
+        indent_style="spaces",
+        indent_size=4,
+        auto_reindent_flat_python_paste=True,
+    )
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+
+    editor.insertFromMimeData(mime)
+
+    assert editor.toPlainText() == "def first():\n    return 1"

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.core.errors import AppValidationError
+from app.project.project_manifest import load_project_manifest
 from app.templates.template_service import TemplateService
 
 pytestmark = pytest.mark.unit
@@ -37,10 +38,10 @@ def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
 
     manifest_path = created / "cbcs" / "project.json"
     assert manifest_path.exists()
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    assert '"name": "My Utility Project"' in manifest_text
-    assert '"default_entry": "main.py"' in manifest_text
-    assert '"template": "utility_script"' in manifest_text
+    metadata = load_project_manifest(manifest_path)
+    assert metadata.name == "My Utility Project"
+    assert metadata.default_entry == "main.py"
+    assert metadata.template == "utility_script"
 
 
 def test_materialize_template_rejects_non_empty_destination(tmp_path: Path) -> None:

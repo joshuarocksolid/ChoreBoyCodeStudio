@@ -11,7 +11,14 @@ from types import ModuleType
 import pytest
 
 from app.core import constants
-from app.packaging.packager import build_desktop_entry
+from app.packaging.desktop_builder import build_portable_launcher
+from app.packaging.installer_manifest import create_distribution_manifest
+from app.packaging.layout import sanitize_project_name
+from app.packaging.models import (
+    LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
+    PACKAGE_KIND_PROJECT,
+    PACKAGE_PROFILE_PORTABLE,
+)
 
 pytestmark = pytest.mark.runtime_parity
 
@@ -52,13 +59,28 @@ def _extract_shell_script(exec_line: str) -> str:
     return exec_line[len(prefix) : -len(suffix)].replace('\\"', '"')
 
 
+def _build_portable_desktop_entry(project_name: str, entry_file: str, install_dir: str) -> str:
+    manifest = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_PORTABLE,
+        package_id=sanitize_project_name(project_name),
+        display_name=project_name,
+        version="0.1.0",
+        description="",
+        entry_relative_path=Path(install_dir, entry_file).as_posix(),
+        launcher_mode=LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
+        app_run_path=constants.APP_RUN_PATH,
+    )
+    return build_portable_launcher(manifest)
+
+
 def test_portable_launcher_bootstrap_runs_under_apprun_when_given_desktop_path(tmp_path: Path) -> None:
     _require_apprun()
     package_root = tmp_path / "portable_package"
     (package_root / "app_files").mkdir(parents=True, exist_ok=True)
     (package_root / "app_files" / "main.py").write_text("print('portable-ok')\n", encoding="utf-8")
     desktop_path = package_root / "portable_tool.desktop"
-    desktop_content = build_desktop_entry("Portable Tool", "main.py", "app_files")
+    desktop_content = _build_portable_desktop_entry("Portable Tool", "main.py", "app_files")
     desktop_path.write_text(desktop_content, encoding="utf-8")
     exec_line = next(line for line in desktop_content.splitlines() if line.startswith("Exec="))[len("Exec=") :]
     shell_script = _extract_shell_script(exec_line)

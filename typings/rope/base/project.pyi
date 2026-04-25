@@ -1,0 +1,9 @@
+from __future__ import annotations
+
+from typing import Any, Optional
+
+
+class Project:
+    def __init__(self, projectroot: str, fscommands: Any = ..., ropefolder: Optional[str] = ..., **prefs: Any) -> None: ...
+    def get_file(self, path: str) -> Any: ...
+    def close(self) -> None: ...

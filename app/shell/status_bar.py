@@ -9,13 +9,18 @@ This module intentionally stays thin:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 from app.core.models import CapabilityProbeReport
 from app.support.runtime_explainer import build_startup_issue_report
 
 if TYPE_CHECKING:
     from PySide2.QtWidgets import QLabel, QMainWindow, QStatusBar
+
+
+class _EmittableSignal(Protocol):
+    def emit(self) -> None:
+        ...
 
 
 @dataclass(frozen=True)
@@ -317,7 +322,7 @@ def create_shell_status_bar(
 
         def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[name-defined]
             if event.button() == QtCore.Qt.LeftButton:
-                self.clicked.emit()
+                cast(_EmittableSignal, self.clicked).emit()
             super().mousePressEvent(event)
 
     status_bar = QStatusBar(main_window)

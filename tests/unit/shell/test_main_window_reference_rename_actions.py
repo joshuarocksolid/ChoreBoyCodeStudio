@@ -52,7 +52,7 @@ def _build_window_for_reference_actions() -> MainWindow:
     window_any._handle_save_all_action = lambda: True
     window_any._refresh_open_tabs_from_disk = lambda *_a, **_kw: None
     window_any._reload_current_project = lambda: None
-    window_any._record_local_history_transaction = lambda *_a, **_kw: None
+    window_any._local_history_workflow = SimpleNamespace(record_transaction=lambda *_a, **_kw: None)
     return window
 
 

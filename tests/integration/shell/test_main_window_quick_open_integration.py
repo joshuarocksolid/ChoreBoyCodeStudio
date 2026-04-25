@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import pytest
 
@@ -26,6 +27,14 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     if app is None:
         app = qt_widgets.QApplication([])
     return app
+
+
+def _wait_for_quick_open_results(app) -> None:  # type: ignore[no-untyped-def]
+    deadline = time.time() + 0.15
+    while time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    app.processEvents()
 
 
 def test_quick_open_opens_selected_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -52,7 +61,7 @@ def test_quick_open_opens_selected_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert dialog is not None
 
     dialog._search_input.setText("beta")
-    app.processEvents()
+    _wait_for_quick_open_results(app)
     assert dialog._list_model.rowCount() >= 1
 
     first_item_text = dialog._list_model.stringList()[0]
@@ -89,7 +98,7 @@ def test_quick_open_preview_then_enter_promotes_to_permanent(
     dialog = window._quick_open_dialog
     assert dialog is not None
     dialog._search_input.setText("beta")
-    app.processEvents()
+    _wait_for_quick_open_results(app)
     assert dialog._list_model.rowCount() == 1
 
     preview_index = dialog._list_model.index(0, 0)
@@ -133,7 +142,7 @@ def test_preview_tab_promotes_on_first_edit(
     dialog = window._quick_open_dialog
     assert dialog is not None
     dialog._search_input.setText("first")
-    app.processEvents()
+    _wait_for_quick_open_results(app)
     assert dialog._list_model.rowCount() == 1
     preview_index = dialog._list_model.index(0, 0)
     dialog._on_item_preview(preview_index)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.run.test_discovery_service import (
+from app.run.pytest_discovery_service import (
     DiscoveredTestNode,
     DiscoveredTestResult,
     DiscoveryResult,
@@ -77,7 +77,7 @@ def test_build_collect_command_resolves_default_runtime_when_given_project_root(
     resolved_inputs: list[object] = []
 
     monkeypatch.setattr(
-        "app.run.test_discovery_service.resolve_runtime_executable",
+        "app.run.pytest_discovery_service.resolve_runtime_executable",
         lambda runtime_executable: resolved_inputs.append(runtime_executable) or "/usr/bin/python3",
     )
 

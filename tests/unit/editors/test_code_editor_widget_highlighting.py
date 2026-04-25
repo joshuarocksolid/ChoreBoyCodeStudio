@@ -10,6 +10,7 @@ from PySide2.QtGui import QTextCursor  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.core import constants  # noqa: E402
+from app.editors.code_editor_bracket_overlay_mixin import BRACKET_MATCH_SCAN_LIMIT_CHARS  # noqa: E402
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.editors.find_replace_bar import FindOptions  # noqa: E402
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
@@ -58,6 +59,45 @@ def test_large_documents_skip_bracket_matching_scan() -> None:
     cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
     assert editor._is_large_document() is True
+    assert editor._build_bracket_match_selections() == []
+
+
+def test_nearby_bracket_match_creates_pair_selections() -> None:
+    editor = CodeEditorWidget()
+    source = "values = (1 + 2)\n"
+    editor.setPlainText(source)
+    cursor = editor.textCursor()
+    cursor.setPosition(source.index("(") + 1)
+    editor.setTextCursor(cursor)
+
+    selections = editor._build_bracket_match_selections()
+
+    assert len(selections) == 2
+    assert [selection.cursor.selectionStart() for selection in selections] == [
+        source.index("("),
+        source.index(")"),
+    ]
+
+
+def test_bracket_match_returns_empty_when_partner_is_past_scan_budget() -> None:
+    editor = CodeEditorWidget()
+    source = "(" + ("a" * (BRACKET_MATCH_SCAN_LIMIT_CHARS + 5)) + ")"
+    editor.setPlainText(source)
+    cursor = editor.textCursor()
+    cursor.setPosition(1)
+    editor.setTextCursor(cursor)
+
+    assert editor._build_bracket_match_selections() == []
+
+
+def test_bracket_match_scan_limit_bounds_mismatched_multiline_document() -> None:
+    editor = CodeEditorWidget()
+    source = "{\n" + ("line = 1\n" * 500)
+    editor.setPlainText(source)
+    cursor = editor.textCursor()
+    cursor.setPosition(1)
+    editor.setTextCursor(cursor)
+
     assert editor._build_bracket_match_selections() == []
 
 

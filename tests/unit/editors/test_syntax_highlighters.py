@@ -15,7 +15,7 @@ from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402
-from app.treesitter.highlighter import TreeSitterHighlighter  # noqa: E402
+from app.treesitter.highlighter_core import TreeSitterHighlighter  # noqa: E402
 from app.treesitter.language_registry import default_tree_sitter_language_registry  # noqa: E402
 from app.treesitter.loader import available_language_keys as loader_available_language_keys, initialize_tree_sitter_runtime  # noqa: E402
 

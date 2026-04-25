@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bdb
+from dataclasses import replace
 import queue
 import sys
 import threading
@@ -347,7 +348,7 @@ class _RunnerDebugHost:
 
     def _handle_update_breakpoints(self, *, command_id: str, arguments: Mapping[str, object]) -> None:
         breakpoints = _parse_breakpoints(arguments.get("breakpoints", []))
-        self._manifest.breakpoints[:] = breakpoints  # type: ignore[misc]
+        self._manifest = replace(self._manifest, breakpoints=breakpoints)
         updated = self._apply_breakpoints(breakpoints)
         self._transport.send_message(
             build_debug_event("breakpoints_updated", {"breakpoints": updated})

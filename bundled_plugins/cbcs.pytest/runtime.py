@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from app.plugins.runtime_serializers import serialize_pytest_run_result
-from app.run.test_runner_service import run_pytest_project, run_pytest_target
+from app.run.pytest_runner_service import run_pytest_project, run_pytest_target
 
 
 def handle_pytest_job(

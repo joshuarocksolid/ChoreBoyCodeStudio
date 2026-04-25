@@ -156,6 +156,12 @@ Developer-side build entrypoint:
 
 - `package.py`
 
+`package.py` is intentionally thin: it prompts for the release version and delegates
+to `app.packaging.product_builder.build_product_artifact(...)`. The shared
+installable artifact layout is written by `app.packaging.artifact_builder`, while
+`product_builder` owns product-specific payload selection, vendor staging, cp39
+tree-sitter validation, archive creation, and budget enforcement.
+
 Supported behavior:
 
 1. build a manifest-driven installable package for Code Studio itself
@@ -166,7 +172,7 @@ Supported behavior:
 4. enforce the product archive budget:
    - **15 MB maximum**
 
-During staging, `package.py` auto-fetches the cp39 manylinux `tree-sitter`
+During staging, the product builder auto-fetches the cp39 manylinux `tree-sitter`
 wheel and overlays `_binding.cpython-39-x86_64-linux-gnu.so` onto
 `payload/vendor/tree_sitter/`. The wheel is cached under
 `CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are

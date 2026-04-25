@@ -24,7 +24,7 @@ def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
 
 def test_menu_registry_includes_top_level_shell_menu_ids(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+    registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     assert registry.menu("shell.menu.file") is not None
     assert registry.menu("shell.menu.edit") is not None
@@ -38,7 +38,7 @@ def test_menu_registry_includes_top_level_shell_menu_ids(_ensure_qapp) -> None: 
 
 def test_tools_menu_registers_highlighting_actions(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+    registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     assert registry.action("shell.action.tools.setLanguageMode") is not None
     assert registry.action("shell.action.tools.clearLanguageOverride") is not None
@@ -49,7 +49,7 @@ def test_tools_menu_registers_highlighting_actions(_ensure_qapp) -> None:  # typ
 
 def test_view_menu_registers_test_explorer_action(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
-    registry = build_menu_stubs(window, callbacks=MenuCallbacks())
+    registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
     action = registry.action("shell.action.view.showTestExplorer")
     assert action is not None

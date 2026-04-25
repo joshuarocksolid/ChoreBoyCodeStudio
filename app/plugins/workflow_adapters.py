@@ -11,7 +11,7 @@ from app.packaging.models import DependencyAuditRecord, DependencyAuditReport, P
 from app.plugins.workflow_broker import WorkflowBroker, WorkflowProviderDescriptor
 from app.python_tools.models import PythonTextTransformResult, PythonToolingSettings
 from app.run.problem_parser import ProblemEntry
-from app.run.test_runner_service import PytestRunResult
+from app.run.pytest_runner_service import PytestRunResult
 from app.templates.template_service import TemplateMetadata
 
 

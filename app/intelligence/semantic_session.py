@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable, Optional, cast
 
 from app.bootstrap.paths import PathInput
-from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest, CompletionService
 from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.semantic_models import (
@@ -50,16 +50,15 @@ class SemanticSession:
         """Boost ranking for a user-accepted completion."""
         self._completion_service.record_acceptance(item)
 
-    def complete_blocking(self, *, request: CompletionRequest) -> list[CompletionItem]:
+    def complete_blocking(self, *, request: CompletionRequest) -> CompletionEnvelope:
         """Resolve completion candidates on the semantic thread and wait for them."""
-        result = cast(
-            list[CompletionItem],
+        return cast(
+            CompletionEnvelope,
             self._worker.call(
-            key=f"completion_sync:{request.current_file_path}",
-            task=lambda: list(self._completion_service.complete(request)),
+                key=f"completion_sync:{request.current_file_path}",
+                task=lambda: self._completion_service.complete(request),
             ),
         )
-        return list(result)
 
     def request_completion(
         self,
@@ -67,14 +66,18 @@ class SemanticSession:
         request: CompletionRequest,
         prefix: str,
         request_generation: int,
-        on_success: Callable[[tuple[int, str, list[CompletionItem]]], None],
+        on_success: Callable[[CompletionRequestResult], None],
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Resolve completion candidates asynchronously."""
 
-        def task() -> tuple[int, str, list[CompletionItem]]:
-            completions = list(self._completion_service.complete(request))
-            return (request_generation, prefix, completions)
+        def task() -> CompletionRequestResult:
+            envelope = self._completion_service.complete(request)
+            return CompletionRequestResult(
+                request_generation=request_generation,
+                prefix=prefix,
+                envelope=envelope,
+            )
 
         self._worker.submit(
             key=f"completion:{request.current_file_path}",

@@ -1,9 +1,18 @@
 """Controller for editor semantic routing and result formatting."""
 from __future__ import annotations
 
-from app.intelligence.completion_models import CompletionItem
+from typing import Callable
+
+from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest
-from app.intelligence.semantic_models import SemanticHoverResult, SemanticSignatureResult
+from app.intelligence.semantic_models import (
+    SemanticDefinitionResult,
+    SemanticHoverResult,
+    SemanticReferenceResult,
+    SemanticRenameApplyResult,
+    SemanticRenamePlan,
+    SemanticSignatureResult,
+)
 from app.intelligence.semantic_session import SemanticSession
 
 
@@ -22,29 +31,139 @@ class EditorIntelligenceController:
     def record_completion_acceptance(self, item: CompletionItem) -> None:
         self._semantic_session.record_completion_acceptance(item)
 
-    def complete_blocking(self, *, request: CompletionRequest) -> list[CompletionItem]:
+    def complete_blocking(self, *, request: CompletionRequest) -> CompletionEnvelope:
         return self._semantic_session.complete_blocking(request=request)
 
-    def request_completion(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_completion(**kwargs)
+    def request_completion(
+        self,
+        *,
+        request: CompletionRequest,
+        prefix: str,
+        request_generation: int,
+        on_success: Callable[[CompletionRequestResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_completion(
+            request=request,
+            prefix=prefix,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_lookup_definition(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_lookup_definition(**kwargs)
+    def request_lookup_definition(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        on_success: Callable[[SemanticDefinitionResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_lookup_definition(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_find_references(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_find_references(**kwargs)
+    def request_find_references(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        on_success: Callable[[SemanticReferenceResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_find_references(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_rename_plan(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_rename_plan(**kwargs)
+    def request_rename_plan(
+        self,
+        *,
+        project_root: str,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        new_symbol: str,
+        on_success: Callable[[SemanticRenamePlan | None], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_rename_plan(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            new_symbol=new_symbol,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_apply_rename(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_apply_rename(**kwargs)
+    def request_apply_rename(
+        self,
+        *,
+        plan: SemanticRenamePlan,
+        on_success: Callable[[SemanticRenameApplyResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_apply_rename(
+            plan=plan,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_hover_info(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_hover_info(**kwargs)
+    def request_hover_info(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        request_generation: int,
+        on_success: Callable[[tuple[int, SemanticHoverResult | None]], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_hover_info(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
-    def request_signature_help(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        self._semantic_session.request_signature_help(**kwargs)
+    def request_signature_help(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        request_generation: int,
+        on_success: Callable[[tuple[int, SemanticSignatureResult | None]], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_signature_help(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def build_inline_signature_text(
         self,

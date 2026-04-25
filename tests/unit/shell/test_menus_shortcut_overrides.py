@@ -25,7 +25,7 @@ def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
 def test_build_menu_stubs_applies_shortcut_overrides(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
     window = QMainWindow()
     registry = build_menu_stubs(
-        window,
+        window.menuBar(),
         callbacks=MenuCallbacks(),
         shortcut_overrides={
             "shell.action.run.run": "Ctrl+R",

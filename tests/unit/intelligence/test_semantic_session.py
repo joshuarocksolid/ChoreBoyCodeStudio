@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from app.intelligence.completion_models import CompletionItem, CompletionKind
+from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest
 from app.intelligence.semantic_models import SemanticHoverResult, SemanticOperationMetadata, SemanticSignatureResult
 from app.intelligence.semantic_session import SemanticSession
@@ -19,12 +19,15 @@ def test_request_completion_routes_through_owned_completion_service() -> None:
         cache_db_path=":memory:",
     )
     done = threading.Event()
-    captured: list[tuple[int, str, list[CompletionItem]]] = []
+    captured: list[CompletionRequestResult] = []
 
     class _CompletionServiceStub:
-        def complete(self, request: CompletionRequest) -> list[CompletionItem]:
+        def complete(self, request: CompletionRequest) -> CompletionEnvelope:
             assert request.current_file_path == "/tmp/example.py"
-            return [CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL)]
+            return CompletionEnvelope(
+                items=[CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL)],
+                degradation_reason="semantic_engine_error",
+            )
 
         def record_acceptance(self, item: CompletionItem) -> None:
             raise AssertionError("not used in this test")
@@ -46,9 +49,10 @@ def test_request_completion_routes_through_owned_completion_service() -> None:
     )
 
     assert done.wait(timeout=1.0) is True
-    assert captured[0][0] == 3
-    assert captured[0][1] == "alpha"
-    assert [item.label for item in captured[0][2]] == ["alpha"]
+    assert captured[0].request_generation == 3
+    assert captured[0].prefix == "alpha"
+    assert captured[0].envelope.degradation_reason == "semantic_engine_error"
+    assert [item.label for item in captured[0].envelope.items] == ["alpha"]
     session.shutdown()
 
 
