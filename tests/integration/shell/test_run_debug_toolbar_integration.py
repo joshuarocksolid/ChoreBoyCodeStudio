@@ -50,7 +50,7 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
         (project_root / "run_tests.py").write_text("print('tests')\n", encoding="utf-8")
         opened = window._open_project_by_path(str(project_root.resolve()))
         assert opened is True
-        assert window._open_file_in_editor(str((project_root / "run.py").resolve()), preview=False) is True
+        assert window._editor_tab_factory.open_file_in_editor(str((project_root / "run.py").resolve()), preview=False) is True
         window._refresh_run_action_states()
 
         run_action = registry.action("shell.action.run.run")

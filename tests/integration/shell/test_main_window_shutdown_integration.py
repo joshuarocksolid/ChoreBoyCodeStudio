@@ -43,7 +43,7 @@ def test_close_event_stops_active_run_before_accepting_exit(
     clear_mode_calls: list[str] = []
     console_session_updates: list[bool] = []
 
-    monkeypatch.setattr(window, "_confirm_proceed_with_unsaved_changes", lambda _action: True)
+    monkeypatch.setattr(window._save_workflow, "confirm_proceed_with_unsaved_changes", lambda _action: True)
     monkeypatch.setattr(window._run_service.supervisor, "is_running", lambda: True)
     monkeypatch.setattr(window._run_service, "stop_run", lambda: stop_calls.append("stop"))
     monkeypatch.setattr(
@@ -77,7 +77,7 @@ def test_close_event_blocks_post_close_run_event_application(
     applied_events: list[ProcessEvent] = []
     stop_calls: list[str] = []
 
-    monkeypatch.setattr(window, "_confirm_proceed_with_unsaved_changes", lambda _action: True)
+    monkeypatch.setattr(window._save_workflow, "confirm_proceed_with_unsaved_changes", lambda _action: True)
     monkeypatch.setattr(window._run_service.supervisor, "is_running", lambda: True)
     monkeypatch.setattr(window._run_service, "stop_run", lambda: stop_calls.append("stop"))
     monkeypatch.setattr(window, "_apply_run_event", lambda event: applied_events.append(event))
@@ -110,7 +110,7 @@ def test_close_event_persists_python_console_history(
     assert window._python_console_widget is not None
     window._python_console_widget.set_history(["print('saved')"])
 
-    monkeypatch.setattr(window, "_confirm_proceed_with_unsaved_changes", lambda _action: True)
+    monkeypatch.setattr(window._save_workflow, "confirm_proceed_with_unsaved_changes", lambda _action: True)
     monkeypatch.setattr(window._run_service.supervisor, "is_running", lambda: False)
 
     close_event = QCloseEvent()

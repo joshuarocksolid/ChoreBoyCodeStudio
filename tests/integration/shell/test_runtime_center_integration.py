@@ -114,7 +114,7 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
             on_success(fake_report)
 
         monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
-        window._handle_project_health_check_action()
+        window._runtime_support_workflow.handle_project_health_check_action()
 
         assert window._latest_health_report == fake_report
         assert len(opened_dialogs) == 1

@@ -6,6 +6,22 @@ Out of scope (this pass): `tests/`, `scripts/`, `bundled_plugins/`, `templates/`
 Owner: Codebase quality
 Audience: any agent or human picking up one of the eleven work briefs in section 6
 
+## Current closeout status (2026-04-25)
+
+This file stays useful as a **historical playbook** and as the **Agent A–L progress log** in section 6. **Do not treat the quantitative section 5 snapshot as current inventory**; re-run the metric sweep before planning work. For **what remains** after the original app audit, use [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md).
+
+**Metric sweep (re-baselined 2026-04-25, repo `app/` tree):**
+
+- Total Python source lines: **56,999** (`find app -name '*.py' -not -path '*__pycache__*' -exec wc -l {} + | tail -1`)
+- [`app/shell/main_window.py`](../../app/shell/main_window.py): **6,176** lines; **363** `def` entries matching `^    def ` (method-like surface; not a perfect OO method count)
+- Bare `except Exception:` lines: **29** (`rg` on `app/**/*.py`)
+- `# type: ignore` lines: **95** (`rg` on `app/**/*.py`)
+- Old hard-cutover string hits (`__CB_DEBUG_`, `ingest_output_line`, `debug_event_protocol`, `app.run.test_(runner|discovery)_service`): **0** across `app/`, `tests/`, `bundled_plugins/`
+
+**Test and type-check checkpoints** are maintained in [AGENTS.md](../../AGENTS.md) (e.g. fast shard ~**1445** passed, **0** pyright diagnostics as of the latest checkpoint on that branch). Section 4.6 below may cite older numbers; **prefer AGENTS.md** for current counts.
+
+**Superseded §5 findings (historical only):** Items such as orphan intelligence modules, the empty `app/designer/` tree, `pytest` service `test_*` names, the stdout debug marker path, and similar issues were addressed by Agents A–L (see their **Progress** blocks in section 6 and the summary in the handoff). Section 5.1–5.3 still describes the *audit-era* tree shape for archaeology.
+
 ---
 
 ## 1. Purpose
@@ -95,7 +111,7 @@ python3 run_tests.py -v --import-mode=importlib tests/unit/<area>/
 python3 run_tests.py -q --import-mode=importlib tests/unit/
 ```
 
-`npx pyright` must remain at zero errors. Latest checkpoint per `AGENTS.md`: `1386 passed, 1 skipped`, `0 errors, 0 warnings, 0 informations`.
+`npx pyright` must remain at zero errors. Latest checkpoint: see [AGENTS.md](../../AGENTS.md) (test counts and pyright stats are updated there; do not trust a frozen number in this document).
 
 ### 4.7 Architecture is the source of truth
 
@@ -116,6 +132,8 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
 ---
 
 ## 5. Findings overview
+
+> **Historical snapshot:** subsection 5.1–5.3 reflects metrics gathered during the original audit pass. The **Current closeout status** at the top of this document and [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md) reflect the live tree.
 
 ### 5.1 Quantitative shape of `app/`
 

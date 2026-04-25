@@ -10,6 +10,7 @@ from PySide2.QtWidgets import QSplitter, QToolButton, QVBoxLayout, QWidget
 
 from app.core import constants
 from app.shell.layout_persistence import DEFAULT_TOP_SPLITTER_SIZES, DEFAULT_VERTICAL_SPLITTER_SIZES
+from app.shell.main_window_panels import build_bottom_panel, build_center_panel, build_left_panel
 
 
 def configure_window_frame(window: Any) -> None:
@@ -34,13 +35,13 @@ def build_layout_shell(window: Any) -> None:
     top_splitter = QSplitter(Qt.Horizontal, vertical_splitter)
     top_splitter.setObjectName("shell.topSplitter")
     window._top_splitter = top_splitter
-    top_splitter.addWidget(window._build_left_panel())
-    top_splitter.addWidget(window._build_center_panel())
+    top_splitter.addWidget(build_left_panel(window))
+    top_splitter.addWidget(build_center_panel(window))
     top_splitter.setStretchFactor(0, 1)
     top_splitter.setStretchFactor(1, 3)
 
     vertical_splitter.addWidget(top_splitter)
-    vertical_splitter.addWidget(window._build_bottom_panel())
+    vertical_splitter.addWidget(build_bottom_panel(window))
     vertical_splitter.setStretchFactor(0, 4)
     vertical_splitter.setStretchFactor(1, 2)
     top_splitter.setSizes(list(DEFAULT_TOP_SPLITTER_SIZES))

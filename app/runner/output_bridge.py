@@ -8,9 +8,12 @@ This module keeps stdout/stderr behavior explicit:
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 from pathlib import Path
 import sys
 from typing import IO, Iterator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class TeeTextIO:
@@ -48,10 +51,14 @@ def redirect_output_to_log(log_file_path: str) -> Iterator[None]:
         path.parent.mkdir(parents=True, exist_ok=True)
         log_stream = path.open("a", encoding="utf-8")
     except OSError as exc:
-        try:
-            print(f"[runner] unable to open run log at {path}: {exc}", file=original_stderr)
-        except Exception:
-            pass
+        msg = f"[runner] unable to open run log at {path}: {exc}"
+        for stream in (original_stderr, getattr(sys, "__stderr__", None)):
+            if stream is not None:
+                try:
+                    print(msg, file=stream, flush=True)
+                except OSError:
+                    continue
+        _LOGGER.warning("Runner run log not opened; stdout/stderr not mirrored to file: %s", exc)
         yield
         return
 
@@ -65,9 +72,9 @@ def redirect_output_to_log(log_file_path: str) -> Iterator[None]:
                 try:
                     sys.stdout.flush()
                     sys.stderr.flush()
-                except Exception:
-                    # Flushing should not mask user-code failures.
-                    pass
+                except OSError as exc:
+                    # Flushing should not mask user-code failures; log I/O glitches only.
+                    _LOGGER.debug("Flush after run yield failed: %s", exc)
     finally:
         sys.stdout = original_stdout
         sys.stderr = original_stderr

@@ -53,14 +53,14 @@ class SaveWorkflow:
         if response == QMessageBox.Discard:
             return True
 
-        return window._handle_save_all_action()
+        return self.handle_save_all_action()
 
     def handle_save_action(self) -> bool:
         window = self._window
         active_tab = window._editor_manager.active_tab()
         if active_tab is None:
             return False
-        return window._save_tab(active_tab.file_path)
+        return self.save_tab(active_tab.file_path)
 
     def handle_save_all_action(self) -> bool:
         window = self._window
@@ -68,7 +68,7 @@ class SaveWorkflow:
         for tab in window._editor_manager.all_tabs():
             if not tab.is_dirty:
                 continue
-            if not window._save_tab(tab.file_path):
+            if not self.save_tab(tab.file_path):
                 any_failure = True
         window._refresh_save_action_states()
         return not any_failure
@@ -90,7 +90,7 @@ class SaveWorkflow:
             if not tab.is_dirty:
                 continue
             try:
-                window._save_tab(
+                self.save_tab(
                     tab.file_path,
                     show_style_warnings=False,
                     checkpoint_source="auto_save_to_file",
@@ -110,7 +110,7 @@ class SaveWorkflow:
         window = self._window
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
         if apply_transforms:
-            window._apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
+            self.apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
         try:
             saved_tab = window._editor_manager.save_tab(file_path)
         except (OSError, ValueError) as exc:

@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import zipfile
 
+from app.project.dependency_classifier import COMPILED_EXTENSION_SUFFIXES
 from app.project.dependency_manifest import (
     CLASSIFICATION_NATIVE_EXTENSION,
     CLASSIFICATION_PURE_PYTHON,
@@ -18,7 +19,7 @@ from app.project.dependency_manifest import (
     save_dependency_manifest,
 )
 
-_COMPILED_EXTENSION_SUFFIXES = frozenset({".so", ".pyd", ".dll", ".dylib"})
+_COMPILED_EXTENSION_SUFFIXES = frozenset(COMPILED_EXTENSION_SUFFIXES)
 
 
 @dataclass(frozen=True)

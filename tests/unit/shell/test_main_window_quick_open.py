@@ -98,7 +98,9 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
     opened_paths: list[str] = []
     opened_with_preview: list[tuple[str, bool]] = []
     opened_at_line_with_preview: list[tuple[str, int, bool]] = []
-    window_any._open_file_in_editor = lambda path, preview=False: opened_with_preview.append((path, preview)) or True
+    window_any._editor_tab_factory = SimpleNamespace(
+        open_file_in_editor=lambda path, preview=False: opened_with_preview.append((path, preview)) or True
+    )
     window_any._open_file_at_line = (
         lambda path, line, preview=False: opened_at_line_with_preview.append((path, line, preview))
     )

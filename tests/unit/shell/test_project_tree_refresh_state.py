@@ -13,7 +13,11 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
-from app.shell.main_window import MainWindow, TREE_ROLE_RELATIVE_PATH  # noqa: E402
+from app.shell.main_window import (  # noqa: E402
+    MainWindow,
+    TREE_ROLE_RELATIVE_PATH,
+    _filter_tree_signature_entries,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -89,3 +93,65 @@ def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -
     MainWindow._poll_external_file_changes(window)
 
     assert reload_calls == [True]
+
+
+def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
+    """Run/debug sessions write under cbcs/runs/ and cbcs/logs/ on every start.
+    Those writes must not trigger the project reload cascade (which clears the
+    file tree, restarts the symbol indexer, etc.) — otherwise the file
+    explorer's scroll position is reset every time the user runs a file.
+    """
+    window = MainWindow.__new__(MainWindow)
+    window_any = cast(Any, window)
+    window_any._editor_manager = SimpleNamespace(
+        stale_open_paths=lambda: [],
+        active_tab=lambda: None,
+    )
+    loaded_project = LoadedProject(
+        project_root="/tmp/project",
+        manifest_path="/tmp/project/cbcs/project.json",
+        metadata=ProjectMetadata(schema_version=1, name="Tree"),
+        entries=[],
+    )
+    window_any._loaded_project = loaded_project
+    baseline = ("cbcs/project.json", "src", "src/main.py")
+    window_any._project_tree_structure_signature = baseline
+    reload_calls: list[bool] = []
+    window_any._reload_current_project = lambda: reload_calls.append(True)
+
+    raw_entries = (
+        "cbcs/project.json",
+        "cbcs/logs/run_abc123.log",
+        "cbcs/runs/run_abc123.json",
+        "src",
+        "src/main.py",
+    )
+    window_any._scan_project_tree_signature = (
+        lambda _project: _filter_tree_signature_entries(raw_entries)
+    )
+
+    MainWindow._poll_external_file_changes(window)
+
+    assert reload_calls == []
+    assert window_any._project_tree_structure_signature == baseline
+
+
+def test_filter_tree_signature_entries_strips_run_artifacts_only() -> None:
+    raw = (
+        "cbcs/project.json",
+        "cbcs/runs/run_1.json",
+        "cbcs/runs/nested/sub.json",
+        "cbcs/logs/run_1.log",
+        "cbcs/cache/index.bin",
+        "src/main.py",
+        "logs/keepme.txt",
+    )
+
+    filtered = _filter_tree_signature_entries(raw)
+
+    assert filtered == (
+        "cbcs/project.json",
+        "cbcs/cache/index.bin",
+        "src/main.py",
+        "logs/keepme.txt",
+    )

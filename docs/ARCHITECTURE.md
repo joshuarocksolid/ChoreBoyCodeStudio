@@ -655,7 +655,11 @@ domain orchestration to focused shell controllers:
 - `run_session_controller` for run/debug/repl lifecycle control wiring
 - `project_tree_controller` for tree move/delete/remap side effects
 - `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
+- `editor_tab_factory` for editor widget materialization and per-tab signal wiring
 - `editor_intelligence_controller` for semantic request routing and inline result formatting
+- `debug_control_workflow` for breakpoint state, debug panel command routing, and debugger transport commands
+- `runtime_support_workflow` for project health checks, support bundles, and project packaging UI actions
+- `python_style_workflow` and `save_workflow` for explicit formatting/import/lint actions and save-time transforms
 - `test_runner_workflow` for pytest discovery, run scopes, explorer outcomes, and debug-test targeting
 - `plugin_activation_workflow` for plugin discovery/config refresh, contribution activation, workflow-provider catalog rebuilds, and runtime-plugin reloads
 - `background_tasks` for keyed off-UI-thread task execution and replacement

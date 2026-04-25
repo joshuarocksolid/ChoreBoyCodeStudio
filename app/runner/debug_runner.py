@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bdb
 from dataclasses import replace
+import logging
 import queue
 import sys
 import threading
@@ -16,6 +17,8 @@ from app.debug.debug_protocol import build_debug_event, build_debug_response
 from app.debug.debug_runtime_probe import probe_debug_runtime
 from app.debug.debug_transport import RunnerDebugTransportClient
 from app.run.run_manifest import RunManifest
+
+_LOGGER = logging.getLogger(__name__)
 
 _MAX_TOP_LEVEL_VARS = 100
 _MAX_CHILD_VARS = 100
@@ -128,7 +131,8 @@ class _RunnerDebugHost:
                 build_debug_event("session_ended", {"message": "Debug session ended."})
             )
         except Exception:
-            pass
+            # Best-effort: transport may already be closed or the peer gone.
+            _LOGGER.debug("Failed to send session_ended on debug transport close", exc_info=True)
         self._transport.close()
 
     def pause_at_frame(

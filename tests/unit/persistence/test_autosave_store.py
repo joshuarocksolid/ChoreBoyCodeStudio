@@ -1,10 +1,6 @@
 """Unit tests for autosave draft persistence."""
 
-import hashlib
-import json
-import logging
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -44,36 +40,3 @@ def test_autosave_store_lists_multiple_drafts(tmp_path: Path) -> None:
 
     drafts = store.list_drafts()
     assert sorted(draft.file_path for draft in drafts) == sorted([str(alpha.resolve()), str(beta.resolve())])
-
-
-def test_autosave_store_migrates_legacy_json_draft_on_load(tmp_path: Path) -> None:
-    state_root = tmp_path / "state"
-    file_path = tmp_path / "project" / "legacy.py"
-    file_path.parent.mkdir(parents=True)
-    file_path.write_text("print('hello')\n", encoding="utf-8")
-    normalized_path = str(file_path.resolve())
-    digest = hashlib.sha256(normalized_path.encode("utf-8")).hexdigest()
-    legacy_dir = state_root / "cache" / "autosave_drafts"
-    legacy_dir.mkdir(parents=True)
-    legacy_path = legacy_dir / f"{digest}.json"
-    legacy_path.write_text(
-        json.dumps(
-            {
-                "file_path": normalized_path,
-                "content": "print('legacy draft')\n",
-                "saved_at": "2026-03-24T10:00:00",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    store = AutosaveStore(state_root=state_root)
-    logger = logging.getLogger("choreboy_code_studio.persistence")
-    with patch.object(logger, "info") as log_info:
-        loaded = store.load_draft(str(file_path))
-
-    assert loaded is not None
-    assert loaded.content == "print('legacy draft')\n"
-    assert legacy_path.exists() is False
-    assert store.list_drafts()[0].file_path == normalized_path
-    log_info.assert_called_once_with("Migrating legacy autosave draft for %s", normalized_path)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QApplication, QMenu, QTreeWidgetItem
 
 from app.core.models import LoadedProject
@@ -35,8 +36,13 @@ class ProjectTreePresenter:
 
         expanded_paths: set[str] = set()
         selected_paths: set[str] = set()
+        vertical_scroll = 0
+        horizontal_scroll = 0
         if preserve_state:
             expanded_paths, selected_paths = self.capture_state()
+            tree = window._project_tree_widget
+            vertical_scroll = tree.verticalScrollBar().value()
+            horizontal_scroll = tree.horizontalScrollBar().value()
         window._project_tree_widget.clear()
         root_nodes = build_project_tree(loaded_project.entries)
         display_nodes = build_project_tree_display(root_nodes)
@@ -48,6 +54,26 @@ class ProjectTreePresenter:
                 root_item.setIcon(0, window._tree_folder_open_icon)
         if preserve_state:
             self.restore_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
+            # Qt finalizes scrollbar ranges after expansion is applied; defer the
+            # restore to the next event-loop tick so setValue lands on a real range.
+            self._restore_scroll_position(vertical_scroll, horizontal_scroll)
+
+    def _restore_scroll_position(self, vertical: int, horizontal: int) -> None:
+        window = self._window
+        tree = window._project_tree_widget
+        if tree is None:
+            return
+        tree.verticalScrollBar().setValue(vertical)
+        tree.horizontalScrollBar().setValue(horizontal)
+
+        def _reapply() -> None:
+            current_tree = window._project_tree_widget
+            if current_tree is None:
+                return
+            current_tree.verticalScrollBar().setValue(vertical)
+            current_tree.horizontalScrollBar().setValue(horizontal)
+
+        QTimer.singleShot(0, _reapply)
 
     def capture_state(self) -> tuple[set[str], set[str]]:
         window = self._window

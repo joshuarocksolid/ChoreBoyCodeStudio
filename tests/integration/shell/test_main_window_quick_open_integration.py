@@ -161,11 +161,11 @@ def test_preview_tab_promotes_on_first_edit(
     assert promoted_tab is not None
     assert promoted_tab.is_preview is False
 
-    assert window._open_file_in_editor(str(second_file.resolve()), preview=True) is True
+    assert window._editor_tab_factory.open_file_in_editor(str(second_file.resolve()), preview=True) is True
     app.processEvents()
     assert window._editor_tabs_widget is not None
     assert window._editor_tabs_widget.count() == 2
-    assert window._handle_save_all_action() is True
+    assert window._save_workflow.handle_save_all_action() is True
     window.close()
 
 

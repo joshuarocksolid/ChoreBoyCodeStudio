@@ -46,7 +46,7 @@ Remaining risk areas:
 - `app/shell/main_window.py` is still the highest concentration of orchestration and change risk.
 - Several shell/debug/intelligence modules still exceed or sit near the original 700-line smell threshold.
 - Some silent fallback paths remain and need triage.
-- The autosave legacy migration bridge still exists and needs a dated removal decision.
+- ~~The autosave legacy migration bridge~~ **removed** (drafts use `LocalHistoryStore` only; see `app/persistence/autosave_store.py`).
 - Project traversal/exclude policy is repeated across multiple subsystems.
 - Dependency/native-extension/runtime classification is split across project, packaging, and diagnostics code.
 - `AUDIT_app.md` now mixes historical findings with completed notes and stale metrics, so future agents can misread fixed items as open.
@@ -185,8 +185,7 @@ Concrete work:
 4. Decide the autosave legacy bridge:
   - If the telemetry window has elapsed, delete `_legacy_draft_root`, `_legacy_draft_path`, `_delete_legacy_draft`, `_migrate_legacy_draft`, `_migrate_all_legacy_drafts`, `_load_legacy_draft`, and `_load_legacy_draft_payload`.
   - If not, add a dated removal note in `docs/TASKS.md` or this handoff.
-5. Finish the completion honesty decision:
-  - Either group semantic and approximate items in the popup, or document that item-level source/detail tagging plus the status-bar notice is the accepted UX.
+5. **Completion honesty (resolved for v1).** The product UX is: semantic vs approximate items are distinguishable in the completion list via per-item `source`, `detail` (including an `approximate` suffix from `_tag_approximate_items` in `app/intelligence/completion_service.py`), and `confidence`. When the semantic engine fails, `CompletionEnvelope.degradation_reason` is set and the shell surfaces that via the status bar. A separate “grouping” in the popup is not required unless a future UX pass asks for it.
 
 Acceptance criteria:
 
@@ -269,6 +268,8 @@ npx pyright
 ### R3 - Shell Hotspot Splits
 
 Goal: reduce remaining oversized shell UI/style modules without changing behavior.
+
+**Status (2026-04-25):** Stylesheet generation is already decomposed: `app/shell/style_sheet.py` is the composer, and `app/shell/style_sheet_sections.py` re-exports section builders from `style_sheet_sections_chrome`, `style_sheet_sections_workspace`, `style_sheet_sections_panels`, `style_sheet_sections_dialogs`, and `style_sheet_sections_settings`. Remaining hotspots for a follow-up pass: `app/shell/settings_dialog.py`, `app/shell/outline_panel.py`, and large panel widgets as listed below.
 
 Files in scope:
 

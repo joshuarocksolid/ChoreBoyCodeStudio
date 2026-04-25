@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import logging
 import queue
 import threading
 import uuid
@@ -21,6 +23,7 @@ from app.plugins.rpc_protocol import (
 from app.run.process_supervisor import ProcessEvent
 
 _PLUGIN_RUNTIME_LOG_FILENAME = "plugin_host.log"
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -263,19 +266,29 @@ class PluginRuntimeManager:
                         {"ok": False, "error": "Plugin host process exited before response."}
                     )
                 except queue.Full:
-                    continue
+                    self._append_runtime_log(
+                        "plugin runtime: dropped exit response (response queue full)"
+                    )
             for _, result_queue in job_results:
                 try:
                     result_queue.put_nowait(
                         {"type": "job_error", "error": "Plugin host process exited before job completion."}
                     )
                 except queue.Full:
-                    continue
+                    self._append_runtime_log(
+                        "plugin runtime: dropped exit job_error (result queue full)"
+                    )
 
     def _consume_message(self, line: str) -> bool:
         try:
             payload = decode_message(line)
-        except Exception:
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            preview = line.strip()[:120]
+            _LOGGER.debug(
+                "plugin runtime: non-RPC stdout line ignored (%s): %r",
+                exc.__class__.__name__,
+                preview,
+            )
             return False
         message_type = payload.get("type")
         if message_type == "response":
@@ -324,7 +337,9 @@ class PluginRuntimeManager:
                                 }
                             )
                         except queue.Full:
-                            pass
+                            self._append_runtime_log(
+                                "plugin runtime: dropped handler job_error (result queue full)"
+                            )
                     return True
             return True
         if message_type in {"job_result", "job_error"}:
@@ -338,6 +353,9 @@ class PluginRuntimeManager:
             try:
                 result_queue.put_nowait(payload)
             except queue.Full:
+                self._append_runtime_log(
+                    "plugin runtime: dropped job_result (result queue full)"
+                )
                 return False
             return True
         return False

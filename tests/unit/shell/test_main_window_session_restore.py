@@ -140,7 +140,7 @@ def _make_window_for_open_file(
     def _show_editor() -> None:
         captured["show_editor_calls"] += 1
 
-    window_any._open_file_in_editor = _open_file
+    window_any._editor_tab_factory = SimpleNamespace(open_file_in_editor=_open_file)
     window_any._open_project_by_path = _open_project
     window_any._show_editor_screen = _show_editor
 

@@ -6,8 +6,9 @@ from pathlib import Path
 import re
 
 from app.plugins.models import PluginManifest
+from app.project.dependency_classifier import COMPILED_EXTENSION_SUFFIXES
 
-_NATIVE_EXTENSION_SUFFIXES = (".so", ".pyd", ".dll", ".dylib")
+_NATIVE_EXTENSION_SUFFIXES = COMPILED_EXTENSION_SUFFIXES
 _FORBIDDEN_HIDDEN_PATH_TOKENS = (
     ".cbcs",
     ".choreboy_code_studio",

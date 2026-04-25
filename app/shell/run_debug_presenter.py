@@ -44,7 +44,7 @@ class RunDebugPresenter:
             debug_exception_policy=debug_exception_policy,
             source_maps=source_maps,
             skip_save=skip_save,
-            save_all=window._handle_save_all_action,
+            save_all=window._save_workflow.handle_save_all_action,
             before_start=window._prepare_for_session_start,
             append_console_line=lambda text, stream: window._append_console_line(text, stream=stream),
             append_python_console_line=window._append_python_console_line,
