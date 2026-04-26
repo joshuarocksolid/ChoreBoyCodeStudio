@@ -2656,6 +2656,58 @@ Verify that the test explorer UI remains usable in light and dark mode.
 
 ---
 
+## AT-102 — Markdown files open with source and preview modes
+
+**Purpose:**  
+Verify that documentation files can be read and edited inside the editor.
+
+**Preconditions:**  
+
+- a valid project is open
+- project contains a Markdown file such as `README.md`
+
+**Steps:**  
+
+1. Open `README.md`.
+2. Switch between **Markdown**, **Preview**, and **Split** modes.
+3. Edit the Markdown source and wait for the preview to update.
+4. Save the file.
+
+**Expected Result:**  
+
+- the Markdown file opens in a normal editor tab
+- Preview mode shows rendered headings, lists, links, tables, and code blocks
+- Split mode shows source and preview side by side
+- source edits mark the file dirty and save clears the dirty state
+- no duplicate source/preview tabs are created for the same file
+
+---
+
+## AT-103 — Markdown preview handles links and large files safely
+
+**Purpose:**  
+Verify that Markdown preview remains useful and safe under common document cases.
+
+**Preconditions:**  
+
+- a Markdown file is open
+- the file contains at least one local file link
+
+**Steps:**  
+
+1. Click a local `.md` or source-file link in Preview mode.
+2. Open a large Markdown document.
+3. Switch between light and dark themes while preview is visible.
+
+**Expected Result:**  
+
+- local links open through Code Studio's file-opening workflow
+- external links do not execute embedded code or shell commands
+- large-file preview is paused or refreshed manually without freezing the UI
+- preview text, links, code blocks, and toolbar controls are readable in both themes
+
+---
+
 ## 16. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

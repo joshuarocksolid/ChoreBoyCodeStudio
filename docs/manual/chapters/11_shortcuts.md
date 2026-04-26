@@ -45,6 +45,8 @@ This chapter lists the default shortcuts shipped with Code Studio.
 - `Ctrl+=` — Zoom In
 - `Ctrl+-` — Zoom Out
 - `Ctrl+0` — Reset Zoom
+- `Ctrl+Shift+V` — Toggle Markdown Preview
+- `Ctrl+K, V` — Markdown Split View
 
 ## Tip
 

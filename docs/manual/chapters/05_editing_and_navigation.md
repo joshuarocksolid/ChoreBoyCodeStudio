@@ -61,6 +61,21 @@ Code Studio supports preview tabs:
 
 This keeps tab clutter low while browsing.
 
+## Markdown preview
+
+Markdown files such as `README.md` and project docs open with a built-in viewer.
+
+Use the mode buttons at the top of a Markdown tab:
+
+- **Markdown** shows the raw editable source.
+- **Preview** shows the rendered document.
+- **Split** shows source and preview side by side.
+
+The preview updates from the current editor buffer, so you can edit the source
+and read the rendered result without leaving Code Studio. Local links open
+through the normal file-opening workflow. Code blocks are displayed as document
+content only; commands inside Markdown are not executed.
+
 ## Edit reliability tips
 
 1. Save often (`Ctrl+S`).

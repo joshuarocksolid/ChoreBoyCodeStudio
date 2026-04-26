@@ -61,6 +61,8 @@ from app.editors.editor_manager import EditorManager
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
+from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
+from app.editors.markdown_rendering import is_markdown_path
 from app.editors.quick_open_dialog import QuickOpenDialog
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
@@ -395,6 +397,7 @@ class MainWindow(QMainWindow):
         self._workspace_controller = EditorWorkspaceController()
         self._editor_manager = EditorManager()
         self._editor_widgets_by_path = self._workspace_controller.editor_widgets_by_path
+        self._markdown_panes_by_path: dict[str, MarkdownEditorPane] = {}
         self._editor_tab_factory = EditorTabFactory(self)
         self._indent_source_by_path: dict[str, tuple[str, int, str]] = {}
         self._breakpoints_by_file: dict[str, set[int]] = {}
@@ -697,6 +700,7 @@ class MainWindow(QMainWindow):
         self._refresh_open_recent_menu()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_markdown_action_states()
         self._test_runner_workflow.refresh_discovery()
         self._plugin_activation_workflow.reload()
         self._run_event_timer = QTimer(self)
@@ -1163,6 +1167,8 @@ class MainWindow(QMainWindow):
             self.setStyleSheet(build_shell_style_sheet(tokens))
             for editor_widget in self._editor_widgets_by_path.values():
                 editor_widget.apply_theme(tokens)
+            for markdown_pane in self._markdown_panes_by_path.values():
+                markdown_pane.apply_theme(tokens)
             if self._python_console_widget is not None:
                 self._python_console_widget.apply_theme(tokens)
             self._apply_explorer_theme(tokens)
@@ -4226,6 +4232,12 @@ class MainWindow(QMainWindow):
     def _release_editor_widget(self, widget: CodeEditorWidget) -> None:
         if self._debug_execution_editor is widget:
             self._clear_debug_execution_indicator()
+        markdown_panes = getattr(self, "_markdown_panes_by_path", {})
+        for file_path, markdown_pane in list(markdown_panes.items()):
+            if markdown_pane.source_editor() is widget:
+                markdown_panes.pop(file_path, None)
+                markdown_pane.deleteLater()
+                return
         widget.deleteLater()
 
     def _close_deleted_editor_paths(self, deleted_path: str) -> None:
@@ -4236,6 +4248,14 @@ class MainWindow(QMainWindow):
 
     def _update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
+        markdown_panes = getattr(self, "_markdown_panes_by_path", {})
+        for old_path, markdown_pane in list(markdown_panes.items()):
+            if markdown_pane.source_editor() is widget:
+                markdown_panes.pop(old_path, None)
+                if is_markdown_path(new_path):
+                    markdown_pane.set_file_path(new_path)
+                    markdown_panes[new_path] = markdown_pane
+                break
 
     def _update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         if self._editor_tabs_widget is None:
@@ -4398,6 +4418,50 @@ class MainWindow(QMainWindow):
     def _promote_existing_preview_tab(self) -> bool:
         return self._get_editor_tabs_coordinator().promote_existing_preview_tab()
 
+    def _active_markdown_pane(self) -> MarkdownEditorPane | None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return None
+        return self._markdown_panes_by_path.get(active_tab.file_path)
+
+    def _set_active_markdown_mode(self, mode: str) -> None:
+        markdown_pane = self._active_markdown_pane()
+        if markdown_pane is None:
+            return
+        markdown_pane.set_mode(mode)
+        self._refresh_markdown_action_states()
+
+    def _handle_markdown_show_source_action(self) -> None:
+        self._set_active_markdown_mode(MarkdownPreviewMode.SOURCE)
+
+    def _handle_markdown_show_preview_action(self) -> None:
+        self._set_active_markdown_mode(MarkdownPreviewMode.PREVIEW)
+
+    def _handle_markdown_show_split_action(self) -> None:
+        self._set_active_markdown_mode(MarkdownPreviewMode.SPLIT)
+
+    def _handle_markdown_toggle_preview_action(self) -> None:
+        markdown_pane = self._active_markdown_pane()
+        if markdown_pane is None:
+            return
+        markdown_pane.toggle_preview()
+        self._refresh_markdown_action_states()
+
+    def _refresh_markdown_action_states(self) -> None:
+        if self._menu_registry is None:
+            return
+        markdown_pane = self._active_markdown_pane()
+        enabled = markdown_pane is not None
+        for action_id in (
+            "shell.action.view.markdownTogglePreview",
+            "shell.action.view.markdownShowSource",
+            "shell.action.view.markdownShowPreview",
+            "shell.action.view.markdownShowSplit",
+        ):
+            action = self._menu_registry.action(action_id)
+            if action is not None:
+                action.setEnabled(enabled)
+
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         if self._editor_manager.get_tab(file_path) is None:
             return
@@ -4543,6 +4607,7 @@ class MainWindow(QMainWindow):
         self._editor_manager.set_active_file(tab_path)
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_markdown_action_states()
         self._update_editor_status_for_path(tab_path)
         self._update_indent_status_for_path(tab_path)
         self._check_for_external_file_change(tab_path)
@@ -4578,11 +4643,29 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
+        markdown_source_action = None
+        markdown_preview_action = None
+        markdown_split_action = None
+        markdown_pane = self._markdown_panes_by_path.get(file_path)
+        if markdown_pane is not None:
+            markdown_source_action = menu.addAction("Markdown: Show Source")
+            markdown_preview_action = menu.addAction("Markdown: Show Preview")
+            markdown_split_action = menu.addAction("Markdown: Show Split View")
+            menu.addSeparator()
         local_history_action = menu.addAction("Local History...")
         menu.addSeparator()
         close_action = menu.addAction("Close")
         chosen = menu.exec_(tab_bar.mapToGlobal(position))
-        if chosen == local_history_action:
+        if markdown_pane is not None and chosen == markdown_source_action:
+            markdown_pane.set_mode(MarkdownPreviewMode.SOURCE)
+            self._refresh_markdown_action_states()
+        elif markdown_pane is not None and chosen == markdown_preview_action:
+            markdown_pane.set_mode(MarkdownPreviewMode.PREVIEW)
+            self._refresh_markdown_action_states()
+        elif markdown_pane is not None and chosen == markdown_split_action:
+            markdown_pane.set_mode(MarkdownPreviewMode.SPLIT)
+            self._refresh_markdown_action_states()
+        elif chosen == local_history_action:
             self._local_history_workflow.show_local_history_for_path(file_path)
         elif chosen == close_action:
             self._handle_tab_close_requested(tab_index)
@@ -4620,6 +4703,7 @@ class MainWindow(QMainWindow):
         self._debug_control_workflow.refresh_breakpoints_list()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_markdown_action_states()
 
     def _close_active_tab(self) -> None:
         if self._editor_tabs_widget is None:
@@ -4630,6 +4714,10 @@ class MainWindow(QMainWindow):
 
     def _reset_editor_tabs(self) -> None:
         if self._editor_tabs_widget is not None:
+            for path in list(self._workspace_controller.open_editor_paths()):
+                widget = self._workspace_controller.pop_editor(path)
+                if widget is not None:
+                    self._release_editor_widget(widget)
             self._editor_tabs_widget.clear()
         self._local_history_workflow.stop_autosave_timer()
         self._auto_save_to_file_timer.stop()
@@ -4639,10 +4727,12 @@ class MainWindow(QMainWindow):
         self._clear_debug_execution_indicator()
         self._workspace_controller.clear()
         self._editor_manager = EditorManager()
+        self._markdown_panes_by_path.clear()
         self._local_history_workflow.set_editor_manager(self._editor_manager)
         self._indent_source_by_path.clear()
         self._refresh_save_action_states()
         self._refresh_run_action_states()
+        self._refresh_markdown_action_states()
         if self._status_controller is not None:
             self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             self._status_controller.set_indent_status(style=None, size=None, source=None)

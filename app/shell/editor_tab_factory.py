@@ -5,10 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
-from PySide2.QtWidgets import QMessageBox
+from PySide2.QtWidgets import QMessageBox, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
+from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
+from app.editors.markdown_rendering import is_markdown_path, qt_markdown_supported
 from app.intelligence.completion_models import CompletionItem
 
 
@@ -147,7 +149,23 @@ class EditorTabFactory:
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
         window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
 
-        tab_index = window._editor_tabs_widget.addTab(editor_widget, opened_result.tab.display_name)
+        tab_content: QWidget = editor_widget
+        if is_markdown_path(tab_file_path) and qt_markdown_supported():
+            markdown_pane = MarkdownEditorPane(
+                editor_widget,
+                tab_file_path,
+                window._editor_tabs_widget,
+                local_link_callback=lambda linked_path: window._editor_tab_factory.open_file_in_editor(
+                    linked_path,
+                    preview=False,
+                ),
+                initial_mode=MarkdownPreviewMode.PREVIEW,
+            )
+            markdown_pane.apply_theme(window._resolve_theme_tokens())
+            window._markdown_panes_by_path[tab_file_path] = markdown_pane
+            tab_content = markdown_pane
+
+        tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
         window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
         window._refresh_tab_presentation(opened_result.tab.file_path)

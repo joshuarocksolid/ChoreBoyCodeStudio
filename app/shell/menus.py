@@ -98,6 +98,10 @@ class MenuCallbacks:
     on_zoom_in: Callable[[], object] | None = None
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None
+    on_markdown_show_source: Callable[[], object] | None = None
+    on_markdown_show_preview: Callable[[], object] | None = None
+    on_markdown_show_split: Callable[[], object] | None = None
+    on_markdown_toggle_preview: Callable[[], object] | None = None
     on_format_current_file: Callable[[], object] | None = None
     on_organize_imports_current_file: Callable[[], object] | None = None
     on_lint_current_file: Callable[[], object] | None = None

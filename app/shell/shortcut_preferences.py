@@ -43,7 +43,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand(
         "shell.action.edit.pasteReindentedFlatPython",
         "Paste and Re-indent Flat Python",
-        "Ctrl+Shift+V",
+        "",
         "Edit",
     ),
     ShortcutCommand("shell.action.edit.goToDefinition", "Go To Definition", "F12", "Edit"),
@@ -74,6 +74,10 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.view.zoomIn", "Zoom In", "Ctrl+=", "View"),
     ShortcutCommand("shell.action.view.zoomOut", "Zoom Out", "Ctrl+-", "View"),
     ShortcutCommand("shell.action.view.zoomReset", "Reset Zoom", "Ctrl+0", "View"),
+    ShortcutCommand("shell.action.view.markdownTogglePreview", "Markdown: Toggle Preview", "Ctrl+Shift+V", "View"),
+    ShortcutCommand("shell.action.view.markdownShowSource", "Markdown: Show Source", "", "View"),
+    ShortcutCommand("shell.action.view.markdownShowPreview", "Markdown: Show Preview", "", "View"),
+    ShortcutCommand("shell.action.view.markdownShowSplit", "Markdown: Show Split View", "Ctrl+K, V", "View"),
     ShortcutCommand(_SHORTCUT_ID_CLOSE_TAB, "Close Tab", "Ctrl+W", "Editor"),
     ShortcutCommand(_SHORTCUT_ID_KEEP_PREVIEW_OPEN, "Keep Preview Tab Open", "Ctrl+K, Enter", "Editor"),
 )

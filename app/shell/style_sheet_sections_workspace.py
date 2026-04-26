@@ -70,6 +70,50 @@ QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:hover {{
 QToolButton#shell\\.bottom\\.pythonConsole\\.clearBtn:pressed {{
     background: {tokens.tree_selected_bg};
 }}
+QWidget#shell\\.markdownEditorPane {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+}}
+QWidget#shell\\.markdownEditorPane\\.toolbar {{
+    background: {tokens.panel_bg};
+    border-left: 1px solid {tokens.border};
+    border-right: 1px solid {tokens.border};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.markdownEditorPane\\.title {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    font-weight: 700;
+    padding-right: 8px;
+}}
+QLabel#shell\\.markdownEditorPane\\.status {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+    padding-left: 6px;
+}}
+QToolButton#shell\\.markdownEditorPane\\.modeButton,
+QToolButton#shell\\.markdownEditorPane\\.refreshButton {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+}}
+QToolButton#shell\\.markdownEditorPane\\.modeButton:hover,
+QToolButton#shell\\.markdownEditorPane\\.refreshButton:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+    border-color: {tokens.border};
+}}
+QToolButton#shell\\.markdownEditorPane\\.modeButton:checked {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+    border-color: {tokens.accent};
+}}
+QSplitter#shell\\.markdownEditorPane\\.splitter::handle {{
+    background: {tokens.border};
+}}
 """
 def shell_section_run_log_panel(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Run Log panel ------------------------------------------------------ */

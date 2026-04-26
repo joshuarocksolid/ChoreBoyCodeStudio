@@ -55,3 +55,13 @@ def test_view_menu_registers_test_explorer_action(_ensure_qapp) -> None:  # type
     assert action is not None
     assert action.text() == "Show Test Explorer"
 
+
+def test_view_menu_registers_markdown_preview_actions(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    window = QMainWindow()
+    registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
+
+    assert registry.action("shell.action.view.markdownTogglePreview") is not None
+    assert registry.action("shell.action.view.markdownShowSource") is not None
+    assert registry.action("shell.action.view.markdownShowPreview") is not None
+    assert registry.action("shell.action.view.markdownShowSplit") is not None
+

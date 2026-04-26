@@ -38,6 +38,46 @@ def build_view_menu(ctx: MenuBuildContext) -> object:
     view_menu.addSeparator()
 
     for action_id, label, shortcut, callback in [
+        (
+            "shell.action.view.markdownTogglePreview",
+            "Markdown: Toggle Preview",
+            "Ctrl+Shift+V",
+            callbacks.on_markdown_toggle_preview,
+        ),
+        (
+            "shell.action.view.markdownShowSource",
+            "Markdown: Show Source",
+            "",
+            callbacks.on_markdown_show_source,
+        ),
+        (
+            "shell.action.view.markdownShowPreview",
+            "Markdown: Show Preview",
+            "",
+            callbacks.on_markdown_show_preview,
+        ),
+        (
+            "shell.action.view.markdownShowSplit",
+            "Markdown: Show Split View",
+            "Ctrl+K, V",
+            callbacks.on_markdown_show_split,
+        ),
+    ]:
+        register_menu_action(
+            qt_widgets=ctx.qt_widgets,
+            menu=view_menu,
+            action_lookup=ctx.actions,
+            action_id=action_id,
+            label=label,
+            shortcut=shortcut,
+            enabled=False,
+            callback=callback,
+            shortcut_overrides=ctx.shortcut_overrides,
+        )
+
+    view_menu.addSeparator()
+
+    for action_id, label, shortcut, callback in [
         ("shell.action.view.zoomIn", "Zoom In", "Ctrl+=", callbacks.on_zoom_in),
         ("shell.action.view.zoomOut", "Zoom Out", "Ctrl+-", callbacks.on_zoom_out),
         ("shell.action.view.zoomReset", "Reset Zoom", "Ctrl+0", callbacks.on_zoom_reset),
