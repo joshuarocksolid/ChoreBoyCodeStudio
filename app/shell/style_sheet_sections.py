@@ -27,9 +27,11 @@ from app.shell.style_sheet_sections_panels import (
 )
 
 from app.shell.style_sheet_sections_dialogs import (
+    shell_section_dialog_chrome,
+    shell_section_draft_recovery_dialog,
     shell_section_help_dialog,
-    shell_section_runtime_center_dialog,
     shell_section_package_wizard,
+    shell_section_runtime_center_dialog,
 )
 
 from app.shell.style_sheet_sections_settings import (
@@ -54,6 +56,8 @@ __all__ = [
     "settings_section_tables_lists_scroll_area",
     "shell_section_activity_bar",
     "shell_section_debug_panel",
+    "shell_section_dialog_chrome",
+    "shell_section_draft_recovery_dialog",
     "shell_section_explorer_status_toolbar_chrome",
     "shell_section_find_bar",
     "shell_section_help_dialog",

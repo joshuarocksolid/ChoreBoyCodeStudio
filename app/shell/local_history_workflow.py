@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QDialog, QMessageBox, QWidget
+
+from app.shell.theme_tokens import ShellThemeTokens
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -425,6 +428,7 @@ class LocalHistoryWorkflow:
             current_text=self.current_text_for_history_path(file_path),
             checkpoint_content_loader=self._local_history_store.load_checkpoint_content,
             restore_to_buffer=lambda content: self.restore_local_history_content_to_buffer(file_path, content),
+            tokens=self._resolve_parent_tokens(),
             parent=self._parent,
         )
         dialog.exec_()
@@ -478,6 +482,9 @@ class LocalHistoryWorkflow:
             file_name=tab_state.display_name,
             disk_text=tab_state.current_content,
             draft_text=draft_entry.content,
+            tokens=self._resolve_parent_tokens(),
+            disk_saved_at=_resolve_disk_saved_at_iso(tab_state.file_path),
+            draft_saved_at=draft_entry.saved_at,
             parent=self._parent,
         )
         response = dialog.exec_()
@@ -566,6 +573,18 @@ class LocalHistoryWorkflow:
 
     def stop_autosave_timer(self) -> None:
         self._autosave_timer.stop()
+
+    def _resolve_parent_tokens(self) -> ShellThemeTokens | None:
+        accessor = getattr(self._parent, "current_theme_tokens", None)
+        if not callable(accessor):
+            return None
+        try:
+            resolved = accessor()
+        except Exception:  # pragma: no cover - defensive: parent in shutdown
+            return None
+        if isinstance(resolved, ShellThemeTokens):
+            return resolved
+        return None
 
     def _apply_content_to_open_tab(
         self,
@@ -735,3 +754,12 @@ class LocalHistoryWorkflow:
         editor_widget.setTextCursor(cursor)
         scroll_position = max(0, file_state.scroll_position)
         QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
+
+
+def _resolve_disk_saved_at_iso(file_path: str) -> Optional[str]:
+    """Return ``file_path``'s mtime as an ISO timestamp, or ``None`` on failure."""
+    try:
+        stat = Path(file_path).stat()
+    except OSError:
+        return None
+    return datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).astimezone().isoformat()

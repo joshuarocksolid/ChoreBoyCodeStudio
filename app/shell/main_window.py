@@ -1158,6 +1158,10 @@ class MainWindow(QMainWindow):
         syntax_overrides = self._syntax_color_overrides.get(theme_key, {})
         return apply_syntax_token_overrides(base_tokens, syntax_overrides)
 
+    def current_theme_tokens(self) -> ShellThemeTokens:
+        """Public accessor used by child dialogs to inherit shell theming."""
+        return self._resolve_theme_tokens()
+
     def _apply_theme_styles(self) -> None:
         if self._is_applying_theme_styles:
             return

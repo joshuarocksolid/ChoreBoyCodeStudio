@@ -13,6 +13,8 @@ from app.shell.style_sheet_sections import (
     settings_section_tables_lists_scroll_area,
     shell_section_activity_bar,
     shell_section_debug_panel,
+    shell_section_dialog_chrome,
+    shell_section_draft_recovery_dialog,
     shell_section_explorer_status_toolbar_chrome,
     shell_section_find_bar,
     shell_section_help_dialog,
@@ -54,6 +56,8 @@ def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
         + shell_section_help_dialog(tokens)
         + shell_section_runtime_center_dialog(tokens)
         + shell_section_package_wizard(tokens)
+        + shell_section_dialog_chrome(tokens)
+        + shell_section_draft_recovery_dialog(tokens)
     )
 
 

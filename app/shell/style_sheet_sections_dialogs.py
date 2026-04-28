@@ -5,6 +5,209 @@ from __future__ import annotations
 from app.shell.theme_tokens import ShellThemeTokens
 
 
+def _accent_hover(tokens: ShellThemeTokens) -> str:
+    return "#4D7AFF" if tokens.is_dark else "#2952CC"
+
+
+def _accent_pressed(tokens: ShellThemeTokens) -> str:
+    return "#3D6AEE" if tokens.is_dark else "#1F3FA6"
+
+
+def _destructive_color(tokens: ShellThemeTokens) -> str:
+    return tokens.diag_error_color or ("#FF6B6B" if tokens.is_dark else "#E03131")
+
+
+def shell_section_dialog_chrome(tokens: ShellThemeTokens) -> str:
+    """Generic chrome (header / body / footer / buttons) for shell dialogs."""
+    accent_hover = _accent_hover(tokens)
+    accent_pressed = _accent_pressed(tokens)
+    destructive = _destructive_color(tokens)
+    return f"""/* -- Dialog chrome (shared header/body/footer) --------------------------- */
+QWidget#shell\\.dialogChrome\\.header {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+}}
+QLabel#shell\\.dialogChrome\\.title {{
+    color: {tokens.text_primary};
+    font-size: 17px;
+    font-weight: 700;
+}}
+QLabel#shell\\.dialogChrome\\.subtitle {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+}}
+QWidget#shell\\.dialogChrome\\.metaRow QLabel[metaChip="true"] {{
+    background: {tokens.badge_bg};
+    color: {tokens.text_muted};
+    padding: 3px 9px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QWidget#shell\\.dialogChrome\\.body {{
+    background: {tokens.window_bg};
+}}
+QWidget#shell\\.dialogChrome\\.footer {{
+    background: {tokens.panel_bg};
+    border-top: 1px solid {tokens.border};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.primary {{
+    background: {tokens.accent};
+    color: #FFFFFF;
+    border: none;
+    border-radius: 5px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.primary:hover {{
+    background: {accent_hover};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.primary:pressed {{
+    background: {accent_pressed};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.primary:disabled {{
+    background: {tokens.badge_bg};
+    color: {tokens.text_muted};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.secondary {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.secondary:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.secondary:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.destructiveSecondary {{
+    background: {tokens.input_bg};
+    color: {destructive};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.destructiveSecondary:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {destructive};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.destructiveSecondary:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.link {{
+    background: transparent;
+    color: {tokens.accent};
+    border: none;
+    padding: 6px 4px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.dialogChrome\\.button\\.link:hover {{
+    color: {accent_hover};
+    text-decoration: underline;
+}}
+
+/* -- Diff view (shared) -------------------------------------------------- */
+QWidget#shell\\.diffView {{
+    background: {tokens.window_bg};
+}}
+QLabel#shell\\.diffView\\.paneLabel {{
+    color: {tokens.text_muted};
+}}
+QLabel#shell\\.diffView\\.message {{
+    color: {tokens.text_muted};
+    font-size: 13px;
+    background: {tokens.panel_bg};
+    border: 1px dashed {tokens.border};
+    border-radius: 6px;
+}}
+QSplitter#shell\\.diffView\\.splitter::handle {{
+    background: {tokens.border};
+    width: 1px;
+}}
+
+/* -- Segmented mode toolbar (Inline / Side-by-side) ---------------------- */
+QToolButton[modeButton="true"] {{
+    background: {tokens.input_bg};
+    color: {tokens.text_muted};
+    border: 1px solid {tokens.border};
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 0;
+}}
+QToolButton[modeButton="true"]:first-child {{
+    border-top-left-radius: 5px;
+    border-bottom-left-radius: 5px;
+}}
+QToolButton[modeButton="true"]:last-child {{
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+    border-left: none;
+}}
+QToolButton[modeButton="true"]:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton[modeButton="true"]:checked {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+    border-color: {tokens.accent};
+}}
+QToolButton[modeButton="true"]:disabled {{
+    color: {tokens.text_muted};
+    background: {tokens.input_bg};
+}}
+"""
+
+
+def shell_section_draft_recovery_dialog(tokens: ShellThemeTokens) -> str:
+    """Targeted overrides for the recovery-draft dialog surface."""
+    return f"""/* -- Draft recovery dialog ---------------------------------------------- */
+QDialog#shell\\.draftRecoveryDialog {{
+    background: {tokens.window_bg};
+    color: {tokens.text_primary};
+}}
+QDialog#shell\\.localHistoryDialog {{
+    background: {tokens.window_bg};
+    color: {tokens.text_primary};
+}}
+QTreeWidget#shell\\.localHistoryDialog\\.revisionTree {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    alternate-background-color: {tokens.row_alt_bg};
+}}
+QTreeWidget#shell\\.localHistoryDialog\\.revisionTree::item {{
+    padding: 4px 6px;
+}}
+QTreeWidget#shell\\.localHistoryDialog\\.revisionTree::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QTreeWidget#shell\\.localHistoryDialog\\.revisionTree::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QLabel#shell\\.localHistoryDialog\\.compareLabel {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+    font-weight: 600;
+}}
+"""
+
+
+
+
+
 def shell_section_help_dialog(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Help dialog --------------------------------------------------------- */
 QDialog#shell\\.helpDialog {{
