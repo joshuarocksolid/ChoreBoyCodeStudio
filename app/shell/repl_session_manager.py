@@ -8,6 +8,8 @@ app launch and auto-restart when the REPL process exits unexpectedly.
 from __future__ import annotations
 
 import logging
+import secrets
+import socket
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -15,15 +17,17 @@ from typing import Callable
 
 from app.bootstrap.paths import PathInput, ensure_directory
 from app.core import constants
+from app.intelligence.completion_models import CompletionEnvelope
 from app.run.host_process_manager import HostProcessManager
 from app.run.process_supervisor import ProcessEvent
-from app.run.run_manifest import RunManifest, save_run_manifest
+from app.run.run_manifest import ReplControlConfig, RunManifest, save_run_manifest
 from app.run.run_service import (
     build_repl_context_root,
     build_repl_log_path,
     build_repl_manifest_path,
     generate_run_id,
 )
+from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, dumps_message, envelope_from_dict, loads_message
 
 _logger = logging.getLogger(__name__)
 
@@ -57,6 +61,7 @@ class ReplSessionManager:
         self._auto_restart = True
         self._shutting_down = False
         self._recent_exit_times: list[float] = []
+        self._control_config: ReplControlConfig | None = None
 
     @property
     def is_running(self) -> bool:
@@ -103,6 +108,45 @@ class ReplSessionManager:
             text += "\n"
         self._host_manager.send_input(text)
 
+    def complete(
+        self,
+        *,
+        line_buffer: str,
+        cursor_offset: int,
+        trigger_kind: str,
+        trigger_character: str,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        """Request live completions from the active REPL control channel."""
+
+        config = self._control_config
+        if config is None or not self._host_manager.is_running():
+            return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
+        payload = {
+            "session_token": config.session_token,
+            "method": "complete",
+            "line_buffer": line_buffer,
+            "cursor_offset": cursor_offset,
+            "trigger_kind": trigger_kind,
+            "trigger_character": trigger_character,
+            "max_results": max_results,
+        }
+        timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
+        try:
+            with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:
+                sock.settimeout(timeout_seconds)
+                sock.sendall(dumps_message(payload))
+                response = _read_json_line(sock)
+        except OSError as exc:
+            _logger.debug("REPL completion request failed: %s", exc)
+            return CompletionEnvelope(items=[], degradation_reason="repl_control_unavailable")
+        if not response.get("ok"):
+            return CompletionEnvelope(items=[], degradation_reason=str(response.get("error") or "repl_error"))
+        result = response.get("result")
+        if not isinstance(result, dict):
+            return CompletionEnvelope(items=[], degradation_reason="repl_invalid_response")
+        return envelope_from_dict(result)
+
     def shutdown(self) -> None:
         """Permanent shutdown (call during app close)."""
         self._auto_restart = False
@@ -119,6 +163,13 @@ class ReplSessionManager:
         context_root = build_repl_context_root(state_root=self._state_root)
         manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
         log_path = build_repl_log_path(run_id, state_root=self._state_root)
+        self._control_config = ReplControlConfig(
+            protocol=REPL_CONTROL_PROTOCOL,
+            host="127.0.0.1",
+            port=_allocate_loopback_port(),
+            session_token=f"repl_{run_id}_{secrets.token_hex(8)}",
+            connect_timeout_ms=800,
+        )
 
         home_dir = Path.home().expanduser().resolve()
         ensure_directory(Path(manifest_path).parent)
@@ -136,6 +187,7 @@ class ReplSessionManager:
             env={},
             timestamp=datetime.now().isoformat(timespec="seconds"),
             breakpoints=[],
+            repl_control=self._control_config,
         )
         save_run_manifest(str(manifest_path), manifest)
 
@@ -188,3 +240,22 @@ class ReplSessionManager:
             return
         if self._on_session_started is not None:
             self._on_session_started()
+
+
+def _allocate_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _read_json_line(sock: socket.socket) -> dict[str, object]:
+    chunks: list[bytes] = []
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        if b"\n" in chunk:
+            break
+    raw = b"".join(chunks).split(b"\n", 1)[0] + b"\n"
+    return loads_message(raw)

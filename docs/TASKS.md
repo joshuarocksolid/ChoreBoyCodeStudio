@@ -1499,6 +1499,93 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Depends on: `I05`, `I06`
 - Done when: semantic completion is async/cancellable, trust states are legible in both themes, and latency gates have passing evidence.
 
+### I08 — Next-level completion contract and documentation
+
+- Status: `DONE`
+- Objective: lock the shared completion model for editor and Python Console autocomplete, including trigger metadata, documentation/signature fields, revision guards, live-runtime provenance, and acceptance coverage.
+- Primary files:
+  - `docs/ARCHITECTURE.md`
+  - `docs/TASKS.md`
+  - `docs/ACCEPTANCE_TESTS.md`
+  - `docs/USER_REQUESTS_TODO.md`
+  - `app/intelligence/completion_context.py`
+  - `app/intelligence/completion_broker.py`
+  - `app/intelligence/completion_models.py`
+  - `app/intelligence/completion_service.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py tests/unit/intelligence/test_completion_context.py tests/unit/intelligence/test_completion_broker.py tests/unit/intelligence/test_completion_service.py`
+- Acceptance linkage: `AT-47`, `AT-50`, `AT-51`, `AT-73`, `AT-74`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I07`, `M08`
+- Done when: dot-triggered completion requests carry explicit trigger/revision metadata, completion items can expose docs/signatures/ranges/provenance, and fallback/degraded states remain visible.
+
+### I09 — Editor dot-completion details and trusted API index
+
+- Status: `DONE`
+- Objective: upgrade editor attribute completion so `obj.` surfaces methods, properties, attributes, docs, signatures, and confidence metadata using static Jedi semantics plus a visible FreeCAD/PySide API index or stubs.
+- Primary files:
+  - `app/editors/code_editor_semantics.py`
+  - `app/intelligence/completion_broker.py`
+  - `app/intelligence/completion_resolver.py`
+  - `app/intelligence/completion_service.py`
+  - `app/intelligence/jedi_engine.py`
+  - `app/intelligence/api_index.py`
+  - `app/intelligence/runtime_api_index.json`
+  - `app/shell/main_window.py`
+  - `tests/unit/editors/test_semantic_editor_interactions.py`
+  - `tests/unit/intelligence/test_api_index.py`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `python3 run_tests.py tests/unit/intelligence/test_api_index.py tests/unit/intelligence/test_completion_service.py tests/unit/editors/test_semantic_editor_interactions.py tests/integration/performance/test_completion_latency_performance.py tests/runtime_parity/intelligence/test_semantic_engine_runtime.py -k trusted_runtime_api_index`
+- Acceptance linkage: `AT-47`, `AT-50`, `AT-51`, `AT-73`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I08`
+- Done when: editor dot completion is trigger-aware, stale results are revision-dropped, documentation/details remain readable in both themes, and trusted runtime API data uses visible paths only.
+
+### I10 — Python Console live completion protocol
+
+- Status: `IN PROGRESS`
+- Objective: add FreeCAD-style live object completion to the Python Console without executing user code in the editor process or polluting stdout/stderr.
+- Primary files:
+  - `app/shell/python_console_widget.py`
+  - `app/shell/repl_session_manager.py`
+  - `app/runner/runner_main.py`
+  - `app/runner/repl_completion.py`
+  - `app/runner/repl_protocol.py`
+  - `tests/unit/shell/test_python_console_widget.py`
+  - `tests/unit/runner/test_repl_completion.py`
+  - `tests/integration/run/test_repl_completion_integration.py`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `python3 run_tests.py tests/unit/runner/test_repl_completion.py tests/unit/shell/test_python_console_widget.py tests/integration/run/test_repl_completion_integration.py`
+- Acceptance linkage: `AT-50`, `AT-51`, `AT-74`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `I08`
+- Done when: the console supports dot/Ctrl+Space/Tab completion from the live runner namespace, uses a dedicated metadata channel or equivalent structured runner-side request path, labels runtime inspection risk, and preserves existing REPL history/multiline/stdout behavior.
+
+### I11 — Polished completion popup widget (UX redesign)
+
+- Status: `IN PROGRESS`
+- Objective: replace the stock `QCompleter` + `QStringListModel` popup used by both the editor and Python Console with a shared theme-aware widget: custom delegate-rendered rows (icon chip, fuzzy-bolded label, dim signature, right-aligned origin badge) plus a VS Code-style documentation side panel that updates with the highlighted item.
+- Primary files:
+  - `app/editors/completion_popup/completion_kind_style.py`
+  - `app/editors/completion_popup/completion_item_model.py`
+  - `app/editors/completion_popup/completion_item_delegate.py`
+  - `app/editors/completion_popup/completion_list_view.py`
+  - `app/editors/completion_popup/completion_docs_panel.py`
+  - `app/editors/completion_popup/completion_popup_container.py`
+  - `app/editors/completion_popup/completion_controller.py`
+  - `app/editors/code_editor_widget.py`
+  - `app/editors/code_editor_semantics.py`
+  - `app/shell/python_console_widget.py`
+  - `app/shell/theme_tokens.py`
+  - `tests/unit/editors/completion_popup/test_completion_item_model.py`
+  - `tests/unit/editors/completion_popup/test_completion_kind_style.py`
+- Automated test layer: `unit`
+- Validation method: `python3 run_tests.py tests/unit/editors/completion_popup/ tests/unit/editors/test_semantic_editor_interactions.py tests/unit/shell/test_python_console_widget.py`
+- Acceptance linkage: `AT-47`, `AT-50`, `AT-51`, `AT-73`, `AT-74`
+- Release class: `MVP-BLOCKING`
+- Depends on: `I08`, `I09`, `I10`
+- Done when: editor and console completion render with kind icons, fuzzy-bolded labels, theme-aware colors, and a docs side panel; existing keyboard/insert behavior is preserved; light/dark themes have been manually validated through `run_editor.py`.
+
 ---
 
 ## 18) Phase J — Real Python formatting and import management
@@ -1977,6 +2064,27 @@ Release class default for this phase: `RELEASE-CRITICAL`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `L04`, `L05`, `L06`, `L07`, `L08`
 - Done when: retention and exclusion controls are configurable, history pruning remains bounded, support diagnostics include history context when appropriate, and the local-history UI is validated for theme safety and responsiveness.
+
+### L10 — Document safety lifecycle and hot-exit polish
+
+- Status: `DONE`
+- Objective: make save/discard/keep/cancel intent explicit across dirty-buffer lifecycle paths so normal discard never reappears as crash recovery.
+- Primary files:
+  - `app/shell/document_safety.py`
+  - `app/shell/unsaved_changes_dialog.py`
+  - `app/shell/save_workflow.py`
+  - `app/shell/local_history_workflow.py`
+  - `app/shell/recovery_center_dialog.py`
+  - `app/persistence/local_history_schema.py`
+  - `app/persistence/local_history_store.py`
+  - `tests/unit/shell/test_save_workflow.py`
+  - `tests/integration/shell/test_main_window_shutdown_integration.py`
+- Automated test layer: `unit`, `integration`
+- Validation method: `python3 run_tests.py tests/unit/shell/test_save_workflow.py tests/unit/shell/test_local_history_workflow.py tests/unit/persistence/test_local_history_store.py tests/integration/shell/test_main_window_shutdown_integration.py`
+- Acceptance linkage: `AT-66`, `AT-70`, `AT-71`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `L04`, `L06`, `L09`
+- Done when: discard deletes drafts, keep-for-next-launch restores dirty buffers intentionally, crash recovery still prompts for review, and recovery drafts are discoverable from the Recovery Center.
 
 ---
 

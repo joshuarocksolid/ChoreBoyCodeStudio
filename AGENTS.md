@@ -127,17 +127,18 @@ current per-language tree-sitter bundle for the Cloud AppRun runtime:
 ```bash
 mkdir -p vendor
 pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
-  tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
-  tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
-  tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
-  tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
-  tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
-  jedi parso "black==24.10.0" isort tomli rope \
-  --target=vendor/ --python-version=3.11 --only-binary=:all: \
-  --platform=manylinux_2_17_x86_64
+ tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
+ tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
+ tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
+ tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
+ tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
+ jedi parso "black==24.10.0" isort tomli rope \
+ pytest==8.3.4 pluggy iniconfig exceptiongroup \
+ --target=vendor/ --python-version=3.11 --only-binary=:all: \
+ --platform=manylinux_2_17_x86_64
 ```
 
-**Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable.
+**Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable. The `pytest` (+ `pluggy`, `iniconfig`, `exceptiongroup`) packages are bundled so the in-app Test Explorer works on real ChoreBoy without needing pytest installed in the AppRun runtime.
 
 The `--python-version=3.11` and `--platform` flags above are for Cloud dev
 only. See `vendor/README.md` for the shipped ChoreBoy bundle contract and the
@@ -145,13 +146,17 @@ Python 3.9 production guidance.
 
 ### Installing dev tools into FreeCAD's Python
 
-pytest (and other dev-only packages) are installed into FreeCAD's site-packages:
+`pytest` is bundled in `vendor/` (see "Vendored dependencies" above). Both
+`run_tests.py` and the in-app Test Explorer inject `vendor/` onto the AppRun
+subprocess `sys.path` before importing pytest, so no separate pytest install
+into `/opt/freecad/usr/lib/python3.11/site-packages/` is required.
+
+If you need other dev-only packages (e.g. `pytest-timeout`) that are not
+shipped with the product, install them into FreeCAD's site-packages:
 
 ```bash
-pip3 install pytest --target=/opt/freecad/usr/lib/python3.11/site-packages/
+pip3 install pytest-timeout --target=/opt/freecad/usr/lib/python3.11/site-packages/
 ```
-
-This is necessary because `run_tests.py` imports pytest from within the AppRun process.
 
 ### Key caveats
 

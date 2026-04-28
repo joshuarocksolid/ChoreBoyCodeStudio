@@ -4,11 +4,15 @@ from __future__ import annotations
 import pytest
 
 from app.run.pytest_discovery_service import (
+    PYTEST_MISSING_MARKER,
+    PYTEST_MISSING_MESSAGE,
     DiscoveredTestNode,
     DiscoveredTestResult,
     DiscoveryResult,
+    _build_apprun_pytest_payload,
     _build_collect_command,
     _parse_collect_output,
+    discover_tests,
     parse_test_results,
 )
 
@@ -131,3 +135,78 @@ def test_collection_result_kind_filters() -> None:
 def test_collection_result_succeeded_flag() -> None:
     assert DiscoveryResult().succeeded is True
     assert DiscoveryResult(error_message="fail").succeeded is False
+
+
+# ---------------------------------------------------------------------------
+# AppRun payload contract: editor vendor/ must be injected before pytest import
+# ---------------------------------------------------------------------------
+
+
+def test_apprun_payload_inserts_editor_vendor_before_pytest_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AppRun -c payload must prepend the editor's vendor/ to sys.path
+    before importing pytest, otherwise ChoreBoy (no system pytest) will raise
+    ModuleNotFoundError and the Test Explorer fails."""
+    monkeypatch.setattr(
+        "app.run.pytest_discovery_service.resolve_vendor_root",
+        lambda: "/opt/cbcs/vendor",
+    )
+
+    payload = _build_apprun_pytest_payload(["--collect-only", "-q"])
+
+    insert_pos = payload.find("sys.path.insert(0, '/opt/cbcs/vendor')")
+    import_pos = payload.find("import pytest")
+    main_pos = payload.find("pytest.main([")
+
+    assert insert_pos != -1, "vendor/ path was not inserted into sys.path"
+    assert import_pos != -1, "pytest is never imported"
+    assert insert_pos < import_pos < main_pos, (
+        "vendor/ must be on sys.path before `import pytest`, and import must "
+        "precede pytest.main()."
+    )
+
+
+def test_apprun_payload_emits_marker_when_pytest_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If pytest still isn't importable, the payload must emit the
+    PYTEST_MISSING_MARKER on stderr so the discovery error path can render
+    a friendly message to the user."""
+    monkeypatch.setattr(
+        "app.run.pytest_discovery_service.resolve_vendor_root",
+        lambda: "/opt/cbcs/vendor",
+    )
+
+    payload = _build_apprun_pytest_payload(["--collect-only", "-q"])
+
+    assert "except ModuleNotFoundError" in payload
+    assert PYTEST_MISSING_MARKER in payload
+
+
+def test_discover_tests_maps_pytest_missing_marker_to_friendly_message(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """When the AppRun subprocess emits the marker on stderr, the discovery
+    result should surface the friendly message instead of leaking the raw
+    marker token to the Test Explorer."""
+    monkeypatch.setattr(
+        "app.run.pytest_discovery_service._build_collect_command",
+        lambda *, project_root: ["/bin/sh", "-c", ":"],
+    )
+
+    class _FakeCompleted:
+        returncode = 2
+        stdout = ""
+        stderr = PYTEST_MISSING_MARKER + "\n"
+
+    monkeypatch.setattr(
+        "app.run.pytest_discovery_service.subprocess.run",
+        lambda *args, **kwargs: _FakeCompleted(),
+    )
+
+    result = discover_tests(str(tmp_path))
+
+    assert not result.succeeded
+    assert result.error_message == PYTEST_MISSING_MESSAGE
+    assert PYTEST_MISSING_MARKER not in result.error_message

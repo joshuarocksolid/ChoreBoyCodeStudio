@@ -87,6 +87,19 @@ def build_file_menu(ctx: MenuBuildContext) -> object:
     quick_open_action.setToolTip("Search project files by name and open the selected file.")
     quick_open_action.setStatusTip("Search project files by name and open the selected file.")
 
+    recovery_center_action = register_menu_action(
+        qt_widgets=ctx.qt_widgets,
+        menu=file_menu,
+        action_lookup=ctx.actions,
+        action_id="shell.action.file.recoveryCenter",
+        label="Open Recovery Center...",
+        enabled=True,
+        callback=callbacks.on_open_recovery_center,
+    )
+    recovery_center_tip = "Review unsaved recovery drafts and saved local-history timelines."
+    recovery_center_action.setToolTip(recovery_center_tip)
+    recovery_center_action.setStatusTip(recovery_center_tip)
+
     global_history_action = register_menu_action(
         qt_widgets=ctx.qt_widgets,
         menu=file_menu,

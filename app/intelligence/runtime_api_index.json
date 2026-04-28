@@ -1,0 +1,102 @@
+{
+  "metadata": {
+    "schema_version": 1,
+    "source": "generated_trusted_runtime_index",
+    "runtime": "FreeCAD AppRun / PySide2",
+    "notes": "Static acceleration asset for editor completion. Regenerate intentionally outside the typing path."
+  },
+  "modules": {
+    "PySide2": [
+      {"name": "QtCore", "kind": "module", "detail": "PySide2.QtCore module"},
+      {"name": "QtGui", "kind": "module", "detail": "PySide2.QtGui module"},
+      {"name": "QtWidgets", "kind": "module", "detail": "PySide2.QtWidgets module"},
+      {"name": "QtPrintSupport", "kind": "module", "detail": "PySide2.QtPrintSupport module"},
+      {"name": "QtUiTools", "kind": "module", "detail": "PySide2.QtUiTools module"}
+    ],
+    "PySide2.QtCore": [
+      {"name": "QAbstractListModel", "kind": "class", "detail": "QtCore model base class"},
+      {"name": "QDate", "kind": "class", "detail": "Date value"},
+      {"name": "QDateTime", "kind": "class", "detail": "Date/time value"},
+      {"name": "QEvent", "kind": "class", "detail": "Qt event"},
+      {"name": "QModelIndex", "kind": "class", "detail": "Model index"},
+      {"name": "QObject", "kind": "class", "detail": "Base QObject"},
+      {"name": "QPoint", "kind": "class", "detail": "2D point"},
+      {"name": "QRect", "kind": "class", "detail": "Rectangle"},
+      {"name": "QSize", "kind": "class", "detail": "Size value"},
+      {"name": "QThread", "kind": "class", "detail": "Qt thread"},
+      {"name": "QTimer", "kind": "class", "detail": "Timer"},
+      {"name": "Qt", "kind": "class", "detail": "Qt enum namespace"},
+      {"name": "Signal", "kind": "class", "detail": "PySide signal descriptor"},
+      {"name": "Slot", "kind": "function", "detail": "PySide slot decorator"}
+    ],
+    "PySide2.QtGui": [
+      {"name": "QBrush", "kind": "class", "detail": "Brush"},
+      {"name": "QColor", "kind": "class", "detail": "Color"},
+      {"name": "QFont", "kind": "class", "detail": "Font"},
+      {"name": "QIcon", "kind": "class", "detail": "Icon"},
+      {"name": "QKeyEvent", "kind": "class", "detail": "Key event"},
+      {"name": "QPainter", "kind": "class", "detail": "Painter"},
+      {"name": "QPalette", "kind": "class", "detail": "Palette"},
+      {"name": "QPixmap", "kind": "class", "detail": "Pixmap"},
+      {"name": "QTextCharFormat", "kind": "class", "detail": "Text character format"},
+      {"name": "QTextCursor", "kind": "class", "detail": "Text cursor"}
+    ],
+    "PySide2.QtWidgets": [
+      {"name": "QApplication", "kind": "class", "detail": "Qt application object"},
+      {"name": "QCheckBox", "kind": "class", "detail": "Checkbox widget"},
+      {"name": "QComboBox", "kind": "class", "detail": "Combo box"},
+      {"name": "QDialog", "kind": "class", "detail": "Dialog window"},
+      {"name": "QFileDialog", "kind": "class", "detail": "File dialog"},
+      {"name": "QFrame", "kind": "class", "detail": "Frame widget"},
+      {"name": "QHBoxLayout", "kind": "class", "detail": "Horizontal box layout"},
+      {"name": "QLabel", "kind": "class", "detail": "Text/display label"},
+      {"name": "QLineEdit", "kind": "class", "detail": "Single-line text input"},
+      {"name": "QListView", "kind": "class", "detail": "List view"},
+      {"name": "QListWidget", "kind": "class", "detail": "List widget"},
+      {"name": "QMainWindow", "kind": "class", "detail": "Main window shell"},
+      {"name": "QMenu", "kind": "class", "detail": "Menu"},
+      {"name": "QMessageBox", "kind": "class", "detail": "Message dialog"},
+      {"name": "QPlainTextEdit", "kind": "class", "detail": "Plain text editor"},
+      {"name": "QPushButton", "kind": "class", "detail": "Push button"},
+      {"name": "QSizePolicy", "kind": "class", "detail": "Widget size policy"},
+      {"name": "QSplitter", "kind": "class", "detail": "Splitter widget"},
+      {"name": "QTableWidget", "kind": "class", "detail": "Table widget"},
+      {"name": "QTextEdit", "kind": "class", "detail": "Rich/plain text editor widget"},
+      {"name": "QToolTip", "kind": "class", "detail": "Tooltip helper"},
+      {"name": "QVBoxLayout", "kind": "class", "detail": "Vertical box layout"},
+      {"name": "QWidget", "kind": "class", "detail": "Base QWidget"}
+    ],
+    "PySide2.QtPrintSupport": [
+      {"name": "QPrintDialog", "kind": "class", "detail": "Print dialog"},
+      {"name": "QPrinter", "kind": "class", "detail": "Printer device"}
+    ],
+    "PySide2.QtUiTools": [
+      {"name": "QUiLoader", "kind": "class", "detail": "Qt Designer UI loader"}
+    ],
+    "FreeCAD": [
+      {"name": "ActiveDocument", "kind": "attribute", "detail": "FreeCAD active document"},
+      {"name": "Console", "kind": "attribute", "detail": "FreeCAD console"},
+      {"name": "GuiUp", "kind": "attribute", "detail": "FreeCAD GUI availability flag"},
+      {"name": "Version", "kind": "function", "detail": "FreeCAD version information", "signature": "Version()"},
+      {"name": "addExportType", "kind": "function", "detail": "Register an export type"},
+      {"name": "addImportType", "kind": "function", "detail": "Register an import type"},
+      {"name": "closeDocument", "kind": "function", "detail": "Close a FreeCAD document"},
+      {"name": "getDocument", "kind": "function", "detail": "Return a document by name"},
+      {"name": "listDocuments", "kind": "function", "detail": "Return open documents"},
+      {"name": "newDocument", "kind": "function", "detail": "Create a new document", "signature": "newDocument(name='')"},
+      {"name": "openDocument", "kind": "function", "detail": "Open a FreeCAD document"},
+      {"name": "setActiveDocument", "kind": "function", "detail": "Set the active document"}
+    ],
+    "FreeCAD.ActiveDocument": [
+      {"name": "Objects", "kind": "attribute", "detail": "Objects in the active document"},
+      {"name": "Name", "kind": "attribute", "detail": "Document name"},
+      {"name": "Label", "kind": "attribute", "detail": "Document label"},
+      {"name": "addObject", "kind": "method", "detail": "Add an object to the document"},
+      {"name": "getObject", "kind": "method", "detail": "Return an object by name"},
+      {"name": "recompute", "kind": "method", "detail": "Recompute document dependencies"},
+      {"name": "removeObject", "kind": "method", "detail": "Remove an object by name"},
+      {"name": "save", "kind": "method", "detail": "Save the document"},
+      {"name": "saveAs", "kind": "method", "detail": "Save the document as a path"}
+    ]
+  }
+}

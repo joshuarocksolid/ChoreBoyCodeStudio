@@ -42,6 +42,7 @@ class RunManifest:
     timestamp: str = ""
     breakpoints: list[DebugBreakpoint] = field(default_factory=list)
     debug_transport: DebugTransportConfig | None = None
+    repl_control: ReplControlConfig | None = None
     debug_exception_policy: DebugExceptionPolicy = field(default_factory=DebugExceptionPolicy)
     source_maps: list[DebugSourceMap] = field(default_factory=list)
 
@@ -88,7 +89,26 @@ class RunManifest:
                 "session_token": self.debug_transport.session_token,
                 "connect_timeout_ms": self.debug_transport.connect_timeout_ms,
             }
+        if self.repl_control is not None:
+            payload["repl_control"] = {
+                "protocol": self.repl_control.protocol,
+                "host": self.repl_control.host,
+                "port": self.repl_control.port,
+                "session_token": self.repl_control.session_token,
+                "connect_timeout_ms": self.repl_control.connect_timeout_ms,
+            }
         return payload
+
+
+@dataclass(frozen=True)
+class ReplControlConfig:
+    """Loopback control channel for Python Console metadata requests."""
+
+    protocol: str
+    host: str
+    port: int
+    session_token: str
+    connect_timeout_ms: int = 800
 
 
 def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = None) -> RunManifest:
@@ -130,6 +150,7 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
     timestamp = _require_non_empty_string(payload, "timestamp", manifest_path=manifest_path)
     breakpoints = _parse_breakpoints(payload.get("breakpoints", []), manifest_path=manifest_path)
     debug_transport = _parse_debug_transport(payload.get("debug_transport"), manifest_path=manifest_path)
+    repl_control = _parse_repl_control(payload.get("repl_control"), manifest_path=manifest_path)
     exception_policy = _parse_exception_policy(payload.get("debug_exception_policy"))
     source_maps = _parse_source_maps(payload.get("source_maps", []), manifest_path=manifest_path)
 
@@ -153,6 +174,7 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
         timestamp=timestamp,
         breakpoints=breakpoints,
         debug_transport=debug_transport,
+        repl_control=repl_control,
         debug_exception_policy=exception_policy,
         source_maps=source_maps,
     )
@@ -281,6 +303,31 @@ def _parse_debug_transport(raw_value: object, *, manifest_path: Path | None) -> 
             manifest_path=manifest_path,
         )
     return DebugTransportConfig(
+        protocol=protocol,
+        host=host,
+        port=port,
+        session_token=session_token,
+        connect_timeout_ms=connect_timeout_ms,
+    )
+
+
+def _parse_repl_control(raw_value: object, *, manifest_path: Path | None) -> ReplControlConfig | None:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, Mapping):
+        _raise_manifest_error("repl_control must be an object.", field="repl_control", manifest_path=manifest_path)
+    protocol = str(raw_value.get("protocol", "")).strip()
+    host = str(raw_value.get("host", "")).strip()
+    port = _parse_optional_positive_int(raw_value.get("port"))
+    session_token = str(raw_value.get("session_token", "")).strip()
+    connect_timeout_ms = _parse_optional_positive_int(raw_value.get("connect_timeout_ms")) or 800
+    if not protocol or not host or port is None or not session_token:
+        _raise_manifest_error(
+            "repl_control requires protocol, host, port, and session_token.",
+            field="repl_control",
+            manifest_path=manifest_path,
+        )
+    return ReplControlConfig(
         protocol=protocol,
         host=host,
         port=port,

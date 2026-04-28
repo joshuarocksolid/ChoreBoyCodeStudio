@@ -256,6 +256,7 @@ def build_bottom_panel(window: Any) -> QWidget:
     window._python_console_widget.input_submitted.connect(window._handle_python_console_submit)
     window._python_console_widget.interrupt_requested.connect(window._handle_python_console_interrupt)
     window._python_console_widget.restart_requested.connect(window._handle_start_python_console_action)
+    window._python_console_widget.set_completion_requester(window._request_python_console_completion_async)
     window._restore_python_console_history()
     clear_btn.clicked.connect(window._python_console_widget.clear_console)
     container_layout.addWidget(window._python_console_widget)

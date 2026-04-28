@@ -71,6 +71,9 @@ class ShellThemeTokens:
     syntax_semantic_constant: str = ""
     tab_close_icon_path: str = ""
     tab_close_icon_hover_path: str = ""
+    popup_bg: str = ""
+    popup_border: str = ""
+    popup_shadow: str = ""
 
 
 def tokens_from_palette(
@@ -127,6 +130,9 @@ def tokens_from_palette(
             diag_warning_color="#E5A100",
             diag_info_color="#5B8CFF",
             test_passed_color="#3FB950",
+            popup_bg="#262C33",
+            popup_border="#3C434A",
+            popup_shadow="#000000",
             **syntax_kwargs,
         )
     return ShellThemeTokens(
@@ -158,6 +164,9 @@ def tokens_from_palette(
         diag_warning_color="#D97706",
         diag_info_color="#3366FF",
         test_passed_color="#1A7F37",
+        popup_bg="#FFFFFF",
+        popup_border="#DEE2E6",
+        popup_shadow="#000000",
         **syntax_kwargs,
     )
 

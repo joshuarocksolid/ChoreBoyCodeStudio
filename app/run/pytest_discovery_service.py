@@ -6,7 +6,15 @@ from pathlib import Path
 import subprocess
 from typing import Optional
 
+from app.bootstrap.vendor_paths import resolve_vendor_root
 from app.run.runtime_launch import resolve_runtime_executable, is_freecad_runtime_executable, build_runpy_bootstrap_payload
+
+
+PYTEST_MISSING_MARKER = "cbcs:test_explorer:pytest_missing"
+PYTEST_MISSING_MESSAGE = (
+    "pytest is not bundled with this Code Studio install. "
+    "Reinstall the editor or restore the bundled vendor/ directory."
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,8 @@ def discover_tests(project_root: str, *, timeout_seconds: int = 30) -> Discovery
         return DiscoveryResult(error_message=f"Test discovery failed: {exc}")
 
     if result.returncode not in (0, 5):  # 5 = no tests collected
+        if PYTEST_MISSING_MARKER in (result.stderr or "") or PYTEST_MISSING_MARKER in (result.stdout or ""):
+            return DiscoveryResult(error_message=PYTEST_MISSING_MESSAGE)
         error_msg = (result.stderr or result.stdout or "").strip()
         if not error_msg:
             error_msg = f"pytest exited with code {result.returncode}"
@@ -117,10 +127,18 @@ def _build_collect_command(*, project_root: str) -> list[str]:
 
 def _build_apprun_pytest_payload(pytest_args: list[str]) -> str:
     args_repr = repr(pytest_args)
-    return (
-        "import sys;"
-        f"sys.exit(__import__('pytest').main({args_repr}))"
-    )
+    vendor_root = str(resolve_vendor_root())
+    lines = [
+        "import sys",
+        f"sys.path.insert(0, {vendor_root!r})",
+        "try:",
+        "    import pytest",
+        "except ModuleNotFoundError:",
+        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
+        "    sys.exit(2)",
+        f"sys.exit(pytest.main({args_repr}))",
+    ]
+    return "\n".join(lines)
 
 
 def _parse_collect_output(stdout: str, *, project_root: str) -> list[DiscoveredTestNode]:

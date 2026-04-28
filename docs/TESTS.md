@@ -43,6 +43,8 @@ Implemented coverage includes:
 - diagnostics and support bundle generation
 - built-in template discovery/materialization and generated-project execution
 - responsiveness threshold checks (integration timing assertions)
+- completion context/broker contracts, trusted API-index lookup, lazy item resolve,
+worker prioritization, and completion latency gates
 
 ## 5) Core commands
 
@@ -66,6 +68,8 @@ python3 testing/run_test_shard.py runtime_parity
 
 - `integration` is the full integration shard (slow + non-slow), excluding the performance subdirectory so timing-sensitive checks remain serial.
 - `performance` is its own serial shard because those tests assert wall-clock thresholds.
+- completion-specific latency gates live in
+`tests/integration/performance/test_completion_latency_performance.py`.
 - `runtime_parity` validates AppRun-specific paths.
 - `all` (`python3 testing/run_test_shard.py all`) runs everything, including `tests/integration/performance` and any `slow`-marked tests.
 

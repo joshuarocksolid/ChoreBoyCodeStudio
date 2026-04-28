@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from app.core import constants
+from app.intelligence.api_index import DEFAULT_RUNTIME_API_INDEX_PATH, provide_api_index_member_items
 from app.intelligence.jedi_runtime import initialize_jedi_runtime
 from app.intelligence.refactor_runtime import initialize_refactor_runtime
 from app.intelligence.refactor_engine import RopeRefactorEngine
@@ -72,6 +73,16 @@ def test_semantic_runtimes_use_visible_cache_paths_and_no_hidden_project_dirs(tm
     assert "jedi" in Path(jedi_status.cache_directory).parts
     assert not Path(jedi_status.cache_directory).name.startswith(".")
     assert plan is not None
+
+
+def test_trusted_runtime_api_index_available_under_apprun() -> None:
+    _require_apprun()
+
+    assert DEFAULT_RUNTIME_API_INDEX_PATH.exists()
+    items = provide_api_index_member_items(module_name="PySide2", member_prefix="QtWi", limit=10)
+
+    assert any(item.label == "QtWidgets" for item in items)
+    assert not any(part.startswith(".") for part in DEFAULT_RUNTIME_API_INDEX_PATH.parts)
 
 
 def test_jedi_completion_works_under_apprun_with_cross_file_imports(tmp_path: Path) -> None:

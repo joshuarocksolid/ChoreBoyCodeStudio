@@ -20,6 +20,13 @@ from app.python_tools.models import (
     PYTHON_TOOLING_STATUS_UNCHANGED,
     PythonTextTransformResult,
 )
+from app.shell.document_safety import (
+    DocumentCloseIntent,
+    DocumentSafetyDecision,
+    DocumentScope,
+    dirty_buffer_snapshots,
+)
+from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
 PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
@@ -32,28 +39,67 @@ class SaveWorkflow:
         self._window = window
 
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
-        window = self._window
-        dirty_tabs = [tab for tab in window._editor_manager.all_tabs() if tab.is_dirty]
-        if not dirty_tabs:
-            return True
+        decision = self.request_unsaved_changes_decision(
+            action_description,
+            scope=DocumentScope.PROJECT,
+            allow_keep_for_next_launch=False,
+        )
+        return self.apply_unsaved_changes_decision(decision)
 
-        response = QMessageBox.warning(
+    def request_unsaved_changes_decision(
+        self,
+        action_description: str,
+        *,
+        scope: DocumentScope,
+        allow_keep_for_next_launch: bool,
+        dirty_buffers: tuple[object, ...] | None = None,
+    ) -> DocumentSafetyDecision:
+        window = self._window
+        buffer_snapshots = (
+            dirty_buffer_snapshots(window._editor_manager.all_tabs())
+            if dirty_buffers is None
+            else dirty_buffer_snapshots(dirty_buffers)
+        )
+        if not buffer_snapshots:
+            return DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=scope)
+
+        if (
+            scope is DocumentScope.APPLICATION
+            and getattr(window, "_editor_exit_behavior", constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT)
+            == constants.UI_EDITOR_EXIT_BEHAVIOR_KEEP_UNSAVED
+        ):
+            return DocumentSafetyDecision(
+                intent=DocumentCloseIntent.KEEP_FOR_NEXT_LAUNCH,
+                scope=scope,
+                dirty_buffers=buffer_snapshots,
+            )
+
+        return prompt_for_unsaved_changes(
             window,
-            "Unsaved changes",
-            (
-                f"You have {len(dirty_tabs)} unsaved file(s) before {action_description}.\n"
-                "Would you like to save changes first?"
-            ),
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-            QMessageBox.Save,
+            action_description=action_description,
+            scope=scope,
+            dirty_buffers=buffer_snapshots,
+            allow_keep_for_next_launch=allow_keep_for_next_launch,
         )
 
-        if response == QMessageBox.Cancel:
+    def apply_unsaved_changes_decision(self, decision: DocumentSafetyDecision) -> bool:
+        window = self._window
+        if decision.intent is DocumentCloseIntent.CANCEL:
             return False
-        if response == QMessageBox.Discard:
+        if decision.intent is DocumentCloseIntent.PROCEED:
+            return True
+        if decision.intent is DocumentCloseIntent.DISCARD:
+            window._local_history_workflow.discard_drafts_for_paths(decision.affected_paths)
+            return True
+        if decision.intent is DocumentCloseIntent.KEEP_FOR_NEXT_LAUNCH:
+            window._local_history_workflow.keep_drafts_for_paths(decision.affected_paths)
             return True
 
-        return self.handle_save_all_action()
+        any_failure = False
+        for file_path in decision.affected_paths:
+            if not self.save_tab(file_path):
+                any_failure = True
+        return not any_failure
 
     def handle_save_action(self) -> bool:
         window = self._window

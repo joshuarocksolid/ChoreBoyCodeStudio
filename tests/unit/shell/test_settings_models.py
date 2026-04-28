@@ -38,6 +38,7 @@ _DEFAULT_FIELDS: list[tuple[str, object]] = [
     ("insert_final_newline_on_save", True),
     ("enable_preview", True),
     ("auto_save", False),
+    ("exit_behavior", "ask"),
     ("hover_tooltip_enabled", False),
     ("auto_reindent_flat_python_paste", False),
     ("completion_enabled", True),
@@ -78,6 +79,7 @@ _EXPLICIT_PAYLOAD: dict = {
         "trim_trailing_whitespace_on_save": False,
         "insert_final_newline_on_save": False,
         "enable_preview": False,
+        "exit_behavior": "keep_unsaved",
         "hover_tooltip_enabled": True,
         "auto_reindent_flat_python_paste": True,
     },
@@ -131,6 +133,7 @@ _EXPLICIT_FIELDS: list[tuple[str, object]] = [
     ("trim_trailing_whitespace_on_save", False),
     ("insert_final_newline_on_save", False),
     ("enable_preview", False),
+    ("exit_behavior", "keep_unsaved"),
     ("hover_tooltip_enabled", True),
     ("auto_reindent_flat_python_paste", True),
     ("completion_enabled", False),
@@ -186,6 +189,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
         trim_trailing_whitespace_on_save=False,
         insert_final_newline_on_save=False,
         enable_preview=False,
+        exit_behavior="keep_unsaved",
         hover_tooltip_enabled=True,
         auto_reindent_flat_python_paste=True,
         completion_enabled=False,
@@ -225,6 +229,7 @@ def test_merge_editor_settings_snapshot_writes_editor_and_intelligence_keys() ->
     assert merged["editor"]["trim_trailing_whitespace_on_save"] is False
     assert merged["editor"]["insert_final_newline_on_save"] is False
     assert merged["editor"]["enable_preview"] is False
+    assert merged["editor"]["exit_behavior"] == "keep_unsaved"
     assert merged["editor"]["hover_tooltip_enabled"] is True
     assert merged["editor"]["auto_reindent_flat_python_paste"] is True
     assert merged["intelligence"]["enable_completion"] is False
@@ -441,6 +446,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         False,
         False,
         False,
+        "ask",
         False,
         False,
     )
@@ -625,7 +631,12 @@ def test_merge_auto_save_round_trip() -> None:
 
 def test_parse_main_window_settings_includes_auto_save_in_editor_preferences() -> None:
     grouped = parse_main_window_settings({"editor": {"auto_save": True}})
-    assert grouped.editor_preferences[-3] is True
+    assert grouped.editor_preferences[-4] is True
+
+
+def test_parse_main_window_settings_includes_exit_behavior_in_editor_preferences() -> None:
+    grouped = parse_main_window_settings({"editor": {"exit_behavior": "keep_unsaved"}})
+    assert grouped.editor_preferences[-3] == "keep_unsaved"
 
 
 def test_parse_main_window_settings_includes_local_history_policy() -> None:

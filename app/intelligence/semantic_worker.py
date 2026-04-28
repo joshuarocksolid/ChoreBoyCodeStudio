@@ -1,20 +1,24 @@
 """Serialized worker queue for semantic engine operations."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import queue
 import threading
+import time
 from typing import Callable, Optional
 
 
-@dataclass
+@dataclass(order=True)
 class _QueuedSemanticTask:
-    key: str
-    generation: int
-    task: Callable[[], object]
-    on_success: Callable[[object], None] | None
-    on_error: Callable[[Exception], None] | None
-    dispatch_on_main_thread: bool = True
+    priority: int
+    sequence: int
+    key: str = field(compare=False)
+    generation: int = field(compare=False)
+    task: Callable[[], object] = field(compare=False)
+    on_success: Callable[[object], None] | None = field(compare=False)
+    on_error: Callable[[Exception], None] | None = field(compare=False)
+    dispatch_on_main_thread: bool = field(default=True, compare=False)
+    enqueued_at: float = field(default_factory=time.perf_counter, compare=False)
 
 
 class SemanticWorker:
@@ -22,9 +26,12 @@ class SemanticWorker:
 
     def __init__(self, *, dispatch_to_main_thread: Callable[[Callable[[], None]], None]) -> None:
         self._dispatch_to_main_thread = dispatch_to_main_thread
-        self._queue: "queue.Queue[_QueuedSemanticTask | None]" = queue.Queue()
+        self._queue: "queue.PriorityQueue[_QueuedSemanticTask]" = queue.PriorityQueue()
         self._lock = threading.Lock()
         self._generations: dict[str, int] = {}
+        self._sequence = 0
+        self._shutdown_requested = False
+        self._last_queue_wait_ms_by_key: dict[str, float] = {}
         self._thread = threading.Thread(target=self._run, name="semantic-worker", daemon=True)
         self._thread.start()
 
@@ -36,13 +43,20 @@ class SemanticWorker:
         on_success: Optional[Callable[[object], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
         dispatch_on_main_thread: bool = True,
+        priority: int = 50,
     ) -> None:
         """Queue a task, replacing any previous queued result for the same key."""
         with self._lock:
+            if self._shutdown_requested:
+                return
             generation = self._generations.get(key, 0) + 1
             self._generations[key] = generation
+            self._sequence += 1
+            sequence = self._sequence
         self._queue.put(
             _QueuedSemanticTask(
+                priority=priority,
+                sequence=sequence,
                 key=key,
                 generation=generation,
                 task=task,
@@ -71,6 +85,7 @@ class SemanticWorker:
             on_success=on_success,
             on_error=on_error,
             dispatch_on_main_thread=False,
+            priority=0,
         )
         if not done.wait(timeout_seconds):
             raise TimeoutError("Semantic worker call timed out.")
@@ -87,16 +102,40 @@ class SemanticWorker:
 
     def shutdown(self) -> None:
         """Stop the worker thread."""
-        self._queue.put(None)
+        with self._lock:
+            self._shutdown_requested = True
+            self._sequence += 1
+            sequence = self._sequence
+        self._queue.put(
+            _QueuedSemanticTask(
+                priority=-100,
+                sequence=sequence,
+                key="__shutdown__",
+                generation=0,
+                task=lambda: None,
+                on_success=None,
+                on_error=None,
+                dispatch_on_main_thread=False,
+            )
+        )
         self._thread.join(timeout=1.0)
+
+    def queue_wait_ms(self, key: str) -> float:
+        """Return the most recent queue wait observed for ``key``."""
+
+        with self._lock:
+            return self._last_queue_wait_ms_by_key.get(key, 0.0)
 
     def _run(self) -> None:
         while True:
             queued = self._queue.get()
-            if queued is None:
+            if queued.key == "__shutdown__":
                 return
             if not self._is_current(queued.key, queued.generation):
                 continue
+            queue_wait_ms = (time.perf_counter() - queued.enqueued_at) * 1000.0
+            with self._lock:
+                self._last_queue_wait_ms_by_key[queued.key] = queue_wait_ms
             try:
                 result = queued.task()
             except Exception as exc:

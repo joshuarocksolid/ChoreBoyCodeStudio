@@ -87,6 +87,7 @@ def build_main_window_menus(
         on_new_project=window._handle_new_project_action,
         on_new_project_from_template=window._handle_new_project_from_template_action,
         on_quick_open=window._handle_quick_open_action,
+        on_open_recovery_center=window._local_history_workflow.open_recovery_center,
         on_open_global_history=window._local_history_workflow.open_global_history,
         on_find=window._handle_find_action,
         on_replace=window._handle_replace_action,

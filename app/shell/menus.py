@@ -46,6 +46,7 @@ class MenuCallbacks:
     on_open_settings: Callable[[], object] | None = None
     on_exit: Callable[[], object] | None = None
     on_quick_open: Callable[[], object] | None = None
+    on_open_recovery_center: Callable[[], object] | None = None
     on_open_global_history: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None

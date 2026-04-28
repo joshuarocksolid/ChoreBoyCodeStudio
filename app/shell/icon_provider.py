@@ -143,6 +143,21 @@ def search_icon(color: str) -> QIcon:
     return _icon_from_svg(svg)
 
 
+def history_icon(color: str) -> QIcon:
+    """Clock-with-counterclockwise-arrow icon for history/recovery surfaces."""
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+        f'<path d="M2.5 4a6 6 0 1 1-1 4.5" fill="none" stroke="{color}" '
+        f'stroke-width="1.4" stroke-linecap="round"/>'
+        f'<path d="M2.5 1.5v3h3" fill="none" stroke="{color}" '
+        f'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<path d="M8 5v3.3l2.2 1.3" fill="none" stroke="{color}" '
+        f'stroke-width="1.4" stroke-linecap="round"/>'
+        f"</svg>"
+    )
+    return _icon_from_svg(svg)
+
+
 def explorer_icon(color: str) -> QIcon:
     """File explorer / tree icon."""
     svg = (

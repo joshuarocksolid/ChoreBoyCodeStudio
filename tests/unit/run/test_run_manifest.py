@@ -9,7 +9,7 @@ import pytest
 from app.core import constants
 from app.core.errors import RunManifestValidationError
 from app.debug.debug_breakpoints import build_breakpoint
-from app.run.run_manifest import RunManifest, load_run_manifest, parse_run_manifest, save_run_manifest
+from app.run.run_manifest import ReplControlConfig, RunManifest, load_run_manifest, parse_run_manifest, save_run_manifest
 
 pytestmark = pytest.mark.unit
 
@@ -97,3 +97,27 @@ def test_parse_run_manifest_validates_breakpoint_shape() -> None:
                 "breakpoints": [{"file_path": "/tmp/project/run.py", "line_number": 0}],
             }
         )
+
+
+def test_run_manifest_round_trips_repl_control_config(tmp_path: Path) -> None:
+    manifest = RunManifest(
+        manifest_version=constants.RUN_MANIFEST_VERSION,
+        run_id="repl_1",
+        project_root=str((tmp_path / "repl").resolve()),
+        entry_file="__repl__.py",
+        working_directory=str(tmp_path.resolve()),
+        log_file=str((tmp_path / "repl.log").resolve()),
+        mode=constants.RUN_MODE_PYTHON_REPL,
+        timestamp="2026-04-28T10:00:00",
+        repl_control=ReplControlConfig(
+            protocol="cbcs_repl_control_v1",
+            host="127.0.0.1",
+            port=49123,
+            session_token="token",
+            connect_timeout_ms=800,
+        ),
+    )
+
+    parsed = parse_run_manifest(manifest.to_dict())
+
+    assert parsed == manifest

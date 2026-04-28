@@ -7,9 +7,58 @@ import subprocess
 
 import pytest
 
-from app.run.pytest_runner_service import parse_pytest_failures, run_pytest_args, run_pytest_project, run_pytest_target
+from app.run.pytest_discovery_service import PYTEST_MISSING_MARKER
+from app.run.pytest_runner_service import (
+    _build_apprun_pytest_payload,
+    _build_apprun_pytest_probe_payload,
+    parse_pytest_failures,
+    run_pytest_args,
+    run_pytest_project,
+    run_pytest_target,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def _assert_vendor_inserted_before_pytest_import(payload: str, vendor_path: str) -> None:
+    insert_pos = payload.find(f"sys.path.insert(0, {vendor_path!r})")
+    import_pos = payload.find("import pytest")
+    assert insert_pos != -1, "vendor/ path was not inserted into sys.path"
+    assert import_pos != -1, "pytest is never imported"
+    assert insert_pos < import_pos, "vendor/ must be on sys.path before `import pytest`"
+
+
+def test_apprun_payload_inserts_editor_vendor_before_pytest_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runner's AppRun -c payload must prepend the editor's vendor/ to
+    sys.path before importing pytest, so ChoreBoy can find the bundled copy."""
+    monkeypatch.setattr(
+        "app.run.pytest_runner_service.resolve_vendor_root",
+        lambda: "/opt/cbcs/vendor",
+    )
+
+    payload = _build_apprun_pytest_payload(pytest_args=["-q"])
+
+    _assert_vendor_inserted_before_pytest_import(payload, "/opt/cbcs/vendor")
+    assert "pytest.main(['-q'])" in payload
+    assert PYTEST_MISSING_MARKER in payload
+
+
+def test_apprun_probe_payload_inserts_editor_vendor_before_pytest_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime probe payload must use the same vendor injection so the
+    probe doesn't false-fail on ChoreBoy where pytest only lives in vendor/."""
+    monkeypatch.setattr(
+        "app.run.pytest_runner_service.resolve_vendor_root",
+        lambda: "/opt/cbcs/vendor",
+    )
+
+    payload = _build_apprun_pytest_probe_payload()
+
+    _assert_vendor_inserted_before_pytest_import(payload, "/opt/cbcs/vendor")
+    assert PYTEST_MISSING_MARKER in payload
 
 
 def test_parse_pytest_failures_extracts_relative_paths(tmp_path: Path) -> None:

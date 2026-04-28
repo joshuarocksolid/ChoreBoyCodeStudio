@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generic, Optional, TypeVar
 
@@ -10,6 +11,14 @@ from app.shell.project_tree_controller import ProjectTreeController, TreeEditorW
 
 
 W = TypeVar("W", bound=TreeEditorWidget)
+
+
+@dataclass(frozen=True)
+class NewFileResult:
+    """Outcome of creating a file from the project tree."""
+
+    error_message: Optional[str]
+    created_path: Optional[str]
 
 
 class ProjectTreeActionCoordinator(Generic[W]):
@@ -52,15 +61,16 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._record_deleted_path = record_deleted_path
         self._remap_file_lineage = remap_file_lineage
 
-    def handle_new_file(self, destination_directory: str, file_name: str) -> Optional[str]:
+    def handle_new_file(self, destination_directory: str, file_name: str) -> NewFileResult:
         validated_name = self._validate_child_name(file_name)
         if validated_name is None:
-            return "File name cannot include path separators."
+            return NewFileResult(error_message="File name cannot include path separators.", created_path=None)
         result = create_file(str(Path(destination_directory) / validated_name))
         if not result.success:
-            return result.message
+            return NewFileResult(error_message=result.message, created_path=None)
         self._reload_project()
-        return None
+        created = result.destination_path
+        return NewFileResult(error_message=None, created_path=created)
 
     def handle_new_folder(self, destination_directory: str, folder_name: str) -> Optional[str]:
         validated_name = self._validate_child_name(folder_name)

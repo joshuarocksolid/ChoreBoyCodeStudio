@@ -69,6 +69,56 @@ def test_semantic_worker_runs_tasks_serially() -> None:
     assert order == ["first-start", "first-end", "second-start"]
 
 
+def test_semantic_worker_prioritizes_completion_over_lower_priority_work() -> None:
+    order: list[str] = []
+    release_first = threading.Event()
+    worker = SemanticWorker(dispatch_to_main_thread=lambda callback: callback())
+
+    def first_task() -> str:
+        order.append("first-start")
+        release_first.wait(timeout=1.0)
+        order.append("first-end")
+        return "first"
+
+    try:
+        worker.submit(key="active", task=first_task, priority=50)
+        time.sleep(0.05)
+        worker.submit(key="references", task=lambda: order.append("references") or "references", priority=70)
+        worker.submit(key="completion", task=lambda: order.append("completion") or "completion", priority=10)
+        release_first.set()
+        deadline = time.time() + 2.0
+        while time.time() < deadline and order != ["first-start", "first-end", "completion", "references"]:
+            time.sleep(0.02)
+    finally:
+        worker.shutdown()
+
+    assert order == ["first-start", "first-end", "completion", "references"]
+
+
+def test_semantic_worker_skips_queued_stale_completion_for_same_key() -> None:
+    order: list[str] = []
+    release_first = threading.Event()
+    worker = SemanticWorker(dispatch_to_main_thread=lambda callback: callback())
+
+    def first_task() -> str:
+        release_first.wait(timeout=1.0)
+        return "first"
+
+    try:
+        worker.submit(key="active", task=first_task, priority=50)
+        time.sleep(0.05)
+        worker.submit(key="completion:file.py", task=lambda: order.append("old") or "old", priority=10)
+        worker.submit(key="completion:file.py", task=lambda: order.append("new") or "new", priority=10)
+        release_first.set()
+        deadline = time.time() + 2.0
+        while time.time() < deadline and order != ["new"]:
+            time.sleep(0.02)
+    finally:
+        worker.shutdown()
+
+    assert order == ["new"]
+
+
 def test_semantic_worker_call_runs_task_on_worker_thread() -> None:
     worker = SemanticWorker(dispatch_to_main_thread=lambda callback: callback())
     try:

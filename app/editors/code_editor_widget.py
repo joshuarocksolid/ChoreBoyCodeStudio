@@ -6,13 +6,14 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-from PySide2.QtCore import QMimeData, QPoint, QStringListModel, Qt
+from PySide2.QtCore import QMimeData, QPoint, Qt
 from PySide2.QtGui import QColor, QTextCursor, QTextFormat
-from PySide2.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
+from PySide2.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
 from app.editors.code_editor_bracket_overlay_mixin import CodeEditorBracketOverlayMixin
+from app.editors.completion_popup import CompletionController
 from app.editors.code_editor_chrome_mixin import CodeEditorChromeMixin
 from app.editors.code_editor_diagnostics import CodeEditorDiagnosticsMixin
 from app.editors.code_editor_editing import CodeEditorEditingMixin
@@ -81,7 +82,8 @@ class CodeEditorWidget(
         self._auto_reindent_flat_python_paste = constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_DEFAULT
         self._last_paste_range: tuple[int, int] | None = None
         self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
-        self._completion_requester: Callable[[str, str, int, bool, int], None] | None = None
+        self._completion_requester: Callable[[str, str, int, bool, int, str, str], None] | None = None
+        self._completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
         self._hover_provider: Callable[[str, int], str | None] | None = None
         self._hover_requester: Callable[[str, int, int], None] | None = None
@@ -92,15 +94,14 @@ class CodeEditorWidget(
         self._completion_auto_trigger = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
         self._completion_request_generation = 0
+        self._pending_completion_trigger_character = ""
         self._hover_request_generation = 0
         self._hover_request_global_pos: QPoint | None = None
         self._signature_help_request_generation = 0
-        self._completion_items_by_label: dict[str, CompletionItem] = {}
-        self._completion_model = QStringListModel(self)
-        self._completion_popup = QCompleter(self._completion_model, self)
-        self._completion_popup.setCaseSensitivity(Qt.CaseInsensitive)
-        self._completion_popup.setWidget(self)
-        self._completion_popup.activated.connect(self._insert_completion_from_label)
+        self._completion_popup = CompletionController(self)
+        self._completion_popup.set_widget(self)
+        self._completion_popup.activated.connect(self._insert_completion_from_item)
+        self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
 
         self._is_dark = False
         self._line_highlight = QColor("#EEF7FF")
@@ -140,6 +141,7 @@ class CodeEditorWidget(
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         started_at = time.perf_counter()
         self._is_dark = tokens.is_dark
+        self._completion_popup.apply_theme(tokens)
         self._apply_chrome_theme(tokens)
         self._line_highlight = QColor(tokens.line_highlight)
         self._apply_bracket_overlay_theme(is_dark=tokens.is_dark)
@@ -344,6 +346,7 @@ class CodeEditorWidget(
         super().insertFromMimeData(source)
         end = self.textCursor().position()
         self._last_paste_range = (start, end)
+        self._select_paste_range_if_multiline(start, end, self.textCursor())
 
     def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         super().showEvent(event)

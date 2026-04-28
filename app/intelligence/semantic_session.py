@@ -4,7 +4,14 @@ from __future__ import annotations
 from typing import Callable, Optional, cast
 
 from app.bootstrap.paths import PathInput
-from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionRequestResult
+from app.intelligence.completion_models import (
+    CompletionEnvelope,
+    CompletionItem,
+    CompletionRequestResult,
+    CompletionResolveRequest,
+    CompletionResolveResult,
+)
+from app.intelligence.completion_resolver import CompletionResolver
 from app.intelligence.completion_service import CompletionRequest, CompletionService
 from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.semantic_models import (
@@ -36,6 +43,7 @@ class SemanticSession:
             cache_db_path=cache_db_path,
             semantic_facade=self._semantic_facade,
         )
+        self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
 
     def shutdown(self) -> None:
@@ -60,6 +68,11 @@ class SemanticSession:
             ),
         )
 
+    def complete_fast(self, *, request: CompletionRequest) -> CompletionEnvelope:
+        """Resolve cached/indexed completion candidates without waiting for Jedi."""
+
+        return self._completion_service.complete_fast(request)
+
     def request_completion(
         self,
         *,
@@ -72,11 +85,12 @@ class SemanticSession:
         """Resolve completion candidates asynchronously."""
 
         def task() -> CompletionRequestResult:
-            envelope = self._completion_service.complete(request)
+            envelope = self._completion_service.complete_semantic(request)
             return CompletionRequestResult(
                 request_generation=request_generation,
                 prefix=prefix,
                 envelope=envelope,
+                buffer_revision=request.buffer_revision,
             )
 
         self._worker.submit(
@@ -84,6 +98,33 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=10,
+        )
+
+    def request_completion_resolve(
+        self,
+        *,
+        request: CompletionResolveRequest,
+        on_success: Callable[[CompletionResolveResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        """Resolve lazy metadata for a selected completion item."""
+
+        def task() -> CompletionResolveResult:
+            item = self._completion_resolver.resolve(request)
+            return CompletionResolveResult(
+                request_generation=request.request_generation,
+                item=item,
+                buffer_revision=request.buffer_revision,
+                context_fingerprint=request.context_fingerprint,
+            )
+
+        self._worker.submit(
+            key=f"completion_resolve:{request.current_file_path}:{request.item.item_id or request.item.label}",
+            task=task,
+            on_success=cast(Callable[[object], None], on_success),
+            on_error=on_error,
+            priority=5,
         )
 
     def request_lookup_definition(
@@ -111,6 +152,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=40,
         )
 
     def request_find_references(
@@ -138,6 +180,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=70,
         )
 
     def request_rename_plan(
@@ -167,6 +210,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=70,
         )
 
     def request_apply_rename(
@@ -186,6 +230,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=60,
         )
 
     def request_hover_info(
@@ -215,6 +260,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=30,
         )
 
     def request_signature_help(
@@ -244,6 +290,7 @@ class SemanticSession:
             task=task,
             on_success=cast(Callable[[object], None], on_success),
             on_error=on_error,
+            priority=25,
         )
 
     def resolve_hover_info_blocking(

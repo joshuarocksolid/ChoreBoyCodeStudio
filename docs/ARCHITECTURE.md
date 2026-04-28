@@ -945,6 +945,31 @@ For `python_debug`, the console remains the place for stdout/stderr, while the
 Debug panel is driven by structured inspector state from the dedicated debug
 channel.
 
+### 14.1A Python Console metadata channel
+
+The Python Console is a live REPL running in the runner process, not inside the
+editor process. User-entered code and any runtime-object inspection must stay on
+that side of the process boundary.
+
+Feature metadata for the Python Console, such as live completion, completion-item
+documentation, and signature help, must travel over a dedicated structured
+editor-to-runner control channel. It must not be multiplexed into stdout/stderr,
+because user `print()` output must remain readable and unambiguous.
+
+The steady-state REPL control channel should use explicit request/reply messages
+for:
+
+- completion requests keyed by line buffer, cursor offset, trigger kind, and trigger character
+- completion-item resolution for expensive documentation/signature details
+- signature help requests and retriggers
+- health, timeout, and shutdown handling
+
+Runner-side completion may inspect the live REPL namespace because that namespace
+already belongs to the user-controlled runner process. The UI must still label
+live-runtime results separately from static editor semantics, and any fallback
+that uses `dir()`, descriptors, or `__getattr__` must surface its side-effect
+risk instead of presenting the result as purely static analysis.
+
 ## 14.2 Problems
 
 The problems pane should show:
@@ -1048,8 +1073,18 @@ Recommended v1 behavior:
 - debounce draft writes to avoid per-keystroke disk churn
 - do not silently overwrite source files unless autosave-to-file is explicitly enabled
 - restore drafts after crash
+- treat explicit user intent as authoritative:
+  - **Save** writes the file, records a checkpoint, and deletes the draft
+  - **Discard** deletes pending and persisted drafts so the same text does not reappear on restart
+  - **Keep Unsaved Changes For Next Launch** preserves a draft with restore metadata and reopens it as a dirty buffer
+  - **Cancel** leaves the current editor session untouched
 
 This is safer for support and easier to reason about.
+
+Dirty-buffer lifecycle decisions are modeled explicitly instead of as a boolean
+prompt result. Tab close, project switch, external reload, and application exit
+must route through the same save/discard/keep/cancel semantics so recovery
+behavior is consistent across workflows.
 
 ## 16.2 Local history strategy
 
@@ -1072,6 +1107,8 @@ fragile patch chains as the canonical source of truth
 external-file reload decisions, and multi-file refactor/import-update applies
 - keep draft writes debounced and lightweight; do not turn every keystroke into a
 durable history revision
+- store draft recovery metadata so intentional hot-exit drafts can be restored
+without being presented as unexplained crash leftovers
 - restore history revisions into the editor buffer first, not directly onto disk,
 so the user can review and save explicitly
 - keep restore and diff workflows independent of Git so the feature remains
@@ -1170,10 +1207,15 @@ threads.
 The concrete contract is:
 
 - `SemanticSession` owns the semantic facade and completion service
-- `SemanticWorker` is the only thread allowed to touch that owned semantic state
+- `CompletionBroker` owns editor completion context classification, result reuse,
+fast-provider fan-out, ranking, and semantic merge policy
+- `SemanticWorker` is the only thread allowed to touch owned Jedi/refactor state
 - async and blocking semantic helpers both flow through that same worker so hover,
 signature help, completion, definition, references, and rename planning share one
 ownership model
+- queued completion and selected-item resolve work has higher priority than hover,
+definition, references, and rename planning; stale queued work is skipped before
+execution
 
 ### 17.4.4 Safety rules
 
@@ -1224,6 +1266,39 @@ That means:
 - diagnostics and semantic callbacks must verify the current revision before applying UI
 state
 - stale results are dropped instead of overwriting newer editor state
+
+### 17.4.8 Next-level completion split
+
+Editor-file completion and Python Console completion are related UX surfaces but
+different semantic problems:
+
+- editor buffers use static, project-aware semantic analysis and trusted API
+indexes/stubs; they must not execute arbitrary user project code in the editor
+process
+- the Python Console uses live runtime introspection in the runner process, where
+the user-created objects actually exist
+
+The shared completion vocabulary should include trigger metadata, replacement
+ranges, symbol kind, detail, documentation, signature, engine, source, confidence,
+stale/degraded state, and optional side-effect risk. This makes a dot-triggered
+attribute popup, manual completion, signature help, and documentation details use
+one contract even when the backing engine differs.
+
+Editor completion is tiered:
+
+- previous valid results may be synchronously filtered for a longer prefix
+- fast providers return keywords, builtins, current-file symbols, project-cache
+symbols/modules, and trusted API-index hits without waiting for Jedi
+- Jedi semantic results refine the list asynchronously and stay labeled as exact
+semantic results
+- documentation, signatures, return types, and other expensive details are resolved
+for the selected item only, and must not change insert text or replacement ranges
+
+FreeCAD and PySide2 APIs are dynamic and partly backed by C++ bindings, so generic
+static inference is not enough for the target user experience. The editor-side
+semantic stack should support a visible, shipped or generated API index/stub set
+for trusted runtime modules. Such indexes are acceleration/trust assets, not a
+replacement for the semantic facade contract.
 
 ## 17.5 Real Python formatting and import management
 
@@ -1798,6 +1873,15 @@ into the live editor buffer first and require an explicit save to update the
 source file on disk.
 **Why:** this preserves user trust, keeps undo/cursor context intact, and avoids
 silent destructive overwrites during recovery.
+
+## AD-014A: Explicit document-safety intent owns recovery
+
+**Decision:** dirty-buffer lifecycle actions use explicit save, discard,
+keep-for-next-launch, and cancel intents rather than boolean proceed/cancel
+results.
+**Why:** ChoreBoy users need `Discard` to mean the draft will not come back on
+restart, while still allowing deliberate hot-exit preservation and crash
+recovery.
 
 ## AD-015: `MainWindow` stays a composition root
 

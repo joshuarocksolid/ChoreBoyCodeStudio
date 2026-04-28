@@ -91,11 +91,13 @@ def main() -> int:
         return 1
 
     repo_root = os.path.dirname(os.path.abspath(__file__))
+    vendor_root = os.path.join(repo_root, "vendor")
     pytest_args = repr(_pytest_argv())
 
     payload = (
         "import sys, os;"
         f"sys.path.insert(0, {repo_root!r});"
+        f"sys.path.insert(0, {vendor_root!r});"
         f"os._exit(__import__('pytest').main({pytest_args}))"
     )
 

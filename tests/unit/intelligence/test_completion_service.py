@@ -165,6 +165,65 @@ def test_completion_service_preserves_semantic_item_metadata(tmp_path: Path) -> 
     assert "approximate" not in semantic_result.detail
 
 
+def test_completion_service_attaches_trigger_and_replacement_metadata(tmp_path: Path) -> None:
+    semantic_item = CompletionItem(
+        label="member_name",
+        insert_text="member_name",
+        kind=CompletionKind.ATTRIBUTE,
+        detail="attribute",
+        engine="jedi",
+        source="semantic",
+        confidence="exact",
+    )
+
+    class _SemanticFacade:
+        def complete(self, **_kwargs: object) -> list[CompletionItem]:
+            return [semantic_item]
+
+    source = "obj.mem"
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((tmp_path / "main.py").resolve()),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+        buffer_revision=42,
+    )
+    service = CompletionService(
+        cache_db_path=str(tmp_path / "symbols.sqlite3"),
+        semantic_facade=cast(Any, _SemanticFacade()),
+    )
+
+    item = next(result for result in service.complete(request).items if result.label == "member_name")
+
+    assert item.replacement_start == len("obj.")
+    assert item.replacement_end == len(source)
+    assert item.trigger_kind == "trigger_character"
+    assert item.trigger_character == "."
+
+
+def test_completion_service_uses_static_api_index_for_freecad_members(tmp_path: Path) -> None:
+    source = "import FreeCAD\nFreeCAD.new"
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((tmp_path / "main.py").resolve()),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+    )
+    service = CompletionService(cache_db_path=str(tmp_path / "symbols.sqlite3"))
+
+    items = service.complete(request).items
+
+    assert any(item.label == "newDocument" and item.source == "static_api_index" for item in items)
+
+
 def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

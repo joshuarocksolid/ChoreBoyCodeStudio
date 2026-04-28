@@ -7,6 +7,12 @@ from typing import Optional
 
 HISTORY_ENTRY_KIND_DRAFT = "draft"
 HISTORY_ENTRY_KIND_CHECKPOINT = "checkpoint"
+DRAFT_RECOVERY_POLICY_PROMPT = "prompt"
+DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY = "restore_silently_as_dirty"
+DRAFT_RECOVERY_POLICY_SNOOZED = "snoozed"
+DRAFT_SOURCE_LIVE_DIRTY_BACKUP = "live_dirty_backup"
+DRAFT_SOURCE_KEPT_ON_EXIT = "kept_on_exit"
+DRAFT_SOURCE_CRASH_LEFTOVER = "crash_leftover"
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,11 @@ class LocalHistoryDraft:
     blob_sha256: str
     content: str
     saved_at: str
+    recovery_policy: str = DRAFT_RECOVERY_POLICY_PROMPT
+    source: str = DRAFT_SOURCE_LIVE_DIRTY_BACKUP
+    base_blob_sha256: Optional[str] = None
+    last_known_mtime: Optional[float] = None
+    session_id: Optional[str] = None
 
 
 @dataclass(frozen=True)

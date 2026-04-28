@@ -7,6 +7,8 @@ from typing import Optional
 import sqlite3
 
 from app.persistence.history_models import (
+    DRAFT_RECOVERY_POLICY_PROMPT,
+    DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
     HistoryFileRecord,
     LocalHistoryCheckpoint,
     LocalHistoryFileSummary,
@@ -21,6 +23,11 @@ class LocalHistoryDraftRecord:
     relative_path: str
     blob_sha256: str
     saved_at: str
+    recovery_policy: str = DRAFT_RECOVERY_POLICY_PROMPT
+    source: str = DRAFT_SOURCE_LIVE_DIRTY_BACKUP
+    base_blob_sha256: Optional[str] = None
+    last_known_mtime: Optional[float] = None
+    session_id: Optional[str] = None
 
 
 def draft_record_from_row(row: sqlite3.Row | None) -> Optional[LocalHistoryDraftRecord]:
@@ -33,6 +40,11 @@ def draft_record_from_row(row: sqlite3.Row | None) -> Optional[LocalHistoryDraft
         relative_path=str(row["relative_path"]),
         blob_sha256=str(row["blob_sha256"]),
         saved_at=str(row["saved_at"]),
+        recovery_policy=str(row["recovery_policy"] or DRAFT_RECOVERY_POLICY_PROMPT),
+        source=str(row["source"] or DRAFT_SOURCE_LIVE_DIRTY_BACKUP),
+        base_blob_sha256=None if row["base_blob_sha256"] is None else str(row["base_blob_sha256"]),
+        last_known_mtime=None if row["last_known_mtime"] is None else float(row["last_known_mtime"]),
+        session_id=None if row["session_id"] is None else str(row["session_id"]),
     )
 
 

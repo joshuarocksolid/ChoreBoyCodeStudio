@@ -13,7 +13,13 @@ from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
-from app.persistence.autosave_store import AutosaveStore
+from app.persistence.history_models import (
+    DRAFT_RECOVERY_POLICY_PROMPT,
+    DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
+    DRAFT_SOURCE_KEPT_ON_EXIT,
+    DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
+)
+from app.persistence.autosave_store import AutosaveStore, DraftEntry
 from app.persistence.history_models import LocalHistoryFileSummary
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.persistence.local_history_store import LocalHistoryStore
@@ -25,6 +31,14 @@ from app.shell.history_restore_picker import (
     HistoryRestorePickerDialog,
 )
 from app.shell.local_history_dialog import DraftRecoveryDialog, LocalHistoryDialog
+from app.shell.recovery_center_dialog import (
+    RECOVERY_ACTION_OPEN_TIMELINE,
+    RECOVERY_ACTION_RESTORE_LATEST,
+    RECOVERY_ENTRY_KIND_DRAFT,
+    RECOVERY_ENTRY_KIND_HISTORY,
+    RecoveryCenterDialog,
+    RecoveryCenterEntry,
+)
 from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 
 
@@ -98,6 +112,7 @@ class LocalHistoryWorkflow:
         self._breakpoint_specs_by_key = breakpoint_specs_by_key
         self._refresh_breakpoints_list = refresh_breakpoints_list
         self._history_restore_picker_dialog: HistoryRestorePickerDialog | None = None
+        self._recovery_center_dialog: RecoveryCenterDialog | None = None
         self._pending_autosave_payloads: dict[str, str] = {}
         self._autosave_timer = autosave_timer or QTimer(parent)
         self._autosave_timer.setSingleShot(True)
@@ -451,6 +466,13 @@ class LocalHistoryWorkflow:
         )
         if draft_entry is None or draft_entry.content == tab_state.current_content:
             return
+        if draft_entry.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY:
+            self._apply_content_to_open_tab(tab_state.file_path, draft_entry.content, editor_widget=editor_widget)
+            self._show_status_message(
+                f"Restored unsaved changes for {tab_state.display_name}. Save to update the file on disk.",
+                6000,
+            )
+            return
 
         dialog = DraftRecoveryDialog(
             file_name=tab_state.display_name,
@@ -477,6 +499,31 @@ class LocalHistoryWorkflow:
     def discard_pending_autosave(self, file_path: str) -> None:
         self._pending_autosave_payloads.pop(file_path, None)
 
+    def discard_drafts_for_paths(self, file_paths: Sequence[str]) -> None:
+        for file_path in file_paths:
+            self.discard_pending_autosave(file_path)
+            self.delete_draft(file_path)
+
+    def keep_drafts_for_paths(self, file_paths: Sequence[str]) -> None:
+        for file_path in file_paths:
+            tab_state = self._editor_manager.get_tab(file_path)
+            if tab_state is None or not tab_state.is_dirty:
+                continue
+            project_id, project_root = self.local_history_context_for_path(tab_state.file_path)
+            try:
+                self._autosave_store.save_draft(
+                    tab_state.file_path,
+                    tab_state.current_content,
+                    project_id=project_id,
+                    project_root=project_root,
+                    recovery_policy=DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
+                    source=DRAFT_SOURCE_KEPT_ON_EXIT,
+                    last_known_mtime=tab_state.last_known_mtime,
+                )
+            except OSError as exc:
+                self._logger.warning("Autosave draft write failed for %s: %s", tab_state.file_path, exc)
+            self.discard_pending_autosave(tab_state.file_path)
+
     def clear_pending_autosaves(self) -> None:
         self._pending_autosave_payloads.clear()
 
@@ -484,19 +531,35 @@ class LocalHistoryWorkflow:
         project_id, project_root = self.local_history_context_for_path(file_path)
         self._autosave_store.delete_draft(file_path, project_id=project_id, project_root=project_root)
 
-    def flush_pending_autosaves(self) -> None:
+    def flush_pending_autosaves(
+        self,
+        file_paths: Sequence[str] | None = None,
+        *,
+        recovery_policy: str = DRAFT_RECOVERY_POLICY_PROMPT,
+        source: str = DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
+    ) -> None:
         if not self._pending_autosave_payloads:
             return
-        pending_items = list(self._pending_autosave_payloads.items())
-        self._pending_autosave_payloads.clear()
+        selected_paths = None if file_paths is None else set(file_paths)
+        pending_items = [
+            (file_path, content)
+            for file_path, content in self._pending_autosave_payloads.items()
+            if selected_paths is None or file_path in selected_paths
+        ]
+        for file_path, _content in pending_items:
+            self._pending_autosave_payloads.pop(file_path, None)
         for file_path, content in pending_items:
             try:
                 project_id, project_root = self.local_history_context_for_path(file_path)
+                tab_state = self._editor_manager.get_tab(file_path)
                 self._autosave_store.save_draft(
                     file_path,
                     content,
                     project_id=project_id,
                     project_root=project_root,
+                    recovery_policy=recovery_policy,
+                    source=source,
+                    last_known_mtime=None if tab_state is None else tab_state.last_known_mtime,
                 )
             except OSError as exc:
                 self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)
@@ -553,6 +616,108 @@ class LocalHistoryWorkflow:
 
         if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_OPEN_TIMELINE:
             self.show_local_history_for_entry(selected_entry)
+
+    def open_recovery_center(self) -> None:
+        history_summaries = self._local_history_store.list_global_history_files()
+        draft_entries = self._autosave_store.list_drafts()
+        entries = self._recovery_center_entries(history_summaries, draft_entries)
+        if not entries:
+            QMessageBox.information(
+                self._parent,
+                "Recovery Center",
+                "No recovery drafts or saved local-history entries are available yet.",
+            )
+            return
+        if self._recovery_center_dialog is None:
+            self._recovery_center_dialog = RecoveryCenterDialog(self._parent)
+        self._recovery_center_dialog.set_entries(entries)
+        result = self._recovery_center_dialog.open_dialog()
+        if result != QDialog.Accepted:
+            return
+        selected_entry = self._recovery_center_dialog.selected_entry()
+        if selected_entry is None:
+            return
+        if selected_entry.kind == RECOVERY_ENTRY_KIND_DRAFT:
+            draft_entry = next(
+                (draft for draft in draft_entries if draft.file_path == selected_entry.file_path),
+                None,
+            )
+            if draft_entry is not None:
+                self._review_draft_entry(draft_entry)
+            return
+        selected_summary = next(
+            (summary for summary in history_summaries if summary.file_key == selected_entry.file_key),
+            None,
+        )
+        if selected_summary is None:
+            return
+        if self._recovery_center_dialog.requested_action == RECOVERY_ACTION_RESTORE_LATEST:
+            latest_content = self._local_history_store.load_checkpoint_content(selected_summary.latest_revision_id)
+            if latest_content is None:
+                QMessageBox.warning(self._parent, "Recovery Center", "Could not load the latest saved revision.")
+                return
+            self.restore_local_history_content_to_buffer(selected_summary.file_path, latest_content)
+        elif self._recovery_center_dialog.requested_action == RECOVERY_ACTION_OPEN_TIMELINE:
+            self.show_local_history_for_entry(selected_summary)
+
+    def _review_draft_entry(self, draft_entry: DraftEntry) -> None:
+        tab_state = self._editor_manager.get_tab(draft_entry.file_path)
+        if tab_state is not None:
+            disk_text = tab_state.original_content
+            file_name = tab_state.display_name
+        else:
+            file_name = Path(draft_entry.file_path).name
+            try:
+                disk_text = Path(draft_entry.file_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                disk_text = ""
+        if draft_entry.content == disk_text:
+            self.delete_draft(draft_entry.file_path)
+            QMessageBox.information(self._parent, "Recovery Center", "The draft already matches the saved file.")
+            return
+        dialog = DraftRecoveryDialog(
+            file_name=file_name,
+            disk_text=disk_text,
+            draft_text=draft_entry.content,
+            parent=self._parent,
+        )
+        response = dialog.exec_()
+        if response == QDialog.Accepted:
+            self.restore_local_history_content_to_buffer(draft_entry.file_path, draft_entry.content)
+        elif dialog.discard_draft:
+            self.delete_draft(draft_entry.file_path)
+
+    def _recovery_center_entries(
+        self,
+        history_summaries: Sequence[LocalHistoryFileSummary],
+        draft_entries: Sequence[DraftEntry],
+    ) -> list[RecoveryCenterEntry]:
+        entries: list[RecoveryCenterEntry] = []
+        for draft in draft_entries:
+            entries.append(
+                RecoveryCenterEntry(
+                    kind=RECOVERY_ENTRY_KIND_DRAFT,
+                    file_key=draft.file_path,
+                    file_path=draft.file_path,
+                    display_path=Path(draft.file_path).name,
+                    timestamp=draft.saved_at,
+                    label=draft.source.replace("_", " "),
+                    status="Unsaved Draft",
+                )
+            )
+        for summary in history_summaries:
+            entries.append(
+                RecoveryCenterEntry(
+                    kind=RECOVERY_ENTRY_KIND_HISTORY,
+                    file_key=summary.file_key,
+                    file_path=summary.file_path,
+                    display_path=summary.display_path,
+                    timestamp=summary.latest_checkpoint_at,
+                    label=summary.latest_label or summary.latest_source.replace("_", " "),
+                    status="Deleted" if summary.is_deleted else "Saved History",
+                )
+            )
+        return sorted(entries, key=lambda entry: (entry.timestamp, entry.display_path), reverse=True)
 
     def _restore_editor_cursor_and_scroll(self, editor_widget: CodeEditorWidget, file_state: SessionFileState) -> None:
         target_line = max(1, file_state.cursor_line)

@@ -82,7 +82,7 @@ def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEdito
         items=[CompletionItem(label="alpha_local", insert_text="alpha_local", kind=CompletionKind.SYMBOL)],
     )
 
-    assert editor._completion_items_by_label == {}
+    assert editor._completion_popup.model().rowCount() == 0
 
 
 def test_show_completion_items_for_current_generation_updates_mapping(editor: CodeEditorWidget) -> None:
@@ -95,7 +95,60 @@ def test_show_completion_items_for_current_generation_updates_mapping(editor: Co
         items=[CompletionItem(label="alpha_local", insert_text="alpha_local", kind=CompletionKind.SYMBOL)],
     )
 
-    assert "alpha_local" in editor._completion_items_by_label
+    labels = [item.label for item in editor._completion_popup.model().items()]
+    assert "alpha_local" in labels
+
+
+def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget) -> None:
+    calls: list[tuple[str, str, int, int]] = []
+    item = CompletionItem(
+        label="alpha_local",
+        insert_text="alpha_local",
+        kind=CompletionKind.SYMBOL,
+        source="semantic",
+        resolve_provider="jedi",
+        resolvable_fields=("documentation",),
+    )
+    editor.set_completion_requester(lambda *_args: None)
+    editor.set_completion_resolve_requester(
+        lambda selected, source, position, generation: calls.append(
+            (selected.label, source, position, generation)
+        )
+    )
+    editor.trigger_completion(manual=True)
+
+    editor.show_completion_items_for_request(request_generation=1, prefix="alpha", items=[item])
+
+    assert calls == [("alpha_local", "alpha", 5, 1)]
+
+
+def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorWidget) -> None:
+    item = CompletionItem(
+        label="alpha_local",
+        insert_text="alpha_local",
+        kind=CompletionKind.SYMBOL,
+        source="semantic",
+        item_id="item-1",
+        resolve_provider="jedi",
+        resolvable_fields=("documentation",),
+    )
+    resolved = CompletionItem(
+        label="alpha_local",
+        insert_text="alpha_local",
+        kind=CompletionKind.SYMBOL,
+        documentation="Resolved docs",
+        source="semantic",
+        item_id="item-1",
+        resolve_provider="jedi",
+        resolvable_fields=("documentation",),
+    )
+    editor.set_completion_requester(lambda *_args: None)
+    editor.trigger_completion(manual=True)
+    editor.show_completion_items_for_request(request_generation=1, prefix="alpha", items=[item])
+
+    editor.show_resolved_completion_item_for_request(request_generation=1, item=resolved)
+
+    assert editor._completion_popup.model().items()[0].documentation == "Resolved docs"
 
 
 def test_typing_open_paren_shows_inline_signature_help(editor: CodeEditorWidget) -> None:
@@ -220,7 +273,8 @@ def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWid
 
     editor.apply_theme(_LIGHT_TOKENS)
     assert editor._is_dark is False
-    assert "alpha_local" in editor._completion_items_by_label
+    light_labels = [item.label for item in editor._completion_popup.model().items()]
+    assert "alpha_local" in light_labels
 
     editor.apply_theme(_DARK_TOKENS)
     assert editor._is_dark is True

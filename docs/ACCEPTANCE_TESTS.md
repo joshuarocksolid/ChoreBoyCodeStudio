@@ -1579,14 +1579,17 @@ Verify that completion behavior is semantic, cancellable, and clear about result
 
 1. Trigger completion on an imported module member.
 2. Trigger completion while rapidly typing to force stale requests.
-3. Inspect completion rows for detail/source/confidence metadata.
+3. Trigger `from PySide2 import QtWi` in an empty editor buffer.
+4. Inspect completion rows and selected-item details for source/confidence metadata.
 
 **Expected Result:**  
 
 - imported/member completions are project-aware and relevant
+- trusted API-index results appear quickly before any slower semantic refinement
 - stale completion responses are discarded rather than flashing outdated items
 - completion rows show useful semantic metadata such as kind, source, or confidence state
 - approximate/fallback results, if shown, are clearly labeled as such
+- expensive documentation/signature details load for the selected item rather than blocking the initial list
 
 ---
 
@@ -1681,12 +1684,76 @@ Verify that semantic UI surfaces are legible in light/dark mode and remain respo
 1. Trigger semantic completion, hover, signature help, references, and rename preview in light mode.
 2. Repeat in dark mode.
 3. Measure warm completion/navigation behavior on the medium fixture.
+4. Rapidly type through an existing completion prefix while the popup is open.
 
 **Expected Result:**  
 
 - all semantic labels, badges, lists, popups, and previews remain readable in both themes
 - semantic completion and navigation feel responsive enough for normal editing workflows
 - performance regressions are measurable and within the documented rollout targets
+- the popup remains stable during prefix refinement and does not flicker closed solely because a newer request started
+
+---
+
+## AT-73 — Editor dot completion shows attribute details without executing project code
+
+**Purpose:**  
+Verify that editor `.` completion provides useful attribute/method discovery while preserving the static editor-process safety boundary.
+
+**Preconditions:**  
+
+- semantic completion is enabled
+- a project fixture includes Python classes, imported modules, and FreeCAD/PySide-facing code
+- trusted runtime API stubs or an API index are available when the feature is installed
+
+**Steps:**  
+
+1. Type `.` after a project object, an imported module, and a trusted runtime module reference.
+2. Type trusted import contexts such as `from PySide2 import QtWi` and `import PySide2.QtW`.
+3. Inspect the completion list and selected-item details.
+4. Trigger completion, then immediately edit the buffer to force a stale response.
+5. Repeat in light and dark themes.
+
+**Expected Result:**  
+
+- attribute/method/property candidates are relevant to the receiver when the semantic engine can prove them
+- rows and details show kind, source/engine, confidence, documentation or signature when available
+- fallback/static-index results are labeled distinctly from exact semantic results
+- trusted FreeCAD/PySide2 import and dot completions work from the shipped visible API index
+- stale completion responses are dropped by buffer revision and never overwrite newer UI state
+- no arbitrary project code executes in the editor process
+- popup text, badges, and details remain readable in both themes
+
+---
+
+## AT-74 — Python Console dot completion inspects the live runner namespace
+
+**Purpose:**  
+Verify that the Python Console offers FreeCAD-style live object discovery while keeping stdout/stderr and editor process boundaries clean.
+
+**Preconditions:**  
+
+- Python Console starts successfully
+- REPL completion support is enabled
+- the runtime can import at least one trusted module such as `FreeCAD` or `PySide2`
+
+**Steps:**  
+
+1. In the Python Console, submit simple assignments and class/object definitions.
+2. Type `.` after a live object and after an imported trusted module.
+3. Use `Ctrl+Space` and `Tab` to trigger/accept completion.
+4. Select a callable completion and verify signature/documentation display.
+5. Print normal output before and after completion requests.
+6. Restart the console and confirm completion unavailable/recovery states are understandable during restart.
+
+**Expected Result:**  
+
+- completion candidates reflect objects in the live runner namespace, not editor-process globals
+- no completion metadata appears in user-visible stdout/stderr output
+- accepted completions insert only in the editable prompt region
+- runtime-inspection results are labeled with engine/source/confidence and side-effect risk when applicable
+- existing multiline input, history, interrupt, restart, and transcript behavior remain intact
+- failures or timeouts degrade visibly without killing the editor
 
 ---
 
@@ -1914,13 +1981,19 @@ Verify that draft recovery uses a reviewable recovery flow instead of blindly re
 3. Relaunch the editor and reopen the file.
 4. Use the recovery UI to compare the draft against the saved file.
 5. Choose **Restore Draft to Buffer**.
+6. Modify the file again, exit normally, and choose **Discard Changes**.
+7. Relaunch the editor and reopen the same file.
+8. Modify the file again, exit normally, and choose **Keep Unsaved Changes For Next Launch**.
+9. Relaunch the editor and reopen the same project.
 
 **Expected Result:**  
 
-- the recovery flow offers clear choices such as compare, restore to buffer, or keep disk version
+- the recovery flow offers clear choices such as compare, restore to buffer, decide later, or keep disk version and delete the draft
 - the user can review the draft-versus-saved diff before restoring
 - restoring places the recovered contents into the editor buffer first
 - the source file on disk is not silently overwritten until the user saves explicitly
+- explicit **Discard Changes** deletes the draft and does not show the recovery prompt on the next launch
+- explicit **Keep Unsaved Changes For Next Launch** restores the dirty buffer without treating it like an unexplained crash
 
 ---
 

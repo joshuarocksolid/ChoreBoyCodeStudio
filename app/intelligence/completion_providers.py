@@ -9,13 +9,15 @@ import keyword
 from pathlib import Path
 import re
 
+from app.intelligence.api_index import provide_api_index_member_items
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.persistence.sqlite_index import SQLiteSymbolIndex
 from app.project.file_inventory import iter_python_files
 
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
-_MODULE_MEMBER_CONTEXT_PATTERN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$")
+_DOTTED_NAME = r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+_MODULE_MEMBER_CONTEXT_PATTERN = re.compile(r"(" + _DOTTED_NAME + r")\.([A-Za-z_][A-Za-z0-9_]*)?$")
 _PROJECT_MODULE_CACHE: dict[tuple[str, str], tuple[int, list[str]]] = {}
 
 
@@ -25,6 +27,7 @@ class ModuleMemberCompletionContext:
 
     base_identifier: str
     member_prefix: str
+    base_expression: str = ""
 
 
 def detect_module_member_completion_context(source_text: str, cursor_position: int) -> ModuleMemberCompletionContext | None:
@@ -34,11 +37,16 @@ def detect_module_member_completion_context(source_text: str, cursor_position: i
     match = _MODULE_MEMBER_CONTEXT_PATTERN.search(snippet)
     if match is None:
         return None
-    base_identifier = match.group(1)
+    base_expression = match.group(1)
+    base_identifier = base_expression.split(".")[0]
     if not base_identifier.isidentifier():
         return None
     member_prefix = match.group(2) or ""
-    return ModuleMemberCompletionContext(base_identifier=base_identifier, member_prefix=member_prefix)
+    return ModuleMemberCompletionContext(
+        base_identifier=base_identifier,
+        member_prefix=member_prefix,
+        base_expression=base_expression,
+    )
 
 
 def collect_import_module_bindings(source_text: str) -> dict[str, str]:
@@ -207,13 +215,22 @@ def provide_module_member_items(
     limit: int,
 ) -> list[CompletionItem]:
     """Return completion candidates for `<imported_module>.<member>` contexts."""
-    if project_root is None:
-        return []
     context = detect_module_member_completion_context(source_text, cursor_position)
     if context is None:
         return []
 
     bindings = collect_import_module_bindings(source_text)
+    api_module_name = _resolve_api_index_name(context, bindings)
+    if api_module_name:
+        indexed_items = provide_api_index_member_items(
+            module_name=api_module_name,
+            member_prefix=context.member_prefix,
+            limit=limit,
+        )
+        if indexed_items:
+            return indexed_items
+    if project_root is None:
+        return []
     resolution = resolve_module_binding(project_root, bindings=bindings, binding_name=context.base_identifier)
     if not resolution.is_resolved or not resolution.resolved_path:
         return []
@@ -235,6 +252,17 @@ def provide_module_member_items(
         )
         for name in sorted(module_symbols)[: max(1, int(limit))]
     ]
+
+
+def _resolve_api_index_name(context: ModuleMemberCompletionContext, bindings: dict[str, str]) -> str:
+    expression_parts = context.base_expression.split(".") if context.base_expression else [context.base_identifier]
+    first = expression_parts[0]
+    bound = bindings.get(first, first)
+    if bound == first:
+        return context.base_expression or first
+    if len(expression_parts) == 1:
+        return bound
+    return ".".join([bound, *expression_parts[1:]])
 
 
 def _collect_symbols_from_ast(syntax_tree: ast.AST) -> set[str]:

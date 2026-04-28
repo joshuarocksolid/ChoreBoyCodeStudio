@@ -29,6 +29,9 @@ def test_request_completion_routes_through_owned_completion_service() -> None:
                 degradation_reason="semantic_engine_error",
             )
 
+        def complete_semantic(self, request: CompletionRequest) -> CompletionEnvelope:
+            return self.complete(request)
+
         def record_acceptance(self, item: CompletionItem) -> None:
             raise AssertionError("not used in this test")
 

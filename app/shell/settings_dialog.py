@@ -295,6 +295,12 @@ class SettingsDialog(QDialog):
         self._auto_save_input = QCheckBox(editor_group)
         self._auto_save_input.setChecked(snapshot.auto_save)
         editor_form.addRow("Auto save", self._auto_save_input)
+        self._exit_behavior_input = QComboBox(editor_group)
+        self._exit_behavior_input.addItem("Ask before closing dirty files", "ask")
+        self._exit_behavior_input.addItem("Keep unsaved changes for next launch", "keep_unsaved")
+        exit_behavior_index = self._exit_behavior_input.findData(snapshot.exit_behavior)
+        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
+        editor_form.addRow("Exit behavior", self._exit_behavior_input)
         self._hover_tooltip_enabled_input = QCheckBox(editor_group)
         self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
         editor_form.addRow("Show hover tooltips in code editor", self._hover_tooltip_enabled_input)
@@ -463,6 +469,7 @@ class SettingsDialog(QDialog):
             insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
             enable_preview=self._enable_preview_input.isChecked(),
             auto_save=self._auto_save_input.isChecked(),
+            exit_behavior=str(self._exit_behavior_input.currentData()),
             hover_tooltip_enabled=self._hover_tooltip_enabled_input.isChecked(),
             auto_reindent_flat_python_paste=self._auto_reindent_flat_python_paste_input.isChecked(),
             completion_enabled=self._completion_enabled_input.isChecked(),
@@ -507,6 +514,8 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(snapshot.enable_preview)
         self._auto_save_input.setChecked(snapshot.auto_save)
+        exit_behavior_index = self._exit_behavior_input.findData(snapshot.exit_behavior)
+        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
         self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
         self._auto_reindent_flat_python_paste_input.setChecked(snapshot.auto_reindent_flat_python_paste)
 
@@ -666,6 +675,8 @@ class SettingsDialog(QDialog):
         self._insert_final_newline_on_save_input.setChecked(baseline.insert_final_newline_on_save)
         self._enable_preview_input.setChecked(baseline.enable_preview)
         self._auto_save_input.setChecked(baseline.auto_save)
+        exit_behavior_index = self._exit_behavior_input.findData(baseline.exit_behavior)
+        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
         self._hover_tooltip_enabled_input.setChecked(baseline.hover_tooltip_enabled)
         self._auto_reindent_flat_python_paste_input.setChecked(baseline.auto_reindent_flat_python_paste)
 

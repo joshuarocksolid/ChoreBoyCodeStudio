@@ -46,6 +46,11 @@ class LocalHistoryRepository:
         blob_sha256: str,
         content_size_bytes: int,
         saved_at: str,
+        recovery_policy: str,
+        source: str,
+        base_blob_sha256: Optional[str] = None,
+        last_known_mtime: Optional[float] = None,
+        session_id: Optional[str] = None,
     ) -> LocalHistoryDraftRecord:
         with self._schema.connect() as connection:
             self._upsert_project(connection, subject.project_id, subject.project_root, saved_at)
@@ -59,14 +64,24 @@ class LocalHistoryRepository:
                     relative_path,
                     blob_sha256,
                     content_size_bytes,
-                    saved_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    saved_at,
+                    recovery_policy,
+                    source,
+                    base_blob_sha256,
+                    last_known_mtime,
+                    session_id
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(file_key) DO UPDATE SET
                     absolute_path=excluded.absolute_path,
                     relative_path=excluded.relative_path,
                     blob_sha256=excluded.blob_sha256,
                     content_size_bytes=excluded.content_size_bytes,
-                    saved_at=excluded.saved_at
+                    saved_at=excluded.saved_at,
+                    recovery_policy=excluded.recovery_policy,
+                    source=excluded.source,
+                    base_blob_sha256=excluded.base_blob_sha256,
+                    last_known_mtime=excluded.last_known_mtime,
+                    session_id=excluded.session_id
                 """,
                 (
                     file_record.file_key,
@@ -76,6 +91,11 @@ class LocalHistoryRepository:
                     blob_sha256,
                     content_size_bytes,
                     saved_at,
+                    recovery_policy,
+                    source,
+                    base_blob_sha256,
+                    last_known_mtime,
+                    session_id,
                 ),
             )
             connection.commit()
@@ -86,6 +106,11 @@ class LocalHistoryRepository:
             relative_path=subject.relative_path,
             blob_sha256=blob_sha256,
             saved_at=saved_at,
+            recovery_policy=recovery_policy,
+            source=source,
+            base_blob_sha256=base_blob_sha256,
+            last_known_mtime=last_known_mtime,
+            session_id=session_id,
         )
 
     def load_draft(self, subject: ResolvedHistorySubject) -> Optional[LocalHistoryDraftRecord]:
@@ -95,7 +120,18 @@ class LocalHistoryRepository:
                 return None
             row = connection.execute(
                 """
-                SELECT file_key, project_id, absolute_path, relative_path, blob_sha256, saved_at
+                SELECT
+                    file_key,
+                    project_id,
+                    absolute_path,
+                    relative_path,
+                    blob_sha256,
+                    saved_at,
+                    recovery_policy,
+                    source,
+                    base_blob_sha256,
+                    last_known_mtime,
+                    session_id
                 FROM drafts
                 WHERE file_key = ?
                 """,
@@ -115,7 +151,18 @@ class LocalHistoryRepository:
         with self._schema.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT file_key, project_id, absolute_path, relative_path, blob_sha256, saved_at
+                SELECT
+                    file_key,
+                    project_id,
+                    absolute_path,
+                    relative_path,
+                    blob_sha256,
+                    saved_at,
+                    recovery_policy,
+                    source,
+                    base_blob_sha256,
+                    last_known_mtime,
+                    session_id
                 FROM drafts
                 ORDER BY saved_at DESC, absolute_path ASC
                 """

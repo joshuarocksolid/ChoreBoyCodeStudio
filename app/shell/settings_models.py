@@ -35,6 +35,7 @@ class EditorSettingsSnapshot:
     insert_final_newline_on_save: bool = constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_DEFAULT
     enable_preview: bool = constants.UI_EDITOR_ENABLE_PREVIEW_DEFAULT
     auto_save: bool = constants.UI_EDITOR_AUTO_SAVE_DEFAULT
+    exit_behavior: str = constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT
     hover_tooltip_enabled: bool = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
     auto_reindent_flat_python_paste: bool = constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_DEFAULT
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
@@ -76,7 +77,7 @@ class EditorSettingsSnapshot:
 class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
-    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, bool, bool]
+    editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, str, bool, bool]
     completion_preferences: tuple[bool, bool, int]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
@@ -167,6 +168,12 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         editor_settings.get(constants.UI_EDITOR_AUTO_SAVE_KEY),
         default=constants.UI_EDITOR_AUTO_SAVE_DEFAULT,
     )
+    exit_behavior_raw = editor_settings.get(constants.UI_EDITOR_EXIT_BEHAVIOR_KEY)
+    exit_behavior = (
+        str(exit_behavior_raw)
+        if str(exit_behavior_raw) in constants.UI_EDITOR_EXIT_BEHAVIOR_VALUES
+        else constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT
+    )
     hover_tooltip_enabled = _coerce_bool(
         editor_settings.get(constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_KEY),
         default=constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT,
@@ -207,6 +214,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         insert_final_newline_on_save=insert_final_newline_on_save,
         enable_preview=enable_preview,
         auto_save=auto_save,
+        exit_behavior=exit_behavior,
         hover_tooltip_enabled=hover_tooltip_enabled,
         auto_reindent_flat_python_paste=auto_reindent_flat_python_paste,
         completion_enabled=_coerce_bool(
@@ -296,6 +304,7 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.insert_final_newline_on_save,
             snapshot.enable_preview,
             snapshot.auto_save,
+            snapshot.exit_behavior,
             snapshot.hover_tooltip_enabled,
             snapshot.auto_reindent_flat_python_paste,
         ),
@@ -404,6 +413,11 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_INSERT_FINAL_NEWLINE_ON_SAVE_KEY: bool(snapshot.insert_final_newline_on_save),
         constants.UI_EDITOR_ENABLE_PREVIEW_KEY: bool(snapshot.enable_preview),
         constants.UI_EDITOR_AUTO_SAVE_KEY: bool(snapshot.auto_save),
+        constants.UI_EDITOR_EXIT_BEHAVIOR_KEY: (
+            snapshot.exit_behavior
+            if snapshot.exit_behavior in constants.UI_EDITOR_EXIT_BEHAVIOR_VALUES
+            else constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT
+        ),
         constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_KEY: bool(snapshot.hover_tooltip_enabled),
         constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_KEY: bool(snapshot.auto_reindent_flat_python_paste),
     }

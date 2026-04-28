@@ -75,8 +75,8 @@ class DraftRecoveryDialog(QDialog):
         self._diff_view = diff_view
 
         restore_button = QPushButton("Restore Draft to Buffer", self)
-        keep_disk_button = QPushButton("Keep Disk Version", self)
-        close_button = QPushButton("Close", self)
+        keep_disk_button = QPushButton("Keep Disk Version and Delete Draft", self)
+        close_button = QPushButton("Decide Later", self)
         restore_button.clicked.connect(self.accept)
         keep_disk_button.clicked.connect(self._handle_keep_disk_version)
         close_button.clicked.connect(self.reject)

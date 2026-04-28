@@ -12,6 +12,7 @@ from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
 from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
+from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402
 from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -144,6 +145,42 @@ class TestPromptProtection:
         _type_text(active_widget, "xyz")
         _press(active_widget, Qt.Key_Home)
         assert active_widget.textCursor().position() == active_widget.prompt_anchor
+
+
+class TestCompletion:
+    def test_dot_triggers_completion_request(self, active_widget: PythonConsoleWidget) -> None:
+        requests: list[tuple[str, int, int, str, str]] = []
+        active_widget.set_completion_requester(
+            lambda line, cursor, generation, trigger_kind, trigger_character: requests.append(
+                (line, cursor, generation, trigger_kind, trigger_character)
+            )
+        )
+
+        _type_text(active_widget, "FreeCAD.")
+
+        assert requests
+        assert requests[-1][0] == "FreeCAD."
+        assert requests[-1][1] == len("FreeCAD.")
+        assert requests[-1][3] == "trigger_character"
+        assert requests[-1][4] == "."
+
+    def test_completion_insert_respects_prompt_anchor(self, active_widget: PythonConsoleWidget) -> None:
+        _type_text(active_widget, "FreeCAD.new")
+        item = CompletionItem(
+            label="newDocument",
+            insert_text="newDocument",
+            kind=CompletionKind.FUNCTION,
+            replacement_start=len("FreeCAD."),
+            replacement_end=len("FreeCAD.new"),
+        )
+        active_widget.show_completion_items_for_request(
+            request_generation=active_widget._completion_request_generation,  # noqa: SLF001
+            items=[item],
+        )
+
+        active_widget._insert_completion_from_item(item)  # noqa: SLF001
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "FreeCAD.newDocument")
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ from typing import Optional
 
 from app.bootstrap.paths import PathInput
 from app.persistence.history_models import (
+    DRAFT_RECOVERY_POLICY_PROMPT,
+    DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
     HistoryFileRecord,
     LocalHistoryCheckpoint,
     LocalHistoryDraft,
@@ -20,7 +22,7 @@ from app.persistence.history_retention import (
 )
 from app.persistence.local_history_blob_store import LocalHistoryBlobStore
 from app.persistence.local_history_repository import LocalHistoryRepository
-from app.persistence.local_history_schema import LOCAL_HISTORY_SCHEMA_VERSION, LocalHistorySchema
+from app.persistence.local_history_schema import LocalHistorySchema
 
 
 class LocalHistoryStore:
@@ -64,6 +66,11 @@ class LocalHistoryStore:
         project_id: Optional[str] = None,
         project_root: Optional[str] = None,
         saved_at: Optional[str] = None,
+        recovery_policy: str = DRAFT_RECOVERY_POLICY_PROMPT,
+        source: str = DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
+        base_blob_sha256: Optional[str] = None,
+        last_known_mtime: Optional[float] = None,
+        session_id: Optional[str] = None,
     ) -> LocalHistoryDraft:
         """Persist or update the latest draft head for a file."""
         subject = self._repository.resolve_subject(file_path, project_id=project_id, project_root=project_root)
@@ -74,6 +81,11 @@ class LocalHistoryStore:
             blob_sha256=blob_sha256,
             content_size_bytes=len(content.encode("utf-8")),
             saved_at=timestamp,
+            recovery_policy=recovery_policy,
+            source=source,
+            base_blob_sha256=base_blob_sha256,
+            last_known_mtime=last_known_mtime,
+            session_id=session_id,
         )
         return LocalHistoryDraft(
             file_key=record.file_key,
@@ -83,6 +95,11 @@ class LocalHistoryStore:
             blob_sha256=record.blob_sha256,
             content=content,
             saved_at=record.saved_at,
+            recovery_policy=record.recovery_policy,
+            source=record.source,
+            base_blob_sha256=record.base_blob_sha256,
+            last_known_mtime=record.last_known_mtime,
+            session_id=record.session_id,
         )
 
     def load_draft(
@@ -108,6 +125,11 @@ class LocalHistoryStore:
             blob_sha256=record.blob_sha256,
             content=content,
             saved_at=record.saved_at,
+            recovery_policy=record.recovery_policy,
+            source=record.source,
+            base_blob_sha256=record.base_blob_sha256,
+            last_known_mtime=record.last_known_mtime,
+            session_id=record.session_id,
         )
 
     def delete_draft(
@@ -137,6 +159,11 @@ class LocalHistoryStore:
                     blob_sha256=record.blob_sha256,
                     content=content,
                     saved_at=record.saved_at,
+                    recovery_policy=record.recovery_policy,
+                    source=record.source,
+                    base_blob_sha256=record.base_blob_sha256,
+                    last_known_mtime=record.last_known_mtime,
+                    session_id=record.session_id,
                 )
             )
         return drafts

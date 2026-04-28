@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
+from app.persistence.history_models import (
+    DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
+    DRAFT_SOURCE_KEPT_ON_EXIT,
+)
 from app.persistence.local_history_store import LocalHistoryStore
 
 pytestmark = pytest.mark.unit
@@ -39,6 +44,71 @@ def test_local_history_store_save_and_load_draft_round_trip(tmp_path: Path) -> N
     assert loaded.file_path == str(file_path.resolve())
     assert loaded.content == "print('draft')\n"
     assert store.list_drafts()[0].file_path == str(file_path.resolve())
+
+
+def test_local_history_store_persists_draft_recovery_metadata(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('original')\n", encoding="utf-8")
+    store = LocalHistoryStore(state_root=state_root)
+
+    store.save_draft(
+        str(file_path),
+        "print('draft')\n",
+        project_id="proj_demo",
+        project_root=str(project_root),
+        recovery_policy=DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
+        source=DRAFT_SOURCE_KEPT_ON_EXIT,
+        last_known_mtime=123.5,
+        session_id="session_1",
+    )
+    loaded = store.load_draft(
+        str(file_path),
+        project_id="proj_demo",
+        project_root=str(project_root),
+    )
+
+    assert loaded is not None
+    assert loaded.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY
+    assert loaded.source == DRAFT_SOURCE_KEPT_ON_EXIT
+    assert loaded.last_known_mtime == 123.5
+    assert loaded.session_id == "session_1"
+
+
+def test_local_history_schema_migrates_v1_drafts_table(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    history_dir = state_root / "history"
+    history_dir.mkdir(parents=True)
+    db_path = history_dir / "index.sqlite3"
+    with sqlite3.connect(str(db_path)) as connection:
+        connection.execute("CREATE TABLE schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute(
+            """
+            CREATE TABLE drafts(
+                file_key TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                absolute_path TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                blob_sha256 TEXT NOT NULL,
+                content_size_bytes INTEGER NOT NULL,
+                saved_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.commit()
+
+    store = LocalHistoryStore(state_root=state_root)
+
+    with sqlite3.connect(str(store.db_path)) as connection:
+        draft_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(drafts)").fetchall()}
+        schema_version = connection.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()[0]
+    assert "recovery_policy" in draft_columns
+    assert "source" in draft_columns
+    assert schema_version == "2"
 
 
 def test_local_history_store_creates_deduplicated_checkpoint_blobs(tmp_path: Path) -> None:

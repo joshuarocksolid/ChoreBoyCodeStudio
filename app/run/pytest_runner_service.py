@@ -9,7 +9,9 @@ from shutil import which
 import subprocess
 import time
 
+from app.bootstrap.vendor_paths import resolve_vendor_root
 from app.run.problem_parser import ProblemEntry
+from app.run.pytest_discovery_service import PYTEST_MISSING_MARKER
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
@@ -192,16 +194,33 @@ def _runtime_supports_pytest(runtime_executable: str, *, project_root: str) -> b
 
 
 def _build_apprun_pytest_probe_payload() -> str:
-    statements = ["import sys;"]
-    statements.append("import pytest;sys.exit(0)")
-    return "".join(statements)
+    vendor_root = str(resolve_vendor_root())
+    lines = [
+        "import sys",
+        f"sys.path.insert(0, {vendor_root!r})",
+        "try:",
+        "    import pytest",
+        "except ModuleNotFoundError:",
+        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
+        "    sys.exit(2)",
+        "sys.exit(0)",
+    ]
+    return "\n".join(lines)
 
 
 def _build_apprun_pytest_payload(*, pytest_args: list[str]) -> str:
-    statements = ["import sys;"]
-    statements.append("import pytest;")
-    statements.append(f"sys.exit(pytest.main({pytest_args!r}))")
-    return "".join(statements)
+    vendor_root = str(resolve_vendor_root())
+    lines = [
+        "import sys",
+        f"sys.path.insert(0, {vendor_root!r})",
+        "try:",
+        "    import pytest",
+        "except ModuleNotFoundError:",
+        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
+        "    sys.exit(2)",
+        f"sys.exit(pytest.main({pytest_args!r}))",
+    ]
+    return "\n".join(lines)
 
 
 def _normalized_pytest_args(pytest_args: list[str]) -> list[str]:

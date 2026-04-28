@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 from typing import Any, Callable, Mapping, Optional, Protocol, TypeVar, cast
 
@@ -55,7 +56,12 @@ from app.intelligence.outline_service import (
 )
 from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
-from app.intelligence.completion_models import CompletionRequestResult
+from app.intelligence.completion_models import (
+    CompletionItem,
+    CompletionRequestResult,
+    CompletionResolveRequest,
+    CompletionResolveResult,
+)
 from app.intelligence.completion_service import CompletionRequest
 from app.editors.editor_manager import EditorManager
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -222,6 +228,7 @@ from app.shell.run_config_controller import RunConfigController
 from app.shell.run_debug_presenter import RunDebugPresenter
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import SaveWorkflow
+from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_intelligence_controller import EditorIntelligenceController
 from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.editor_tab_bar import MiddleClickTabBar
@@ -420,6 +427,7 @@ class MainWindow(QMainWindow):
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
             self._editor_auto_save,
+            self._editor_exit_behavior,
             self._editor_hover_tooltip_enabled,
             self._editor_auto_reindent_flat_python_paste,
         ) = self._load_editor_preferences()
@@ -1385,7 +1393,9 @@ class MainWindow(QMainWindow):
             project_settings_payload,
         )
 
-    def _load_editor_preferences(self) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, bool, bool]:
+    def _load_editor_preferences(
+        self,
+    ) -> tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, str, bool, bool]:
         return self._load_main_window_settings().editor_preferences
 
     def _load_completion_preferences(self) -> tuple[bool, bool, int]:
@@ -1704,6 +1714,7 @@ class MainWindow(QMainWindow):
             self._editor_insert_final_newline_on_save,
             self._editor_enable_preview,
             self._editor_auto_save,
+            self._editor_exit_behavior,
             self._editor_hover_tooltip_enabled,
             self._editor_auto_reindent_flat_python_paste,
         ) = self._load_editor_preferences()
@@ -2326,11 +2337,14 @@ class MainWindow(QMainWindow):
         request_generation: int,
     ) -> None:
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        requested_revision = self._editor_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, signature = payload
             active_widget = self._editor_widgets_by_path.get(file_path)
             if active_widget is not editor_widget:
+                return
+            if self._editor_buffer_revision(file_path) != requested_revision:
                 return
             editor_widget.show_calltip_for_request(
                 request_generation=generation,
@@ -2360,11 +2374,14 @@ class MainWindow(QMainWindow):
         request_generation: int,
     ) -> None:
         project_root = None if self._loaded_project is None else self._loaded_project.project_root
+        requested_revision = self._editor_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, hover_info = payload
             active_widget = self._editor_widgets_by_path.get(file_path)
             if active_widget is not editor_widget:
+                return
+            if self._editor_buffer_revision(file_path) != requested_revision:
                 return
             editor_widget.show_hover_text_for_request(
                 request_generation=generation,
@@ -3471,6 +3488,43 @@ class MainWindow(QMainWindow):
             return
         self._python_console_widget.append_output(text, stream)
 
+    def _request_python_console_completion_async(
+        self,
+        line_buffer: str,
+        cursor_offset: int,
+        request_generation: int,
+        trigger_kind: str,
+        trigger_character: str,
+    ) -> None:
+        """Request live Python Console completions off the UI thread."""
+
+        def work() -> None:
+            envelope = self._repl_manager.complete(
+                line_buffer=line_buffer,
+                cursor_offset=cursor_offset,
+                trigger_kind=trigger_kind,
+                trigger_character=trigger_character,
+                max_results=100,
+            )
+
+            def apply() -> None:
+                if self._python_console_widget is None:
+                    return
+                self._python_console_widget.show_completion_items_for_request(
+                    request_generation=request_generation,
+                    items=envelope.items,
+                )
+                if envelope.degradation_reason:
+                    self.statusBar().showMessage(
+                        f"Python Console completion unavailable: {envelope.degradation_reason}",
+                        4000,
+                    )
+
+            self._dispatch_to_main_thread(apply)
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+
     def _append_debug_output_line(self, text: str) -> None:
         if self._debug_panel is None:
             return
@@ -3891,21 +3945,23 @@ class MainWindow(QMainWindow):
         self._open_file_at_line(file_path, line_number, preview=True)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
-        if self._save_workflow.confirm_proceed_with_unsaved_changes("exiting"):
-            self._is_shutting_down = True
-            self._begin_shutdown_teardown()
-            self._stop_active_run_before_close()
-            if self._editor_auto_save:
-                self._save_workflow.flush_auto_save_to_file()
-            self._local_history_workflow.flush_pending_autosaves()
-            if self._status_controller is not None:
-                self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
-            self._persist_layout_to_settings()
-            self._local_history_workflow.persist_session_state()
-            self._persist_python_console_history()
-            event.accept()
+        decision = self._save_workflow.request_unsaved_changes_decision(
+            "exiting",
+            scope=DocumentScope.APPLICATION,
+            allow_keep_for_next_launch=True,
+        )
+        if not self._save_workflow.apply_unsaved_changes_decision(decision):
+            event.ignore()
             return
-        event.ignore()
+        self._is_shutting_down = True
+        self._begin_shutdown_teardown()
+        self._stop_active_run_before_close()
+        if self._status_controller is not None:
+            self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+        self._persist_layout_to_settings()
+        self._local_history_workflow.persist_session_state()
+        self._persist_python_console_history()
+        event.accept()
 
     def _begin_shutdown_teardown(self) -> None:
         self._local_history_workflow.stop_autosave_timer()
@@ -4124,9 +4180,13 @@ class MainWindow(QMainWindow):
         file_name, ok = QInputDialog.getText(self, "New File", "File name:", QLineEdit.Normal, "")
         if not ok or not file_name.strip():
             return
-        error_message = self._project_tree_action_coordinator.handle_new_file(destination_directory, file_name.strip())
-        if error_message is not None:
-            QMessageBox.warning(self, "New File", error_message)
+        outcome = self._project_tree_action_coordinator.handle_new_file(destination_directory, file_name.strip())
+        if outcome.error_message is not None:
+            QMessageBox.warning(self, "New File", outcome.error_message)
+            return
+        if outcome.created_path is not None:
+            self._editor_tab_factory.open_file_in_editor(outcome.created_path, preview=False)
+            self._show_editor_screen()
 
     def _handle_tree_new_folder(self, destination_directory: str) -> None:
         folder_name, ok = QInputDialog.getText(self, "New Folder", "Folder name:", QLineEdit.Normal, "")
@@ -4538,8 +4598,11 @@ class MainWindow(QMainWindow):
         cursor_position: int,
         manual_trigger: bool,
         request_generation: int,
+        trigger_kind: str,
+        trigger_character: str,
     ) -> None:
         started_at = time.perf_counter()
+        requested_revision = self._editor_buffer_revision(file_path)
         request = CompletionRequest(
             source_text=source_text,
             cursor_position=cursor_position,
@@ -4548,7 +4611,27 @@ class MainWindow(QMainWindow):
             trigger_is_manual=manual_trigger,
             min_prefix_chars=self._completion_min_chars,
             max_results=100,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+            buffer_revision=requested_revision,
         )
+        fast_envelope = self._intelligence_controller.complete_fast(request=request)
+        if fast_envelope.items:
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if active_widget is editor_widget and self._editor_buffer_revision(file_path) == requested_revision:
+                if self._intelligence_runtime_settings.metrics_logging_enabled:
+                    self._logger.info(
+                        "Completion telemetry: file=%s phase=%s count=%s timings=%s",
+                        file_path,
+                        fast_envelope.source_phase,
+                        len(fast_envelope.items),
+                        fast_envelope.latency_breakdown,
+                    )
+                editor_widget.show_completion_items_for_request(
+                    request_generation=request_generation,
+                    prefix=prefix,
+                    items=fast_envelope.items,
+                )
 
         def on_success(result: CompletionRequestResult) -> None:
             generation = result.request_generation
@@ -4556,6 +4639,8 @@ class MainWindow(QMainWindow):
             completions = result.envelope.items
             active_widget = self._editor_widgets_by_path.get(file_path)
             if active_widget is not editor_widget:
+                return
+            if self._editor_buffer_revision(file_path) != result.buffer_revision:
                 return
             degradation_reason = result.envelope.degradation_reason
             if degradation_reason and degradation_reason not in self._reported_completion_degradation_reasons:
@@ -4568,17 +4653,21 @@ class MainWindow(QMainWindow):
                 elapsed_ms = (time.perf_counter() - started_at) * 1000.0
                 if elapsed_ms > 150.0:
                     self._logger.warning(
-                        "Completion latency warning: file=%s elapsed_ms=%.2f count=%s",
+                        "Completion latency warning: file=%s phase=%s elapsed_ms=%.2f count=%s timings=%s",
                         file_path,
+                        result.envelope.source_phase,
                         elapsed_ms,
                         len(completions),
+                        result.envelope.latency_breakdown,
                     )
                 else:
                     self._logger.info(
-                        "Completion telemetry: file=%s elapsed_ms=%.2f count=%s",
+                        "Completion telemetry: file=%s phase=%s elapsed_ms=%.2f count=%s timings=%s",
                         file_path,
+                        result.envelope.source_phase,
                         elapsed_ms,
                         len(completions),
+                        result.envelope.latency_breakdown,
                     )
             editor_widget.show_completion_items_for_request(
                 request_generation=generation,
@@ -4593,6 +4682,48 @@ class MainWindow(QMainWindow):
             request=request,
             prefix=prefix,
             request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def _request_completion_item_resolve_async(
+        self,
+        *,
+        file_path: str,
+        editor_widget: CodeEditorWidget,
+        item: CompletionItem,
+        source_text: str,
+        cursor_position: int,
+        request_generation: int,
+    ) -> None:
+        requested_revision = self._editor_buffer_revision(file_path)
+        request = CompletionResolveRequest(
+            item=item,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=file_path,
+            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
+            context_fingerprint=item.context_fingerprint,
+            buffer_revision=requested_revision,
+            request_generation=request_generation,
+        )
+
+        def on_success(result: CompletionResolveResult) -> None:
+            active_widget = self._editor_widgets_by_path.get(file_path)
+            if active_widget is not editor_widget:
+                return
+            if self._editor_buffer_revision(file_path) != result.buffer_revision:
+                return
+            editor_widget.show_resolved_completion_item_for_request(
+                request_generation=result.request_generation,
+                item=result.item,
+            )
+
+        def on_error(exc: Exception) -> None:
+            self._logger.warning("Completion item resolve failed for %s: %s", file_path, exc)
+
+        self._intelligence_controller.request_completion_resolve(
+            request=request,
             on_success=on_success,
             on_error=on_error,
         )
@@ -4679,18 +4810,16 @@ class MainWindow(QMainWindow):
 
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is not None and tab_state.is_dirty:
-            response = QMessageBox.warning(
-                self,
-                "Unsaved changes",
-                f"'{tab_state.display_name}' has unsaved changes.\nSave before closing?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                QMessageBox.Save,
+            decision = self._save_workflow.request_unsaved_changes_decision(
+                "closing this tab",
+                scope=DocumentScope.TAB,
+                allow_keep_for_next_launch=False,
+                dirty_buffers=(tab_state,),
             )
-            if response == QMessageBox.Cancel:
+            if decision.intent is DocumentCloseIntent.CANCEL:
                 return
-            if response == QMessageBox.Save:
-                if not self._save_workflow.save_tab(file_path):
-                    return
+            if not self._save_workflow.apply_unsaved_changes_decision(decision):
+                return
 
         self._editor_tabs_widget.removeTab(tab_index)
         widget = self._workspace_controller.pop_editor(file_path)
@@ -4919,14 +5048,13 @@ class MainWindow(QMainWindow):
             tab_index = self._tab_index_for_path(file_path)
             if self._editor_tabs_widget is not None and tab_index >= 0:
                 self._refresh_tab_presentation(file_path)
-            self._local_history_workflow.discard_pending_autosave(file_path)
             self._local_history_workflow.record_checkpoint(
                 file_path,
                 disk_content,
                 source="external_reload",
                 label="Reloaded from disk after external change",
             )
-            self._local_history_workflow.delete_draft(file_path)
+            self._local_history_workflow.discard_drafts_for_paths([file_path])
             self._refresh_save_action_states()
             self._update_editor_status_for_path(file_path)
             return

@@ -56,6 +56,8 @@ VENDOR_ALLOWLIST = (
     "tree_sitter_javascript", "tree_sitter_toml", "tree_sitter_sql",
     # Intelligence (code completion, refactoring)
     "jedi", "parso", "rope", "pytoolconfig",
+    # Test runner (Test Explorer support on ChoreBoy)
+    "pytest", "_pytest", "pluggy", "iniconfig", "exceptiongroup",
 )
 CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024

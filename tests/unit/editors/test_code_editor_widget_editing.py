@@ -144,3 +144,84 @@ def test_insert_from_mime_data_repairs_only_high_confidence_when_enabled(editor:
     editor.insertFromMimeData(mime)
 
     assert editor.toPlainText() == "def first():\n    return 1"
+
+
+def test_tab_preserves_selection_for_repeated_indents(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("alpha = 1\nbeta = 2\n")
+    cursor = editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(len("alpha = 1\nbeta = 2"), QTextCursor.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    editor.indent_selection()
+    editor.indent_selection()
+
+    assert editor.toPlainText() == "        alpha = 1\n        beta = 2\n"
+    selected_after = editor.textCursor().selectedText().replace("\u2029", "\n")
+    assert selected_after == "        alpha = 1\n        beta = 2"
+
+
+def test_shift_tab_preserves_selection_for_repeated_outdents(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("        alpha = 1\n        beta = 2\n")
+    cursor = editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(len("        alpha = 1\n        beta = 2"), QTextCursor.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    editor.outdent_selection()
+    editor.outdent_selection()
+
+    assert editor.toPlainText() == "alpha = 1\nbeta = 2\n"
+    selected_after = editor.textCursor().selectedText().replace("\u2029", "\n")
+    assert selected_after == "alpha = 1\nbeta = 2"
+
+
+def test_insert_from_mime_data_selects_multiline_paste(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("alpha = 1\nbeta = 2\n")
+
+    editor.insertFromMimeData(mime)
+
+    selected_after = editor.textCursor().selectedText().replace("\u2029", "\n")
+    assert selected_after == "alpha = 1\nbeta = 2\n"
+
+
+def test_insert_from_mime_data_does_not_select_single_line_paste(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("foo")
+
+    editor.insertFromMimeData(mime)
+
+    assert not editor.textCursor().hasSelection()
+    assert editor.toPlainText() == "foo"
+
+
+def test_insert_from_mime_data_selects_repaired_flat_python_paste(editor: CodeEditorWidget) -> None:
+    editor.set_editor_preferences(
+        tab_width=4,
+        font_point_size=10,
+        indent_style="spaces",
+        indent_size=4,
+        auto_reindent_flat_python_paste=True,
+    )
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+
+    editor.insertFromMimeData(mime)
+
+    selected_after = editor.textCursor().selectedText().replace("\u2029", "\n")
+    assert selected_after == "def first():\n    return 1"
+
+
+def test_tab_indent_with_partial_line_selection_expands_to_full_lines(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("alpha = 1\nbeta = 2\n")
+    cursor = editor.textCursor()
+    cursor.setPosition(2)
+    cursor.setPosition(len("alpha = 1\nbe"), QTextCursor.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    editor.indent_selection()
+
+    assert editor.toPlainText() == "    alpha = 1\n    beta = 2\n"
+    selected_after = editor.textCursor().selectedText().replace("\u2029", "\n")
+    assert selected_after == "    alpha = 1\n    beta = 2"

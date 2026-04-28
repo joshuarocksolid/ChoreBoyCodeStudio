@@ -1,7 +1,7 @@
 """Editing transform behavior for CodeEditorWidget."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from PySide2.QtGui import QTextCursor
 from PySide2.QtWidgets import QApplication
@@ -34,19 +34,42 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
     """Editing transforms split out from the main editor widget."""
 
     def indent_selection(self) -> None:
-        selected = self.textCursor().selectedText()
-        if not selected:
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
             self.insertPlainText(self._indent_text())
             return
-        updated = indent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
-        self._replace_selected_text(updated)
+        self._transform_selected_lines(
+            cursor,
+            lambda text: indent_lines(text, indent_text=self._indent_text()),
+        )
 
     def outdent_selection(self) -> None:
-        selected = self.textCursor().selectedText()
-        if not selected:
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
             return
-        updated = outdent_lines(selected.replace("\u2029", "\n"), indent_text=self._indent_text())
-        self._replace_selected_text(updated)
+        self._transform_selected_lines(
+            cursor,
+            lambda text: outdent_lines(text, indent_text=self._indent_text()),
+        )
+
+    def _transform_selected_lines(
+        self,
+        cursor: QTextCursor,
+        transform: Callable[[str], str],
+    ) -> None:
+        """Apply transform to full lines covering the selection and re-select the result."""
+        expanded = self._expand_selection_to_full_lines(cursor)
+        original_text = expanded.selectedText().replace("\u2029", "\n")
+        updated_text = transform(original_text)
+        start = expanded.selectionStart()
+        expanded.beginEditBlock()
+        expanded.insertText(updated_text)
+        expanded.endEditBlock()
+        new_end = start + len(updated_text)
+        restored = QTextCursor(self.document())
+        restored.setPosition(start)
+        restored.setPosition(new_end, QTextCursor.KeepAnchor)
+        self.setTextCursor(restored)
 
     def toggle_comment_selection(self) -> None:
         cursor = self.textCursor()
@@ -130,8 +153,29 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
         cursor.insertText(insert_text)
         cursor.endEditBlock()
         end = cursor.position()
-        self.setTextCursor(cursor)
         setattr(self, "_last_paste_range", (start, end))
+        self._select_paste_range_if_multiline(start, end, cursor)
+
+    def _select_paste_range_if_multiline(
+        self,
+        start: int,
+        end: int,
+        fallback_cursor: QTextCursor,
+    ) -> None:
+        """Re-select a just-inserted paste range when it spans multiple lines."""
+        if end <= start:
+            self.setTextCursor(fallback_cursor)
+            return
+        document = self.document()
+        start_block_number = document.findBlock(start).blockNumber()
+        end_block_number = document.findBlock(max(start, end - 1)).blockNumber()
+        if start_block_number == end_block_number:
+            self.setTextCursor(fallback_cursor)
+            return
+        selection_cursor = QTextCursor(document)
+        selection_cursor.setPosition(start)
+        selection_cursor.setPosition(end, QTextCursor.KeepAnchor)
+        self.setTextCursor(selection_cursor)
 
     def _prefix_paste_subsequent_lines(self, text: str) -> str:
         if "\n" not in text:

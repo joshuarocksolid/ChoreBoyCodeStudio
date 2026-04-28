@@ -8,7 +8,15 @@ from typing import Optional
 
 from app.bootstrap.paths import PathInput, ensure_directory, global_history_dir, global_history_index_path
 
-LOCAL_HISTORY_SCHEMA_VERSION = 1
+LOCAL_HISTORY_SCHEMA_VERSION = 2
+
+_DRAFT_COLUMN_DEFINITIONS = {
+    "recovery_policy": "TEXT NOT NULL DEFAULT 'prompt'",
+    "source": "TEXT NOT NULL DEFAULT 'live_dirty_backup'",
+    "base_blob_sha256": "TEXT",
+    "last_known_mtime": "REAL",
+    "session_id": "TEXT",
+}
 
 
 class LocalHistorySchema:
@@ -94,10 +102,16 @@ class LocalHistorySchema:
                     relative_path TEXT NOT NULL,
                     blob_sha256 TEXT NOT NULL,
                     content_size_bytes INTEGER NOT NULL,
-                    saved_at TEXT NOT NULL
+                    saved_at TEXT NOT NULL,
+                    recovery_policy TEXT NOT NULL DEFAULT 'prompt',
+                    source TEXT NOT NULL DEFAULT 'live_dirty_backup',
+                    base_blob_sha256 TEXT,
+                    last_known_mtime REAL,
+                    session_id TEXT
                 )
                 """
             )
+            self._ensure_draft_columns(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transactions(
@@ -155,3 +169,12 @@ class LocalHistorySchema:
                 ("schema_version", str(LOCAL_HISTORY_SCHEMA_VERSION)),
             )
             connection.commit()
+
+    def _ensure_draft_columns(self, connection: sqlite3.Connection) -> None:
+        existing_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(drafts)").fetchall()
+        }
+        for column_name, definition in _DRAFT_COLUMN_DEFINITIONS.items():
+            if column_name in existing_columns:
+                continue
+            connection.execute(f"ALTER TABLE drafts ADD COLUMN {column_name} {definition}")

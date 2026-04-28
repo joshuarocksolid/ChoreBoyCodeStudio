@@ -242,9 +242,64 @@ class JediEngine:
                     source="semantic",
                     confidence="exact",
                     semantic_kind=symbol_kind,
+                    resolve_provider="jedi",
+                    resolvable_fields=("documentation", "signature", "return_type", "detail"),
                 )
             )
         return items
+
+    def resolve_completion_item(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        item: CompletionItem,
+        max_results: int = 150,
+    ) -> CompletionItem:
+        """Enrich one selected completion item with expensive Jedi metadata."""
+
+        if item.source != "semantic":
+            return item
+        with self._lock:
+            script = self._script(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+            )
+            line_number, column_number = offset_to_line_column(source_text, cursor_position)
+            completions = list(script.complete(line_number, column_number))
+
+        for completion in completions[: max(1, int(max_results))]:
+            completion_name = str(getattr(completion, "name", ""))
+            if completion_name != item.label:
+                continue
+            module_path = getattr(completion, "module_path", None)
+            return CompletionItem(
+                label=item.label,
+                insert_text=item.insert_text,
+                kind=item.kind,
+                detail=_completion_detail(completion),
+                documentation=_completion_documentation(completion),
+                signature=_completion_signature(completion),
+                return_type=item.return_type,
+                source_file_path=None if module_path is None else str(Path(module_path).resolve()),
+                engine=item.engine,
+                source=item.source,
+                confidence=item.confidence,
+                semantic_kind=item.semantic_kind,
+                replacement_start=item.replacement_start,
+                replacement_end=item.replacement_end,
+                trigger_kind=item.trigger_kind,
+                trigger_character=item.trigger_character,
+                side_effect_risk=item.side_effect_risk,
+                item_id=item.item_id,
+                context_fingerprint=item.context_fingerprint,
+                resolve_provider=item.resolve_provider,
+                resolvable_fields=item.resolvable_fields,
+            )
+        return item
 
     def _script(
         self,
@@ -379,6 +434,16 @@ def _completion_kind_from_name(completion: Any) -> CompletionKind:
         return CompletionKind.KEYWORD
     if completion_type == "module":
         return CompletionKind.MODULE
+    if completion_type == "function":
+        return CompletionKind.FUNCTION
+    if completion_type == "class":
+        return CompletionKind.CLASS
+    if completion_type == "property":
+        return CompletionKind.PROPERTY
+    if completion_type == "instance":
+        return CompletionKind.ATTRIBUTE
+    if completion_type == "param":
+        return CompletionKind.ATTRIBUTE
     if str(getattr(completion, "module_name", "")) == "builtins":
         return CompletionKind.BUILTIN
     return CompletionKind.SYMBOL
@@ -390,6 +455,29 @@ def _completion_detail(completion: Any) -> str:
     if module_name:
         return f"{completion_type} • semantic • {module_name}"
     return f"{completion_type} • semantic"
+
+
+def _completion_documentation(completion: Any) -> str:
+    docstring = getattr(completion, "docstring", None)
+    if not callable(docstring):
+        return ""
+    try:
+        return str(docstring(raw=False) or "")
+    except TypeError:
+        try:
+            return str(docstring() or "")
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+
+
+def _completion_signature(completion: Any) -> str:
+    name_with_symbols = getattr(completion, "name_with_symbols", "")
+    if name_with_symbols:
+        return str(name_with_symbols)
+    description = getattr(completion, "description", "")
+    return str(description or "")
 
 
 def _name_file_path(name: Any) -> str:

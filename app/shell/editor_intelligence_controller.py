@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionRequestResult
+from app.intelligence.completion_models import (
+    CompletionEnvelope,
+    CompletionItem,
+    CompletionRequestResult,
+    CompletionResolveRequest,
+    CompletionResolveResult,
+)
 from app.intelligence.completion_service import CompletionRequest
 from app.intelligence.semantic_models import (
     SemanticDefinitionResult,
@@ -34,6 +40,9 @@ class EditorIntelligenceController:
     def complete_blocking(self, *, request: CompletionRequest) -> CompletionEnvelope:
         return self._semantic_session.complete_blocking(request=request)
 
+    def complete_fast(self, *, request: CompletionRequest) -> CompletionEnvelope:
+        return self._semantic_session.complete_fast(request=request)
+
     def request_completion(
         self,
         *,
@@ -47,6 +56,19 @@ class EditorIntelligenceController:
             request=request,
             prefix=prefix,
             request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def request_completion_resolve(
+        self,
+        *,
+        request: CompletionResolveRequest,
+        on_success: Callable[[CompletionResolveResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_completion_resolve(
+            request=request,
             on_success=on_success,
             on_error=on_error,
         )

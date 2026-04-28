@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.project.file_operation_models import FileOperationResult
-from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
+from app.shell.project_tree_action_coordinator import NewFileResult, ProjectTreeActionCoordinator
 
 pytestmark = pytest.mark.unit
 
@@ -141,10 +141,28 @@ def test_handle_new_file_rejects_path_separators() -> None:
     tree_controller = _FakeProjectTreeController()
     coordinator, reloaded = _coordinator(tree_controller)
 
-    error = coordinator.handle_new_file("/tmp/project", "../escape.py")
+    outcome = coordinator.handle_new_file("/tmp/project", "../escape.py")
 
-    assert error == "File name cannot include path separators."
+    assert outcome == NewFileResult(error_message="File name cannot include path separators.", created_path=None)
     assert reloaded == []
+
+
+def test_handle_new_file_success_returns_path_and_reloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    tree_controller = _FakeProjectTreeController()
+    coordinator, reloaded = _coordinator(tree_controller)
+    monkeypatch.setattr(
+        "app.shell.project_tree_action_coordinator.create_file",
+        lambda _path: FileOperationResult(
+            success=True,
+            message="ok",
+            destination_path="/resolved/new.py",
+        ),
+    )
+
+    outcome = coordinator.handle_new_file("/tmp/project", "new.py")
+
+    assert outcome == NewFileResult(error_message=None, created_path="/resolved/new.py")
+    assert reloaded == [True]
 
 
 def test_handle_rename_rejects_path_separators() -> None:

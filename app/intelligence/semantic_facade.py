@@ -152,6 +152,25 @@ class SemanticFacade:
             max_results=max_results,
         )
 
+    def resolve_completion_item(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        item: CompletionItem,
+    ) -> CompletionItem:
+        """Resolve lazy metadata for one semantic completion item."""
+
+        return self._jedi_engine.resolve_completion_item(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
+            item=item,
+        )
+
     def plan_rename(
         self,
         *,

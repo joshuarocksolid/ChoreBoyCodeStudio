@@ -98,6 +98,8 @@ class EditorTabFactory:
             cursor_position: int,
             manual_trigger: bool,
             request_generation: int,
+            trigger_kind: str,
+            trigger_character: str,
         ) -> None:
             window._request_editor_completions_async(
                 file_path=tab_file_path,
@@ -107,6 +109,8 @@ class EditorTabFactory:
                 cursor_position=cursor_position,
                 manual_trigger=manual_trigger,
                 request_generation=request_generation,
+                trigger_kind=trigger_kind,
+                trigger_character=trigger_character,
             )
 
         def hover_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
@@ -127,6 +131,21 @@ class EditorTabFactory:
                 request_generation=request_generation,
             )
 
+        def completion_resolve_requester(
+            item: CompletionItem,
+            source_text: str,
+            cursor_position: int,
+            request_generation: int,
+        ) -> None:
+            window._request_completion_item_resolve_async(
+                file_path=tab_file_path,
+                editor_widget=editor_widget,
+                item=item,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                request_generation=request_generation,
+            )
+
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
             window._debug_control_workflow.handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
 
@@ -141,6 +160,7 @@ class EditorTabFactory:
 
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_completion_requester(completion_requester)
+        editor_widget.set_completion_resolve_requester(completion_resolve_requester)
         editor_widget.set_completion_accepted_callback(on_completion_accepted)
         editor_widget.set_hover_requester(hover_requester)
         editor_widget.set_signature_help_requester(signature_requester)

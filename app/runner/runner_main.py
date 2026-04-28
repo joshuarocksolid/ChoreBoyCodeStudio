@@ -12,6 +12,7 @@ from app.run.run_manifest import RunManifest, load_run_manifest
 from app.runner.debug_runner import run_debug_session
 from app.runner.execution_context import RunnerExecutionContext, apply_execution_context
 from app.runner.output_bridge import redirect_output_to_log
+from app.runner.repl_control import ReplControlServer
 from app.runner.traceback_formatter import format_current_exception
 
 
@@ -77,7 +78,7 @@ def execute_manifest(manifest: RunManifest) -> int:
                 if manifest.mode == constants.RUN_MODE_PYTHON_SCRIPT:
                     _run_entry_script(execution_context.entry_script_path)
                 elif manifest.mode == constants.RUN_MODE_PYTHON_REPL:
-                    _run_interactive_repl()
+                    _run_interactive_repl(manifest)
                 elif manifest.mode == constants.RUN_MODE_PYTHON_DEBUG:
                     return run_debug_session(manifest, _run_entry_script, execution_context.entry_script_path)
                 else:
@@ -102,17 +103,26 @@ def _run_entry_script(entry_script_path: str) -> None:
     runpy.run_path(entry_script_path, run_name="__main__")
 
 
-def _run_interactive_repl() -> None:
-    console = _QuietConsole(locals={
+def _run_interactive_repl(manifest: RunManifest) -> None:
+    namespace = {
         "__name__": "__console__",
         "__package__": None,
         "clear": _make_clear_helper(),
-    })
+    }
+    console = _QuietConsole(locals=namespace)
+    control_server = None
+    if manifest.repl_control is not None:
+        control_server = ReplControlServer(config=manifest.repl_control, namespace=namespace)
+        control_server.start()
     banner = (
         "ChoreBoy Python Console (runner process). "
         "Type exit() or Ctrl-D to close."
     )
-    console.interact(banner=banner, exitmsg="")
+    try:
+        console.interact(banner=banner, exitmsg="")
+    finally:
+        if control_server is not None:
+            control_server.stop()
 
 
 def run_from_manifest_path(manifest_path: str) -> int:
