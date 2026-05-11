@@ -52,6 +52,10 @@ def test_installer_launcher_omits_icon_when_no_value_given() -> None:
     assert "Icon=" not in content
     assert "Install Test App" in content
     assert "/opt/freecad/AppRun" in content
+    assert "/bin/sh" in content
+    assert "dummy %k" in content
+    assert "CBCS_PACKAGE_ROOT" in content
+    assert "/home/default/test_app_installer_v1.0.0" not in content
 
 
 def test_installer_launcher_includes_icon_when_value_given() -> None:
@@ -82,3 +86,16 @@ def test_installed_launcher_omits_icon_when_manifest_has_none() -> None:
     content = build_installed_launcher(manifest, install_dir="/home/default/test_app_v1.0.0")
 
     assert "Icon=" not in content
+
+
+def test_installed_project_launcher_uses_app_files_as_runtime_root() -> None:
+    manifest = _make_manifest(
+        entry_relative_path="app_files/app/main.py",
+        icon_relative_path="",
+    )
+
+    content = build_installed_launcher(manifest, install_dir="/home/default/classic_pos")
+
+    assert "entry_rel='app_files/app/main.py'" in content
+    assert "runtime_root=os.path.abspath(os.path.join(root, 'app_files'))" in content
+    assert "os.chdir(runtime_root)" in content

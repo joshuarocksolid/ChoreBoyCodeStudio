@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from app.packaging.layout import validate_packaged_entry_relative_path
+from app.packaging.launcher_bootstrap import (
+    build_desktop_path_shell_wrapper,
+    build_fixed_root_bootstrap,
+    validate_packaged_entry_relative_path,
+)
 from app.packaging.models import DistributionManifest
 
 
@@ -16,13 +19,20 @@ def build_installer_package_launcher(
     icon_value: str = "",
 ) -> str:
     """Return the staging-package launcher that runs the standalone installer."""
-    package_root = os.path.join(manifest.staging_parent, package_root_name)
-    installer_rel_path = os.path.join(manifest.installer_dirname, "install.py").replace("\\", "/")
-    bootstrap = _build_absolute_root_bootstrap(package_root, installer_rel_path)
+    installer_rel_path = f"{manifest.installer_dirname}/install.py"
+    shell_wrapper = build_desktop_path_shell_wrapper(
+        app_run_path=manifest.app_run_path,
+        entry_relative_path=installer_rel_path,
+        missing_location_message=(
+            "Could not determine this installer package location. Keep the installer desktop file, "
+            "installer folder, and payload folder together, then launch the installer desktop file again."
+        ),
+        allow_cwd_fallback=False,
+    )
     return _build_desktop_entry(
         name=f"Install {manifest.display_name}",
         comment=f"Install {manifest.display_name} on this ChoreBoy system",
-        exec_value=f'{manifest.app_run_path} -c "{bootstrap}"',
+        exec_value=f'/bin/sh -c "{shell_wrapper}" dummy %k',
         icon_value=icon_value,
     )
 
@@ -30,7 +40,7 @@ def build_installer_package_launcher(
 def build_installed_launcher(manifest: DistributionManifest, *, install_dir: str | Path) -> str:
     """Return the launcher written into an installed package directory."""
     resolved_install_dir = str(Path(install_dir).expanduser().resolve())
-    bootstrap = _build_absolute_root_bootstrap(resolved_install_dir, manifest.entry_relative_path)
+    bootstrap = build_fixed_root_bootstrap(resolved_install_dir, manifest.entry_relative_path)
     icon_value = ""
     if manifest.icon_relative_path:
         icon_value = str((Path(resolved_install_dir) / manifest.icon_relative_path).resolve())
@@ -73,6 +83,7 @@ def build_installable_readme_text(
         "Package contents:\n"
         f"- `{installer_launcher_filename}` launches the installer through FreeCAD AppRun.\n"
         f"- `{manifest.installer_dirname}/install.py` is the standalone installer runtime.\n"
+        f"- `{manifest.installer_dirname}/launcher_bootstrap.py` is the shared launcher bootstrap helper.\n"
         f"- `{manifest.payload_dirname}/` contains the files that will be copied into the final install folder.\n"
         f"- `{manifest.readme_filename}` and `{manifest.install_notes_filename}` explain install and upgrade behavior.\n"
         f"- `package_manifest.json` and `package_report.json` contain machine-readable metadata and audit details.\n"
@@ -92,7 +103,7 @@ def build_installable_install_text(
         f"Install {manifest.display_name}\n"
         "\n"
         "1. Copy this entire folder onto the ChoreBoy machine.\n"
-        f"2. Place the folder under `{manifest.staging_parent}` before launching the installer.\n"
+        f"2. Recommended: place the folder under `{manifest.staging_parent}` before launching the installer.\n"
         f"3. Open `{installer_launcher_filename}`.\n"
         "4. Review the suggested install location and any older-version cleanup options.\n"
         "5. Keep the package files together until installation finishes successfully.\n"
@@ -103,6 +114,10 @@ def build_installable_install_text(
         "- performs staged copy + launcher write before swapping Desktop shortcuts\n"
         "- can publish a Desktop shortcut and optional application-menu launcher\n"
         "- can keep older versions side-by-side or remove them after a successful upgrade\n"
+        "\n"
+        "The installer launcher resolves this package folder from its own `.desktop` path.\n"
+        "If the desktop environment cannot provide that path, keep the installer `.desktop`,\n"
+        "`installer/`, and `payload/` together and launch the installer from the copied folder.\n"
         "\n"
         "After install, the launcher inside the installed folder becomes the source of truth.\n"
         "Any Desktop shortcut points at that installed folder, not back at this staging package.\n"
@@ -147,55 +162,17 @@ def build_portable_install_text(manifest: DistributionManifest) -> str:
 
 
 def _build_absolute_root_bootstrap(root_path: str, entry_relative_path: str) -> str:
-    entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
-    return (
-        "import os,runpy,sys;"
-        f"root={root_path!r};"
-        "root=os.path.abspath(root);"
-        f"entry=os.path.abspath(os.path.join(root, {entry_relative_path!r}));"
-        "sys.exit('Invalid package root') if not os.path.isdir(root) else None;"
-        "sys.exit('Invalid package entry') if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;"
-        "sys.path.insert(0, root) if root not in sys.path else None;"
-        "os.chdir(root);"
-        "runpy.run_path(entry, run_name='__main__')"
-    )
-
-
-def _build_portable_root_bootstrap(entry_relative_path: str) -> str:
-    entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
-    return (
-        "import os,runpy,sys;"
-        "desktop_path = sys.argv[1] if len(sys.argv) > 1 else '';"
-        "root = os.path.dirname(os.path.abspath(desktop_path)) if desktop_path else os.getcwd();"
-        "root=os.path.abspath(root);"
-        f"entry=os.path.abspath(os.path.join(root, {entry_relative_path!r}));"
-        "sys.exit('Invalid package root') if not os.path.isdir(root) else None;"
-        "sys.exit('Invalid package entry') if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;"
-        "sys.path.insert(0, root) if root not in sys.path else None;"
-        "os.chdir(root);"
-        "runpy.run_path(entry, run_name='__main__')"
-    )
+    return build_fixed_root_bootstrap(root_path, entry_relative_path)
 
 
 def _build_portable_shell_wrapper(*, app_run_path: str, entry_relative_path: str) -> str:
     entry_relative_path = validate_packaged_entry_relative_path(entry_relative_path)
-    python_code = (
-        "import os,runpy,sys;"
-        'root=os.environ.get("CBCS_PACKAGE_ROOT", os.getcwd());'
-        "root=os.path.abspath(root);"
-        f'entry=os.path.abspath(os.path.join(root, "{entry_relative_path}"));'
-        'sys.exit("Invalid package root") if not os.path.isdir(root) else None;'
-        'sys.exit("Invalid package entry") if os.path.commonpath([root, entry]) != root or not os.path.isfile(entry) else None;'
-        "sys.path.insert(0, root) if root not in sys.path else None;"
-        "os.chdir(root);"
-        'runpy.run_path(entry, run_name="__main__")'
+    return build_desktop_path_shell_wrapper(
+        app_run_path=app_run_path,
+        entry_relative_path=entry_relative_path,
+        missing_location_message="Invalid package root",
+        allow_cwd_fallback=True,
     )
-    shell_script = (
-        'desktop_path="$1";'
-        'root="$(dirname "$desktop_path")";'
-        f'CBCS_PACKAGE_ROOT="$root" exec {app_run_path} -c \'{python_code}\''
-    )
-    return shell_script.replace('"', '\\"')
 
 
 def _build_desktop_entry(

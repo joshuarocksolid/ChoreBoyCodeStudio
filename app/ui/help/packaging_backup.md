@@ -11,6 +11,7 @@ An installable export contains:
 
 - an installer launcher `.desktop` file
 - `installer/install.py`
+- `installer/launcher_bootstrap.py`
 - `payload/app_files/` with the packaged project source
 - `package_manifest.json` and `package_report.json`
 - generated `README.txt` and `INSTALL.txt`
@@ -46,9 +47,13 @@ The generated `package_report.json` records those results.
 For installable exports:
 
 - copy the whole exported folder to `/home/default/`
-- keep the installer `.desktop`, `installer/`, and `payload/` together
+- keep the installer `.desktop`, `installer/`, `payload/`, and package manifest files together
 - run the installer and choose the final install folder
 - let the installer publish an application-menu launcher and optional Desktop shortcut
+
+The installer launcher resolves the exported package folder from its own
+`.desktop` path. After install, project packages launch from the installed
+`app_files/` folder so project-relative imports and resources still work.
 
 For portable exports:
 

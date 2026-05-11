@@ -94,6 +94,7 @@ Installable packages use a shared folder layout:
   install_<name>.desktop
   installer/
     install.py
+    launcher_bootstrap.py
   payload/
     ...
   package_manifest.json
@@ -105,6 +106,15 @@ Installable packages use a shared folder layout:
 For project exports, `payload/` contains:
 
 - `app_files/` with packaged project files
+
+After installation, project packages run from:
+
+- `<install_root>/app_files/`
+
+The generated launcher still stores the chosen `<install_root>` as its fixed
+install location, but its bootstrap sets cwd and first `sys.path` entry to
+`app_files/` before running the packaged project entry. Product packages keep
+running from `<install_root>/` because their entry file lives at the install root.
 
 For the product installer, `payload/` contains:
 
@@ -132,6 +142,9 @@ The shared standalone installer is:
 - `packaging/install.py`
 
 It is copied into installable package artifacts and runs on the target through AppRun.
+The artifact path is `installer/install.py`; `installer/launcher_bootstrap.py`
+is copied beside it so the standalone installer and editor-side package builder
+use the same AppRun bootstrap contract.
 
 The installer must:
 
@@ -223,13 +236,28 @@ Packaging excludes transient/support content such as:
 
 ## Launcher Rules
 
-### Installable launcher rule
+### Installed launcher rule
 
 Installed launchers:
 
 - use direct AppRun bootstrap
 - do not use `/bin/sh`
 - hardcode the final chosen install directory
+- set cwd and first `sys.path` entry to the package runtime root
+  (`<install_root>/app_files/` for project packages, `<install_root>/` for product packages)
+
+### Installer package launcher rule
+
+The temporary installer launcher in an exported installable package:
+
+- lives beside `installer/`, `payload/`, and `package_manifest.json`
+- uses `/bin/sh -c ... %k` only to resolve its own `.desktop` location
+- runs `installer/install.py` relative to that resolved package root
+- fails clearly if the desktop environment does not provide `%k` or the package
+  folder has been split apart
+
+This self-relative staging launcher does not change the final installed launcher
+contract. Installed apps remain fixed to the chosen install directory.
 
 ### Portable launcher rule
 
@@ -256,6 +284,8 @@ Installable packages are designed around the ChoreBoy copy-and-launch workflow:
 4. choose the final install directory
 
 The installer warns when the staging package is not under `/home/default/`.
+The installer launcher no longer depends on the exported folder retaining its
+original generated basename, but the whole folder must remain together.
 
 ## Source of Truth Files
 

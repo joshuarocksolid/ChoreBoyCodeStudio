@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import importlib.util
 import json
 import shutil
 import stat
@@ -82,6 +83,27 @@ def _payload_root(manifest: PackageManifest) -> Path:
     return _package_root() / manifest.payload_dirname
 
 
+def _load_launcher_bootstrap() -> Any:
+    try:
+        from app.packaging import launcher_bootstrap
+
+        return launcher_bootstrap
+    except Exception:
+        helper_path = _source_root() / "launcher_bootstrap.py"
+        if not helper_path.is_file():
+            raise RuntimeError(
+                "Installer helper is missing: installer/launcher_bootstrap.py. "
+                "Keep the entire installer package together and rerun the installer launcher."
+            )
+        spec = importlib.util.spec_from_file_location("cbcs_installer_launcher_bootstrap", helper_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Could not load installer helper: {helper_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+
+
 def load_package_manifest(package_root: Path) -> PackageManifest:
     payload = json.loads((package_root / PACKAGE_MANIFEST_FILENAME).read_text(encoding="utf-8"))
     checksums = tuple(
@@ -129,12 +151,9 @@ def build_installed_desktop_entry(install_dir: str | Path, manifest: PackageMani
     icon_line = ""
     if manifest.icon_relative_path:
         icon_line = f"Icon={Path(resolved_install_dir, manifest.icon_relative_path).resolve()}\n"
-    bootstrap = (
-        "import os,runpy,sys;"
-        f"root={resolved_install_dir!r};"
-        "sys.path.insert(0, root) if root not in sys.path else None;"
-        "os.chdir(root);"
-        f"runpy.run_path(os.path.join(root, {manifest.entry_relative_path!r}), run_name='__main__')"
+    bootstrap = _load_launcher_bootstrap().build_fixed_root_bootstrap(
+        resolved_install_dir,
+        manifest.entry_relative_path,
     )
     return (
         "[Desktop Entry]\n"

@@ -16,6 +16,7 @@ An installable export contains:
 
 - an installer `.desktop` launcher
 - `installer/install.py`
+- `installer/launcher_bootstrap.py`
 - `payload/app_files/` with your packaged project source
 - `package_manifest.json` and `package_report.json`
 - generated `README.txt` and `INSTALL.txt`
@@ -110,14 +111,21 @@ Common blockers:
 ## Installable package workflow on ChoreBoy
 
 1. Copy the whole exported installable folder into `/home/default/`.
-2. Keep the installer `.desktop`, `installer/`, and `payload/` together.
+2. Keep the installer `.desktop`, `installer/`, `payload/`, and package manifest files together.
 3. Right-click the installer `.desktop` and allow launching if ChoreBoy asks.
 4. Run the installer.
 5. Choose the final install folder.
 6. Let the installer publish the application-menu launcher and optional Desktop shortcut.
 7. If you later move the installed folder, rerun the installer so the launcher points at the new location.
 
-The installer performs a staged copy before switching the final install directory, and it can optionally remove older installed versions after a successful upgrade.
+The installer launcher resolves the package folder from its own `.desktop` path,
+so renaming the exported folder is allowed as long as the folder stays together.
+The installer performs a staged copy before switching the final install directory,
+and it can optionally remove older installed versions after a successful upgrade.
+
+For project packages, the installed launcher runs the app from the installed
+`app_files/` folder. This keeps project-relative imports and resource files
+working the same way they did inside Code Studio.
 
 ## Portable package workflow on ChoreBoy
 

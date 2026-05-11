@@ -55,7 +55,7 @@ def test_sanitize_project_name_normalizes_expected_cases() -> None:
     assert sanitize_project_name("!!!") == "project"
 
 
-def test_portable_launcher_uses_direct_apprun_with_percent_k_argument() -> None:
+def test_portable_launcher_uses_shell_wrapper_with_percent_k_argument() -> None:
     content = _build_portable_desktop_entry("Cool Tool", "main.py", "app_files")
 
     assert "[Desktop Entry]" in content
@@ -64,7 +64,8 @@ def test_portable_launcher_uses_direct_apprun_with_percent_k_argument() -> None:
     assert "%k" in content
     assert '" dummy %k' in content
     assert "/bin/sh -c" in content
-    assert 'entry=os.path.abspath(os.path.join(root, \\"app_files/main.py\\"))' in content
+    assert 'entry_rel=\\"app_files/main.py\\"' in content
+    assert "entry=os.path.abspath(os.path.join(root, entry_rel))" in content
 
 
 def test_portable_launcher_rejects_unsafe_entry_relative_path() -> None:
@@ -91,6 +92,7 @@ def test_package_project_builds_installable_artifact_by_default(tmp_path: Path) 
     assert (artifact_root / "README.txt").is_file()
     assert (artifact_root / "INSTALL.txt").is_file()
     assert (artifact_root / "installer" / "install.py").is_file()
+    assert (artifact_root / "installer" / "launcher_bootstrap.py").is_file()
     assert (artifact_root / "payload" / "app_files" / "main.py").is_file()
     assert (artifact_root / "payload" / "app_files" / "helpers.py").is_file()
     assert (artifact_root / "install_my_project.desktop").is_file()

@@ -178,6 +178,10 @@ def write_installable_artifact_tree(
     ensure_directory(installer_root)
     effective_installer_source = installer_source or resolve_app_root() / "packaging" / "install.py"
     shutil.copy2(effective_installer_source, installer_root / "install.py")
+    shutil.copy2(
+        resolve_app_root() / "app" / "packaging" / "launcher_bootstrap.py",
+        installer_root / "launcher_bootstrap.py",
+    )
 
     installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
     launcher_path = artifact_root / installer_launcher_filename

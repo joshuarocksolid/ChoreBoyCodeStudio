@@ -11,12 +11,14 @@ from types import ModuleType
 import pytest
 
 from app.core import constants
-from app.packaging.desktop_builder import build_portable_launcher
+from app.packaging.desktop_builder import build_installer_package_launcher, build_portable_launcher
 from app.packaging.installer_manifest import create_distribution_manifest
 from app.packaging.layout import sanitize_project_name
 from app.packaging.models import (
+    LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
     LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
     PACKAGE_KIND_PROJECT,
+    PACKAGE_PROFILE_INSTALLABLE,
     PACKAGE_PROFILE_PORTABLE,
 )
 
@@ -101,7 +103,13 @@ def test_installed_launcher_bootstrap_runs_under_apprun_with_absolute_install_ro
     installer_module = _load_installer_module()
     install_root = tmp_path / "installed_package"
     (install_root / "app_files").mkdir(parents=True, exist_ok=True)
-    (install_root / "app_files" / "main.py").write_text("print('installed-ok')\n", encoding="utf-8")
+    (install_root / "app_files" / "main.py").write_text(
+        "import os,sys\n"
+        "print('installed-ok')\n"
+        "print('cwd=' + os.path.basename(os.getcwd()))\n"
+        "print('path0=' + os.path.basename(sys.path[0]))\n",
+        encoding="utf-8",
+    )
     manifest = installer_module.PackageManifest(
         package_kind="project",
         profile="installable",
@@ -141,3 +149,49 @@ def test_installed_launcher_bootstrap_runs_under_apprun_with_absolute_install_ro
 
     assert completed.returncode == 0, completed.stderr
     assert "installed-ok" in completed.stdout
+    assert "cwd=app_files" in completed.stdout
+    assert "path0=app_files" in completed.stdout
+
+
+def test_installer_package_launcher_resolves_root_from_desktop_path(tmp_path: Path) -> None:
+    _require_apprun()
+    package_root = tmp_path / "renamed_installer_package"
+    installer_root = package_root / "installer"
+    installer_root.mkdir(parents=True, exist_ok=True)
+    (package_root / "payload").mkdir()
+    (installer_root / "install.py").write_text(
+        "import os\n"
+        "print('installer-ok')\n"
+        "print('cwd=' + os.path.basename(os.getcwd()))\n",
+        encoding="utf-8",
+    )
+    desktop_path = package_root / "install_test.desktop"
+    manifest = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="installer_test",
+        display_name="Installer Test",
+        version="1.0.0",
+        description="",
+        entry_relative_path="app_files/main.py",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+        app_run_path=constants.APP_RUN_PATH,
+    )
+    desktop_content = build_installer_package_launcher(
+        manifest=manifest,
+        package_root_name="original_export_name",
+    )
+    desktop_path.write_text(desktop_content, encoding="utf-8")
+    exec_line = next(line for line in desktop_content.splitlines() if line.startswith("Exec="))[len("Exec=") :]
+    shell_script = _extract_shell_script(exec_line)
+
+    completed = subprocess.run(
+        ["/bin/sh", "-c", shell_script, "dummy", str(desktop_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "installer-ok" in completed.stdout
+    assert "cwd=installer" in completed.stdout

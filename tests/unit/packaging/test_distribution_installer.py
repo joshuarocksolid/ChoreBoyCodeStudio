@@ -113,16 +113,18 @@ def test_distribution_install_instructions_require_home_default_staging() -> Non
     assert "staged copy" in instructions
 
 
-def test_distribution_installer_desktop_entry_uses_direct_apprun() -> None:
+def test_distribution_installer_desktop_entry_resolves_package_root_from_desktop_path() -> None:
     desktop_entry = product_package.build_installer_desktop_entry(
         "/home/default/choreboy_code_studio_installer_v0.2"
     )
 
-    assert "/home/default/choreboy_code_studio_installer_v0.2" in desktop_entry
     assert "installer" in desktop_entry
     assert "install.py" in desktop_entry
     assert "/opt/freecad/AppRun" in desktop_entry
-    assert "/bin/sh" not in desktop_entry
+    assert "/bin/sh" in desktop_entry
+    assert "dummy %k" in desktop_entry
+    assert "CBCS_PACKAGE_ROOT" in desktop_entry
+    assert "/home/default/choreboy_code_studio_installer_v0.2" not in desktop_entry
 
 
 def test_distribution_archive_budget_is_15_mb() -> None:
@@ -292,6 +294,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
         archive_names = set(archive.namelist())
     package_root = result.staging_dir.name
     assert f"{package_root}/package_manifest.json" in archive_names
+    assert f"{package_root}/installer/launcher_bootstrap.py" in archive_names
     assert f"{package_root}/payload/run_editor.py" in archive_names
     assert all(".hidden_cache" not in name for name in archive_names)
 
@@ -334,6 +337,28 @@ def test_installed_desktop_entry_must_not_reference_staging_suffix() -> None:
     assert "Icon=" in desktop_entry
     assert "Python_Icon.png" in desktop_entry
     assert "StartupNotify=true" in desktop_entry
+
+
+def test_installed_project_desktop_entry_runs_from_app_files_root() -> None:
+    installer_module = _load_module("distribution_installer_project", "packaging/install.py")
+    manifest = installer_module.PackageManifest(
+        **{
+            **_build_installer_manifest(installer_module).__dict__,
+            "package_kind": "project",
+            "entry_relative_path": "app_files/app/main.py",
+            "icon_relative_path": "",
+        }
+    )
+
+    desktop_entry = installer_module.build_installed_desktop_entry(
+        "/home/default/classic_pos",
+        manifest,
+    )
+
+    assert "/home/default/classic_pos" in desktop_entry
+    assert "entry_rel='app_files/app/main.py'" in desktop_entry
+    assert "os.path.join(root, 'app_files')" in desktop_entry
+    assert "os.chdir(runtime_root)" in desktop_entry
 
 
 def test_build_staging_location_warning_requires_home_default_staging() -> None:
