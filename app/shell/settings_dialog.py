@@ -212,6 +212,21 @@ class SettingsDialog(QDialog):
         _mode_to_index = {"system": 0, "light": 1, "dark": 2}
         self._theme_mode_input.setCurrentIndex(_mode_to_index.get(snapshot.theme_mode, 0))
         appearance_form.addRow("Theme", self._theme_mode_input)
+
+        self._ui_font_weight_input = QComboBox(appearance_group)
+        # Display labels are user-facing; the ``data`` payload is the persisted value.
+        for label, value in (
+            ("Normal", constants.UI_THEME_FONT_WEIGHT_NORMAL),
+            ("Medium", constants.UI_THEME_FONT_WEIGHT_MEDIUM),
+            ("Bold", constants.UI_THEME_FONT_WEIGHT_BOLD),
+        ):
+            self._ui_font_weight_input.addItem(label, value)
+        weight_index = self._ui_font_weight_input.findData(snapshot.ui_font_weight)
+        self._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
+        self._ui_font_weight_input.setToolTip(
+            "Adjust the weight of menus, panels, and dialogs. The code editor font is unaffected."
+        )
+        appearance_form.addRow("UI font weight", self._ui_font_weight_input)
         general_layout.addWidget(appearance_group)
 
         output_group = QGroupBox("Output")
@@ -484,6 +499,7 @@ class SettingsDialog(QDialog):
             metrics_logging_enabled=self._metrics_logging_input.isChecked(),
             force_full_reindex_on_open=self._force_reindex_on_open_input.isChecked(),
             theme_mode=["system", "light", "dark"][self._theme_mode_input.currentIndex()],
+            ui_font_weight=self._normalized_ui_font_weight_value(),
             auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
             auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
             selected_linter=str(self._linter_provider_input.currentData()),
@@ -500,6 +516,12 @@ class SettingsDialog(QDialog):
 
     def _capture_active_scope_snapshot(self) -> None:
         self._scope_snapshots[self._active_scope] = self._snapshot_from_controls()
+
+    def _normalized_ui_font_weight_value(self) -> str:
+        raw = self._ui_font_weight_input.currentData()
+        if isinstance(raw, str) and raw in constants.UI_THEME_FONT_WEIGHT_VALUES:
+            return raw
+        return constants.UI_THEME_FONT_WEIGHT_DEFAULT
 
     def _apply_snapshot_to_controls(self, snapshot: EditorSettingsSnapshot) -> None:
         self._tab_width_input.setValue(snapshot.tab_width)
@@ -540,6 +562,8 @@ class SettingsDialog(QDialog):
         self._theme_mode_input.setCurrentIndex(
             {"system": 0, "light": 1, "dark": 2}.get(snapshot.theme_mode, 0)
         )
+        weight_index = self._ui_font_weight_input.findData(snapshot.ui_font_weight)
+        self._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
 
         self._apply_shortcut_snapshot(snapshot)
         self._syntax_color_overrides_by_theme = {

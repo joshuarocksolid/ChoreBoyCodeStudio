@@ -7,7 +7,24 @@ from typing import Mapping
 
 from PySide2.QtGui import QColor, QPalette
 
+from app.core import constants
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
+
+
+# Map persisted ui_font_weight values to Qt-stylesheet font-weight literals.
+# Qt accepts named weights ("normal", "bold") and numeric weights (100-900).
+# Using numeric weights for "medium" gives finer control than the limited
+# named set, while still falling back gracefully on any platform.
+_UI_FONT_WEIGHT_CSS_MAP: dict[str, str] = {
+    constants.UI_THEME_FONT_WEIGHT_NORMAL: "normal",
+    constants.UI_THEME_FONT_WEIGHT_MEDIUM: "500",
+    constants.UI_THEME_FONT_WEIGHT_BOLD: "600",
+}
+
+
+def resolve_ui_font_weight_css(ui_font_weight: str) -> str:
+    """Translate a persisted ui_font_weight value into a Qt font-weight literal."""
+    return _UI_FONT_WEIGHT_CSS_MAP.get(ui_font_weight, _UI_FONT_WEIGHT_CSS_MAP[constants.UI_THEME_FONT_WEIGHT_DEFAULT])
 
 
 @dataclass(frozen=True)
@@ -74,6 +91,7 @@ class ShellThemeTokens:
     popup_bg: str = ""
     popup_border: str = ""
     popup_shadow: str = ""
+    ui_font_weight_css: str = "normal"
 
 
 def tokens_from_palette(
@@ -81,11 +99,15 @@ def tokens_from_palette(
     *,
     prefer_dark: bool = False,
     force_mode: str | None = None,
+    ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT,
 ) -> ShellThemeTokens:
     """Derive theme tokens.
 
     ``force_mode`` accepts ``"light"``, ``"dark"``, or ``None``.  When set it
     overrides both ``prefer_dark`` and the palette lightness heuristic.
+
+    ``ui_font_weight`` accepts ``"normal"``, ``"medium"``, or ``"bold"`` and
+    controls chrome-text weight via :attr:`ShellThemeTokens.ui_font_weight_css`.
     """
     if force_mode == "dark":
         is_dark = True
@@ -100,17 +122,22 @@ def tokens_from_palette(
         for token_key, field_name in _SYNTAX_OVERRIDE_FIELD_MAP.items()
         if token_key in sp
     }
+    ui_font_weight_css = resolve_ui_font_weight_css(ui_font_weight)
     if is_dark:
+        # Contrast notes (vs panel_bg #262C33):
+        #   text_muted #C2C9D1   -> 8.43:1  (was #ADB5BD = 6.79:1)
+        #   gutter_text #8B949E  -> 4.58:1 on panel; 5.09:1 on gutter_bg
+        #     (was #6C757D = 3.00:1, 3.34:1 -- below WCAG AA)
         return ShellThemeTokens(
             window_bg="#1F2428",
             panel_bg="#262C33",
             editor_bg="#1B1F23",
             text_primary="#E9ECEF",
-            text_muted="#ADB5BD",
+            text_muted="#C2C9D1",
             border="#3C434A",
             accent="#5B8CFF",
             gutter_bg="#1F2428",
-            gutter_text="#6C757D",
+            gutter_text="#8B949E",
             line_highlight="#252B33",
             is_dark=True,
             tree_hover_bg="#2A3038",
@@ -133,18 +160,23 @@ def tokens_from_palette(
             popup_bg="#262C33",
             popup_border="#3C434A",
             popup_shadow="#000000",
+            ui_font_weight_css=ui_font_weight_css,
             **syntax_kwargs,
         )
+    # Contrast notes (light mode):
+    #   text_muted #5A6168   -> 6.28:1 on white (was #6C757D = 4.69:1)
+    #   gutter_text #666F76  -> 4.60:1 on gutter_bg #F1F3F5
+    #     (was #ADB5BD = 1.87:1 -- well below WCAG AA)
     return ShellThemeTokens(
         window_bg="#F8F9FA",
         panel_bg="#FFFFFF",
         editor_bg="#FFFFFF",
         text_primary="#212529",
-        text_muted="#6C757D",
+        text_muted="#5A6168",
         border="#DEE2E6",
         accent="#3366FF",
         gutter_bg="#F1F3F5",
-        gutter_text="#ADB5BD",
+        gutter_text="#666F76",
         line_highlight="#EEF7FF",
         is_dark=False,
         tree_hover_bg="#E9ECEF",
@@ -167,6 +199,7 @@ def tokens_from_palette(
         popup_bg="#FFFFFF",
         popup_border="#DEE2E6",
         popup_shadow="#000000",
+        ui_font_weight_css=ui_font_weight_css,
         **syntax_kwargs,
     )
 

@@ -337,6 +337,69 @@ def test_merge_invalid_theme_mode_falls_back_to_system() -> None:
     assert merged["theme"]["mode"] == "system"
 
 
+# --- ui_font_weight tests (request #37 Tier 1) ---
+
+
+def test_parse_ui_font_weight_defaults_for_missing_key() -> None:
+    snapshot = parse_editor_settings_snapshot({})
+    assert snapshot.ui_font_weight == constants.UI_THEME_FONT_WEIGHT_DEFAULT
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        constants.UI_THEME_FONT_WEIGHT_NORMAL,
+        constants.UI_THEME_FONT_WEIGHT_MEDIUM,
+        constants.UI_THEME_FONT_WEIGHT_BOLD,
+    ],
+)
+def test_parse_ui_font_weight_reads_explicit_value(value: str) -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"ui_font_weight": value}})
+    assert snapshot.ui_font_weight == value
+
+
+def test_parse_ui_font_weight_invalid_falls_back_to_default() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"ui_font_weight": "extralight"}})
+    assert snapshot.ui_font_weight == constants.UI_THEME_FONT_WEIGHT_DEFAULT
+
+
+def test_merge_ui_font_weight_round_trip() -> None:
+    for weight in constants.UI_THEME_FONT_WEIGHT_VALUES:
+        snapshot = EditorSettingsSnapshot(ui_font_weight=weight)
+        merged = merge_editor_settings_snapshot({}, snapshot)
+        restored = parse_editor_settings_snapshot(merged)
+        assert restored.ui_font_weight == weight
+
+
+def test_merge_invalid_ui_font_weight_falls_back_to_default() -> None:
+    snapshot = EditorSettingsSnapshot(ui_font_weight="extralight")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["theme"]["ui_font_weight"] == constants.UI_THEME_FONT_WEIGHT_DEFAULT
+
+
+def test_ui_font_weight_is_global_only_not_project_overridable() -> None:
+    """Project payload writers must not be able to introduce a theme override.
+
+    ``theme`` is intentionally absent from
+    ``PROJECT_SETTINGS_OVERRIDABLE_ROOT_KEYS``, so changing ui_font_weight on a
+    snapshot saved in project scope must leave the project payload unchanged
+    (no ``theme`` key written).
+    """
+    base_global = merge_editor_settings_snapshot(
+        {}, EditorSettingsSnapshot(ui_font_weight=constants.UI_THEME_FONT_WEIGHT_NORMAL)
+    )
+    project_payload: dict = {}
+    new_global, new_project = merge_editor_settings_snapshot_for_scope(
+        scope=SETTINGS_SCOPE_PROJECT,
+        global_settings_payload=base_global,
+        project_settings_payload=project_payload,
+        snapshot=EditorSettingsSnapshot(ui_font_weight=constants.UI_THEME_FONT_WEIGHT_BOLD),
+    )
+    assert "theme" not in new_project, "project scope must not persist theme overrides"
+    # Global payload is also untouched when scope is project.
+    assert new_global["theme"]["ui_font_weight"] == constants.UI_THEME_FONT_WEIGHT_NORMAL
+
+
 # --- font_family tests ---
 
 

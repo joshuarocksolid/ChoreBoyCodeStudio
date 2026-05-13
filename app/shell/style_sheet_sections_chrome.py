@@ -5,6 +5,33 @@ from __future__ import annotations
 from app.shell.theme_tokens import ShellThemeTokens
 
 
+def shell_section_chrome_font_weight(tokens: ShellThemeTokens) -> str:
+    """Apply the user's UI font-weight preference to chrome surfaces.
+
+    The selectors deliberately:
+
+    - Exclude ``QPlainTextEdit`` and ``QTextEdit`` so the code editor and
+      read-only output viewers keep their own weight.
+    - Exclude ``QTabBar`` / ``QTabWidget`` because some dialogs (e.g. the
+      settings dialog) set tab fonts via ``QWidget.setFont`` and Qt merges
+      stylesheet font properties into the widget font, which would override
+      the explicit DemiBold weight.
+
+    More specific rules later in the stylesheet (e.g. ``font-weight: 700`` on
+    a panel title) still win because they have higher selector specificity.
+    """
+    return f"""/* -- Chrome font weight (user preference) -------------------------------- */
+QMenuBar, QMenu, QToolBar, QStatusBar,
+QLabel, QPushButton, QToolButton,
+QGroupBox, QGroupBox::title,
+QLineEdit, QComboBox, QSpinBox, QCheckBox, QRadioButton,
+QTreeView, QListView, QTableView, QHeaderView::section,
+QDialog, QDockWidget, QDockWidget::title {{
+    font-weight: {tokens.ui_font_weight_css};
+}}
+"""
+
+
 def shell_section_main_window_menus(tokens: ShellThemeTokens) -> str:
     return f"""QMainWindow#shell\\.mainWindow {{
     background: {tokens.window_bg};

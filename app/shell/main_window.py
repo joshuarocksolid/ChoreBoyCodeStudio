@@ -412,6 +412,7 @@ class MainWindow(QMainWindow):
         self._keep_preview_open_shortcut: QShortcut | None = None
         self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
+        self._ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT
         self._system_dark_theme_preference: bool | None = None
         self._loaded_project: LoadedProject | None = None
         self._plugin_activation_workflow = PluginActivationWorkflow(
@@ -482,6 +483,7 @@ class MainWindow(QMainWindow):
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._local_history_retention_policy = self._load_local_history_retention_policy()
         self._theme_mode = self._load_theme_mode()
+        self._ui_font_weight = self._load_ui_font_weight()
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._help_controller = ShellHelpController(
@@ -1174,9 +1176,17 @@ class MainWindow(QMainWindow):
         palette = self.palette()
         mode = self._theme_mode
         if mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-            base_tokens = tokens_from_palette(palette, force_mode=mode)
+            base_tokens = tokens_from_palette(
+                palette,
+                force_mode=mode,
+                ui_font_weight=self._ui_font_weight,
+            )
         else:
-            base_tokens = tokens_from_palette(palette, prefer_dark=self._system_prefers_dark_theme())
+            base_tokens = tokens_from_palette(
+                palette,
+                prefer_dark=self._system_prefers_dark_theme(),
+                ui_font_weight=self._ui_font_weight,
+            )
         theme_key = (
             constants.UI_SYNTAX_COLORS_DARK_KEY
             if base_tokens.is_dark
@@ -1282,6 +1292,11 @@ class MainWindow(QMainWindow):
         settings_payload = self._settings_service.load_global()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return snapshot.theme_mode
+
+    def _load_ui_font_weight(self) -> str:
+        settings_payload = self._settings_service.load_global()
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return snapshot.ui_font_weight
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = self._settings_service.load_global()
@@ -1731,6 +1746,7 @@ class MainWindow(QMainWindow):
 
         if updated_snapshot.theme_mode != previous_theme_mode:
             self._handle_set_theme(updated_snapshot.theme_mode)
+        self._ui_font_weight = updated_snapshot.ui_font_weight
 
         (
             self._editor_tab_width,
