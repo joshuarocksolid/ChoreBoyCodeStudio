@@ -91,6 +91,7 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = loaded
+    window_any._active_named_run_config_name = None
     window_any._ensure_run_preflight_ready = lambda **_kwargs: True
     calls: list[dict[str, object]] = []
     window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
@@ -116,6 +117,7 @@ def test_handle_run_project_action_stops_when_preflight_fails_without_modal_reso
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = loaded
+    window_any._active_named_run_config_name = None
     window_any._ensure_run_preflight_ready = lambda **_kwargs: False
     window_any._resolve_project_entry_for_project_run = (
         lambda: (_ for _ in ()).throw(AssertionError("run path should not invoke modal entry resolution"))

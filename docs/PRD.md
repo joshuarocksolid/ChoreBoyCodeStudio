@@ -141,14 +141,15 @@ A familiar “IDE tri-pane” that works well even for non-developers:
 - **Problems** (lint results, parse errors)
 - **Tasks** (background ops: indexing, search, etc.)
 
-### Right sidebar (optional, collapsible)
+### Run target controls (modal-first)
 
-- **Properties / Run Config** panel:
-  - Entry point
-  - Arguments
-  - Working directory
-  - “Run with FreeCAD headless backend” toggle
-  - Environment variables (limited, stored per project)
+Run target editing lives in two modal surfaces plus a persistent status-bar indicator, not a right sidebar. This keeps the editor canvas full-width while making the active run target discoverable on every screen:
+
+- **Status-bar active-run-config indicator.** A button on the right side of the status bar shows the configuration F5 will use (label `Default` when no named config is selected, otherwise the config name). Clicking opens a popup listing all named configurations plus `Run With Arguments...` and `Edit Configurations...`.
+- **Run > Run With Arguments...** opens a one-off dialog with **Entry file**, **Arguments** (with a live shlex-tokenized preview and a "Recent..." dropdown), **Working directory**, and **Environment overrides** (comma-separated `KEY=VALUE`). The dialog does **not** persist into `cbcs/project.json` unless the user clicks **Save as Configuration...**.
+- **Run > Run Configurations...** opens a two-pane editor: a list of named configurations on the left, the per-configuration form on the right (Name, Entry file, Arguments, Working directory, Environment overrides), and a sticky top panel that edits the project's `default_argv` (the argv used by F5 when no named configuration is active). Add / Duplicate / Delete actions sit under the list. **Save** persists the whole edit through `RunConfigController.persist_run_configs` and `set_project_default_argv()`.
+
+The "Run with FreeCAD headless backend" toggle remains a separate future slice — there is no backend selection wiring yet, so it is intentionally absent from the current dialogs.
 
 ---
 

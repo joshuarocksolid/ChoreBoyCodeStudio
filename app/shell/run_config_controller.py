@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +17,25 @@ from app.project.run_configs import (
     remove_run_config,
     upsert_run_config,
 )
+
+
+def tokenize_argv_text(argv_text: str) -> list[str]:
+    """Tokenize an argv text field using shell-style quoting.
+
+    Supports single/double quotes and backslash escapes so that values like
+    ``--config "/tmp/with space/cfg.toml"`` parse into a single token. Empty or
+    whitespace-only input yields an empty list. Raises ``AppValidationError``
+    when quoting is unbalanced so callers can surface inline UI errors instead
+    of crashing on the underlying ``shlex`` ``ValueError``.
+    """
+
+    text = argv_text or ""
+    if not text.strip():
+        return []
+    try:
+        return shlex.split(text, posix=True)
+    except ValueError as exc:
+        raise AppValidationError(f"Invalid arguments: {exc}") from exc
 
 
 class RunConfigController:
@@ -54,11 +74,12 @@ class RunConfigController:
         env_overrides_text: str,
     ) -> RunConfiguration:
         parsed_env_overrides = parse_env_overrides_text(env_overrides_text)
+        argv_tokens = tokenize_argv_text(argv_text)
         return parse_run_config(
             {
                 "name": name.strip(),
                 "entry_file": entry_file.strip(),
-                "argv": [token for token in argv_text.split(" ") if token.strip()],
+                "argv": argv_tokens,
                 "working_directory": working_directory_text.strip() or None,
                 "env_overrides": parsed_env_overrides,
             }

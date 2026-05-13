@@ -95,7 +95,8 @@ def _add_test_and_session_actions(ctx: MenuBuildContext, run_menu: Any) -> None:
             None,
             callbacks.on_debug_pytest_failed,
         ),
-        ("shell.action.run.runWithConfig", "Run With Configuration...", None, callbacks.on_run_with_config),
+        ("shell.action.run.runWithArgs", "Run With Arguments...", None, callbacks.on_run_with_args),
+        ("shell.action.run.runWithConfig", "Run Configurations...", None, callbacks.on_run_with_config),
         ("shell.action.run.stop", "Stop", "Shift+F2", callbacks.on_stop),
         ("shell.action.run.restart", "Restart", "Ctrl+Shift+F2", callbacks.on_restart),
         (

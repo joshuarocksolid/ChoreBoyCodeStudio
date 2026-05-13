@@ -20,6 +20,30 @@ This chapter explains how to execute and investigate your code.
 
 ![Figure 10 — Run toolbar and bottom panels](../screenshots/manual_10_run_toolbar_panels.png)
 
+## Passing arguments to a run
+
+Code Studio runs do not have a terminal, but `sys.argv` and environment variables can be supplied through dialogs and saved configurations. Three surfaces cover the common cases:
+
+### One-off: Run With Arguments…
+
+`Run` → `Run With Arguments…` opens a small dialog that collects an entry file, an **Arguments** string, a **Working directory**, and **Environment overrides** (comma-separated `KEY=VALUE`). The dialog parses the argument string with shell-style quoting, so `--config "/tmp/a b/c.toml" --verbose` parses into three argv tokens with the path's space preserved. A "Recent…" dropdown next to the field remembers the last 10 argument strings across projects.
+
+The dialog runs the configuration once and does **not** modify `cbcs/project.json`. Click **Save as Configuration…** instead of **Run** to promote the values into a named entry through the Run Configurations editor.
+
+### Persistent: Run Configurations…
+
+`Run` → `Run Configurations…` opens a two-pane editor. The left pane lists named configurations stored in `cbcs/project.json` under `run_configs`; the right pane edits the selected configuration's Name, Entry file, Arguments, Working directory, and Environment overrides. Use the buttons under the list to **Add**, **Duplicate**, or **Delete** entries. **Save** writes the full edited list back to `cbcs/project.json` in one commit.
+
+The top of the dialog also exposes a **Default arguments for Run Project** field, which edits the project's `default_argv` — the argv that F5 uses when no named configuration is active.
+
+### Active run target indicator (status bar)
+
+The status bar shows the current run target (`Default` or the name of the active configuration). Click it to switch between configurations, open **Run With Arguments…**, or open **Edit Configurations…**. While a named configuration is active, both **Run Project** (F5) and **Debug Project** (Ctrl+Shift+F5) use that configuration's entry, argv, working directory, and environment overrides.
+
+### Right-click on a file
+
+Right-clicking a `.py` file in the project tree exposes **Run** (no arguments) and **Run With Arguments…** alongside **Set as Entry Point**. The Run With Arguments dialog opens pre-filled with the right-clicked file as the entry.
+
 ## Debug workflow (explicit step-by-step)
 
 ### Step 1 — Set breakpoints

@@ -198,7 +198,10 @@ from app.project.project_service import (
     enumerate_project_entries,
     open_project,
 )
-from app.project.project_manifest import set_project_default_entry
+from app.project.project_manifest import (
+    set_project_default_argv,
+    set_project_default_entry,
+)
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
@@ -225,6 +228,16 @@ from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController
 from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
+from app.shell.run_configurations_dialog import (
+    RunConfigurationsDialog,
+    RunConfigurationsInitial,
+    RunConfigurationsResult,
+)
+from app.shell.run_with_arguments_dialog import (
+    RunInvocation,
+    RunWithArgumentsDialog,
+    RunWithArgumentsInitial,
+)
 from app.shell.run_debug_presenter import RunDebugPresenter
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import SaveWorkflow
@@ -270,6 +283,19 @@ def _filter_tree_signature_entries(relative_paths: tuple[str, ...]) -> tuple[str
         path for path in relative_paths
         if not any(path.startswith(prefix) for prefix in PROJECT_TREE_SIGNATURE_IGNORED_PREFIXES)
     )
+
+
+def _proposed_new_config_name(existing_configs: list[RunConfiguration]) -> str:
+    """Return a unique default name for a freshly created run configuration."""
+
+    base = "New Configuration"
+    existing_names = {config.name for config in existing_configs}
+    if base not in existing_names:
+        return base
+    index = 2
+    while f"{base} {index}" in existing_names:
+        index += 1
+    return f"{base} {index}"
 ShellEventT = TypeVar("ShellEventT")
 ReplEvent = tuple[str, object, object]
 
@@ -692,6 +718,7 @@ class MainWindow(QMainWindow):
             startup_report=startup_report,
             on_startup_activated=self._handle_runtime_center_action,
         )
+        self._install_active_run_config_indicator()
         self._refresh_python_tooling_status()
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -2655,6 +2682,7 @@ class MainWindow(QMainWindow):
         self._latest_run_issue_ids = ()
         self._latest_runtime_issue_report = self._build_runtime_issue_report()
         self._active_named_run_config_name = None
+        self._refresh_active_run_config_indicator()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._plugin_activation_workflow.reload()
@@ -2794,6 +2822,7 @@ class MainWindow(QMainWindow):
             if config.name == active_name:
                 return config
         self._active_named_run_config_name = None
+        self._refresh_active_run_config_indicator()
         return None
 
     def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
@@ -2831,6 +2860,9 @@ class MainWindow(QMainWindow):
         if loaded_project is None:
             QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return False
+        active_config = self._resolve_active_named_run_config()
+        if active_config is not None:
+            return self._launch_run_configuration(active_config, debug=False)
         entry_file = (loaded_project.metadata.default_entry or "").strip()
         if not self._ensure_run_preflight_ready(title="Run Project", entry_file=entry_file):
             return False
@@ -2841,6 +2873,9 @@ class MainWindow(QMainWindow):
         if loaded_project is None:
             QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
             return False
+        active_config = self._resolve_active_named_run_config()
+        if active_config is not None:
+            return self._launch_run_configuration(active_config, debug=True)
         entry_file = (loaded_project.metadata.default_entry or "").strip()
         if not self._ensure_run_preflight_ready(title="Debug Project", entry_file=entry_file):
             return False
@@ -3042,50 +3077,308 @@ class MainWindow(QMainWindow):
             if node_id:
                 self._test_runner_workflow.debug_test_node(node_id)
 
-    def _handle_run_with_configuration_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Run With Configuration", "Open a project first.")
-            return
-        configs = self._run_config_controller.load_configs(self._loaded_project)
-        if not configs:
+    def _handle_run_with_configuration_action(self) -> bool:
+        """Open the Run Configurations editor; optionally run the selected entry on accept."""
+
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            QMessageBox.warning(self, "Run Configurations", "Open a project first.")
+            return False
+        existing_configs = self._run_config_controller.load_configs(loaded_project)
+        initial = RunConfigurationsInitial(
+            configurations=existing_configs,
+            default_argv=loaded_project.metadata.default_argv,
+            default_entry=loaded_project.metadata.default_entry,
+            project_root=loaded_project.project_root,
+            active_config_name=self._active_named_run_config_name,
+            initial_selection_name=self._active_named_run_config_name,
+        )
+        result = RunConfigurationsDialog.run_dialog(
+            self,
+            initial=initial,
+            tokens=self._current_theme_tokens(),
+        )
+        if result is None:
+            return False
+        persisted = self._persist_run_configurations_result(result)
+        if not persisted:
+            return False
+        selected_name = result.selected_config_name
+        if not selected_name:
+            return True
+        target = next(
+            (config for config in result.configurations if config.name == selected_name),
+            None,
+        )
+        if target is None:
+            return True
+        return self._launch_run_configuration(target, debug=False)
+
+    def _handle_run_with_arguments_action(self) -> bool:
+        """Launch a one-off run using arguments collected through a small dialog."""
+
+        loaded_project = self._loaded_project
+        active_tab = self._editor_manager.active_tab()
+        active_file_path: str | None = None
+        if active_tab is not None and getattr(active_tab, "file_path", None):
+            active_file_path = active_tab.file_path
+        default_entry = ""
+        default_argv: tuple[str, ...] = ()
+        default_env: Mapping[str, str] = {}
+        project_root: str | None = None
+        if loaded_project is not None:
+            default_entry = (loaded_project.metadata.default_entry or "").strip()
+            default_argv = tuple(loaded_project.metadata.default_argv)
+            default_env = dict(loaded_project.metadata.env_overrides)
+            project_root = loaded_project.project_root
+
+        initial_entry = active_file_path or default_entry
+        initial = RunWithArgumentsInitial(
+            entry_file=initial_entry,
+            argv=default_argv,
+            working_directory=None,
+            env_overrides=default_env,
+            recent_argv_history=tuple(self._settings_service.load_recent_argv_history()),
+            project_root=project_root,
+        )
+        invocation = RunWithArgumentsDialog.run_dialog(
+            self,
+            initial=initial,
+            tokens=self._current_theme_tokens(),
+        )
+        if invocation is None:
+            return False
+        if invocation.argv_text:
+            self._settings_service.push_recent_argv_history(invocation.argv_text)
+        return self._launch_ad_hoc_run_invocation(invocation)
+
+    def _launch_ad_hoc_run_invocation(self, invocation: RunInvocation) -> bool:
+        """Run an ad-hoc :class:`RunInvocation`, optionally promoting it to a saved config."""
+
+        if invocation.save_request:
+            self._open_save_invocation_as_configuration_dialog(invocation)
+        if not self._ensure_run_preflight_ready(
+            title="Run With Arguments",
+            entry_file=invocation.entry_file,
+            working_directory=invocation.working_directory,
+        ):
+            return False
+        return self._start_session(
+            mode=constants.RUN_MODE_PYTHON_SCRIPT,
+            entry_file=invocation.entry_file,
+            argv=list(invocation.argv),
+            working_directory=invocation.working_directory,
+            env_overrides=dict(invocation.env_overrides),
+        )
+
+    def _open_save_invocation_as_configuration_dialog(self, invocation: RunInvocation) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
             QMessageBox.information(
                 self,
-                "Run With Configuration",
-                "This project has no saved run setups in its project file (run_configs). "
-                "Add entries to run_configs or use Run Project with the default entry.",
+                "Save as Configuration",
+                "Open a project first to save named run configurations.",
             )
             return
-        names = [config.name for config in configs]
-        selected_name, accepted = QInputDialog.getItem(
+        existing_configs = self._run_config_controller.load_configs(loaded_project)
+        proposed_name = _proposed_new_config_name(existing_configs)
+        new_config = RunConfiguration(
+            name=proposed_name,
+            entry_file=invocation.entry_file,
+            argv=list(invocation.argv),
+            working_directory=invocation.working_directory,
+            env_overrides=dict(invocation.env_overrides),
+        )
+        initial = RunConfigurationsInitial(
+            configurations=[*existing_configs, new_config],
+            default_argv=loaded_project.metadata.default_argv,
+            default_entry=loaded_project.metadata.default_entry,
+            project_root=loaded_project.project_root,
+            active_config_name=self._active_named_run_config_name,
+            initial_selection_name=new_config.name,
+        )
+        result = RunConfigurationsDialog.run_dialog(
             self,
-            "Run With Configuration",
-            "Select run configuration:",
-            names,
-            0,
-            False,
+            initial=initial,
+            tokens=self._current_theme_tokens(),
         )
-        if not accepted or not selected_name:
+        if result is None:
             return
-        selected_config = next((config for config in configs if config.name == selected_name), None)
-        if selected_config is None:
-            QMessageBox.warning(self, "Run With Configuration", "Selected configuration could not be resolved.")
-            return
-        self._active_named_run_config_name = selected_config.name
-        self._refresh_run_action_states()
+        self._persist_run_configurations_result(result)
+
+    def _handle_run_active_configuration_action(self) -> bool:
+        """Launch the currently-active named configuration (or default Run Project)."""
+
+        active_config = self._resolve_active_named_run_config()
+        if active_config is None:
+            return self._handle_run_project_action()
+        return self._launch_run_configuration(active_config, debug=False)
+
+    def _launch_run_configuration(
+        self,
+        config: RunConfiguration,
+        *,
+        debug: bool,
+    ) -> bool:
+        mode = constants.RUN_MODE_PYTHON_DEBUG if debug else constants.RUN_MODE_PYTHON_SCRIPT
+        title = (
+            f"Debug Configuration: {config.name}" if debug else f"Run Configuration: {config.name}"
+        )
         if not self._ensure_run_preflight_ready(
-            title=f"Run Configuration: {selected_config.name}",
-            entry_file=selected_config.entry_file,
-            working_directory=selected_config.working_directory,
-            config_name=selected_config.name,
+            title=title,
+            entry_file=config.entry_file,
+            working_directory=config.working_directory,
+            config_name=config.name,
         ):
-            return
-        self._start_session(
-            mode=constants.RUN_MODE_PYTHON_SCRIPT,
-            entry_file=selected_config.entry_file,
-            argv=selected_config.argv,
-            working_directory=selected_config.working_directory,
-            env_overrides=selected_config.env_overrides,
+            return False
+        breakpoints: list[DebugBreakpoint] | None = None
+        debug_exception_policy: DebugExceptionPolicy | None = None
+        if debug:
+            breakpoints = self._debug_control_workflow.build_debug_breakpoints_for_launch()
+            debug_exception_policy = self._debug_exception_policy
+        started = self._start_session(
+            mode=mode,
+            entry_file=config.entry_file,
+            argv=list(config.argv),
+            working_directory=config.working_directory,
+            env_overrides=dict(config.env_overrides),
+            breakpoints=breakpoints,
+            debug_exception_policy=debug_exception_policy,
         )
+        if started and debug:
+            self._last_debug_target = {"kind": "project"}
+        return started
+
+    def _persist_run_configurations_result(self, result: RunConfigurationsResult) -> bool:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return False
+        try:
+            self._run_config_controller.persist_run_configs(
+                loaded_project=loaded_project,
+                run_configs=result.configurations,
+            )
+        except AppValidationError as exc:
+            QMessageBox.warning(self, "Run Configurations", str(exc))
+            return False
+        try:
+            updated_metadata = set_project_default_argv(
+                loaded_project.manifest_path,
+                default_argv=list(result.default_argv),
+                metadata_if_absent=None
+                if loaded_project.manifest_materialized
+                else loaded_project.metadata,
+            )
+        except (ProjectManifestValidationError, ValueError) as exc:
+            QMessageBox.warning(self, "Run Configurations", str(exc))
+            return False
+        self._loaded_project = replace(
+            loaded_project,
+            metadata=updated_metadata,
+            manifest_materialized=True,
+        )
+        selected_name = result.selected_config_name
+        existing_names = {config.name for config in result.configurations}
+        if selected_name and selected_name in existing_names:
+            self._active_named_run_config_name = selected_name
+        elif (
+            self._active_named_run_config_name is not None
+            and self._active_named_run_config_name not in existing_names
+        ):
+            self._active_named_run_config_name = None
+        self._refresh_run_action_states()
+        self._refresh_active_run_config_indicator()
+        return True
+
+    def _install_active_run_config_indicator(self) -> None:
+        """Add a status-bar button showing which run configuration F5 will use."""
+
+        if getattr(self, "_active_run_config_button", None) is not None:
+            return
+        status_bar = self.statusBar()
+        button = QToolButton(status_bar)
+        button.setObjectName("shell.statusBar.activeRunConfig")
+        button.setText("Default")
+        button.setToolTip(
+            "Active run target for F5 / Run Project. Click to switch configurations or edit them."
+        )
+        button.setPopupMode(QToolButton.InstantPopup)
+        button.setAutoRaise(True)
+        button.setFocusPolicy(Qt.NoFocus)
+        button.aboutToShowMenu = None  # placeholder for type clarity
+        button.setMenu(QMenu(button))
+        button.menu().aboutToShow.connect(self._populate_active_run_config_menu)
+        status_bar.addPermanentWidget(button)
+        self._active_run_config_button = button
+        self._refresh_active_run_config_indicator()
+
+    def _populate_active_run_config_menu(self) -> None:
+        button = getattr(self, "_active_run_config_button", None)
+        if button is None:
+            return
+        menu = button.menu()
+        if menu is None:
+            return
+        menu.clear()
+        loaded_project = self._loaded_project
+
+        default_action = menu.addAction("Default (no named configuration)")
+        default_action.setCheckable(True)
+        default_action.setChecked(self._active_named_run_config_name is None)
+        default_action.triggered.connect(self._set_active_run_config_to_default)
+
+        if loaded_project is not None:
+            configs = self._run_config_controller.load_configs(loaded_project)
+        else:
+            configs = []
+        if configs:
+            menu.addSeparator()
+            for config in configs:
+                action = menu.addAction(config.name)
+                action.setCheckable(True)
+                action.setChecked(config.name == self._active_named_run_config_name)
+                action.triggered.connect(
+                    lambda _checked=False, name=config.name: self._set_active_run_config_by_name(name)
+                )
+        menu.addSeparator()
+        run_with_args_action = menu.addAction("Run With Arguments...")
+        run_with_args_action.triggered.connect(self._handle_run_with_arguments_action)
+        edit_action = menu.addAction("Edit Configurations...")
+        edit_action.setEnabled(loaded_project is not None)
+        edit_action.triggered.connect(self._handle_run_with_configuration_action)
+
+    def _set_active_run_config_to_default(self) -> None:
+        if self._active_named_run_config_name is None:
+            return
+        self._active_named_run_config_name = None
+        self._refresh_run_action_states()
+        self._refresh_active_run_config_indicator()
+
+    def _set_active_run_config_by_name(self, name: str) -> None:
+        normalized = (name or "").strip()
+        if not normalized:
+            return
+        if normalized == self._active_named_run_config_name:
+            return
+        self._active_named_run_config_name = normalized
+        self._refresh_run_action_states()
+        self._refresh_active_run_config_indicator()
+
+    def _refresh_active_run_config_indicator(self) -> None:
+        """Update the status-bar active-run-config indicator (no-op when the widget is missing)."""
+
+        button = getattr(self, "_active_run_config_button", None)
+        if button is None:
+            return
+        active_name = self._active_named_run_config_name
+        button.setText(active_name if active_name else "Default")
+        if self._loaded_project is None:
+            button.setEnabled(True)  # menu still useful: Run With Arguments is always available
+        else:
+            button.setEnabled(True)
+
+    def _current_theme_tokens(self) -> ShellThemeTokens:
+        return self._resolve_theme_tokens()
 
 
     def _handle_start_python_console_action(self) -> bool:
@@ -3502,27 +3795,71 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Request live Python Console completions off the UI thread."""
 
+        # #region agent log
+        import json as _agent_json
+        import threading as _agent_threading
+        import time as _agent_time
+        import traceback as _agent_tb
+        _AGENT_LOG_PATH = "/home/joshua/Documents/ChoreBoyCodeStudio/.cursor/debug-0b96d3.log"
+
+        def _agent_log_mw(message, data=None, location=""):
+            try:
+                payload = {
+                    "sessionId": "0b96d3",
+                    "location": location,
+                    "message": message,
+                    "data": data or {},
+                    "timestamp": int(_agent_time.time() * 1000),
+                    "thread": _agent_threading.current_thread().name,
+                }
+                with open(_AGENT_LOG_PATH, "a", encoding="utf-8") as _f:
+                    _f.write(_agent_json.dumps(payload, default=repr) + "\n")
+            except Exception:
+                pass
+
+        _agent_log_mw("repl completion request spawning thread", {"gen": request_generation, "active_threads": _agent_threading.active_count(), "trigger_kind": trigger_kind}, "main_window.py:_request_python_console_completion_async")
+        # #endregion
+
         def work() -> None:
-            envelope = self._repl_manager.complete(
-                line_buffer=line_buffer,
-                cursor_offset=cursor_offset,
-                trigger_kind=trigger_kind,
-                trigger_character=trigger_character,
-                max_results=100,
-            )
+            # #region agent log
+            _agent_log_mw("repl work() thread start - calling _repl_manager.complete", {"gen": request_generation}, "main_window.py:work")
+            try:
+            # #endregion
+                envelope = self._repl_manager.complete(
+                    line_buffer=line_buffer,
+                    cursor_offset=cursor_offset,
+                    trigger_kind=trigger_kind,
+                    trigger_character=trigger_character,
+                    max_results=100,
+                )
+            # #region agent log
+            except BaseException as _exc:
+                _agent_log_mw("repl work() _repl_manager.complete EXCEPTION", {"gen": request_generation, "type": type(_exc).__name__, "value": repr(_exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "main_window.py:work")
+                raise
+            _agent_log_mw("repl work() _repl_manager.complete returned", {"gen": request_generation, "n_items": len(envelope.items), "degradation": envelope.degradation_reason}, "main_window.py:work")
+            # #endregion
 
             def apply() -> None:
-                if self._python_console_widget is None:
-                    return
-                self._python_console_widget.show_completion_items_for_request(
-                    request_generation=request_generation,
-                    items=envelope.items,
-                )
-                if envelope.degradation_reason:
-                    self.statusBar().showMessage(
-                        f"Python Console completion unavailable: {envelope.degradation_reason}",
-                        4000,
+                # #region agent log
+                _agent_log_mw("repl apply() running on main thread", {"gen": request_generation, "n_items": len(envelope.items)}, "main_window.py:apply")
+                try:
+                # #endregion
+                    if self._python_console_widget is None:
+                        return
+                    self._python_console_widget.show_completion_items_for_request(
+                        request_generation=request_generation,
+                        items=envelope.items,
                     )
+                    if envelope.degradation_reason:
+                        self.statusBar().showMessage(
+                            f"Python Console completion unavailable: {envelope.degradation_reason}",
+                            4000,
+                        )
+                # #region agent log
+                except BaseException as _exc:
+                    _agent_log_mw("repl apply() EXCEPTION", {"gen": request_generation, "type": type(_exc).__name__, "value": repr(_exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "main_window.py:apply")
+                    raise
+                # #endregion
 
             self._dispatch_to_main_thread(apply)
 
@@ -4175,6 +4512,38 @@ class MainWindow(QMainWindow):
             entry_file=str(entry_path),
         )
 
+    def _handle_tree_run_file_with_arguments(self, absolute_path: str) -> bool:
+        """Open the Run With Arguments dialog pre-filled with ``absolute_path``."""
+
+        entry_path = Path(absolute_path).expanduser().resolve()
+        if entry_path.suffix.lower() != ".py":
+            return False
+        loaded_project = self._loaded_project
+        project_root = loaded_project.project_root if loaded_project is not None else None
+        default_env: Mapping[str, str] = (
+            dict(loaded_project.metadata.env_overrides)
+            if loaded_project is not None
+            else {}
+        )
+        initial = RunWithArgumentsInitial(
+            entry_file=str(entry_path),
+            argv=(),
+            working_directory=None,
+            env_overrides=default_env,
+            recent_argv_history=tuple(self._settings_service.load_recent_argv_history()),
+            project_root=project_root,
+        )
+        invocation = RunWithArgumentsDialog.run_dialog(
+            self,
+            initial=initial,
+            tokens=self._current_theme_tokens(),
+        )
+        if invocation is None:
+            return False
+        if invocation.argv_text:
+            self._settings_service.push_recent_argv_history(invocation.argv_text)
+        return self._launch_ad_hoc_run_invocation(invocation)
+
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
     ) -> None:
@@ -4749,6 +5118,7 @@ class MainWindow(QMainWindow):
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_refresh_timer.stop()
         self._refresh_outline_for_active_tab()
+        self._get_project_tree_presenter().reveal_path(tab_path)
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:

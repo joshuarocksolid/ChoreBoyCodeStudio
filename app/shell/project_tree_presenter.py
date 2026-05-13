@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QApplication, QMenu, QTreeWidgetItem
+from PySide2.QtWidgets import QAbstractItemView, QApplication, QMenu, QTreeWidgetItem
 
 from app.core.models import LoadedProject
 from app.project.project_tree import build_project_tree
@@ -57,6 +57,9 @@ class ProjectTreePresenter:
             # Qt finalizes scrollbar ranges after expansion is applied; defer the
             # restore to the next event-loop tick so setValue lands on a real range.
             self._restore_scroll_position(vertical_scroll, horizontal_scroll)
+        active_path = window._editor_manager.active_file_path()
+        if active_path:
+            self.reveal_path(active_path)
 
     def _restore_scroll_position(self, vertical: int, horizontal: int) -> None:
         window = self._window
@@ -106,6 +109,45 @@ class ProjectTreePresenter:
                     window._tree_folder_open_icon if item.isExpanded() else window._tree_folder_icon,
                 )
             item.setSelected(relative_path in selected_paths)
+
+    def reveal_path(self, file_path: str) -> None:
+        """Select and scroll to the tree item matching ``file_path``.
+
+        Expands ancestor folders so the item is visible, replaces any existing
+        selection, and centres the item in the viewport. Silently no-ops when
+        the path is empty, the tree is unavailable, or no matching item exists
+        (for example, when the active editor file lives outside the project).
+        """
+        window = self._window
+        tree = window._project_tree_widget
+        if tree is None or not file_path:
+            return
+        try:
+            target = str(Path(file_path).expanduser().resolve())
+        except OSError:
+            return
+        for item in self.iter_items():
+            raw = str(item.data(0, self._absolute_path_role) or "")
+            if not raw:
+                continue
+            try:
+                candidate = str(Path(raw).expanduser().resolve())
+            except OSError:
+                continue
+            if candidate != target:
+                continue
+            parent = item.parent()
+            while parent is not None:
+                if not parent.isExpanded():
+                    parent.setExpanded(True)
+                    if bool(parent.data(0, self._is_directory_role)):
+                        parent.setIcon(0, window._tree_folder_open_icon)
+                parent = parent.parent()
+            tree.clearSelection()
+            tree.setCurrentItem(item)
+            item.setSelected(True)
+            tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+            return
 
     def iter_items(self) -> list[QTreeWidgetItem]:
         window = self._window
@@ -230,6 +272,7 @@ class ProjectTreePresenter:
         if not is_directory:
             local_history_action = menu.addAction("Local History...")
         run_file_action = None
+        run_file_with_args_action = None
         set_entry_point_action = None
         if (
             not is_directory
@@ -239,7 +282,11 @@ class ProjectTreePresenter:
             menu.addSeparator()
             run_file_action = menu.addAction("Run")
             assert run_file_action is not None
-            run_file_action.setEnabled(not window._run_service.supervisor.is_running())
+            run_is_idle = not window._run_service.supervisor.is_running()
+            run_file_action.setEnabled(run_is_idle)
+            run_file_with_args_action = menu.addAction("Run With Arguments...")
+            assert run_file_with_args_action is not None
+            run_file_with_args_action.setEnabled(run_is_idle)
             set_entry_point_action = menu.addAction("Set as Entry Point")
             assert set_entry_point_action is not None
             if relative_path == window._loaded_project.metadata.default_entry:
@@ -279,6 +326,8 @@ class ProjectTreePresenter:
             window._local_history_workflow.show_local_history_for_path(absolute_path)
         elif run_file_action is not None and chosen == run_file_action:
             window._handle_tree_run_file(absolute_path)
+        elif run_file_with_args_action is not None and chosen == run_file_with_args_action:
+            window._handle_tree_run_file_with_arguments(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
             window._set_project_entry_point(relative_path)
 

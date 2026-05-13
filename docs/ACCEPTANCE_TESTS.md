@@ -2781,6 +2781,105 @@ Verify that Markdown preview remains useful and safe under common document cases
 
 ---
 
+## AT-RUN-ARGS-AD-HOC — Run With Arguments launches once and does not persist
+
+**Purpose:**
+Verify the ad-hoc Run With Arguments dialog passes argv to the runner without modifying `cbcs/project.json`.
+
+**Preconditions:**
+
+- A Python project is open with at least one entry file.
+- `cbcs/project.json` contains a known `run_configs` list (or is empty).
+
+**Steps:**
+
+1. Open **Run > Run With Arguments...** (or use the status-bar active-config picker).
+2. Enter argv `--foo bar baz`.
+3. Click **Run**.
+4. Inspect the Run Log: confirm `sys.argv[1:] == ['--foo', 'bar', 'baz']` (e.g. via a small print).
+5. Close and reopen the project.
+6. Open `cbcs/project.json`.
+
+**Expected Result:**
+
+- The run executes once with the supplied argv.
+- `cbcs/project.json` `run_configs` is unchanged (no new entry created unless the user clicked **Save as Configuration...**).
+- The recent-argv dropdown in the dialog now includes the just-used argv string (global state).
+
+---
+
+## AT-RUN-ARGS-PERSIST — Run Configurations round-trip through cbcs/project.json
+
+**Purpose:**
+Verify named run configurations edited in the dialog persist into `cbcs/project.json` and survive reopen.
+
+**Preconditions:**
+
+- A Python project is open.
+
+**Steps:**
+
+1. Open **Run > Run Configurations...** (or **Edit Configurations...** from the status-bar picker).
+2. Click **+ Add**, name the configuration `Dev`, set entry `main.py`, argv `--profile dev`, env `DEBUG=1`.
+3. Click **Save**.
+4. Inspect `cbcs/project.json` and confirm a `run_configs` entry matches the new values.
+5. Close the project and reopen it.
+6. Open the status-bar active-config picker and select **Dev**, then press **F5** (Run Project).
+
+**Expected Result:**
+
+- `run_configs` in `cbcs/project.json` contains the new entry exactly as edited.
+- After reopen, the **Dev** configuration is still listed.
+- Selecting **Dev** and pressing F5 runs `main.py` with `sys.argv[1:] == ['--profile', 'dev']` and `os.environ['DEBUG'] == '1'`.
+
+---
+
+## AT-RUN-ARGS-QUOTING — Quoted argv tokens preserve embedded whitespace
+
+**Purpose:**
+Verify the shlex-based tokenizer preserves whitespace inside quoted argv values.
+
+**Preconditions:**
+
+- Run With Arguments dialog is open (or a Run Configurations entry is being edited).
+
+**Steps:**
+
+1. In the **Arguments** field, type `--path "/tmp/a b/c.toml" --flag`.
+2. Observe the "Parsed argv" preview line.
+3. Click **Run**.
+
+**Expected Result:**
+
+- The preview line shows three tokens exactly: `'--path'`, `'/tmp/a b/c.toml'`, `'--flag'`.
+- The runner receives the path as a single argv element with the embedded space intact.
+- Typing an unbalanced quote (e.g. `--path "/tmp/missing-close`) surfaces an inline error and disables Run until corrected.
+
+---
+
+## AT-RUN-ARGS-THEME — Run arguments UI is readable in light and dark themes
+
+**Purpose:**
+Verify the new dialogs and the status-bar indicator meet the dual-theme rule (`.cursor/rules/ui_light_dark_mode.mdc`).
+
+**Preconditions:**
+
+- A Python project is open.
+
+**Steps:**
+
+1. Toggle to **Light** theme via Settings.
+2. Open **Run With Arguments...** and **Run Configurations...** in turn; observe labels, fields, inline-error text, "Parsed argv" preview line, list items, and buttons.
+3. Hover the status-bar active-config indicator and open its popup menu.
+4. Toggle to **Dark** theme and repeat steps 2–3.
+
+**Expected Result:**
+
+- All text, inline error states, selected-row highlights, button focus rings, and the active-config indicator render with adequate contrast in both themes.
+- No control is clipped, invisible, or rendered with a hardcoded color that disappears in the other theme.
+
+---
+
 ## 16. Minimum MVP Gate
 
 The following tests are the minimum gate for MVP:

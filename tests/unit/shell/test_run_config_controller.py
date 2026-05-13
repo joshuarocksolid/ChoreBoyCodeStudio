@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from app.core.errors import AppValidationError
 from app.core.models import LoadedProject, ProjectMetadata
 from app.project.run_configs import RunConfiguration
-from app.shell.run_config_controller import RunConfigController
+from app.shell.run_config_controller import RunConfigController, tokenize_argv_text
 
 pytestmark = pytest.mark.unit
 
@@ -55,6 +56,40 @@ def test_parse_config_input_validates_and_normalizes_fields() -> None:
     assert config.argv == ["--foo", "--bar"]
     assert config.working_directory == "src"
     assert config.env_overrides == {"A": "1", "B": "two"}
+
+
+def test_parse_config_input_handles_quoted_spaces() -> None:
+    controller = RunConfigController()
+
+    config = controller.parse_config_input(
+        name="With spaces",
+        entry_file="app/main.py",
+        argv_text='--config "/tmp/with space/cfg.toml" --flag',
+        working_directory_text="",
+        env_overrides_text="",
+    )
+
+    assert config.argv == ["--config", "/tmp/with space/cfg.toml", "--flag"]
+
+
+def test_parse_config_input_rejects_unbalanced_quotes() -> None:
+    controller = RunConfigController()
+
+    with pytest.raises(AppValidationError):
+        controller.parse_config_input(
+            name="Bad",
+            entry_file="app/main.py",
+            argv_text='--config "/tmp/missing-close',
+            working_directory_text="",
+            env_overrides_text="",
+        )
+
+
+def test_tokenize_argv_text_collapses_whitespace_and_handles_empty() -> None:
+    assert tokenize_argv_text("") == []
+    assert tokenize_argv_text("   ") == []
+    assert tokenize_argv_text("--foo   --bar") == ["--foo", "--bar"]
+    assert tokenize_argv_text("'one two' three") == ["one two", "three"]
 
 
 def test_upsert_config_persists_updated_payload(tmp_path: Path) -> None:

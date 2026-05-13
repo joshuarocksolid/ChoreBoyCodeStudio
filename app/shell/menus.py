@@ -78,6 +78,7 @@ class MenuCallbacks:
     on_debug_pytest_current_file: Callable[[], object] | None = None
     on_debug_pytest_failed: Callable[[], object] | None = None
     on_run_with_config: Callable[[], object] | None = None
+    on_run_with_args: Callable[[], object] | None = None
     on_stop: Callable[[], object] | None = None
     on_restart: Callable[[], object] | None = None
     on_rerun_last_debug_target: Callable[[], object] | None = None

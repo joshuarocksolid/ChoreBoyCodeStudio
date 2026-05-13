@@ -6,7 +6,7 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping, NoReturn, Optional
+from typing import Any, Mapping, NoReturn, Optional, Sequence
 import uuid
 
 from app.bootstrap.paths import PathInput, project_manifest_path
@@ -177,6 +177,30 @@ def set_project_default_entry(
     else:
         _raise_validation_error("Manifest file not found.", manifest_path=path)
     updated_metadata = replace(metadata, default_entry=normalized_entry)
+    save_project_manifest(manifest_path, updated_metadata)
+    return updated_metadata
+
+
+def set_project_default_argv(
+    manifest_path: PathInput,
+    *,
+    default_argv: Sequence[str],
+    metadata_if_absent: Optional[ProjectMetadata] = None,
+) -> ProjectMetadata:
+    """Update ``default_argv`` and persist the updated manifest metadata.
+
+    Materializes ``cbcs/project.json`` from ``metadata_if_absent`` when the manifest
+    file does not yet exist on disk, mirroring :func:`set_project_default_entry`.
+    """
+    normalized_argv = [str(token) for token in default_argv if str(token).strip() != ""]
+    path = Path(manifest_path).expanduser().resolve()
+    if path.is_file():
+        metadata = load_project_manifest(manifest_path)
+    elif metadata_if_absent is not None:
+        metadata = metadata_if_absent
+    else:
+        _raise_validation_error("Manifest file not found.", manifest_path=path)
+    updated_metadata = replace(metadata, default_argv=normalized_argv)
     save_project_manifest(manifest_path, updated_metadata)
     return updated_metadata
 

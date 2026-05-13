@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from app.bootstrap.paths import PathInput, global_settings_path, project_settings_path
+from app.core import constants
 from app.persistence.settings_store import (
     compute_effective_settings_payload,
     filter_project_settings_payload,
@@ -91,3 +92,46 @@ class SettingsService:
     def invalidate_cache(self) -> None:
         self._cached_global_payload = None
         self._cached_project_payloads.clear()
+
+    def load_recent_argv_history(self) -> list[str]:
+        """Return the most-recent-first list of argv strings used in Run With Arguments."""
+        payload = self.load_global()
+        return _coerce_recent_argv_history(payload)
+
+    def push_recent_argv_history(self, argv_text: str) -> list[str]:
+        """Prepend ``argv_text`` to the recent argv history (deduplicated, capped)."""
+
+        normalized = (argv_text or "").strip()
+        if not normalized:
+            return self.load_recent_argv_history()
+
+        def _updater(current_payload: dict[str, Any]) -> Mapping[str, Any]:
+            updated_payload = dict(current_payload)
+            run_section_raw = updated_payload.get(constants.UI_RUN_SETTINGS_KEY)
+            run_section: dict[str, Any] = (
+                dict(run_section_raw) if isinstance(run_section_raw, Mapping) else {}
+            )
+            existing_history = _coerce_recent_argv_history(updated_payload)
+            deduped_history = [normalized] + [entry for entry in existing_history if entry != normalized]
+            run_section[constants.UI_RUN_RECENT_ARGV_KEY] = deduped_history[
+                : constants.UI_RUN_RECENT_ARGV_HISTORY_LIMIT
+            ]
+            updated_payload[constants.UI_RUN_SETTINGS_KEY] = run_section
+            return updated_payload
+
+        updated = self.update_global(_updater)
+        return _coerce_recent_argv_history(updated)
+
+
+def _coerce_recent_argv_history(payload: Mapping[str, Any]) -> list[str]:
+    run_section = payload.get(constants.UI_RUN_SETTINGS_KEY)
+    if not isinstance(run_section, Mapping):
+        return []
+    raw_history = run_section.get(constants.UI_RUN_RECENT_ARGV_KEY)
+    if not isinstance(raw_history, list):
+        return []
+    normalized: list[str] = []
+    for entry in raw_history:
+        if isinstance(entry, str) and entry.strip():
+            normalized.append(entry)
+    return normalized[: constants.UI_RUN_RECENT_ARGV_HISTORY_LIMIT]
