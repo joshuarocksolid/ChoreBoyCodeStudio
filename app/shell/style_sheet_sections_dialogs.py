@@ -169,6 +169,75 @@ QToolButton[modeButton="true"]:disabled {{
 """
 
 
+def shell_section_unsaved_changes_dialog(tokens: ShellThemeTokens) -> str:
+    """Targeted overrides for the unsaved-changes prompt surface."""
+    warning_color = tokens.diag_warning_color or ("#F59F00" if tokens.is_dark else "#E08E00")
+    return f"""/* -- Unsaved changes dialog --------------------------------------------- */
+QDialog#shell\\.unsavedChangesDialog {{
+    background: {tokens.window_bg};
+    color: {tokens.text_primary};
+}}
+QDialog#shell\\.unsavedChangesDialog QLabel#shell\\.dialogChrome\\.icon {{
+    background: transparent;
+}}
+QDialog#shell\\.unsavedChangesDialog QWidget#shell\\.dialogChrome\\.metaRow QLabel[metaChip="true"] {{
+    background: {tokens.badge_bg};
+    color: {warning_color};
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList {{
+    background: {tokens.editor_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList::item {{
+    border: none;
+    padding: 0;
+    margin: 1px 0;
+}}
+QWidget#shell\\.unsavedChangesDialog\\.row {{
+    background: transparent;
+    border-radius: 4px;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList::item:hover QWidget#shell\\.unsavedChangesDialog\\.row {{
+    background: {tokens.tree_hover_bg};
+}}
+QLabel#shell\\.unsavedChangesDialog\\.row\\.name {{
+    color: {tokens.text_primary};
+    font-size: 13px;
+    font-weight: 600;
+}}
+QLabel#shell\\.unsavedChangesDialog\\.row\\.path {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar:vertical {{
+    background: transparent;
+    width: 10px;
+    margin: 2px 0;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::handle:vertical {{
+    background: {tokens.border};
+    border-radius: 4px;
+    min-height: 24px;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::handle:vertical:hover {{
+    background: {tokens.text_muted};
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::add-line:vertical,
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::sub-line:vertical {{
+    height: 0;
+    background: transparent;
+    border: none;
+}}
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::add-page:vertical,
+QListWidget#shell\\.unsavedChangesDialog\\.fileList QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+"""
+
+
 def shell_section_draft_recovery_dialog(tokens: ShellThemeTokens) -> str:
     """Targeted overrides for the recovery-draft dialog surface."""
     return f"""/* -- Draft recovery dialog ---------------------------------------------- */
@@ -376,6 +445,7 @@ QWizard#shell\\.packageWizard QLineEdit:focus,
 QWizard#shell\\.packageWizard QTextEdit:focus,
 QWizard#shell\\.packageWizard QComboBox:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QWizard#shell\\.packageWizard QPushButton {{
     background: {tokens.input_bg};

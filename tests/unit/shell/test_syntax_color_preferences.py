@@ -6,6 +6,8 @@ import pytest
 
 from app.shell.syntax_color_preferences import (
     THEME_DARK,
+    THEME_HC_DARK,
+    THEME_HC_LIGHT,
     THEME_LIGHT,
     normalize_hex_color,
     parse_syntax_color_overrides,
@@ -52,4 +54,22 @@ def test_parse_syntax_color_overrides_validates_theme_shape_and_token_keys() -> 
 
 def test_parse_syntax_color_overrides_returns_empty_maps_when_section_missing() -> None:
     parsed = parse_syntax_color_overrides({})
-    assert parsed == {THEME_LIGHT: {}, THEME_DARK: {}}
+    assert parsed == {
+        THEME_LIGHT: {},
+        THEME_DARK: {},
+        THEME_HC_LIGHT: {},
+        THEME_HC_DARK: {},
+    }
+
+
+def test_parse_syntax_color_overrides_parses_high_contrast_scopes() -> None:
+    parsed = parse_syntax_color_overrides(
+        {
+            "syntax_colors": {
+                "high_contrast_light": {"keyword": "#000080"},
+                "high_contrast_dark": {"keyword": "#FFFF00"},
+            }
+        }
+    )
+    assert parsed[THEME_HC_LIGHT] == {"keyword": "#000080"}
+    assert parsed[THEME_HC_DARK] == {"keyword": "#FFFF00"}

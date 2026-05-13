@@ -136,6 +136,7 @@ QDialog#shell\\.settingsDialog QComboBox:hover {{
 }}
 QDialog#shell\\.settingsDialog QComboBox:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QDialog#shell\\.settingsDialog QComboBox::drop-down {{
     border: none;
@@ -164,6 +165,7 @@ QDialog#shell\\.settingsDialog QSpinBox:hover {{
 }}
 QDialog#shell\\.settingsDialog QSpinBox:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 /* -- Font combo ---------------------------------------------------------- */
 QDialog#shell\\.settingsDialog QFontComboBox {{
@@ -180,6 +182,7 @@ QDialog#shell\\.settingsDialog QFontComboBox:hover {{
 }}
 QDialog#shell\\.settingsDialog QFontComboBox:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QDialog#shell\\.settingsDialog QFontComboBox QAbstractItemView {{
     background: {tokens.panel_bg};
@@ -208,6 +211,7 @@ QDialog#shell\\.settingsDialog QLineEdit {{
 }}
 QDialog#shell\\.settingsDialog QLineEdit:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 """
 def settings_section_push_buttons(tokens: ShellThemeTokens) -> str:
@@ -357,6 +361,7 @@ QDialog#shell\\.settingsDialog QKeySequenceEdit {{
 }}
 QDialog#shell\\.settingsDialog QKeySequenceEdit:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 /* -- Validation labels --------------------------------------------------- */
 QLabel#shell\\.settingsDialog\\.shortcutConflict,

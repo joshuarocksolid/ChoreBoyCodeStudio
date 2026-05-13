@@ -65,6 +65,12 @@ def build_main_window_menus(
         on_set_theme_system=lambda: window._handle_set_theme(constants.UI_THEME_MODE_SYSTEM),
         on_set_theme_light=lambda: window._handle_set_theme(constants.UI_THEME_MODE_LIGHT),
         on_set_theme_dark=lambda: window._handle_set_theme(constants.UI_THEME_MODE_DARK),
+        on_set_theme_high_contrast_light=lambda: window._handle_set_theme(
+            constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT
+        ),
+        on_set_theme_high_contrast_dark=lambda: window._handle_set_theme(
+            constants.UI_THEME_MODE_HIGH_CONTRAST_DARK
+        ),
         on_zoom_in=window._handle_zoom_in,
         on_zoom_out=window._handle_zoom_out,
         on_zoom_reset=window._handle_zoom_reset,

@@ -81,11 +81,88 @@ DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "semantic_property": "#9CDCFE",
     "semantic_constant": "#4FC1FF",
 }
+# High-Contrast palettes target WCAG AAA (>= 7:1) against the HC editor
+# background (pure white #FFFFFF for HC Light, pure black #000000 for HC Dark).
+# Inspiration: VS Code "Default High Contrast" themes.
+DEFAULT_HC_LIGHT_PALETTE: SyntaxPalette = {
+    "keyword": "#0000C0",
+    "keyword_control": "#7B1FA2",
+    "keyword_import": "#7B1FA2",
+    "keyword_operator": "#7B1FA2",
+    "builtin": "#005A5A",
+    "escape": "#A03000",
+    "string": "#9C0000",
+    "comment": "#005000",
+    "number": "#005000",
+    "function": "#5A3500",
+    "class": "#005A5A",
+    "decorator": "#5A3500",
+    "operator": "#000000",
+    "punctuation": "#000000",
+    "parameter": "#000080",
+    "json_key": "#003C8F",
+    "json_literal": "#0000C0",
+    "markdown_heading": "#5A0000",
+    "markdown_emphasis": "#5A0000",
+    "markdown_strong": "#5A0000",
+    "markdown_code": "#5A0000",
+    "semantic_function": "#5A3500",
+    "semantic_method": "#5A3500",
+    "semantic_class": "#005A5A",
+    "semantic_parameter": "#000080",
+    "semantic_import": "#000080",
+    "semantic_variable": "#000080",
+    "semantic_property": "#000080",
+    "semantic_constant": "#003C8F",
+}
+DEFAULT_HC_DARK_PALETTE: SyntaxPalette = {
+    "keyword": "#7CB7FF",
+    "keyword_control": "#FF9CFF",
+    "keyword_import": "#FF9CFF",
+    "keyword_operator": "#FF9CFF",
+    "builtin": "#5FE3C2",
+    "escape": "#FFD787",
+    "string": "#FFB088",
+    "comment": "#7FCB66",
+    "number": "#D5F0AE",
+    "function": "#FFFF87",
+    "class": "#5FE3C2",
+    "decorator": "#FFFF87",
+    "operator": "#FFFFFF",
+    "punctuation": "#FFFFFF",
+    "parameter": "#B8E4FF",
+    "json_key": "#B8E4FF",
+    "json_literal": "#7CB7FF",
+    "markdown_heading": "#7CB7FF",
+    "markdown_emphasis": "#7CB7FF",
+    "markdown_strong": "#7CB7FF",
+    "markdown_code": "#FFB088",
+    "semantic_function": "#FFFF87",
+    "semantic_method": "#FFFF87",
+    "semantic_class": "#5FE3C2",
+    "semantic_parameter": "#B8E4FF",
+    "semantic_import": "#B8E4FF",
+    "semantic_variable": "#B8E4FF",
+    "semantic_property": "#B8E4FF",
+    "semantic_constant": "#7FD2FF",
+}
 
 
-def build_syntax_palette(*, is_dark: bool, overrides: Mapping[str, str] | None = None) -> SyntaxPalette:
-    """Return merged syntax palette for the selected mode."""
-    palette = dict(DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE)
+def build_syntax_palette(
+    *,
+    is_dark: bool,
+    overrides: Mapping[str, str] | None = None,
+    high_contrast: bool = False,
+) -> SyntaxPalette:
+    """Return merged syntax palette for the selected mode.
+
+    ``high_contrast`` selects the WCAG-AAA-targeted palette variant. The
+    returned palette may still be overridden per-token by ``overrides``.
+    """
+    if high_contrast:
+        palette = dict(DEFAULT_HC_DARK_PALETTE if is_dark else DEFAULT_HC_LIGHT_PALETTE)
+    else:
+        palette = dict(DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE)
     if overrides:
         for key, value in overrides.items():
             if value:

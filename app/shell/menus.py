@@ -97,6 +97,8 @@ class MenuCallbacks:
     on_set_theme_system: Callable[[], object] | None = None
     on_set_theme_light: Callable[[], object] | None = None
     on_set_theme_dark: Callable[[], object] | None = None
+    on_set_theme_high_contrast_light: Callable[[], object] | None = None
+    on_set_theme_high_contrast_dark: Callable[[], object] | None = None
     on_zoom_in: Callable[[], object] | None = None
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None

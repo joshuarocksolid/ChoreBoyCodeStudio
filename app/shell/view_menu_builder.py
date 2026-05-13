@@ -109,6 +109,16 @@ def _build_theme_submenu(ctx: MenuBuildContext, view_menu: Any) -> object:
         ("shell.action.view.theme.system", "System", callbacks.on_set_theme_system),
         ("shell.action.view.theme.light", "Light", callbacks.on_set_theme_light),
         ("shell.action.view.theme.dark", "Dark", callbacks.on_set_theme_dark),
+        (
+            "shell.action.view.theme.high_contrast_light",
+            "High Contrast Light",
+            callbacks.on_set_theme_high_contrast_light,
+        ),
+        (
+            "shell.action.view.theme.high_contrast_dark",
+            "High Contrast Dark",
+            callbacks.on_set_theme_high_contrast_dark,
+        ),
     ]:
         action = ctx.qt_widgets.QAction(label, theme_menu)
         action.setObjectName(action_id)

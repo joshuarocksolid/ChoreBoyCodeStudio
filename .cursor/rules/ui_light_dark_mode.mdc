@@ -1,20 +1,27 @@
 ---
-description: Require UI compatibility across light and dark modes
+description: Require UI compatibility across all four theme modes (Light, Dark, High Contrast Light, High Contrast Dark)
 alwaysApply: true
 ---
 
 # UI Theme Compatibility
 
-For user-facing UI work, ensure visuals and states remain usable in both light and dark mode.
+For user-facing UI work, ensure visuals and states remain usable in **all four** theme modes:
+
+1. Light
+2. Dark
+3. High Contrast Light (WCAG AAA, request #37 Tier 2)
+4. High Contrast Dark (WCAG AAA, request #37 Tier 2)
 
 ## Implementation guidance
 
-- Avoid hardcoded one-theme-only colors for text, backgrounds, borders, and state highlights.
-- Prefer semantic or theme-aware color tokens that can map cleanly to both themes.
+- Never hardcode one-theme-only colors for text, backgrounds, borders, focus rings, or state highlights. Always read from `ShellThemeTokens`.
+- Prefer semantic, theme-aware tokens that map cleanly across all four themes.
 - Maintain readable contrast for normal, hover, selected, disabled, warning, and error states.
-- Ensure icons, badges, and status indicators stay recognizable on light and dark surfaces.
+- Use `tokens.focus_border_width` for focus-state border widths so HC modes (which set `focus_border_width=2`) get visibly thicker focus rings without per-mode branching.
+- Ensure icons, badges, and status indicators stay recognizable on every surface. SVG icons colored from `tokens.icon_primary` / `tokens.icon_muted` inherit HC tuning automatically.
 
 ## Validation expectations
 
-- When UI code changes, verify affected views in both light and dark mode before considering the task complete.
-- If dual-theme validation cannot be run, explicitly note that gap in the completion summary.
+- When UI code changes, verify affected views in **all four** theme modes (Light, Dark, HC Light, HC Dark) before considering the task complete.
+- HC Light targets pure-white (`#FFFFFF`) editor/panel backgrounds with body text contrast >= 7:1 (WCAG AAA). HC Dark targets pure-black (`#000000`).
+- If full four-theme validation cannot be run, explicitly note the gap in the completion summary and call out which themes were verified.

@@ -167,6 +167,7 @@ QLineEdit#shell\\.outlinePanel\\.filter {{
 }}
 QLineEdit#shell\\.outlinePanel\\.filter:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QWidget#shell\\.outlinePanel\\.body {{
     background: {tokens.panel_bg};
@@ -325,6 +326,7 @@ QLineEdit#shell\\.debug\\.watchInput {{
 }}
 QLineEdit#shell\\.debug\\.watchInput:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QWidget#shell\\.debug\\.commandInputRow {{
     background: {tokens.editor_bg};
@@ -340,6 +342,7 @@ QLineEdit#shell\\.debug\\.commandInput {{
 }}
 QLineEdit#shell\\.debug\\.commandInput:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QLineEdit#shell\\.debug\\.commandInput:disabled {{
     color: {tokens.text_muted};

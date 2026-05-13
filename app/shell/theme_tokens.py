@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Mapping
+from typing import Any, Mapping
 
 from PySide2.QtGui import QColor, QPalette
 
 from app.core import constants
-from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
+from app.editors.syntax_engine import (
+    DEFAULT_DARK_PALETTE,
+    DEFAULT_HC_DARK_PALETTE,
+    DEFAULT_HC_LIGHT_PALETTE,
+    DEFAULT_LIGHT_PALETTE,
+)
+
+
+def is_high_contrast_mode(mode: str) -> bool:
+    """Return True for the two High-Contrast theme.mode values."""
+    return mode in (
+        constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+        constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+    )
 
 
 # Map persisted ui_font_weight values to Qt-stylesheet font-weight literals.
@@ -92,6 +105,8 @@ class ShellThemeTokens:
     popup_border: str = ""
     popup_shadow: str = ""
     ui_font_weight_css: str = "normal"
+    is_high_contrast: bool = False
+    focus_border_width: int = 1
 
 
 def tokens_from_palette(
@@ -103,26 +118,119 @@ def tokens_from_palette(
 ) -> ShellThemeTokens:
     """Derive theme tokens.
 
-    ``force_mode`` accepts ``"light"``, ``"dark"``, or ``None``.  When set it
-    overrides both ``prefer_dark`` and the palette lightness heuristic.
+    ``force_mode`` accepts ``"light"``, ``"dark"``, ``"high_contrast_light"``,
+    ``"high_contrast_dark"``, or ``None``.  When set it overrides both
+    ``prefer_dark`` and the palette lightness heuristic.
 
     ``ui_font_weight`` accepts ``"normal"``, ``"medium"``, or ``"bold"`` and
     controls chrome-text weight via :attr:`ShellThemeTokens.ui_font_weight_css`.
     """
-    if force_mode == "dark":
+    is_high_contrast = is_high_contrast_mode(force_mode or "")
+    if force_mode == constants.UI_THEME_MODE_HIGH_CONTRAST_DARK:
+        is_dark = True
+    elif force_mode == constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT:
+        is_dark = False
+    elif force_mode == "dark":
         is_dark = True
     elif force_mode == "light":
         is_dark = False
     else:
         window_color = palette.color(QPalette.Window)
         is_dark = prefer_dark or window_color.lightness() < 128
-    sp = DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE
-    syntax_kwargs = {
+    if is_high_contrast:
+        sp = DEFAULT_HC_DARK_PALETTE if is_dark else DEFAULT_HC_LIGHT_PALETTE
+    else:
+        sp = DEFAULT_DARK_PALETTE if is_dark else DEFAULT_LIGHT_PALETTE
+    # Annotated as ``dict[str, Any]`` so unpacking via ``**syntax_kwargs`` does
+    # not collide with non-string ShellThemeTokens fields like
+    # ``focus_border_width: int`` and ``is_high_contrast: bool``.
+    syntax_kwargs: dict[str, Any] = {
         field_name: sp[token_key]
         for token_key, field_name in _SYNTAX_OVERRIDE_FIELD_MAP.items()
         if token_key in sp
     }
     ui_font_weight_css = resolve_ui_font_weight_css(ui_font_weight)
+    if is_high_contrast and is_dark:
+        # HC Dark: pure-black background, near-white body text. All accents
+        # tuned to >= 7:1 contrast on #000000. focus_border_width=2 widens
+        # focus rings via the shared style-sheet sections.
+        return ShellThemeTokens(
+            window_bg="#000000",
+            panel_bg="#000000",
+            editor_bg="#000000",
+            text_primary="#FFFFFF",
+            text_muted="#E0E0E0",
+            border="#FFFFFF",
+            accent="#7CB7FF",
+            gutter_bg="#000000",
+            gutter_text="#D0D0D0",
+            line_highlight="#1F1F1F",
+            is_dark=True,
+            tree_hover_bg="#1F1F1F",
+            tree_selected_bg="#0A4D8C",
+            icon_primary="#FFFFFF",
+            icon_muted="#7CB7FF",
+            debug_paused_color="#FFD700",
+            debug_running_color="#7FCB66",
+            debug_current_frame_bg="#0A4D8C",
+            row_alt_bg="#0A0A0A",
+            search_match_bg="#5A5A00",
+            search_current_match_bg="#A06000",
+            activity_bar_bg="#000000",
+            input_bg="#000000",
+            badge_bg="#1F1F1F",
+            diag_error_color="#FF8080",
+            diag_warning_color="#FFD700",
+            diag_info_color="#7CB7FF",
+            test_passed_color="#7FCB66",
+            popup_bg="#000000",
+            popup_border="#FFFFFF",
+            popup_shadow="#000000",
+            ui_font_weight_css=ui_font_weight_css,
+            is_high_contrast=True,
+            focus_border_width=2,
+            **syntax_kwargs,
+        )
+    if is_high_contrast and not is_dark:
+        # HC Light: pure-white background, near-black body text. All accents
+        # tuned to >= 7:1 contrast on #FFFFFF.
+        return ShellThemeTokens(
+            window_bg="#FFFFFF",
+            panel_bg="#FFFFFF",
+            editor_bg="#FFFFFF",
+            text_primary="#000000",
+            text_muted="#1F1F1F",
+            border="#000000",
+            accent="#0000C0",
+            gutter_bg="#FFFFFF",
+            gutter_text="#2A2A2A",
+            line_highlight="#E6F0FF",
+            is_dark=False,
+            tree_hover_bg="#E6E6E6",
+            tree_selected_bg="#B8D7FF",
+            icon_primary="#000000",
+            icon_muted="#0000C0",
+            debug_paused_color="#7A4500",
+            debug_running_color="#005000",
+            debug_current_frame_bg="#B8D7FF",
+            row_alt_bg="#F2F2F2",
+            search_match_bg="#FFE066",
+            search_current_match_bg="#D17500",
+            activity_bar_bg="#FFFFFF",
+            input_bg="#FFFFFF",
+            badge_bg="#E6E6E6",
+            diag_error_color="#9C0000",
+            diag_warning_color="#7A4500",
+            diag_info_color="#0000C0",
+            test_passed_color="#005000",
+            popup_bg="#FFFFFF",
+            popup_border="#000000",
+            popup_shadow="#000000",
+            ui_font_weight_css=ui_font_weight_css,
+            is_high_contrast=True,
+            focus_border_width=2,
+            **syntax_kwargs,
+        )
     if is_dark:
         # Contrast notes (vs panel_bg #262C33):
         #   text_muted #C2C9D1   -> 8.43:1  (was #ADB5BD = 6.79:1)

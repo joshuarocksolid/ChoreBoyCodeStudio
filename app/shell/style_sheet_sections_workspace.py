@@ -265,6 +265,7 @@ QLineEdit#shell\\.welcome\\.searchInput {{
 }}
 QLineEdit#shell\\.welcome\\.searchInput:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QLabel#shell\\.welcome\\.recentLabel {{
     font-size: 11px;
@@ -332,6 +333,7 @@ QLineEdit#shell\\.findBar\\.replaceInput {{
 QLineEdit#shell\\.findBar\\.findInput:focus,
 QLineEdit#shell\\.findBar\\.replaceInput:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QLabel#shell\\.findBar\\.matchCount {{
     color: {tokens.text_muted};
@@ -513,6 +515,7 @@ QLineEdit#shell\\.searchSidebar\\.replaceInput:focus,
 QLineEdit#shell\\.searchSidebar\\.includeInput:focus,
 QLineEdit#shell\\.searchSidebar\\.excludeInput:focus {{
     border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
 }}
 QToolButton#shell\\.searchSidebar\\.caseBtn,
 QToolButton#shell\\.searchSidebar\\.wordBtn,

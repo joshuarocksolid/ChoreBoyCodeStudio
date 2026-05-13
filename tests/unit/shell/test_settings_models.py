@@ -324,11 +324,24 @@ def test_merge_preserves_theme_mode() -> None:
 
 
 def test_merge_theme_mode_round_trip() -> None:
-    for mode in ("system", "light", "dark"):
+    for mode in (
+        "system",
+        "light",
+        "dark",
+        "high_contrast_light",
+        "high_contrast_dark",
+    ):
         snapshot = EditorSettingsSnapshot(theme_mode=mode)
         merged = merge_editor_settings_snapshot({}, snapshot)
         restored = parse_editor_settings_snapshot(merged)
         assert restored.theme_mode == mode
+
+
+def test_merge_theme_mode_helper_round_trip_for_high_contrast() -> None:
+    for mode in ("high_contrast_light", "high_contrast_dark"):
+        merged = merge_theme_mode({}, mode)
+        snapshot = parse_editor_settings_snapshot(merged)
+        assert snapshot.theme_mode == mode
 
 
 def test_merge_invalid_theme_mode_falls_back_to_system() -> None:

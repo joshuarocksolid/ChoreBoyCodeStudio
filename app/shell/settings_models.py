@@ -14,9 +14,14 @@ from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS, parse_global_exc
 from app.shell.shortcut_preferences import parse_shortcut_overrides
 from app.shell.syntax_color_preferences import (
     THEME_DARK,
+    THEME_HC_DARK,
+    THEME_HC_LIGHT,
     THEME_LIGHT,
     parse_syntax_color_overrides,
 )
+
+
+_VALID_THEME_MODES: frozenset[str] = frozenset(constants.UI_THEME_MODE_VALUES)
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,8 @@ class EditorSettingsSnapshot:
     shortcut_overrides: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_light: dict[str, str] = field(default_factory=dict)
     syntax_color_overrides_dark: dict[str, str] = field(default_factory=dict)
+    syntax_color_overrides_high_contrast_light: dict[str, str] = field(default_factory=dict)
+    syntax_color_overrides_high_contrast_dark: dict[str, str] = field(default_factory=dict)
     lint_rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     file_exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
     local_history_max_checkpoints_per_file: int = constants.UI_LOCAL_HISTORY_MAX_CHECKPOINTS_PER_FILE_DEFAULT
@@ -117,8 +124,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
     if not isinstance(local_history_settings, dict):
         local_history_settings = {}
     theme_mode_raw = theme_settings.get(constants.UI_THEME_MODE_KEY, constants.UI_THEME_MODE_DEFAULT)
-    _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
-    theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _valid_modes else constants.UI_THEME_MODE_DEFAULT
+    theme_mode = str(theme_mode_raw) if str(theme_mode_raw) in _VALID_THEME_MODES else constants.UI_THEME_MODE_DEFAULT
     ui_font_weight_raw = theme_settings.get(
         constants.UI_THEME_FONT_WEIGHT_KEY, constants.UI_THEME_FONT_WEIGHT_DEFAULT
     )
@@ -273,6 +279,8 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         shortcut_overrides=shortcut_overrides,
         syntax_color_overrides_light=syntax_color_overrides.get(THEME_LIGHT, {}),
         syntax_color_overrides_dark=syntax_color_overrides.get(THEME_DARK, {}),
+        syntax_color_overrides_high_contrast_light=syntax_color_overrides.get(THEME_HC_LIGHT, {}),
+        syntax_color_overrides_high_contrast_dark=syntax_color_overrides.get(THEME_HC_DARK, {}),
         lint_rule_overrides=lint_rule_overrides,
         file_exclude_patterns=file_exclude_patterns,
         local_history_max_checkpoints_per_file=_coerce_int(
@@ -378,8 +386,7 @@ def parse_effective_main_window_settings(
 def merge_theme_mode(settings_payload: Mapping[str, Any], theme_mode: str) -> dict[str, Any]:
     """Merge validated theme mode into settings payload."""
     merged = dict(settings_payload)
-    valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
-    normalized_mode = theme_mode if theme_mode in valid_modes else constants.UI_THEME_MODE_DEFAULT
+    normalized_mode = theme_mode if theme_mode in _VALID_THEME_MODES else constants.UI_THEME_MODE_DEFAULT
     theme_payload = merged.get(constants.UI_THEME_SETTINGS_KEY, {})
     if not isinstance(theme_payload, dict):
         theme_payload = {}
@@ -463,8 +470,7 @@ def merge_editor_settings_snapshot(
             int(snapshot.highlighting_lexical_only_threshold_chars),
         ),
     }
-    _valid_modes = {constants.UI_THEME_MODE_SYSTEM, constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK}
-    mode = snapshot.theme_mode if snapshot.theme_mode in _valid_modes else constants.UI_THEME_MODE_DEFAULT
+    mode = snapshot.theme_mode if snapshot.theme_mode in _VALID_THEME_MODES else constants.UI_THEME_MODE_DEFAULT
     ui_font_weight = (
         snapshot.ui_font_weight
         if snapshot.ui_font_weight in constants.UI_THEME_FONT_WEIGHT_VALUES
@@ -484,6 +490,12 @@ def merge_editor_settings_snapshot(
     merged[constants.UI_SYNTAX_COLORS_SETTINGS_KEY] = {
         constants.UI_SYNTAX_COLORS_LIGHT_KEY: _normalize_string_map(snapshot.syntax_color_overrides_light),
         constants.UI_SYNTAX_COLORS_DARK_KEY: _normalize_string_map(snapshot.syntax_color_overrides_dark),
+        constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_LIGHT_KEY: _normalize_string_map(
+            snapshot.syntax_color_overrides_high_contrast_light
+        ),
+        constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_DARK_KEY: _normalize_string_map(
+            snapshot.syntax_color_overrides_high_contrast_dark
+        ),
     }
     merged[constants.UI_LINTER_SETTINGS_KEY] = {
         constants.UI_LINTER_ENABLED_KEY: bool(snapshot.diagnostics_enabled),

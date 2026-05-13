@@ -50,10 +50,22 @@ from app.shell.shortcut_preferences import (
 from app.shell.syntax_color_preferences import (
     SYNTAX_COLOR_TOKENS,
     THEME_DARK,
+    THEME_HC_DARK,
+    THEME_HC_LIGHT,
     THEME_LIGHT,
     normalize_hex_color,
 )
-from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE
+from app.editors.syntax_engine import (
+    DEFAULT_DARK_PALETTE,
+    DEFAULT_HC_DARK_PALETTE,
+    DEFAULT_HC_LIGHT_PALETTE,
+    DEFAULT_LIGHT_PALETTE,
+)
+
+
+_VALID_SYNTAX_THEME_KEYS: frozenset[str] = frozenset(
+    {THEME_LIGHT, THEME_DARK, THEME_HC_LIGHT, THEME_HC_DARK}
+)
 from app.intelligence.lint_profile import (
     LINT_RULE_DEFINITIONS,
     LINT_SEVERITY_ERROR,
@@ -119,6 +131,8 @@ class SettingsDialog(QDialog):
         self._syntax_color_overrides_by_theme: dict[str, dict[str, str]] = {
             THEME_LIGHT: dict(snapshot.syntax_color_overrides_light),
             THEME_DARK: dict(snapshot.syntax_color_overrides_dark),
+            THEME_HC_LIGHT: dict(snapshot.syntax_color_overrides_high_contrast_light),
+            THEME_HC_DARK: dict(snapshot.syntax_color_overrides_high_contrast_dark),
         }
         self._lint_rule_overrides: dict[str, dict[str, object]] = {
             code: dict(value) for code, value in snapshot.lint_rule_overrides.items()
@@ -208,9 +222,19 @@ class SettingsDialog(QDialog):
         appearance_form.setVerticalSpacing(10)
         appearance_form.setHorizontalSpacing(16)
         self._theme_mode_input = QComboBox(appearance_group)
-        self._theme_mode_input.addItems(["System", "Light", "Dark"])
-        _mode_to_index = {"system": 0, "light": 1, "dark": 2}
-        self._theme_mode_input.setCurrentIndex(_mode_to_index.get(snapshot.theme_mode, 0))
+        for label, value in (
+            ("System", constants.UI_THEME_MODE_SYSTEM),
+            ("Light", constants.UI_THEME_MODE_LIGHT),
+            ("Dark", constants.UI_THEME_MODE_DARK),
+            ("High Contrast Light", constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT),
+            ("High Contrast Dark", constants.UI_THEME_MODE_HIGH_CONTRAST_DARK),
+        ):
+            self._theme_mode_input.addItem(label, value)
+        theme_index = self._theme_mode_input.findData(snapshot.theme_mode)
+        self._theme_mode_input.setCurrentIndex(theme_index if theme_index >= 0 else 0)
+        self._theme_mode_input.setToolTip(
+            "High Contrast variants target WCAG AAA contrast for accessibility."
+        )
         appearance_form.addRow("Theme", self._theme_mode_input)
 
         self._ui_font_weight_input = QComboBox(appearance_group)
@@ -498,7 +522,7 @@ class SettingsDialog(QDialog):
             incremental_indexing=self._incremental_indexing_input.isChecked(),
             metrics_logging_enabled=self._metrics_logging_input.isChecked(),
             force_full_reindex_on_open=self._force_reindex_on_open_input.isChecked(),
-            theme_mode=["system", "light", "dark"][self._theme_mode_input.currentIndex()],
+            theme_mode=self._normalized_theme_mode_value(),
             ui_font_weight=self._normalized_ui_font_weight_value(),
             auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
             auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
@@ -506,6 +530,12 @@ class SettingsDialog(QDialog):
             shortcut_overrides=self._shortcut_overrides_snapshot(),
             syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
             syntax_color_overrides_dark=dict(self._syntax_color_overrides_by_theme.get(THEME_DARK, {})),
+            syntax_color_overrides_high_contrast_light=dict(
+                self._syntax_color_overrides_by_theme.get(THEME_HC_LIGHT, {})
+            ),
+            syntax_color_overrides_high_contrast_dark=dict(
+                self._syntax_color_overrides_by_theme.get(THEME_HC_DARK, {})
+            ),
             lint_rule_overrides=self._lint_rule_overrides_snapshot(),
             file_exclude_patterns=self._file_exclude_patterns_snapshot(),
             local_history_max_checkpoints_per_file=int(self._local_history_max_checkpoints_input.value()),
@@ -522,6 +552,12 @@ class SettingsDialog(QDialog):
         if isinstance(raw, str) and raw in constants.UI_THEME_FONT_WEIGHT_VALUES:
             return raw
         return constants.UI_THEME_FONT_WEIGHT_DEFAULT
+
+    def _normalized_theme_mode_value(self) -> str:
+        raw = self._theme_mode_input.currentData()
+        if isinstance(raw, str) and raw in constants.UI_THEME_MODE_VALUES:
+            return raw
+        return constants.UI_THEME_MODE_DEFAULT
 
     def _apply_snapshot_to_controls(self, snapshot: EditorSettingsSnapshot) -> None:
         self._tab_width_input.setValue(snapshot.tab_width)
@@ -559,9 +595,8 @@ class SettingsDialog(QDialog):
         self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
         self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
 
-        self._theme_mode_input.setCurrentIndex(
-            {"system": 0, "light": 1, "dark": 2}.get(snapshot.theme_mode, 0)
-        )
+        theme_index = self._theme_mode_input.findData(snapshot.theme_mode)
+        self._theme_mode_input.setCurrentIndex(theme_index if theme_index >= 0 else 0)
         weight_index = self._ui_font_weight_input.findData(snapshot.ui_font_weight)
         self._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
 
@@ -569,6 +604,8 @@ class SettingsDialog(QDialog):
         self._syntax_color_overrides_by_theme = {
             THEME_LIGHT: dict(snapshot.syntax_color_overrides_light),
             THEME_DARK: dict(snapshot.syntax_color_overrides_dark),
+            THEME_HC_LIGHT: dict(snapshot.syntax_color_overrides_high_contrast_light),
+            THEME_HC_DARK: dict(snapshot.syntax_color_overrides_high_contrast_dark),
         }
         self._populate_syntax_color_table(self._active_syntax_theme_key)
         self._lint_rule_overrides = {
@@ -860,7 +897,13 @@ class SettingsDialog(QDialog):
         return overrides
 
     def _syntax_defaults_for_theme(self, theme_key: str) -> dict[str, str]:
-        return dict(DEFAULT_DARK_PALETTE if theme_key == THEME_DARK else DEFAULT_LIGHT_PALETTE)
+        if theme_key == THEME_HC_DARK:
+            return dict(DEFAULT_HC_DARK_PALETTE)
+        if theme_key == THEME_HC_LIGHT:
+            return dict(DEFAULT_HC_LIGHT_PALETTE)
+        if theme_key == THEME_DARK:
+            return dict(DEFAULT_DARK_PALETTE)
+        return dict(DEFAULT_LIGHT_PALETTE)
 
     def _populate_syntax_color_table(self, theme_key: str) -> None:
         self._active_syntax_theme_key = theme_key
@@ -920,7 +963,7 @@ class SettingsDialog(QDialog):
 
     def _handle_syntax_theme_changed(self, _index: int) -> None:
         theme_key = str(self._syntax_theme_input.currentData())
-        if theme_key not in {THEME_LIGHT, THEME_DARK}:
+        if theme_key not in _VALID_SYNTAX_THEME_KEYS:
             theme_key = THEME_LIGHT
         self._populate_syntax_color_table(theme_key)
 

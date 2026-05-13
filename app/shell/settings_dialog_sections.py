@@ -26,7 +26,12 @@ from PySide2.QtWidgets import (
 
 from app.core import constants
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT
-from app.shell.syntax_color_preferences import THEME_DARK, THEME_LIGHT
+from app.shell.syntax_color_preferences import (
+    THEME_DARK,
+    THEME_HC_DARK,
+    THEME_HC_LIGHT,
+    THEME_LIGHT,
+)
 
 if TYPE_CHECKING:
     from app.shell.settings_dialog import SettingsDialog
@@ -77,6 +82,8 @@ def build_syntax_tab(dialog: "SettingsDialog", tabs: QTabWidget) -> None:
     dialog._syntax_theme_input.setObjectName("shell.settingsDialog.syntaxThemeInput")
     dialog._syntax_theme_input.addItem("Light Theme", THEME_LIGHT)
     dialog._syntax_theme_input.addItem("Dark Theme", THEME_DARK)
+    dialog._syntax_theme_input.addItem("High Contrast Light", THEME_HC_LIGHT)
+    dialog._syntax_theme_input.addItem("High Contrast Dark", THEME_HC_DARK)
     dialog._syntax_theme_input.currentIndexChanged.connect(dialog._handle_syntax_theme_changed)
     syntax_layout.addWidget(dialog._syntax_theme_input)
 

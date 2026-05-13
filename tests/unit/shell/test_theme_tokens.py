@@ -128,6 +128,49 @@ class TestTokensFromPalette:
             mode=mode, fails=", ".join(failures)
         )
 
+    @pytest.mark.parametrize(
+        ("mode", "expected_dark", "expected_editor_bg"),
+        [
+            (constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT, False, "#FFFFFF"),
+            (constants.UI_THEME_MODE_HIGH_CONTRAST_DARK, True, "#000000"),
+        ],
+    )
+    def test_high_contrast_modes_have_aaa_chrome_contrast_and_wide_focus(
+        self, mode: str, expected_dark: bool, expected_editor_bg: str
+    ) -> None:
+        """High Contrast palettes must hit WCAG AAA (>=7:1) on body text and
+        widen focus rings via ``focus_border_width=2``."""
+        tokens = tokens_from_palette(_make_palette(), force_mode=mode)
+        assert tokens.is_high_contrast is True
+        assert tokens.is_dark is expected_dark
+        assert tokens.editor_bg == expected_editor_bg
+        assert tokens.focus_border_width == 2
+        critical_pairs = (
+            (tokens.text_primary, tokens.editor_bg, "text_primary on editor_bg"),
+            (tokens.text_primary, tokens.panel_bg, "text_primary on panel_bg"),
+            (tokens.text_muted, tokens.panel_bg, "text_muted on panel_bg"),
+            (tokens.gutter_text, tokens.gutter_bg, "gutter_text on gutter_bg"),
+            (tokens.diag_error_color, tokens.panel_bg, "diag_error_color on panel_bg"),
+            (tokens.diag_warning_color, tokens.panel_bg, "diag_warning_color on panel_bg"),
+            (tokens.diag_info_color, tokens.panel_bg, "diag_info_color on panel_bg"),
+            (tokens.test_passed_color, tokens.panel_bg, "test_passed_color on panel_bg"),
+            (tokens.accent, tokens.panel_bg, "accent on panel_bg"),
+        )
+        failures: list[str] = []
+        for fg, bg, label in critical_pairs:
+            ratio = contrast_ratio(fg, bg)
+            if ratio < 7.0:
+                failures.append(f"{label}: {ratio:.2f}:1 (fg={fg}, bg={bg})")
+        assert not failures, "WCAG AAA regressions in {mode}: {fails}".format(
+            mode=mode, fails=", ".join(failures)
+        )
+
+    def test_non_high_contrast_modes_keep_default_focus_border_width(self) -> None:
+        for mode in ("light", "dark"):
+            tokens = tokens_from_palette(_make_palette(), force_mode=mode)
+            assert tokens.is_high_contrast is False
+            assert tokens.focus_border_width == 1
+
     def test_apply_syntax_token_overrides_updates_target_fields_only(self) -> None:
         tokens = tokens_from_palette(_make_palette(), force_mode="light")
         overridden = apply_syntax_token_overrides(

@@ -1175,7 +1175,12 @@ class MainWindow(QMainWindow):
     def _resolve_theme_tokens(self) -> ShellThemeTokens:
         palette = self.palette()
         mode = self._theme_mode
-        if mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
+        if mode in (
+            constants.UI_THEME_MODE_LIGHT,
+            constants.UI_THEME_MODE_DARK,
+            constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+            constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+        ):
             base_tokens = tokens_from_palette(
                 palette,
                 force_mode=mode,
@@ -1187,11 +1192,18 @@ class MainWindow(QMainWindow):
                 prefer_dark=self._system_prefers_dark_theme(),
                 ui_font_weight=self._ui_font_weight,
             )
-        theme_key = (
-            constants.UI_SYNTAX_COLORS_DARK_KEY
-            if base_tokens.is_dark
-            else constants.UI_SYNTAX_COLORS_LIGHT_KEY
-        )
+        if base_tokens.is_high_contrast:
+            theme_key = (
+                constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_DARK_KEY
+                if base_tokens.is_dark
+                else constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_LIGHT_KEY
+            )
+        else:
+            theme_key = (
+                constants.UI_SYNTAX_COLORS_DARK_KEY
+                if base_tokens.is_dark
+                else constants.UI_SYNTAX_COLORS_LIGHT_KEY
+            )
         syntax_overrides = self._syntax_color_overrides.get(theme_key, {})
         return apply_syntax_token_overrides(base_tokens, syntax_overrides)
 
@@ -1367,6 +1379,8 @@ class MainWindow(QMainWindow):
             constants.UI_THEME_MODE_SYSTEM: "shell.action.view.theme.system",
             constants.UI_THEME_MODE_LIGHT: "shell.action.view.theme.light",
             constants.UI_THEME_MODE_DARK: "shell.action.view.theme.dark",
+            constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT: "shell.action.view.theme.high_contrast_light",
+            constants.UI_THEME_MODE_HIGH_CONTRAST_DARK: "shell.action.view.theme.high_contrast_dark",
         }
         active_id = _mode_to_action_id.get(self._theme_mode, _mode_to_action_id[constants.UI_THEME_MODE_SYSTEM])
         for action_id in _mode_to_action_id.values():
@@ -1987,6 +2001,21 @@ class MainWindow(QMainWindow):
             return
         result = editor_widget.reindent_flat_python_selection()
         self.statusBar().showMessage(_flat_python_repair_status_message(result), 4000)
+
+    def _handle_paste_hint_repair_result(self, result: FlatPythonIndentRepairResult) -> None:
+        """Surface flat-Python paste repair feedback in the status bar."""
+        self.statusBar().showMessage(_flat_python_repair_status_message(result), 4000)
+
+    def _enable_auto_reindent_flat_python_paste_from_hint(self) -> None:
+        """Persist auto-re-indent ON and propagate to open editors. Called by the paste hint's "Always" button."""
+        if self._editor_auto_reindent_flat_python_paste:
+            return
+        self._editor_auto_reindent_flat_python_paste = True
+        try:
+            self._settings_service.update_global(_enable_auto_reindent_flat_python_paste_in_payload)
+        except Exception:
+            self._logger.exception("Failed to persist auto-reindent flat-Python paste setting.")
+        self._apply_editor_preferences_to_open_editors()
 
     def _handle_go_to_line_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -5495,6 +5524,18 @@ class MainWindow(QMainWindow):
         if self._is_shutting_down:
             return
         self._diagnostics_orchestrator.run_scheduled_realtime_lint()
+
+def _enable_auto_reindent_flat_python_paste_in_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Settings-service updater that flips ``editor.auto_reindent_flat_python_paste`` on."""
+    updated = dict(payload)
+    editor_section_raw = updated.get(constants.UI_EDITOR_SETTINGS_KEY)
+    editor_section: dict[str, Any] = (
+        dict(editor_section_raw) if isinstance(editor_section_raw, dict) else {}
+    )
+    editor_section[constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_KEY] = True
+    updated[constants.UI_EDITOR_SETTINGS_KEY] = editor_section
+    return updated
+
 
 def _flat_python_repair_status_message(result: FlatPythonIndentRepairResult) -> str:
     if result.reason == "not a flat Python paste":

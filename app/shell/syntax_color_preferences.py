@@ -10,7 +10,9 @@ from app.core import constants
 
 THEME_LIGHT = constants.UI_SYNTAX_COLORS_LIGHT_KEY
 THEME_DARK = constants.UI_SYNTAX_COLORS_DARK_KEY
-SYNTAX_THEMES: tuple[str, str] = (THEME_LIGHT, THEME_DARK)
+THEME_HC_LIGHT = constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_LIGHT_KEY
+THEME_HC_DARK = constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_DARK_KEY
+SYNTAX_THEMES: tuple[str, ...] = (THEME_LIGHT, THEME_DARK, THEME_HC_LIGHT, THEME_HC_DARK)
 _HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -59,11 +61,12 @@ _KNOWN_TOKEN_KEYS: frozenset[str] = frozenset(token.key for token in SYNTAX_COLO
 
 
 def parse_syntax_color_overrides(settings_payload: Mapping[str, Any]) -> dict[str, dict[str, str]]:
-    """Parse persisted syntax color overrides for light/dark themes."""
+    """Parse persisted syntax color overrides for all theme scopes."""
+    empty: dict[str, dict[str, str]] = {theme_name: {} for theme_name in SYNTAX_THEMES}
     section = settings_payload.get(constants.UI_SYNTAX_COLORS_SETTINGS_KEY, {})
     if not isinstance(section, dict):
-        return {THEME_LIGHT: {}, THEME_DARK: {}}
-    parsed: dict[str, dict[str, str]] = {THEME_LIGHT: {}, THEME_DARK: {}}
+        return empty
+    parsed: dict[str, dict[str, str]] = empty
     for theme_name in SYNTAX_THEMES:
         theme_payload = section.get(theme_name, {})
         if not isinstance(theme_payload, dict):

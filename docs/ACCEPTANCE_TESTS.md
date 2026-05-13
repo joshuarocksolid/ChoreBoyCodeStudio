@@ -1118,6 +1118,42 @@ Verify users can customize command shortcuts from Settings and observe immediate
 
 ---
 
+## AT-THEME-HIGH-CONTRAST — High Contrast theme modes (request #37 Tier 2)
+
+**Purpose:**  
+Verify the two High Contrast theme modes (HC Light, HC Dark) are selectable, persist, apply WCAG-AAA contrast across every surface, widen focus rings, and accept independent per-token syntax color overrides.
+
+**Preconditions:**  
+
+- editor is running
+- a project with at least one `.py`, one `.json`, and one `.md` file is open (covers lexical + JSON + Markdown highlighting)
+
+**Steps:**  
+
+1. Open **View > Theme** and verify the menu lists five entries: **System**, **Light**, **Dark**, **High Contrast Light**, **High Contrast Dark**.
+2. Select **High Contrast Dark**. Verify:
+   - Editor and panel backgrounds become pure black (`#000000`).
+   - Body text is white/near-white.
+   - Focus a `QLineEdit` (e.g. **Find**, the search sidebar input, the outline filter) and confirm the focus border is visibly thicker than in Dark mode (2px instead of 1px).
+   - Open the file tree, Search, Outline, Run Log, Problems, Debug panel, Python Console, Test Explorer, Settings dialog, and Plugin Manager dialog. Confirm every panel renders against pure black with no panel falling back to the standard Dark colors.
+   - Diagnostic squiggles (error/warning/info), debug current-frame highlight, search match highlight, and test-passed indicators remain clearly distinguishable.
+3. Select **High Contrast Light**. Verify the equivalent checks against pure white (`#FFFFFF`) backgrounds with near-black text and the same widened focus rings.
+4. Open **File > Settings... > Syntax Colors**. Confirm the scope dropdown lists four scopes: **Light Theme**, **Dark Theme**, **High Contrast Light**, **High Contrast Dark**.
+5. In the **High Contrast Dark** scope, override one token (e.g. `keyword` to `#FFFF00`). Save.
+6. Switch the theme to **High Contrast Dark** and verify the keyword color reflects the override; switch to **Dark** and verify the standard dark palette is still used (HC override does not bleed into Dark).
+7. Restart the editor and verify both `theme.mode` (HC Dark) and the HC syntax-color override survive across sessions.
+8. Open **View > Theme > System** to confirm the editor returns to the system-detected non-HC palette.
+
+**Expected Result:**  
+
+- Both HC modes select and persist via `theme.mode` in `settings.json`.
+- Every panel, dialog, menu, editor surface, and indicator renders with HC tokens — no fallback to the non-HC palette.
+- Focus rings are visibly thicker in HC modes (`focus_border_width=2`).
+- HC syntax-color overrides persist independently from Light/Dark overrides under `syntax_colors.high_contrast_light` / `syntax_colors.high_contrast_dark`.
+- Body-text contrast meets WCAG AAA (>= 7:1) on every surface (validated by `tests/unit/shell/test_theme_tokens.py::TestTokensFromPalette::test_high_contrast_modes_have_aaa_chrome_contrast_and_wide_focus`).
+
+---
+
 ## AT-35 — Syntax color customization (light + dark) persists
 
 **Purpose:**  
@@ -2877,6 +2913,89 @@ Verify the new dialogs and the status-bar indicator meet the dual-theme rule (`.
 
 - All text, inline error states, selected-row highlights, button focus rings, and the active-config indicator render with adequate contrast in both themes.
 - No control is clipped, invisible, or rendered with a hardcoded color that disappears in the other theme.
+
+---
+
+## AT-EDIT-FLAT-PYTHON-PASTE — PDF flat-Python paste re-indent
+
+**Purpose:**
+Verify the flat-Python paste re-indent feature (request #30) works end-to-end across its three discoverable surfaces: opt-in auto-paste, inline paste-hint overlay, and right-click context menu. Both light and dark themes must render the overlay readably per `.cursor/rules/ui_light_dark_mode.mdc`.
+
+**Preconditions:**
+
+- A Python project is open with at least one `.py` file in the editor.
+- Clipboard available.
+
+**Steps:**
+
+1. **Auto-mode OFF + hint overlay (default install):**
+
+   1. Confirm Settings → Editor → *Auto re-indent flat-Python pastes* is OFF (default).
+   2. Copy this snippet to the clipboard: `def first():\nreturn 1\n`.
+   3. Click into the editor and paste (`Ctrl+V`).
+   4. Observe the paste landing literally (un-indented) and an inline *Looks like flat Python.* hint with **[Re-indent] [Always] [×]** anchored just below the paste.
+   5. Click **Re-indent**.
+   6. Observe the block reformats to `def first():\n    return 1\n` and the hint disappears.
+   7. Press `Ctrl+Z` and confirm a single undo reverts to the literal paste.
+   8. Press `Ctrl+Z` again and confirm a second undo removes the paste entirely.
+
+2. **Auto-mode ON (HIGH confidence silent path):**
+
+   1. Toggle Settings → Editor → *Auto re-indent flat-Python pastes* ON.
+   2. Copy `class Service:\ndef helper(self):\nreturn 1\n` to the clipboard.
+   3. Paste into the editor.
+   4. Observe the block lands fully indented with no hint overlay.
+   5. Confirm the status bar shows a "Repaired flat-Python paste …" message.
+   6. Press `Ctrl+Z` and confirm a single undo reverts to the literal paste.
+
+3. **Context menu — clipboard branch:**
+
+   1. With *Auto re-indent* still ON or OFF, copy `for item in items:\nprint(item)\n` to the clipboard.
+   2. Right-click in the editor (no selection).
+   3. Confirm the menu shows **Paste and Re-indent (Flat Python)** as an enabled entry below the standard items.
+   4. Activate it and observe the repaired block appear.
+
+4. **Context menu — selection branch:**
+
+   1. In the editor, type or paste `def main():\npass\n` so it is flat (column-0).
+   2. Select both lines.
+   3. Right-click and confirm **Re-indent Selection (Flat Python)** is present and enabled.
+   4. Activate it and observe the selection becomes `def main():\n    pass\n`.
+
+5. **"Always" affordance flips the setting:**
+
+   1. Toggle *Auto re-indent flat-Python pastes* OFF in Settings.
+   2. Paste any flat-Python snippet and trigger the hint overlay (step 1).
+   3. Click **Always**.
+   4. Observe the block re-indents and the hint disappears.
+   5. Open Settings again and confirm *Auto re-indent flat-Python pastes* is now ON (persisted).
+
+6. **Dismiss (×) suppresses for the session:**
+
+   1. Toggle *Auto re-indent flat-Python pastes* OFF.
+   2. Paste a flat-Python snippet; click **×** on the hint.
+   3. Paste a different flat-Python snippet.
+   4. Observe no hint appears (in-memory dismiss honored until app restart).
+
+7. **Non-Python paste does not show the hint:**
+
+   1. Copy `the quick brown fox\nthe lazy dog\n`.
+   2. Paste into the editor with auto-mode OFF.
+   3. Confirm no hint overlay appears and the paste lands literally.
+
+8. **Dual-theme verification:**
+
+   1. With *Auto re-indent* OFF, paste a flat-Python snippet in the **Light** theme to surface the hint. Verify text, button, border, and dismiss-button contrast are readable.
+   2. Switch to the **Dark** theme via Settings and repeat step 8.1. Verify the same controls are readable.
+
+**Expected Result:**
+
+- The inline hint surfaces only when auto-mode is OFF and the pasted text looks like flat Python with HIGH or MEDIUM confidence.
+- *Re-indent* and *Always* both restore Python indentation; `Ctrl+Z` reverts to the literal paste in one step.
+- *Always* persists `editor.auto_reindent_flat_python_paste` to global settings.
+- *×* hides the hint for the rest of the session without persisting any new setting.
+- The context-menu entries appear exactly when the clipboard or selection looks like flat Python.
+- The overlay reads cleanly in both light and dark themes.
 
 ---
 
