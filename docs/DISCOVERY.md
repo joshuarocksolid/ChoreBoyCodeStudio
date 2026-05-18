@@ -913,6 +913,184 @@ This is the same architectural pattern that has worked elsewhere on ChoreBoy:
 
 ---
 
+## 4J. Qt System Tray Is Display-Only on ChoreBoy (2026-05-18)
+
+**Date discovered:** 2026-05-18
+**Probe bundle:** `qt_system_tray_probe` (probes 1 through 7)
+**Primary finding:** `QSystemTrayIcon` renders icons, badges, tooltips, and `showMessage()` notification balloons reliably on ChoreBoy and persists while the main window is minimized. However, the tray host on this environment does **not** deliver any interactive callback back to Qt: `activated` (left-click), `setContextMenu` (right-click), and `messageClicked` (balloon click) all fail. Treat the tray as a write-only display surface.
+
+### Why this was probed
+
+Iron Advantage's `Call_Notes.md` (line 321) requested a "small popup display in the bottom toolbar with a number showing new messages, when the app is minimized or in a different app." The existing in-window toast (`ToastHost`) and sidebar pill are invisible when the IA window is minimized or another app is focused. `QSystemTrayIcon` was the obvious candidate, but ChoreBoy's locked-down panel had never been validated for it.
+
+### Environment (where the probes ran)
+
+- Qt 5.15.2 inside the FreeCAD AppRun runtime (Python 3.9.2 at `/opt/freecad/usr/bin/FreeCAD`).
+- Qt platform plugin: `xcb`.
+- Session: `lightdm-xsession` on X11.
+- `XDG_CURRENT_DESKTOP`: unset. `XDG_SESSION_DESKTOP` and `DESKTOP_SESSION`: `lightdm-xsession` (bare panel, not GNOME / XFCE / KDE).
+- D-Bus session bus: reachable at `/run/user/1000/bus`.
+
+### Capability matrix (final)
+
+| Check | Result | Source probe |
+| --- | --- | --- |
+| `QSystemTrayIcon.isSystemTrayAvailable()` | YES (True) | probe1 |
+| `QSystemTrayIcon.supportsMessages()` | YES (True) | probe1 |
+| Tray icon visible to user | YES | probe2 |
+| Live badge updates legible (0 / 3 / 12 / 99 / 99+) | YES | probe3 |
+| `tray.showMessage(...)` produces OS balloon | YES | probe4 |
+| Tray icon persists while window minimized | YES | probe5 |
+| `tray.activated` left-click signal fires | **NO** (0 events) | probe5 |
+| `tray.setContextMenu(menu)` right-click opens | **NO** | probe7 |
+| `tray.messageClicked` signal fires | **NO** (user clicked, no event) | probe7 |
+
+### What works
+
+- Icon and badge paint via `tray.setIcon(QIcon(pixmap))`. The pixmap can be repainted on every snapshot change for live count updates.
+- Tooltip via `tray.setToolTip(...)`.
+- Native OS notification balloons via `tray.showMessage(title, body, icon, msec)`. The balloon renders, displays for the full duration, and dismisses correctly.
+- Icon persistence: minimizing the owning `QMainWindow` does **not** hide the tray icon. The badge remains a useful passive counter while the user is in another app.
+
+### What does not work
+
+- **`tray.activated` signal never fires** on left-click. Probe 5 wired the slot and recorded 0 activation events across multiple user clicks.
+- **`tray.setContextMenu(QMenu)` does not render a menu** on right-click. Probe 7 installed a `Open / Quit` menu; the user reported no menu appeared.
+- **`tray.messageClicked` signal never fires** even when the user clicks the balloon. Probe 7 confirmed `user_clicked_balloon: true` but `message_clicked_signal_fired: false` (counter delta = 0).
+
+The tray host on `lightdm-xsession` appears to implement only the display side of the XEmbed / StatusNotifierItem protocol. Events do not return to the application.
+
+### Implications and recommended pattern
+
+Treat `QSystemTrayIcon` as a **write-only** display surface on ChoreBoy:
+
+- Use it for unread counters, status badges, and `showMessage(...)` balloons.
+- Do **not** wire `tray.activated`, `tray.setContextMenu(...)`, or `tray.messageClicked`. Doing so creates dead UX affordances that suggest behavior the host cannot deliver.
+- Do **not** call `QApplication.setQuitOnLastWindowClosed(False)`. With no tray-side restore gesture, the OS taskbar entry becomes the only way users can bring a minimized window back; suppressing it would strand the user.
+- Gracefully degrade when `isSystemTrayAvailable()` returns False: log a one-line warning and skip tray construction. In-app toasts / sidebar pills continue to work.
+- Avoid double-notification: when the application is the focused app, the in-app toast covers the user; when it is not, the OS balloon does. Gate `tray.showMessage(...)` on `application.applicationState() != Qt.ApplicationActive`.
+
+### Reference implementation
+
+A passive tray notifier following this pattern lives at:
+
+- `packages/choreboy_ui/shell/tray_notifier.py` (the `TrayNotifier` class)
+- `packages/choreboy_ui/shell/_tray_badge_painter.py` (the validated `paint_badge_pixmap`)
+- `tests/unit/test_tray_notifier.py` (11 contract tests)
+
+Skeleton:
+
+```python
+from PySide2 import QtCore, QtGui, QtWidgets
+
+class TrayNotifier(QtCore.QObject):
+    def __init__(self, application=None, parent=None):
+        super().__init__(parent)
+        self._application = application
+        self._tray = None
+        if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        self._tray = QtWidgets.QSystemTrayIcon()
+        self._tray.setIcon(QtGui.QIcon(paint_badge_pixmap(0)))
+        self._tray.setToolTip("Iron Advantage")
+        self._tray.setVisible(True)
+
+    def handle_snapshot(self, snapshot):
+        if self._tray is None:
+            return
+        count = int((snapshot or {}).get("unread_total") or 0)
+        self._tray.setIcon(QtGui.QIcon(paint_badge_pixmap(count)))
+        if count <= 0:
+            self._tray.setToolTip("Iron Advantage")
+        else:
+            self._tray.setToolTip("Iron Advantage \u2014 {} unread".format(count))
+
+    def handle_alert(self, alert):
+        if self._tray is None or not QtWidgets.QSystemTrayIcon.supportsMessages():
+            return
+        if self._application is not None and (
+            self._application.applicationState() == QtCore.Qt.ApplicationActive
+        ):
+            return
+        title = "New message from {}".format(alert.get("sender_label") or "User")
+        body = alert.get("body_preview") or "Click Iron Advantage in the taskbar to read."
+        self._tray.showMessage(
+            title, body, QtWidgets.QSystemTrayIcon.Information, 8000
+        )
+
+    def shutdown(self):
+        if self._tray is not None:
+            self._tray.setVisible(False)
+            self._tray.deleteLater()
+            self._tray = None
+```
+
+### Painter (validated legible at 0 / 3 / 12 / 99 / 99+)
+
+```python
+from PySide2 import QtCore, QtGui
+
+_BADGE_FILL = QtGui.QColor(200, 40, 40)
+_BADGE_EMPTY_OUTLINE = QtGui.QColor(200, 60, 60)
+_BADGE_TEXT = QtGui.QColor(255, 255, 255)
+
+def paint_badge_pixmap(count, size=22):
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    try:
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
+        if count <= 0:
+            painter.setBrush(QtCore.Qt.NoBrush)
+            pen = QtGui.QPen(_BADGE_EMPTY_OUTLINE)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawEllipse(1, 1, size - 2, size - 2)
+            return pixmap
+        painter.setBrush(_BADGE_FILL)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+        if count > 99:
+            text, font_size = "99+", max(7, int(size * 0.38))
+        elif count >= 10:
+            text, font_size = str(count), max(8, int(size * 0.48))
+        else:
+            text, font_size = str(count), max(9, int(size * 0.58))
+        font = QtGui.QFont("DejaVu Sans", font_size, QtGui.QFont.Bold)
+        painter.setFont(font)
+        painter.setPen(_BADGE_TEXT)
+        painter.drawText(
+            QtCore.QRect(0, 0, size, size), QtCore.Qt.AlignCenter, text
+        )
+    finally:
+        painter.end()
+    return pixmap
+```
+
+### Parallel with other ChoreBoy display vs. event findings
+
+| Surface | Display path works | Event / callback path works |
+| --- | --- | --- |
+| `QSystemTrayIcon` (this section) | YES — icon, badge, balloon | NO — activated / context / messageClicked all silent |
+| Java (section 4D) | n/a — `execve` blocked | n/a — load `libjvm.so` via JNI in-process |
+| Printing (section 4I) | YES — via `libcups.so.2` | n/a — `/usr/bin/lpr` blocked |
+
+Common theme: ChoreBoy reliably accepts data going **out** through panel widgets and system libraries, but does not always route events back **in**. Design for write-only flow where possible; rely on the standard OS taskbar entry / Alt-Tab / app launcher for user-initiated restore gestures rather than tray-icon interaction.
+
+### Probe artifacts
+
+- Bundle: `probes/qt_system_tray_probe/`
+- Per-probe results: `probes/qt_system_tray_probe/results/probe[1-7]_results.{json,txt}`
+- Aggregate summary: `probes/qt_system_tray_probe/results/SUMMARY.md`
+- Run order and probe descriptions: `probes/qt_system_tray_probe/README.md`
+
+### Verdict
+
+`PARTIAL` (per the `qt_system_tray_probe` summary): the original `Call_Notes.md` request — "small popup display in the bottom toolbar with a number showing new messages, when the app is minimized or in a different app" — is **fully satisfied** by the passive badge plus `showMessage(...)` balloon. What is not delivered is any tray-side gesture to restore the window; that is acceptable because the OS taskbar entry covers it.
+
+---
+
 ## 5. Postgres Strategy (Deep Dive)
 
 ### What we know
