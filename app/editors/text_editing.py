@@ -13,6 +13,11 @@ FLAT_PYTHON_CONFIDENCE_HIGH = "high"
 FLAT_PYTHON_CONFIDENCE_MEDIUM = "medium"
 FLAT_PYTHON_CONFIDENCE_LOW = "low"
 
+# Reasons used to distinguish HIGH from MEDIUM in :class:`FlatPythonIndentRepairResult`.
+_REPAIR_REASON_PARSEABLE = "parseable repair"
+_REPAIR_REASON_REDUCED_ERRORS = "repair reduced parser errors"
+_REPAIR_REASON_PARSO_CLEAN = "parso reports no errors after repair"
+
 _BLOCK_START_RE = re.compile(
     r"^(?:async\s+def|def|class|if|for|while|try|with)\b.*:\s*(?:#.*)?$"
 )
@@ -26,6 +31,8 @@ _PYTHON_SIGNAL_RE = re.compile(
 )
 _LINE_NUMBER_PREFIX_RE = re.compile(r"^\s*\d{1,5}(?:[.)\]:|-]?\s+)(.+)$")
 _PROMPT_PREFIX_RE = re.compile(r"^\s*(?:>>>|\.\.\.)\s?(.+)$")
+_DECORATOR_RE = re.compile(r"^@[A-Za-z_]")
+_TRIPLE_STRING_RE = re.compile(r"\"\"\"|'''")
 
 
 @dataclass(frozen=True)
@@ -155,14 +162,17 @@ def repair_flat_python_indentation(
     parse_target = _strip_base_indent(repaired, base_indent)
     parse_ok = _python_parse_ok(parse_target)
     confidence = FLAT_PYTHON_CONFIDENCE_HIGH if parse_ok else FLAT_PYTHON_CONFIDENCE_LOW
-    reason = "parseable repair" if parse_ok else "repair did not parse"
+    reason = _REPAIR_REASON_PARSEABLE if parse_ok else "repair did not parse"
 
     if not parse_ok:
         original_errors = _parso_error_count(_strip_base_indent(normalized, base_indent))
         repaired_errors = _parso_error_count(parse_target)
         if original_errors is not None and repaired_errors is not None and repaired_errors < original_errors:
             confidence = FLAT_PYTHON_CONFIDENCE_MEDIUM
-            reason = "repair reduced parser errors"
+            if repaired_errors == 0:
+                reason = _REPAIR_REASON_PARSO_CLEAN
+            else:
+                reason = _REPAIR_REASON_REDUCED_ERRORS
 
     return FlatPythonIndentRepairResult(
         text=repaired,
@@ -171,6 +181,31 @@ def repair_flat_python_indentation(
         parse_ok=parse_ok,
         reason=reason,
     )
+
+
+def auto_paste_accepts_repair(result: FlatPythonIndentRepairResult) -> bool:
+    """Return whether ``insertFromMimeData`` should auto-apply ``result``.
+
+    Accepts:
+
+    * HIGH-confidence repairs (full AST parse succeeded), and
+    * MEDIUM-confidence repairs where parso reports zero remaining errors
+      after the repair.
+
+    The MEDIUM tier handles the common "PDF paste that nearly-but-not-quite
+    parses" case while still rejecting outright failures.  HIGH is the strong
+    guarantee; ``parso_clean`` MEDIUM is the near-miss safety net.
+    """
+    if not result.changed:
+        return False
+    if result.confidence == FLAT_PYTHON_CONFIDENCE_HIGH and result.parse_ok:
+        return True
+    if (
+        result.confidence == FLAT_PYTHON_CONFIDENCE_MEDIUM
+        and result.reason == _REPAIR_REASON_PARSO_CLEAN
+    ):
+        return True
+    return False
 
 
 def _normalize_pasted_python_text(text: str) -> str:
@@ -241,16 +276,76 @@ def _reindent_flat_python_lines(
     repaired: list[str] = []
     previous_blank = False
     previous_terminal = False
+    bracket_depth = 0
+    pending_decorators = 0
+    in_triple_string = False
+    triple_delim = ""
 
     for raw_line in lines:
         stripped = raw_line.strip()
+
+        # --- Triple-quoted string passthrough ----------------------------
+        # While inside a triple-quoted string we emit lines at the current
+        # block depth without re-stripping or stack changes.  The body of a
+        # docstring (and the closing ``"""``) lives one indent level deeper
+        # than the surrounding block opener.
+        if in_triple_string:
+            level = max(len(stack), 1)
+            indent_prefix = f"{base_indent}{indent_text * level}"
+            if not stripped:
+                repaired.append("")
+            else:
+                repaired.append(f"{indent_prefix}{stripped}")
+            previous_blank = not stripped
+            previous_terminal = False
+            close_count = len(_TRIPLE_STRING_RE.findall(stripped))
+            if close_count % 2 == 1:
+                in_triple_string = False
+                triple_delim = ""
+            continue
+
         if not stripped:
             repaired.append("")
             previous_blank = True
             continue
 
+        # --- Bracket continuation ----------------------------------------
+        # If the previous logical line left brackets open, emit this line
+        # as a hang-indented continuation (one level deeper than current
+        # block), and do not modify the indent stack.  Lines that start
+        # with a closing bracket line up with the opener (one level shallower).
+        if bracket_depth > 0:
+            net_delta = _count_unclosed_brackets(stripped)
+            starts_with_close = stripped[:1] in {")", "]", "}"}
+            if starts_with_close:
+                continuation_level = len(stack)
+            else:
+                continuation_level = len(stack) + 1
+            repaired.append(f"{base_indent}{indent_text * continuation_level}{stripped}")
+            bracket_depth = max(0, bracket_depth + net_delta)
+            previous_blank = False
+            previous_terminal = False
+            continue
+
         if previous_blank and _TOP_LEVEL_RESET_RE.match(stripped):
             stack = []
+            pending_decorators = 0
+
+        # --- Decorator transparency --------------------------------------
+        # A decorator line attaches at the same indent as the upcoming
+        # ``def``/``async def``/``class``; it does not change the stack
+        # itself nor act as a terminal.  When the previous statement was
+        # a terminal, pop the closed block first (same dedent rule as
+        # any other non-clause statement).
+        if _DECORATOR_RE.match(stripped):
+            if previous_terminal and stack:
+                stack = stack[:-1]
+            repaired.append(f"{base_indent}{indent_text * len(stack)}{stripped}")
+            pending_decorators += 1
+            previous_blank = False
+            previous_terminal = False
+            bracket_depth += _count_unclosed_brackets(stripped)
+            continue
 
         clause_kind = _clause_kind(stripped)
         if clause_kind is not None:
@@ -265,9 +360,73 @@ def _reindent_flat_python_lines(
             previous_terminal = False
         else:
             previous_terminal = bool(_TERMINAL_RE.match(stripped))
+        pending_decorators = 0
         previous_blank = False
 
+        bracket_depth = max(0, bracket_depth + _count_unclosed_brackets(stripped))
+        opened_delim = _opens_triple_string(stripped)
+        if opened_delim is not None:
+            in_triple_string = True
+            triple_delim = opened_delim
+
+    # ``triple_delim`` is tracked for symmetry; intentionally unused beyond
+    # state-machine driver above.
+    del triple_delim
+
     return repaired
+
+
+def _count_unclosed_brackets(stripped: str) -> int:
+    """Return the net open-bracket count for ``stripped``, ignoring string contents.
+
+    This is a small heuristic tokenizer: we walk characters, skipping over
+    string literals, comments, and triple-quoted spans.  Tabs are treated as
+    whitespace.  The result can be negative when more closing brackets appear
+    than openers (callers clamp the cumulative total to ``>=0``).
+    """
+    delta = 0
+    index = 0
+    length = len(stripped)
+    while index < length:
+        char = stripped[index]
+        if char == "#":
+            break
+        if char in "\"'":
+            quote = char
+            triple = stripped.startswith(quote * 3, index)
+            if triple:
+                close_marker = quote * 3
+                end = stripped.find(close_marker, index + 3)
+                if end == -1:
+                    return delta
+                index = end + 3
+                continue
+            index += 1
+            while index < length and stripped[index] != quote:
+                if stripped[index] == "\\" and index + 1 < length:
+                    index += 2
+                    continue
+                index += 1
+            index += 1
+            continue
+        if char in "([{":
+            delta += 1
+        elif char in ")]}":
+            delta -= 1
+        index += 1
+    return delta
+
+
+def _opens_triple_string(stripped: str) -> str | None:
+    """Return the triple-quote delimiter that opened (and was not closed) on this line.
+
+    Returns ``None`` when no unterminated triple-string starts on the line.
+    """
+    matches = list(_TRIPLE_STRING_RE.finditer(stripped))
+    if len(matches) % 2 == 0:
+        return None
+    # Last unmatched delimiter wins (defines the string we just opened).
+    return matches[-1].group(0)
 
 
 def _clause_kind(stripped: str) -> str | None:

@@ -164,6 +164,10 @@ class EditorTabFactory:
         editor_widget.set_completion_accepted_callback(on_completion_accepted)
         editor_widget.set_hover_requester(hover_requester)
         editor_widget.set_signature_help_requester(signature_requester)
+        editor_widget.set_paste_hint_enable_always_callback(
+            window._enable_auto_reindent_flat_python_paste_from_hint
+        )
+        editor_widget.set_paste_hint_status_callback(window._handle_paste_hint_repair_result)
         editor_widget.set_breakpoints(window._breakpoints_by_file.get(opened_result.tab.file_path, set()))
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)

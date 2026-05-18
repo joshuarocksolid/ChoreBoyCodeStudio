@@ -45,7 +45,7 @@ def build_edit_menu(ctx: MenuBuildContext) -> object:
         (
             "shell.action.edit.pasteReindentedFlatPython",
             "Paste and Re-indent Flat Python",
-            "Ctrl+Shift+V",
+            "Ctrl+Alt+V",
             callbacks.on_paste_reindented_flat_python,
         ),
         ("shell.action.edit.goToDefinition", "Go To Definition", "F12", callbacks.on_go_to_definition),

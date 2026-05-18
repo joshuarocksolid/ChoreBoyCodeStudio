@@ -213,6 +213,145 @@ def test_insert_from_mime_data_selects_repaired_flat_python_paste(editor: CodeEd
     assert selected_after == "def first():\n    return 1"
 
 
+def test_paste_hint_appears_when_flat_python_pasted_and_auto_mode_off(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+
+    editor.insertFromMimeData(mime)
+
+    assert editor.has_flat_python_paste_hint_visible() is True
+
+
+def test_paste_hint_not_shown_when_auto_mode_handles_paste(editor: CodeEditorWidget) -> None:
+    editor.set_editor_preferences(
+        tab_width=4,
+        font_point_size=10,
+        indent_style="spaces",
+        indent_size=4,
+        auto_reindent_flat_python_paste=True,
+    )
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+
+    editor.insertFromMimeData(mime)
+
+    assert editor.has_flat_python_paste_hint_visible() is False
+
+
+def test_paste_hint_not_shown_for_non_python_text(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("the quick brown fox jumped over the lazy dog")
+
+    editor.insertFromMimeData(mime)
+
+    assert editor.has_flat_python_paste_hint_visible() is False
+
+
+def test_paste_hint_reindent_applies_repair_and_hides(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+    editor.insertFromMimeData(mime)
+    assert editor.has_flat_python_paste_hint_visible() is True
+
+    editor.trigger_flat_python_paste_hint_reindent()
+
+    assert editor.toPlainText() == "def first():\n    return 1"
+    assert editor.has_flat_python_paste_hint_visible() is False
+
+
+def test_paste_hint_dismiss_suppresses_subsequent_hints_in_session(editor: CodeEditorWidget) -> None:
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+    editor.insertFromMimeData(mime)
+    editor.trigger_flat_python_paste_hint_dismiss()
+
+    editor.setPlainText("")
+    cursor = editor.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    editor.setTextCursor(cursor)
+    editor.insertFromMimeData(mime)
+
+    assert editor.has_flat_python_paste_hint_visible() is False
+
+
+def test_paste_hint_always_invokes_callback_and_applies_repair(editor: CodeEditorWidget) -> None:
+    callback_calls: list[bool] = []
+
+    def _always() -> None:
+        callback_calls.append(True)
+        editor.set_editor_preferences(
+            tab_width=4,
+            font_point_size=10,
+            indent_style="spaces",
+            indent_size=4,
+            auto_reindent_flat_python_paste=True,
+        )
+
+    editor.set_paste_hint_enable_always_callback(_always)
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+    editor.insertFromMimeData(mime)
+
+    editor.trigger_flat_python_paste_hint_always()
+
+    assert callback_calls == [True]
+    assert editor.toPlainText() == "def first():\n    return 1"
+    assert editor.has_flat_python_paste_hint_visible() is False
+
+
+def test_context_menu_adds_flat_python_actions_when_clipboard_looks_flat(editor: CodeEditorWidget) -> None:
+    from PySide2.QtWidgets import QMenu
+
+    QApplication.clipboard().setText("def first():\nreturn 1")
+    try:
+        menu = QMenu()
+        editor._augment_context_menu_with_flat_python_actions(menu)
+        labels = [action.text() for action in menu.actions() if action.text()]
+        assert "Paste and Re-indent (Flat Python)" in labels
+        menu.deleteLater()
+    finally:
+        QApplication.clipboard().clear()
+
+
+def test_context_menu_adds_reindent_selection_action_when_selection_looks_flat(editor: CodeEditorWidget) -> None:
+    from PySide2.QtWidgets import QMenu
+
+    editor.setPlainText("def first():\nreturn 1\n")
+    cursor = editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(len("def first():\nreturn 1"), QTextCursor.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    QApplication.clipboard().clear()
+    try:
+        menu = QMenu()
+        editor._augment_context_menu_with_flat_python_actions(menu)
+        labels = [action.text() for action in menu.actions() if action.text()]
+        assert "Re-indent Selection (Flat Python)" in labels
+        assert "Paste and Re-indent (Flat Python)" not in labels
+        menu.deleteLater()
+    finally:
+        QApplication.clipboard().clear()
+
+
+def test_context_menu_omits_flat_python_actions_when_neither_clipboard_nor_selection_match(
+    editor: CodeEditorWidget,
+) -> None:
+    from PySide2.QtWidgets import QMenu
+
+    editor.setPlainText("alpha = 1\n")
+    QApplication.clipboard().setText("the quick brown fox")
+    try:
+        menu = QMenu()
+        editor._augment_context_menu_with_flat_python_actions(menu)
+        labels = [action.text() for action in menu.actions() if action.text()]
+        assert "Paste and Re-indent (Flat Python)" not in labels
+        assert "Re-indent Selection (Flat Python)" not in labels
+        menu.deleteLater()
+    finally:
+        QApplication.clipboard().clear()
+
+
 def test_tab_indent_with_partial_line_selection_expands_to_full_lines(editor: CodeEditorWidget) -> None:
     editor.setPlainText("alpha = 1\nbeta = 2\n")
     cursor = editor.textCursor()

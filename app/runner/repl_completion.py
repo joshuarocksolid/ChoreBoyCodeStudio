@@ -16,6 +16,32 @@ from app.intelligence.completion_providers import extract_completion_prefix
 
 _logger = logging.getLogger(__name__)
 
+# #region agent log
+import json as _agent_json
+import threading as _agent_threading
+import time as _agent_time
+import traceback as _agent_tb
+
+_AGENT_LOG_PATH = "/home/joshua/Documents/ChoreBoyCodeStudio/.cursor/debug-0b96d3.log"
+
+
+def _agent_log_repl(message, data=None, location=""):
+    try:
+        payload = {
+            "sessionId": "0b96d3",
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": int(_agent_time.time() * 1000),
+            "thread": _agent_threading.current_thread().name,
+            "process": "repl_subprocess",
+        }
+        with open(_AGENT_LOG_PATH, "a", encoding="utf-8") as _f:
+            _f.write(_agent_json.dumps(payload, default=repr) + "\n")
+    except Exception:
+        pass
+# #endregion
+
 _DOTTED_EXPR_PATTERN = re.compile(
     r"(?P<expr>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)?$"
 )
@@ -41,19 +67,37 @@ class ReplCompletionService:
     def complete(self, request: ReplCompletionRequest) -> CompletionEnvelope:
         """Return completion candidates for a live REPL line buffer."""
 
+        # #region agent log
+        _agent_log_repl("REPL complete enter", {"line_buffer": request.line_buffer[:200], "cursor_offset": request.cursor_offset, "trigger_kind": request.trigger_kind}, "repl_completion.py:complete")
+        # #endregion
         started_at = time.perf_counter()
         try:
             jedi_items = self._complete_with_jedi(request)
-        except Exception as exc:
+        except BaseException as exc:
+            # #region agent log
+            _agent_log_repl("REPL _complete_with_jedi EXCEPTION", {"type": type(exc).__name__, "value": repr(exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "repl_completion.py:complete")
+            # #endregion
             _logger.debug("REPL Jedi completion failed: %s", exc)
             jedi_items = []
         if jedi_items:
+            # #region agent log
+            _agent_log_repl("REPL complete returning jedi items", {"count": len(jedi_items)}, "repl_completion.py:complete")
+            # #endregion
             return CompletionEnvelope(items=jedi_items, source="runtime", confidence="semantic")
 
-        fallback_items = self._complete_with_fallback(request)
+        try:
+            fallback_items = self._complete_with_fallback(request)
+        except BaseException as exc:
+            # #region agent log
+            _agent_log_repl("REPL _complete_with_fallback EXCEPTION", {"type": type(exc).__name__, "value": repr(exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "repl_completion.py:complete")
+            # #endregion
+            raise
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         if elapsed_ms > 200.0:
             _logger.warning("Slow REPL completion: elapsed_ms=%.2f count=%s", elapsed_ms, len(fallback_items))
+        # #region agent log
+        _agent_log_repl("REPL complete returning fallback items", {"count": len(fallback_items), "elapsed_ms": elapsed_ms}, "repl_completion.py:complete")
+        # #endregion
         return CompletionEnvelope(
             items=fallback_items,
             source="runtime",

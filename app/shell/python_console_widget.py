@@ -30,6 +30,33 @@ from app.editors.completion_popup import CompletionController
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
+# #region agent log
+import json as _agent_json
+import threading as _agent_threading
+import time as _agent_time
+import traceback as _agent_tb
+
+_AGENT_LOG_PATH = "/home/joshua/Documents/ChoreBoyCodeStudio/.cursor/debug-0b96d3.log"
+_AGENT_DEPTH_CON = {"d": 0}
+
+
+def _agent_log_con(message, data=None, location=""):
+    try:
+        payload = {
+            "sessionId": "0b96d3",
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": int(_agent_time.time() * 1000),
+            "thread": _agent_threading.current_thread().name,
+            "depth": _AGENT_DEPTH_CON["d"],
+        }
+        with open(_AGENT_LOG_PATH, "a", encoding="utf-8") as _f:
+            _f.write(_agent_json.dumps(payload, default=repr) + "\n")
+    except Exception:
+        pass
+# #endregion
+
 
 _PROMPT = ">>> "
 _CONT_PROMPT = "... "
@@ -227,6 +254,26 @@ class PythonConsoleWidget(QTextEdit):
     # ------------------------------------------------------------------
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
+        # #region agent log
+        _AGENT_DEPTH_CON["d"] += 1
+        try:
+            _k = int(event.key())
+            _txt = event.text()
+        except Exception:
+            _k, _txt = -1, ""
+        _agent_log_con("console keyPressEvent enter", {"key": _k, "text": _txt, "popup_visible": self._completion_popup.is_visible()}, "python_console_widget.py:keyPressEvent")
+        if _AGENT_DEPTH_CON["d"] > 20:
+            _agent_log_con("console keyPressEvent RECURSION DEPTH EXCEEDED", {"stack": _agent_tb.format_stack()[-25:]}, "python_console_widget.py:keyPressEvent")
+        try:
+            self._keyPressEvent_inner(event)
+        except BaseException as _exc:
+            _agent_log_con("console keyPressEvent EXCEPTION", {"type": type(_exc).__name__, "value": repr(_exc)[:300], "traceback": _agent_tb.format_exc()[:4000]}, "python_console_widget.py:keyPressEvent")
+            raise
+        finally:
+            _AGENT_DEPTH_CON["d"] -= 1
+        # #endregion
+
+    def _keyPressEvent_inner(self, event: QKeyEvent) -> None:
         if self._handle_completion_popup_navigation(event):
             return
         key = event.key()
@@ -330,6 +377,9 @@ class PythonConsoleWidget(QTextEdit):
             self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
 
     def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:
+        # #region agent log
+        _agent_log_con("console _trigger_completion enter", {"trigger_kind": trigger_kind, "trigger_character": trigger_character, "prompt_anchor": self._prompt_anchor, "has_requester": self._completion_requester is not None}, "python_console_widget.py:_trigger_completion")
+        # #endregion
         if self._completion_requester is None or self._prompt_anchor < 0:
             return
         cursor = self.textCursor()
@@ -337,6 +387,21 @@ class PythonConsoleWidget(QTextEdit):
             return
         self._completion_request_generation += 1
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+        # #region agent log
+        _agent_log_con("console calling completion_requester", {"gen": self._completion_request_generation, "line_buffer": line_buffer[:200], "cursor_offset": cursor_offset}, "python_console_widget.py:_trigger_completion")
+        try:
+            self._completion_requester(
+                line_buffer,
+                cursor_offset,
+                self._completion_request_generation,
+                trigger_kind,
+                trigger_character,
+            )
+        except BaseException as _exc:
+            _agent_log_con("console completion_requester EXCEPTION", {"type": type(_exc).__name__, "value": repr(_exc)[:300], "traceback": _agent_tb.format_exc()[:4000]}, "python_console_widget.py:_trigger_completion")
+            raise
+        return
+        # #endregion
         self._completion_requester(
             line_buffer,
             cursor_offset,
@@ -349,15 +414,24 @@ class PythonConsoleWidget(QTextEdit):
         return self._completion_popup.handle_navigation_event(event)
 
     def _show_completion_items(self, items: list[CompletionItem]) -> None:
-        if not items:
-            self._completion_popup.hide()
-            return
-        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
-        prefix = _completion_prefix(line_buffer, cursor_offset)
-        self._completion_popup.set_items(items, prefix)
-        rect = self.cursorRect()
-        rect.setWidth(max(260, rect.width()))
-        self._completion_popup.complete(rect)
+        # #region agent log
+        _agent_log_con("console _show_completion_items enter", {"n_items": len(items), "depth": _AGENT_DEPTH_CON["d"]}, "python_console_widget.py:_show_completion_items")
+        try:
+        # #endregion
+            if not items:
+                self._completion_popup.hide()
+                return
+            line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+            prefix = _completion_prefix(line_buffer, cursor_offset)
+            self._completion_popup.set_items(items, prefix)
+            rect = self.cursorRect()
+            rect.setWidth(max(260, rect.width()))
+            self._completion_popup.complete(rect)
+        # #region agent log
+        except BaseException as _exc:
+            _agent_log_con("console _show_completion_items EXCEPTION", {"type": type(_exc).__name__, "value": repr(_exc)[:300], "traceback": _agent_tb.format_exc()[:4000]}, "python_console_widget.py:_show_completion_items")
+            raise
+        # #endregion
 
     def _insert_completion_from_item(self, item: object) -> None:
         if not isinstance(item, CompletionItem) or self._prompt_anchor < 0:

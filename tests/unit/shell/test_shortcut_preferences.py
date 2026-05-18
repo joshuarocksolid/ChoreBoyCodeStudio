@@ -66,3 +66,12 @@ def test_find_shortcut_conflicts_groups_action_ids_by_shortcut() -> None:
         }
     )
     assert conflicts == {"Ctrl+R": ("shell.action.file.save", "shell.action.run.run")}
+
+
+def test_no_duplicate_default_shortcuts() -> None:
+    """Every non-empty default shortcut must be unique across SHORTCUT_COMMANDS."""
+    defaults = default_shortcut_map()
+    conflicts = find_shortcut_conflicts(
+        {action_id: shortcut for action_id, shortcut in defaults.items() if shortcut}
+    )
+    assert conflicts == {}, f"Duplicate default shortcuts: {conflicts}"

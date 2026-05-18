@@ -24,6 +24,8 @@ from app.shell.theme_tokens import ShellThemeTokens
 
 _PANEL_MIN_WIDTH = 260
 _PANEL_MAX_WIDTH = 420
+_PANEL_MIN_HEIGHT = 200
+_DOC_BODY_MIN_HEIGHT = 80
 _DOC_BODY_MAX_HEIGHT = 220
 
 
@@ -37,6 +39,7 @@ class CompletionDocsPanel(QFrame):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setMinimumWidth(_PANEL_MIN_WIDTH)
         self.setMaximumWidth(_PANEL_MAX_WIDTH)
+        self.setMinimumHeight(_PANEL_MIN_HEIGHT)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -67,6 +70,7 @@ class CompletionDocsPanel(QFrame):
         self._doc_body.setFrameShape(QFrame.NoFrame)
         self._doc_body.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._doc_body.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._doc_body.setMinimumHeight(_DOC_BODY_MIN_HEIGHT)
         self._doc_body.setMaximumHeight(_DOC_BODY_MAX_HEIGHT)
         layout.addWidget(self._doc_body, 1)
 

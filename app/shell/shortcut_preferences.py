@@ -43,7 +43,7 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand(
         "shell.action.edit.pasteReindentedFlatPython",
         "Paste and Re-indent Flat Python",
-        "",
+        "Ctrl+Alt+V",
         "Edit",
     ),
     ShortcutCommand("shell.action.edit.goToDefinition", "Go To Definition", "F12", "Edit"),

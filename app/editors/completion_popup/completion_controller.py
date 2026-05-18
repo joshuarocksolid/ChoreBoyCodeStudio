@@ -152,16 +152,18 @@ class CompletionController(QObject):
         list_width = list_view.width_hint()
         list_height = list_view.height_hint()
         list_view.setFixedWidth(list_width)
-        list_view.setFixedHeight(list_height)
 
+        chrome_height = list_height
         if self._popup.docs_visible():
             docs = self._popup.docs_panel()
-            docs.setFixedHeight(list_height)
+            chrome_height = max(list_height, docs.minimumSizeHint().height())
+            docs.setFixedHeight(chrome_height)
+        list_view.setFixedHeight(chrome_height)
 
         self._popup.adjustSize()
         size = self._popup.sizeHint()
         popup_width = max(size.width(), list_width + 32)
-        popup_height = max(size.height(), list_height + 16)
+        popup_height = max(size.height(), chrome_height + 16)
         self._popup.resize(popup_width, popup_height)
 
         global_anchor = widget.mapToGlobal(QPoint(anchor_rect.x(), anchor_rect.bottom() + 4))

@@ -6,7 +6,10 @@ import pytest
 
 from app.editors.text_editing import (
     FLAT_PYTHON_CONFIDENCE_HIGH,
+    FLAT_PYTHON_CONFIDENCE_LOW,
     FLAT_PYTHON_CONFIDENCE_MEDIUM,
+    FlatPythonIndentRepairResult,
+    auto_paste_accepts_repair,
     indent_lines,
     looks_like_flat_python_paste,
     next_line_indentation,
@@ -176,3 +179,199 @@ def test_repair_flat_python_indentation_reports_failed_parse_confidence() -> Non
 
     assert result.parse_ok is False
     assert result.confidence in {FLAT_PYTHON_CONFIDENCE_MEDIUM, "low"}
+
+
+# --- Decorator transparency -------------------------------------------------
+
+
+def test_repair_flat_python_indentation_attaches_single_decorator_to_function() -> None:
+    result = repair_flat_python_indentation(
+        "@cached\ndef value():\nreturn 1\n"
+    )
+
+    assert result.text == (
+        "@cached\n"
+        "def value():\n"
+        "    return 1\n"
+    )
+    assert result.parse_ok is True
+
+
+def test_repair_flat_python_indentation_stacks_multiple_decorators_on_method() -> None:
+    result = repair_flat_python_indentation(
+        "class Service:\ndef helper(self):\nreturn 1\n@staticmethod\n@cached\ndef api():\nreturn 2\n"
+    )
+
+    assert result.text == (
+        "class Service:\n"
+        "    def helper(self):\n"
+        "        return 1\n"
+        "    @staticmethod\n"
+        "    @cached\n"
+        "    def api():\n"
+        "        return 2\n"
+    )
+    assert result.parse_ok is True
+
+
+def test_repair_flat_python_indentation_attaches_decorator_to_class() -> None:
+    result = repair_flat_python_indentation(
+        "@register\nclass Service:\ndef noop(self):\npass\n"
+    )
+
+    assert result.text == (
+        "@register\n"
+        "class Service:\n"
+        "    def noop(self):\n"
+        "        pass\n"
+    )
+    assert result.parse_ok is True
+
+
+# --- Bracket continuation awareness -----------------------------------------
+
+
+def test_repair_flat_python_indentation_handles_multiline_function_call() -> None:
+    result = repair_flat_python_indentation(
+        "def main():\nrun(\nfirst,\nsecond,\n)\nreturn 0\n"
+    )
+
+    assert result.text == (
+        "def main():\n"
+        "    run(\n"
+        "        first,\n"
+        "        second,\n"
+        "    )\n"
+        "    return 0\n"
+    )
+    assert result.parse_ok is True
+
+
+def test_repair_flat_python_indentation_handles_multiline_dict_literal() -> None:
+    result = repair_flat_python_indentation(
+        "def main():\nconfig = {\n'a': 1,\n'b': 2,\n}\nreturn config\n"
+    )
+
+    assert result.text == (
+        "def main():\n"
+        "    config = {\n"
+        "        'a': 1,\n"
+        "        'b': 2,\n"
+        "    }\n"
+        "    return config\n"
+    )
+    assert result.parse_ok is True
+
+
+# --- for/while else vs if else ----------------------------------------------
+
+
+def test_repair_flat_python_indentation_attaches_for_else_to_loop() -> None:
+    result = repair_flat_python_indentation(
+        "def main():\nfor item in items:\nprocess(item)\nelse:\nfinalize()\n"
+    )
+
+    assert result.text == (
+        "def main():\n"
+        "    for item in items:\n"
+        "        process(item)\n"
+        "    else:\n"
+        "        finalize()\n"
+    )
+    assert result.parse_ok is True
+
+
+def test_repair_flat_python_indentation_attaches_while_else_to_loop() -> None:
+    result = repair_flat_python_indentation(
+        "while pending:\nstep()\nelse:\nflush()\n"
+    )
+
+    assert result.text == (
+        "while pending:\n"
+        "    step()\n"
+        "else:\n"
+        "    flush()\n"
+    )
+    assert result.parse_ok is True
+
+
+# --- Triple-quoted string passthrough ---------------------------------------
+
+
+# --- Auto-paste acceptance rule ---------------------------------------------
+
+
+def test_auto_paste_accepts_high_confidence_changed_repair() -> None:
+    result = FlatPythonIndentRepairResult(
+        text="def f():\n    return 1\n",
+        changed=True,
+        confidence=FLAT_PYTHON_CONFIDENCE_HIGH,
+        parse_ok=True,
+        reason="parseable repair",
+    )
+
+    assert auto_paste_accepts_repair(result) is True
+
+
+def test_auto_paste_accepts_medium_with_zero_parso_errors() -> None:
+    result = FlatPythonIndentRepairResult(
+        text="def f():\n    pass  # almost valid\n",
+        changed=True,
+        confidence=FLAT_PYTHON_CONFIDENCE_MEDIUM,
+        parse_ok=False,
+        reason="parso reports no errors after repair",
+    )
+
+    assert auto_paste_accepts_repair(result) is True
+
+
+def test_auto_paste_rejects_medium_with_remaining_parso_errors() -> None:
+    result = FlatPythonIndentRepairResult(
+        text="def f(",
+        changed=True,
+        confidence=FLAT_PYTHON_CONFIDENCE_MEDIUM,
+        parse_ok=False,
+        reason="repair reduced parser errors",
+    )
+
+    assert auto_paste_accepts_repair(result) is False
+
+
+def test_auto_paste_rejects_low_confidence() -> None:
+    result = FlatPythonIndentRepairResult(
+        text="def broken(:\n    return 1",
+        changed=True,
+        confidence=FLAT_PYTHON_CONFIDENCE_LOW,
+        parse_ok=False,
+        reason="repair did not parse",
+    )
+
+    assert auto_paste_accepts_repair(result) is False
+
+
+def test_auto_paste_rejects_unchanged_result() -> None:
+    result = FlatPythonIndentRepairResult(
+        text="def f():\n    return 1\n",
+        changed=False,
+        confidence=FLAT_PYTHON_CONFIDENCE_HIGH,
+        parse_ok=True,
+        reason="parseable repair",
+    )
+
+    assert auto_paste_accepts_repair(result) is False
+
+
+def test_repair_flat_python_indentation_preserves_docstring_body() -> None:
+    result = repair_flat_python_indentation(
+        'def greet():\n"""Say hello.\n\nDetails here.\n"""\nreturn "hi"\n'
+    )
+
+    assert result.text == (
+        'def greet():\n'
+        '    """Say hello.\n'
+        '\n'
+        '    Details here.\n'
+        '    """\n'
+        '    return "hi"\n'
+    )
+    assert result.parse_ok is True
