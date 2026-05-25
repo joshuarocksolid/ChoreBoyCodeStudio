@@ -43,7 +43,7 @@ def _clear_qt_module_caches() -> None:
     """Release module-level QIcon caches before QApplication is destroyed."""
     from app.shell.file_type_icons import clear_icon_caches as _clear_file_type
     from app.shell.problems_panel import clear_icon_caches as _clear_problems
-    from app.shell.test_explorer_panel import clear_icon_caches as _clear_test_explorer
+    from app.shell.test_explorer_icons import clear_icon_caches as _clear_test_explorer
 
     _clear_file_type()
     _clear_problems()

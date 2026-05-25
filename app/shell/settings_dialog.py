@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide2.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -17,24 +18,31 @@ from PySide2.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMessageBox,
-    QFontComboBox,
-    QFormLayout,
-    QColorDialog,
     QPushButton,
-    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from PySide2.QtGui import QColor, QFont, QFontMetrics, QIcon
+from PySide2.QtGui import QColor, QFont, QIcon
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
 
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
+from app.shell.settings_dialog_general import (
+    apply_general_tab_state_to_controls,
+    build_general_tab,
+    general_tab_state_from_controls,
+)
+from app.shell.settings_dialog_handlers import SettingsDialogHandlersMixin
+from app.shell.settings_dialog_state import GeneralTabState
+from app.shell.settings_dialog_tables import (
+    finalize_keybindings_columns,
+    finalize_linter_columns,
+    finalize_syntax_columns,
+)
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
     SETTINGS_SCOPE_GLOBAL,
@@ -86,11 +94,8 @@ from app.shell.python_tooling_status_copy import UNKNOWN_SETTINGS_COPY
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.ui.segmented_control import SegmentedControl
 
-# Horizontal padding added to measured content/header width so table cells do not clip styled controls.
-_SETTINGS_TABLE_COLUMN_PAD = 16
 
-
-class SettingsDialog(QDialog):
+class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
     """Simple settings editor for core editor/intelligence preferences."""
 
     def __init__(
@@ -123,6 +128,11 @@ class SettingsDialog(QDialog):
         }
         if self._project_scope_available:
             self._scope_snapshots[SETTINGS_SCOPE_PROJECT] = project_snapshot or snapshot
+        self._baseline_highlighting_adaptive_mode = snapshot.highlighting_adaptive_mode
+        self._baseline_highlighting_reduced_threshold_chars = snapshot.highlighting_reduced_threshold_chars
+        self._baseline_highlighting_lexical_only_threshold_chars = (
+            snapshot.highlighting_lexical_only_threshold_chars
+        )
         self._shortcut_editors: dict[str, QKeySequenceEdit] = {}
         self._shortcut_rows: dict[str, int] = {}
         self._syntax_color_inputs: dict[str, QLineEdit] = {}
@@ -203,213 +213,15 @@ class SettingsDialog(QDialog):
         tab_bar.setExpanding(False)
         layout.addWidget(tabs)
 
-        general_tab = QWidget(tabs)
-        _general_tab_layout = QVBoxLayout(general_tab)
-        _general_tab_layout.setContentsMargins(0, 0, 0, 0)
-        tabs.addTab(general_tab, "General")
-        _scroll_area = QScrollArea(general_tab)
-        _scroll_area.setWidgetResizable(True)
-        _scroll_area.setObjectName("shell.settingsDialog.generalScroll")
-        _scroll_content = QWidget()
-        _scroll_content.setObjectName("shell.settingsDialog.generalScrollContent")
-        general_layout = QVBoxLayout(_scroll_content)
-        general_layout.setContentsMargins(16, 12, 16, 12)
-        general_layout.setSpacing(4)
-        appearance_group = QGroupBox("Appearance")
-        appearance_group.setObjectName("shell.settingsDialog.appearanceGroup")
-        self._appearance_group = appearance_group
-        appearance_form = QFormLayout(appearance_group)
-        appearance_form.setVerticalSpacing(10)
-        appearance_form.setHorizontalSpacing(16)
-        self._theme_mode_input = QComboBox(appearance_group)
-        for label, value in (
-            ("System", constants.UI_THEME_MODE_SYSTEM),
-            ("Light", constants.UI_THEME_MODE_LIGHT),
-            ("Dark", constants.UI_THEME_MODE_DARK),
-            ("High Contrast Light", constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT),
-            ("High Contrast Dark", constants.UI_THEME_MODE_HIGH_CONTRAST_DARK),
-        ):
-            self._theme_mode_input.addItem(label, value)
-        theme_index = self._theme_mode_input.findData(snapshot.theme_mode)
-        self._theme_mode_input.setCurrentIndex(theme_index if theme_index >= 0 else 0)
-        self._theme_mode_input.setToolTip(
-            "High Contrast variants target WCAG AAA contrast for accessibility."
+        build_general_tab(
+            self,
+            tabs,
+            snapshot,
+            python_tooling_runtime_text=python_tooling_runtime_text,
+            python_tooling_runtime_details=python_tooling_runtime_details,
+            python_tooling_config_text=python_tooling_config_text,
+            python_tooling_config_details=python_tooling_config_details,
         )
-        appearance_form.addRow("Theme", self._theme_mode_input)
-
-        self._ui_font_weight_input = QComboBox(appearance_group)
-        # Display labels are user-facing; the ``data`` payload is the persisted value.
-        for label, value in (
-            ("Normal", constants.UI_THEME_FONT_WEIGHT_NORMAL),
-            ("Medium", constants.UI_THEME_FONT_WEIGHT_MEDIUM),
-            ("Bold", constants.UI_THEME_FONT_WEIGHT_BOLD),
-        ):
-            self._ui_font_weight_input.addItem(label, value)
-        weight_index = self._ui_font_weight_input.findData(snapshot.ui_font_weight)
-        self._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
-        self._ui_font_weight_input.setToolTip(
-            "Adjust the weight of menus, panels, and dialogs. The code editor font is unaffected."
-        )
-        appearance_form.addRow("UI font weight", self._ui_font_weight_input)
-        general_layout.addWidget(appearance_group)
-
-        output_group = QGroupBox("Output")
-        output_group.setObjectName("shell.settingsDialog.outputGroup")
-        output_form = QFormLayout(output_group)
-        output_form.setVerticalSpacing(10)
-        output_form.setHorizontalSpacing(16)
-        self._auto_open_console_on_run_output_input = QCheckBox(output_group)
-        self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
-        output_form.addRow("Auto-open Run Log on run output", self._auto_open_console_on_run_output_input)
-        self._auto_open_problems_on_run_failure_input = QCheckBox(output_group)
-        self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
-        output_form.addRow("Auto-open Problems on run failure", self._auto_open_problems_on_run_failure_input)
-        self._output_reset_to_global_btn = QPushButton("Reset Output Overrides to Global", output_group)
-        self._output_reset_to_global_btn.setObjectName("shell.settingsDialog.outputResetGlobal")
-        self._output_reset_to_global_btn.clicked.connect(self._handle_reset_output_group_to_global)
-        output_form.addRow("", self._output_reset_to_global_btn)
-        general_layout.addWidget(output_group)
-
-        editor_group = QGroupBox("Editor")
-        editor_group.setObjectName("shell.settingsDialog.editorGroup")
-        editor_form = QFormLayout(editor_group)
-        editor_form.setVerticalSpacing(10)
-        editor_form.setHorizontalSpacing(16)
-        self._tab_width_input = QSpinBox(editor_group)
-        self._tab_width_input.setRange(2, 16)
-        self._tab_width_input.setValue(snapshot.tab_width)
-        editor_form.addRow("Tab width", self._tab_width_input)
-
-        self._font_family_input = QFontComboBox(editor_group)
-        self._font_family_input.setCurrentFont(QFont(snapshot.font_family))
-        editor_form.addRow("Font family", self._font_family_input)
-
-        self._font_size_input = QSpinBox(editor_group)
-        self._font_size_input.setRange(8, 28)
-        self._font_size_input.setValue(snapshot.font_size)
-        editor_form.addRow("Font size", self._font_size_input)
-
-        self._indent_style_input = QComboBox(editor_group)
-        self._indent_style_input.addItems(["spaces", "tabs"])
-        self._indent_style_input.setCurrentText(snapshot.indent_style)
-        editor_form.addRow("Indent style", self._indent_style_input)
-
-        self._indent_size_input = QSpinBox(editor_group)
-        self._indent_size_input.setRange(1, 16)
-        self._indent_size_input.setValue(snapshot.indent_size)
-        editor_form.addRow("Indent size", self._indent_size_input)
-
-        self._detect_indentation_input = QCheckBox(editor_group)
-        self._detect_indentation_input.setChecked(snapshot.detect_indentation_from_file)
-        editor_form.addRow("Detect indentation from file", self._detect_indentation_input)
-
-        self._format_on_save_input = QCheckBox(editor_group)
-        self._format_on_save_input.setChecked(snapshot.format_on_save)
-        editor_form.addRow("Format on save", self._format_on_save_input)
-
-        self._organize_imports_on_save_input = QCheckBox(editor_group)
-        self._organize_imports_on_save_input.setChecked(snapshot.organize_imports_on_save)
-        editor_form.addRow("Organize imports on save", self._organize_imports_on_save_input)
-
-        self._python_tooling_runtime_status_label = QLabel(python_tooling_runtime_text, editor_group)
-        self._python_tooling_runtime_status_label.setWordWrap(True)
-        self._python_tooling_runtime_status_label.setToolTip(python_tooling_runtime_details)
-        editor_form.addRow("Python tooling runtime", self._python_tooling_runtime_status_label)
-
-        self._python_tooling_config_status_label = QLabel(python_tooling_config_text, editor_group)
-        self._python_tooling_config_status_label.setWordWrap(True)
-        self._python_tooling_config_status_label.setToolTip(python_tooling_config_details)
-        editor_form.addRow("Project Python config", self._python_tooling_config_status_label)
-
-        self._trim_trailing_whitespace_on_save_input = QCheckBox(editor_group)
-        self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
-        editor_form.addRow("Trim trailing whitespace on save", self._trim_trailing_whitespace_on_save_input)
-
-        self._insert_final_newline_on_save_input = QCheckBox(editor_group)
-        self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
-        editor_form.addRow("Insert final newline on save", self._insert_final_newline_on_save_input)
-        self._enable_preview_input = QCheckBox(editor_group)
-        self._enable_preview_input.setChecked(snapshot.enable_preview)
-        editor_form.addRow("Enable preview tabs", self._enable_preview_input)
-        self._auto_save_input = QCheckBox(editor_group)
-        self._auto_save_input.setChecked(snapshot.auto_save)
-        editor_form.addRow("Auto save", self._auto_save_input)
-        self._exit_behavior_input = QComboBox(editor_group)
-        self._exit_behavior_input.addItem("Ask before closing dirty files", "ask")
-        self._exit_behavior_input.addItem("Keep unsaved changes for next launch", "keep_unsaved")
-        exit_behavior_index = self._exit_behavior_input.findData(snapshot.exit_behavior)
-        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
-        editor_form.addRow("Exit behavior", self._exit_behavior_input)
-        self._hover_tooltip_enabled_input = QCheckBox(editor_group)
-        self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
-        editor_form.addRow("Show hover tooltips in code editor", self._hover_tooltip_enabled_input)
-        self._auto_reindent_flat_python_paste_input = QCheckBox(editor_group)
-        self._auto_reindent_flat_python_paste_input.setChecked(snapshot.auto_reindent_flat_python_paste)
-        editor_form.addRow(
-            "Automatically repair flat Python indentation on paste (experimental)",
-            self._auto_reindent_flat_python_paste_input,
-        )
-        self._editor_reset_to_global_btn = QPushButton("Reset Editor Overrides to Global", editor_group)
-        self._editor_reset_to_global_btn.setObjectName("shell.settingsDialog.editorResetGlobal")
-        self._editor_reset_to_global_btn.clicked.connect(self._handle_reset_editor_group_to_global)
-        editor_form.addRow("", self._editor_reset_to_global_btn)
-        general_layout.addWidget(editor_group)
-
-        intelligence_group = QGroupBox("Intelligence")
-        intelligence_group.setObjectName("shell.settingsDialog.intelligenceGroup")
-        intelligence_form = QFormLayout(intelligence_group)
-        intelligence_form.setVerticalSpacing(10)
-        intelligence_form.setHorizontalSpacing(16)
-        self._completion_enabled_input = QCheckBox(intelligence_group)
-        self._completion_enabled_input.setChecked(snapshot.completion_enabled)
-        intelligence_form.addRow("Enable completion", self._completion_enabled_input)
-
-        self._completion_auto_trigger_input = QCheckBox(intelligence_group)
-        self._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
-        intelligence_form.addRow("Auto-trigger completion", self._completion_auto_trigger_input)
-
-        self._completion_min_chars_input = QSpinBox(intelligence_group)
-        self._completion_min_chars_input.setRange(1, 8)
-        self._completion_min_chars_input.setValue(snapshot.completion_min_chars)
-        intelligence_form.addRow("Completion min chars", self._completion_min_chars_input)
-
-        self._diagnostics_realtime_input = QCheckBox(intelligence_group)
-        self._diagnostics_realtime_input.setChecked(snapshot.diagnostics_realtime)
-        intelligence_form.addRow("Realtime diagnostics", self._diagnostics_realtime_input)
-
-        self._quick_fixes_enabled_input = QCheckBox(intelligence_group)
-        self._quick_fixes_enabled_input.setChecked(snapshot.quick_fixes_enabled)
-        intelligence_form.addRow("Enable quick fixes", self._quick_fixes_enabled_input)
-
-        self._quick_fix_multifile_preview_input = QCheckBox(intelligence_group)
-        self._quick_fix_multifile_preview_input.setChecked(snapshot.quick_fix_require_preview_for_multifile)
-        intelligence_form.addRow("Preview required for multi-file fixes", self._quick_fix_multifile_preview_input)
-
-        self._cache_enabled_input = QCheckBox(intelligence_group)
-        self._cache_enabled_input.setChecked(snapshot.cache_enabled)
-        intelligence_form.addRow("Enable intelligence cache", self._cache_enabled_input)
-
-        self._incremental_indexing_input = QCheckBox(intelligence_group)
-        self._incremental_indexing_input.setChecked(snapshot.incremental_indexing)
-        intelligence_form.addRow("Incremental indexing", self._incremental_indexing_input)
-
-        self._metrics_logging_input = QCheckBox(intelligence_group)
-        self._metrics_logging_input.setChecked(snapshot.metrics_logging_enabled)
-        intelligence_form.addRow("Metrics logging", self._metrics_logging_input)
-
-        self._force_reindex_on_open_input = QCheckBox(intelligence_group)
-        self._force_reindex_on_open_input.setChecked(snapshot.force_full_reindex_on_open)
-        intelligence_form.addRow("Force full reindex on open", self._force_reindex_on_open_input)
-        self._intelligence_reset_to_global_btn = QPushButton(
-            "Reset Intelligence Overrides to Global", intelligence_group
-        )
-        self._intelligence_reset_to_global_btn.setObjectName("shell.settingsDialog.intelligenceResetGlobal")
-        self._intelligence_reset_to_global_btn.clicked.connect(self._handle_reset_intelligence_group_to_global)
-        intelligence_form.addRow("", self._intelligence_reset_to_global_btn)
-        general_layout.addWidget(intelligence_group)
-        general_layout.addStretch(1)
-        _scroll_area.setWidget(_scroll_content)
-        _general_tab_layout.addWidget(_scroll_area)
         build_keybindings_tab(self, tabs, snapshot)
         build_syntax_tab(self, tabs)
         build_linter_tab(self, tabs, snapshot, project_snapshot)
@@ -437,95 +249,27 @@ class SettingsDialog(QDialog):
         self._capture_active_scope_snapshot()
         return self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
 
-    @staticmethod
-    def _settings_table_widget_preferred_width(widget: QWidget) -> int:
-        return max(
-            widget.sizeHint().width(),
-            widget.minimumSizeHint().width(),
-            widget.minimumWidth(),
-        )
-
-    def _settings_table_item_text_width(self, table: QTableWidget, item: QTableWidgetItem) -> int:
-        font = item.font()
-        if font.pixelSize() < 0 and font.pointSize() < 0:
-            font = table.font()
-        fm = QFontMetrics(font)
-        return fm.boundingRect(item.text()).width()
-
-    def _settings_table_column_width(self, table: QTableWidget, col: int) -> int:
-        header = table.horizontalHeader()
-        header_hint = header.sectionSizeFromContents(col).width()
-        max_w = 0
-        for row in range(table.rowCount()):
-            cell = table.cellWidget(row, col)
-            if cell is not None:
-                max_w = max(max_w, self._settings_table_widget_preferred_width(cell))
-                continue
-            item = table.item(row, col)
-            if item is not None:
-                max_w = max(max_w, self._settings_table_item_text_width(table, item))
-        return max(max_w, header_hint) + _SETTINGS_TABLE_COLUMN_PAD
-
     def _finalize_keybindings_columns(self) -> None:
-        table = self._shortcut_table
-        header = table.horizontalHeader()
-        for col in (1, 2, 3):
-            width = self._settings_table_column_width(table, col)
-            header.setSectionResizeMode(col, QHeaderView.Fixed)
-            table.setColumnWidth(col, max(width, 64))
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        finalize_keybindings_columns(self)
 
     def _finalize_linter_columns(self) -> None:
-        table = self._linter_table
-        header = table.horizontalHeader()
-        for col in (0, 2, 3, 4):
-            width = self._settings_table_column_width(table, col)
-            header.setSectionResizeMode(col, QHeaderView.Fixed)
-            table.setColumnWidth(col, max(width, 48))
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        finalize_linter_columns(self)
 
     def _finalize_syntax_columns(self) -> None:
-        table = self._syntax_color_table
-        header = table.horizontalHeader()
-        for col in (1, 2, 3):
-            width = self._settings_table_column_width(table, col)
-            header.setSectionResizeMode(col, QHeaderView.Fixed)
-            table.setColumnWidth(col, max(width, 56))
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        finalize_syntax_columns(self)
+
+    def _general_tab_state_from_controls(self) -> GeneralTabState:
+        return general_tab_state_from_controls(self)
+
+    def _apply_general_tab_state_to_controls(self, state: GeneralTabState) -> None:
+        apply_general_tab_state_to_controls(self, state)
 
     def _snapshot_from_controls(self) -> EditorSettingsSnapshot:
         """Build settings snapshot from current control values."""
+        general = self._general_tab_state_from_controls()
         return EditorSettingsSnapshot(
-            tab_width=int(self._tab_width_input.value()),
-            font_size=int(self._font_size_input.value()),
-            font_family=self._font_family_input.currentFont().family(),
-            indent_style=str(self._indent_style_input.currentText()),
-            indent_size=int(self._indent_size_input.value()),
-            detect_indentation_from_file=self._detect_indentation_input.isChecked(),
-            format_on_save=self._format_on_save_input.isChecked(),
-            organize_imports_on_save=self._organize_imports_on_save_input.isChecked(),
-            trim_trailing_whitespace_on_save=self._trim_trailing_whitespace_on_save_input.isChecked(),
-            insert_final_newline_on_save=self._insert_final_newline_on_save_input.isChecked(),
-            enable_preview=self._enable_preview_input.isChecked(),
-            auto_save=self._auto_save_input.isChecked(),
-            exit_behavior=str(self._exit_behavior_input.currentData()),
-            hover_tooltip_enabled=self._hover_tooltip_enabled_input.isChecked(),
-            auto_reindent_flat_python_paste=self._auto_reindent_flat_python_paste_input.isChecked(),
-            completion_enabled=self._completion_enabled_input.isChecked(),
-            completion_auto_trigger=self._completion_auto_trigger_input.isChecked(),
-            completion_min_chars=int(self._completion_min_chars_input.value()),
+            **general.to_snapshot_fields(),
             diagnostics_enabled=self._linter_enabled_input.isChecked(),
-            diagnostics_realtime=self._diagnostics_realtime_input.isChecked(),
-            quick_fixes_enabled=self._quick_fixes_enabled_input.isChecked(),
-            quick_fix_require_preview_for_multifile=self._quick_fix_multifile_preview_input.isChecked(),
-            cache_enabled=self._cache_enabled_input.isChecked(),
-            incremental_indexing=self._incremental_indexing_input.isChecked(),
-            metrics_logging_enabled=self._metrics_logging_input.isChecked(),
-            force_full_reindex_on_open=self._force_reindex_on_open_input.isChecked(),
-            theme_mode=self._normalized_theme_mode_value(),
-            ui_font_weight=self._normalized_ui_font_weight_value(),
-            auto_open_console_on_run_output=self._auto_open_console_on_run_output_input.isChecked(),
-            auto_open_problems_on_run_failure=self._auto_open_problems_on_run_failure_input.isChecked(),
             selected_linter=str(self._linter_provider_input.currentData()),
             shortcut_overrides=self._shortcut_overrides_snapshot(),
             syntax_color_overrides_light=dict(self._syntax_color_overrides_by_theme.get(THEME_LIGHT, {})),
@@ -560,45 +304,12 @@ class SettingsDialog(QDialog):
         return constants.UI_THEME_MODE_DEFAULT
 
     def _apply_snapshot_to_controls(self, snapshot: EditorSettingsSnapshot) -> None:
-        self._tab_width_input.setValue(snapshot.tab_width)
-        self._font_size_input.setValue(snapshot.font_size)
-        self._font_family_input.setCurrentFont(QFont(snapshot.font_family))
-        self._indent_style_input.setCurrentText(snapshot.indent_style)
-        self._indent_size_input.setValue(snapshot.indent_size)
-        self._detect_indentation_input.setChecked(snapshot.detect_indentation_from_file)
-        self._format_on_save_input.setChecked(snapshot.format_on_save)
-        self._organize_imports_on_save_input.setChecked(snapshot.organize_imports_on_save)
-        self._trim_trailing_whitespace_on_save_input.setChecked(snapshot.trim_trailing_whitespace_on_save)
-        self._insert_final_newline_on_save_input.setChecked(snapshot.insert_final_newline_on_save)
-        self._enable_preview_input.setChecked(snapshot.enable_preview)
-        self._auto_save_input.setChecked(snapshot.auto_save)
-        exit_behavior_index = self._exit_behavior_input.findData(snapshot.exit_behavior)
-        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
-        self._hover_tooltip_enabled_input.setChecked(snapshot.hover_tooltip_enabled)
-        self._auto_reindent_flat_python_paste_input.setChecked(snapshot.auto_reindent_flat_python_paste)
+        self._apply_general_tab_state_to_controls(GeneralTabState.from_snapshot(snapshot))
 
-        self._completion_enabled_input.setChecked(snapshot.completion_enabled)
-        self._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
-        self._completion_min_chars_input.setValue(snapshot.completion_min_chars)
         self._linter_enabled_input.setChecked(snapshot.diagnostics_enabled)
-        self._diagnostics_realtime_input.setChecked(snapshot.diagnostics_realtime)
-        self._quick_fixes_enabled_input.setChecked(snapshot.quick_fixes_enabled)
-        self._quick_fix_multifile_preview_input.setChecked(snapshot.quick_fix_require_preview_for_multifile)
-        self._cache_enabled_input.setChecked(snapshot.cache_enabled)
-        self._incremental_indexing_input.setChecked(snapshot.incremental_indexing)
-        self._metrics_logging_input.setChecked(snapshot.metrics_logging_enabled)
-        self._force_reindex_on_open_input.setChecked(snapshot.force_full_reindex_on_open)
         provider_index = self._linter_provider_input.findData(snapshot.selected_linter)
         self._linter_provider_input.setCurrentIndex(provider_index if provider_index >= 0 else 0)
         self._sync_linter_control_states()
-
-        self._auto_open_console_on_run_output_input.setChecked(snapshot.auto_open_console_on_run_output)
-        self._auto_open_problems_on_run_failure_input.setChecked(snapshot.auto_open_problems_on_run_failure)
-
-        theme_index = self._theme_mode_input.findData(snapshot.theme_mode)
-        self._theme_mode_input.setCurrentIndex(theme_index if theme_index >= 0 else 0)
-        weight_index = self._ui_font_weight_input.findData(snapshot.ui_font_weight)
-        self._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
 
         self._apply_shortcut_snapshot(snapshot)
         self._syntax_color_overrides_by_theme = {
@@ -628,684 +339,4 @@ class SettingsDialog(QDialog):
         self._refresh_syntax_validation()
         self._refresh_validation_state()
 
-    def _apply_shortcut_snapshot(self, snapshot: EditorSettingsSnapshot) -> None:
-        effective = build_effective_shortcut_map(snapshot.shortcut_overrides)
-        self._is_updating_shortcut_editors = True
-        try:
-            for action_id, editor in self._shortcut_editors.items():
-                editor.setKeySequence(QKeySequence(effective.get(action_id, "")))
-        finally:
-            self._is_updating_shortcut_editors = False
 
-    def _handle_scope_changed(self, selected_scope: str) -> None:
-        if self._scope_input is None:
-            return
-        if selected_scope == SETTINGS_SCOPE_PROJECT and not self._project_scope_available:
-            self._scope_input.set_selected(self._active_scope)
-            return
-        if selected_scope not in {SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT}:
-            return
-        if selected_scope == self._active_scope:
-            return
-        self._set_scope(selected_scope, apply_snapshot=True)
-
-    def _set_scope(self, scope: str, *, apply_snapshot: bool) -> None:
-        normalized_scope = scope
-        if normalized_scope == SETTINGS_SCOPE_PROJECT and not self._project_scope_available:
-            normalized_scope = SETTINGS_SCOPE_GLOBAL
-        if normalized_scope not in {SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT}:
-            normalized_scope = SETTINGS_SCOPE_GLOBAL
-
-        if normalized_scope != self._active_scope:
-            self._capture_active_scope_snapshot()
-        self._active_scope = normalized_scope
-        if self._scope_input is not None:
-            self._scope_input.blockSignals(True)
-            self._scope_input.set_selected(normalized_scope)
-            self._scope_input.blockSignals(False)
-        if apply_snapshot:
-            snapshot = self._scope_snapshots.get(normalized_scope, self._scope_snapshots[SETTINGS_SCOPE_GLOBAL])
-            self._apply_snapshot_to_controls(snapshot)
-        self._apply_scope_visibility()
-
-    def _apply_scope_visibility(self) -> None:
-        is_project_scope = self._active_scope == SETTINGS_SCOPE_PROJECT and self._project_scope_available
-        if self._scope_banner_label is not None:
-            if is_project_scope:
-                self._scope_banner_label.setText(
-                    "Project overrides apply to this project only."
-                )
-            else:
-                self._scope_banner_label.setText(
-                    "Global settings apply by default across projects."
-                )
-        if self._appearance_group is not None:
-            self._appearance_group.setVisible(not is_project_scope)
-        self._enable_preview_input.setEnabled(not is_project_scope)
-        if self._output_reset_to_global_btn is not None:
-            self._output_reset_to_global_btn.setVisible(is_project_scope)
-        if self._editor_reset_to_global_btn is not None:
-            self._editor_reset_to_global_btn.setVisible(is_project_scope)
-        if self._intelligence_reset_to_global_btn is not None:
-            self._intelligence_reset_to_global_btn.setVisible(is_project_scope)
-        if self._linter_reset_to_global_btn is not None:
-            self._linter_reset_to_global_btn.setVisible(is_project_scope)
-        if self._file_excludes_reset_btn is not None:
-            self._file_excludes_reset_btn.setText(
-                "Reset to Global" if is_project_scope else "Reset to Defaults"
-            )
-        if self._local_history_reset_btn is not None:
-            self._local_history_reset_btn.setText(
-                "Reset to Global" if is_project_scope else "Reset to Defaults"
-            )
-
-        if self._linter_provider_scope_hint is not None:
-            self._linter_provider_scope_hint.setVisible(not is_project_scope)
-
-        if self._tabs_widget is not None:
-            if self._keybindings_tab_index is not None:
-                self._set_tab_visible(self._keybindings_tab_index, not is_project_scope)
-            if self._syntax_tab_index is not None:
-                self._set_tab_visible(self._syntax_tab_index, not is_project_scope)
-
-    def _set_tab_visible(self, index: int, visible: bool) -> None:
-        if self._tabs_widget is None:
-            return
-        if hasattr(self._tabs_widget, "setTabVisible"):
-            self._tabs_widget.setTabVisible(index, visible)
-            return
-        if self._tabs_widget.widget(index) is not None:
-            self._tabs_widget.widget(index).setVisible(visible)
-
-    def _handle_reset_output_group_to_global(self) -> None:
-        baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
-        self._auto_open_console_on_run_output_input.setChecked(baseline.auto_open_console_on_run_output)
-        self._auto_open_problems_on_run_failure_input.setChecked(baseline.auto_open_problems_on_run_failure)
-
-    def _handle_reset_editor_group_to_global(self) -> None:
-        baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
-        self._tab_width_input.setValue(baseline.tab_width)
-        self._font_size_input.setValue(baseline.font_size)
-        self._font_family_input.setCurrentFont(QFont(baseline.font_family))
-        self._indent_style_input.setCurrentText(baseline.indent_style)
-        self._indent_size_input.setValue(baseline.indent_size)
-        self._detect_indentation_input.setChecked(baseline.detect_indentation_from_file)
-        self._format_on_save_input.setChecked(baseline.format_on_save)
-        self._organize_imports_on_save_input.setChecked(baseline.organize_imports_on_save)
-        self._trim_trailing_whitespace_on_save_input.setChecked(baseline.trim_trailing_whitespace_on_save)
-        self._insert_final_newline_on_save_input.setChecked(baseline.insert_final_newline_on_save)
-        self._enable_preview_input.setChecked(baseline.enable_preview)
-        self._auto_save_input.setChecked(baseline.auto_save)
-        exit_behavior_index = self._exit_behavior_input.findData(baseline.exit_behavior)
-        self._exit_behavior_input.setCurrentIndex(exit_behavior_index if exit_behavior_index >= 0 else 0)
-        self._hover_tooltip_enabled_input.setChecked(baseline.hover_tooltip_enabled)
-        self._auto_reindent_flat_python_paste_input.setChecked(baseline.auto_reindent_flat_python_paste)
-
-    def _handle_reset_intelligence_group_to_global(self) -> None:
-        baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
-        self._completion_enabled_input.setChecked(baseline.completion_enabled)
-        self._completion_auto_trigger_input.setChecked(baseline.completion_auto_trigger)
-        self._completion_min_chars_input.setValue(baseline.completion_min_chars)
-        self._linter_enabled_input.setChecked(baseline.diagnostics_enabled)
-        self._diagnostics_realtime_input.setChecked(baseline.diagnostics_realtime)
-        self._quick_fixes_enabled_input.setChecked(baseline.quick_fixes_enabled)
-        self._quick_fix_multifile_preview_input.setChecked(baseline.quick_fix_require_preview_for_multifile)
-        self._cache_enabled_input.setChecked(baseline.cache_enabled)
-        self._incremental_indexing_input.setChecked(baseline.incremental_indexing)
-        self._metrics_logging_input.setChecked(baseline.metrics_logging_enabled)
-        self._force_reindex_on_open_input.setChecked(baseline.force_full_reindex_on_open)
-        provider_index = self._linter_provider_input.findData(baseline.selected_linter)
-        self._linter_provider_input.setCurrentIndex(provider_index if provider_index >= 0 else 0)
-        self._sync_linter_control_states()
-
-    def _populate_shortcut_table(self, snapshot: EditorSettingsSnapshot) -> None:
-        defaults = default_shortcut_map()
-        effective = build_effective_shortcut_map(snapshot.shortcut_overrides)
-        self._shortcut_table.setRowCount(len(SHORTCUT_COMMANDS))
-        for row_index, command in enumerate(SHORTCUT_COMMANDS):
-            self._shortcut_rows[command.action_id] = row_index
-            command_item = QTableWidgetItem(f"{command.category} / {command.label}")
-            command_item.setData(Qt.UserRole, command.action_id)
-            self._shortcut_table.setItem(row_index, 0, command_item)
-
-            editor = QKeySequenceEdit(self._shortcut_table)
-            current_shortcut = effective.get(command.action_id, "")
-            if current_shortcut:
-                editor.setKeySequence(QKeySequence(current_shortcut))
-            editor.keySequenceChanged.connect(
-                lambda _sequence, action_id=command.action_id: self._handle_shortcut_changed(action_id)
-            )
-            self._shortcut_editors[command.action_id] = editor
-            self._shortcut_table.setCellWidget(row_index, 1, editor)
-
-            default_item = QTableWidgetItem(defaults.get(command.action_id, ""))
-            self._shortcut_table.setItem(row_index, 2, default_item)
-
-            reset_button = QPushButton("Reset", self._shortcut_table)
-            reset_button.clicked.connect(
-                lambda _checked=False, action_id=command.action_id: self._handle_reset_shortcut(action_id)
-            )
-            self._shortcut_table.setCellWidget(row_index, 3, reset_button)
-
-        self._finalize_keybindings_columns()
-
-    def _handle_reset_shortcut(self, action_id: str) -> None:
-        editor = self._shortcut_editors.get(action_id)
-        if editor is None:
-            return
-        default_shortcuts = default_shortcut_map()
-        self._is_updating_shortcut_editors = True
-        editor.setKeySequence(QKeySequence(default_shortcuts.get(action_id, "")))
-        self._is_updating_shortcut_editors = False
-        self._refresh_shortcut_conflicts()
-
-    def _handle_shortcut_changed(self, action_id: str) -> None:
-        if self._is_updating_shortcut_editors:
-            self._refresh_shortcut_conflicts()
-            return
-        editor = self._shortcut_editors.get(action_id)
-        if editor is None:
-            self._refresh_shortcut_conflicts()
-            return
-        assigned_shortcut = normalize_shortcut(editor.keySequence().toString())
-        if not assigned_shortcut or not editor.hasFocus():
-            self._refresh_shortcut_conflicts()
-            return
-        conflicting_action_ids = [
-            conflict_action_id
-            for conflict_action_id, shortcut in self._current_shortcut_map().items()
-            if conflict_action_id != action_id and normalize_shortcut(shortcut) == assigned_shortcut
-        ]
-        if not conflicting_action_ids:
-            self._refresh_shortcut_conflicts()
-            return
-        command_labels = {
-            command.action_id: f"{command.category} / {command.label}"
-            for command in SHORTCUT_COMMANDS
-        }
-        conflict_names = ", ".join(command_labels.get(item, item) for item in conflicting_action_ids)
-        choice = QMessageBox.question(
-            self,
-            "Shortcut Conflict",
-            (
-                f"'{assigned_shortcut}' is already assigned to {conflict_names}.\n\n"
-                "Do you want to reassign it to this command?"
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        self._is_updating_shortcut_editors = True
-        try:
-            if choice == QMessageBox.Yes:
-                for conflict_action_id in conflicting_action_ids:
-                    conflict_editor = self._shortcut_editors.get(conflict_action_id)
-                    if conflict_editor is not None:
-                        conflict_editor.setKeySequence(QKeySequence())
-            else:
-                editor.setKeySequence(QKeySequence())
-        finally:
-            self._is_updating_shortcut_editors = False
-        self._refresh_shortcut_conflicts()
-
-    def _handle_reset_all_shortcuts(self) -> None:
-        defaults = default_shortcut_map()
-        self._is_updating_shortcut_editors = True
-        try:
-            for action_id, editor in self._shortcut_editors.items():
-                editor.setKeySequence(QKeySequence(defaults.get(action_id, "")))
-        finally:
-            self._is_updating_shortcut_editors = False
-        self._refresh_shortcut_conflicts()
-
-    def _filter_shortcut_rows(self, query: str) -> None:
-        lowered = query.strip().lower()
-        for action_id, row_index in self._shortcut_rows.items():
-            item = self._shortcut_table.item(row_index, 0)
-            if item is None:
-                continue
-            text = item.text().lower()
-            should_show = not lowered or lowered in text or lowered in action_id.lower()
-            self._shortcut_table.setRowHidden(row_index, not should_show)
-
-    def _current_shortcut_map(self) -> dict[str, str]:
-        current: dict[str, str] = {}
-        for action_id, editor in self._shortcut_editors.items():
-            current[action_id] = normalize_shortcut(editor.keySequence().toString())
-        return current
-
-    def _refresh_shortcut_conflicts(self) -> None:
-        conflicts = find_shortcut_conflicts(self._current_shortcut_map())
-        if conflicts:
-            details = [f"{shortcut}: {', '.join(action_ids)}" for shortcut, action_ids in sorted(conflicts.items())]
-            self._shortcut_conflict_label.setText("Conflicting shortcuts:\n" + "\n".join(details[:4]))
-            self._shortcut_conflict_label.setVisible(True)
-            self._has_shortcut_conflicts = True
-        else:
-            self._shortcut_conflict_label.clear()
-            self._shortcut_conflict_label.setVisible(False)
-            self._has_shortcut_conflicts = False
-        self._refresh_validation_state()
-
-    def _shortcut_overrides_snapshot(self) -> dict[str, str]:
-        overrides: dict[str, str] = {}
-        defaults = default_shortcut_map()
-        for action_id, current_shortcut in self._current_shortcut_map().items():
-            default_shortcut = normalize_shortcut(defaults.get(action_id, ""))
-            if current_shortcut == default_shortcut:
-                continue
-            overrides[action_id] = current_shortcut if current_shortcut else ""
-        return overrides
-
-    def _syntax_defaults_for_theme(self, theme_key: str) -> dict[str, str]:
-        if theme_key == THEME_HC_DARK:
-            return dict(DEFAULT_HC_DARK_PALETTE)
-        if theme_key == THEME_HC_LIGHT:
-            return dict(DEFAULT_HC_LIGHT_PALETTE)
-        if theme_key == THEME_DARK:
-            return dict(DEFAULT_DARK_PALETTE)
-        return dict(DEFAULT_LIGHT_PALETTE)
-
-    def _populate_syntax_color_table(self, theme_key: str) -> None:
-        self._active_syntax_theme_key = theme_key
-        self._syntax_color_inputs.clear()
-        self._syntax_color_swatches.clear()
-        self._syntax_color_row_by_token.clear()
-        defaults = self._syntax_defaults_for_theme(theme_key)
-        overrides = self._syntax_color_overrides_by_theme.setdefault(theme_key, {})
-        self._syntax_color_table.setRowCount(0)
-        self._syntax_color_table.setRowCount(len(SYNTAX_COLOR_TOKENS))
-        for row_index, token in enumerate(SYNTAX_COLOR_TOKENS):
-            self._syntax_color_row_by_token[token.key] = row_index
-            label_item = QTableWidgetItem(f"{token.category} / {token.label}")
-            label_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-            self._syntax_color_table.setItem(row_index, 0, label_item)
-
-            color_container = QWidget(self._syntax_color_table)
-            color_layout = QHBoxLayout(color_container)
-            color_layout.setContentsMargins(4, 2, 4, 2)
-            color_layout.setSpacing(6)
-
-            swatch = QLabel(color_container)
-            swatch.setFixedSize(16, 16)
-            color_layout.addWidget(swatch)
-            self._syntax_color_swatches[token.key] = swatch
-
-            color_input = QLineEdit(color_container)
-            color_input.setMaximumWidth(90)
-            color_input.setPlaceholderText(defaults.get(token.key, ""))
-            effective_color = overrides.get(token.key, defaults.get(token.key, ""))
-            color_input.setText(effective_color)
-            color_input.textEdited.connect(
-                lambda _text, key=token.key: self._handle_syntax_color_text_edited(key)
-            )
-            self._syntax_color_inputs[token.key] = color_input
-            color_layout.addWidget(color_input)
-
-            self._syntax_color_table.setCellWidget(row_index, 1, color_container)
-            self._update_syntax_swatch(token.key, effective_color)
-
-            pick_button = QPushButton("Pick", self._syntax_color_table)
-            pick_button.clicked.connect(
-                lambda _checked=False, key=token.key: self._handle_pick_syntax_color(key)
-            )
-            self._syntax_color_table.setCellWidget(row_index, 2, pick_button)
-
-            reset_button = QPushButton("Reset", self._syntax_color_table)
-            reset_button.clicked.connect(
-                lambda _checked=False, key=token.key: self._handle_reset_syntax_color(key)
-            )
-            self._syntax_color_table.setCellWidget(row_index, 3, reset_button)
-
-        self._syntax_color_table.verticalHeader().setMinimumSectionSize(28)
-        self._syntax_color_table.resizeRowsToContents()
-        self._finalize_syntax_columns()
-        self._refresh_syntax_validation()
-
-    def _handle_syntax_theme_changed(self, _index: int) -> None:
-        theme_key = str(self._syntax_theme_input.currentData())
-        if theme_key not in _VALID_SYNTAX_THEME_KEYS:
-            theme_key = THEME_LIGHT
-        self._populate_syntax_color_table(theme_key)
-
-    def _handle_pick_syntax_color(self, token_key: str) -> None:
-        input_widget = self._syntax_color_inputs.get(token_key)
-        if input_widget is None:
-            return
-        current = normalize_hex_color(input_widget.text()) or input_widget.placeholderText()
-        chosen = QColorDialog.getColor(
-            initial=QColor(current if current else "#FFFFFF"),
-            parent=self,
-            title="Choose syntax color",
-        )
-        if not chosen.isValid():
-            return
-        input_widget.setText(chosen.name().upper())
-        self._handle_syntax_color_text_edited(token_key)
-
-    def _handle_reset_syntax_color(self, token_key: str) -> None:
-        defaults = self._syntax_defaults_for_theme(self._active_syntax_theme_key)
-        overrides = self._syntax_color_overrides_by_theme.setdefault(self._active_syntax_theme_key, {})
-        overrides.pop(token_key, None)
-        input_widget = self._syntax_color_inputs.get(token_key)
-        default_color = defaults.get(token_key, "")
-        if input_widget is not None:
-            input_widget.setText(default_color)
-        self._update_syntax_swatch(token_key, default_color)
-        self._refresh_syntax_validation()
-
-    def _handle_syntax_color_text_edited(self, token_key: str) -> None:
-        input_widget = self._syntax_color_inputs.get(token_key)
-        if input_widget is None:
-            return
-        overrides = self._syntax_color_overrides_by_theme.setdefault(self._active_syntax_theme_key, {})
-        defaults = self._syntax_defaults_for_theme(self._active_syntax_theme_key)
-        raw_text = input_widget.text().strip()
-        if not raw_text:
-            overrides.pop(token_key, None)
-            default_color = defaults.get(token_key, "")
-            input_widget.setText(default_color)
-            self._update_syntax_swatch(token_key, default_color)
-            self._refresh_syntax_validation()
-            return
-        normalized = normalize_hex_color(input_widget.text())
-        if normalized is None:
-            self._update_syntax_swatch(token_key, raw_text)
-            self._refresh_syntax_validation()
-            return
-        if normalized == defaults.get(token_key):
-            overrides.pop(token_key, None)
-        else:
-            overrides[token_key] = normalized
-        input_widget.setText(normalized)
-        self._update_syntax_swatch(token_key, normalized)
-        self._refresh_syntax_validation()
-
-    def _update_syntax_swatch(self, token_key: str, hex_color: str) -> None:
-        swatch = self._syntax_color_swatches.get(token_key)
-        if swatch is None:
-            return
-        normalized = normalize_hex_color(hex_color)
-        border = self._tokens.border
-        if normalized:
-            swatch.setStyleSheet(
-                f"background: {normalized}; border: 1px solid {border}; border-radius: 3px;"
-            )
-        else:
-            swatch.setStyleSheet(
-                f"background: transparent; border: 1px solid {border}; border-radius: 3px;"
-            )
-
-    def _refresh_syntax_validation(self) -> None:
-        invalid_entries: list[str] = []
-        error_color = self._tokens.diag_error_color
-        for token_key, input_widget in self._syntax_color_inputs.items():
-            if not input_widget.text().strip():
-                input_widget.setStyleSheet("")
-                continue
-            normalized = normalize_hex_color(input_widget.text())
-            if normalized is None:
-                input_widget.setStyleSheet(f"border: 1px solid {error_color};")
-                invalid_entries.append(token_key)
-            else:
-                input_widget.setStyleSheet("")
-        if invalid_entries:
-            preview = ", ".join(invalid_entries[:5])
-            self._syntax_validation_label.setText(
-                f"Invalid syntax colors for: {preview}. Use #RRGGBB format."
-            )
-            self._syntax_validation_label.setVisible(True)
-            self._has_invalid_syntax_colors = True
-        else:
-            self._syntax_validation_label.clear()
-            self._syntax_validation_label.setVisible(False)
-            self._has_invalid_syntax_colors = False
-        self._refresh_validation_state()
-
-    def _handle_linter_enabled_toggled(self, _checked: bool) -> None:
-        self._sync_linter_control_states()
-
-    def _sync_linter_control_states(self) -> None:
-        enabled = self._linter_enabled_input.isChecked()
-        self._linter_provider_input.setEnabled(enabled)
-        self._linter_table.setEnabled(enabled)
-
-    def _populate_linter_table(self) -> None:
-        self._lint_enabled_inputs.clear()
-        self._lint_severity_inputs.clear()
-        self._linter_table.setRowCount(0)
-        self._linter_table.setRowCount(len(LINT_RULE_DEFINITIONS))
-        severity_values = [LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO]
-        for row_index, definition in enumerate(LINT_RULE_DEFINITIONS):
-            code_item = QTableWidgetItem(definition.code)
-            self._linter_table.setItem(row_index, 0, code_item)
-            rule_item = QTableWidgetItem(definition.title)
-            self._linter_table.setItem(row_index, 1, rule_item)
-
-            override_payload = self._lint_rule_overrides.get(definition.code, {})
-            enabled_value = bool(override_payload.get("enabled", definition.default_enabled))
-            enabled_input = QCheckBox(self._linter_table)
-            enabled_input.setChecked(enabled_value)
-            enabled_input.setEnabled(definition.allow_disable)
-            enabled_input.stateChanged.connect(
-                lambda _state, code=definition.code: self._handle_lint_enabled_changed(code)
-            )
-            self._linter_table.setCellWidget(row_index, 2, enabled_input)
-            self._lint_enabled_inputs[definition.code] = enabled_input
-
-            severity_input = QComboBox(self._linter_table)
-            for severity in severity_values:
-                severity_input.addItem(severity.upper(), severity)
-            severity_value = str(override_payload.get("severity", definition.default_severity))
-            selected_index = severity_input.findData(severity_value)
-            severity_input.setCurrentIndex(selected_index if selected_index >= 0 else 0)
-            severity_input.setEnabled(definition.allow_severity_override)
-            severity_input.currentIndexChanged.connect(
-                lambda _idx, code=definition.code: self._handle_lint_severity_changed(code)
-            )
-            severity_input.setMinimumContentsLength(len("WARNING"))
-            severity_input.setMinimumWidth(severity_input.sizeHint().width())
-            self._linter_table.setCellWidget(row_index, 3, severity_input)
-            self._lint_severity_inputs[definition.code] = severity_input
-
-            reset_button = QPushButton("Reset", self._linter_table)
-            reset_button.clicked.connect(
-                lambda _checked=False, code=definition.code: self._handle_reset_lint_rule(code)
-            )
-            reset_button.setMinimumWidth(reset_button.sizeHint().width())
-            self._linter_table.setCellWidget(row_index, 4, reset_button)
-
-        self._finalize_linter_columns()
-
-    def _handle_lint_enabled_changed(self, code: str) -> None:
-        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
-        if definition is None:
-            return
-        enabled_input = self._lint_enabled_inputs.get(code)
-        if enabled_input is None:
-            return
-        override = self._lint_rule_overrides.setdefault(code, {})
-        if definition.allow_disable:
-            override["enabled"] = enabled_input.isChecked()
-        self._normalize_lint_rule_override(code)
-
-    def _handle_lint_severity_changed(self, code: str) -> None:
-        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
-        if definition is None:
-            return
-        severity_input = self._lint_severity_inputs.get(code)
-        if severity_input is None:
-            return
-        override = self._lint_rule_overrides.setdefault(code, {})
-        if definition.allow_severity_override:
-            override["severity"] = str(severity_input.currentData())
-        self._normalize_lint_rule_override(code)
-
-    def _handle_reset_lint_rule(self, code: str) -> None:
-        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
-        if definition is None:
-            return
-        self._lint_rule_overrides.pop(code, None)
-        baseline_snapshot = self._scope_snapshots.get(SETTINGS_SCOPE_GLOBAL)
-        baseline_override = None
-        if (
-            self._active_scope == SETTINGS_SCOPE_PROJECT
-            and baseline_snapshot is not None
-            and code in baseline_snapshot.lint_rule_overrides
-        ):
-            baseline_override = baseline_snapshot.lint_rule_overrides.get(code, {})
-        enabled_input = self._lint_enabled_inputs.get(code)
-        if enabled_input is not None:
-            if isinstance(baseline_override, dict) and "enabled" in baseline_override:
-                enabled_input.setChecked(bool(baseline_override.get("enabled")))
-            else:
-                enabled_input.setChecked(definition.default_enabled)
-        severity_input = self._lint_severity_inputs.get(code)
-        if severity_input is not None:
-            baseline_severity = None
-            if isinstance(baseline_override, dict):
-                severity_raw = baseline_override.get("severity")
-                if isinstance(severity_raw, str):
-                    baseline_severity = severity_raw
-            index = severity_input.findData(baseline_severity or definition.default_severity)
-            severity_input.setCurrentIndex(index if index >= 0 else 0)
-
-    def _normalize_lint_rule_override(self, code: str) -> None:
-        definition = next((item for item in LINT_RULE_DEFINITIONS if item.code == code), None)
-        if definition is None:
-            self._lint_rule_overrides.pop(code, None)
-            return
-        override = self._lint_rule_overrides.get(code, {})
-        normalized: dict[str, object] = {}
-        enabled = override.get("enabled")
-        if definition.allow_disable and isinstance(enabled, bool) and enabled != definition.default_enabled:
-            normalized["enabled"] = enabled
-        severity = override.get("severity")
-        if (
-            definition.allow_severity_override
-            and isinstance(severity, str)
-            and severity in {LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO}
-            and severity != definition.default_severity
-        ):
-            normalized["severity"] = severity
-        if normalized:
-            self._lint_rule_overrides[code] = normalized
-        else:
-            self._lint_rule_overrides.pop(code, None)
-
-    def _lint_rule_overrides_snapshot(self) -> dict[str, dict[str, object]]:
-        return {code: dict(value) for code, value in self._lint_rule_overrides.items()}
-
-    def _file_exclude_patterns_snapshot(self) -> list[str]:
-        patterns: list[str] = []
-        for i in range(self._file_excludes_list.count()):
-            item = self._file_excludes_list.item(i)
-            if item is not None:
-                text = item.text().strip()
-                if text:
-                    patterns.append(text)
-        return patterns
-
-    def _handle_add_file_exclude(self) -> None:
-        text = self._file_exclude_input.text().strip()
-        if not text:
-            return
-        for part in text.split(","):
-            pattern = part.strip()
-            if not pattern:
-                continue
-            existing = [
-                self._file_excludes_list.item(i).text()
-                for i in range(self._file_excludes_list.count())
-                if self._file_excludes_list.item(i) is not None
-            ]
-            if pattern not in existing:
-                self._file_excludes_list.addItem(pattern)
-        self._file_exclude_input.clear()
-
-    def _handle_remove_file_exclude(self) -> None:
-        selected = self._file_excludes_list.currentRow()
-        if selected >= 0:
-            self._file_excludes_list.takeItem(selected)
-
-    def _handle_reset_file_excludes(self) -> None:
-        self._file_excludes_list.clear()
-        baseline_patterns = DEFAULT_EXCLUDE_PATTERNS
-        if self._active_scope == SETTINGS_SCOPE_PROJECT:
-            baseline_patterns = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL].file_exclude_patterns
-        for pattern in baseline_patterns:
-            self._file_excludes_list.addItem(pattern)
-
-    def _local_history_exclude_patterns_snapshot(self) -> list[str]:
-        patterns: list[str] = []
-        for i in range(self._local_history_excludes_list.count()):
-            item = self._local_history_excludes_list.item(i)
-            if item is None:
-                continue
-            text = item.text().strip()
-            if text:
-                patterns.append(text)
-        return patterns
-
-    def _handle_add_local_history_exclude(self) -> None:
-        text = self._local_history_exclude_input.text().strip()
-        if not text:
-            return
-        existing = {
-            self._local_history_excludes_list.item(i).text()
-            for i in range(self._local_history_excludes_list.count())
-            if self._local_history_excludes_list.item(i) is not None
-        }
-        for part in text.split(","):
-            pattern = part.strip()
-            if pattern and pattern not in existing:
-                self._local_history_excludes_list.addItem(pattern)
-                existing.add(pattern)
-        self._local_history_exclude_input.clear()
-
-    def _handle_remove_local_history_exclude(self) -> None:
-        selected = self._local_history_excludes_list.currentRow()
-        if selected >= 0:
-            self._local_history_excludes_list.takeItem(selected)
-
-    def _handle_reset_local_history_settings(self) -> None:
-        baseline = EditorSettingsSnapshot()
-        if self._active_scope == SETTINGS_SCOPE_PROJECT:
-            baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
-        self._local_history_max_checkpoints_input.setValue(baseline.local_history_max_checkpoints_per_file)
-        self._local_history_retention_days_input.setValue(baseline.local_history_retention_days)
-        self._local_history_max_tracked_file_kb_input.setValue(
-            max(1, int((baseline.local_history_max_tracked_file_bytes + 1023) / 1024))
-        )
-        self._local_history_excludes_list.clear()
-        for pattern in baseline.local_history_exclude_patterns:
-            self._local_history_excludes_list.addItem(pattern)
-
-    def _handle_reset_linter_overrides_to_global(self) -> None:
-        self._lint_rule_overrides.clear()
-        self._populate_linter_table()
-        baseline_snapshot = self._scope_snapshots.get(SETTINGS_SCOPE_GLOBAL)
-        if self._active_scope != SETTINGS_SCOPE_PROJECT or baseline_snapshot is None:
-            return
-        for definition in LINT_RULE_DEFINITIONS:
-            baseline_override = baseline_snapshot.lint_rule_overrides.get(definition.code, {})
-            enabled_input = self._lint_enabled_inputs.get(definition.code)
-            if enabled_input is not None:
-                if isinstance(baseline_override.get("enabled"), bool):
-                    enabled_input.setChecked(bool(baseline_override["enabled"]))
-                else:
-                    enabled_input.setChecked(definition.default_enabled)
-            severity_input = self._lint_severity_inputs.get(definition.code)
-            if severity_input is not None:
-                baseline_severity = baseline_override.get("severity")
-                if not isinstance(baseline_severity, str):
-                    baseline_severity = definition.default_severity
-                index = severity_input.findData(baseline_severity)
-                severity_input.setCurrentIndex(index if index >= 0 else 0)
-
-    def _refresh_validation_state(self) -> None:
-        if self._ok_button is None:
-            return
-        if self._active_scope == SETTINGS_SCOPE_PROJECT:
-            self._ok_button.setEnabled(True)
-            return
-        self._ok_button.setEnabled(not (self._has_shortcut_conflicts or self._has_invalid_syntax_colors))

@@ -74,7 +74,7 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
         assert python_console_action.isEnabled() is True
         assert pause_action.isEnabled() is False
 
-        window._last_debug_target = {"kind": "project"}
+        window._run_launch_workflow.record_debug_target_from_dict({"kind": "project"})
         window._refresh_run_action_states()
         assert rerun_last_debug_action.isEnabled() is True
     finally:

@@ -8,7 +8,7 @@ from typing import Any, Callable
 from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox
 
 from app.core import constants
-from app.debug.debug_breakpoints import build_breakpoint, breakpoint_key
+from app.debug.debug_breakpoints import breakpoint_key
 from app.debug.debug_command_service import (
     evaluate_command,
     expand_variable_command,
@@ -17,6 +17,7 @@ from app.debug.debug_command_service import (
     update_exception_policy_command,
 )
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy
+from app.shell.breakpoint_store import BreakpointStore
 
 
 class DebugControlWorkflow:
@@ -24,6 +25,11 @@ class DebugControlWorkflow:
 
     def __init__(self, window: Any) -> None:
         self._window = window
+        self._store = BreakpointStore()
+
+    @property
+    def breakpoint_store(self) -> BreakpointStore:
+        return self._store
 
     def dispatch_debug_transport_command(
         self,
@@ -67,8 +73,7 @@ class DebugControlWorkflow:
 
     def handle_remove_all_breakpoints_action(self) -> None:
         window = self._window
-        window._breakpoints_by_file.clear()
-        window._breakpoint_specs_by_key.clear()
+        self._store.clear_all()
         for editor_widget in window._editor_widgets_by_path.values():
             editor_widget.set_breakpoints(set())
         self.refresh_breakpoints_list()
@@ -77,15 +82,8 @@ class DebugControlWorkflow:
 
     def handle_editor_breakpoint_toggled(self, file_path: str, line_number: int, enabled: bool) -> None:
         window = self._window
-        breakpoints = window._breakpoints_by_file.setdefault(file_path, set())
-        if enabled:
-            breakpoints.add(line_number)
-            self.ensure_breakpoint_spec(file_path, line_number)
-        else:
-            breakpoints.discard(line_number)
-            window._breakpoint_specs_by_key.pop(breakpoint_key(file_path, line_number), None)
-        if not breakpoints:
-            window._breakpoints_by_file.pop(file_path, None)
+        self._store.set_line_enabled(file_path, line_number, enabled)
+        self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
         window._refresh_run_action_states()
@@ -97,19 +95,10 @@ class DebugControlWorkflow:
         window._debug_panel.set_breakpoints(self.display_breakpoints())
 
     def ensure_breakpoint_spec(self, file_path: str, line_number: int) -> DebugBreakpoint:
-        window = self._window
-        key = breakpoint_key(file_path, line_number)
-        existing = window._breakpoint_specs_by_key.get(key)
-        if existing is not None:
-            return existing
-        created = build_breakpoint(file_path=file_path, line_number=line_number)
-        window._breakpoint_specs_by_key[key] = created
-        return created
+        return self._store.ensure_spec(file_path, line_number)
 
     def all_breakpoints(self) -> list[DebugBreakpoint]:
-        window = self._window
-        breakpoints = list(window._breakpoint_specs_by_key.values())
-        return sorted(breakpoints, key=lambda breakpoint: (breakpoint.file_path, breakpoint.line_number))
+        return self._store.all_specs()
 
     def display_breakpoints(self) -> list[DebugBreakpoint]:
         window = self._window
@@ -227,14 +216,8 @@ class DebugControlWorkflow:
 
     def handle_debug_breakpoint_remove(self, file_path: str, line_number: int) -> None:
         window = self._window
-        breakpoints = window._breakpoints_by_file.get(file_path, set())
-        breakpoints.discard(line_number)
-        if not breakpoints:
-            window._breakpoints_by_file.pop(file_path, None)
-        window._breakpoint_specs_by_key.pop(breakpoint_key(file_path, line_number), None)
-        editor_widget = window._editor_widgets_by_path.get(file_path)
-        if editor_widget is not None:
-            editor_widget.set_breakpoints(window._breakpoints_by_file.get(file_path, set()))
+        self._store.remove_line(file_path, line_number)
+        self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
         window._refresh_run_action_states()
@@ -242,16 +225,20 @@ class DebugControlWorkflow:
     def handle_debug_breakpoint_toggle(self, file_path: str, line_number: int, enabled: bool) -> None:
         window = self._window
         spec = self.ensure_breakpoint_spec(file_path, line_number)
-        window._breakpoint_specs_by_key[breakpoint_key(file_path, line_number)] = DebugBreakpoint(
-            breakpoint_id=spec.breakpoint_id,
-            file_path=spec.file_path,
-            line_number=spec.line_number,
-            enabled=enabled,
-            condition=spec.condition,
-            hit_condition=spec.hit_condition,
-            verified=spec.verified,
-            verification_message=spec.verification_message,
+        self._store.set_spec(
+            DebugBreakpoint(
+                breakpoint_id=spec.breakpoint_id,
+                file_path=spec.file_path,
+                line_number=spec.line_number,
+                enabled=enabled,
+                condition=spec.condition,
+                hit_condition=spec.hit_condition,
+                verified=spec.verified,
+                verification_message=spec.verification_message,
+            )
         )
+        self._store.set_line_enabled(file_path, line_number, enabled)
+        self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
         window._refresh_run_action_states()
@@ -280,15 +267,17 @@ class DebugControlWorkflow:
         )
         if not accepted:
             return
-        window._breakpoint_specs_by_key[breakpoint_key(file_path, line_number)] = DebugBreakpoint(
-            breakpoint_id=spec.breakpoint_id,
-            file_path=spec.file_path,
-            line_number=spec.line_number,
-            enabled=spec.enabled,
-            condition=condition.strip(),
-            hit_condition=hit_condition or None,
-            verified=spec.verified,
-            verification_message=spec.verification_message,
+        self._store.set_spec(
+            DebugBreakpoint(
+                breakpoint_id=spec.breakpoint_id,
+                file_path=spec.file_path,
+                line_number=spec.line_number,
+                enabled=spec.enabled,
+                condition=condition.strip(),
+                hit_condition=hit_condition or None,
+                verified=spec.verified,
+                verification_message=spec.verification_message,
+            )
         )
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
@@ -341,3 +330,8 @@ class DebugControlWorkflow:
             return
         command_name, arguments = select_frame_command(frame_id)
         self.send_debug_command(command_name, arguments)
+
+    def _sync_editor_breakpoints(self, file_path: str) -> None:
+        editor_widget = self._window._editor_widgets_by_path.get(file_path)
+        if editor_widget is not None:
+            editor_widget.set_breakpoints(self._store.lines_for_file(file_path))

@@ -68,12 +68,12 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     assert first_index >= 0
     assert window._editor_tabs_widget is not None
     window._editor_tabs_widget.setCurrentIndex(first_index)
-    window._breakpoints_by_file[file_one_path] = {2, 5}
-    window._breakpoints_by_file[file_two_path] = {3}
+    window._debug_control_workflow.breakpoint_store.breakpoints_by_file[file_one_path] = {2, 5}
+    window._debug_control_workflow.breakpoint_store.breakpoints_by_file[file_two_path] = {3}
 
     window._local_history_workflow.persist_session_state()
     window._reset_editor_tabs()
-    window._breakpoints_by_file.clear()
+    window._debug_control_workflow.breakpoint_store.breakpoints_by_file.clear()
     window._local_history_workflow.restore_session_state(str(project_root.resolve()))
     app.processEvents()
 
@@ -81,8 +81,8 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     active_tab = window._editor_manager.active_tab()
     assert active_tab is not None
     assert active_tab.file_path == file_one_path
-    assert window._breakpoints_by_file[file_one_path] == {2, 5}
-    assert window._breakpoints_by_file[file_two_path] == {3}
+    assert window._debug_control_workflow.breakpoint_store.breakpoints_by_file[file_one_path] == {2, 5}
+    assert window._debug_control_workflow.breakpoint_store.breakpoints_by_file[file_two_path] == {3}
 
     restored_first_widget = window._editor_widgets_by_path[file_one_path]
     restored_second_widget = window._editor_widgets_by_path[file_two_path]
@@ -120,7 +120,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     assert window._editor_tab_factory.open_file_in_editor(project_one_path) is True
     widget_one = window._editor_widgets_by_path[project_one_path]
     _set_cursor_position(widget_one, line=3, column=2)
-    window._breakpoints_by_file[project_one_path] = {2}
+    window._debug_control_workflow.breakpoint_store.breakpoints_by_file[project_one_path] = {2}
 
     # Opening another project should persist current project-one session state.
     assert window._open_project_by_path(str(project_two.resolve())) is True
@@ -134,5 +134,5 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     restored_widget = window._editor_widgets_by_path[project_one_path]
     assert restored_widget.textCursor().blockNumber() + 1 == 3
     assert restored_widget.textCursor().positionInBlock() + 1 == 2
-    assert window._breakpoints_by_file[project_one_path] == {2}
+    assert window._debug_control_workflow.breakpoint_store.breakpoints_by_file[project_one_path] == {2}
     window.close()

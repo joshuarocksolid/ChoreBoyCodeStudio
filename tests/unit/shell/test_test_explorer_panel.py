@@ -51,13 +51,13 @@ def test_node_parent_id_links_function_to_file() -> None:
 
 
 def test_all_outcome_builders_exist() -> None:
-    from app.shell.test_explorer_panel import _OUTCOME_BUILDERS
+    from app.shell.test_explorer_icons import _OUTCOME_BUILDERS
     expected = {"passed", "failed", "skipped", "error", "not_run"}
     assert set(_OUTCOME_BUILDERS.keys()) == expected
 
 
 def test_all_kind_builders_exist() -> None:
-    from app.shell.test_explorer_panel import _KIND_BUILDERS
+    from app.shell.test_explorer_icons import _KIND_BUILDERS
     expected = {"file", "class", "function"}
     assert set(_KIND_BUILDERS.keys()) == expected
 
@@ -67,27 +67,27 @@ def test_all_kind_builders_exist() -> None:
 class TestOutcomeIconCache:
     def test_outcome_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         from PySide2.QtGui import QIcon
-        from app.shell.test_explorer_panel import _OUTCOME_ICON_CACHE, outcome_icon
+        from app.shell.test_explorer_icons import _OUTCOME_ICON_CACHE, outcome_icon
         _OUTCOME_ICON_CACHE.clear()
         icon = outcome_icon("passed", "#3FB950")
         assert isinstance(icon, QIcon)
 
     def test_outcome_icon_caches_result(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import _OUTCOME_ICON_CACHE, outcome_icon
+        from app.shell.test_explorer_icons import _OUTCOME_ICON_CACHE, outcome_icon
         _OUTCOME_ICON_CACHE.clear()
         icon1 = outcome_icon("failed", "#FF6B6B")
         icon2 = outcome_icon("failed", "#FF6B6B")
         assert icon1 is icon2
 
     def test_outcome_icon_different_color_different_cache(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import _OUTCOME_ICON_CACHE, outcome_icon
+        from app.shell.test_explorer_icons import _OUTCOME_ICON_CACHE, outcome_icon
         _OUTCOME_ICON_CACHE.clear()
         icon1 = outcome_icon("failed", "#FF6B6B")
         icon2 = outcome_icon("failed", "#E03131")
         assert icon1 is not icon2
 
     def test_unknown_outcome_falls_back(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import _OUTCOME_ICON_CACHE, outcome_icon
+        from app.shell.test_explorer_icons import _OUTCOME_ICON_CACHE, outcome_icon
         _OUTCOME_ICON_CACHE.clear()
         icon = outcome_icon("unknown_state", "#AAAAAA")
         assert icon is not None
@@ -98,13 +98,13 @@ class TestOutcomeIconCache:
 class TestKindIconCache:
     def test_kind_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         from PySide2.QtGui import QIcon
-        from app.shell.test_explorer_panel import _KIND_ICON_CACHE, kind_icon
+        from app.shell.test_explorer_icons import _KIND_ICON_CACHE, kind_icon
         _KIND_ICON_CACHE.clear()
         icon = kind_icon("file", "#5B8CFF")
         assert isinstance(icon, QIcon)
 
     def test_kind_icon_caches_result(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import _KIND_ICON_CACHE, kind_icon
+        from app.shell.test_explorer_icons import _KIND_ICON_CACHE, kind_icon
         _KIND_ICON_CACHE.clear()
         icon1 = kind_icon("class", "#5B8CFF")
         icon2 = kind_icon("class", "#5B8CFF")
@@ -116,16 +116,16 @@ class TestKindIconCache:
 class TestActionIconCache:
     def test_action_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         from PySide2.QtGui import QIcon
-        from app.shell.test_explorer_panel import _ACTION_ICON_CACHE, _action_icon
+        from app.shell.test_explorer_icons import _ACTION_ICON_CACHE, action_icon
         _ACTION_ICON_CACHE.clear()
-        icon = _action_icon("play", "#CED4DA")
+        icon = action_icon("play", "#CED4DA")
         assert isinstance(icon, QIcon)
 
     def test_action_icon_caches_result(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import _ACTION_ICON_CACHE, _action_icon
+        from app.shell.test_explorer_icons import _ACTION_ICON_CACHE, action_icon
         _ACTION_ICON_CACHE.clear()
-        icon1 = _action_icon("refresh", "#CED4DA")
-        icon2 = _action_icon("refresh", "#CED4DA")
+        icon1 = action_icon("refresh", "#CED4DA")
+        icon2 = action_icon("refresh", "#CED4DA")
         assert icon1 is icon2
 
 
@@ -317,16 +317,17 @@ class TestTestExplorerPanelSummary:
 
 class TestTestExplorerApplyTheme:
     def test_apply_theme_clears_icon_caches(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from app.shell.test_explorer_panel import (
+        from app.shell.test_explorer_icons import (
             _OUTCOME_ICON_CACHE, _KIND_ICON_CACHE, _ACTION_ICON_CACHE,
-            TestExplorerPanel, outcome_icon, kind_icon, _action_icon,
+            action_icon, kind_icon, outcome_icon,
         )
+        from app.shell.test_explorer_panel import TestExplorerPanel
         _OUTCOME_ICON_CACHE.clear()
         _KIND_ICON_CACHE.clear()
         _ACTION_ICON_CACHE.clear()
         outcome_icon("passed", "#3FB950")
         kind_icon("file", "#5B8CFF")
-        _action_icon("play", "#CED4DA")
+        action_icon("play", "#CED4DA")
         assert len(_OUTCOME_ICON_CACHE) > 0
         assert len(_KIND_ICON_CACHE) > 0
         assert len(_ACTION_ICON_CACHE) > 0

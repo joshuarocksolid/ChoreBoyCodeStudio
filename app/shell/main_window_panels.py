@@ -21,12 +21,12 @@ from PySide2.QtWidgets import (
 from app.editors.find_replace_bar import FindReplaceBar
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.shell.activity_bar import ActivityBar
-from app.shell.debug_panel_widget import DebugPanelWidget
+from app.shell.debug_panel import DebugPanelWidget
 from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.icon_provider import new_file_icon, new_folder_icon, refresh_icon
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.layout_persistence import DEFAULT_EXPLORER_SPLITTER_SIZES
-from app.shell.outline_panel import OutlinePanel
+from app.shell.outline import OutlinePanel
 from app.shell.problems_panel import ProblemsPanel
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.run_log_panel import RunLogPanel
@@ -53,7 +53,7 @@ def build_left_panel(window: Any) -> QWidget:
     outer_layout.setSpacing(0)
 
     window._activity_bar = ActivityBar(panel)
-    tokens = window._resolve_theme_tokens()
+    tokens = window._shell_theme_workflow.resolve_theme_tokens()
     normal = QColor(tokens.text_muted)
     active = QColor(tokens.text_primary)
     window._activity_bar.add_view(
@@ -199,12 +199,13 @@ def build_center_panel(window: Any) -> QWidget:
     editor_layout.setSpacing(0)
 
     window._find_replace_bar = FindReplaceBar(editor_page)
-    window._find_replace_bar.find_requested.connect(window._handle_find_bar_find)
-    window._find_replace_bar.find_next_requested.connect(window._handle_find_bar_next)
-    window._find_replace_bar.find_previous_requested.connect(window._handle_find_bar_prev)
-    window._find_replace_bar.replace_requested.connect(window._handle_find_bar_replace)
-    window._find_replace_bar.replace_all_requested.connect(window._handle_find_bar_replace_all)
-    window._find_replace_bar.close_requested.connect(window._handle_find_bar_close)
+    workflow = window._find_replace_workflow
+    window._find_replace_bar.find_requested.connect(workflow.handle_find)
+    window._find_replace_bar.find_next_requested.connect(workflow.handle_find_next)
+    window._find_replace_bar.find_previous_requested.connect(workflow.handle_find_previous)
+    window._find_replace_bar.replace_requested.connect(workflow.handle_replace)
+    window._find_replace_bar.replace_all_requested.connect(workflow.handle_replace_all)
+    window._find_replace_bar.close_requested.connect(workflow.handle_close)
     editor_layout.addWidget(window._find_replace_bar, 0)
 
     window._editor_tabs_widget = QTabWidget(editor_page)

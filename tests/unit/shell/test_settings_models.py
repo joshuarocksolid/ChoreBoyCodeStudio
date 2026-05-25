@@ -646,6 +646,53 @@ def test_merge_editor_settings_snapshot_for_scope_project_persists_only_diffs() 
     assert constants.UI_THEME_SETTINGS_KEY not in merged_project
 
 
+def test_merge_editor_settings_snapshot_for_scope_dual_snapshots_persist_global_edits() -> None:
+    global_payload = {
+        constants.UI_EDITOR_SETTINGS_KEY: {
+            constants.UI_EDITOR_TAB_WIDTH_KEY: 4,
+        },
+        constants.UI_THEME_SETTINGS_KEY: {
+            constants.UI_THEME_MODE_KEY: constants.UI_THEME_MODE_DARK,
+        },
+    }
+    project_payload = {"schema_version": 1}
+    global_snapshot = EditorSettingsSnapshot(
+        tab_width=4,
+        theme_mode=constants.UI_THEME_MODE_LIGHT,
+    )
+    project_snapshot = EditorSettingsSnapshot(
+        tab_width=2,
+        theme_mode=constants.UI_THEME_MODE_DARK,
+    )
+
+    merged_global, merged_project = merge_editor_settings_snapshot_for_scope(
+        scope=SETTINGS_SCOPE_PROJECT,
+        global_settings_payload=global_payload,
+        project_settings_payload=project_payload,
+        snapshot=project_snapshot,
+        global_snapshot=global_snapshot,
+        project_snapshot=project_snapshot,
+    )
+
+    assert merged_global[constants.UI_THEME_SETTINGS_KEY][constants.UI_THEME_MODE_KEY] == (
+        constants.UI_THEME_MODE_LIGHT
+    )
+    assert merged_project[constants.UI_EDITOR_SETTINGS_KEY][constants.UI_EDITOR_TAB_WIDTH_KEY] == 2
+
+
+def test_merge_editor_settings_snapshot_preserves_highlighting_runtime_fields() -> None:
+    snapshot = EditorSettingsSnapshot(
+        tab_width=4,
+        highlighting_adaptive_mode="reduced",
+        highlighting_reduced_threshold_chars=12000,
+        highlighting_lexical_only_threshold_chars=24000,
+    )
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["intelligence"]["highlighting_adaptive_mode"] == "reduced"
+    assert merged["intelligence"]["highlighting_reduced_threshold_chars"] == 12000
+    assert merged["intelligence"]["highlighting_lexical_only_threshold_chars"] == 24000
+
+
 def test_has_project_override_and_remove_project_override_manage_nested_paths() -> None:
     payload = {
         "schema_version": 1,

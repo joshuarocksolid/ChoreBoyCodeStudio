@@ -1,4 +1,4 @@
-"""Unit tests for MainWindow run/debug command routing."""
+"""Unit tests for shell run/debug command routing."""
 
 from __future__ import annotations
 
@@ -14,23 +14,73 @@ from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
 from app.debug.debug_breakpoints import build_breakpoint
 from app.debug.debug_models import DebugExceptionPolicy, DebugSourceMap
-from app.shell.main_window import MainWindow
+from app.shell.run_launch_workflow import RunLaunchWorkflow
 
 pytestmark = pytest.mark.unit
 
 
-def test_handle_run_action_routes_to_active_file_entry() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(file_path="/tmp/project/a.py", is_dirty=False, current_content="")
+def _build_run_launch_workflow(**overrides: Any) -> tuple[RunLaunchWorkflow, Any]:
+    loaded_project = overrides.get("loaded_project")
+    active_config_name: list[str | None] = [overrides.get("active_named_run_config_name")]
+    transient_path: list[str | None] = [overrides.get("active_transient_entry_file_path")]
+    editor_manager = overrides.get(
+        "editor_manager",
+        lambda: SimpleNamespace(active_tab=lambda: None),
     )
-    window_any._breakpoints_by_file = {}
+    debug_control_workflow = overrides.get(
+        "debug_control_workflow",
+        SimpleNamespace(
+            breakpoint_store=SimpleNamespace(breakpoints_by_file={}),
+            build_debug_breakpoints_for_launch=lambda **_kwargs: [],
+        ),
+    )
+    host = SimpleNamespace(
+        dialog_parent=SimpleNamespace(),
+        loaded_project=lambda: loaded_project,
+        set_loaded_project=lambda project: setattr(host, "_loaded_project_value", project) or setattr(
+            host, "loaded_project", lambda: project
+        ),
+        active_named_run_config_name=lambda: active_config_name[0],
+        set_active_named_run_config_name=lambda name: active_config_name.__setitem__(0, name),
+        editor_manager=editor_manager,
+        debug_control_workflow=lambda: debug_control_workflow,
+        debug_exception_policy=lambda: overrides.get("debug_exception_policy", DebugExceptionPolicy()),
+        run_config_controller=lambda: overrides.get("run_config_controller"),
+        run_debug_presenter=lambda: SimpleNamespace(start_session=lambda **_kwargs: True),
+        settings_service=lambda: SimpleNamespace(
+            load_recent_argv_history=lambda: [],
+            push_recent_argv_history=lambda _text: None,
+        ),
+        resolve_theme_tokens=lambda: None,
+        show_run_preflight_result=lambda *_args, **_kwargs: None,
+        refresh_run_action_states=lambda: None,
+        editor_tab_factory=lambda: overrides.get(
+            "editor_tab_factory", SimpleNamespace(open_file_in_editor=lambda *_a, **_k: True)
+        ),
+        editor_tabs_widget=lambda: overrides.get("editor_tabs_widget"),
+        tab_index_for_path=lambda _path: -1,
+        test_runner_workflow=lambda: overrides.get("test_runner_workflow", SimpleNamespace()),
+        active_transient_entry_file_path=lambda: transient_path[0],
+        set_active_transient_entry_file_path=lambda path: transient_path.__setitem__(0, path),
+        status_bar=SimpleNamespace(addPermanentWidget=lambda *_args: None),
+        show_warning=lambda *_args, **_kwargs: None,
+        show_information=lambda *_args, **_kwargs: None,
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+    )
+    workflow = RunLaunchWorkflow(cast(Any, host))
+    return workflow, host
 
+
+def test_handle_run_action_routes_to_active_file_entry() -> None:
+    workflow, _host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(file_path="/tmp/project/a.py", is_dirty=False, current_content="")
+        ),
+    )
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._handle_run_action(window)
+    started = workflow.handle_run_action()
 
     assert started is True
     assert len(calls) == 1
@@ -41,25 +91,23 @@ def test_handle_run_action_routes_to_active_file_entry() -> None:
 
 
 def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(file_path="/tmp/project/debug.py", is_dirty=False, current_content="")
-    )
     breakpoints = [
         build_breakpoint("/tmp/project/debug.py", 2),
         build_breakpoint("/tmp/project/debug.py", 9),
         build_breakpoint("/tmp/project/other.py", 1),
     ]
-    window_any._debug_control_workflow = SimpleNamespace(
-        build_debug_breakpoints_for_launch=lambda **_kwargs: breakpoints,
+    workflow, _host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(file_path="/tmp/project/debug.py", is_dirty=False, current_content="")
+        ),
+        debug_control_workflow=SimpleNamespace(
+            build_debug_breakpoints_for_launch=lambda **_kwargs: breakpoints,
+        ),
     )
-    window_any._debug_exception_policy = DebugExceptionPolicy()
-
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._handle_debug_action(window)
+    started = workflow.handle_debug_action()
 
     assert started is True
     assert len(calls) == 1
@@ -88,15 +136,15 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
         metadata=ProjectMetadata(schema_version=1, name="T", default_entry="app.py"),
         entries=[],
     )
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded
-    window_any._active_named_run_config_name = None
-    window_any._ensure_run_preflight_ready = lambda **_kwargs: True
+    workflow, _host = _build_run_launch_workflow(
+        loaded_project=loaded,
+        active_named_run_config_name=None,
+    )
+    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._handle_run_project_action(window)
+    started = workflow.handle_run_project_action()
 
     assert started is True
     assert calls == [{"mode": constants.RUN_MODE_PYTHON_SCRIPT, "entry_file": "app.py"}]
@@ -114,49 +162,43 @@ def test_handle_run_project_action_stops_when_preflight_fails_without_modal_reso
         metadata=ProjectMetadata(schema_version=1, name="T", default_entry="missing.py"),
         entries=[],
     )
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded
-    window_any._active_named_run_config_name = None
-    window_any._ensure_run_preflight_ready = lambda **_kwargs: False
-    window_any._resolve_project_entry_for_project_run = (
-        lambda: (_ for _ in ()).throw(AssertionError("run path should not invoke modal entry resolution"))
+    workflow, _host = _build_run_launch_workflow(
+        loaded_project=loaded,
+        active_named_run_config_name=None,
     )
-    window_any._start_session = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("session should not start"))
+    workflow._ensure_run_preflight_ready = lambda **_kwargs: False  # type: ignore[method-assign]
+    workflow.start_session = lambda **_kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("session should not start")
+    )
 
-    started = MainWindow._handle_run_project_action(window)
+    started = workflow.handle_run_project_action()
 
     assert started is False
 
 
 def test_start_active_file_session_rejects_non_python_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(file_path="/tmp/project/readme.txt", is_dirty=False, current_content="")
+    workflow, host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(file_path="/tmp/project/readme.txt", is_dirty=False, current_content="")
+        ),
     )
-    window_any._breakpoints_by_file = {}
-    window_any._start_session = lambda **_kwargs: True
+    workflow.start_session = lambda **_kwargs: True  # type: ignore[method-assign]
 
     warnings: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
-        lambda _parent, title, text: warnings.append((title, text)),
-    )
+    host.show_warning = lambda title, message: warnings.append((title, message))
 
-    started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT)
+    started = workflow._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     assert started is False
     assert warnings == [("Run unavailable", "Active file must be a Python file.")]
 
 
 def test_handle_tree_run_file_routes_selected_python_entry() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
+    workflow, _host = _build_run_launch_workflow()
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._handle_tree_run_file(window, "/tmp/project/folder/run.py")
+    started = workflow.handle_tree_run_file("/tmp/project/folder/run.py")
 
     assert started is True
     assert calls == [
@@ -168,34 +210,32 @@ def test_handle_tree_run_file_routes_selected_python_entry() -> None:
 
 
 def test_handle_tree_run_file_ignores_non_python_target() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._start_session = lambda **_kwargs: True
+    workflow, _host = _build_run_launch_workflow()
+    workflow.start_session = lambda **_kwargs: True  # type: ignore[method-assign]
 
-    started = MainWindow._handle_tree_run_file(window, "/tmp/project/readme.md")
+    started = workflow.handle_tree_run_file("/tmp/project/readme.md")
 
     assert started is False
 
 
 def test_start_active_file_session_uses_transient_file_for_dirty_buffer() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(
-            file_path="/tmp/project/dirty.py",
-            is_dirty=True,
-            current_content="print('dirty')\n",
-        )
+    workflow, host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(
+                file_path="/tmp/project/dirty.py",
+                is_dirty=True,
+                current_content="print('dirty')\n",
+            )
+        ),
+        active_transient_entry_file_path=None,
     )
-    window_any._breakpoints_by_file = {}
-    window_any._active_transient_entry_file_path = None
-    window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
+    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    window_any._delete_transient_entry_file = deleted.append
+    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT)
+    started = workflow._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     assert started is True
     assert len(calls) == 1
@@ -208,63 +248,64 @@ def test_start_active_file_session_uses_transient_file_for_dirty_buffer() -> Non
     ]
     assert calls[0]["skip_save"] is True
     assert deleted == []
-    assert window_any._active_transient_entry_file_path == "/tmp/transient.py"
+    assert host.active_transient_entry_file_path() == "/tmp/transient.py"
 
 
 def test_start_active_file_session_cleans_transient_file_when_start_fails() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(
-            file_path="/tmp/project/dirty.py",
-            is_dirty=True,
-            current_content="print('dirty')\n",
-        )
+    workflow, host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(
+                file_path="/tmp/project/dirty.py",
+                is_dirty=True,
+                current_content="print('dirty')\n",
+            )
+        ),
+        active_transient_entry_file_path=None,
     )
-    window_any._breakpoints_by_file = {}
-    window_any._active_transient_entry_file_path = None
-    window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
+    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    window_any._delete_transient_entry_file = deleted.append
-    window_any._start_session = lambda **_kwargs: False
+    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
+    workflow.start_session = lambda **_kwargs: False  # type: ignore[method-assign]
 
-    started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT)
+    started = workflow._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     assert started is False
     assert deleted == ["/tmp/transient.py"]
-    assert window_any._active_transient_entry_file_path is None
+    assert host.active_transient_entry_file_path() is None
 
 
 def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_transient_path() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(
-            file_path="/tmp/project/dirty.py",
-            is_dirty=True,
-            current_content="print('dirty')\n",
-        )
-    )
     breakpoints = [
         build_breakpoint("/tmp/project/dirty.py", 2),
         build_breakpoint("/tmp/project/dirty.py", 9),
         build_breakpoint("/tmp/project/other.py", 1),
     ]
-    window_any._debug_control_workflow = SimpleNamespace(
-        build_debug_breakpoints_for_launch=lambda **_kwargs: [
-            build_breakpoint("/tmp/transient.py" if bp.file_path == "/tmp/project/dirty.py" else bp.file_path, bp.line_number)
-            for bp in breakpoints
-        ],
+    workflow, host = _build_run_launch_workflow(
+        editor_manager=lambda: SimpleNamespace(
+            active_tab=lambda: SimpleNamespace(
+                file_path="/tmp/project/dirty.py",
+                is_dirty=True,
+                current_content="print('dirty')\n",
+            )
+        ),
+        debug_control_workflow=SimpleNamespace(
+            build_debug_breakpoints_for_launch=lambda **_kwargs: [
+                build_breakpoint(
+                    "/tmp/transient.py" if bp.file_path == "/tmp/project/dirty.py" else bp.file_path,
+                    bp.line_number,
+                )
+                for bp in breakpoints
+            ],
+        ),
+        active_transient_entry_file_path=None,
     )
-    window_any._debug_exception_policy = DebugExceptionPolicy()
-    window_any._active_transient_entry_file_path = None
-    window_any._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"
+    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    window_any._delete_transient_entry_file = deleted.append
+    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
-    window_any._start_session = lambda **kwargs: calls.append(kwargs) or True
+    workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
-    started = MainWindow._start_active_file_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG)
+    started = workflow._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
 
     assert started is True
     assert len(calls) == 1
@@ -280,16 +321,15 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
         ("/tmp/project/other.py", 1),
     ]
     assert deleted == []
-    assert window_any._active_transient_entry_file_path == "/tmp/transient.py"
+    assert host.active_transient_entry_file_path() == "/tmp/transient.py"
 
 
 def test_handle_rerun_last_debug_target_replays_test_node_debug() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
     calls: list[str] = []
-    window_any._last_debug_target = {"kind": "test_node", "node_id": "tests/test_demo.py::test_it"}
-    window_any._test_runner_workflow = SimpleNamespace(debug_test_node=lambda node_id: calls.append(node_id))
+    workflow, host = _build_run_launch_workflow()
+    host.test_runner_workflow = lambda: SimpleNamespace(debug_test_node=lambda node_id: calls.append(node_id))
+    workflow.record_debug_target_from_dict({"kind": "test_node", "node_id": "tests/test_demo.py::test_it"})
 
-    MainWindow._handle_rerun_last_debug_target_action(window)
+    workflow.handle_rerun_last_debug_target_action()
 
     assert calls == ["tests/test_demo.py::test_it"]

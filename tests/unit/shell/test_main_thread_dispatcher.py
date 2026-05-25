@@ -82,51 +82,6 @@ def test_main_window_dispatch_to_main_thread_noop_when_shutting_down() -> None:
     assert dispatched == []
 
 
-def test_schedule_search_results_uses_dispatcher() -> None:
-    captured: dict[str, object] = {}
-
-    class _FakeWindow:
-        def __init__(self) -> None:
-            self.dispatched: list[object] = []
-
-        def _dispatch_to_main_thread(self, callback) -> None:  # type: ignore[no-untyped-def]
-            self.dispatched.append(callback)
-
-        def _set_search_results(self, matches, query) -> None:  # type: ignore[no-untyped-def]
-            captured["matches"] = matches
-            captured["query"] = query
-
-    fake = _FakeWindow()
-    MainWindow._schedule_search_results_update(fake, [], "needle")
-    assert len(fake.dispatched) == 1
-
-    callback = fake.dispatched[0]
-    callback()
-    assert captured == {"matches": [], "query": "needle"}
-
-
-def test_search_worker_done_uses_dispatcher_for_state_clear() -> None:
-    logger = _LoggerStub()
-
-    class _FakeWindow:
-        def __init__(self) -> None:
-            self._logger = logger
-            self._active_search_worker = object()
-            self.dispatched: list[object] = []
-
-        def _dispatch_to_main_thread(self, callback) -> None:  # type: ignore[no-untyped-def]
-            self.dispatched.append(callback)
-
-    fake = _FakeWindow()
-    MainWindow._handle_search_worker_done(fake, time.perf_counter() - 0.01, "abc")
-    assert len(logger.info_calls) == 1
-    assert len(fake.dispatched) == 1
-
-    callback = fake.dispatched[0]
-    callback()
-    assert fake._active_search_worker is None
-
-
 def test_symbol_index_done_uses_dispatcher_for_state_clear() -> None:
     logger = _LoggerStub()
 

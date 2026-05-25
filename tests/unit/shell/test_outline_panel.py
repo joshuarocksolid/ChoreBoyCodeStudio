@@ -10,7 +10,7 @@ from PySide2.QtCore import QRect  # noqa: E402
 from PySide2.QtGui import QPainter, QPixmap  # noqa: E402
 
 from app.intelligence.outline_service import OutlineSymbol  # noqa: E402
-from app.shell.outline_panel import (  # noqa: E402
+from app.shell.outline import (  # noqa: E402
     SORT_CATEGORY,
     SORT_NAME,
     SORT_POSITION,

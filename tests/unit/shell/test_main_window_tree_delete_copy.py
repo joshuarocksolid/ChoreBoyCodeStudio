@@ -1,4 +1,4 @@
-"""Unit tests for project-tree move-to-trash copy in MainWindow."""
+"""Thin MainWindow integration tests for project-tree delete delegation."""
 
 from __future__ import annotations
 
@@ -7,65 +7,23 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-
-from PySide2.QtWidgets import QMessageBox  # noqa: E402
-
-from app.shell.main_window import MainWindow  # noqa: E402
+from app.shell.main_window import MainWindow
 
 pytestmark = pytest.mark.unit
 
 
-def test_tree_delete_confirmation_uses_move_to_trash_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_window_tree_delete_delegates_to_workflow() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    handled_paths: list[str] = []
-    window_any._project_tree_action_coordinator = SimpleNamespace(
-        handle_delete=lambda path: handled_paths.append(path) or None
-    )
-    window_any._local_history_workflow = SimpleNamespace(
-        capture_text_history_snapshots=lambda _paths: {},
-        record_transaction=lambda *_args, **_kwargs: None,
-    )
-
-    prompts: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.question",
-        lambda _parent, title, text, *_args: prompts.append((title, text)) or QMessageBox.Yes,
+    delete_calls: list[str] = []
+    bulk_calls: list[list[str]] = []
+    window_any._project_tree_action_workflow = SimpleNamespace(
+        delete_paths=lambda path: delete_calls.append(path),
+        bulk_delete=lambda paths: bulk_calls.append(list(paths)),
     )
 
     MainWindow._handle_tree_delete(window, "/tmp/example.txt")
-
-    assert handled_paths == ["/tmp/example.txt"]
-    assert prompts == [("Move to Trash", "Move 'example.txt' to trash?")]
-
-
-def test_tree_bulk_delete_failure_warning_uses_move_to_trash_title(monkeypatch: pytest.MonkeyPatch) -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._project_tree_action_coordinator = SimpleNamespace(
-        handle_bulk_delete=lambda _paths: (["one.py: permission denied"], [])
-    )
-    window_any._local_history_workflow = SimpleNamespace(
-        capture_text_history_snapshots=lambda _paths: {},
-        record_transaction=lambda *_args, **_kwargs: None,
-        filter_snapshots_for_paths=lambda snapshots, _paths: snapshots,
-    )
-
-    prompts: list[tuple[str, str]] = []
-    warnings: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.question",
-        lambda _parent, title, text, *_args: prompts.append((title, text)) or QMessageBox.Yes,
-    )
-    monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
-        lambda _parent, title, text: warnings.append((title, text)),
-    )
-
     MainWindow._handle_tree_bulk_delete(window, ["/tmp/one.py", "/tmp/two.py"])
 
-    assert prompts
-    assert prompts[0][0] == "Move to Trash"
-    assert "cannot be undone" not in prompts[0][1].lower()
-    assert warnings == [("Move to Trash", "one.py: permission denied")]
+    assert delete_calls == ["/tmp/example.txt"]
+    assert bulk_calls == [["/tmp/one.py", "/tmp/two.py"]]

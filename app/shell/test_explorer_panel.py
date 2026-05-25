@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide2.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -20,6 +19,15 @@ from PySide2.QtWidgets import (
 )
 
 from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.shell.test_explorer_icons import (
+    _OUTCOME_ICON_CACHE,
+    _ACTION_ICON_CACHE,
+    _KIND_ICON_CACHE,
+    action_icon,
+    clear_icon_caches,
+    kind_icon,
+    outcome_icon,
+)
 
 if TYPE_CHECKING:
     from app.shell.theme_tokens import ShellThemeTokens
@@ -30,290 +38,6 @@ _ROLE_FILE_PATH = Qt.UserRole + 2
 _ROLE_LINE_NUMBER = Qt.UserRole + 3
 _ROLE_KIND = Qt.UserRole + 4
 _ROLE_OUTCOME = Qt.UserRole + 5
-
-# ---------------------------------------------------------------------------
-# Painted outcome icons
-# ---------------------------------------------------------------------------
-
-_OUTCOME_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
-
-
-def _make_passed_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(1, 1, 12, 12)
-    p.setPen(QPen(QColor("#FFFFFF"), 1.6))
-    p.drawLine(4, 7, 6, 10)
-    p.drawLine(6, 10, 10, 4)
-    p.end()
-    return QIcon(px)
-
-
-def _make_failed_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(1, 1, 12, 12)
-    p.setPen(QPen(QColor("#FFFFFF"), 1.6))
-    p.drawLine(4, 4, 10, 10)
-    p.drawLine(10, 4, 4, 10)
-    p.end()
-    return QIcon(px)
-
-
-def _make_skipped_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(color_hex)
-    c.setAlpha(180)
-    p.setPen(QPen(c, 1.4))
-    p.setBrush(Qt.NoBrush)
-    p.drawEllipse(2, 2, 10, 10)
-    p.drawLine(5, 7, 9, 7)
-    p.end()
-    return QIcon(px)
-
-
-def _make_error_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    from PySide2.QtCore import QPoint
-    from PySide2.QtGui import QPolygon
-    tri = QPolygon()
-    tri.append(QPoint(7, 1))
-    tri.append(QPoint(13, 13))
-    tri.append(QPoint(1, 13))
-    p.drawPolygon(tri)
-    p.setPen(QPen(QColor("#FFFFFF"), 1.4))
-    p.drawLine(7, 5, 7, 9)
-    p.drawPoint(7, 11)
-    p.end()
-    return QIcon(px)
-
-
-def _make_not_run_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(color_hex)
-    c.setAlpha(120)
-    p.setBrush(c)
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(4, 4, 6, 6)
-    p.end()
-    return QIcon(px)
-
-
-_OUTCOME_BUILDERS = {
-    "passed": _make_passed_icon,
-    "failed": _make_failed_icon,
-    "skipped": _make_skipped_icon,
-    "error": _make_error_icon,
-    "not_run": _make_not_run_icon,
-}
-
-
-def outcome_icon(outcome: str, color_hex: str) -> QIcon:
-    key = (outcome, color_hex)
-    cached = _OUTCOME_ICON_CACHE.get(key)
-    if cached is not None:
-        return cached
-    builder = _OUTCOME_BUILDERS.get(outcome, _make_not_run_icon)
-    icon = builder(color_hex)
-    _OUTCOME_ICON_CACHE[key] = icon
-    return icon
-
-
-# ---------------------------------------------------------------------------
-# Painted node-kind icons
-# ---------------------------------------------------------------------------
-
-_KIND_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
-
-
-def _make_file_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(color_hex)
-    c.setAlpha(180)
-    p.setPen(QPen(c, 1.2))
-    p.setBrush(Qt.NoBrush)
-    p.drawRoundedRect(2, 1, 10, 12, 2, 2)
-    p.drawLine(2, 5, 12, 5)
-    p.end()
-    return QIcon(px)
-
-
-def _make_class_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(color_hex)
-    p.setBrush(c)
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(1, 2, 12, 10, 2, 2)
-    f = QFont()
-    f.setPixelSize(9)
-    f.setBold(True)
-    p.setFont(f)
-    p.setPen(QColor("#FFFFFF"))
-    p.drawText(px.rect(), Qt.AlignCenter, "C")
-    p.end()
-    return QIcon(px)
-
-
-def _make_function_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(color_hex)
-    p.setBrush(c)
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(1, 2, 12, 10, 2, 2)
-    f = QFont()
-    f.setPixelSize(9)
-    f.setBold(True)
-    p.setFont(f)
-    p.setPen(QColor("#FFFFFF"))
-    p.drawText(px.rect(), Qt.AlignCenter, "f")
-    p.end()
-    return QIcon(px)
-
-
-_KIND_BUILDERS = {
-    "file": _make_file_icon,
-    "class": _make_class_icon,
-    "function": _make_function_icon,
-}
-
-
-def kind_icon(kind: str, color_hex: str) -> QIcon:
-    key = (kind, color_hex)
-    cached = _KIND_ICON_CACHE.get(key)
-    if cached is not None:
-        return cached
-    builder = _KIND_BUILDERS.get(kind, _make_file_icon)
-    icon = builder(color_hex)
-    _KIND_ICON_CACHE[key] = icon
-    return icon
-
-
-# ---------------------------------------------------------------------------
-# Painted toolbar action icons
-# ---------------------------------------------------------------------------
-
-_ACTION_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
-
-
-def clear_icon_caches() -> None:
-    """Release all cached QIcon objects so Shiboken can tear down cleanly."""
-    _OUTCOME_ICON_CACHE.clear()
-    _KIND_ICON_CACHE.clear()
-    _ACTION_ICON_CACHE.clear()
-
-
-def _make_play_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    from PySide2.QtCore import QPoint
-    from PySide2.QtGui import QPolygon
-    tri = QPolygon()
-    tri.append(QPoint(3, 2))
-    tri.append(QPoint(12, 7))
-    tri.append(QPoint(3, 12))
-    p.drawPolygon(tri)
-    p.end()
-    return QIcon(px)
-
-
-def _make_rerun_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(color_hex), 1.6)
-    p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-    p.drawArc(2, 2, 10, 10, 30 * 16, 300 * 16)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    from PySide2.QtCore import QPoint
-    from PySide2.QtGui import QPolygon
-    arrow = QPolygon()
-    arrow.append(QPoint(9, 1))
-    arrow.append(QPoint(12, 4))
-    arrow.append(QPoint(8, 5))
-    p.drawPolygon(arrow)
-    p.end()
-    return QIcon(px)
-
-
-def _make_refresh_icon(color_hex: str) -> QIcon:
-    px = QPixmap(14, 14)
-    px.fill(QColor(0, 0, 0, 0))
-    p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(color_hex), 1.6)
-    p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-    p.drawArc(2, 2, 10, 10, 60 * 16, 240 * 16)
-    p.setBrush(QColor(color_hex))
-    p.setPen(Qt.NoPen)
-    from PySide2.QtCore import QPoint
-    from PySide2.QtGui import QPolygon
-    arrow = QPolygon()
-    arrow.append(QPoint(10, 2))
-    arrow.append(QPoint(13, 5))
-    arrow.append(QPoint(9, 5))
-    p.drawPolygon(arrow)
-    p.end()
-    return QIcon(px)
-
-
-def _action_icon(name: str, color_hex: str) -> QIcon:
-    key = (name, color_hex)
-    cached = _ACTION_ICON_CACHE.get(key)
-    if cached is not None:
-        return cached
-    builders = {"play": _make_play_icon, "rerun": _make_rerun_icon, "refresh": _make_refresh_icon}
-    icon = builders.get(name, _make_play_icon)(color_hex)
-    _ACTION_ICON_CACHE[key] = icon
-    return icon
-
-
-# ---------------------------------------------------------------------------
-# Outcome filter toggle
-# ---------------------------------------------------------------------------
-
-_OUTCOME_ICONS_TEXT = {
-    "passed": "\u2713",
-    "failed": "\u2717",
-    "skipped": "\u25CB",
-    "error": "\u26A0",
-    "not_run": "\u00B7",
-}
 
 
 class _OutcomeFilterToggle(QToolButton):
@@ -396,7 +120,7 @@ class TestExplorerPanel(QWidget):
 
         self._refresh_btn = QToolButton()
         self._refresh_btn.setObjectName("shell.testExplorer.refreshBtn")
-        self._refresh_btn.setIcon(_action_icon("refresh", self._action_color))
+        self._refresh_btn.setIcon(action_icon("refresh", self._action_color))
         self._refresh_btn.setToolTip("Refresh test discovery")
         self._refresh_btn.setAutoRaise(True)
         self._refresh_btn.clicked.connect(self.refresh_requested.emit)
@@ -404,7 +128,7 @@ class TestExplorerPanel(QWidget):
 
         self._run_all_btn = QToolButton()
         self._run_all_btn.setObjectName("shell.testExplorer.runAllBtn")
-        self._run_all_btn.setIcon(_action_icon("play", self._action_color))
+        self._run_all_btn.setIcon(action_icon("play", self._action_color))
         self._run_all_btn.setText("Run All")
         self._run_all_btn.setToolTip("Run all discovered tests")
         self._run_all_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -414,7 +138,7 @@ class TestExplorerPanel(QWidget):
 
         self._run_failed_btn = QToolButton()
         self._run_failed_btn.setObjectName("shell.testExplorer.runFailedBtn")
-        self._run_failed_btn.setIcon(_action_icon("rerun", self._action_color))
+        self._run_failed_btn.setIcon(action_icon("rerun", self._action_color))
         self._run_failed_btn.setText("Rerun Failed")
         self._run_failed_btn.setToolTip("Rerun only failed tests")
         self._run_failed_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -425,7 +149,7 @@ class TestExplorerPanel(QWidget):
 
         self._debug_failed_btn = QToolButton()
         self._debug_failed_btn.setObjectName("shell.testExplorer.debugFailedBtn")
-        self._debug_failed_btn.setIcon(_action_icon("rerun", self._action_color))
+        self._debug_failed_btn.setIcon(action_icon("rerun", self._action_color))
         self._debug_failed_btn.setText("Debug Failed")
         self._debug_failed_btn.setToolTip("Debug the first failed test")
         self._debug_failed_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -551,10 +275,10 @@ class TestExplorerPanel(QWidget):
         self._kind_color = tokens.accent
         self._action_color = tokens.icon_primary
 
-        self._refresh_btn.setIcon(_action_icon("refresh", self._action_color))
-        self._run_all_btn.setIcon(_action_icon("play", self._action_color))
-        self._run_failed_btn.setIcon(_action_icon("rerun", self._action_color))
-        self._debug_failed_btn.setIcon(_action_icon("rerun", self._action_color))
+        self._refresh_btn.setIcon(action_icon("refresh", self._action_color))
+        self._run_all_btn.setIcon(action_icon("play", self._action_color))
+        self._run_failed_btn.setIcon(action_icon("rerun", self._action_color))
+        self._debug_failed_btn.setIcon(action_icon("rerun", self._action_color))
 
         self._refresh_outcome_icons()
         self._refresh_summary_colors()

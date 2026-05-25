@@ -35,6 +35,7 @@ Thumbs.db
 *~
 *.swp
 .idea/
+.cursor/debug-*.log
 
 # ChoreBoy Code Studio runtime artifacts
 choreboy_code_studio_state/

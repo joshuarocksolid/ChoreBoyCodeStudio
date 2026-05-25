@@ -19,7 +19,7 @@ from app.debug.debug_models import (  # noqa: E402
     DebugVariable,
     DebugWatchResult,
 )
-from app.shell.debug_panel_widget import DebugPanelWidget  # noqa: E402
+from app.shell.debug_panel import DebugPanelWidget  # noqa: E402
 
 pytestmark = pytest.mark.unit
 

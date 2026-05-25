@@ -19,9 +19,21 @@ from app.run.process_supervisor import ProcessEvent  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402
 from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
+from app.shell.run_debug_presenter import RunDebugPresenter  # noqa: E402
+from app.shell.run_launch_workflow import ProjectTarget  # noqa: E402
 from app.shell.run_session_controller import RunSessionStartFailureReason, RunSessionStartResult  # noqa: E402
+from app.shell.shell_composition import MainWindowRunLaunchHost  # noqa: E402
+from app.shell.run_launch_workflow import RunLaunchWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+
+def _attach_run_launch_workflow(window: MainWindow) -> RunLaunchWorkflow:
+    window_any = cast(Any, window)
+    window_any._run_debug_presenter = RunDebugPresenter(window)
+    workflow = RunLaunchWorkflow(MainWindowRunLaunchHost(window))
+    window_any._run_launch_workflow = workflow
+    return workflow
 
 
 class _TailBuffer:
@@ -228,7 +240,8 @@ def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
     window_any._active_run_session_info = None
     window_any._active_transient_entry_file_path = "/tmp/transient.py"
     deleted: list[str] = []
-    window_any._delete_transient_entry_file = deleted.append
+    workflow = _attach_run_launch_workflow(window)
+    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
     window_any._get_run_output_coordinator = lambda: SimpleNamespace(apply=lambda _event: None)
 
@@ -254,8 +267,9 @@ def test_start_session_in_debug_enables_debug_input() -> None:
     window_any._set_run_status = lambda _status: None
     window_any._is_shutting_down = False
     window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
+    workflow = _attach_run_launch_workflow(window)
 
-    started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
+    started = workflow.start_session(mode=constants.RUN_MODE_PYTHON_DEBUG, skip_save=True)
     debug_panel = cast(_FakeDebugPanel, window_any._debug_panel)
 
     assert started is True
@@ -266,10 +280,11 @@ def test_handle_rerun_last_debug_target_replays_project_debug() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     calls: list[str] = []
-    window_any._last_debug_target = {"kind": "project"}
-    window_any._handle_debug_project_action = lambda: calls.append("project")
+    workflow = _attach_run_launch_workflow(window)
+    workflow.record_debug_target(ProjectTarget())
+    workflow.handle_debug_project_action = lambda: calls.append("project")  # type: ignore[method-assign]
 
-    MainWindow._handle_rerun_last_debug_target_action(window)
+    workflow.handle_rerun_last_debug_target_action()
 
     assert calls == ["project"]
 
@@ -278,7 +293,10 @@ def test_handle_rerun_last_debug_target_replays_current_test_debug() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     calls: list[tuple[str, object]] = []
-    window_any._last_debug_target = {"kind": "current_test", "target_path": "/tmp/project/test_sample.py"}
+    workflow = _attach_run_launch_workflow(window)
+    workflow.record_debug_target_from_dict(
+        {"kind": "current_test", "target_path": "/tmp/project/test_sample.py"}
+    )
     window_any._editor_tab_factory = SimpleNamespace(
         open_file_in_editor=lambda file_path, preview=False: calls.append(("open", file_path)) or True
     )
@@ -288,7 +306,7 @@ def test_handle_rerun_last_debug_target_replays_current_test_debug() -> None:
         debug_current_file_tests=lambda: calls.append(("debug", "current_test"))
     )
 
-    MainWindow._handle_rerun_last_debug_target_action(window)
+    workflow.handle_rerun_last_debug_target_action()
 
     assert calls == [
         ("open", "/tmp/project/test_sample.py"),
@@ -316,6 +334,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
     window_any._refresh_run_action_states = lambda: None
     window_any._auto_open_console_on_run_output = False
     window_any._set_run_status = lambda _status: None
+    workflow = _attach_run_launch_workflow(window)
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -323,7 +342,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
+    started = workflow.start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
 
     assert started is False
     assert warnings == [("Run unavailable", "Open something first (legacy wording changed).")]
@@ -347,6 +366,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
     window_any._refresh_run_action_states = lambda: None
     window_any._auto_open_console_on_run_output = False
     window_any._set_run_status = lambda _status: None
+    workflow = _attach_run_launch_workflow(window)
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -354,7 +374,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    started = MainWindow._start_session(window, mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
+    started = workflow.start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
 
     assert started is False
     assert warnings == []

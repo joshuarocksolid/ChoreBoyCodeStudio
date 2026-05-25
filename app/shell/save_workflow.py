@@ -46,6 +46,34 @@ class SaveWorkflow:
         )
         return self.apply_unsaved_changes_decision(decision)
 
+    def confirm_proceed_before_tree_delete(
+        self,
+        target_paths: list[str],
+        *,
+        action_description: str = "moving items to trash",
+    ) -> bool:
+        window = self._window
+        normalized_paths = [str(Path(path).expanduser().resolve()) for path in target_paths]
+        affected_tabs: list[object] = []
+        for tab in window._editor_manager.all_tabs():
+            tab_path = str(Path(tab.file_path).expanduser().resolve())
+            for target_path in normalized_paths:
+                if tab_path == target_path or tab_path.startswith(f"{target_path}/"):
+                    if tab.is_dirty:
+                        affected_tabs.append(tab)
+                    break
+        if not affected_tabs:
+            return True
+        decision = self.request_unsaved_changes_decision(
+            action_description,
+            scope=DocumentScope.PROJECT,
+            allow_keep_for_next_launch=False,
+            dirty_buffers=tuple(affected_tabs),
+        )
+        if decision.intent is DocumentCloseIntent.CANCEL:
+            return False
+        return self.apply_unsaved_changes_decision(decision)
+
     def request_unsaved_changes_decision(
         self,
         action_description: str,

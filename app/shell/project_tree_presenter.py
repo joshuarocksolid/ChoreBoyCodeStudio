@@ -325,9 +325,9 @@ class ProjectTreePresenter:
         elif not is_directory and local_history_action is not None and chosen == local_history_action:
             window._local_history_workflow.show_local_history_for_path(absolute_path)
         elif run_file_action is not None and chosen == run_file_action:
-            window._handle_tree_run_file(absolute_path)
+            window._run_launch_workflow.handle_tree_run_file(absolute_path)
         elif run_file_with_args_action is not None and chosen == run_file_with_args_action:
-            window._handle_tree_run_file_with_arguments(absolute_path)
+            window._run_launch_workflow.handle_tree_run_file_with_arguments(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
             window._set_project_entry_point(relative_path)
 

@@ -93,3 +93,33 @@ def test_apply_unsaved_changes_decision_keeps_drafts_for_next_launch() -> None:
 
     assert workflow.apply_unsaved_changes_decision(decision) is True
     assert window._local_history_workflow.kept == [("/tmp/project/main.py",)]
+
+
+def test_confirm_proceed_before_tree_delete_blocks_on_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tab = _dirty_tab()
+    window = _window_with_tabs(tab)
+    workflow = SaveWorkflow(window)
+    monkeypatch.setattr(
+        workflow,
+        "request_unsaved_changes_decision",
+        lambda *args, **kwargs: DocumentSafetyDecision(  # type: ignore[assignment]
+            intent=DocumentCloseIntent.CANCEL,
+            scope=DocumentScope.PROJECT,
+            dirty_buffers=(),
+        ),
+    )
+
+    assert workflow.confirm_proceed_before_tree_delete(["/tmp/project/main.py"]) is False
+
+
+def test_confirm_proceed_before_tree_delete_proceeds_when_no_dirty_tabs() -> None:
+    clean_tab = SimpleNamespace(
+        file_path="/tmp/project/main.py",
+        is_dirty=False,
+    )
+    window = _window_with_tabs(clean_tab)
+    workflow = SaveWorkflow(window)
+
+    assert workflow.confirm_proceed_before_tree_delete(["/tmp/project/main.py"]) is True

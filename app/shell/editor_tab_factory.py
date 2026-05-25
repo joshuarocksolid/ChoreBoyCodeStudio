@@ -87,7 +87,7 @@ class EditorTabFactory:
             min_chars=window._completion_min_chars,
         )
         window._apply_runtime_intelligence_preferences_to_editor(editor_widget)
-        editor_widget.apply_theme(window._resolve_theme_tokens())
+        editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
@@ -101,7 +101,7 @@ class EditorTabFactory:
             trigger_kind: str,
             trigger_character: str,
         ) -> None:
-            window._request_editor_completions_async(
+            window._semantic_navigation_workflow.request_editor_completions_async(
                 file_path=tab_file_path,
                 editor_widget=editor_widget,
                 prefix=prefix,
@@ -114,7 +114,7 @@ class EditorTabFactory:
             )
 
         def hover_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
-            window._request_inline_hover_text_async(
+            window._semantic_navigation_workflow.request_inline_hover_text_async(
                 file_path=tab_file_path,
                 editor_widget=editor_widget,
                 source_text=source_text,
@@ -123,7 +123,7 @@ class EditorTabFactory:
             )
 
         def signature_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
-            window._request_inline_signature_text_async(
+            window._semantic_navigation_workflow.request_inline_signature_text_async(
                 file_path=tab_file_path,
                 editor_widget=editor_widget,
                 source_text=source_text,
@@ -168,7 +168,9 @@ class EditorTabFactory:
             window._enable_auto_reindent_flat_python_paste_from_hint
         )
         editor_widget.set_paste_hint_status_callback(window._handle_paste_hint_repair_result)
-        editor_widget.set_breakpoints(window._breakpoints_by_file.get(opened_result.tab.file_path, set()))
+        editor_widget.set_breakpoints(
+            window._debug_control_workflow.breakpoint_store.lines_for_file(opened_result.tab.file_path)
+        )
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
         window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
@@ -185,7 +187,7 @@ class EditorTabFactory:
                 ),
                 initial_mode=MarkdownPreviewMode.PREVIEW,
             )
-            markdown_pane.apply_theme(window._resolve_theme_tokens())
+            markdown_pane.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
             window._markdown_panes_by_path[tab_file_path] = markdown_pane
             tab_content = markdown_pane
 

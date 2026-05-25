@@ -267,6 +267,7 @@ QToolButton#shell\\.debug\\.sectionBtn:pressed {{
 QToolButton#shell\\.debug\\.sectionBtn:disabled {{
     color: {tokens.text_muted};
 }}
+QTreeWidget#shell\\.debug\\.threadsTree,
 QTreeWidget#shell\\.debug\\.stackTree,
 QTreeWidget#shell\\.debug\\.variablesTree,
 QTreeWidget#shell\\.debug\\.watchTree,
@@ -277,18 +278,21 @@ QTreeWidget#shell\\.debug\\.breakpointsTree {{
     outline: none;
     alternate-background-color: {tokens.row_alt_bg};
 }}
+QTreeWidget#shell\\.debug\\.threadsTree::item,
 QTreeWidget#shell\\.debug\\.stackTree::item,
 QTreeWidget#shell\\.debug\\.variablesTree::item,
 QTreeWidget#shell\\.debug\\.watchTree::item,
 QTreeWidget#shell\\.debug\\.breakpointsTree::item {{
     padding: 2px 4px;
 }}
+QTreeWidget#shell\\.debug\\.threadsTree::item:hover,
 QTreeWidget#shell\\.debug\\.stackTree::item:hover,
 QTreeWidget#shell\\.debug\\.variablesTree::item:hover,
 QTreeWidget#shell\\.debug\\.watchTree::item:hover,
 QTreeWidget#shell\\.debug\\.breakpointsTree::item:hover {{
     background: {tokens.tree_hover_bg};
 }}
+QTreeWidget#shell\\.debug\\.threadsTree::item:selected,
 QTreeWidget#shell\\.debug\\.stackTree::item:selected,
 QTreeWidget#shell\\.debug\\.variablesTree::item:selected,
 QTreeWidget#shell\\.debug\\.watchTree::item:selected,
@@ -371,6 +375,7 @@ QLabel#shell\\.testExplorer\\.title {{
 }}
 QToolButton#shell\\.testExplorer\\.runAllBtn,
 QToolButton#shell\\.testExplorer\\.runFailedBtn,
+QToolButton#shell\\.testExplorer\\.debugFailedBtn,
 QToolButton#shell\\.testExplorer\\.refreshBtn {{
     background: transparent;
     color: {tokens.text_muted};
@@ -381,17 +386,20 @@ QToolButton#shell\\.testExplorer\\.refreshBtn {{
 }}
 QToolButton#shell\\.testExplorer\\.runAllBtn:hover,
 QToolButton#shell\\.testExplorer\\.runFailedBtn:hover,
+QToolButton#shell\\.testExplorer\\.debugFailedBtn:hover,
 QToolButton#shell\\.testExplorer\\.refreshBtn:hover {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
 }}
 QToolButton#shell\\.testExplorer\\.runAllBtn:pressed,
 QToolButton#shell\\.testExplorer\\.runFailedBtn:pressed,
+QToolButton#shell\\.testExplorer\\.debugFailedBtn:pressed,
 QToolButton#shell\\.testExplorer\\.refreshBtn:pressed {{
     background: {tokens.tree_selected_bg};
 }}
 QToolButton#shell\\.testExplorer\\.runAllBtn:disabled,
 QToolButton#shell\\.testExplorer\\.runFailedBtn:disabled,
+QToolButton#shell\\.testExplorer\\.debugFailedBtn:disabled,
 QToolButton#shell\\.testExplorer\\.refreshBtn:disabled {{
     color: {tokens.border};
 }}

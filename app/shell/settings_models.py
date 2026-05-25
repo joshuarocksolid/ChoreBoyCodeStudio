@@ -528,8 +528,34 @@ def merge_editor_settings_snapshot_for_scope(
     global_settings_payload: Mapping[str, Any],
     project_settings_payload: Mapping[str, Any],
     snapshot: EditorSettingsSnapshot,
+    global_snapshot: EditorSettingsSnapshot | None = None,
+    project_snapshot: EditorSettingsSnapshot | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Merge settings snapshot into the selected scope payload(s)."""
+    if global_snapshot is not None:
+        merged_global = merge_editor_settings_snapshot(global_settings_payload, global_snapshot)
+        if project_snapshot is None:
+            return (
+                merged_global,
+                filter_project_settings_payload(project_settings_payload),
+            )
+        merged_global_overridable = _extract_project_overridable_payload(
+            merge_editor_settings_snapshot({}, global_snapshot)
+        )
+        desired_overridable_payload = _extract_project_overridable_payload(
+            merge_editor_settings_snapshot({}, project_snapshot)
+        )
+        override_payload = _diff_mapping_payload(
+            desired_overridable_payload,
+            merged_global_overridable,
+        )
+        base_project_payload = filter_project_settings_payload(project_settings_payload)
+        merged_project_payload = _merge_project_scope_overrides(
+            base_project_payload,
+            override_payload,
+        )
+        return (merged_global, merged_project_payload)
+
     normalized_scope = scope if scope in SETTINGS_SCOPES else SETTINGS_SCOPE_GLOBAL
     if normalized_scope == SETTINGS_SCOPE_GLOBAL:
         return (

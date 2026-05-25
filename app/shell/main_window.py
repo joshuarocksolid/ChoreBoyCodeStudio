@@ -6,13 +6,12 @@ import queue
 from dataclasses import replace
 from pathlib import Path
 import subprocess
-import tempfile
 import threading
 import time
 from typing import Any, Callable, Mapping, Optional, Protocol, TypeVar, cast
 
 from PySide2.QtCore import QEvent, QPoint, QSize, QTimer, Qt, QUrl
-from PySide2.QtGui import QCloseEvent, QColor, QDesktopServices, QIcon, QKeySequence
+from PySide2.QtGui import QCloseEvent, QDesktopServices, QIcon, QKeySequence
 from PySide2.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -47,18 +46,15 @@ from app.intelligence.cache_controls import (
     IntelligenceRuntimeSettings,
     rebuild_symbol_cache,
 )
-from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file, find_unresolved_imports
-from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file
 from app.intelligence.outline_service import (
     OutlineSymbol,
     build_outline_from_source,
-    flatten_symbols,
 )
 from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import (
     CompletionItem,
-    CompletionRequestResult,
     CompletionResolveRequest,
     CompletionResolveResult,
 )
@@ -66,7 +62,7 @@ from app.intelligence.completion_service import CompletionRequest
 from app.editors.editor_manager import EditorManager
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
-from app.editors.find_replace_bar import FindOptions, FindReplaceBar
+from app.editors.find_replace_bar import FindReplaceBar
 from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.editors.markdown_rendering import is_markdown_path
 from app.editors.quick_open_dialog import QuickOpenDialog
@@ -115,13 +111,11 @@ from app.support.diagnostics import ProjectHealthReport
 from app.support.runtime_explainer import (
     HELP_TOPIC_GETTING_STARTED,
     HELP_TOPIC_HEADLESS_NOTES,
-    build_import_issue_report,
     build_project_health_issue_report,
     build_startup_issue_report,
     explain_runtime_message,
     merge_runtime_issue_reports,
 )
-from app.support.preflight import build_run_preflight
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.examples.example_project_service import ExampleProjectService
 from app.shell.layout_persistence import (
@@ -164,11 +158,9 @@ from app.shell.icon_provider import (
     new_folder_icon,
     refresh_icon,
 )
-from app.shell.activity_bar import ActivityBar
-from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.test_explorer_panel import TestExplorerPanel
-from app.shell.debug_panel_widget import DebugPanelWidget
-from app.shell.outline_panel import OutlinePanel
+from app.shell.debug_panel import DebugPanelWidget
+from app.shell.outline import OutlinePanel
 from app.shell.problems_panel import ProblemsPanel, ResultItem
 from app.shell.plugins_panel import PluginManagerDialog
 from app.shell.dependency_panel import DependencyInspectorDialog
@@ -177,10 +169,7 @@ from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.python_console_history import load_python_console_history, save_python_console_history
 from app.shell.runtime_center_dialog import RuntimeCenterDialog
 from app.shell.search_sidebar_widget import SearchSidebarWidget
-from app.shell.style_sheet import build_shell_style_sheet
-from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
-from app.shell.toolbar_icons import ensure_tab_close_icons
-from app.project.run_configs import RunConfiguration
+from app.shell.theme_tokens import ShellThemeTokens
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.project.project_tree_presenter import ProjectTreeDisplayNode
 from app.project.file_excludes import (
@@ -199,7 +188,6 @@ from app.project.project_service import (
     open_project,
 )
 from app.project.project_manifest import (
-    set_project_default_argv,
     set_project_default_entry,
 )
 from app.project.recent_projects import load_recent_projects
@@ -228,19 +216,22 @@ from app.shell.repl_session_manager import ReplSessionManager
 from app.shell.run_session_controller import RunSessionController
 from app.shell.run_output_coordinator import RunOutputCoordinator
 from app.shell.run_config_controller import RunConfigController
-from app.shell.run_configurations_dialog import (
-    RunConfigurationsDialog,
-    RunConfigurationsInitial,
-    RunConfigurationsResult,
-)
-from app.shell.run_with_arguments_dialog import (
-    RunInvocation,
-    RunWithArgumentsDialog,
-    RunWithArgumentsInitial,
-)
 from app.shell.run_debug_presenter import RunDebugPresenter
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import SaveWorkflow
+from app.shell.shell_composition import (
+    build_external_file_change_workflow,
+    build_find_replace_workflow,
+    build_project_tree_action_workflow,
+    build_python_console_workflow,
+    build_realtime_lint_runner,
+    build_run_launch_workflow,
+    build_semantic_navigation_workflow,
+    build_settings_apply_workflow,
+    build_shell_theme_workflow,
+)
+from app.shell.shell_theme_workflow import ShellThemeWorkflow
+from app.shell.settings_apply_workflow import capture_settings_apply_baseline
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_intelligence_controller import EditorIntelligenceController
 from app.shell.editor_tab_factory import EditorTabFactory
@@ -248,7 +239,7 @@ from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
-from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
+from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
 from app.shell.help_controller import ShellHelpController
 from app.shell.main_window_layout import (
     build_layout_shell,
@@ -285,17 +276,6 @@ def _filter_tree_signature_entries(relative_paths: tuple[str, ...]) -> tuple[str
     )
 
 
-def _proposed_new_config_name(existing_configs: list[RunConfiguration]) -> str:
-    """Return a unique default name for a freshly created run configuration."""
-
-    base = "New Configuration"
-    existing_names = {config.name for config in existing_configs}
-    if base not in existing_names:
-        return base
-    index = 2
-    while f"{base} {index}" in existing_names:
-        index += 1
-    return f"{base} {index}"
 ShellEventT = TypeVar("ShellEventT")
 ReplEvent = tuple[str, object, object]
 
@@ -345,6 +325,7 @@ class MainWindow(QMainWindow):
         self._editor_tab_factory: EditorTabFactory
         self._save_workflow: SaveWorkflow
         self._python_style_workflow: PythonStyleWorkflow
+        self._semantic_navigation_workflow: Any
         self._plugin_manager_dialog: PluginManagerDialog | None = None
         self._dependency_inspector_dialog: DependencyInspectorDialog | None = None
         self._bottom_tabs_widget: QTabWidget | None = None
@@ -410,10 +391,8 @@ class MainWindow(QMainWindow):
         self._vertical_splitter: QSplitter | None = None
         self._close_tab_shortcut: QShortcut | None = None
         self._keep_preview_open_shortcut: QShortcut | None = None
-        self._is_applying_theme_styles = False
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT
-        self._system_dark_theme_preference: bool | None = None
         self._loaded_project: LoadedProject | None = None
         self._plugin_activation_workflow = PluginActivationWorkflow(
             state_root=self._state_root,
@@ -434,10 +413,7 @@ class MainWindow(QMainWindow):
         self._markdown_panes_by_path: dict[str, MarkdownEditorPane] = {}
         self._editor_tab_factory = EditorTabFactory(self)
         self._indent_source_by_path: dict[str, tuple[str, int, str]] = {}
-        self._breakpoints_by_file: dict[str, set[int]] = {}
-        self._breakpoint_specs_by_key: dict[tuple[str, int], DebugBreakpoint] = {}
         self._debug_exception_policy = DebugExceptionPolicy()
-        self._last_debug_target: dict[str, object] | None = None
         self._tree_clipboard_paths: list[str] = []
         self._tree_clipboard_cut: bool = False
         self._import_update_policy = self._load_import_update_policy()
@@ -482,17 +458,11 @@ class MainWindow(QMainWindow):
         ) = self._load_output_preferences()
         self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
         self._local_history_retention_policy = self._load_local_history_retention_policy()
-        self._theme_mode = self._load_theme_mode()
-        self._ui_font_weight = self._load_ui_font_weight()
+        self._theme_mode = ShellThemeWorkflow.load_theme_mode(self._settings_service)
+        self._ui_font_weight = ShellThemeWorkflow.load_ui_font_weight(self._settings_service)
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
-        self._help_controller = ShellHelpController(
-            state_root=self._state_root,
-            resolve_theme_tokens=self._resolve_theme_tokens,
-            reveal_path_in_file_manager=self._reveal_path_in_file_manager,
-            get_effective_shortcuts=lambda: self._effective_shortcuts,
-        )
-        self._syntax_color_overrides = self._load_syntax_color_overrides()
+        self._syntax_color_overrides = ShellThemeWorkflow.load_syntax_color_overrides(self._settings_service)
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
@@ -514,7 +484,6 @@ class MainWindow(QMainWindow):
         self._realtime_lint_timer = QTimer(self)
         self._realtime_lint_timer.setSingleShot(True)
         self._realtime_lint_timer.setInterval(300)
-        self._realtime_lint_timer.timeout.connect(self._run_scheduled_realtime_lint)
         self._outline_panel: OutlinePanel | None = None
         self._explorer_splitter: QSplitter | None = None
         self._outline_symbols_by_path: dict[str, tuple[OutlineSymbol, ...]] = {}
@@ -533,7 +502,6 @@ class MainWindow(QMainWindow):
         self._active_transient_entry_file_path: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
-        self._active_search_worker: SearchWorker | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._is_shutting_down = False
         self._symbol_index_generation = 0
@@ -614,8 +582,8 @@ class MainWindow(QMainWindow):
             background_tasks=self._background_tasks,
             retention_policy=self._local_history_retention_policy,
             ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
-            breakpoints_by_file=self._breakpoints_by_file,
-            breakpoint_specs_by_key=self._breakpoint_specs_by_key,
+            breakpoints_by_file=self._debug_control_workflow.breakpoint_store.breakpoints_by_file,
+            breakpoint_specs_by_key=self._debug_control_workflow.breakpoint_store.breakpoint_specs_by_key,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
         )
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
@@ -643,9 +611,11 @@ class MainWindow(QMainWindow):
                 message,
             ),
         )
-        self._search_results_coordinator = SearchResultsCoordinator(
-            set_search_results=self._set_search_results,
-            dispatch_to_main_thread=self._dispatch_to_main_thread,
+        self._realtime_lint_timer.timeout.connect(
+            build_realtime_lint_runner(
+                is_shutting_down=lambda: self._is_shutting_down,
+                orchestrator=self._diagnostics_orchestrator,
+            )
         )
         self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
         self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
@@ -658,7 +628,7 @@ class MainWindow(QMainWindow):
             else None,
             release_editor_widget=self._release_editor_widget,
             close_editor_file=self._editor_manager.close_file,
-            breakpoints_by_file=self._breakpoints_by_file,
+            breakpoints_by_file=self._debug_control_workflow.breakpoint_store.breakpoints_by_file,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
             remap_editor_paths=self._editor_manager.remap_paths_for_move,
             update_tab_path_and_name=self._update_tab_path_and_name,
@@ -669,9 +639,23 @@ class MainWindow(QMainWindow):
             record_deleted_path=self._local_history_workflow.record_deleted_path,
             remap_file_lineage=self._local_history_workflow.remap_file_lineage,
         )
+        self._project_tree_action_workflow = build_project_tree_action_workflow(self)
+        self._external_file_change_workflow = build_external_file_change_workflow(self)
+        self._settings_apply_workflow = build_settings_apply_workflow(self)
+        self._python_console_workflow = build_python_console_workflow(self)
+        self._find_replace_workflow = build_find_replace_workflow(self)
+        self._semantic_navigation_workflow = build_semantic_navigation_workflow(self)
+        self._shell_theme_workflow = build_shell_theme_workflow(self)
+        self._help_controller = ShellHelpController(
+            state_root=self._state_root,
+            resolve_theme_tokens=self._shell_theme_workflow.resolve_theme_tokens,
+            reveal_path_in_file_manager=self._reveal_path_in_file_manager,
+            get_effective_shortcuts=lambda: self._effective_shortcuts,
+        )
 
         self._configure_window_frame()
         self._build_layout_shell()
+        self._run_launch_workflow = build_run_launch_workflow(self)
 
         def active_test_editor() -> ActiveTestEditor | None:
             active_tab = self._editor_manager.active_tab()
@@ -691,7 +675,7 @@ class MainWindow(QMainWindow):
             background_tasks=self._background_tasks,
             test_explorer_panel=self._test_explorer_panel,
             run_pytest_with_workflow=run_pytest_with_workflow,
-            start_debug_session=self._start_session,
+            start_debug_session=self._run_launch_workflow.start_session,
             build_debug_breakpoints=self._debug_control_workflow.build_debug_breakpoints_for_launch,
             debug_exception_policy_provider=lambda: self._debug_exception_policy,
             append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
@@ -700,7 +684,7 @@ class MainWindow(QMainWindow):
             focus_problems_tab=self._focus_problems_tab,
             show_warning=lambda title, message: QMessageBox.warning(self, title, message),
             show_information=lambda title, message: QMessageBox.information(self, title, message),
-            record_debug_target=lambda target: setattr(self, "_last_debug_target", dict(target)),
+            record_debug_target=self._run_launch_workflow.record_debug_target_from_dict,
             auto_open_console_on_output=lambda: self._auto_open_console_on_run_output,
             auto_open_problems_on_failure=lambda: self._auto_open_problems_on_run_failure,
             logger=self._logger,
@@ -720,7 +704,7 @@ class MainWindow(QMainWindow):
             startup_report=startup_report,
             on_startup_activated=self._handle_runtime_center_action,
         )
-        self._install_active_run_config_indicator()
+        self._run_launch_workflow.install_active_run_config_indicator()
         self._refresh_python_tooling_status()
         self._toolbar = build_run_toolbar_widget(self._menu_registry)
         if self._toolbar is not None:
@@ -729,7 +713,7 @@ class MainWindow(QMainWindow):
                 center_layout = center_panel.layout()
                 if isinstance(center_layout, QVBoxLayout):
                     center_layout.insertWidget(0, self._toolbar, 0)
-        self._apply_theme_styles()
+        self._shell_theme_workflow.apply_theme_styles()
         self._apply_runtime_intelligence_preferences_to_open_editors()
         self._sync_theme_menu_check_state()
         self._sync_auto_save_menu_state()
@@ -853,15 +837,15 @@ class MainWindow(QMainWindow):
 
     def _open_runtime_help_topic(self, topic_id: str) -> None:
         if topic_id == HELP_TOPIC_HEADLESS_NOTES:
-            self._handle_headless_notes_action()
+            self._help_controller.show_headless_notes(parent=self)
             return
         if topic_id == "packaging_backup":
             self._help_controller.show_packaging_backup(parent=self)
             return
         if topic_id == HELP_TOPIC_GETTING_STARTED:
-            self._handle_getting_started_action()
+            self._help_controller.show_getting_started(parent=self)
             return
-        self._handle_getting_started_action()
+        self._help_controller.show_getting_started(parent=self)
 
     def _open_runtime_center_dialog(
         self,
@@ -872,7 +856,7 @@ class MainWindow(QMainWindow):
         dialog = RuntimeCenterDialog(
             title=title,
             report=report or self._latest_runtime_issue_report,
-            tokens=self._resolve_theme_tokens(),
+            tokens=self._shell_theme_workflow.resolve_theme_tokens(),
             open_help_topic=self._open_runtime_help_topic,
             parent=self,
         )
@@ -976,7 +960,10 @@ class MainWindow(QMainWindow):
             lambda: self._invoke_welcome_action(self._handle_load_example_project_action, close_after_action)
         )
         widget.headless_notes_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_headless_notes_action, close_after_action)
+            lambda: self._invoke_welcome_action(
+                lambda: self._help_controller.show_headless_notes(parent=self),
+                close_after_action,
+            )
         )
         widget.dismiss_onboarding_requested.connect(
             lambda: self._handle_runtime_onboarding_dismiss_action(close_after_action=close_after_action)
@@ -1172,156 +1159,14 @@ class MainWindow(QMainWindow):
         except ValueError:
             return ImportUpdatePolicy.ASK
 
-    def _resolve_theme_tokens(self) -> ShellThemeTokens:
-        palette = self.palette()
-        mode = self._theme_mode
-        if mode in (
-            constants.UI_THEME_MODE_LIGHT,
-            constants.UI_THEME_MODE_DARK,
-            constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
-            constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
-        ):
-            base_tokens = tokens_from_palette(
-                palette,
-                force_mode=mode,
-                ui_font_weight=self._ui_font_weight,
-            )
-        else:
-            base_tokens = tokens_from_palette(
-                palette,
-                prefer_dark=self._system_prefers_dark_theme(),
-                ui_font_weight=self._ui_font_weight,
-            )
-        if base_tokens.is_high_contrast:
-            theme_key = (
-                constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_DARK_KEY
-                if base_tokens.is_dark
-                else constants.UI_SYNTAX_COLORS_HIGH_CONTRAST_LIGHT_KEY
-            )
-        else:
-            theme_key = (
-                constants.UI_SYNTAX_COLORS_DARK_KEY
-                if base_tokens.is_dark
-                else constants.UI_SYNTAX_COLORS_LIGHT_KEY
-            )
-        syntax_overrides = self._syntax_color_overrides.get(theme_key, {})
-        return apply_syntax_token_overrides(base_tokens, syntax_overrides)
-
     def current_theme_tokens(self) -> ShellThemeTokens:
         """Public accessor used by child dialogs to inherit shell theming."""
-        return self._resolve_theme_tokens()
-
-    def _apply_theme_styles(self) -> None:
-        if self._is_applying_theme_styles:
-            return
-        self._is_applying_theme_styles = True
-        try:
-            tokens = self._resolve_theme_tokens()
-            close_normal, close_hover = ensure_tab_close_icons(
-                tokens.text_muted, tokens.text_primary,
-            )
-            tokens = replace(
-                tokens,
-                tab_close_icon_path=close_normal,
-                tab_close_icon_hover_path=close_hover,
-            )
-            self.setStyleSheet(build_shell_style_sheet(tokens))
-            for editor_widget in self._editor_widgets_by_path.values():
-                editor_widget.apply_theme(tokens)
-            for markdown_pane in self._markdown_panes_by_path.values():
-                markdown_pane.apply_theme(tokens)
-            if self._python_console_widget is not None:
-                self._python_console_widget.apply_theme(tokens)
-            self._apply_explorer_theme(tokens)
-            if self._run_log_panel is not None:
-                self._run_log_panel.apply_theme(tokens)
-            if self._search_sidebar is not None:
-                self._search_sidebar.apply_theme_tokens(
-                    match_bg=tokens.search_match_bg,
-                    text_primary=tokens.text_primary,
-                    text_muted=tokens.text_muted,
-                    badge_bg=tokens.badge_bg,
-                )
-            if self._activity_bar is not None:
-                normal = QColor(tokens.text_muted)
-                active = QColor(tokens.text_primary)
-                self._activity_bar.set_view_icon(
-                    "explorer",
-                    explorer_icon(color_normal=normal, color_active=active),
-                )
-                self._activity_bar.set_view_icon(
-                    "search",
-                    search_icon(color_normal=normal, color_active=active),
-                )
-                self._activity_bar.set_view_icon(
-                    "test_explorer",
-                    test_icon(color_normal=normal, color_active=active),
-                )
-            if self._test_explorer_panel is not None:
-                self._test_explorer_panel.apply_theme(tokens)
-            if self._outline_panel is not None:
-                self._outline_panel.apply_theme_tokens(tokens)
-        finally:
-            self._is_applying_theme_styles = False
-
-    def _apply_explorer_theme(self, tokens: ShellThemeTokens) -> None:
-        self._tree_file_icon = file_icon(tokens.icon_primary)
-        self._tree_file_icon_map = file_type_icon_map()
-        self._tree_filename_icon_map = filename_icon_map()
-        self._tree_folder_icon = folder_icon(tokens.icon_muted)
-        self._tree_folder_open_icon = folder_open_icon(tokens.icon_muted)
-        self._tree_entrypoint_icon = icon_run(tokens.debug_running_color)
-        if self._explorer_new_file_btn is not None:
-            self._explorer_new_file_btn.setIcon(new_file_icon(tokens.icon_primary, tokens.icon_muted))
-        if self._explorer_new_folder_btn is not None:
-            self._explorer_new_folder_btn.setIcon(new_folder_icon(tokens.icon_primary, tokens.icon_muted))
-        if self._explorer_refresh_btn is not None:
-            self._explorer_refresh_btn.setIcon(refresh_icon(tokens.icon_primary))
-        if self._loaded_project is not None:
-            self._populate_project_tree(self._loaded_project, preserve_state=True)
-
-    def _system_prefers_dark_theme(self) -> bool:
-        cached_preference = self._system_dark_theme_preference
-        if cached_preference is not None:
-            return cached_preference
-        try:
-            result = subprocess.run(
-                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-        except OSError:
-            self._system_dark_theme_preference = False
-            return False
-        if result.returncode != 0:
-            self._system_dark_theme_preference = False
-            return False
-        self._system_dark_theme_preference = "prefer-dark" in result.stdout
-        return self._system_dark_theme_preference
-
-    def _load_theme_mode(self) -> str:
-        settings_payload = self._settings_service.load_global()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
-        return snapshot.theme_mode
-
-    def _load_ui_font_weight(self) -> str:
-        settings_payload = self._settings_service.load_global()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
-        return snapshot.ui_font_weight
+        return self._shell_theme_workflow.resolve_theme_tokens()
 
     def _load_shortcut_overrides(self) -> dict[str, str]:
         settings_payload = self._settings_service.load_global()
         snapshot = parse_editor_settings_snapshot(settings_payload)
         return dict(snapshot.shortcut_overrides)
-
-    def _load_syntax_color_overrides(self) -> dict[str, dict[str, str]]:
-        settings_payload = self._settings_service.load_global()
-        snapshot = parse_editor_settings_snapshot(settings_payload)
-        return {
-            constants.UI_SYNTAX_COLORS_LIGHT_KEY: dict(snapshot.syntax_color_overrides_light),
-            constants.UI_SYNTAX_COLORS_DARK_KEY: dict(snapshot.syntax_color_overrides_dark),
-        }
 
     def _load_lint_rule_overrides(self) -> dict[str, dict[str, object]]:
         snapshot = self._load_effective_editor_settings_snapshot()
@@ -1363,12 +1208,12 @@ class MainWindow(QMainWindow):
         if mode == self._theme_mode:
             return
         self._theme_mode = mode
-        self._system_dark_theme_preference = None
+        self._shell_theme_workflow.invalidate_system_dark_theme_preference()
         self._persist_theme_mode(mode)
         if self._quick_open_dialog is not None:
             self._quick_open_dialog.deleteLater()
             self._quick_open_dialog = None
-        self._apply_theme_styles()
+        self._shell_theme_workflow.apply_theme_styles()
         self._sync_theme_menu_check_state()
         self._logger.info("Theme mode changed to %s.", mode)
 
@@ -1472,6 +1317,50 @@ class MainWindow(QMainWindow):
 
     def _load_intelligence_runtime_settings(self) -> IntelligenceRuntimeSettings:
         return self._load_main_window_settings().intelligence_runtime_settings
+
+    def _apply_preferences_bundle(self, bundle) -> None:
+        main = bundle.main_window
+        (
+            self._editor_tab_width,
+            self._editor_font_size,
+            self._editor_font_family,
+            self._editor_indent_style,
+            self._editor_indent_size,
+            self._editor_detect_indentation_from_file,
+            self._editor_format_on_save,
+            self._editor_organize_imports_on_save,
+            self._editor_trim_trailing_whitespace_on_save,
+            self._editor_insert_final_newline_on_save,
+            self._editor_enable_preview,
+            self._editor_auto_save,
+            self._editor_exit_behavior,
+            self._editor_hover_tooltip_enabled,
+            self._editor_auto_reindent_flat_python_paste,
+        ) = main.editor_preferences
+        (
+            self._completion_enabled,
+            self._completion_auto_trigger,
+            self._completion_min_chars,
+        ) = main.completion_preferences
+        (
+            self._diagnostics_enabled,
+            self._diagnostics_realtime,
+            self._quick_fixes_enabled,
+            self._quick_fix_require_preview_for_multifile,
+        ) = main.diagnostics_preferences
+        (
+            self._auto_open_console_on_run_output,
+            self._auto_open_problems_on_run_failure,
+        ) = main.output_preferences
+        self._local_history_retention_policy = bundle.local_history_retention_policy
+        self._local_history_workflow.set_retention_policy(self._local_history_retention_policy, apply_now=True)
+        self._shortcut_overrides = dict(bundle.shortcut_overrides)
+        self._syntax_color_overrides = {
+            theme: dict(overrides) for theme, overrides in bundle.syntax_color_overrides.items()
+        }
+        self._lint_rule_overrides = bundle.lint_rule_overrides
+        self._selected_linter = bundle.selected_linter
+        self._intelligence_runtime_settings = bundle.intelligence_runtime_settings
 
     def _load_plugin_safe_mode(self) -> bool:
         settings_payload = self._settings_service.load_global()
@@ -1734,7 +1623,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(
             global_snapshot,
             self,
-            tokens=self._resolve_theme_tokens(),
+            tokens=self._shell_theme_workflow.resolve_theme_tokens(),
             project_snapshot=effective_snapshot if project_root is not None else None,
             project_scope_available=project_root is not None,
             python_tooling_runtime_text=python_tooling_runtime_text,
@@ -1752,96 +1641,27 @@ class MainWindow(QMainWindow):
             global_settings_payload=global_settings_payload,
             project_settings_payload=project_settings_payload,
             snapshot=updated_snapshot,
+            global_snapshot=dialog.global_scope_snapshot(),
+            project_snapshot=dialog.project_scope_snapshot(),
         )
         if merged_global_settings != global_settings_payload:
             self._settings_service.save_global(merged_global_settings)
         if project_root is not None and merged_project_settings != project_settings_payload:
             self._settings_service.save_project(project_root, merged_project_settings)
 
-        if updated_snapshot.theme_mode != previous_theme_mode:
-            self._handle_set_theme(updated_snapshot.theme_mode)
-        self._ui_font_weight = updated_snapshot.ui_font_weight
-
-        (
-            self._editor_tab_width,
-            self._editor_font_size,
-            self._editor_font_family,
-            self._editor_indent_style,
-            self._editor_indent_size,
-            self._editor_detect_indentation_from_file,
-            self._editor_format_on_save,
-            self._editor_organize_imports_on_save,
-            self._editor_trim_trailing_whitespace_on_save,
-            self._editor_insert_final_newline_on_save,
-            self._editor_enable_preview,
-            self._editor_auto_save,
-            self._editor_exit_behavior,
-            self._editor_hover_tooltip_enabled,
-            self._editor_auto_reindent_flat_python_paste,
-        ) = self._load_editor_preferences()
-        self._sync_auto_save_menu_state()
-        if not self._editor_auto_save:
-            self._auto_save_to_file_timer.stop()
-        (
-            self._completion_enabled,
-            self._completion_auto_trigger,
-            self._completion_min_chars,
-        ) = self._load_completion_preferences()
-        (
-            self._diagnostics_enabled,
-            self._diagnostics_realtime,
-            self._quick_fixes_enabled,
-            self._quick_fix_require_preview_for_multifile,
-        ) = self._load_diagnostics_preferences()
-        (
-            self._auto_open_console_on_run_output,
-            self._auto_open_problems_on_run_failure,
-        ) = self._load_output_preferences()
-        self._local_history_retention_policy = self._load_local_history_retention_policy()
-        self._local_history_workflow.set_retention_policy(self._local_history_retention_policy, apply_now=True)
-        self._shortcut_overrides = self._load_shortcut_overrides()
-        self._syntax_color_overrides = self._load_syntax_color_overrides()
-        self._lint_rule_overrides = self._load_lint_rule_overrides()
-        self._selected_linter = self._load_selected_linter()
-        if not self._diagnostics_enabled or not self._diagnostics_realtime:
-            self._realtime_lint_timer.stop()
-            self._pending_realtime_lint_file_path = None
-        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
-        if not self._intelligence_runtime_settings.cache_enabled:
-            if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
-                self._active_symbol_index_worker.cancel()
-        elif self._loaded_project is not None:
-            self._start_symbol_indexing(self._loaded_project.project_root)
-        self._apply_editor_preferences_to_open_editors()
-        self._apply_runtime_intelligence_preferences_to_open_editors()
-        self._apply_shortcut_overrides_runtime()
-        self._apply_theme_styles()
-        if previous_enable_preview and not self._editor_enable_preview:
-            self._cancel_pending_project_tree_preview()
-            self._promote_existing_preview_tab()
-        lint_profile_changed = self._lint_rule_overrides != previous_lint_rule_overrides
-        diagnostics_enabled_changed = self._diagnostics_enabled != previous_diagnostics_enabled
-        selected_linter_changed = self._selected_linter != previous_selected_linter
-        if self._diagnostics_enabled and (
-            lint_profile_changed or diagnostics_enabled_changed or selected_linter_changed
-        ):
-            self._relint_open_python_files()
-        if not self._diagnostics_enabled:
-            self._stored_lint_diagnostics.clear()
-            self._render_merged_problems_panel()
-        effective_excludes = self._load_effective_exclude_patterns(project_root)
-        if effective_excludes != previous_effective_excludes:
-            self._reload_current_project()
-            if self._search_sidebar is not None and self._loaded_project is not None:
-                self._search_sidebar.set_exclude_patterns(
-                    compute_effective_excludes(
-                        self._load_effective_exclude_patterns(self._loaded_project.project_root),
-                        self._loaded_project.metadata.exclude_patterns,
-                    )
-                )
-        if self._loaded_project is not None:
-            self.set_project_placeholder(self._loaded_project.metadata.name)
-        self._logger.info("Updated settings from dialog.")
+        baseline = capture_settings_apply_baseline(
+            theme_mode=previous_theme_mode,
+            lint_rule_overrides=previous_lint_rule_overrides,
+            diagnostics_enabled=previous_diagnostics_enabled,
+            selected_linter=previous_selected_linter,
+            enable_preview=previous_enable_preview,
+            effective_excludes=previous_effective_excludes,
+        )
+        self._settings_apply_workflow.apply_after_settings_saved(
+            updated_snapshot=updated_snapshot,
+            baseline=baseline,
+            project_root=project_root,
+        )
 
     def _prompt_for_template(self, templates: list[TemplateMetadata]) -> TemplateMetadata | None:
         labels = [f"{template.display_name} ({template.template_id})" for template in templates]
@@ -1870,7 +1690,7 @@ class MainWindow(QMainWindow):
         ]
 
         if self._quick_open_dialog is None:
-            tokens = self._resolve_theme_tokens()
+            tokens = self._shell_theme_workflow.resolve_theme_tokens()
             self._quick_open_dialog = QuickOpenDialog(
                 self,
                 tokens=tokens,
@@ -1900,73 +1720,6 @@ class MainWindow(QMainWindow):
 
         self._quick_open_dialog.set_candidates(candidates)
         self._quick_open_dialog.open_dialog()
-
-    def _handle_find_action(self) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None:
-            return
-        if self._find_replace_bar is None:
-            return
-        initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
-        self._find_replace_bar.open_find(initial)
-
-    def _handle_replace_action(self) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None:
-            return
-        if self._find_replace_bar is None:
-            return
-        initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
-        self._find_replace_bar.open_find_replace(initial)
-
-    def _handle_find_bar_find(self, text: str, options: FindOptions) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None or self._find_replace_bar is None:
-            return
-        total = editor_widget.highlight_all_matches(text, options)
-        if total > 0:
-            current, total = editor_widget.find_next()
-            self._find_replace_bar.update_match_count(current, total)
-        else:
-            self._find_replace_bar.update_match_count(0, 0)
-
-    def _handle_find_bar_next(self) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None or self._find_replace_bar is None:
-            return
-        current, total = editor_widget.find_next()
-        self._find_replace_bar.update_match_count(current, total)
-
-    def _handle_find_bar_prev(self) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None or self._find_replace_bar is None:
-            return
-        current, total = editor_widget.find_previous()
-        self._find_replace_bar.update_match_count(current, total)
-
-    def _handle_find_bar_replace(self, replacement: str) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None or self._find_replace_bar is None:
-            return
-        query = self._find_replace_bar.find_text()
-        options = self._find_replace_bar.find_options()
-        current, total = editor_widget.replace_current_match(replacement, query, options)
-        self._find_replace_bar.update_match_count(current, total)
-
-    def _handle_find_bar_replace_all(self, replacement: str) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is None or self._find_replace_bar is None:
-            return
-        query = self._find_replace_bar.find_text()
-        options = self._find_replace_bar.find_options()
-        editor_widget.replace_all_matches(query, replacement, options)
-        self._find_replace_bar.update_match_count(0, 0)
-
-    def _handle_find_bar_close(self) -> None:
-        editor_widget = self._active_editor_widget()
-        if editor_widget is not None:
-            editor_widget.clear_search_highlights()
-            editor_widget.setFocus()
 
     def _handle_toggle_comment_action(self) -> None:
         editor_widget = self._active_editor_widget()
@@ -2029,20 +1782,6 @@ class MainWindow(QMainWindow):
             return
 
         editor_widget.go_to_line(line_number)
-
-    def _handle_find_in_files_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Find in Files", "Open a project first.")
-            return
-        if self._activity_bar is not None:
-            self._activity_bar.set_active_view("search")
-            self._handle_sidebar_view_changed("search")
-        editor_widget = self._active_editor_widget()
-        initial = ""
-        if editor_widget is not None:
-            initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
-        if self._search_sidebar is not None and initial:
-            self._search_sidebar.focus_search(initial)
 
     def _handle_find_references_action(self) -> None:
         if self._loaded_project is None:
@@ -2255,340 +1994,6 @@ class MainWindow(QMainWindow):
             on_error=on_error,
         )
 
-    def _handle_go_to_definition_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Go To Definition", "Open a project first.")
-            return
-        active_tab = self._editor_manager.active_tab()
-        editor_widget = self._active_editor_widget()
-        if active_tab is None or editor_widget is None:
-            QMessageBox.warning(self, "Go To Definition", "Open a file tab first.")
-            return
-        symbol_name = editor_widget.word_under_cursor()
-        if not symbol_name:
-            QMessageBox.information(self, "Go To Definition", "Place cursor on a symbol first.")
-            return
-        project_root = self._loaded_project.project_root
-        current_file_path = active_tab.file_path
-        source_text = editor_widget.toPlainText()
-        cursor_position = editor_widget.textCursor().position()
-
-        def on_success(lookup) -> None:  # type: ignore[no-untyped-def]
-            if not lookup.found:
-                if lookup.metadata.unsupported_reason:
-                    if lookup.metadata.source == "semantic_unavailable":
-                        QMessageBox.warning(
-                            self,
-                            "Go To Definition",
-                            (
-                                "Semantic definitions are currently unavailable.\n\n"
-                                f"Reason: {lookup.metadata.unsupported_reason}"
-                            ),
-                        )
-                        return
-                    QMessageBox.information(
-                        self,
-                        "Go To Definition",
-                        f"No semantic definition found for '{symbol_name}'. The symbol may be dynamic or unresolved.",
-                    )
-                else:
-                    QMessageBox.information(self, "Go To Definition", f"No definition found for '{symbol_name}'.")
-                return
-            location = self._choose_definition_location(lookup.locations)
-            if location is None:
-                return
-            selected_location = cast(Any, location)
-            self._open_file_at_line(str(selected_location.file_path), int(selected_location.line_number))
-
-        def on_error(exc: Exception) -> None:
-            QMessageBox.warning(self, "Go To Definition", f"Lookup failed: {exc}")
-
-        self._intelligence_controller.request_lookup_definition(
-            project_root=project_root,
-            current_file_path=current_file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_signature_help_action(self) -> None:
-        active_tab = self._editor_manager.active_tab()
-        editor_widget = self._active_editor_widget()
-        if active_tab is None or editor_widget is None:
-            QMessageBox.warning(self, "Signature Help", "Open a file tab first.")
-            return
-
-        tooltip_text = self._build_inline_signature_text(
-            file_path=active_tab.file_path,
-            source_text=editor_widget.toPlainText(),
-            cursor_position=editor_widget.textCursor().position(),
-        )
-        if not tooltip_text:
-            QMessageBox.information(self, "Signature Help", "No callable signature information available.")
-            return
-        editor_widget.show_calltip(tooltip_text)
-
-    def _handle_hover_info_action(self) -> None:
-        active_tab = self._editor_manager.active_tab()
-        editor_widget = self._active_editor_widget()
-        if active_tab is None or editor_widget is None:
-            QMessageBox.warning(self, "Hover Info", "Open a file tab first.")
-            return
-
-        tooltip_text = self._build_inline_hover_text(
-            file_path=active_tab.file_path,
-            source_text=editor_widget.toPlainText(),
-            cursor_position=editor_widget.textCursor().position(),
-        )
-        if not tooltip_text:
-            QMessageBox.information(self, "Hover Info", "No symbol info available.")
-            return
-        editor_widget.show_calltip(tooltip_text)
-
-    def _choose_definition_location(self, locations: list[object]):  # type: ignore[no-untyped-def]
-        if not locations:
-            return None
-        if len(locations) == 1:
-            return locations[0]
-
-        labels: list[str] = []
-        by_label: dict[str, object] = {}
-        for location in locations:
-            file_path = str(getattr(location, "file_path", ""))
-            line_number = int(getattr(location, "line_number", 0) or 0)
-            symbol_kind = str(getattr(location, "symbol_kind", "symbol"))
-            label = f"{Path(file_path).name}:{line_number} ({symbol_kind})"
-            labels.append(label)
-            by_label[label] = location
-        selected_label, ok = QInputDialog.getItem(
-            self,
-            "Choose Definition Target",
-            "Multiple definition targets found:",
-            labels,
-            0,
-            editable=False,
-        )
-        if not ok or not selected_label:
-            return None
-        return by_label.get(selected_label)
-
-    def _build_inline_signature_text(
-        self,
-        *,
-        file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> str | None:
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        return self._intelligence_controller.build_inline_signature_text(
-            project_root=project_root,
-            current_file_path=file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-        )
-
-    def _build_inline_hover_text(
-        self,
-        *,
-        file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> str | None:
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        return self._intelligence_controller.build_inline_hover_text(
-            project_root=project_root,
-            current_file_path=file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-        )
-
-    def _request_inline_signature_text_async(
-        self,
-        *,
-        file_path: str,
-        editor_widget: CodeEditorWidget,
-        source_text: str,
-        cursor_position: int,
-        request_generation: int,
-    ) -> None:
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        requested_revision = self._editor_buffer_revision(file_path)
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            generation, signature = payload
-            active_widget = self._editor_widgets_by_path.get(file_path)
-            if active_widget is not editor_widget:
-                return
-            if self._editor_buffer_revision(file_path) != requested_revision:
-                return
-            editor_widget.show_calltip_for_request(
-                request_generation=generation,
-                text=self._intelligence_controller.format_inline_signature_text(signature),
-            )
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Signature-help request failed for %s: %s", file_path, exc)
-
-        self._intelligence_controller.request_signature_help(
-            project_root=project_root,
-            current_file_path=file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-            request_generation=request_generation,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _request_inline_hover_text_async(
-        self,
-        *,
-        file_path: str,
-        editor_widget: CodeEditorWidget,
-        source_text: str,
-        cursor_position: int,
-        request_generation: int,
-    ) -> None:
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        requested_revision = self._editor_buffer_revision(file_path)
-
-        def on_success(payload) -> None:  # type: ignore[no-untyped-def]
-            generation, hover_info = payload
-            active_widget = self._editor_widgets_by_path.get(file_path)
-            if active_widget is not editor_widget:
-                return
-            if self._editor_buffer_revision(file_path) != requested_revision:
-                return
-            editor_widget.show_hover_text_for_request(
-                request_generation=generation,
-                text=self._intelligence_controller.format_inline_hover_text(hover_info),
-            )
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Hover request failed for %s: %s", file_path, exc)
-
-        self._intelligence_controller.request_hover_info(
-            project_root=project_root,
-            current_file_path=file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-            request_generation=request_generation,
-            on_success=on_success,
-            on_error=on_error,
-        )
-
-    def _handle_analyze_imports_action(self) -> None:
-        if self._loaded_project is None:
-            QMessageBox.warning(self, "Analyze Imports", "Open a project first.")
-            return
-        project_root = self._loaded_project.project_root
-        source_overrides: dict[str, str] = {}
-        for path, widget in self._editor_widgets_by_path.items():
-            source_overrides[path] = widget.toPlainText()
-
-        known_modules = self._known_runtime_modules
-
-        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
-            return find_unresolved_imports(
-                project_root,
-                source_overrides=source_overrides,
-                known_runtime_modules=known_modules,
-                allow_runtime_import_probe=True,
-                lint_rule_overrides=self._lint_rule_overrides,
-            )
-
-        def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
-            if self._problems_panel is None:
-                return
-            _, unresolved_import_severity = resolve_lint_rule_settings("PY200", self._lint_rule_overrides)
-            if unresolved_import_severity == LINT_SEVERITY_ERROR:
-                diagnostic_severity = DiagnosticSeverity.ERROR
-            elif unresolved_import_severity == LINT_SEVERITY_INFO:
-                diagnostic_severity = DiagnosticSeverity.INFO
-            else:
-                diagnostic_severity = DiagnosticSeverity.WARNING
-            import_diags = [
-                CodeDiagnostic(
-                    code="PY200",
-                    severity=diagnostic_severity,
-                    file_path=d.file_path,
-                    line_number=d.line_number,
-                    message=d.message,
-                )
-                for d in diagnostics
-            ]
-            self._problems_panel.set_diagnostics(import_diags)
-            self._update_problems_tab_title(self._problems_panel.problem_count())
-            self._focus_problems_tab()
-            self._latest_import_issue_report = build_import_issue_report(
-                project_root,
-                diagnostics,
-                known_runtime_modules=known_modules,
-                allow_runtime_import_probe=True,
-            )
-            self._latest_runtime_issue_report = self._build_runtime_issue_report()
-            if self._latest_import_issue_report.issues:
-                self._open_runtime_center_dialog(
-                    title="Import Analysis",
-                    report=self._latest_import_issue_report,
-                )
-
-        def on_error(exc: Exception) -> None:
-            QMessageBox.warning(self, "Analyze Imports", f"Import analysis failed: {exc}")
-
-        self._background_tasks.run(key="analyze_imports", task=task, on_success=on_success, on_error=on_error)
-
-    def _handle_goto_symbol_in_file_action(self) -> None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            QMessageBox.information(
-                self, "Go to Symbol", "Open a Python file first."
-            )
-            return
-        file_path = active_tab.file_path
-        if Path(file_path).suffix.lower() not in {".py", ".pyw", ".pyi"}:
-            QMessageBox.information(
-                self, "Go to Symbol", "Open a Python file first."
-            )
-            return
-        symbols = self._outline_symbols_by_path.get(file_path)
-        if symbols is None:
-            editor_widget = self._editor_widgets_by_path.get(
-                str(Path(file_path).expanduser().resolve())
-            )
-            source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
-            symbols = build_outline_from_source(source or "")
-            self._outline_symbols_by_path[file_path] = symbols
-        flat = flatten_symbols(symbols)
-        if not flat:
-            QMessageBox.information(
-                self, "Go to Symbol", "No symbols in this file."
-            )
-            return
-        editor_widget = self._editor_widgets_by_path.get(
-            str(Path(file_path).expanduser().resolve())
-        )
-        original_line = (
-            editor_widget.textCursor().blockNumber() + 1 if editor_widget is not None else 1
-        )
-
-        from app.shell.quick_symbol_dialog import QuickSymbolDialog
-
-        dialog = QuickSymbolDialog(flat, parent=self)
-
-        def _on_preview(line: int) -> None:
-            if editor_widget is not None:
-                editor_widget.go_to_line(line)
-
-        def _on_chosen(line: int) -> None:
-            self._open_file_at_line(file_path, line)
-
-        dialog.symbol_preview.connect(_on_preview)
-        dialog.symbol_chosen.connect(_on_chosen)
-        result = dialog.exec_()
-        if result != QDialog.Accepted and editor_widget is not None:
-            editor_widget.go_to_line(original_line)
-
     def _handle_set_language_mode_action(self) -> None:
         editor_widget = self._active_editor_widget()
         active_tab = self._editor_manager.active_tab()
@@ -2650,24 +2055,6 @@ class MainWindow(QMainWindow):
 
         self._open_project_by_path(str(created_path))
 
-    def _handle_open_app_log_action(self) -> None:
-        self._help_controller.open_app_log(parent=self)
-
-    def _handle_open_log_folder_action(self) -> None:
-        self._help_controller.open_log_folder(parent=self)
-
-    def _handle_getting_started_action(self) -> None:
-        self._help_controller.show_getting_started(parent=self)
-
-    def _handle_shortcuts_action(self) -> None:
-        self._help_controller.show_shortcuts(parent=self)
-
-    def _handle_headless_notes_action(self) -> None:
-        self._help_controller.show_headless_notes(parent=self)
-
-    def _handle_about_action(self) -> None:
-        self._help_controller.show_about(parent=self)
-
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
         return self._project_controller.open_project_by_path(
@@ -2727,7 +2114,7 @@ class MainWindow(QMainWindow):
         self._latest_run_issue_ids = ()
         self._latest_runtime_issue_report = self._build_runtime_issue_report()
         self._active_named_run_config_name = None
-        self._refresh_active_run_config_indicator()
+        self._run_launch_workflow.refresh_active_run_config_indicator()
         self._lint_rule_overrides = self._load_lint_rule_overrides()
         self._selected_linter = self._load_selected_linter()
         self._plugin_activation_workflow.reload()
@@ -2750,7 +2137,6 @@ class MainWindow(QMainWindow):
                 loaded_project.metadata.exclude_patterns,
             )
             self._search_sidebar.set_exclude_patterns(effective_excludes)
-        self._breakpoints_by_file.clear()
         self._local_history_workflow.restore_session_state(loaded_project.project_root)
         self._lint_all_open_files()
         self._debug_control_workflow.refresh_breakpoints_list()
@@ -2857,146 +2243,10 @@ class MainWindow(QMainWindow):
         if save_all_action is not None:
             save_all_action.setEnabled(has_dirty_tabs)
 
-    def _resolve_active_named_run_config(self) -> RunConfiguration | None:
-        loaded_project = self._loaded_project
-        active_name = self._active_named_run_config_name
-        if loaded_project is None or not active_name:
-            return None
-        configs = self._run_config_controller.load_configs(loaded_project)
-        for config in configs:
-            if config.name == active_name:
-                return config
-        self._active_named_run_config_name = None
-        self._refresh_active_run_config_indicator()
-        return None
-
     def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
         report = RuntimeIssueReport(workflow="run", issues=list(issues))
         self._open_runtime_center_dialog(title=title, report=report)
         self._append_console_line(summary, stream="system")
-
-    def _ensure_run_preflight_ready(
-        self,
-        *,
-        title: str,
-        entry_file: str,
-        working_directory: str | None = None,
-        config_name: str | None = None,
-    ) -> bool:
-        result = build_run_preflight(
-            loaded_project=self._loaded_project,
-            entry_file=entry_file,
-            working_directory=working_directory,
-            config_name=config_name,
-        )
-        if result.is_ready:
-            return True
-        self._show_run_preflight_result(title, result.summary, result.issues)
-        return False
-
-    def _handle_run_action(self) -> bool:
-        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
-
-    def _handle_debug_action(self) -> bool:
-        return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_DEBUG)
-
-    def _handle_run_project_action(self) -> bool:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
-            return False
-        active_config = self._resolve_active_named_run_config()
-        if active_config is not None:
-            return self._launch_run_configuration(active_config, debug=False)
-        entry_file = (loaded_project.metadata.default_entry or "").strip()
-        if not self._ensure_run_preflight_ready(title="Run Project", entry_file=entry_file):
-            return False
-        return self._start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, entry_file=entry_file)
-
-    def _handle_debug_project_action(self) -> bool:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Run unavailable", "Open a project before running.")
-            return False
-        active_config = self._resolve_active_named_run_config()
-        if active_config is not None:
-            return self._launch_run_configuration(active_config, debug=True)
-        entry_file = (loaded_project.metadata.default_entry or "").strip()
-        if not self._ensure_run_preflight_ready(title="Debug Project", entry_file=entry_file):
-            return False
-        started = self._start_session(
-            mode=constants.RUN_MODE_PYTHON_DEBUG,
-            entry_file=entry_file,
-            breakpoints=self._debug_control_workflow.build_debug_breakpoints_for_launch(),
-            debug_exception_policy=self._debug_exception_policy,
-        )
-        if started:
-            self._last_debug_target = {"kind": "project"}
-        return started
-
-    def _start_active_file_session(self, *, mode: str) -> bool:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            QMessageBox.warning(self, "Run unavailable", "Open a file tab before running.")
-            return False
-        entry_path = Path(active_tab.file_path).expanduser().resolve()
-        active_file_path = str(entry_path)
-        if entry_path.suffix.lower() != ".py":
-            QMessageBox.warning(self, "Run unavailable", "Active file must be a Python file.")
-            return False
-        transient_entry_file: str | None = None
-        entry_file = active_file_path
-        skip_save = False
-        source_maps: list[DebugSourceMap] | None = None
-        if active_tab.is_dirty:
-            transient_entry_file = self._write_transient_entry_file(
-                source_file_path=active_tab.file_path,
-                source_content=active_tab.current_content,
-            )
-            entry_file = transient_entry_file
-            skip_save = True
-            source_maps = [DebugSourceMap(runtime_path=transient_entry_file, source_path=active_file_path)]
-        breakpoints: list[DebugBreakpoint] | None = None
-        if mode == constants.RUN_MODE_PYTHON_DEBUG:
-            breakpoints = self._debug_control_workflow.build_debug_breakpoints_for_launch(
-                active_file_path=active_file_path,
-                remapped_active_path=transient_entry_file,
-            )
-        started = self._start_session(
-            mode=mode,
-            entry_file=entry_file,
-            breakpoints=breakpoints,
-            debug_exception_policy=self._debug_exception_policy if mode == constants.RUN_MODE_PYTHON_DEBUG else None,
-            source_maps=source_maps,
-            skip_save=skip_save,
-        )
-        if started and mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._last_debug_target = {"kind": "active_file", "file_path": active_file_path}
-        if transient_entry_file is not None:
-            if started:
-                self._active_transient_entry_file_path = transient_entry_file
-            else:
-                self._delete_transient_entry_file(transient_entry_file)
-        return started
-
-    def _write_transient_entry_file(self, *, source_file_path: str, source_content: str) -> str:
-        source_name = Path(source_file_path).name
-        safe_stem = Path(source_name).stem or "buffer"
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=".py",
-            prefix=f"cbcs_{safe_stem}_",
-            delete=False,
-        ) as handle:
-            handle.write(source_content)
-            return str(Path(handle.name).resolve())
-
-    def _delete_transient_entry_file(self, path: str) -> None:
-        try:
-            Path(path).unlink(missing_ok=True)
-        except OSError:
-            self._logger.warning("Failed to delete transient run file: %s", path)
 
     def _resolve_project_entry_for_project_run(self) -> str | None:
         loaded_project = self._loaded_project
@@ -3086,346 +2336,6 @@ class MainWindow(QMainWindow):
         self._populate_project_tree(self._loaded_project, preserve_state=True)
         return True
 
-
-    def _handle_rerun_last_debug_target_action(self) -> None:
-        target = self._last_debug_target
-        if not target:
-            QMessageBox.information(self, "Rerun Last Debug Target", "No previous debug target is available yet.")
-            return
-        kind = str(target.get("kind", "")).strip()
-        if kind == "project":
-            self._handle_debug_project_action()
-            return
-        if kind == "active_file":
-            file_path = str(target.get("file_path", "")).strip()
-            if not file_path:
-                return
-            if not self._editor_tab_factory.open_file_in_editor(file_path, preview=False):
-                QMessageBox.warning(self, "Rerun Last Debug Target", "The previous debug file could not be reopened.")
-                return
-            if self._editor_tabs_widget is not None:
-                index = self._tab_index_for_path(file_path)
-                if index >= 0:
-                    self._editor_tabs_widget.setCurrentIndex(index)
-            self._handle_debug_action()
-            return
-        if kind == "current_test":
-            file_path = str(target.get("target_path", "")).strip()
-            if file_path and self._editor_tab_factory.open_file_in_editor(file_path, preview=False) and self._editor_tabs_widget is not None:
-                index = self._tab_index_for_path(file_path)
-                if index >= 0:
-                    self._editor_tabs_widget.setCurrentIndex(index)
-            self._test_runner_workflow.debug_current_file_tests()
-            return
-        if kind == "test_node":
-            node_id = str(target.get("node_id", "")).strip()
-            if node_id:
-                self._test_runner_workflow.debug_test_node(node_id)
-
-    def _handle_run_with_configuration_action(self) -> bool:
-        """Open the Run Configurations editor; optionally run the selected entry on accept."""
-
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.warning(self, "Run Configurations", "Open a project first.")
-            return False
-        existing_configs = self._run_config_controller.load_configs(loaded_project)
-        initial = RunConfigurationsInitial(
-            configurations=existing_configs,
-            default_argv=loaded_project.metadata.default_argv,
-            default_entry=loaded_project.metadata.default_entry,
-            project_root=loaded_project.project_root,
-            active_config_name=self._active_named_run_config_name,
-            initial_selection_name=self._active_named_run_config_name,
-        )
-        result = RunConfigurationsDialog.run_dialog(
-            self,
-            initial=initial,
-            tokens=self._current_theme_tokens(),
-        )
-        if result is None:
-            return False
-        persisted = self._persist_run_configurations_result(result)
-        if not persisted:
-            return False
-        selected_name = result.selected_config_name
-        if not selected_name:
-            return True
-        target = next(
-            (config for config in result.configurations if config.name == selected_name),
-            None,
-        )
-        if target is None:
-            return True
-        return self._launch_run_configuration(target, debug=False)
-
-    def _handle_run_with_arguments_action(self) -> bool:
-        """Launch a one-off run using arguments collected through a small dialog."""
-
-        loaded_project = self._loaded_project
-        active_tab = self._editor_manager.active_tab()
-        active_file_path: str | None = None
-        if active_tab is not None and getattr(active_tab, "file_path", None):
-            active_file_path = active_tab.file_path
-        default_entry = ""
-        default_argv: tuple[str, ...] = ()
-        default_env: Mapping[str, str] = {}
-        project_root: str | None = None
-        if loaded_project is not None:
-            default_entry = (loaded_project.metadata.default_entry or "").strip()
-            default_argv = tuple(loaded_project.metadata.default_argv)
-            default_env = dict(loaded_project.metadata.env_overrides)
-            project_root = loaded_project.project_root
-
-        initial_entry = active_file_path or default_entry
-        initial = RunWithArgumentsInitial(
-            entry_file=initial_entry,
-            argv=default_argv,
-            working_directory=None,
-            env_overrides=default_env,
-            recent_argv_history=tuple(self._settings_service.load_recent_argv_history()),
-            project_root=project_root,
-        )
-        invocation = RunWithArgumentsDialog.run_dialog(
-            self,
-            initial=initial,
-            tokens=self._current_theme_tokens(),
-        )
-        if invocation is None:
-            return False
-        if invocation.argv_text:
-            self._settings_service.push_recent_argv_history(invocation.argv_text)
-        return self._launch_ad_hoc_run_invocation(invocation)
-
-    def _launch_ad_hoc_run_invocation(self, invocation: RunInvocation) -> bool:
-        """Run an ad-hoc :class:`RunInvocation`, optionally promoting it to a saved config."""
-
-        if invocation.save_request:
-            self._open_save_invocation_as_configuration_dialog(invocation)
-        if not self._ensure_run_preflight_ready(
-            title="Run With Arguments",
-            entry_file=invocation.entry_file,
-            working_directory=invocation.working_directory,
-        ):
-            return False
-        return self._start_session(
-            mode=constants.RUN_MODE_PYTHON_SCRIPT,
-            entry_file=invocation.entry_file,
-            argv=list(invocation.argv),
-            working_directory=invocation.working_directory,
-            env_overrides=dict(invocation.env_overrides),
-        )
-
-    def _open_save_invocation_as_configuration_dialog(self, invocation: RunInvocation) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            QMessageBox.information(
-                self,
-                "Save as Configuration",
-                "Open a project first to save named run configurations.",
-            )
-            return
-        existing_configs = self._run_config_controller.load_configs(loaded_project)
-        proposed_name = _proposed_new_config_name(existing_configs)
-        new_config = RunConfiguration(
-            name=proposed_name,
-            entry_file=invocation.entry_file,
-            argv=list(invocation.argv),
-            working_directory=invocation.working_directory,
-            env_overrides=dict(invocation.env_overrides),
-        )
-        initial = RunConfigurationsInitial(
-            configurations=[*existing_configs, new_config],
-            default_argv=loaded_project.metadata.default_argv,
-            default_entry=loaded_project.metadata.default_entry,
-            project_root=loaded_project.project_root,
-            active_config_name=self._active_named_run_config_name,
-            initial_selection_name=new_config.name,
-        )
-        result = RunConfigurationsDialog.run_dialog(
-            self,
-            initial=initial,
-            tokens=self._current_theme_tokens(),
-        )
-        if result is None:
-            return
-        self._persist_run_configurations_result(result)
-
-    def _handle_run_active_configuration_action(self) -> bool:
-        """Launch the currently-active named configuration (or default Run Project)."""
-
-        active_config = self._resolve_active_named_run_config()
-        if active_config is None:
-            return self._handle_run_project_action()
-        return self._launch_run_configuration(active_config, debug=False)
-
-    def _launch_run_configuration(
-        self,
-        config: RunConfiguration,
-        *,
-        debug: bool,
-    ) -> bool:
-        mode = constants.RUN_MODE_PYTHON_DEBUG if debug else constants.RUN_MODE_PYTHON_SCRIPT
-        title = (
-            f"Debug Configuration: {config.name}" if debug else f"Run Configuration: {config.name}"
-        )
-        if not self._ensure_run_preflight_ready(
-            title=title,
-            entry_file=config.entry_file,
-            working_directory=config.working_directory,
-            config_name=config.name,
-        ):
-            return False
-        breakpoints: list[DebugBreakpoint] | None = None
-        debug_exception_policy: DebugExceptionPolicy | None = None
-        if debug:
-            breakpoints = self._debug_control_workflow.build_debug_breakpoints_for_launch()
-            debug_exception_policy = self._debug_exception_policy
-        started = self._start_session(
-            mode=mode,
-            entry_file=config.entry_file,
-            argv=list(config.argv),
-            working_directory=config.working_directory,
-            env_overrides=dict(config.env_overrides),
-            breakpoints=breakpoints,
-            debug_exception_policy=debug_exception_policy,
-        )
-        if started and debug:
-            self._last_debug_target = {"kind": "project"}
-        return started
-
-    def _persist_run_configurations_result(self, result: RunConfigurationsResult) -> bool:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            return False
-        try:
-            self._run_config_controller.persist_run_configs(
-                loaded_project=loaded_project,
-                run_configs=result.configurations,
-            )
-        except AppValidationError as exc:
-            QMessageBox.warning(self, "Run Configurations", str(exc))
-            return False
-        try:
-            updated_metadata = set_project_default_argv(
-                loaded_project.manifest_path,
-                default_argv=list(result.default_argv),
-                metadata_if_absent=None
-                if loaded_project.manifest_materialized
-                else loaded_project.metadata,
-            )
-        except (ProjectManifestValidationError, ValueError) as exc:
-            QMessageBox.warning(self, "Run Configurations", str(exc))
-            return False
-        self._loaded_project = replace(
-            loaded_project,
-            metadata=updated_metadata,
-            manifest_materialized=True,
-        )
-        selected_name = result.selected_config_name
-        existing_names = {config.name for config in result.configurations}
-        if selected_name and selected_name in existing_names:
-            self._active_named_run_config_name = selected_name
-        elif (
-            self._active_named_run_config_name is not None
-            and self._active_named_run_config_name not in existing_names
-        ):
-            self._active_named_run_config_name = None
-        self._refresh_run_action_states()
-        self._refresh_active_run_config_indicator()
-        return True
-
-    def _install_active_run_config_indicator(self) -> None:
-        """Add a status-bar button showing which run configuration F5 will use."""
-
-        if getattr(self, "_active_run_config_button", None) is not None:
-            return
-        status_bar = self.statusBar()
-        button = QToolButton(status_bar)
-        button.setObjectName("shell.statusBar.activeRunConfig")
-        button.setText("Default")
-        button.setToolTip(
-            "Active run target for F5 / Run Project. Click to switch configurations or edit them."
-        )
-        button.setPopupMode(QToolButton.InstantPopup)
-        button.setAutoRaise(True)
-        button.setFocusPolicy(Qt.NoFocus)
-        button.aboutToShowMenu = None  # placeholder for type clarity
-        button.setMenu(QMenu(button))
-        button.menu().aboutToShow.connect(self._populate_active_run_config_menu)
-        status_bar.addPermanentWidget(button)
-        self._active_run_config_button = button
-        self._refresh_active_run_config_indicator()
-
-    def _populate_active_run_config_menu(self) -> None:
-        button = getattr(self, "_active_run_config_button", None)
-        if button is None:
-            return
-        menu = button.menu()
-        if menu is None:
-            return
-        menu.clear()
-        loaded_project = self._loaded_project
-
-        default_action = menu.addAction("Default (no named configuration)")
-        default_action.setCheckable(True)
-        default_action.setChecked(self._active_named_run_config_name is None)
-        default_action.triggered.connect(self._set_active_run_config_to_default)
-
-        if loaded_project is not None:
-            configs = self._run_config_controller.load_configs(loaded_project)
-        else:
-            configs = []
-        if configs:
-            menu.addSeparator()
-            for config in configs:
-                action = menu.addAction(config.name)
-                action.setCheckable(True)
-                action.setChecked(config.name == self._active_named_run_config_name)
-                action.triggered.connect(
-                    lambda _checked=False, name=config.name: self._set_active_run_config_by_name(name)
-                )
-        menu.addSeparator()
-        run_with_args_action = menu.addAction("Run With Arguments...")
-        run_with_args_action.triggered.connect(self._handle_run_with_arguments_action)
-        edit_action = menu.addAction("Edit Configurations...")
-        edit_action.setEnabled(loaded_project is not None)
-        edit_action.triggered.connect(self._handle_run_with_configuration_action)
-
-    def _set_active_run_config_to_default(self) -> None:
-        if self._active_named_run_config_name is None:
-            return
-        self._active_named_run_config_name = None
-        self._refresh_run_action_states()
-        self._refresh_active_run_config_indicator()
-
-    def _set_active_run_config_by_name(self, name: str) -> None:
-        normalized = (name or "").strip()
-        if not normalized:
-            return
-        if normalized == self._active_named_run_config_name:
-            return
-        self._active_named_run_config_name = normalized
-        self._refresh_run_action_states()
-        self._refresh_active_run_config_indicator()
-
-    def _refresh_active_run_config_indicator(self) -> None:
-        """Update the status-bar active-run-config indicator (no-op when the widget is missing)."""
-
-        button = getattr(self, "_active_run_config_button", None)
-        if button is None:
-            return
-        active_name = self._active_named_run_config_name
-        button.setText(active_name if active_name else "Default")
-        if self._loaded_project is None:
-            button.setEnabled(True)  # menu still useful: Run With Arguments is always available
-        else:
-            button.setEnabled(True)
-
-    def _current_theme_tokens(self) -> ShellThemeTokens:
-        return self._resolve_theme_tokens()
-
-
     def _handle_start_python_console_action(self) -> bool:
         self._repl_manager.restart()
         self._focus_python_console_tab()
@@ -3439,35 +2349,6 @@ class MainWindow(QMainWindow):
         if self._run_log_panel is not None:
             self._run_log_panel.begin_run()
 
-    def _start_session(
-        self,
-        *,
-        mode: str,
-        entry_file: str | None = None,
-        argv: list[str] | None = None,
-        working_directory: str | None = None,
-        env_overrides: dict[str, str] | None = None,
-        breakpoints: list[DebugBreakpoint] | list[dict[str, object]] | None = None,
-        debug_exception_policy: DebugExceptionPolicy | None = None,
-        source_maps: list[DebugSourceMap] | None = None,
-        skip_save: bool = False,
-    ) -> bool:
-        presenter = getattr(self, "_run_debug_presenter", None)
-        if presenter is None:
-            presenter = RunDebugPresenter(self)
-            self._run_debug_presenter = presenter
-        return presenter.start_session(
-            mode=mode,
-            entry_file=entry_file,
-            argv=argv,
-            working_directory=working_directory,
-            env_overrides=env_overrides,
-            breakpoints=breakpoints,
-            debug_exception_policy=debug_exception_policy,
-            source_maps=source_maps,
-            skip_save=skip_save,
-        )
-
     def _handle_stop_action(self) -> None:
         self._run_session_controller.stop_session(lambda text, stream: self._append_console_line(text, stream=stream))
         self._set_run_status("stopping")
@@ -3477,9 +2358,9 @@ class MainWindow(QMainWindow):
         if self._run_service.supervisor.is_running():
             self._run_service.stop_run()
         if self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._handle_rerun_last_debug_target_action()
+            self._run_launch_workflow.handle_rerun_last_debug_target_action()
         else:
-            self._handle_run_action()
+            self._run_launch_workflow.handle_run_action()
 
     def _handle_clear_console_action(self) -> None:
         self._console_model.clear()
@@ -3839,77 +2720,13 @@ class MainWindow(QMainWindow):
         trigger_character: str,
     ) -> None:
         """Request live Python Console completions off the UI thread."""
-
-        # #region agent log
-        import json as _agent_json
-        import threading as _agent_threading
-        import time as _agent_time
-        import traceback as _agent_tb
-        _AGENT_LOG_PATH = "/home/joshua/Documents/ChoreBoyCodeStudio/.cursor/debug-0b96d3.log"
-
-        def _agent_log_mw(message, data=None, location=""):
-            try:
-                payload = {
-                    "sessionId": "0b96d3",
-                    "location": location,
-                    "message": message,
-                    "data": data or {},
-                    "timestamp": int(_agent_time.time() * 1000),
-                    "thread": _agent_threading.current_thread().name,
-                }
-                with open(_AGENT_LOG_PATH, "a", encoding="utf-8") as _f:
-                    _f.write(_agent_json.dumps(payload, default=repr) + "\n")
-            except Exception:
-                pass
-
-        _agent_log_mw("repl completion request spawning thread", {"gen": request_generation, "active_threads": _agent_threading.active_count(), "trigger_kind": trigger_kind}, "main_window.py:_request_python_console_completion_async")
-        # #endregion
-
-        def work() -> None:
-            # #region agent log
-            _agent_log_mw("repl work() thread start - calling _repl_manager.complete", {"gen": request_generation}, "main_window.py:work")
-            try:
-            # #endregion
-                envelope = self._repl_manager.complete(
-                    line_buffer=line_buffer,
-                    cursor_offset=cursor_offset,
-                    trigger_kind=trigger_kind,
-                    trigger_character=trigger_character,
-                    max_results=100,
-                )
-            # #region agent log
-            except BaseException as _exc:
-                _agent_log_mw("repl work() _repl_manager.complete EXCEPTION", {"gen": request_generation, "type": type(_exc).__name__, "value": repr(_exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "main_window.py:work")
-                raise
-            _agent_log_mw("repl work() _repl_manager.complete returned", {"gen": request_generation, "n_items": len(envelope.items), "degradation": envelope.degradation_reason}, "main_window.py:work")
-            # #endregion
-
-            def apply() -> None:
-                # #region agent log
-                _agent_log_mw("repl apply() running on main thread", {"gen": request_generation, "n_items": len(envelope.items)}, "main_window.py:apply")
-                try:
-                # #endregion
-                    if self._python_console_widget is None:
-                        return
-                    self._python_console_widget.show_completion_items_for_request(
-                        request_generation=request_generation,
-                        items=envelope.items,
-                    )
-                    if envelope.degradation_reason:
-                        self.statusBar().showMessage(
-                            f"Python Console completion unavailable: {envelope.degradation_reason}",
-                            4000,
-                        )
-                # #region agent log
-                except BaseException as _exc:
-                    _agent_log_mw("repl apply() EXCEPTION", {"gen": request_generation, "type": type(_exc).__name__, "value": repr(_exc)[:500], "traceback": _agent_tb.format_exc()[:8000]}, "main_window.py:apply")
-                    raise
-                # #endregion
-
-            self._dispatch_to_main_thread(apply)
-
-        thread = threading.Thread(target=work, daemon=True)
-        thread.start()
+        self._python_console_workflow.request_completion_async(
+            line_buffer,
+            cursor_offset,
+            request_generation,
+            trigger_kind,
+            trigger_character,
+        )
 
     def _append_debug_output_line(self, text: str) -> None:
         if self._debug_panel is None:
@@ -3978,7 +2795,7 @@ class MainWindow(QMainWindow):
             self._menu_registry,
             has_project=self._loaded_project is not None,
             has_active_file=self._has_active_python_file(),
-            has_breakpoints=bool(self._breakpoints_by_file),
+            has_breakpoints=bool(self._debug_control_workflow.breakpoint_store.breakpoints_by_file),
         )
         if self._menu_registry is None:
             return
@@ -4008,7 +2825,8 @@ class MainWindow(QMainWindow):
         rerun_last_debug_action = self._menu_registry.action("shell.action.run.rerunLastDebugTarget")
         if rerun_last_debug_action is not None:
             rerun_last_debug_action.setEnabled(
-                self._last_debug_target is not None and not self._run_service.supervisor.is_running()
+                self._run_launch_workflow.has_rerun_target()
+                and not self._run_service.supervisor.is_running()
             )
         exception_settings_action = self._menu_registry.action("shell.action.run.debugExceptionStops")
         if exception_settings_action is not None:
@@ -4173,7 +2991,7 @@ class MainWindow(QMainWindow):
             )
             transient_entry_file = getattr(self, "_active_transient_entry_file_path", None)
             if transient_entry_file:
-                self._delete_transient_entry_file(transient_entry_file)
+                self._run_launch_workflow.delete_transient_entry_file(transient_entry_file)
                 self._active_transient_entry_file_path = None
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
@@ -4220,33 +3038,6 @@ class MainWindow(QMainWindow):
     def _set_problems(self, problems: list[ProblemEntry]) -> None:
         self._stored_runtime_problems = problems
         self._render_merged_problems_panel()
-
-    def _set_search_results(self, matches: list[SearchMatch], query: str) -> None:
-        if self._problems_panel is None:
-            return
-        search_items = [
-            ResultItem(
-                label=match.line_text.strip(),
-                file_path=match.absolute_path,
-                line_number=match.line_number,
-                tooltip=match.absolute_path,
-            )
-            for match in matches
-        ]
-        self._problems_panel.set_results(f"Search: {query}", search_items)
-        self._update_problems_tab_title(self._problems_panel.problem_count())
-
-    def _schedule_search_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        coordinator = getattr(self, "_search_results_coordinator", None)
-        if coordinator is None:
-            self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))
-            return
-        coordinator.schedule_results_update(matches, query)
-
-    def _handle_search_worker_done(self, started_at: float, query: str) -> None:
-        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-        self._logger.info("Find in files telemetry: query=%r elapsed_ms=%.2f", query, elapsed_ms)
-        self._dispatch_to_main_thread(lambda: setattr(self, "_active_search_worker", None))
 
     def _start_symbol_indexing(self, project_root: str) -> None:
         if not self._intelligence_runtime_settings.cache_enabled:
@@ -4377,9 +3168,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_semantic_session"):
             self._intelligence_controller.cancel_all()
             self._intelligence_controller.shutdown()
-        if self._active_search_worker is not None and self._active_search_worker.is_running():
-            self._active_search_worker.cancel()
-        self._active_search_worker = None
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
             self._active_symbol_index_worker.cancel()
         self._active_symbol_index_worker = None
@@ -4409,8 +3197,8 @@ class MainWindow(QMainWindow):
             self._python_console_widget.set_session_active(False)
 
     def changeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.type() == QEvent.PaletteChange and not self._is_applying_theme_styles:
-            self._apply_theme_styles()
+        if event.type() == QEvent.PaletteChange and not self._shell_theme_workflow.host.is_applying_theme_styles:
+            self._shell_theme_workflow.apply_theme_styles()
         super().changeEvent(event)
 
     def _configure_window_frame(self) -> None:
@@ -4548,47 +3336,6 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._get_project_tree_presenter().show_single_item_context_menu(position, entry)
 
-    def _handle_tree_run_file(self, absolute_path: str) -> bool:
-        entry_path = Path(absolute_path).expanduser().resolve()
-        if entry_path.suffix.lower() != ".py":
-            return False
-        return self._start_session(
-            mode=constants.RUN_MODE_PYTHON_SCRIPT,
-            entry_file=str(entry_path),
-        )
-
-    def _handle_tree_run_file_with_arguments(self, absolute_path: str) -> bool:
-        """Open the Run With Arguments dialog pre-filled with ``absolute_path``."""
-
-        entry_path = Path(absolute_path).expanduser().resolve()
-        if entry_path.suffix.lower() != ".py":
-            return False
-        loaded_project = self._loaded_project
-        project_root = loaded_project.project_root if loaded_project is not None else None
-        default_env: Mapping[str, str] = (
-            dict(loaded_project.metadata.env_overrides)
-            if loaded_project is not None
-            else {}
-        )
-        initial = RunWithArgumentsInitial(
-            entry_file=str(entry_path),
-            argv=(),
-            working_directory=None,
-            env_overrides=default_env,
-            recent_argv_history=tuple(self._settings_service.load_recent_argv_history()),
-            project_root=project_root,
-        )
-        invocation = RunWithArgumentsDialog.run_dialog(
-            self,
-            initial=initial,
-            tokens=self._current_theme_tokens(),
-        )
-        if invocation is None:
-            return False
-        if invocation.argv_text:
-            self._settings_service.push_recent_argv_history(invocation.argv_text)
-        return self._launch_ad_hoc_run_invocation(invocation)
-
     def _show_bulk_context_menu(
         self, position: object, selected: list[tuple[str, str, bool]],
     ) -> None:
@@ -4633,25 +3380,7 @@ class MainWindow(QMainWindow):
             self._handle_tree_bulk_delete([entry[0] for entry in selected])
 
     def _handle_tree_delete(self, target_path: str) -> None:
-        confirmation = QMessageBox.question(
-            self,
-            "Move to Trash",
-            f"Move '{Path(target_path).name}' to trash?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if confirmation != QMessageBox.Yes:
-            return
-        delete_snapshots = self._local_history_workflow.capture_text_history_snapshots([target_path])
-        error_message = self._project_tree_action_coordinator.handle_delete(target_path)
-        if error_message is not None:
-            QMessageBox.warning(self, "Move to Trash", error_message)
-            return
-        self._local_history_workflow.record_transaction(
-            delete_snapshots,
-            source="delete",
-            label=f"Delete '{Path(target_path).name}'",
-        )
+        self._project_tree_action_workflow.delete_paths(target_path)
 
     def _handle_tree_duplicate(self, source_path: str) -> None:
         error_message = self._project_tree_action_coordinator.handle_duplicate(source_path)
@@ -4659,25 +3388,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Duplicate", error_message)
 
     def _handle_tree_bulk_delete(self, paths: list[str]) -> None:
-        names = "\n".join(f"  • {Path(p).name}" for p in paths)
-        confirmation = QMessageBox.question(
-            self,
-            "Move to Trash",
-            f"Move {len(paths)} items to trash?\n\n{names}",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if confirmation != QMessageBox.Yes:
-            return
-        delete_snapshots = self._local_history_workflow.capture_text_history_snapshots(paths)
-        failed, deleted_paths = self._project_tree_action_coordinator.handle_bulk_delete(paths)
-        self._local_history_workflow.record_transaction(
-            self._local_history_workflow.filter_snapshots_for_paths(delete_snapshots, deleted_paths),
-            source="delete",
-            label="Bulk delete from project tree",
-        )
-        if failed:
-            QMessageBox.warning(self, "Move to Trash", "\n".join(failed))
+        self._project_tree_action_workflow.bulk_delete(paths)
 
     def _handle_tree_bulk_duplicate(self, paths: list[str]) -> None:
         failed = self._project_tree_action_coordinator.handle_bulk_duplicate(paths)
@@ -4966,7 +3677,8 @@ class MainWindow(QMainWindow):
             self._local_history_workflow.delete_draft(tab_state.file_path)
         self._refresh_save_action_states()
         self._update_editor_status_for_path(tab_state.file_path)
-        self._schedule_realtime_lint(tab_state.file_path)
+        if not self._is_shutting_down:
+            self._diagnostics_orchestrator.schedule_realtime_lint(tab_state.file_path)
         self._outline_refresh_timer.start()
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
@@ -5005,104 +3717,6 @@ class MainWindow(QMainWindow):
 
     def _editor_buffer_revision(self, file_path: str) -> int | None:
         return self._get_editor_tabs_coordinator().buffer_revision(file_path)
-
-    def _request_editor_completions_async(
-        self,
-        *,
-        file_path: str,
-        editor_widget: CodeEditorWidget,
-        prefix: str,
-        source_text: str,
-        cursor_position: int,
-        manual_trigger: bool,
-        request_generation: int,
-        trigger_kind: str,
-        trigger_character: str,
-    ) -> None:
-        started_at = time.perf_counter()
-        requested_revision = self._editor_buffer_revision(file_path)
-        request = CompletionRequest(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            current_file_path=file_path,
-            project_root=None if self._loaded_project is None else self._loaded_project.project_root,
-            trigger_is_manual=manual_trigger,
-            min_prefix_chars=self._completion_min_chars,
-            max_results=100,
-            trigger_kind=trigger_kind,
-            trigger_character=trigger_character,
-            buffer_revision=requested_revision,
-        )
-        fast_envelope = self._intelligence_controller.complete_fast(request=request)
-        if fast_envelope.items:
-            active_widget = self._editor_widgets_by_path.get(file_path)
-            if active_widget is editor_widget and self._editor_buffer_revision(file_path) == requested_revision:
-                if self._intelligence_runtime_settings.metrics_logging_enabled:
-                    self._logger.info(
-                        "Completion telemetry: file=%s phase=%s count=%s timings=%s",
-                        file_path,
-                        fast_envelope.source_phase,
-                        len(fast_envelope.items),
-                        fast_envelope.latency_breakdown,
-                    )
-                editor_widget.show_completion_items_for_request(
-                    request_generation=request_generation,
-                    prefix=prefix,
-                    items=fast_envelope.items,
-                )
-
-        def on_success(result: CompletionRequestResult) -> None:
-            generation = result.request_generation
-            completion_prefix = result.prefix
-            completions = result.envelope.items
-            active_widget = self._editor_widgets_by_path.get(file_path)
-            if active_widget is not editor_widget:
-                return
-            if self._editor_buffer_revision(file_path) != result.buffer_revision:
-                return
-            degradation_reason = result.envelope.degradation_reason
-            if degradation_reason and degradation_reason not in self._reported_completion_degradation_reasons:
-                self._reported_completion_degradation_reasons.add(degradation_reason)
-                self.statusBar().showMessage(
-                    "Python completion is using approximate results; semantic engine failed. See app log.",
-                    5000,
-                )
-            if self._intelligence_runtime_settings.metrics_logging_enabled:
-                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-                if elapsed_ms > 150.0:
-                    self._logger.warning(
-                        "Completion latency warning: file=%s phase=%s elapsed_ms=%.2f count=%s timings=%s",
-                        file_path,
-                        result.envelope.source_phase,
-                        elapsed_ms,
-                        len(completions),
-                        result.envelope.latency_breakdown,
-                    )
-                else:
-                    self._logger.info(
-                        "Completion telemetry: file=%s phase=%s elapsed_ms=%.2f count=%s timings=%s",
-                        file_path,
-                        result.envelope.source_phase,
-                        elapsed_ms,
-                        len(completions),
-                        result.envelope.latency_breakdown,
-                    )
-            editor_widget.show_completion_items_for_request(
-                request_generation=generation,
-                prefix=completion_prefix,
-                items=completions,
-            )
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Async completion request failed for %s: %s", file_path, exc)
-
-        self._intelligence_controller.request_completion(
-            request=request,
-            prefix=prefix,
-            request_generation=request_generation,
-            on_success=on_success,
-            on_error=on_error,
-        )
 
     def _request_completion_item_resolve_async(
         self,
@@ -5245,7 +3859,7 @@ class MainWindow(QMainWindow):
         if widget is not None:
             self._release_editor_widget(widget)
         self._editor_manager.close_file(file_path)
-        self._breakpoints_by_file.pop(file_path, None)
+        self._debug_control_workflow.breakpoint_store.clear_file(file_path)
         self._stored_lint_diagnostics.pop(file_path, None)
         self._render_merged_problems_panel()
         self._debug_control_workflow.refresh_breakpoints_list()
@@ -5414,74 +4028,7 @@ class MainWindow(QMainWindow):
         self._refresh_save_action_states()
 
     def _check_for_external_file_change(self, file_path: str) -> None:
-        tab_state = self._editor_manager.get_tab(file_path)
-        editor_widget = self._editor_widgets_by_path.get(file_path)
-        if tab_state is None or editor_widget is None:
-            return
-
-        current_mtime = self._editor_manager.current_disk_mtime(file_path)
-        if current_mtime is None or current_mtime == tab_state.last_known_mtime:
-            return
-
-        try:
-            disk_content = Path(file_path).read_text(encoding="utf-8")
-        except OSError:
-            self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
-            return
-
-        if disk_content == tab_state.current_content:
-            tab_state.mark_saved(last_known_mtime=current_mtime)
-            self._refresh_save_action_states()
-            return
-
-        if tab_state.is_dirty:
-            message = (
-                "This file changed on disk while you have unsaved changes.\n\n"
-                "Reloading will discard editor changes."
-            )
-        else:
-            message = "This file changed on disk. Reload the file from disk?"
-
-        choice = QMessageBox.question(
-            self,
-            "External file change detected",
-            message,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No if tab_state.is_dirty else QMessageBox.Yes,
-        )
-
-        if choice == QMessageBox.Yes:
-            if tab_state.is_dirty and tab_state.current_content != disk_content:
-                self._local_history_workflow.record_checkpoint(
-                    file_path,
-                    tab_state.current_content,
-                    source="external_reload_discarded_buffer",
-                    label="Discarded buffer during disk reload",
-                )
-            editor_widget.blockSignals(True)
-            editor_widget.setPlainText(disk_content)
-            editor_widget.blockSignals(False)
-            self._apply_detected_indentation_for_widget(file_path, editor_widget, disk_content)
-            refreshed_tab = self._editor_manager.update_tab_content(file_path, disk_content)
-            refreshed_tab.mark_saved(last_known_mtime=current_mtime)
-            tab_index = self._tab_index_for_path(file_path)
-            if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._refresh_tab_presentation(file_path)
-            self._local_history_workflow.record_checkpoint(
-                file_path,
-                disk_content,
-                source="external_reload",
-                label="Reloaded from disk after external change",
-            )
-            self._local_history_workflow.discard_drafts_for_paths([file_path])
-            self._refresh_save_action_states()
-            self._update_editor_status_for_path(file_path)
-            return
-
-        self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
-        if not tab_state.is_dirty:
-            tab_state.original_content = disk_content
-            self._handle_editor_text_changed(file_path, editor_widget)
+        self._external_file_change_workflow.check_and_handle(file_path)
 
     def _poll_external_file_changes(self) -> None:
         stale_paths = self._editor_manager.stale_open_paths()
@@ -5515,15 +4062,6 @@ class MainWindow(QMainWindow):
         )
         return _filter_tree_signature_entries(tuple(entry.relative_path for entry in entries))
 
-    def _schedule_realtime_lint(self, file_path: str) -> None:
-        if self._is_shutting_down:
-            return
-        self._diagnostics_orchestrator.schedule_realtime_lint(file_path)
-
-    def _run_scheduled_realtime_lint(self) -> None:
-        if self._is_shutting_down:
-            return
-        self._diagnostics_orchestrator.run_scheduled_realtime_lint()
 
 def _enable_auto_reindent_flat_python_paste_in_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Settings-service updater that flips ``editor.auto_reindent_flat_python_paste`` on."""

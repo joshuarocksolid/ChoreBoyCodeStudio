@@ -68,12 +68,12 @@ def test_run_project_preflight_opens_runtime_center_for_missing_entry(
             ),
         )
         monkeypatch.setattr(
-            window,
-            "_start_session",
+            window._run_launch_workflow,
+            "start_session",
             lambda **_kwargs: pytest.fail("run should not start when preflight fails"),
         )
 
-        started = window._handle_run_project_action()
+        started = window._run_launch_workflow.handle_run_project_action()
 
         assert started is False
         assert len(opened_dialogs) == 1

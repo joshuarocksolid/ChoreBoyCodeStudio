@@ -104,7 +104,9 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
     window_any._open_file_at_line = (
         lambda path, line, preview=False: opened_at_line_with_preview.append((path, line, preview))
     )
-    monkeypatch.setattr(MainWindow, "_resolve_theme_tokens", lambda _self: _DUMMY_TOKENS)
+    window_any._shell_theme_workflow = SimpleNamespace(
+        resolve_theme_tokens=lambda: _DUMMY_TOKENS,
+    )
 
     MainWindow._handle_quick_open_action(window)
 

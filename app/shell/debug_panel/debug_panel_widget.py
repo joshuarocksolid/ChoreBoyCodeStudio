@@ -6,20 +6,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import QFont, QFontDatabase
 from PySide2.QtWidgets import (
-    QAbstractItemView,
     QAction,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
     QMenu,
-    QPlainTextEdit,
-    QSizePolicy,
     QSplitter,
-    QToolButton,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -32,143 +22,26 @@ from app.debug.debug_models import (
     DebugScope,
     DebugSessionState,
     DebugThread,
-    DebugWatchResult,
     DebugVariable,
+    DebugWatchResult,
 )
-
-
-_ROLE_FILE_PATH = Qt.UserRole + 1
-_ROLE_LINE_NUMBER = Qt.UserRole + 2
-_ROLE_IS_CURRENT_FRAME = Qt.UserRole + 3
-_ROLE_FRAME_ID = Qt.UserRole + 4
-_ROLE_VARIABLE_REFERENCE = Qt.UserRole + 5
-_ROLE_BREAKPOINT_ENABLED = Qt.UserRole + 6
-
-
-class _SectionHeader(QWidget):
-    """Compact header bar for a debug panel section."""
-
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("shell.debug.sectionHeader")
-        self.setFixedHeight(22)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 0, 4, 0)
-        layout.setSpacing(4)
-
-        self._title_label = QLabel(title, self)
-        self._title_label.setObjectName("shell.debug.sectionTitle")
-        layout.addWidget(self._title_label)
-
-        self._count_label = QLabel("", self)
-        self._count_label.setObjectName("shell.debug.sectionCount")
-        layout.addWidget(self._count_label)
-
-        layout.addStretch(1)
-
-    def set_count(self, count: int) -> None:
-        self._count_label.setText(str(count) if count > 0 else "")
-
-    def add_action_button(self, text: str, tooltip: str = "") -> QToolButton:
-        btn = QToolButton(self)
-        btn.setObjectName("shell.debug.sectionBtn")
-        btn.setText(text)
-        btn.setCursor(Qt.PointingHandCursor)
-        if tooltip:
-            btn.setToolTip(tooltip)
-        self.layout().addWidget(btn)
-        return btn
-
-
-class _StatusHeader(QWidget):
-    """Status bar across the top of the debug panel showing execution state."""
-
-    refresh_stack_clicked: Any = Signal()
-    refresh_locals_clicked: Any = Signal()
-    clear_clicked: Any = Signal()
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("shell.debug.statusHeader")
-        self.setFixedHeight(28)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(6)
-
-        self._dot = QLabel(self)
-        self._dot.setObjectName("shell.debug.statusDot")
-        self._dot.setFixedSize(10, 10)
-        layout.addWidget(self._dot)
-
-        self._label = QLabel("Idle", self)
-        self._label.setObjectName("shell.debug.statusLabel")
-        layout.addWidget(self._label)
-
-        layout.addStretch(1)
-
-        refresh_stack_btn = QToolButton(self)
-        refresh_stack_btn.setObjectName("shell.debug.sectionBtn")
-        refresh_stack_btn.setText("Stack")
-        refresh_stack_btn.setToolTip("Refresh call stack")
-        refresh_stack_btn.setCursor(Qt.PointingHandCursor)
-        refresh_stack_btn.clicked.connect(self.refresh_stack_clicked)
-        layout.addWidget(refresh_stack_btn)
-
-        refresh_locals_btn = QToolButton(self)
-        refresh_locals_btn.setObjectName("shell.debug.sectionBtn")
-        refresh_locals_btn.setText("Locals")
-        refresh_locals_btn.setToolTip("Refresh local variables")
-        refresh_locals_btn.setCursor(Qt.PointingHandCursor)
-        refresh_locals_btn.clicked.connect(self.refresh_locals_clicked)
-        layout.addWidget(refresh_locals_btn)
-
-        clear_btn = QToolButton(self)
-        clear_btn.setObjectName("shell.debug.sectionBtn")
-        clear_btn.setText("Clear")
-        clear_btn.setToolTip("Clear debug output")
-        clear_btn.setCursor(Qt.PointingHandCursor)
-        clear_btn.clicked.connect(self.clear_clicked)
-        layout.addWidget(clear_btn)
-
-    def update_state(self, state: DebugExecutionState, location: str = "") -> None:
-        labels = {
-            DebugExecutionState.IDLE: "Idle",
-            DebugExecutionState.RUNNING: "Running",
-            DebugExecutionState.PAUSED: "Paused",
-            DebugExecutionState.EXITED: "Session ended",
-        }
-        dot_classes = {
-            DebugExecutionState.IDLE: "idle",
-            DebugExecutionState.RUNNING: "running",
-            DebugExecutionState.PAUSED: "paused",
-            DebugExecutionState.EXITED: "idle",
-        }
-        text = labels.get(state, "Idle")
-        if location and state == DebugExecutionState.PAUSED:
-            text = f"Paused at {location}"
-        self._label.setText(text)
-        self._dot.setProperty("debugState", dot_classes.get(state, "idle"))
-        self._dot.style().unpolish(self._dot)
-        self._dot.style().polish(self._dot)
-
-
-def _make_section(header: _SectionHeader, content: QWidget, parent: QWidget | None = None) -> QWidget:
-    """Combine a section header with its content widget in a vertical stack."""
-    container = QWidget(parent)
-    layout = QVBoxLayout(container)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(0)
-    layout.addWidget(header)
-    layout.addWidget(content, 1)
-    return container
-
-
-def _mono_font() -> QFont:
-    font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-    font.setPointSize(9)
-    return font
+from app.shell.debug_panel.debug_panel_trees import (
+    ROLE_BREAKPOINT_ENABLED,
+    ROLE_FILE_PATH,
+    ROLE_FRAME_ID,
+    ROLE_IS_CURRENT_FRAME,
+    ROLE_LINE_NUMBER,
+    ROLE_VARIABLE_REFERENCE,
+    _SectionHeader,
+    _StatusHeader,
+    build_breakpoints_tree,
+    build_output_section,
+    build_stack_tree,
+    build_threads_tree,
+    build_variables_tree,
+    build_watch_section,
+    make_section,
+)
 
 
 class DebugPanelWidget(QWidget):
@@ -211,18 +84,26 @@ class DebugPanelWidget(QWidget):
         left_splitter.setHandleWidth(1)
 
         self._threads_header = _SectionHeader("THREADS")
-        self._threads_tree = self._build_threads_tree()
-        left_splitter.addWidget(_make_section(self._threads_header, self._threads_tree))
+        self._threads_tree = build_threads_tree()
+        left_splitter.addWidget(make_section(self._threads_header, self._threads_tree))
 
         self._stack_header = _SectionHeader("CALL STACK")
-        self._stack_tree = self._build_stack_tree()
-        left_splitter.addWidget(_make_section(self._stack_header, self._stack_tree))
+        self._stack_tree = build_stack_tree(
+            on_item_clicked=self._on_stack_item_clicked,
+            on_item_double_clicked=self._on_stack_item_double_clicked,
+        )
+        left_splitter.addWidget(make_section(self._stack_header, self._stack_tree))
 
         self._bp_header = _SectionHeader("BREAKPOINTS")
         self._bp_clear_btn = self._bp_header.add_action_button("Clear All", "Remove all breakpoints")
         self._bp_clear_btn.clicked.connect(self._handle_clear_all_breakpoints)
-        self._bp_tree = self._build_breakpoints_tree()
-        left_splitter.addWidget(_make_section(self._bp_header, self._bp_tree))
+        self._bp_tree = build_breakpoints_tree(
+            on_context_menu=self._on_bp_context_menu,
+            on_item_clicked=self._on_bp_item_clicked,
+            on_item_double_clicked=self._on_bp_item_double_clicked,
+            on_item_changed=self._on_bp_item_changed,
+        )
+        left_splitter.addWidget(make_section(self._bp_header, self._bp_tree))
 
         left_splitter.setStretchFactor(0, 1)
         left_splitter.setStretchFactor(1, 3)
@@ -230,8 +111,11 @@ class DebugPanelWidget(QWidget):
         main_splitter.addWidget(left_splitter)
 
         self._vars_header = _SectionHeader("VARIABLES")
-        self._vars_tree = self._build_variables_tree()
-        main_splitter.addWidget(_make_section(self._vars_header, self._vars_tree))
+        self._vars_tree = build_variables_tree(
+            on_item_expanded=self._on_variable_item_expanded,
+            on_item_collapsed=self._on_variable_item_collapsed,
+        )
+        main_splitter.addWidget(make_section(self._vars_header, self._vars_tree))
 
         right_splitter = QSplitter(Qt.Vertical, main_splitter)
         right_splitter.setObjectName("shell.debug.rightSplitter")
@@ -239,12 +123,17 @@ class DebugPanelWidget(QWidget):
         right_splitter.setHandleWidth(1)
 
         self._watch_header = _SectionHeader("WATCH")
-        self._watch_tree, self._watch_input, watch_container = self._build_watch_section()
-        right_splitter.addWidget(_make_section(self._watch_header, watch_container))
+        self._watch_tree, self._watch_input, watch_container = build_watch_section(
+            on_add_watch=self._handle_add_watch,
+            on_context_menu=self._on_watch_context_menu,
+        )
+        right_splitter.addWidget(make_section(self._watch_header, watch_container))
 
         self._output_header = _SectionHeader("DEBUG OUTPUT")
-        self._output_widget, self._command_input, self._command_send_btn, output_container = self._build_output_section()
-        right_splitter.addWidget(_make_section(self._output_header, output_container))
+        self._output_widget, self._command_input, self._command_send_btn, output_container = build_output_section(
+            on_submit_command=self._handle_submit_command,
+        )
+        right_splitter.addWidget(make_section(self._output_header, output_container))
 
         right_splitter.setStretchFactor(0, 2)
         right_splitter.setStretchFactor(1, 3)
@@ -262,160 +151,7 @@ class DebugPanelWidget(QWidget):
         self._last_auto_eval_key: tuple[str, int, str] | None = None
         self.set_command_input_enabled(False)
 
-    # -- Tree builders --------------------------------------------------------
-
-    def _build_threads_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
-        tree.setObjectName("shell.debug.threadsTree")
-        tree.setHeaderLabels(["Thread"])
-        tree.setRootIsDecorated(False)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().hide()
-        tree.setIndentation(0)
-        return tree
-
-    def _build_stack_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
-        tree.setObjectName("shell.debug.stackTree")
-        tree.setHeaderLabels(["Function", "Location"])
-        tree.setRootIsDecorated(False)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().setStretchLastSection(True)
-        tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
-        tree.header().resizeSection(0, 140)
-        tree.setIndentation(0)
-        tree.itemClicked.connect(self._on_stack_item_clicked)
-        tree.itemDoubleClicked.connect(self._on_stack_item_double_clicked)
-        return tree
-
-    def _build_variables_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
-        tree.setObjectName("shell.debug.variablesTree")
-        tree.setHeaderLabels(["Name", "Value"])
-        tree.setRootIsDecorated(True)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().setStretchLastSection(True)
-        tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
-        tree.header().resizeSection(0, 120)
-        tree.setIndentation(12)
-        tree.itemExpanded.connect(self._on_variable_item_expanded)
-        tree.itemCollapsed.connect(self._on_variable_item_collapsed)
-        return tree
-
-    def _build_breakpoints_tree(self) -> QTreeWidget:
-        tree = QTreeWidget()
-        tree.setObjectName("shell.debug.breakpointsTree")
-        tree.setHeaderLabels(["Breakpoint", "Status"])
-        tree.setRootIsDecorated(False)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().setStretchLastSection(True)
-        tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
-        tree.header().resizeSection(0, 180)
-        tree.setIndentation(0)
-        tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        tree.customContextMenuRequested.connect(self._on_bp_context_menu)
-        tree.itemClicked.connect(self._on_bp_item_clicked)
-        tree.itemDoubleClicked.connect(self._on_bp_item_double_clicked)
-        tree.itemChanged.connect(self._on_bp_item_changed)
-        return tree
-
-    def _build_watch_section(self) -> tuple[QTreeWidget, QLineEdit, QWidget]:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        input_row = QWidget(container)
-        input_row.setObjectName("shell.debug.watchInputRow")
-        input_layout = QHBoxLayout(input_row)
-        input_layout.setContentsMargins(4, 3, 4, 3)
-        input_layout.setSpacing(4)
-
-        watch_input = QLineEdit(input_row)
-        watch_input.setObjectName("shell.debug.watchInput")
-        watch_input.setPlaceholderText("Add safe expression...")
-        watch_input.setToolTip("Watch expressions are evaluated in a safe read-only subset; function calls are blocked.")
-        watch_input.returnPressed.connect(self._handle_add_watch)
-        input_layout.addWidget(watch_input, 1)
-
-        add_btn = QToolButton(input_row)
-        add_btn.setObjectName("shell.debug.sectionBtn")
-        add_btn.setText("+")
-        add_btn.setToolTip("Add watch expression")
-        add_btn.setCursor(Qt.PointingHandCursor)
-        add_btn.clicked.connect(self._handle_add_watch)
-        input_layout.addWidget(add_btn)
-
-        layout.addWidget(input_row)
-
-        tree = QTreeWidget(container)
-        tree.setObjectName("shell.debug.watchTree")
-        tree.setHeaderLabels(["Expression", "Value"])
-        tree.setRootIsDecorated(False)
-        tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        tree.setAlternatingRowColors(True)
-        tree.setFont(_mono_font())
-        tree.header().setStretchLastSection(True)
-        tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
-        tree.header().resizeSection(0, 120)
-        tree.setIndentation(0)
-        tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        tree.customContextMenuRequested.connect(self._on_watch_context_menu)
-        layout.addWidget(tree, 1)
-
-        return tree, watch_input, container
-
-    def _build_output_widget(self) -> QPlainTextEdit:
-        widget = QPlainTextEdit()
-        widget.setObjectName("shell.debug.output")
-        widget.setReadOnly(True)
-        widget.setFont(_mono_font())
-        widget.setLineWrapMode(QPlainTextEdit.NoWrap)
-        return widget
-
-    def _build_output_section(self) -> tuple[QPlainTextEdit, QLineEdit, QToolButton, QWidget]:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        input_row = QWidget(container)
-        input_row.setObjectName("shell.debug.commandInputRow")
-        input_layout = QHBoxLayout(input_row)
-        input_layout.setContentsMargins(4, 3, 4, 3)
-        input_layout.setSpacing(4)
-
-        command_input = QLineEdit(input_row)
-        command_input.setObjectName("shell.debug.commandInput")
-        command_input.setPlaceholderText("Evaluate in selected frame...")
-        command_input.returnPressed.connect(self._handle_submit_command)
-        input_layout.addWidget(command_input, 1)
-
-        send_btn = QToolButton(input_row)
-        send_btn.setObjectName("shell.debug.sectionBtn")
-        send_btn.setText("Eval")
-        send_btn.setToolTip("Evaluate in selected debug frame")
-        send_btn.setCursor(Qt.PointingHandCursor)
-        send_btn.clicked.connect(self._handle_submit_command)
-        input_layout.addWidget(send_btn)
-
-        output_widget = self._build_output_widget()
-        layout.addWidget(input_row)
-        layout.addWidget(output_widget, 1)
-        return output_widget, command_input, send_btn, container
-
-    # -- Public API -----------------------------------------------------------
-
     def update_from_state(self, state: DebugSessionState) -> None:
-        """Refresh stack, variables, and status from debug session state."""
         location = ""
         selected_frame = state.selected_frame
         if selected_frame is not None:
@@ -451,7 +187,6 @@ class DebugPanelWidget(QWidget):
         return exprs
 
     def set_watch_value(self, expression: str, value: str) -> None:
-        """Update the value column for a watch expression."""
         for i in range(self._watch_tree.topLevelItemCount()):
             item = self._watch_tree.topLevelItem(i)
             if item.text(0).strip() == expression.strip():
@@ -480,8 +215,6 @@ class DebugPanelWidget(QWidget):
         self._command_input.setEnabled(enabled)
         self._command_send_btn.setEnabled(enabled)
 
-    # -- Internal refresh helpers ---------------------------------------------
-
     def _refresh_threads(self, threads: List[DebugThread]) -> None:
         self._threads_tree.clear()
         self._threads_header.set_count(len(threads))
@@ -501,11 +234,11 @@ class DebugPanelWidget(QWidget):
             item = QTreeWidgetItem()
             item.setText(0, frame.function_name)
             item.setText(1, f"{Path(frame.file_path).name}:{frame.line_number}")
-            item.setData(0, _ROLE_FILE_PATH, frame.file_path)
-            item.setData(0, _ROLE_LINE_NUMBER, frame.line_number)
-            item.setData(0, _ROLE_FRAME_ID, frame.frame_id)
+            item.setData(0, ROLE_FILE_PATH, frame.file_path)
+            item.setData(0, ROLE_LINE_NUMBER, frame.line_number)
+            item.setData(0, ROLE_FRAME_ID, frame.frame_id)
             is_selected = frame.frame_id == selected_frame_id or (selected_frame_id <= 0 and index == 0)
-            item.setData(0, _ROLE_IS_CURRENT_FRAME, is_selected)
+            item.setData(0, ROLE_IS_CURRENT_FRAME, is_selected)
             if is_selected:
                 bold_font = self._stack_tree.font()
                 bold_font.setBold(True)
@@ -527,7 +260,7 @@ class DebugPanelWidget(QWidget):
             scope_item = QTreeWidgetItem()
             scope_item.setText(0, scope.name)
             scope_item.setText(1, "")
-            scope_item.setData(0, _ROLE_VARIABLE_REFERENCE, scope.variables_reference)
+            scope_item.setData(0, ROLE_VARIABLE_REFERENCE, scope.variables_reference)
             scope_item.setFirstColumnSpanned(False)
             scope_item.setExpanded(True)
             self._vars_tree.addTopLevelItem(scope_item)
@@ -546,7 +279,7 @@ class DebugPanelWidget(QWidget):
         item.setText(0, variable.name)
         item.setText(1, variable.value_repr)
         item.setToolTip(1, variable.value_repr)
-        item.setData(0, _ROLE_VARIABLE_REFERENCE, variable.variables_reference)
+        item.setData(0, ROLE_VARIABLE_REFERENCE, variable.variables_reference)
         if variable.type_name:
             item.setToolTip(0, variable.type_name)
         if variable.variables_reference > 0:
@@ -594,9 +327,9 @@ class DebugPanelWidget(QWidget):
                 item.setText(0, label)
                 item.setText(1, "Verified" if breakpoint.verified else breakpoint.verification_message or "Pending")
                 item.setCheckState(0, Qt.Checked if breakpoint.enabled else Qt.Unchecked)
-                item.setData(0, _ROLE_FILE_PATH, breakpoint.file_path)
-                item.setData(0, _ROLE_LINE_NUMBER, breakpoint.line_number)
-                item.setData(0, _ROLE_BREAKPOINT_ENABLED, breakpoint.enabled)
+                item.setData(0, ROLE_FILE_PATH, breakpoint.file_path)
+                item.setData(0, ROLE_LINE_NUMBER, breakpoint.line_number)
+                item.setData(0, ROLE_BREAKPOINT_ENABLED, breakpoint.enabled)
                 item.setToolTip(0, f"{breakpoint.file_path}:{breakpoint.line_number}")
                 if breakpoint.verification_message:
                     item.setToolTip(1, breakpoint.verification_message)
@@ -604,32 +337,30 @@ class DebugPanelWidget(QWidget):
         finally:
             self._syncing_breakpoint_tree = False
 
-    # -- Slots ----------------------------------------------------------------
-
     def _on_stack_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
-        frame_id = item.data(0, _ROLE_FRAME_ID)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
+        frame_id = item.data(0, ROLE_FRAME_ID)
         if frame_id is not None:
             self.frame_selected_requested.emit(int(frame_id))
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
 
     def _on_stack_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
         if file_path and line_number is not None:
             self.navigate_permanent_requested.emit(file_path, int(line_number))
 
     def _on_bp_item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
         if file_path and line_number is not None:
             self.navigate_requested.emit(file_path, int(line_number))
 
     def _on_bp_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
         if file_path and line_number is not None:
             self.navigate_permanent_requested.emit(file_path, int(line_number))
 
@@ -640,8 +371,8 @@ class DebugPanelWidget(QWidget):
         menu = QMenu(self._bp_tree)
         edit_action = QAction("Edit Breakpoint...", menu)
         remove_action = QAction("Remove Breakpoint", menu)
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
         edit_action.triggered.connect(
             lambda: self._edit_breakpoint(file_path, line_number)
         )
@@ -663,8 +394,8 @@ class DebugPanelWidget(QWidget):
     def _on_bp_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if self._syncing_breakpoint_tree or column != 0:
             return
-        file_path = item.data(0, _ROLE_FILE_PATH)
-        line_number = item.data(0, _ROLE_LINE_NUMBER)
+        file_path = item.data(0, ROLE_FILE_PATH)
+        line_number = item.data(0, ROLE_LINE_NUMBER)
         enabled = item.checkState(0) == Qt.Checked
         if file_path and line_number is not None:
             self.breakpoint_toggle_requested.emit(file_path, int(line_number), enabled)
@@ -723,7 +454,7 @@ class DebugPanelWidget(QWidget):
             self.watch_evaluate_requested.emit(expr)
 
     def _on_variable_item_expanded(self, item: QTreeWidgetItem) -> None:
-        variables_reference = item.data(0, _ROLE_VARIABLE_REFERENCE)
+        variables_reference = item.data(0, ROLE_VARIABLE_REFERENCE)
         if variables_reference is None:
             return
         reference = int(variables_reference)
@@ -734,7 +465,7 @@ class DebugPanelWidget(QWidget):
             self.variable_expand_requested.emit(reference)
 
     def _on_variable_item_collapsed(self, item: QTreeWidgetItem) -> None:
-        variables_reference = item.data(0, _ROLE_VARIABLE_REFERENCE)
+        variables_reference = item.data(0, ROLE_VARIABLE_REFERENCE)
         if variables_reference is None:
             return
         reference = int(variables_reference)
