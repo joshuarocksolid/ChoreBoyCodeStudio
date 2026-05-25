@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.project.file_operation_models import FileOperationResult
+from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_tree_action_coordinator import NewFileResult, ProjectTreeActionCoordinator
 
 pytestmark = pytest.mark.unit
@@ -60,7 +61,7 @@ def _coordinator(
         remove_tab_at_index=lambda _index: None,
         release_editor_widget=lambda _widget: None,
         close_editor_file=lambda _path: None,
-        breakpoints_by_file={},
+        breakpoint_store=BreakpointStore(),
         refresh_breakpoints_list=lambda: None,
         remap_editor_paths=lambda _old, _new: {},
         update_tab_path_and_name=lambda _index, _path: None,

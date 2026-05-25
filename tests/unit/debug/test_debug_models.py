@@ -4,46 +4,30 @@ from __future__ import annotations
 
 import pytest
 
-from app.debug.debug_models import DebugEvent, DebugExecutionState, DebugFrame, DebugSessionState, DebugVariable
+from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState, DebugVariable
 
 pytestmark = pytest.mark.unit
 
 
-def test_debug_session_state_applies_legacy_events() -> None:
-    state = DebugSessionState()
+def test_debug_session_state_mark_exited_clears_inspector() -> None:
+    state = DebugSessionState(
+        execution_state=DebugExecutionState.PAUSED,
+        stop_reason="breakpoint",
+        frames=[DebugFrame(file_path="/tmp/run.py", line_number=12, function_name="main", frame_id=101)],
+        selected_frame_id=101,
+        variables=[DebugVariable(name="value", value_repr="42")],
+        variables_by_reference={7: [DebugVariable(name="child", value_repr="1")]},
+    )
 
-    state.apply_event(DebugEvent(event_type="running", message="running"))
-    assert state.execution_state == DebugExecutionState.RUNNING
-    assert state.stop_reason == ""
+    state.mark_exited(message="done")
 
-    state.apply_event(DebugEvent(event_type="paused", message="paused"))
-    assert state.execution_state == DebugExecutionState.PAUSED
-    assert state.stop_reason == "breakpoint"
-    assert state.last_message == "paused"
-
-    state.apply_event(DebugEvent(event_type="exited", message="done"))
     assert state.execution_state == DebugExecutionState.EXITED
     assert state.stop_reason == ""
     assert state.last_message == "done"
-
-
-def test_debug_session_state_updates_frames_variables_and_selected_frame() -> None:
-    state = DebugSessionState()
-    frame = DebugFrame(
-        file_path="/tmp/run.py",
-        line_number=12,
-        function_name="main",
-        frame_id=101,
-        thread_id=1,
-    )
-    variable = DebugVariable(name="value", value_repr="42")
-
-    state.apply_event(DebugEvent(event_type="paused", frames=[frame], variables=[variable]))
-
-    assert state.frames == [frame]
-    assert state.variables == [variable]
-    assert state.selected_frame_id == 101
-    assert state.selected_frame == frame
+    assert state.frames == []
+    assert state.variables == []
+    assert state.variables_by_reference == {}
+    assert state.selected_frame_id == 0
 
 
 def test_selected_frame_falls_back_to_first_frame_when_selection_missing() -> None:

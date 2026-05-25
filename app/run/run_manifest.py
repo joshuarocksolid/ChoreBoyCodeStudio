@@ -9,7 +9,7 @@ from typing import Any, Mapping, NoReturn, cast
 
 from app.core import constants
 from app.core.errors import RunManifestValidationError
-from app.debug.debug_breakpoints import build_breakpoint
+from app.debug.debug_breakpoints import breakpoint_to_wire_dict, parse_breakpoint_entry
 from app.debug.debug_models import (
     DebugBreakpoint,
     DebugExceptionPolicy,
@@ -25,6 +25,36 @@ ALLOWED_RUN_MODES = frozenset(
     }
 )
 
+_MODE_REQUIRED_FIELDS: dict[str, frozenset[str]] = {
+    constants.RUN_MODE_PYTHON_DEBUG: frozenset({"debug_transport"}),
+    constants.RUN_MODE_PYTHON_REPL: frozenset({"repl_control"}),
+}
+
+_MODE_FORBIDDEN_FIELDS: dict[str, frozenset[str]] = {
+    constants.RUN_MODE_PYTHON_SCRIPT: frozenset({"debug_transport", "repl_control"}),
+    constants.RUN_MODE_PYTHON_REPL: frozenset({"debug_transport"}),
+}
+
+
+@dataclass(frozen=True)
+class LoopbackTransportConfig:
+    """Shared loopback socket contract for debug and REPL control channels."""
+
+    protocol: str
+    host: str
+    port: int
+    session_token: str
+    connect_timeout_ms: int = 8000
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {
+            "protocol": self.protocol,
+            "host": self.host,
+            "port": self.port,
+            "session_token": self.session_token,
+            "connect_timeout_ms": self.connect_timeout_ms,
+        }
+
 
 @dataclass(frozen=True)
 class RunManifest:
@@ -37,14 +67,14 @@ class RunManifest:
     working_directory: str
     log_file: str
     mode: str
-    argv: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
+    argv: tuple[str, ...] = field(default_factory=tuple)
+    env: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     timestamp: str = ""
-    breakpoints: list[DebugBreakpoint] = field(default_factory=list)
+    breakpoints: tuple[DebugBreakpoint, ...] = field(default_factory=tuple)
     debug_transport: DebugTransportConfig | None = None
     repl_control: ReplControlConfig | None = None
     debug_exception_policy: DebugExceptionPolicy = field(default_factory=DebugExceptionPolicy)
-    source_maps: list[DebugSourceMap] = field(default_factory=list)
+    source_maps: tuple[DebugSourceMap, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -58,17 +88,7 @@ class RunManifest:
             "argv": list(self.argv),
             "env": dict(self.env),
             "timestamp": self.timestamp,
-            "breakpoints": [
-                {
-                    "breakpoint_id": breakpoint.breakpoint_id,
-                    "file_path": breakpoint.file_path,
-                    "line_number": breakpoint.line_number,
-                    "enabled": breakpoint.enabled,
-                    "condition": breakpoint.condition,
-                    "hit_condition": breakpoint.hit_condition,
-                }
-                for breakpoint in self.breakpoints
-            ],
+            "breakpoints": [breakpoint_to_wire_dict(breakpoint) for breakpoint in self.breakpoints],
             "debug_exception_policy": {
                 "stop_on_uncaught_exceptions": self.debug_exception_policy.stop_on_uncaught_exceptions,
                 "stop_on_raised_exceptions": self.debug_exception_policy.stop_on_raised_exceptions,
@@ -82,21 +102,21 @@ class RunManifest:
             ],
         }
         if self.debug_transport is not None:
-            payload["debug_transport"] = {
-                "protocol": self.debug_transport.protocol,
-                "host": self.debug_transport.host,
-                "port": self.debug_transport.port,
-                "session_token": self.debug_transport.session_token,
-                "connect_timeout_ms": self.debug_transport.connect_timeout_ms,
-            }
+            payload["debug_transport"] = LoopbackTransportConfig(
+                protocol=self.debug_transport.protocol,
+                host=self.debug_transport.host,
+                port=self.debug_transport.port,
+                session_token=self.debug_transport.session_token,
+                connect_timeout_ms=self.debug_transport.connect_timeout_ms,
+            ).to_wire_dict()
         if self.repl_control is not None:
-            payload["repl_control"] = {
-                "protocol": self.repl_control.protocol,
-                "host": self.repl_control.host,
-                "port": self.repl_control.port,
-                "session_token": self.repl_control.session_token,
-                "connect_timeout_ms": self.repl_control.connect_timeout_ms,
-            }
+            payload["repl_control"] = LoopbackTransportConfig(
+                protocol=self.repl_control.protocol,
+                host=self.repl_control.host,
+                port=self.repl_control.port,
+                session_token=self.repl_control.session_token,
+                connect_timeout_ms=self.repl_control.connect_timeout_ms,
+            ).to_wire_dict()
         return payload
 
 
@@ -109,6 +129,16 @@ class ReplControlConfig:
     port: int
     session_token: str
     connect_timeout_ms: int = 800
+
+    @classmethod
+    def from_loopback(cls, config: LoopbackTransportConfig) -> ReplControlConfig:
+        return cls(
+            protocol=config.protocol,
+            host=config.host,
+            port=config.port,
+            session_token=config.session_token,
+            connect_timeout_ms=config.connect_timeout_ms,
+        )
 
 
 def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = None) -> RunManifest:
@@ -139,27 +169,45 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
             manifest_path=manifest_path,
         )
 
-    argv = payload.get("argv", [])
-    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
-        _raise_manifest_error("argv must be a list of strings.", field="argv", manifest_path=manifest_path)
-
-    env = payload.get("env", {})
-    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
-        _raise_manifest_error("env must be an object of string key/value pairs.", field="env", manifest_path=manifest_path)
-
+    argv = _parse_argv(payload.get("argv", []), manifest_path=manifest_path)
+    env = _parse_env(payload.get("env", {}), manifest_path=manifest_path)
     timestamp = _require_non_empty_string(payload, "timestamp", manifest_path=manifest_path)
     breakpoints = _parse_breakpoints(payload.get("breakpoints", []), manifest_path=manifest_path)
-    debug_transport = _parse_debug_transport(payload.get("debug_transport"), manifest_path=manifest_path)
-    repl_control = _parse_repl_control(payload.get("repl_control"), manifest_path=manifest_path)
+    debug_transport = _parse_loopback_transport(
+        payload.get("debug_transport"),
+        manifest_path=manifest_path,
+        field_name="debug_transport",
+    )
+    repl_control_raw = _parse_loopback_transport(
+        payload.get("repl_control"),
+        manifest_path=manifest_path,
+        field_name="repl_control",
+    )
+    repl_control = (
+        ReplControlConfig.from_loopback(repl_control_raw)
+        if repl_control_raw is not None
+        else None
+    )
+    debug_transport_config = (
+        DebugTransportConfig(
+            protocol=debug_transport.protocol,
+            host=debug_transport.host,
+            port=debug_transport.port,
+            session_token=debug_transport.session_token,
+            connect_timeout_ms=debug_transport.connect_timeout_ms,
+        )
+        if debug_transport is not None
+        else None
+    )
     exception_policy = _parse_exception_policy(payload.get("debug_exception_policy"))
     source_maps = _parse_source_maps(payload.get("source_maps", []), manifest_path=manifest_path)
 
-    if mode == constants.RUN_MODE_PYTHON_DEBUG and debug_transport is None:
-        _raise_manifest_error(
-            "debug_transport is required for python_debug manifests.",
-            field="debug_transport",
-            manifest_path=manifest_path,
-        )
+    _validate_mode_fields(
+        mode,
+        debug_transport=debug_transport is not None,
+        repl_control=repl_control is not None,
+        manifest_path=manifest_path,
+    )
 
     return RunManifest(
         manifest_version=manifest_version,
@@ -169,11 +217,11 @@ def parse_run_manifest(payload: dict[str, Any], *, manifest_path: Path | None = 
         working_directory=working_directory,
         log_file=log_file,
         mode=mode,
-        argv=list(argv),
-        env=dict(env),
+        argv=argv,
+        env=env,
         timestamp=timestamp,
         breakpoints=breakpoints,
-        debug_transport=debug_transport,
+        debug_transport=debug_transport_config,
         repl_control=repl_control,
         debug_exception_policy=exception_policy,
         source_maps=source_maps,
@@ -243,11 +291,49 @@ def _raise_manifest_error(
     raise RunManifestValidationError(message, field=field, manifest_path=manifest_path)
 
 
+def _parse_argv(raw_argv: object, *, manifest_path: Path | None) -> tuple[str, ...]:
+    if not isinstance(raw_argv, list) or not all(isinstance(item, str) for item in raw_argv):
+        _raise_manifest_error("argv must be a list of strings.", field="argv", manifest_path=manifest_path)
+    return tuple(cast(list[str], raw_argv))
+
+
+def _parse_env(raw_env: object, *, manifest_path: Path | None) -> tuple[tuple[str, str], ...]:
+    if not isinstance(raw_env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in raw_env.items()):
+        _raise_manifest_error("env must be an object of string key/value pairs.", field="env", manifest_path=manifest_path)
+    env_dict = cast(dict[str, str], raw_env)
+    return tuple(sorted(env_dict.items()))
+
+
+def _validate_mode_fields(
+    mode: str,
+    *,
+    debug_transport: bool,
+    repl_control: bool,
+    manifest_path: Path | None,
+) -> None:
+    for field_name in _MODE_REQUIRED_FIELDS.get(mode, frozenset()):
+        present = debug_transport if field_name == "debug_transport" else repl_control
+        if not present:
+            _raise_manifest_error(
+                "%s is required for %s manifests." % (field_name, mode),
+                field=field_name,
+                manifest_path=manifest_path,
+            )
+    for field_name in _MODE_FORBIDDEN_FIELDS.get(mode, frozenset()):
+        present = debug_transport if field_name == "debug_transport" else repl_control
+        if present:
+            _raise_manifest_error(
+                "%s is not allowed for %s manifests." % (field_name, mode),
+                field=field_name,
+                manifest_path=manifest_path,
+            )
+
+
 def _parse_breakpoints(
     raw_breakpoints: object,
     *,
     manifest_path: Path | None,
-) -> list[DebugBreakpoint]:
+) -> tuple[DebugBreakpoint, ...]:
     if not isinstance(raw_breakpoints, list):
         _raise_manifest_error("breakpoints must be a list.", field="breakpoints", manifest_path=manifest_path)
 
@@ -273,67 +359,66 @@ def _parse_breakpoints(
                 field="breakpoints",
                 manifest_path=manifest_path,
             )
-        normalized.append(
-            build_breakpoint(
-                file_path=str(file_path),
-                line_number=int(line_number),
-                breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
-                enabled=bool(entry.get("enabled", True)),
-                condition=str(entry.get("condition", "")).strip(),
-                hit_condition=_parse_optional_positive_int(entry.get("hit_condition")),
+        parsed = parse_breakpoint_entry(entry)
+        if parsed is None:
+            _raise_manifest_error(
+                "breakpoints[%s] is invalid." % (index,),
+                field="breakpoints",
+                manifest_path=manifest_path,
             )
-        )
-    return normalized
+        normalized.append(parsed)
+    return tuple(normalized)
 
 
-def _parse_debug_transport(raw_value: object, *, manifest_path: Path | None) -> DebugTransportConfig | None:
+def _parse_loopback_transport(
+    raw_value: object,
+    *,
+    manifest_path: Path | None,
+    field_name: str,
+) -> LoopbackTransportConfig | None:
     if raw_value is None:
         return None
     if not isinstance(raw_value, Mapping):
-        _raise_manifest_error("debug_transport must be an object.", field="debug_transport", manifest_path=manifest_path)
+        _raise_manifest_error("%s must be an object." % (field_name,), field=field_name, manifest_path=manifest_path)
     protocol = str(raw_value.get("protocol", "")).strip()
     host = str(raw_value.get("host", "")).strip()
     port = _parse_optional_positive_int(raw_value.get("port"))
     session_token = str(raw_value.get("session_token", "")).strip()
-    connect_timeout_ms = _parse_optional_positive_int(raw_value.get("connect_timeout_ms")) or 8000
+    default_timeout = 8000 if field_name == "debug_transport" else 800
+    connect_timeout_ms = _parse_optional_positive_int(raw_value.get("connect_timeout_ms")) or default_timeout
     if not protocol or not host or port is None or not session_token:
         _raise_manifest_error(
-            "debug_transport requires protocol, host, port, and session_token.",
-            field="debug_transport",
+            "%s requires protocol, host, port, and session_token." % (field_name,),
+            field=field_name,
             manifest_path=manifest_path,
         )
-    return DebugTransportConfig(
+    return LoopbackTransportConfig(
         protocol=protocol,
         host=host,
         port=port,
         session_token=session_token,
         connect_timeout_ms=connect_timeout_ms,
+    )
+
+
+def _parse_debug_transport(raw_value: object, *, manifest_path: Path | None) -> DebugTransportConfig | None:
+    parsed = _parse_loopback_transport(raw_value, manifest_path=manifest_path, field_name="debug_transport")
+    if parsed is None:
+        return None
+    return DebugTransportConfig(
+        protocol=parsed.protocol,
+        host=parsed.host,
+        port=parsed.port,
+        session_token=parsed.session_token,
+        connect_timeout_ms=parsed.connect_timeout_ms,
     )
 
 
 def _parse_repl_control(raw_value: object, *, manifest_path: Path | None) -> ReplControlConfig | None:
-    if raw_value is None:
+    parsed = _parse_loopback_transport(raw_value, manifest_path=manifest_path, field_name="repl_control")
+    if parsed is None:
         return None
-    if not isinstance(raw_value, Mapping):
-        _raise_manifest_error("repl_control must be an object.", field="repl_control", manifest_path=manifest_path)
-    protocol = str(raw_value.get("protocol", "")).strip()
-    host = str(raw_value.get("host", "")).strip()
-    port = _parse_optional_positive_int(raw_value.get("port"))
-    session_token = str(raw_value.get("session_token", "")).strip()
-    connect_timeout_ms = _parse_optional_positive_int(raw_value.get("connect_timeout_ms")) or 800
-    if not protocol or not host or port is None or not session_token:
-        _raise_manifest_error(
-            "repl_control requires protocol, host, port, and session_token.",
-            field="repl_control",
-            manifest_path=manifest_path,
-        )
-    return ReplControlConfig(
-        protocol=protocol,
-        host=host,
-        port=port,
-        session_token=session_token,
-        connect_timeout_ms=connect_timeout_ms,
-    )
+    return ReplControlConfig.from_loopback(parsed)
 
 
 def _parse_exception_policy(raw_value: object) -> DebugExceptionPolicy:
@@ -349,7 +434,7 @@ def _parse_source_maps(
     raw_value: object,
     *,
     manifest_path: Path | None,
-) -> list[DebugSourceMap]:
+) -> tuple[DebugSourceMap, ...]:
     if not isinstance(raw_value, list):
         _raise_manifest_error("source_maps must be a list.", field="source_maps", manifest_path=manifest_path)
     source_maps: list[DebugSourceMap] = []
@@ -380,7 +465,7 @@ def _parse_source_maps(
                 source_path=str(Path(source_path).expanduser().resolve()),
             )
         )
-    return source_maps
+    return tuple(source_maps)
 
 
 def _parse_optional_positive_int(raw_value: object) -> int | None:

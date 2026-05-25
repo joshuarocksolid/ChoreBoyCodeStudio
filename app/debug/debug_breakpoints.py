@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from hashlib import sha1
 from pathlib import Path
+from typing import Mapping
 
 from app.debug.debug_models import DebugBreakpoint
 
@@ -50,6 +52,40 @@ def build_breakpoint(
     )
 
 
+def replace_breakpoint(breakpoint: DebugBreakpoint, **changes: object) -> DebugBreakpoint:
+    """Return a copy of ``breakpoint`` with the given field overrides."""
+
+    return replace(breakpoint, **changes)
+
+
+def with_enabled(breakpoint: DebugBreakpoint, enabled: bool) -> DebugBreakpoint:
+    """Return a copy with updated enabled flag."""
+
+    return replace(breakpoint, enabled=bool(enabled))
+
+
+def with_verification(
+    breakpoint: DebugBreakpoint,
+    *,
+    verified: bool,
+    verification_message: str = "",
+) -> DebugBreakpoint:
+    """Return a copy with updated verification state."""
+
+    return replace(
+        breakpoint,
+        verified=bool(verified),
+        verification_message=str(verification_message or "").strip(),
+    )
+
+
+def with_file_path(breakpoint: DebugBreakpoint, file_path: str) -> DebugBreakpoint:
+    """Return a copy with a normalized file path."""
+
+    normalized_path, _ = breakpoint_key(file_path, breakpoint.line_number)
+    return replace(breakpoint, file_path=normalized_path)
+
+
 def update_breakpoint_verification(
     breakpoint: DebugBreakpoint,
     *,
@@ -58,24 +94,22 @@ def update_breakpoint_verification(
 ) -> DebugBreakpoint:
     """Return a copy with updated verification state."""
 
-    return DebugBreakpoint(
-        breakpoint_id=breakpoint.breakpoint_id,
-        file_path=breakpoint.file_path,
-        line_number=breakpoint.line_number,
-        enabled=breakpoint.enabled,
-        condition=breakpoint.condition,
-        hit_condition=breakpoint.hit_condition,
-        verified=bool(verified),
-        verification_message=str(verification_message or "").strip(),
+    return with_verification(
+        breakpoint,
+        verified=verified,
+        verification_message=verification_message,
     )
 
 
-def breakpoint_to_manifest_payload(
+def breakpoint_to_wire_dict(
     breakpoint: DebugBreakpoint,
     *,
     runtime_file_path: str | None = None,
 ) -> dict[str, object]:
-    """Serialize breakpoint for run-manifest transport."""
+    """Serialize one breakpoint for manifest or transport wire format.
+
+    Omits empty ``condition`` and absent or non-positive ``hit_condition`` values.
+    """
 
     file_path = breakpoint.file_path if runtime_file_path is None else str(Path(runtime_file_path).expanduser().resolve())
     payload: dict[str, object] = {
@@ -89,3 +123,51 @@ def breakpoint_to_manifest_payload(
     if breakpoint.hit_condition is not None:
         payload["hit_condition"] = breakpoint.hit_condition
     return payload
+
+
+def parse_breakpoint_entry(entry: Mapping[str, object]) -> DebugBreakpoint | None:
+    """Parse one wire-format breakpoint entry, or None when the entry is invalid."""
+
+    file_path_raw = entry.get("file_path")
+    if not isinstance(file_path_raw, str):
+        return None
+    file_path = file_path_raw.strip()
+    if not file_path:
+        return None
+
+    line_number = _parse_positive_line_number(entry.get("line_number"))
+    if line_number is None:
+        return None
+
+    return build_breakpoint(
+        file_path=file_path,
+        line_number=line_number,
+        breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
+        enabled=bool(entry.get("enabled", True)),
+        condition=str(entry.get("condition", "")).strip(),
+        hit_condition=_parse_optional_positive_int(entry.get("hit_condition")),
+        verified=bool(entry.get("verified", False)),
+        verification_message=str(entry.get("verification_message", "")).strip(),
+    )
+
+
+def _parse_positive_line_number(raw_value: object) -> int | None:
+    if isinstance(raw_value, int) and not isinstance(raw_value, bool) and raw_value > 0:
+        return int(raw_value)
+    try:
+        parsed = int(str(raw_value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _parse_optional_positive_int(raw_value: object) -> int | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, int) and not isinstance(raw_value, bool):
+        return int(raw_value) if raw_value > 0 else None
+    try:
+        parsed = int(str(raw_value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None

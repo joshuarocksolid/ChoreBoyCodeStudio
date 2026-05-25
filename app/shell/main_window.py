@@ -75,9 +75,14 @@ from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
 from app.persistence.settings_store import project_settings_has_overrides
-from app.run.console_model import ConsoleModel
-from app.run.exit_status import describe_exit_code
-from app.run.output_tail_buffer import OutputTailBuffer
+from app.shell.clear_console_policy import (
+    MainWindowClearConsoleHost,
+    clear_run_output_sinks,
+    prepare_new_run,
+)
+from app.shell.console_model import ConsoleModel
+from app.shell.exit_status import describe_exit_code
+from app.shell.output_tail_buffer import OutputTailBuffer
 from app.run.problem_parser import ProblemEntry, parse_traceback_problems
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
@@ -497,8 +502,6 @@ class MainWindow(QMainWindow):
         self._console_model = ConsoleModel()
         self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
         self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
-        self._active_run_session_log_path: str | None = None
-        self._active_run_session_info: RunInfo | None = None
         self._active_transient_entry_file_path: str | None = None
         self._debug_session = DebugSession()
         self._debug_execution_editor: CodeEditorWidget | None = None
@@ -559,7 +562,7 @@ class MainWindow(QMainWindow):
             set_latest_runtime_issue_report=lambda report: setattr(self, "_latest_runtime_issue_report", report),
             build_runtime_issue_report=self._build_runtime_issue_report,
             open_runtime_center_dialog=lambda **kwargs: self._open_runtime_center_dialog(**kwargs),
-            active_run_session_log_path=lambda: self._active_run_session_log_path,
+            active_run_session_log_path=lambda: self._run_session_controller.session_store.log_path,
             known_runtime_modules=lambda: self._known_runtime_modules,
         )
         self._local_history_workflow = LocalHistoryWorkflow(
@@ -582,8 +585,7 @@ class MainWindow(QMainWindow):
             background_tasks=self._background_tasks,
             retention_policy=self._local_history_retention_policy,
             ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
-            breakpoints_by_file=self._debug_control_workflow.breakpoint_store.breakpoints_by_file,
-            breakpoint_specs_by_key=self._debug_control_workflow.breakpoint_store.breakpoint_specs_by_key,
+            breakpoint_store=self._debug_control_workflow.breakpoint_store,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
         )
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
@@ -628,7 +630,7 @@ class MainWindow(QMainWindow):
             else None,
             release_editor_widget=self._release_editor_widget,
             close_editor_file=self._editor_manager.close_file,
-            breakpoints_by_file=self._debug_control_workflow.breakpoint_store.breakpoints_by_file,
+            breakpoint_store=self._debug_control_workflow.breakpoint_store,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
             remap_editor_paths=self._editor_manager.remap_paths_for_move,
             update_tab_path_and_name=self._update_tab_path_and_name,
@@ -2342,12 +2344,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _prepare_for_session_start(self) -> None:
-        self._active_run_output_tail.clear()
-        self._clear_problems()
-        self._debug_session = DebugSession()
-        self._clear_debug_execution_indicator()
-        if self._run_log_panel is not None:
-            self._run_log_panel.begin_run()
+        prepare_new_run(MainWindowClearConsoleHost(self))
 
     def _handle_stop_action(self) -> None:
         self._run_session_controller.stop_session(lambda text, stream: self._append_console_line(text, stream=stream))
@@ -2363,13 +2360,7 @@ class MainWindow(QMainWindow):
             self._run_launch_workflow.handle_run_action()
 
     def _handle_clear_console_action(self) -> None:
-        self._console_model.clear()
-        if self._run_log_panel is not None:
-            self._run_log_panel.clear()
-        if self._python_console_widget is not None:
-            self._python_console_widget.clear_console()
-        if self._debug_panel is not None:
-            self._debug_panel.clear_output()
+        clear_run_output_sinks(MainWindowClearConsoleHost(self))
 
     def _handle_open_plugin_manager_action(self) -> None:
         if self._plugin_manager_dialog is None:
@@ -2795,7 +2786,8 @@ class MainWindow(QMainWindow):
             self._menu_registry,
             has_project=self._loaded_project is not None,
             has_active_file=self._has_active_python_file(),
-            has_breakpoints=bool(self._debug_control_workflow.breakpoint_store.breakpoints_by_file),
+            has_breakpoints=self._debug_control_workflow.breakpoint_store.has_any_breakpoints(),
+            debug_execution_state=self._debug_session.state.execution_state,
         )
         if self._menu_registry is None:
             return
@@ -2958,7 +2950,7 @@ class MainWindow(QMainWindow):
             processed += 1
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
-        active_session = self._active_run_session_info
+        active_session = self._run_session_controller.session_store.active_session
         run_id = active_session.run_id if active_session is not None else None
         mode = active_session.mode if active_session is not None else None
         self._get_run_output_coordinator().apply(event)
@@ -3003,14 +2995,14 @@ class MainWindow(QMainWindow):
         panel = getattr(self, "_run_log_panel", None)
         if panel is None:
             return
-        cached = getattr(self, "_active_run_session_info", None)
+        active_session = self._run_session_controller.session_store.active_session
         run_info = RunInfo(
-            run_id=cached.run_id if cached else "",
-            mode=cached.mode if cached else "",
-            entry_file=cached.entry_file if cached else "",
+            run_id=active_session.run_id if active_session else "",
+            mode=active_session.mode if active_session else "",
+            entry_file=active_session.entry_file if active_session else "",
             exit_code=return_code,
         )
-        active_log_path = getattr(self, "_active_run_session_log_path", None)
+        active_log_path = self._run_session_controller.session_store.log_path
         log_path_str: str | None = None
         if active_log_path:
             log_path = Path(active_log_path)

@@ -118,21 +118,6 @@ class DebugWatchResult:
     error_message: str = ""
 
 
-@dataclass(frozen=True)
-class DebugEvent:
-    """Normalized debug event payload for editor-side session state.
-
-    The runner speaks over the structured debug transport; editor code and tests
-    use :class:`DebugEvent` to aggregate or replay debugger updates into
-    :class:`DebugSessionState`.
-    """
-
-    event_type: str
-    message: str = ""
-    frames: list[DebugFrame] = field(default_factory=list)
-    variables: list[DebugVariable] = field(default_factory=list)
-
-
 @dataclass
 class DebugSessionState:
     """Mutable debug session state aggregator."""
@@ -163,22 +148,21 @@ class DebugSessionState:
     def variables_for_reference(self, variables_reference: int) -> list[DebugVariable]:
         return list(self.variables_by_reference.get(int(variables_reference), []))
 
-    def apply_event(self, event: DebugEvent) -> None:
-        """Merge a :class:`DebugEvent` into live session state (frames, variables, status)."""
-        if event.event_type == "paused":
-            self.execution_state = DebugExecutionState.PAUSED
-            self.stop_reason = "breakpoint"
-        elif event.event_type == "running":
-            self.execution_state = DebugExecutionState.RUNNING
-            self.stop_reason = ""
-        elif event.event_type == "exited":
-            self.execution_state = DebugExecutionState.EXITED
-            self.stop_reason = ""
+    def clear_inspector_state(self) -> None:
+        """Clear paused-frame inspector fields without touching breakpoints."""
 
-        if event.frames:
-            self.frames = list(event.frames)
-            self.selected_frame_id = self.frames[0].frame_id
-        if event.variables:
-            self.variables = list(event.variables)
-        if event.message:
-            self.last_message = event.message
+        self.threads = []
+        self.frames = []
+        self.scopes = []
+        self.variables = []
+        self.variables_by_reference.clear()
+        self.exception_info = None
+        self.selected_frame_id = 0
+
+    def mark_exited(self, *, message: str = "Debug session exited.") -> None:
+        """Transition session to exited and clear inspector state."""
+
+        self.execution_state = DebugExecutionState.EXITED
+        self.stop_reason = ""
+        self.last_message = message
+        self.clear_inspector_state()

@@ -22,6 +22,7 @@ from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.run_debug_presenter import RunDebugPresenter  # noqa: E402
 from app.shell.run_launch_workflow import ProjectTarget  # noqa: E402
 from app.shell.run_session_controller import RunSessionStartFailureReason, RunSessionStartResult  # noqa: E402
+from app.shell.run_session_store import ActiveRunSession, RunSessionStore  # noqa: E402
 from app.shell.shell_composition import MainWindowRunLaunchHost  # noqa: E402
 from app.shell.run_launch_workflow import RunLaunchWorkflow  # noqa: E402
 
@@ -78,31 +79,49 @@ class _FakeBottomTabs:
 
 class _FakeRunSessionController:
     def __init__(self, active_mode: str) -> None:
+        self.session_store = RunSessionStore()
+        if active_mode:
+            self.session_store._active = ActiveRunSession(  # noqa: SLF001 - test fake
+                mode=active_mode,
+                run_id="run123",
+                log_path="/tmp/project/logs/run_run123.log",
+                entry_file="run.py",
+            )
         self.active_session_mode = active_mode
 
     def set_active_session_mode(self, mode: str | None) -> None:
         self.active_session_mode = mode
+        if mode is None:
+            self.session_store.clear()
+        elif self.session_store.active_session is None:
+            self.session_store._active = ActiveRunSession(  # noqa: SLF001 - test fake
+                mode=mode,
+                run_id="run123",
+                log_path="/tmp/project/logs/run_run123.log",
+                entry_file="run.py",
+            )
 
     def clear_active_session_mode(self) -> None:
         self.active_session_mode = None
+        self.session_store.clear()
 
     def start_session(self, **_kwargs):  # type: ignore[no-untyped-def]
-        return RunSessionStartResult(
-            started=True,
-            session=RunSession(
-                run_id="run123",
-                manifest_path="/tmp/run.json",
-                log_file_path="/tmp/project/logs/run_run123.log",
-                project_root="/tmp/project",
-                entry_file="run.py",
-                mode=self.active_session_mode,
-            ),
+        session = RunSession(
+            run_id="run123",
+            manifest_path="/tmp/run.json",
+            log_file_path="/tmp/project/logs/run_run123.log",
+            project_root="/tmp/project",
+            entry_file="run.py",
+            mode=self.active_session_mode or constants.RUN_MODE_PYTHON_SCRIPT,
         )
+        self.session_store.start_from_session(session)
+        return RunSessionStartResult(started=True, session=session)
 
 
 class _FailingRunSessionController:
     def __init__(self, result: RunSessionStartResult) -> None:
         self._result = result
+        self.session_store = RunSessionStore()
         self.active_session_mode: str | None = None
 
     def start_session(self, **_kwargs):  # type: ignore[no-untyped-def]
@@ -237,7 +256,7 @@ def test_apply_run_event_focuses_problems_tab_on_failed_exit_when_enabled() -> N
 def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
-    window_any._active_run_session_info = None
+    window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_SCRIPT)
     window_any._active_transient_entry_file_path = "/tmp/transient.py"
     deleted: list[str] = []
     workflow = _attach_run_launch_workflow(window)
@@ -348,7 +367,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
     assert warnings == [("Run unavailable", "Open something first (legacy wording changed).")]
 
 
-def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_start_session_already_running_reason_shows_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = object()
@@ -356,6 +375,7 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
         RunSessionStartResult(
             started=False,
             failure_reason=RunSessionStartFailureReason.ALREADY_RUNNING,
+            error_message="A run is already in progress. Stop it before starting a new one.",
         )
     )
     window_any._debug_panel = None
@@ -377,7 +397,12 @@ def test_start_session_already_running_reason_shows_no_warning(monkeypatch: pyte
     started = workflow.start_session(mode=constants.RUN_MODE_PYTHON_SCRIPT, skip_save=True)
 
     assert started is False
-    assert warnings == []
+    assert warnings == [
+        (
+            "Run already in progress",
+            "A run is already in progress. Stop it before starting a new one.",
+        )
+    ]
 
 
 def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation() -> None:

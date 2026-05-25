@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from app.debug.debug_breakpoints import breakpoint_key, build_breakpoint
+from typing import Callable
+
+from app.debug.debug_breakpoints import breakpoint_key, build_breakpoint, with_file_path
 from app.debug.debug_models import DebugBreakpoint
 
 
@@ -13,13 +15,14 @@ class BreakpointStore:
         self._breakpoints_by_file: dict[str, set[int]] = {}
         self._breakpoint_specs_by_key: dict[tuple[str, int], DebugBreakpoint] = {}
 
-    @property
-    def breakpoints_by_file(self) -> dict[str, set[int]]:
-        return self._breakpoints_by_file
+    def has_any_breakpoints(self) -> bool:
+        return bool(self._breakpoints_by_file)
 
-    @property
-    def breakpoint_specs_by_key(self) -> dict[tuple[str, int], DebugBreakpoint]:
-        return self._breakpoint_specs_by_key
+    def get_spec(self, file_path: str, line_number: int) -> DebugBreakpoint | None:
+        return self._breakpoint_specs_by_key.get(breakpoint_key(file_path, line_number))
+
+    def list_all(self) -> list[DebugBreakpoint]:
+        return self.all_specs()
 
     def clear_all(self) -> None:
         self._breakpoints_by_file.clear()
@@ -33,6 +36,26 @@ class BreakpointStore:
 
     def lines_for_file(self, file_path: str) -> set[int]:
         return set(self._breakpoints_by_file.get(file_path, set()))
+
+    def lines_snapshot(self) -> dict[str, set[int]]:
+        """Return a shallow copy of gutter line sets keyed by file path."""
+        return {file_path: set(lines) for file_path, lines in self._breakpoints_by_file.items()}
+
+    def restore_session_breakpoints(
+        self,
+        restored_by_file: dict[str, set[int]],
+        *,
+        ensure_spec: Callable[[str, int], DebugBreakpoint] | None = None,
+    ) -> None:
+        """Replace store contents from persisted session breakpoint lines."""
+        self.clear_all()
+        for file_path, lines in restored_by_file.items():
+            if not lines:
+                continue
+            self._breakpoints_by_file[file_path] = set(lines)
+            if ensure_spec is not None:
+                for line_number in lines:
+                    ensure_spec(file_path, line_number)
 
     def ensure_spec(self, file_path: str, line_number: int) -> DebugBreakpoint:
         key = breakpoint_key(file_path, line_number)
@@ -83,15 +106,6 @@ class BreakpointStore:
         remapped_specs: dict[tuple[str, int], DebugBreakpoint] = {}
         for (file_path, line_number), spec in self._breakpoint_specs_by_key.items():
             target_path = path_map.get(file_path, file_path)
-            remapped_specs[breakpoint_key(target_path, line_number)] = DebugBreakpoint(
-                breakpoint_id=spec.breakpoint_id,
-                file_path=target_path,
-                line_number=spec.line_number,
-                enabled=spec.enabled,
-                condition=spec.condition,
-                hit_condition=spec.hit_condition,
-                verified=spec.verified,
-                verification_message=spec.verification_message,
-            )
+            remapped_specs[breakpoint_key(target_path, line_number)] = with_file_path(spec, target_path)
         self._breakpoint_specs_by_key.clear()
         self._breakpoint_specs_by_key.update(remapped_specs)

@@ -45,6 +45,7 @@ class DebugTransportServer:
         self._read_thread: threading.Thread | None = None
         self._close_event = threading.Event()
         self._write_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
         self._session_token = ""
 
     def start(self) -> DebugTransportConfig:
@@ -76,22 +77,27 @@ class DebugTransportServer:
     def send_command(self, command_name: str, arguments: Mapping[str, Any] | None = None) -> str:
         """Send one command to the connected runner."""
 
-        resources = self._client_resources
-        if resources is None:
-            raise RuntimeError("Debug transport is not connected.")
         payload = build_debug_command(command_name, arguments)
         encoded = encode_debug_message(payload)
-        with self._write_lock:
-            resources.writer.write(encoded)
-            resources.writer.flush()
+        with self._lifecycle_lock:
+            resources = self._client_resources
+            if resources is None:
+                raise RuntimeError("Debug transport is not connected.")
+            with self._write_lock:
+                try:
+                    resources.writer.write(encoded)
+                    resources.writer.flush()
+                except OSError as exc:
+                    raise RuntimeError("Debug transport write failed: %s" % (exc,)) from exc
         return str(payload["command_id"])
 
     def close(self) -> None:
         """Close listener and any accepted runner connection."""
 
         self._close_event.set()
-        resources = self._client_resources
-        self._client_resources = None
+        with self._lifecycle_lock:
+            resources = self._client_resources
+            self._client_resources = None
         if resources is not None:
             self._close_socket_resources(resources)
         server_socket = self._server_socket
@@ -121,7 +127,8 @@ class DebugTransportServer:
             reader = client_socket.makefile("r", encoding="utf-8")
             writer = client_socket.makefile("w", encoding="utf-8")
             resources = _SocketResources(sock=client_socket, reader=reader, writer=writer)
-            self._client_resources = resources
+            with self._lifecycle_lock:
+                self._client_resources = resources
             self._read_thread = threading.Thread(target=self._read_loop, args=(resources,), daemon=True)
             self._read_thread.start()
             return
@@ -141,8 +148,13 @@ class DebugTransportServer:
         except Exception as exc:
             if not self._close_event.is_set():
                 self._emit_error("Debug transport read failed: %s" % (exc,))
+        else:
+            if not self._close_event.is_set():
+                self._emit_error("Debug transport disconnected.")
         finally:
-            self._client_resources = None
+            with self._lifecycle_lock:
+                if self._client_resources is resources:
+                    self._client_resources = None
             self._close_socket_resources(resources)
 
     def _emit_error(self, message: str) -> None:
@@ -188,6 +200,7 @@ class RunnerDebugTransportClient:
         self._read_thread: threading.Thread | None = None
         self._close_event = threading.Event()
         self._write_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
 
     def connect(self) -> None:
         """Connect to the editor-side server and begin listening."""
@@ -208,20 +221,25 @@ class RunnerDebugTransportClient:
     def send_message(self, payload: Mapping[str, Any]) -> None:
         """Send one raw protocol payload."""
 
-        resources = self._resources
-        if resources is None:
-            raise RuntimeError("Runner debug transport is not connected.")
         encoded = encode_debug_message(payload)
-        with self._write_lock:
-            resources.writer.write(encoded)
-            resources.writer.flush()
+        with self._lifecycle_lock:
+            resources = self._resources
+            if resources is None:
+                raise RuntimeError("Runner debug transport is not connected.")
+            with self._write_lock:
+                try:
+                    resources.writer.write(encoded)
+                    resources.writer.flush()
+                except OSError as exc:
+                    raise RuntimeError("Runner debug transport write failed: %s" % (exc,)) from exc
 
     def close(self) -> None:
         """Close runner-side resources."""
 
         self._close_event.set()
-        resources = self._resources
-        self._resources = None
+        with self._lifecycle_lock:
+            resources = self._resources
+            self._resources = None
         if resources is not None:
             DebugTransportServer._close_socket_resources(resources)
         if self._read_thread is not None and self._read_thread.is_alive():
@@ -239,3 +257,6 @@ class RunnerDebugTransportClient:
         except Exception as exc:
             if not self._close_event.is_set() and self._on_error is not None:
                 self._on_error("Runner debug transport failed: %s" % (exc,))
+        else:
+            if not self._close_event.is_set() and self._on_error is not None:
+                self._on_error("Runner debug transport disconnected.")

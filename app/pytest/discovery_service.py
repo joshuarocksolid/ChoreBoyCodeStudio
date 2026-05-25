@@ -4,17 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
-from typing import Optional
 
-from app.bootstrap.vendor_paths import resolve_vendor_root
-from app.run.runtime_launch import resolve_runtime_executable, is_freecad_runtime_executable, build_runpy_bootstrap_payload
-
-
-PYTEST_MISSING_MARKER = "cbcs:test_explorer:pytest_missing"
-PYTEST_MISSING_MESSAGE = (
-    "pytest is not bundled with this Code Studio install. "
-    "Reinstall the editor or restore the bundled vendor/ directory."
+from app.pytest.launch_plan import (
+    PYTEST_MISSING_MARKER,
+    PYTEST_MISSING_MESSAGE,
+    build_pytest_command,
+    build_pytest_launch_plan,
 )
+from app.pytest.outcome_types import TestNodeKind, TestOutcome
 
 
 @dataclass(frozen=True)
@@ -25,7 +22,7 @@ class DiscoveredTestNode:
     name: str  # display name, e.g. test_method
     file_path: str  # absolute path to test file
     line_number: int  # 0-based line number (or 0 if unknown)
-    kind: str  # "file", "class", "function"
+    kind: TestNodeKind
     parent_id: str = ""  # node_id of the parent, empty for file nodes
 
 
@@ -55,7 +52,7 @@ class DiscoveredTestResult:
     """Per-test execution result."""
 
     node_id: str
-    outcome: str  # "passed", "failed", "skipped", "error"
+    outcome: TestOutcome
     message: str = ""
     file_path: str = ""
     line_number: int = 0
@@ -95,11 +92,18 @@ def discover_tests(project_root: str, *, timeout_seconds: int = 30) -> Discovery
 def parse_test_results(output: str) -> list[DiscoveredTestResult]:
     """Parse pytest output into per-test results.
 
-    This is a simple line-based parser for ``-v`` output format.
+    Supports verbose ``node PASSED`` lines and ``-rA`` summary lines.
     """
     results: list[DiscoveredTestResult] = []
     for line in output.splitlines():
         stripped = line.strip()
+        if not stripped:
+            continue
+        summary_outcome = _parse_summary_result_line(stripped)
+        if summary_outcome is not None:
+            node_id, outcome = summary_outcome
+            results.append(DiscoveredTestResult(node_id=node_id, outcome=outcome))
+            continue
         if " PASSED" in stripped:
             node_id = stripped.split(" PASSED")[0].strip()
             results.append(DiscoveredTestResult(node_id=node_id, outcome="passed"))
@@ -115,30 +119,23 @@ def parse_test_results(output: str) -> list[DiscoveredTestResult]:
     return results
 
 
+def _parse_summary_result_line(stripped: str) -> tuple[str, TestOutcome] | None:
+    for prefix, outcome in (
+        ("PASSED ", "passed"),
+        ("FAILED ", "failed"),
+        ("SKIPPED ", "skipped"),
+        ("ERROR ", "error"),
+    ):
+        if stripped.startswith(prefix):
+            node_id = stripped[len(prefix) :].split(" - ", 1)[0].strip()
+            if node_id:
+                return (node_id, outcome)
+    return None
+
+
 def _build_collect_command(*, project_root: str) -> list[str]:
-    runtime_executable = resolve_runtime_executable(None)
-    args = ["--collect-only", "-q", "--import-mode=importlib"]
-
-    if is_freecad_runtime_executable(runtime_executable):
-        payload = _build_apprun_pytest_payload(args)
-        return [runtime_executable, "-c", payload]
-    return [runtime_executable, "-m", "pytest"] + args
-
-
-def _build_apprun_pytest_payload(pytest_args: list[str]) -> str:
-    args_repr = repr(pytest_args)
-    vendor_root = str(resolve_vendor_root())
-    lines = [
-        "import sys",
-        f"sys.path.insert(0, {vendor_root!r})",
-        "try:",
-        "    import pytest",
-        "except ModuleNotFoundError:",
-        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
-        "    sys.exit(2)",
-        f"sys.exit(pytest.main({args_repr}))",
-    ]
-    return "\n".join(lines)
+    plan = build_pytest_launch_plan(project_root)
+    return build_pytest_command(plan, ["--collect-only", "-q"])
 
 
 def _parse_collect_output(stdout: str, *, project_root: str) -> list[DiscoveredTestNode]:

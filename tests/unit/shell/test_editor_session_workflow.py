@@ -14,6 +14,7 @@ from PySide2.QtGui import QTextCursor  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.editors.editor_manager import EditorManager  # noqa: E402
+from app.shell.breakpoint_store import BreakpointStore  # noqa: E402
 from app.shell.editor_session_workflow import EditorSessionWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -46,8 +47,8 @@ def test_project_session_persist_and_restore_round_trips_editor_state(
     cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, 1)
     widgets[file_path_str].setTextCursor(cursor)
 
-    breakpoints_by_file = {file_path_str: {2}}
-    ensured_specs: list[tuple[str, int]] = []
+    breakpoint_store = BreakpointStore()
+    breakpoint_store.set_line_enabled(file_path_str, 2, enabled=True)
     selected_tabs: list[int] = []
     open_file_handlers = {"handler": lambda _path: True}
     workflow = EditorSessionWorkflow(
@@ -58,9 +59,7 @@ def test_project_session_persist_and_restore_round_trips_editor_state(
         tab_index_for_path=lambda path: 0 if path == file_path_str else -1,
         set_current_tab_index=selected_tabs.append,
         logger=logging.getLogger("test.editor_session_workflow"),
-        breakpoints_by_file=breakpoints_by_file,
-        breakpoint_specs_by_key={},
-        ensure_breakpoint_spec=lambda path, line: ensured_specs.append((path, line)),
+        breakpoint_store=breakpoint_store,
     )
 
     workflow.persist_session_state(project_root=str(project_root.resolve()))
@@ -78,13 +77,13 @@ def test_project_session_persist_and_restore_round_trips_editor_state(
         return True
 
     workflow.set_editor_manager(restored_manager)
-    breakpoints_by_file.clear()
+    breakpoint_store.clear_all()
     open_file_handlers["handler"] = open_restored_file
     workflow.restore_session_state(str(project_root.resolve()))
 
     assert restored_manager.open_paths() == [file_path_str]
-    assert breakpoints_by_file[file_path_str] == {2}
-    assert ensured_specs == [(file_path_str, 2)]
+    assert breakpoint_store.lines_for_file(file_path_str) == {2}
+    assert breakpoint_store.get_spec(file_path_str, 2) is not None
     assert selected_tabs == [0]
     restored_cursor = restored_widgets[file_path_str].textCursor()
     assert restored_cursor.blockNumber() + 1 == 2

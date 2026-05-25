@@ -226,7 +226,7 @@ def test_start_session_returns_already_running_reason_when_supervisor_active() -
 
     assert result.started is False
     assert result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING
-    assert result.error_message is None
+    assert result.error_message == "A run is already in progress. Stop it before starting a new one."
 
 
 def test_start_session_returns_save_failed_reason_when_save_all_fails() -> None:

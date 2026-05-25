@@ -14,15 +14,15 @@ pytestmark = pytest.mark.unit
 class _FakeSupervisor:
     def __init__(self) -> None:
         self._running = False
-        self.start_calls: list[tuple[str, str]] = []
+        self.start_calls: list[tuple[list[str], str]] = []
         self.stop_calls: int = 0
         self.inputs: list[str] = []
 
     def is_running(self) -> bool:
         return self._running
 
-    def start_manifest(self, *, manifest_path: str, cwd: str, env=None) -> int:
-        self.start_calls.append((manifest_path, cwd))
+    def start(self, command: list[str], *, cwd: str, env=None) -> int:
+        self.start_calls.append((command, cwd))
         self._running = True
         return 12345
 
@@ -40,7 +40,7 @@ def _make_manager(**kwargs) -> tuple[ReplSessionManager, _FakeSupervisor]:
         kwargs["state_root"] = "/tmp/test-repl-state"
     mgr = ReplSessionManager(**kwargs)
     fake_sup = _FakeSupervisor()
-    mgr._host_manager = fake_sup  # type: ignore[assignment]
+    mgr._supervisor = fake_sup  # type: ignore[assignment]
     return mgr, fake_sup
 
 
@@ -111,12 +111,12 @@ def test_session_ended_callback_invoked() -> None:
     assert ended == [(0, False)]
 
 
-def test_launch_delegates_manifest_start_to_host_manager(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_launch_delegates_start_to_supervisor(tmp_path) -> None:  # type: ignore[no-untyped-def]
     mgr, sup = _make_manager(state_root=str(tmp_path))
 
     mgr._launch()
 
     assert len(sup.start_calls) == 1
-    manifest_path, cwd = sup.start_calls[0]
-    assert str(manifest_path).endswith(".json")
+    command, cwd = sup.start_calls[0]
+    assert command
     assert cwd

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable, cast
 
-from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from app.core import constants
-from app.debug.debug_breakpoints import breakpoint_key
+from app.debug.debug_models import DebugExecutionState
+from app.debug.debug_breakpoints import breakpoint_key, replace_breakpoint, with_enabled, with_file_path, with_verification
 from app.debug.debug_command_service import (
     evaluate_command,
     expand_variable_command,
@@ -18,14 +19,19 @@ from app.debug.debug_command_service import (
 )
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy
 from app.shell.breakpoint_store import BreakpointStore
+from app.shell.debug_shell_host import DebugShellHost
 
 
 class DebugControlWorkflow:
     """Owns debug transport commands, breakpoint state, and debug panel actions."""
 
-    def __init__(self, window: Any) -> None:
+    def __init__(self, window: DebugShellHost) -> None:
         self._window = window
         self._store = BreakpointStore()
+
+    @staticmethod
+    def _dialog_parent(window: DebugShellHost) -> QWidget:
+        return cast(QWidget, window)
 
     @property
     def breakpoint_store(self) -> BreakpointStore:
@@ -37,7 +43,7 @@ class DebugControlWorkflow:
     ) -> None:
         window = self._window
         if not window._run_service.supervisor.is_running():
-            QMessageBox.information(window, "Debug", "No active debug session.")
+            QMessageBox.information(self._dialog_parent(window), "Debug", "No active debug session.")
             return
         command_name, arguments = command_factory()
         self.send_debug_command(command_name, arguments)
@@ -47,7 +53,7 @@ class DebugControlWorkflow:
         try:
             window._run_service.send_debug_command(command_name, arguments)
         except Exception as exc:
-            QMessageBox.warning(window, "Debug", f"Debug command failed: {exc}")
+            QMessageBox.warning(self._dialog_parent(window), "Debug", f"Debug command failed: {exc}")
             return
         window._append_debug_output_line("[debug] %s" % (command_name.replace("_", " "),))
 
@@ -58,7 +64,7 @@ class DebugControlWorkflow:
             append_debug_output_line=window._append_debug_output_line,
         )
         if error_message is not None:
-            QMessageBox.warning(window, "Debug", f"Pause failed: {error_message}")
+            QMessageBox.warning(self._dialog_parent(window), "Debug", f"Pause failed: {error_message}")
         if paused:
             window._refresh_run_action_states()
 
@@ -66,7 +72,7 @@ class DebugControlWorkflow:
         window = self._window
         editor_widget = window._active_editor_widget()
         if editor_widget is None:
-            QMessageBox.information(window, "Toggle Breakpoint", "Open a Python file first.")
+            QMessageBox.information(self._dialog_parent(window), "Toggle Breakpoint", "Open a Python file first.")
             return
         line_number = editor_widget.textCursor().blockNumber() + 1
         editor_widget.toggle_breakpoint(line_number)
@@ -113,13 +119,8 @@ class DebugControlWorkflow:
                 display_breakpoints.append(breakpoint)
                 continue
             display_breakpoints.append(
-                DebugBreakpoint(
-                    breakpoint_id=breakpoint.breakpoint_id,
-                    file_path=breakpoint.file_path,
-                    line_number=breakpoint.line_number,
-                    enabled=breakpoint.enabled,
-                    condition=breakpoint.condition,
-                    hit_condition=breakpoint.hit_condition,
+                with_verification(
+                    breakpoint,
                     verified=verified.verified,
                     verification_message=verified.verification_message,
                 )
@@ -138,16 +139,7 @@ class DebugControlWorkflow:
             if active_file_path and remapped_active_path and file_path == active_file_path:
                 file_path = remapped_active_path
             launch_breakpoints.append(
-                DebugBreakpoint(
-                    breakpoint_id=breakpoint.breakpoint_id,
-                    file_path=file_path,
-                    line_number=breakpoint.line_number,
-                    enabled=breakpoint.enabled,
-                    condition=breakpoint.condition,
-                    hit_condition=breakpoint.hit_condition,
-                    verified=breakpoint.verified,
-                    verification_message=breakpoint.verification_message,
-                )
+                with_file_path(breakpoint, file_path) if file_path != breakpoint.file_path else breakpoint
             )
         return launch_breakpoints
 
@@ -226,16 +218,7 @@ class DebugControlWorkflow:
         window = self._window
         spec = self.ensure_breakpoint_spec(file_path, line_number)
         self._store.set_spec(
-            DebugBreakpoint(
-                breakpoint_id=spec.breakpoint_id,
-                file_path=spec.file_path,
-                line_number=spec.line_number,
-                enabled=enabled,
-                condition=spec.condition,
-                hit_condition=spec.hit_condition,
-                verified=spec.verified,
-                verification_message=spec.verification_message,
-            )
+            with_enabled(spec, enabled)
         )
         self._store.set_line_enabled(file_path, line_number, enabled)
         self._sync_editor_breakpoints(file_path)
@@ -247,7 +230,7 @@ class DebugControlWorkflow:
         window = self._window
         spec = self.ensure_breakpoint_spec(file_path, line_number)
         condition, accepted = QInputDialog.getText(
-            window,
+            self._dialog_parent(window),
             "Breakpoint Condition",
             "Pause only when this expression is truthy (leave blank for always):",
             QLineEdit.Normal,
@@ -257,7 +240,7 @@ class DebugControlWorkflow:
             return
         hit_value = spec.hit_condition or 0
         hit_condition, accepted = QInputDialog.getInt(
-            window,
+            self._dialog_parent(window),
             "Breakpoint Hit Count",
             "Pause after this many hits (0 disables threshold):",
             hit_value,
@@ -268,15 +251,10 @@ class DebugControlWorkflow:
         if not accepted:
             return
         self._store.set_spec(
-            DebugBreakpoint(
-                breakpoint_id=spec.breakpoint_id,
-                file_path=spec.file_path,
-                line_number=spec.line_number,
-                enabled=spec.enabled,
+            replace_breakpoint(
+                spec,
                 condition=condition.strip(),
                 hit_condition=hit_condition or None,
-                verified=spec.verified,
-                verification_message=spec.verification_message,
             )
         )
         self.refresh_breakpoints_list()
@@ -285,7 +263,7 @@ class DebugControlWorkflow:
 
     def sync_breakpoints_to_active_debug_session(self) -> None:
         window = self._window
-        if not (window._run_service.is_debug_mode and window._run_service.is_debug_paused):
+        if not (window._run_service.is_debug_mode and self._is_debug_session_paused(window)):
             return
         command_name, arguments = update_breakpoints_command(self.all_breakpoints())
         self.send_debug_command(command_name, arguments)
@@ -296,7 +274,7 @@ class DebugControlWorkflow:
         if not window._debug_exception_policy.stop_on_uncaught_exceptions:
             current_value = "Disabled"
         selection, accepted = QInputDialog.getItem(
-            window,
+            self._dialog_parent(window),
             "Debug Exception Stops",
             "Pause on exceptions:",
             ["Disabled", "Uncaught only", "Raised + uncaught"],
@@ -309,7 +287,7 @@ class DebugControlWorkflow:
             stop_on_uncaught_exceptions=selection != "Disabled",
             stop_on_raised_exceptions=selection == "Raised + uncaught",
         )
-        if window._run_service.is_debug_mode and window._run_service.is_debug_paused:
+        if window._run_service.is_debug_mode and self._is_debug_session_paused(window):
             command_name, arguments = update_exception_policy_command(window._debug_exception_policy)
             self.send_debug_command(command_name, arguments)
 
@@ -330,6 +308,10 @@ class DebugControlWorkflow:
             return
         command_name, arguments = select_frame_command(frame_id)
         self.send_debug_command(command_name, arguments)
+
+    @staticmethod
+    def _is_debug_session_paused(window: DebugShellHost) -> bool:
+        return window._debug_session.state.execution_state == DebugExecutionState.PAUSED
 
     def _sync_editor_breakpoints(self, file_path: str) -> None:
         editor_widget = self._window._editor_widgets_by_path.get(file_path)

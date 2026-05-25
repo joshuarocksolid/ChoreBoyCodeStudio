@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Callable
 
 from PySide2.QtCore import QTimer
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.shell.breakpoint_store import BreakpointStore
 from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
 
 
@@ -26,9 +27,7 @@ class EditorSessionWorkflow:
         tab_index_for_path: Callable[[str], int],
         set_current_tab_index: Callable[[int], None],
         logger: logging.Logger,
-        ensure_breakpoint_spec: Callable[[str, int], object] | None = None,
-        breakpoints_by_file: dict[str, set[int]] | None = None,
-        breakpoint_specs_by_key: dict[tuple[str, int], Any] | None = None,
+        breakpoint_store: BreakpointStore | None = None,
         refresh_breakpoints_list: Callable[[], None] | None = None,
     ) -> None:
         self._loaded_project = loaded_project
@@ -38,9 +37,7 @@ class EditorSessionWorkflow:
         self._tab_index_for_path = tab_index_for_path
         self._set_current_tab_index = set_current_tab_index
         self._logger = logger
-        self._ensure_breakpoint_spec = ensure_breakpoint_spec
-        self._breakpoints_by_file = breakpoints_by_file
-        self._breakpoint_specs_by_key = breakpoint_specs_by_key
+        self._breakpoint_store = breakpoint_store
         self._refresh_breakpoints_list = refresh_breakpoints_list
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
@@ -55,6 +52,9 @@ class EditorSessionWorkflow:
             target_project_root = loaded_project.project_root
 
         open_files: list[SessionFileState] = []
+        lines_snapshot = (
+            self._breakpoint_store.lines_snapshot() if self._breakpoint_store is not None else {}
+        )
         for file_path in self._editor_manager.open_paths():
             cursor_line = 1
             cursor_column = 1
@@ -65,9 +65,7 @@ class EditorSessionWorkflow:
                 cursor_line = cursor.blockNumber() + 1
                 cursor_column = cursor.positionInBlock() + 1
                 scroll_position = editor_widget.verticalScrollBar().value()
-            breakpoints = set()
-            if self._breakpoints_by_file is not None:
-                breakpoints = self._breakpoints_by_file.get(file_path, set())
+            breakpoints = set(lines_snapshot.get(file_path, set()))
             open_files.append(
                 SessionFileState(
                     file_path=file_path,
@@ -95,22 +93,20 @@ class EditorSessionWorkflow:
         if session_state is None:
             return
 
-        if self._breakpoints_by_file is not None:
-            self._breakpoints_by_file.clear()
-        if self._breakpoint_specs_by_key is not None:
-            self._breakpoint_specs_by_key.clear()
+        restored_by_file: dict[str, set[int]] = {}
         for file_state in session_state.open_files:
-            if not file_state.breakpoints or self._breakpoints_by_file is None:
-                continue
-            self._breakpoints_by_file[file_state.file_path] = set(file_state.breakpoints)
-            if self._ensure_breakpoint_spec is not None:
-                for line_number in file_state.breakpoints:
-                    self._ensure_breakpoint_spec(file_state.file_path, line_number)
+            if file_state.breakpoints:
+                restored_by_file[file_state.file_path] = set(file_state.breakpoints)
+        if self._breakpoint_store is not None:
+            self._breakpoint_store.restore_session_breakpoints(
+                restored_by_file,
+                ensure_spec=self._breakpoint_store.ensure_spec,
+            )
 
         for file_state in session_state.open_files:
             if not self._open_file_in_editor(file_state.file_path):
-                if self._breakpoints_by_file is not None:
-                    self._breakpoints_by_file.pop(file_state.file_path, None)
+                if self._breakpoint_store is not None:
+                    self._breakpoint_store.clear_file(file_state.file_path)
                 continue
             editor_widget = self._editor_widget_for_path(file_state.file_path)
             if editor_widget is None:
@@ -118,9 +114,10 @@ class EditorSessionWorkflow:
             restore_editor_cursor_and_scroll(editor_widget, file_state)
 
         if session_state.active_file_path is not None:
-            active_index = self._tab_index_for_path(session_state.active_file_path)
-            if active_index >= 0:
-                self._set_current_tab_index(active_index)
+            tab_index = self._tab_index_for_path(session_state.active_file_path)
+            if tab_index >= 0:
+                self._set_current_tab_index(tab_index)
+
         if self._refresh_breakpoints_list is not None:
             self._refresh_breakpoints_list()
 

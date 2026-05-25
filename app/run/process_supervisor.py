@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
 import signal
 import subprocess
@@ -10,6 +11,8 @@ import threading
 from typing import IO, Callable, Literal, Mapping, Sequence
 
 from app.core.errors import RunLifecycleError
+
+_LOGGER = logging.getLogger(__name__)
 
 ProcessState = Literal["idle", "running", "stopping", "exited"]
 
@@ -297,7 +300,7 @@ class ProcessSupervisor:
         try:
             self._on_event(event)
         except Exception:
-            # Event callbacks are observer side-effects; never crash supervisor threads.
+            _LOGGER.warning("Process event observer failed", exc_info=True)
             return
 
     @staticmethod

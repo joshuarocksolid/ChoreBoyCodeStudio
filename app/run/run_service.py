@@ -4,26 +4,85 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import os
 from pathlib import Path
+import secrets
+import socket
 import uuid
-from typing import Callable
+from typing import Callable, Mapping
 
-from app.bootstrap.paths import (
-    PathInput,
-    ensure_directory,
-    project_logs_dir,
-    project_runs_dir,
-    resolve_global_state_root,
-)
+from app.bootstrap.paths import PathInput, ensure_directory, resolve_app_root
 from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.core.models import LoadedProject
-from app.debug.debug_breakpoints import build_breakpoint
-from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
+from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap, DebugTransportConfig
 from app.debug.debug_transport import DebugTransportServer
-from app.run.host_process_manager import HostProcessManager
+from app.run.launch_context import (
+    LaunchContext,
+    build_repl_context_root,
+    build_repl_log_path,
+    build_repl_manifest_path,
+    build_run_log_path,
+    build_run_manifest_path,
+    plan_launch,
+)
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
-from app.run.run_manifest import RunManifest, save_run_manifest
+from app.run.run_manifest import ReplControlConfig, RunManifest, save_run_manifest
+from app.run.runner_command_builder import build_runner_command
+from app.run.runtime_launch import resolve_runtime_executable
+from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL
+
+
+def build_repl_sidecar_launch(
+    *,
+    run_id: str,
+    now: datetime,
+    state_root: PathInput | None = None,
+) -> ReplSidecarLaunch:
+    """Build manifest artifacts for a REPL sidecar without starting a process."""
+    context_root = build_repl_context_root(state_root=state_root)
+    manifest_path = build_repl_manifest_path(run_id, state_root=state_root)
+    log_path = build_repl_log_path(run_id, state_root=state_root)
+    home_dir = Path.home().expanduser().resolve()
+    repl_control = _build_repl_control_config(run_id)
+    manifest = RunManifest(
+        manifest_version=constants.RUN_MANIFEST_VERSION,
+        run_id=run_id,
+        project_root=str(context_root),
+        entry_file="__repl__.py",
+        working_directory=str(home_dir),
+        log_file=str(log_path.resolve()),
+        mode=constants.RUN_MODE_PYTHON_REPL,
+        argv=(),
+        env=(),
+        timestamp=now.isoformat(timespec="seconds"),
+        breakpoints=(),
+        repl_control=repl_control,
+    )
+    ensure_directory(Path(manifest_path).parent)
+    ensure_directory(Path(log_path).parent)
+    save_run_manifest(str(manifest_path), manifest)
+    return ReplSidecarLaunch(
+        run_id=run_id,
+        manifest_path=str(manifest_path),
+        log_path=str(log_path.resolve()),
+        launch_cwd=str(home_dir),
+        repl_control=repl_control,
+    )
+
+
+__all__ = [
+    "RunService",
+    "RunSession",
+    "ReplSidecarLaunch",
+    "build_repl_sidecar_launch",
+    "build_repl_context_root",
+    "build_repl_log_path",
+    "build_repl_manifest_path",
+    "build_run_log_path",
+    "build_run_manifest_path",
+    "generate_run_id",
+]
 
 
 @dataclass(frozen=True)
@@ -36,6 +95,17 @@ class RunSession:
     project_root: str
     entry_file: str
     mode: str
+
+
+@dataclass(frozen=True)
+class ReplSidecarLaunch:
+    """Artifacts for one REPL sidecar subprocess launch."""
+
+    run_id: str
+    manifest_path: str
+    log_path: str
+    launch_cwd: str
+    repl_control: ReplControlConfig
 
 
 class RunService:
@@ -53,18 +123,19 @@ class RunService:
         self._on_event = on_event
         self._now_factory = now_factory or datetime.now
         self._state_root = state_root
-        self._host_manager = HostProcessManager(
-            on_event=self._forward_event,
-            runtime_executable=runtime_executable,
-            runner_boot_path=runner_boot_path,
+        self._runtime_executable = runtime_executable
+        self._runner_boot_path = str(
+            Path(runner_boot_path).expanduser().resolve()
+            if runner_boot_path
+            else resolve_app_root() / "run_runner.py"
         )
+        self._supervisor = ProcessSupervisor(on_event=self._forward_event)
         self._current_session: RunSession | None = None
-        self._is_debug_paused = False
         self._debug_transport_server: DebugTransportServer | None = None
 
     @property
     def supervisor(self) -> ProcessSupervisor:
-        return self._host_manager.supervisor
+        return self._supervisor
 
     @property
     def current_session(self) -> RunSession | None:
@@ -73,10 +144,6 @@ class RunService:
     @property
     def is_debug_mode(self) -> bool:
         return self._current_session is not None and self._current_session.mode == constants.RUN_MODE_PYTHON_DEBUG
-
-    @property
-    def is_debug_paused(self) -> bool:
-        return self._is_debug_paused
 
     def start_run(
         self,
@@ -92,127 +159,76 @@ class RunService:
         source_maps: list[DebugSourceMap] | None = None,
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
-        run_id = generate_run_id(now=self._now_factory())
-        run_mode = mode or (
-            constants.RUN_MODE_PYTHON_SCRIPT
-            if loaded_project is not None
-            else constants.RUN_MODE_PYTHON_REPL
+        self._assert_idle()
+        launch = plan_launch(
+            run_id=generate_run_id(now=self._now_factory()),
+            loaded_project=loaded_project,
+            entry_file=entry_file,
+            mode=mode,
+            argv=argv,
+            working_directory=working_directory,
+            env_overrides=env_overrides,
+            breakpoints=breakpoints,
+            debug_exception_policy=debug_exception_policy,
+            source_maps=source_maps,
+            state_root=self._state_root,
         )
-
-        if loaded_project is None:
-            if run_mode == constants.RUN_MODE_PYTHON_REPL:
-                resolved_project_root = build_repl_context_root(state_root=self._state_root)
-                entry = entry_file or "__repl__.py"
-                arguments = [] if argv is None else list(argv)
-                home_directory = Path.home().expanduser().resolve()
-                configured_working_directory = working_directory or str(home_directory)
-                working_directory_candidate = Path(configured_working_directory).expanduser()
-                if working_directory_candidate.is_absolute():
-                    resolved_working_directory = working_directory_candidate.resolve()
-                else:
-                    resolved_working_directory = (home_directory / working_directory_candidate).resolve()
-            else:
-                if entry_file is None:
-                    raise RunLifecycleError("Provide a file entry before running without a project.")
-                resolved_entry = Path(entry_file).expanduser().resolve()
-                if not resolved_entry.exists() or not resolved_entry.is_file():
-                    raise RunLifecycleError(f"Entry file not found: {resolved_entry}")
-                resolved_project_root = resolved_entry.parent
-                entry = str(resolved_entry)
-                arguments = [] if argv is None else list(argv)
-                configured_working_directory = working_directory or str(resolved_entry.parent)
-                working_directory_candidate = Path(configured_working_directory).expanduser()
-                if working_directory_candidate.is_absolute():
-                    resolved_working_directory = working_directory_candidate.resolve()
-                else:
-                    resolved_working_directory = (resolved_entry.parent / working_directory_candidate).resolve()
-            manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
-            log_path = build_repl_log_path(run_id, state_root=self._state_root)
-            merged_env_overrides = {} if env_overrides is None else dict(env_overrides)
-            launch_cwd = str(resolved_working_directory)
-        else:
-            entry = entry_file or loaded_project.metadata.default_entry
-            arguments = list(loaded_project.metadata.default_argv) if argv is None else list(argv)
-            resolved_project_root = Path(loaded_project.project_root).expanduser().resolve()
-            configured_working_directory = working_directory or loaded_project.metadata.working_directory
-            resolved_working_directory = (resolved_project_root / configured_working_directory).resolve()
-            manifest_path = build_run_manifest_path(resolved_project_root, run_id)
-            log_path = build_run_log_path(resolved_project_root, run_id)
-            merged_env_overrides = dict(loaded_project.metadata.env_overrides)
-            if env_overrides is not None:
-                merged_env_overrides.update(env_overrides)
-            launch_cwd = str(resolved_project_root)
-
-        normalized_breakpoints = self._normalize_breakpoints(breakpoints)
-        normalized_exception_policy = debug_exception_policy or DebugExceptionPolicy()
-        normalized_source_maps = [] if source_maps is None else list(source_maps)
-        debug_transport = None
-        if run_mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._close_debug_transport_server()
-            self._debug_transport_server = DebugTransportServer(
-                on_message=self._forward_debug_message,
-                on_error=self._forward_debug_transport_error,
-            )
-            debug_transport = self._debug_transport_server.start()
-        ensure_directory(Path(manifest_path).parent)
-        ensure_directory(Path(log_path).parent)
-
-        timestamp = self._now_factory().isoformat(timespec="seconds")
-        manifest = RunManifest(
-            manifest_version=constants.RUN_MANIFEST_VERSION,
-            run_id=run_id,
-            project_root=str(resolved_project_root),
-            entry_file=entry,
-            working_directory=str(resolved_working_directory),
-            log_file=str(Path(log_path).resolve()),
-            mode=run_mode,
-            argv=arguments,
-            env=merged_env_overrides,
-            timestamp=timestamp,
-            breakpoints=normalized_breakpoints,
-            debug_transport=debug_transport,
-            debug_exception_policy=normalized_exception_policy,
-            source_maps=normalized_source_maps,
-        )
-        save_run_manifest(manifest_path, manifest)
-
+        debug_transport = self._start_debug_transport_if_needed(launch.mode)
+        manifest = self._build_run_manifest(launch, debug_transport=debug_transport)
+        self._persist_run_manifest(launch, manifest)
         try:
-            self._host_manager.start_manifest(
-                manifest_path=str(manifest_path),
-                cwd=launch_cwd,
-            )
+            self._start_manifest(str(launch.manifest_path), cwd=launch.launch_cwd)
         except Exception:
             self._close_debug_transport_server()
+            self._remove_manifest_file(launch.manifest_path)
             raise
         self._current_session = RunSession(
-            run_id=run_id,
-            manifest_path=str(manifest_path),
-            log_file_path=str(Path(log_path).resolve()),
-            project_root=str(resolved_project_root),
-            entry_file=entry,
-            mode=run_mode,
+            run_id=launch.run_id,
+            manifest_path=str(launch.manifest_path),
+            log_file_path=str(launch.log_path.resolve()),
+            project_root=launch.project_root,
+            entry_file=launch.entry_file,
+            mode=launch.mode,
         )
-        self._is_debug_paused = False
         return self._current_session
+
+    def plan_repl_sidecar(self) -> ReplSidecarLaunch:
+        """Build manifest artifacts for a REPL sidecar without starting a process."""
+        return build_repl_sidecar_launch(
+            run_id=generate_run_id(now=self._now_factory()),
+            now=self._now_factory(),
+            state_root=self._state_root,
+        )
+
+    def start_repl_sidecar(self, *, supervisor: ProcessSupervisor | None = None) -> ReplSidecarLaunch:
+        """Build REPL manifest artifacts and launch the sidecar subprocess."""
+        launch = self.plan_repl_sidecar()
+        target_supervisor = supervisor or self._supervisor
+        command = build_runner_command(
+            runtime_executable=self._resolve_runtime_executable(),
+            runner_boot_path=self._runner_boot_path,
+            manifest_path=launch.manifest_path,
+        )
+        target_supervisor.start(command, cwd=launch.launch_cwd, env=os.environ.copy())
+        return launch
 
     def stop_run(self) -> int | None:
         """Stop active run process if running."""
-        return self._host_manager.stop()
+        return self._supervisor.stop()
 
     def pause_run(self) -> bool:
         """Interrupt active run process to enter paused/debug interaction."""
         if self.is_debug_mode:
             self.send_debug_command("pause")
             return True
-        return self._host_manager.pause()
+        return self._supervisor.pause()
 
     def send_input(self, text: str) -> None:
         """Send stdin input to active runner process."""
-        self._host_manager.send_input(text)
+        self._supervisor.send_input(text)
 
     def send_debug_command(self, command_name: str, arguments: dict[str, object] | None = None) -> str:
         """Send one structured debug command over the dedicated transport."""
-
         if not self.is_debug_mode:
             raise RunLifecycleError("No active debug session is running.")
         if self._debug_transport_server is None:
@@ -222,29 +238,91 @@ class RunService:
         except Exception as exc:
             raise RunLifecycleError("Failed to send debug command: %s" % (exc,)) from exc
 
+    def _start_manifest(
+        self,
+        manifest_path: str,
+        *,
+        cwd: str,
+        env: Mapping[str, str] | None = None,
+    ) -> int:
+        command = build_runner_command(
+            runtime_executable=self._resolve_runtime_executable(),
+            runner_boot_path=self._runner_boot_path,
+            manifest_path=manifest_path,
+        )
+        launch_env = os.environ.copy() if env is None else dict(env)
+        return self._supervisor.start(command, cwd=cwd, env=launch_env)
+
+    def _resolve_runtime_executable(self) -> str:
+        return resolve_runtime_executable(self._runtime_executable)
+
+    def _start_debug_transport_if_needed(self, run_mode: str) -> DebugTransportConfig | None:
+        if run_mode != constants.RUN_MODE_PYTHON_DEBUG:
+            return None
+        self._close_debug_transport_server()
+        self._debug_transport_server = DebugTransportServer(
+            on_message=self._forward_debug_message,
+            on_error=self._forward_debug_transport_error,
+        )
+        return self._debug_transport_server.start()
+
+    def _build_run_manifest(
+        self,
+        launch: LaunchContext,
+        *,
+        debug_transport: DebugTransportConfig | None,
+    ) -> RunManifest:
+        repl_control = (
+            _build_repl_control_config(launch.run_id)
+            if launch.mode == constants.RUN_MODE_PYTHON_REPL
+            else None
+        )
+        return RunManifest(
+            manifest_version=constants.RUN_MANIFEST_VERSION,
+            run_id=launch.run_id,
+            project_root=launch.project_root,
+            entry_file=launch.entry_file,
+            working_directory=launch.working_directory,
+            log_file=str(launch.log_path.resolve()),
+            mode=launch.mode,
+            argv=tuple(launch.argv),
+            env=tuple(sorted(launch.env.items())),
+            timestamp=self._now_factory().isoformat(timespec="seconds"),
+            breakpoints=tuple(launch.breakpoints),
+            debug_transport=debug_transport,
+            repl_control=repl_control,
+            debug_exception_policy=launch.debug_exception_policy,
+            source_maps=tuple(launch.source_maps),
+        )
+
+    def _persist_run_manifest(self, launch: LaunchContext, manifest: RunManifest) -> None:
+        ensure_directory(launch.manifest_path.parent)
+        ensure_directory(launch.log_path.parent)
+        save_run_manifest(str(launch.manifest_path), manifest)
+
+    @staticmethod
+    def _remove_manifest_file(manifest_path: Path) -> None:
+        manifest_file = Path(manifest_path)
+        if manifest_file.exists():
+            try:
+                manifest_file.unlink()
+            except OSError:
+                pass
+
     def _forward_event(self, event: ProcessEvent) -> None:
         if event.event_type == "exit":
             self._current_session = None
-            self._is_debug_paused = False
             self._close_debug_transport_server()
         if self._on_event is None:
             return
         self._on_event(event)
 
     def _forward_debug_message(self, message: dict[str, object]) -> None:
-        kind = str(message.get("kind", "")).strip()
-        if kind == "event":
-            event_name = str(message.get("event", "")).strip()
-            if event_name == "stopped":
-                self._is_debug_paused = True
-            elif event_name in {"continued", "session_ready", "session_ended"}:
-                self._is_debug_paused = False
         if self._on_event is None:
             return
         self._on_event(ProcessEvent(event_type="debug", payload=dict(message)))
 
     def _forward_debug_transport_error(self, message: str) -> None:
-        self._is_debug_paused = False
         if self._on_event is not None:
             self._on_event(
                 ProcessEvent(
@@ -257,6 +335,7 @@ class RunService:
                 )
             )
             self._on_event(ProcessEvent(event_type="output", stream="stderr", text="[debug] %s\n" % (message,)))
+        self._close_debug_transport_server()
 
     def _close_debug_transport_server(self) -> None:
         transport_server = self._debug_transport_server
@@ -264,33 +343,9 @@ class RunService:
         if transport_server is not None:
             transport_server.close()
 
-    @staticmethod
-    def _normalize_breakpoints(
-        raw_breakpoints: list[DebugBreakpoint] | list[dict[str, object]] | None,
-    ) -> list[DebugBreakpoint]:
-        if raw_breakpoints is None:
-            return []
-        normalized: list[DebugBreakpoint] = []
-        for entry in raw_breakpoints:
-            if isinstance(entry, DebugBreakpoint):
-                normalized.append(entry)
-                continue
-            file_path = entry.get("file_path")
-            line_number = entry.get("line_number")
-            hit_condition = entry.get("hit_condition")
-            if not isinstance(file_path, str) or not isinstance(line_number, int):
-                continue
-            normalized.append(
-                build_breakpoint(
-                    file_path=file_path,
-                    line_number=line_number,
-                    breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
-                    enabled=bool(entry.get("enabled", True)),
-                    condition=str(entry.get("condition", "")).strip(),
-                    hit_condition=int(hit_condition) if isinstance(hit_condition, int) else None,
-                )
-            )
-        return normalized
+    def _assert_idle(self) -> None:
+        if self._supervisor.is_running():
+            raise RunLifecycleError("A run session is already active.")
 
 
 def generate_run_id(*, now: datetime | None = None) -> str:
@@ -301,29 +356,17 @@ def generate_run_id(*, now: datetime | None = None) -> str:
     return f"{timestamp}_{unique_suffix}"
 
 
-def build_run_manifest_path(project_root: str | Path, run_id: str) -> Path:
-    """Build run manifest path under `<project>/cbcs/runs`."""
-    runs_directory = project_runs_dir(str(Path(project_root).expanduser().resolve()))
-    return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
+def _build_repl_control_config(run_id: str) -> ReplControlConfig:
+    return ReplControlConfig(
+        protocol=REPL_CONTROL_PROTOCOL,
+        host="127.0.0.1",
+        port=_allocate_loopback_port(),
+        session_token=f"repl_{run_id}_{secrets.token_hex(8)}",
+        connect_timeout_ms=800,
+    )
 
 
-def build_run_log_path(project_root: str | Path, run_id: str) -> Path:
-    """Build run log path under `<project>/cbcs/logs`."""
-    return project_logs_dir(project_root) / f"run_{run_id}.log"
-
-
-def build_repl_context_root(*, state_root: PathInput | None = None) -> Path:
-    """Build global state-backed root for projectless REPL artifacts."""
-    return ensure_directory(resolve_global_state_root(state_root) / "repl")
-
-
-def build_repl_manifest_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
-    """Build projectless REPL manifest path under global state."""
-    runs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "runs")
-    return runs_directory / f"{constants.RUN_MANIFEST_FILENAME_PREFIX}{run_id}.json"
-
-
-def build_repl_log_path(run_id: str, *, state_root: PathInput | None = None) -> Path:
-    """Build projectless REPL log path under global state."""
-    logs_directory = ensure_directory(build_repl_context_root(state_root=state_root) / "logs")
-    return logs_directory / f"run_{run_id}.log"
+def _allocate_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])

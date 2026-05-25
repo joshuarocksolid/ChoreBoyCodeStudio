@@ -9,8 +9,8 @@ import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
 from app.run.problem_parser import ProblemEntry
-from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
-from app.run.pytest_runner_service import PytestRunResult
+from app.pytest.discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.runner_service import PytestRunResult
 from app.shell.test_runner_workflow import ActiveTestEditor, TestRunnerWorkflow
 
 pytestmark = pytest.mark.unit
@@ -207,7 +207,7 @@ def test_handle_pytest_result_updates_outcomes_and_problems(tmp_path: Path) -> N
         command=["pytest"],
         project_root=str(harness.project_root),
         return_code=1,
-        stdout="tests/test_sample.py::test_alpha FAILED\n",
+        stdout="FAILED tests/test_sample.py::test_alpha - AssertionError\n",
         stderr="",
         elapsed_ms=1.0,
         failures=[

@@ -27,10 +27,12 @@ def _build_run_launch_workflow(**overrides: Any) -> tuple[RunLaunchWorkflow, Any
         "editor_manager",
         lambda: SimpleNamespace(active_tab=lambda: None),
     )
+    from app.shell.breakpoint_store import BreakpointStore
+
     debug_control_workflow = overrides.get(
         "debug_control_workflow",
         SimpleNamespace(
-            breakpoint_store=SimpleNamespace(breakpoints_by_file={}),
+            breakpoint_store=BreakpointStore(),
             build_debug_breakpoints_for_launch=lambda **_kwargs: [],
         ),
     )
@@ -229,9 +231,9 @@ def test_start_active_file_session_uses_transient_file_for_dirty_buffer() -> Non
         ),
         active_transient_entry_file_path=None,
     )
-    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
+    workflow._active_file_launch.write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
+    workflow._active_file_launch.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
@@ -262,9 +264,9 @@ def test_start_active_file_session_cleans_transient_file_when_start_fails() -> N
         ),
         active_transient_entry_file_path=None,
     )
-    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
+    workflow._active_file_launch.write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
+    workflow._active_file_launch.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     workflow.start_session = lambda **_kwargs: False  # type: ignore[method-assign]
 
     started = workflow._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
@@ -299,9 +301,9 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
         ),
         active_transient_entry_file_path=None,
     )
-    workflow._write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
+    workflow._active_file_launch.write_transient_entry_file = lambda **_kwargs: "/tmp/transient.py"  # type: ignore[method-assign]
     deleted: list[str] = []
-    workflow.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
+    workflow._active_file_launch.delete_transient_entry_file = deleted.append  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 

@@ -8,26 +8,21 @@ app launch and auto-restart when the REPL process exits unexpectedly.
 from __future__ import annotations
 
 import logging
-import secrets
+import os
 import socket
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from app.bootstrap.paths import PathInput, ensure_directory
-from app.core import constants
+from app.bootstrap.paths import PathInput, resolve_app_root
 from app.intelligence.completion_models import CompletionEnvelope
-from app.run.host_process_manager import HostProcessManager
-from app.run.process_supervisor import ProcessEvent
-from app.run.run_manifest import ReplControlConfig, RunManifest, save_run_manifest
-from app.run.run_service import (
-    build_repl_context_root,
-    build_repl_log_path,
-    build_repl_manifest_path,
-    generate_run_id,
-)
-from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, dumps_message, envelope_from_dict, loads_message
+from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.run_manifest import ReplControlConfig
+from app.run.run_service import build_repl_sidecar_launch, generate_run_id
+from app.run.runner_command_builder import build_runner_command
+from app.run.runtime_launch import resolve_runtime_executable
+from app.runner.repl_protocol import dumps_message, envelope_from_dict, loads_message
 
 _logger = logging.getLogger(__name__)
 
@@ -52,11 +47,13 @@ class ReplSessionManager:
         self._on_output = on_output
         self._on_session_ended = on_session_ended
         self._on_session_started = on_session_started
-        self._host_manager = HostProcessManager(
-            on_event=self._handle_event,
-            runtime_executable=runtime_executable,
-            runner_boot_path=runner_boot_path,
+        self._runtime_executable = runtime_executable
+        self._runner_boot_path = str(
+            Path(runner_boot_path).expanduser().resolve()
+            if runner_boot_path
+            else resolve_app_root() / "run_runner.py"
         )
+        self._supervisor = ProcessSupervisor(on_event=self._handle_event)
         self._state_root = state_root
         self._auto_restart = True
         self._shutting_down = False
@@ -65,11 +62,11 @@ class ReplSessionManager:
 
     @property
     def is_running(self) -> bool:
-        return self._host_manager.is_running()
+        return self._supervisor.is_running()
 
     def start(self) -> None:
         """Launch the REPL subprocess (no-op if already running)."""
-        if self._host_manager.is_running():
+        if self._supervisor.is_running():
             return
         self._shutting_down = False
         self._auto_restart = True
@@ -85,8 +82,8 @@ class ReplSessionManager:
         """Stop the REPL subprocess and suppress auto-restart."""
         self._auto_restart = False
         self._shutting_down = True
-        if self._host_manager.is_running():
-            self._host_manager.stop()
+        if self._supervisor.is_running():
+            self._supervisor.stop()
 
     def restart(self) -> None:
         """Stop then re-launch the REPL subprocess."""
@@ -106,7 +103,7 @@ class ReplSessionManager:
         """Send *text* to the REPL subprocess stdin."""
         if not text.endswith("\n"):
             text += "\n"
-        self._host_manager.send_input(text)
+        self._supervisor.send_input(text)
 
     def complete(
         self,
@@ -120,9 +117,10 @@ class ReplSessionManager:
         """Request live completions from the active REPL control channel."""
 
         config = self._control_config
-        if config is None or not self._host_manager.is_running():
+        if config is None or not self._supervisor.is_running():
             return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
         payload = {
+            "protocol": config.protocol,
             "session_token": config.session_token,
             "method": "complete",
             "line_buffer": line_buffer,
@@ -151,50 +149,22 @@ class ReplSessionManager:
         """Permanent shutdown (call during app close)."""
         self._auto_restart = False
         self._shutting_down = True
-        if self._host_manager.is_running():
-            self._host_manager.stop()
-
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
+        if self._supervisor.is_running():
+            self._supervisor.stop()
 
     def _launch(self) -> None:
-        run_id = generate_run_id(now=datetime.now())
-        context_root = build_repl_context_root(state_root=self._state_root)
-        manifest_path = build_repl_manifest_path(run_id, state_root=self._state_root)
-        log_path = build_repl_log_path(run_id, state_root=self._state_root)
-        self._control_config = ReplControlConfig(
-            protocol=REPL_CONTROL_PROTOCOL,
-            host="127.0.0.1",
-            port=_allocate_loopback_port(),
-            session_token=f"repl_{run_id}_{secrets.token_hex(8)}",
-            connect_timeout_ms=800,
+        launch = build_repl_sidecar_launch(
+            run_id=generate_run_id(now=datetime.now()),
+            now=datetime.now(),
+            state_root=self._state_root,
         )
-
-        home_dir = Path.home().expanduser().resolve()
-        ensure_directory(Path(manifest_path).parent)
-        ensure_directory(Path(log_path).parent)
-
-        manifest = RunManifest(
-            manifest_version=constants.RUN_MANIFEST_VERSION,
-            run_id=run_id,
-            project_root=str(context_root),
-            entry_file="__repl__.py",
-            working_directory=str(home_dir),
-            log_file=str(log_path.resolve()),
-            mode=constants.RUN_MODE_PYTHON_REPL,
-            argv=[],
-            env={},
-            timestamp=datetime.now().isoformat(timespec="seconds"),
-            breakpoints=[],
-            repl_control=self._control_config,
+        self._control_config = launch.repl_control
+        command = build_runner_command(
+            runtime_executable=resolve_runtime_executable(self._runtime_executable),
+            runner_boot_path=self._runner_boot_path,
+            manifest_path=launch.manifest_path,
         )
-        save_run_manifest(str(manifest_path), manifest)
-
-        self._host_manager.start_manifest(
-            manifest_path=str(manifest_path),
-            cwd=str(home_dir),
-        )
+        self._supervisor.start(command, cwd=launch.launch_cwd, env=os.environ.copy())
 
     def _handle_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:
@@ -220,8 +190,11 @@ class ReplSessionManager:
         ]
         self._recent_exit_times.append(now)
         if len(self._recent_exit_times) >= _MAX_RAPID_RESTARTS:
-            _logger.warning("REPL crashed %d times in %.0fs — suppressing auto-restart",
-                            _MAX_RAPID_RESTARTS, _RAPID_RESTART_WINDOW_SECONDS)
+            _logger.warning(
+                "REPL crashed %d times in %.0fs — suppressing auto-restart",
+                _MAX_RAPID_RESTARTS,
+                _RAPID_RESTART_WINDOW_SECONDS,
+            )
             return
         timer = threading.Timer(_AUTO_RESTART_DELAY_SECONDS, self._do_auto_restart)
         timer.daemon = True
@@ -230,7 +203,7 @@ class ReplSessionManager:
     def _do_auto_restart(self) -> None:
         if self._shutting_down or not self._auto_restart:
             return
-        if self._host_manager.is_running():
+        if self._supervisor.is_running():
             return
         _logger.info("Auto-restarting REPL session")
         try:
@@ -240,12 +213,6 @@ class ReplSessionManager:
             return
         if self._on_session_started is not None:
             self._on_session_started()
-
-
-def _allocate_loopback_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def _read_json_line(sock: socket.socket) -> dict[str, object]:

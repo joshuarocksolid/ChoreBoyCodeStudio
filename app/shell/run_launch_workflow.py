@@ -2,99 +2,42 @@
 
 from __future__ import annotations
 
-import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Union
+from typing import Any, Mapping, Protocol
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QMenu, QMessageBox, QToolButton, QWidget
+from PySide2.QtWidgets import QWidget
 
 from app.core import constants
-from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
-from app.project.project_manifest import set_project_default_argv
 from app.project.run_configs import RunConfiguration
 from app.shell.run_config_controller import RunConfigController
-from app.shell.run_configurations_dialog import (
-    RunConfigurationsDialog,
-    RunConfigurationsInitial,
-    RunConfigurationsResult,
+from app.shell.run_configurations_dialog import RunConfigurationsDialog, RunConfigurationsInitial, RunConfigurationsResult
+from app.shell.run_launch.active_file_launch import ActiveFileLaunchWorkflow
+from app.shell.run_launch.debug_targets import (
+    ActiveFileTarget,
+    CurrentTestTarget,
+    DebugTarget,
+    ProjectTarget,
+    TestNodeTarget,
+    debug_target_from_mapping,
 )
+from app.shell.run_launch.run_configuration_workflow import RunConfigurationWorkflow, proposed_new_config_name
 from app.shell.run_with_arguments_dialog import RunInvocation, RunWithArgumentsDialog, RunWithArgumentsInitial
 from app.support.preflight import build_run_preflight
 
-
-@dataclass(frozen=True)
-class ProjectTarget:
-    """Last debug target: project default or active named configuration."""
-
-    kind: str = "project"
-
-
-@dataclass(frozen=True)
-class ActiveFileTarget:
-    """Last debug target: active editor Python file."""
-
-    file_path: str
-    kind: str = "active_file"
-
-
-@dataclass(frozen=True)
-class CurrentTestTarget:
-    """Last debug target: pytest run for the current file."""
-
-    target_path: str
-    kind: str = "current_test"
-
-
-@dataclass(frozen=True)
-class TestNodeTarget:
-    """Last debug target: a single pytest node."""
-
-    node_id: str
-    kind: str = "test_node"
-
-
-DebugTarget = Union[ProjectTarget, ActiveFileTarget, CurrentTestTarget, TestNodeTarget]
-
-
-def debug_target_from_mapping(payload: Mapping[str, object]) -> DebugTarget | None:
-    """Parse a legacy debug-target dict into a typed :class:`DebugTarget`."""
-
-    kind = str(payload.get("kind", "")).strip()
-    if kind == "project":
-        return ProjectTarget()
-    if kind == "active_file":
-        file_path = str(payload.get("file_path", "")).strip()
-        if not file_path:
-            return None
-        return ActiveFileTarget(file_path=file_path)
-    if kind == "current_test":
-        target_path = str(payload.get("target_path", "")).strip()
-        if not target_path:
-            return None
-        return CurrentTestTarget(target_path=target_path)
-    if kind == "test_node":
-        node_id = str(payload.get("node_id", "")).strip()
-        if not node_id:
-            return None
-        return TestNodeTarget(node_id=node_id)
-    return None
-
-
-def _proposed_new_config_name(existing_configs: list[RunConfiguration]) -> str:
-    """Return a unique default name for a freshly created run configuration."""
-
-    base = "New Configuration"
-    existing_names = {config.name for config in existing_configs}
-    if base not in existing_names:
-        return base
-    index = 2
-    while f"{base} {index}" in existing_names:
-        index += 1
-    return f"{base} {index}"
+# Re-export debug target types for backward-compatible imports.
+__all__ = [
+    "ActiveFileTarget",
+    "CurrentTestTarget",
+    "DebugTarget",
+    "ProjectTarget",
+    "RunLaunchWorkflow",
+    "RunLaunchWorkflowHost",
+    "TestNodeTarget",
+    "debug_target_from_mapping",
+]
 
 
 class RunLaunchWorkflowHost(Protocol):
@@ -179,7 +122,8 @@ class RunLaunchWorkflow:
     def __init__(self, host: RunLaunchWorkflowHost) -> None:
         self._host = host
         self._last_debug_target: DebugTarget | None = None
-        self._active_run_config_button: QToolButton | None = None
+        self._active_file_launch = ActiveFileLaunchWorkflow(host)
+        self._run_configuration = RunConfigurationWorkflow(_RunConfigurationHostAdapter(self))
 
     @property
     def last_debug_target(self) -> DebugTarget | None:
@@ -232,7 +176,7 @@ class RunLaunchWorkflow:
         if loaded_project is None:
             self._host.show_warning("Run unavailable", "Open a project before running.")
             return False
-        active_config = self._resolve_active_named_run_config()
+        active_config = self._run_configuration.resolve_active_named_run_config()
         if active_config is not None:
             return self._launch_run_configuration(active_config, debug=False)
         entry_file = (loaded_project.metadata.default_entry or "").strip()
@@ -245,7 +189,7 @@ class RunLaunchWorkflow:
         if loaded_project is None:
             self._host.show_warning("Run unavailable", "Open a project before running.")
             return False
-        active_config = self._resolve_active_named_run_config()
+        active_config = self._run_configuration.resolve_active_named_run_config()
         if active_config is not None:
             return self._launch_run_configuration(active_config, debug=True)
         entry_file = (loaded_project.metadata.default_entry or "").strip()
@@ -282,7 +226,7 @@ class RunLaunchWorkflow:
         )
         if result is None:
             return False
-        persisted = self._persist_run_configurations_result(result)
+        persisted = self._run_configuration.persist_run_configurations_result(result)
         if not persisted:
             return False
         selected_name = result.selected_config_name
@@ -350,7 +294,7 @@ class RunLaunchWorkflow:
         )
 
     def handle_run_active_configuration_action(self) -> bool:
-        active_config = self._resolve_active_named_run_config()
+        active_config = self._run_configuration.resolve_active_named_run_config()
         if active_config is None:
             return self.handle_run_project_action()
         return self._launch_run_configuration(active_config, debug=False)
@@ -433,44 +377,10 @@ class RunLaunchWorkflow:
         return self.launch_ad_hoc_run_invocation(invocation)
 
     def install_active_run_config_indicator(self) -> None:
-        if self._active_run_config_button is not None:
-            return
-        status_bar = self._host.status_bar()
-        button = QToolButton(status_bar)
-        button.setObjectName("shell.statusBar.activeRunConfig")
-        button.setText("Default")
-        button.setToolTip(
-            "Active run target for F5 / Run Project. Click to switch configurations or edit them."
-        )
-        button.setPopupMode(QToolButton.InstantPopup)
-        button.setAutoRaise(True)
-        button.setFocusPolicy(Qt.NoFocus)
-        button.setMenu(QMenu(button))
-        button.menu().aboutToShow.connect(self._populate_active_run_config_menu)
-        status_bar.addPermanentWidget(button)
-        self._active_run_config_button = button
-        self.refresh_active_run_config_indicator()
+        self._run_configuration.install_active_run_config_indicator()
 
     def refresh_active_run_config_indicator(self) -> None:
-        button = self._active_run_config_button
-        if button is None:
-            return
-        active_name = self._host.active_named_run_config_name()
-        button.setText(active_name if active_name else "Default")
-        button.setEnabled(True)
-
-    def _resolve_active_named_run_config(self) -> RunConfiguration | None:
-        loaded_project = self._host.loaded_project()
-        active_name = self._host.active_named_run_config_name()
-        if loaded_project is None or not active_name:
-            return None
-        configs = self._host.run_config_controller().load_configs(loaded_project)
-        for config in configs:
-            if config.name == active_name:
-                return config
-        self._host.set_active_named_run_config_name(None)
-        self.refresh_active_run_config_indicator()
-        return None
+        self._run_configuration.refresh_active_run_config_indicator()
 
     def _ensure_run_preflight_ready(
         self,
@@ -526,49 +436,6 @@ class RunLaunchWorkflow:
             self.record_debug_target(ProjectTarget())
         return started
 
-    def _persist_run_configurations_result(self, result: RunConfigurationsResult) -> bool:
-        loaded_project = self._host.loaded_project()
-        if loaded_project is None:
-            return False
-        try:
-            self._host.run_config_controller().persist_run_configs(
-                loaded_project=loaded_project,
-                run_configs=result.configurations,
-            )
-        except AppValidationError as exc:
-            self._host.show_warning("Run Configurations", str(exc))
-            return False
-        try:
-            updated_metadata = set_project_default_argv(
-                loaded_project.manifest_path,
-                default_argv=list(result.default_argv),
-                metadata_if_absent=None
-                if loaded_project.manifest_materialized
-                else loaded_project.metadata,
-            )
-        except (ProjectManifestValidationError, ValueError) as exc:
-            self._host.show_warning("Run Configurations", str(exc))
-            return False
-        self._host.set_loaded_project(
-            replace(
-                loaded_project,
-                metadata=updated_metadata,
-                manifest_materialized=True,
-            )
-        )
-        selected_name = result.selected_config_name
-        existing_names = {config.name for config in result.configurations}
-        if selected_name and selected_name in existing_names:
-            self._host.set_active_named_run_config_name(selected_name)
-        elif (
-            self._host.active_named_run_config_name() is not None
-            and self._host.active_named_run_config_name() not in existing_names
-        ):
-            self._host.set_active_named_run_config_name(None)
-        self._host.refresh_run_action_states()
-        self.refresh_active_run_config_indicator()
-        return True
-
     def _open_save_invocation_as_configuration_dialog(self, invocation: RunInvocation) -> None:
         loaded_project = self._host.loaded_project()
         if loaded_project is None:
@@ -578,7 +445,7 @@ class RunLaunchWorkflow:
             )
             return
         existing_configs = self._host.run_config_controller().load_configs(loaded_project)
-        proposed_name = _proposed_new_config_name(existing_configs)
+        proposed_name = proposed_new_config_name(existing_configs)
         new_config = RunConfiguration(
             name=proposed_name,
             entry_file=invocation.entry_file,
@@ -601,125 +468,59 @@ class RunLaunchWorkflow:
         )
         if result is None:
             return
-        self._persist_run_configurations_result(result)
-
-    def _populate_active_run_config_menu(self) -> None:
-        button = self._active_run_config_button
-        if button is None:
-            return
-        menu = button.menu()
-        if menu is None:
-            return
-        menu.clear()
-        loaded_project = self._host.loaded_project()
-
-        default_action = menu.addAction("Default (no named configuration)")
-        default_action.setCheckable(True)
-        default_action.setChecked(self._host.active_named_run_config_name() is None)
-        default_action.triggered.connect(self._set_active_run_config_to_default)
-
-        if loaded_project is not None:
-            configs = self._host.run_config_controller().load_configs(loaded_project)
-        else:
-            configs = []
-        if configs:
-            menu.addSeparator()
-            for config in configs:
-                action = menu.addAction(config.name)
-                action.setCheckable(True)
-                action.setChecked(config.name == self._host.active_named_run_config_name())
-                action.triggered.connect(
-                    lambda _checked=False, name=config.name: self._set_active_run_config_by_name(name)
-                )
-        menu.addSeparator()
-        run_with_args_action = menu.addAction("Run With Arguments...")
-        run_with_args_action.triggered.connect(self.handle_run_with_arguments_action)
-        edit_action = menu.addAction("Edit Configurations...")
-        edit_action.setEnabled(loaded_project is not None)
-        edit_action.triggered.connect(self.handle_run_with_configuration_action)
-
-    def _set_active_run_config_to_default(self) -> None:
-        if self._host.active_named_run_config_name() is None:
-            return
-        self._host.set_active_named_run_config_name(None)
-        self._host.refresh_run_action_states()
-        self.refresh_active_run_config_indicator()
-
-    def _set_active_run_config_by_name(self, name: str) -> None:
-        normalized = (name or "").strip()
-        if not normalized:
-            return
-        if normalized == self._host.active_named_run_config_name():
-            return
-        self._host.set_active_named_run_config_name(normalized)
-        self._host.refresh_run_action_states()
-        self.refresh_active_run_config_indicator()
+        self._run_configuration.persist_run_configurations_result(result)
 
     def _start_active_file_session(self, *, mode: str) -> bool:
-        active_tab = self._host.editor_manager().active_tab()
-        if active_tab is None:
-            self._host.show_warning("Run unavailable", "Open a file tab before running.")
-            return False
-        entry_path = Path(active_tab.file_path).expanduser().resolve()
-        active_file_path = str(entry_path)
-        if entry_path.suffix.lower() != ".py":
-            self._host.show_warning("Run unavailable", "Active file must be a Python file.")
-            return False
-        transient_entry_file: str | None = None
-        entry_file = active_file_path
-        skip_save = False
-        source_maps: list[DebugSourceMap] | None = None
-        if active_tab.is_dirty:
-            transient_entry_file = self._write_transient_entry_file(
-                source_file_path=active_tab.file_path,
-                source_content=active_tab.current_content,
-            )
-            entry_file = transient_entry_file
-            skip_save = True
-            source_maps = [DebugSourceMap(runtime_path=transient_entry_file, source_path=active_file_path)]
-        breakpoints: list[DebugBreakpoint] | None = None
-        if mode == constants.RUN_MODE_PYTHON_DEBUG:
-            breakpoints = self._host.debug_control_workflow().build_debug_breakpoints_for_launch(
-                active_file_path=active_file_path,
-                remapped_active_path=transient_entry_file,
-            )
-        started = self.start_session(
+        return self._active_file_launch.start_active_file_session(
             mode=mode,
-            entry_file=entry_file,
-            breakpoints=breakpoints,
-            debug_exception_policy=self._host.debug_exception_policy()
-            if mode == constants.RUN_MODE_PYTHON_DEBUG
-            else None,
-            source_maps=source_maps,
-            skip_save=skip_save,
+            start_session=self.start_session,
+            record_debug_target=lambda file_path: self.record_debug_target(
+                ActiveFileTarget(file_path=file_path)
+            ),
         )
-        if started and mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self.record_debug_target(ActiveFileTarget(file_path=active_file_path))
-        if transient_entry_file is not None:
-            if started:
-                self._host.set_active_transient_entry_file_path(transient_entry_file)
-            else:
-                self._delete_transient_entry_file(transient_entry_file)
-        return started
-
-    def _write_transient_entry_file(self, *, source_file_path: str, source_content: str) -> str:
-        source_name = Path(source_file_path).name
-        safe_stem = Path(source_name).stem or "buffer"
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=".py",
-            prefix=f"cbcs_{safe_stem}_",
-            delete=False,
-        ) as handle:
-            handle.write(source_content)
-            return str(Path(handle.name).resolve())
 
     def delete_transient_entry_file(self, path: str) -> None:
-        try:
-            Path(path).unlink(missing_ok=True)
-        except OSError:
-            self._host.logger().warning("Failed to delete transient run file: %s", path)
+        self._active_file_launch.delete_transient_entry_file(path)
 
-    def _delete_transient_entry_file(self, path: str) -> None:
-        self.delete_transient_entry_file(path)
+
+class _RunConfigurationHostAdapter:
+    """Adapt :class:`RunLaunchWorkflowHost` to :class:`RunConfigurationHost`."""
+
+    def __init__(self, workflow: RunLaunchWorkflow) -> None:
+        self._workflow = workflow
+
+    def dialog_parent(self) -> QWidget:
+        return self._workflow._host.dialog_parent()
+
+    def status_bar(self) -> Any:
+        return self._workflow._host.status_bar()
+
+    def loaded_project(self) -> LoadedProject | None:
+        return self._workflow._host.loaded_project()
+
+    def set_loaded_project(self, project: LoadedProject) -> None:
+        self._workflow._host.set_loaded_project(project)
+
+    def active_named_run_config_name(self) -> str | None:
+        return self._workflow._host.active_named_run_config_name()
+
+    def set_active_named_run_config_name(self, name: str | None) -> None:
+        self._workflow._host.set_active_named_run_config_name(name)
+
+    def run_config_controller(self) -> RunConfigController:
+        return self._workflow._host.run_config_controller()
+
+    def resolve_theme_tokens(self) -> Any:
+        return self._workflow._host.resolve_theme_tokens()
+
+    def refresh_run_action_states(self) -> None:
+        self._workflow._host.refresh_run_action_states()
+
+    def show_warning(self, title: str, message: str) -> None:
+        self._workflow._host.show_warning(title, message)
+
+    def handle_run_with_arguments_action(self) -> bool:
+        return self._workflow.handle_run_with_arguments_action()
+
+    def handle_run_with_configuration_action(self) -> bool:
+        return self._workflow.handle_run_with_configuration_action()

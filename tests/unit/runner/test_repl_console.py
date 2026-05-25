@@ -70,9 +70,11 @@ class TestClearHelper:
         helper = _make_clear_helper()
         text = repr(helper)
         assert "Clear Console" in text
+        assert "Run Log" in text
 
     def test_callable_prints_guidance(self, capsys: pytest.CaptureFixture[str]) -> None:
         helper = _make_clear_helper()
         helper()  # type: ignore[operator]
         captured = capsys.readouterr()
         assert "Clear Console" in captured.out
+        assert "Run Log" in captured.out

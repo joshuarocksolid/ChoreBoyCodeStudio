@@ -18,7 +18,8 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.outcome_types import TestOutcome
 from app.shell.test_explorer_icons import (
     _OUTCOME_ICON_CACHE,
     _ACTION_ICON_CACHE,
@@ -340,7 +341,7 @@ class TestExplorerPanel(QWidget):
         self._apply_filters()
         self._refresh_summary()
 
-    def update_outcomes(self, outcomes: dict[str, str]) -> None:
+    def update_outcomes(self, outcomes: dict[str, TestOutcome]) -> None:
         """Update per-test outcome indicators."""
         self._outcomes.update(outcomes)
         self._refresh_outcome_icons()
@@ -349,7 +350,7 @@ class TestExplorerPanel(QWidget):
         self._apply_filters()
         self._refresh_summary()
 
-    def set_outcomes(self, outcomes: dict[str, str]) -> None:
+    def set_outcomes(self, outcomes: dict[str, TestOutcome]) -> None:
         """Replace all tracked outcomes and refresh indicator state."""
         self._outcomes = dict(outcomes)
         self._refresh_outcome_icons()

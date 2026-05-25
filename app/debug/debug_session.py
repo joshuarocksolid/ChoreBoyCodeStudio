@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from app.debug.debug_breakpoints import build_breakpoint
+from app.debug.debug_breakpoints import parse_breakpoint_entry
 from app.debug.debug_models import (
     DebugBreakpoint,
-    DebugEvent,
     DebugExceptionInfo,
     DebugExceptionPolicy,
     DebugExecutionState,
@@ -48,18 +47,10 @@ class DebugSession:
         if kind == "hello":
             self._state.engine_name = str(payload.get("engine_name", "")).strip()
 
-    def mark_exited(self) -> DebugEvent:
-        """Apply and return synthetic exit event."""
+    def mark_exited(self, *, message: str = "Debug session exited.") -> None:
+        """Apply synthetic exit transition and clear inspector state."""
 
-        event = DebugEvent(event_type="exited", message="Debug session exited.")
-        self._state.apply_event(event)
-        self._state.threads = []
-        self._state.frames = []
-        self._state.scopes = []
-        self._state.variables = []
-        self._state.variables_by_reference.clear()
-        self._state.exception_info = None
-        return event
+        self._state.mark_exited(message=message)
 
     def _apply_event_payload(self, event_name: str, body: Mapping[str, object]) -> None:
         if event_name == "session_ready":
@@ -72,6 +63,7 @@ class DebugSession:
             self._state.execution_state = DebugExecutionState.RUNNING
             self._state.stop_reason = ""
             self._state.last_message = str(body.get("message", "")).strip() or "Debug execution running."
+            self._state.clear_inspector_state()
             return
         if event_name == "session_ended":
             self.mark_exited()
@@ -263,22 +255,9 @@ def _parse_breakpoints(raw_value: object) -> list[DebugBreakpoint]:
     for entry in raw_value:
         if not isinstance(entry, Mapping):
             continue
-        file_path = str(entry.get("file_path", "")).strip()
-        line_number = _parse_int(entry.get("line_number"))
-        if not file_path or line_number <= 0:
-            continue
-        breakpoints.append(
-            build_breakpoint(
-                file_path=file_path,
-                line_number=line_number,
-                breakpoint_id=str(entry.get("breakpoint_id", "")).strip() or None,
-                enabled=bool(entry.get("enabled", True)),
-                condition=str(entry.get("condition", "")).strip(),
-                hit_condition=_parse_optional_int(entry.get("hit_condition")),
-                verified=bool(entry.get("verified", False)),
-                verification_message=str(entry.get("verification_message", "")).strip(),
-            )
-        )
+        parsed = parse_breakpoint_entry(entry)
+        if parsed is not None:
+            breakpoints.append(parsed)
     return breakpoints
 
 

@@ -35,11 +35,15 @@ class ReplControlServer:
                     request_payload = loads_message(self.rfile.readline())
                     response_payload = _handle_request(
                         request_payload,
+                        protocol=self._config.protocol,
                         session_token=session_token,
                         completion_service=completion_service,
                     )
-                except Exception as exc:
+                except (ValueError, TypeError, KeyError) as exc:
                     response_payload = {"ok": False, "error": str(exc)}
+                except Exception:
+                    _logger.warning("REPL control request failed", exc_info=True)
+                    response_payload = {"ok": False, "error": "repl_internal_error"}
                 self.wfile.write(dumps_message(response_payload))
 
         socketserver.ThreadingTCPServer.allow_reuse_address = True
@@ -64,9 +68,13 @@ class ReplControlServer:
 def _handle_request(
     payload: dict[str, Any],
     *,
+    protocol: str,
     session_token: str,
     completion_service: ReplCompletionService,
 ) -> dict[str, Any]:
+    if payload.get("protocol") != protocol:
+        return {"ok": False, "error": "Incompatible REPL control protocol."}
+
     if payload.get("session_token") != session_token:
         return {"ok": False, "error": "Invalid REPL control session token."}
 

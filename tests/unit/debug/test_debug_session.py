@@ -169,15 +169,74 @@ def test_apply_protocol_message_expands_variable_children_and_updates_exception_
     assert session.state.exception_policy.stop_on_raised_exceptions is True
 
 
+def test_apply_protocol_message_continued_clears_inspector_state() -> None:
+    session = DebugSession()
+    breakpoint_model = build_breakpoint("/tmp/project/main.py", 12, verified=True)
+    session.apply_protocol_message(
+        {
+            "kind": "event",
+            "event": "stopped",
+            "body": {
+                "reason": "breakpoint",
+                "frames": [
+                    {
+                        "frame_id": 101,
+                        "thread_id": 1,
+                        "file_path": "/tmp/project/main.py",
+                        "line_number": 12,
+                        "function_name": "main",
+                    }
+                ],
+                "selected_frame_id": 101,
+                "scopes": [{"name": "Locals", "variables_reference": 1}],
+                "scope_variables": {
+                    "1": [
+                        {
+                            "name": "value",
+                            "value_repr": "42",
+                            "type_name": "int",
+                        }
+                    ]
+                },
+                "breakpoints": [
+                    {
+                        "breakpoint_id": breakpoint_model.breakpoint_id,
+                        "file_path": breakpoint_model.file_path,
+                        "line_number": breakpoint_model.line_number,
+                        "enabled": True,
+                        "verified": True,
+                    }
+                ],
+                "exception": {"type_name": "ValueError", "message": "boom"},
+            },
+        }
+    )
+
+    session.apply_protocol_message(
+        {
+            "kind": "event",
+            "event": "continued",
+            "body": {"message": "Resuming execution."},
+        }
+    )
+
+    assert session.state.execution_state.value == "running"
+    assert session.state.frames == []
+    assert session.state.scopes == []
+    assert session.state.variables == []
+    assert session.state.variables_by_reference == {}
+    assert session.state.exception_info is None
+    assert session.state.breakpoints[0].breakpoint_id == breakpoint_model.breakpoint_id
+
+
 def test_debug_session_mark_exited_clears_inspector_state() -> None:
     session = DebugSession()
     session.state.frames = [session.state.selected_frame] if session.state.selected_frame is not None else []
     session.state.variables_by_reference[1] = []
     session.state.scopes = []
 
-    exit_event = session.mark_exited()
+    session.mark_exited()
 
-    assert exit_event.event_type == "exited"
     assert session.state.execution_state.value == "exited"
     assert session.state.frames == []
     assert session.state.variables_by_reference == {}

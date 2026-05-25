@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.run.output_tail_buffer import OutputTailBuffer
+from app.shell.output_tail_buffer import OutputTailBuffer
 
 pytestmark = pytest.mark.unit
 

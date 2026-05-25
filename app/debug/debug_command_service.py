@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.debug.debug_breakpoints import breakpoint_to_wire_dict
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy
 
 
@@ -50,17 +51,7 @@ def evaluate_command(
 
 
 def update_breakpoints_command(breakpoints: list[DebugBreakpoint]) -> tuple[str, dict[str, object]]:
-    payload = [
-        {
-            "breakpoint_id": breakpoint.breakpoint_id,
-            "file_path": breakpoint.file_path,
-            "line_number": breakpoint.line_number,
-            "enabled": breakpoint.enabled,
-            "condition": breakpoint.condition,
-            "hit_condition": breakpoint.hit_condition,
-        }
-        for breakpoint in breakpoints
-    ]
+    payload = [breakpoint_to_wire_dict(breakpoint) for breakpoint in breakpoints]
     return ("update_breakpoints", {"breakpoints": payload})
 
 

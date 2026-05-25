@@ -27,6 +27,7 @@ from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.local_history_writer import record_local_history_transaction
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.draft_autosave_workflow import DraftAutosaveWorkflow, _AutosaveTimer
+from app.shell.breakpoint_store import BreakpointStore
 from app.shell.editor_session_workflow import EditorSessionWorkflow
 from app.shell.history_restore_picker import (
     HISTORY_RESTORE_ACTION_OPEN_TIMELINE,
@@ -68,8 +69,7 @@ class LocalHistoryWorkflow:
         autosave_timer: _AutosaveTimer | None = None,
         retention_policy: LocalHistoryRetentionPolicy | None = None,
         ensure_breakpoint_spec: Callable[[str, int], object] | None = None,
-        breakpoints_by_file: dict[str, set[int]] | None = None,
-        breakpoint_specs_by_key: dict[tuple[str, int], Any] | None = None,
+        breakpoint_store: BreakpointStore | None = None,
         refresh_breakpoints_list: Callable[[], None] | None = None,
     ) -> None:
         self._parent = parent
@@ -97,9 +97,7 @@ class LocalHistoryWorkflow:
             tab_index_for_path=tab_index_for_path,
             set_current_tab_index=set_current_tab_index,
             logger=logger,
-            ensure_breakpoint_spec=ensure_breakpoint_spec,
-            breakpoints_by_file=breakpoints_by_file,
-            breakpoint_specs_by_key=breakpoint_specs_by_key,
+            breakpoint_store=breakpoint_store,
             refresh_breakpoints_list=refresh_breakpoints_list,
         )
         self._draft_autosave = DraftAutosaveWorkflow(

@@ -7,11 +7,12 @@ from enum import Enum
 from typing import Callable
 
 from app.core import constants
-from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
+from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugExecutionState, DebugSourceMap
 from app.core.models import LoadedProject
 from app.run.run_service import RunService, RunSession
 from app.shell.actions import map_run_action_state
 from app.shell.menus import MenuStubRegistry
+from app.shell.run_session_store import RunSessionStore
 
 
 class RunSessionStartFailureReason(str, Enum):
@@ -36,13 +37,17 @@ class RunSessionStartResult:
 class RunSessionController:
     """Coordinates run-service actions outside of main window class."""
 
-    def __init__(self, run_service: RunService) -> None:
+    def __init__(self, run_service: RunService, session_store: RunSessionStore | None = None) -> None:
         self._run_service = run_service
-        self._active_session_mode: str | None = None
+        self._session_store = session_store or RunSessionStore()
+
+    @property
+    def session_store(self) -> RunSessionStore:
+        return self._session_store
 
     @property
     def active_session_mode(self) -> str | None:
-        return self._active_session_mode
+        return self._session_store.active_session_mode
 
     def start_session(
         self,
@@ -77,6 +82,7 @@ class RunSessionController:
             return RunSessionStartResult(
                 started=False,
                 failure_reason=RunSessionStartFailureReason.ALREADY_RUNNING,
+                error_message="A run is already in progress. Stop it before starting a new one.",
             )
 
         if loaded_project is not None and not skip_save and not save_all():
@@ -110,7 +116,7 @@ class RunSessionController:
                 error_message=str(exc),
             )
 
-        self._active_session_mode = mode
+        self._session_store.start_from_session(session)
         append_console_line(f"Run started ({session.run_id})\n", "system")
         if mode == constants.RUN_MODE_PYTHON_DEBUG:
             append_python_console_line("[system] Debug session started. Use toolbar and Debug panel controls.")
@@ -122,10 +128,11 @@ class RunSessionController:
         append_console_line("Stop requested.\n", "system")
 
     def clear_active_session_mode(self) -> None:
-        self._active_session_mode = None
+        self._session_store.clear()
 
     def set_active_session_mode(self, mode: str | None) -> None:
-        self._active_session_mode = mode
+        if mode is None:
+            self._session_store.clear()
 
     def pause_session(
         self,
@@ -149,6 +156,7 @@ class RunSessionController:
         has_project: bool,
         has_active_file: bool = False,
         has_breakpoints: bool = False,
+        debug_execution_state: DebugExecutionState | None = None,
     ) -> None:
         if menu_registry is None:
             return
@@ -169,12 +177,13 @@ class RunSessionController:
         remove_all_bp_action = menu_registry.action("shell.action.run.removeAllBreakpoints")
         package_action = menu_registry.action("shell.action.build.package")
 
+        is_debug_paused = debug_execution_state == DebugExecutionState.PAUSED
         state = map_run_action_state(
             has_project=has_project,
             has_active_file=has_active_file,
             is_running=self._run_service.supervisor.is_running(),
             is_debug_mode=self._run_service.is_debug_mode,
-            is_debug_paused=self._run_service.is_debug_paused,
+            is_debug_paused=is_debug_paused,
             has_breakpoints=has_breakpoints,
         )
 

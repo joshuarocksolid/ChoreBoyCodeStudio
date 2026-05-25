@@ -7,6 +7,7 @@ from typing import Callable, Generic, Optional, Protocol, TypeVar
 
 from app.intelligence.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
 from app.project.file_operation_models import ImportUpdatePolicy
+from app.shell.breakpoint_store import BreakpointStore
 
 
 class TreeEditorWidget(Protocol):
@@ -30,7 +31,7 @@ class ProjectTreeController(Generic[W]):
         remove_tab_at_index: Callable[[int], None],
         release_editor_widget: Callable[[W], None],
         close_editor_file: Callable[[str], None],
-        breakpoints_by_file: dict[str, set[int]],
+        breakpoint_store: BreakpointStore,
         refresh_breakpoints_list: Callable[[], None],
         record_deleted_path: Optional[Callable[[str], None]] = None,
     ) -> None:
@@ -44,7 +45,7 @@ class ProjectTreeController(Generic[W]):
                 remove_tab_at_index(tab_index)
             release_editor_widget(widget)
             close_editor_file(open_path)
-            breakpoints_by_file.pop(open_path, None)
+            breakpoint_store.clear_file(open_path)
         refresh_breakpoints_list()
         if record_deleted_path is not None:
             record_deleted_path(deleted_resolved)
@@ -58,7 +59,7 @@ class ProjectTreeController(Generic[W]):
         editor_widgets_by_path: dict[str, W],
         tab_index_for_path: Callable[[str], int],
         update_tab_path_and_name: Callable[[int, str], None],
-        breakpoints_by_file: dict[str, set[int]],
+        breakpoint_store: BreakpointStore,
         apply_breakpoints_to_widget: Callable[[W, set[int]], None],
         update_widget_language: Callable[[W, str], None],
         refresh_breakpoints_list: Callable[[], None],
@@ -74,10 +75,8 @@ class ProjectTreeController(Generic[W]):
             tab_index = tab_index_for_path(old_path)
             if tab_index >= 0:
                 update_tab_path_and_name(tab_index, new_path)
-            breakpoints = breakpoints_by_file.pop(old_path, None)
-            if breakpoints is not None:
-                breakpoints_by_file[new_path] = breakpoints
-                apply_breakpoints_to_widget(widget, breakpoints)
+            breakpoint_store.remap_paths({old_path: new_path})
+            apply_breakpoints_to_widget(widget, breakpoint_store.lines_for_file(new_path))
             update_widget_language(widget, new_path)
 
         refresh_breakpoints_list()

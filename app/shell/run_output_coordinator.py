@@ -6,7 +6,7 @@ from typing import Callable, Mapping
 
 from app.core import constants
 from app.debug.debug_session import DebugSession
-from app.run.exit_status import describe_exit_code
+from app.shell.exit_status import describe_exit_code
 from app.run.problem_parser import ProblemEntry
 from app.run.process_supervisor import ProcessEvent
 
@@ -107,9 +107,9 @@ class RunOutputCoordinator:
                 self._append_debug_output_line(session_line)
             self._set_debug_command_input_enabled(False)
 
-            self._set_active_session_mode(None)
             self._refresh_run_action_states()
             self._finalize_run_log(return_code)
+            self._set_active_session_mode(None)
             problems = self._update_problems_from_output()
             if (
                 not event.terminated_by_user

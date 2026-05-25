@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Generic, Optional, TypeVar
 
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
+from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
 
 
@@ -33,7 +34,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         remove_tab_at_index: Callable[[int], None],
         release_editor_widget: Callable[[W], None],
         close_editor_file: Callable[[str], None],
-        breakpoints_by_file: dict[str, set[int]],
+        breakpoint_store: BreakpointStore,
         refresh_breakpoints_list: Callable[[], None],
         remap_editor_paths: Callable[[str, str], dict[str, str]],
         update_tab_path_and_name: Callable[[int, str], None],
@@ -50,7 +51,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._remove_tab_at_index = remove_tab_at_index
         self._release_editor_widget = release_editor_widget
         self._close_editor_file = close_editor_file
-        self._breakpoints_by_file = breakpoints_by_file
+        self._breakpoint_store = breakpoint_store
         self._refresh_breakpoints_list = refresh_breakpoints_list
         self._remap_editor_paths = remap_editor_paths
         self._update_tab_path_and_name = update_tab_path_and_name
@@ -204,7 +205,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             remove_tab_at_index=self._remove_tab_at_index,
             release_editor_widget=self._release_editor_widget,
             close_editor_file=self._close_editor_file,
-            breakpoints_by_file=self._breakpoints_by_file,
+            breakpoint_store=self._breakpoint_store,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
             record_deleted_path=self._record_deleted_path,
         )
@@ -217,7 +218,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             editor_widgets_by_path=self._editor_widgets_by_path,
             tab_index_for_path=self._tab_index_for_path,
             update_tab_path_and_name=self._update_tab_path_and_name,
-            breakpoints_by_file=self._breakpoints_by_file,
+            breakpoint_store=self._breakpoint_store,
             apply_breakpoints_to_widget=self._apply_breakpoints_to_widget,
             update_widget_language=self._update_widget_language,
             refresh_breakpoints_list=self._refresh_breakpoints_list,

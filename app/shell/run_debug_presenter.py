@@ -9,7 +9,6 @@ from PySide2.QtWidgets import QMessageBox
 from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.shell.events import RunSessionStartedEvent
-from app.shell.run_log_panel import RunInfo
 from app.shell.run_session_controller import RunSessionStartFailureReason
 
 
@@ -55,7 +54,11 @@ class RunDebugPresenter:
             elif result.failure_reason == RunSessionStartFailureReason.SAVE_FAILED:
                 QMessageBox.warning(window, "Run cancelled", result.error_message or "Save was cancelled.")
             elif result.failure_reason == RunSessionStartFailureReason.ALREADY_RUNNING:
-                pass
+                QMessageBox.warning(
+                    window,
+                    "Run already in progress",
+                    result.error_message or "A run is already in progress. Stop it before starting a new one.",
+                )
             elif result.error_message:
                 QMessageBox.warning(window, "Run failed to start", result.error_message)
             window._set_run_status("idle")
@@ -63,12 +66,6 @@ class RunDebugPresenter:
             return False
 
         if result.session is not None:
-            window._active_run_session_log_path = result.session.log_file_path
-            window._active_run_session_info = RunInfo(
-                run_id=result.session.run_id,
-                mode=result.session.mode,
-                entry_file=result.session.entry_file,
-            )
             window._event_bus.publish(
                 RunSessionStartedEvent(
                     run_id=result.session.run_id,

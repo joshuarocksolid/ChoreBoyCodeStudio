@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.run.console_model import ConsoleModel
+from app.shell.console_model import ConsoleModel
 
 pytestmark = pytest.mark.unit
 

@@ -30,6 +30,21 @@ def _wait_until(predicate, timeout_seconds: float = 5.0) -> bool:
     return False
 
 
+def _debug_is_paused(events: list[ProcessEvent]) -> bool:
+    paused = False
+    for event in events:
+        if event.event_type != "debug" or not isinstance(event.payload, Mapping):
+            continue
+        if event.payload.get("kind") != "event":
+            continue
+        event_name = str(event.payload.get("event", "")).strip()
+        if event_name == "stopped":
+            paused = True
+        elif event_name in {"continued", "session_ready", "session_ended"}:
+            paused = False
+    return paused
+
+
 def _build_loaded_project(project_root: Path) -> LoadedProject:
     return LoadedProject(
         project_root=str(project_root.resolve()),
@@ -185,7 +200,7 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
         breakpoints=[{"file_path": str(script_path.resolve()), "line_number": 2}],
     )
     assert _wait_until(lambda: service.supervisor.is_running())
-    assert _wait_until(lambda: service.is_debug_paused, timeout_seconds=12.0)
+    assert _wait_until(lambda: _debug_is_paused(events), timeout_seconds=12.0)
 
     def _breakpoint_pause_frame() -> tuple[Path, int] | None:
         for event in events:
@@ -231,4 +246,4 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
         and event.payload.get("event") == "stopped"
         for event in events
     )
-    assert service.is_debug_paused is False
+    assert _debug_is_paused(events) is False

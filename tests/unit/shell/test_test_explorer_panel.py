@@ -7,7 +7,8 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtWidgets import QApplication
 
-from app.run.pytest_discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.outcome_types import TestOutcome
 
 pytestmark = pytest.mark.unit
 
@@ -52,7 +53,8 @@ def test_node_parent_id_links_function_to_file() -> None:
 
 def test_all_outcome_builders_exist() -> None:
     from app.shell.test_explorer_icons import _OUTCOME_BUILDERS
-    expected = {"passed", "failed", "skipped", "error", "not_run"}
+
+    expected: set[TestOutcome] = {"passed", "failed", "skipped", "error", "not_run"}
     assert set(_OUTCOME_BUILDERS.keys()) == expected
 
 

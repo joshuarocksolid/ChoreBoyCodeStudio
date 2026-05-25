@@ -24,15 +24,15 @@ def test_run_manifest_round_trip_save_and_load(tmp_path: Path) -> None:
         working_directory=str((tmp_path / "project").resolve()),
         log_file=str((tmp_path / "project" / "logs" / "run_20260301_010101_ab12cd.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
-        argv=["--foo", "bar"],
-        env={"ENV_A": "1"},
+        argv=("--foo", "bar"),
+        env=(("ENV_A", "1"),),
         timestamp="2026-03-01T01:01:01",
-        breakpoints=[
+        breakpoints=(
             build_breakpoint(
                 file_path=str((tmp_path / "project" / "run.py").resolve()),
                 line_number=3,
-            )
-        ],
+            ),
+        ),
     )
     manifest_path = tmp_path / "manifest.json"
     save_run_manifest(manifest_path, manifest)
@@ -95,6 +95,44 @@ def test_parse_run_manifest_validates_breakpoint_shape() -> None:
                 "env": {},
                 "timestamp": "2026-03-01T01:01:01",
                 "breakpoints": [{"file_path": "/tmp/project/run.py", "line_number": 0}],
+            }
+        )
+
+
+def test_parse_run_manifest_requires_repl_control_for_repl_mode() -> None:
+    """REPL manifests must include repl_control loopback config."""
+    with pytest.raises(RunManifestValidationError, match="repl_control is required"):
+        parse_run_manifest(
+            {
+                "manifest_version": constants.RUN_MANIFEST_VERSION,
+                "run_id": "repl_1",
+                "project_root": "/tmp/repl",
+                "entry_file": "__repl__.py",
+                "working_directory": "/tmp/repl",
+                "log_file": "/tmp/repl/repl.log",
+                "mode": constants.RUN_MODE_PYTHON_REPL,
+                "argv": [],
+                "env": {},
+                "timestamp": "2026-04-28T10:00:00",
+            }
+        )
+
+
+def test_parse_run_manifest_requires_debug_transport_for_debug_mode() -> None:
+    """Debug manifests must include debug_transport loopback config."""
+    with pytest.raises(RunManifestValidationError, match="debug_transport is required"):
+        parse_run_manifest(
+            {
+                "manifest_version": constants.RUN_MANIFEST_VERSION,
+                "run_id": "debug_1",
+                "project_root": "/tmp/project",
+                "entry_file": "run.py",
+                "working_directory": "/tmp/project",
+                "log_file": "/tmp/project/logs/debug_1.log",
+                "mode": constants.RUN_MODE_PYTHON_DEBUG,
+                "argv": [],
+                "env": {},
+                "timestamp": "2026-03-01T01:01:01",
             }
         )
 

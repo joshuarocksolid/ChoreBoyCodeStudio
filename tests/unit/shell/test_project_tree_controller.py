@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.project.file_operation_models import ImportUpdatePolicy
+from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_tree_controller import ProjectTreeController
 
 pytestmark = pytest.mark.unit
@@ -38,7 +39,9 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
     }
     closed: list[str] = []
     removed_tabs: list[int] = []
-    breakpoints = {"/tmp/project/app.py": {10}, "/tmp/project/sub/module.py": {4}}
+    breakpoint_store = BreakpointStore()
+    breakpoint_store.set_line_enabled("/tmp/project/app.py", 10, enabled=True)
+    breakpoint_store.set_line_enabled("/tmp/project/sub/module.py", 4, enabled=True)
     deleted_records: list[str] = []
 
     controller.close_deleted_editor_paths(
@@ -48,14 +51,14 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
         remove_tab_at_index=removed_tabs.append,
         release_editor_widget=lambda widget: widget.deleteLater(),
         close_editor_file=closed.append,
-        breakpoints_by_file=breakpoints,
+        breakpoint_store=breakpoint_store,
         refresh_breakpoints_list=lambda: None,
         record_deleted_path=deleted_records.append,
     )
 
     assert editor_widgets == {}
     assert sorted(closed) == ["/tmp/project/app.py", "/tmp/project/sub/module.py"]
-    assert breakpoints == {}
+    assert breakpoint_store.has_any_breakpoints() is False
     assert removed_tabs == [0, 0]
     assert widget_a.released is True and widget_b.released is True
     assert deleted_records == ["/tmp/project"]
@@ -65,7 +68,8 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
     controller = ProjectTreeController()
     widget = _FakeWidget()
     editor_widgets = {"/tmp/project/old.py": widget}
-    breakpoints = {"/tmp/project/old.py": {12}}
+    breakpoint_store = BreakpointStore()
+    breakpoint_store.set_line_enabled("/tmp/project/old.py", 12, enabled=True)
     updated_tabs: list[tuple[int, str]] = []
     rewrites: list[tuple[str, str]] = []
     lineage_remaps: list[dict[str, str]] = []
@@ -77,7 +81,7 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
         editor_widgets_by_path=editor_widgets,
         tab_index_for_path=lambda _path: 3,
         update_tab_path_and_name=lambda index, path: updated_tabs.append((index, path)),
-        breakpoints_by_file=breakpoints,
+        breakpoint_store=breakpoint_store,
         apply_breakpoints_to_widget=lambda w, values: w.set_breakpoints(values),  # type: ignore[attr-defined]
         update_widget_language=lambda w, path: w.set_language_for_path(path),  # type: ignore[attr-defined]
         refresh_breakpoints_list=lambda: None,
@@ -87,7 +91,7 @@ def test_apply_path_move_updates_remaps_widgets_breakpoints_and_tabs() -> None:
 
     assert "/tmp/project/new.py" in editor_widgets
     assert editor_widgets["/tmp/project/new.py"] is widget
-    assert breakpoints == {"/tmp/project/new.py": {12}}
+    assert breakpoint_store.lines_for_file("/tmp/project/new.py") == {12}
     assert widget.breakpoints == {12}
     assert widget.language_path == "/tmp/project/new.py"
     assert updated_tabs == [(3, "/tmp/project/new.py")]
@@ -104,10 +108,10 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
         "/tmp/project/pkg/a.py": widget_a,
         "/tmp/project/pkg/sub/b.py": widget_b,
     }
-    breakpoints = {
-        "/tmp/project/pkg/a.py": {2},
-        "/tmp/project/pkg/sub/b.py": {7, 9},
-    }
+    breakpoint_store = BreakpointStore()
+    breakpoint_store.set_line_enabled("/tmp/project/pkg/a.py", 2, enabled=True)
+    breakpoint_store.set_line_enabled("/tmp/project/pkg/sub/b.py", 7, enabled=True)
+    breakpoint_store.set_line_enabled("/tmp/project/pkg/sub/b.py", 9, enabled=True)
     updated_tabs: list[tuple[int, str]] = []
     rewrites: list[tuple[str, str]] = []
     lineage_remaps: list[dict[str, str]] = []
@@ -122,7 +126,7 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
         editor_widgets_by_path=editor_widgets,
         tab_index_for_path=lambda path: 1 if path.endswith("a.py") else 2,
         update_tab_path_and_name=lambda index, path: updated_tabs.append((index, path)),
-        breakpoints_by_file=breakpoints,
+        breakpoint_store=breakpoint_store,
         apply_breakpoints_to_widget=lambda w, values: w.set_breakpoints(values),  # type: ignore[attr-defined]
         update_widget_language=lambda w, path: w.set_language_for_path(path),  # type: ignore[attr-defined]
         refresh_breakpoints_list=lambda: None,
@@ -134,7 +138,7 @@ def test_apply_path_move_updates_remaps_nested_paths_for_directory_move() -> Non
         "/tmp/project/lib/a.py",
         "/tmp/project/lib/sub/b.py",
     ]
-    assert breakpoints == {
+    assert breakpoint_store.lines_snapshot() == {
         "/tmp/project/lib/a.py": {2},
         "/tmp/project/lib/sub/b.py": {7, 9},
     }

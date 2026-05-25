@@ -27,8 +27,8 @@ def _build_manifest(tmp_path: Path, script_contents: str) -> Path:
         working_directory=str(project_root.resolve()),
         log_file=str((project_root / "logs" / "run_20260301_010101_ab12cd.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_SCRIPT,
-        argv=[],
-        env={},
+        argv=(),
+        env=(),
         timestamp="2026-03-01T01:01:01",
     )
     save_run_manifest(manifest_path, manifest)

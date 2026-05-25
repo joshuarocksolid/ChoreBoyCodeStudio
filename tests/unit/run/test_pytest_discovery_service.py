@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.run.pytest_discovery_service import (
-    PYTEST_MISSING_MARKER,
+from app.pytest.launch_plan import PYTEST_MISSING_MARKER, build_apprun_pytest_payload
+from app.pytest.discovery_service import (
     PYTEST_MISSING_MESSAGE,
     DiscoveredTestNode,
     DiscoveredTestResult,
     DiscoveryResult,
-    _build_apprun_pytest_payload,
     _build_collect_command,
     _parse_collect_output,
     discover_tests,
@@ -78,22 +77,34 @@ tests/test_foo.py::test_bar
 def test_build_collect_command_resolves_default_runtime_when_given_project_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resolved_inputs: list[object] = []
+    from app.pytest.launch_plan import PytestLaunchPlan
 
     monkeypatch.setattr(
-        "app.run.pytest_discovery_service.resolve_runtime_executable",
-        lambda runtime_executable: resolved_inputs.append(runtime_executable) or "/usr/bin/python3",
+        "app.pytest.discovery_service.build_pytest_launch_plan",
+        lambda project_root: PytestLaunchPlan(
+            project_root=project_root,
+            runtime_executable="/usr/bin/python3",
+            run_tests_script=None,
+            use_apprun_inline_payload=False,
+        ),
     )
 
     command = _build_collect_command(project_root="/tmp/project")
 
-    assert resolved_inputs == [None]
     assert command[:3] == ["/usr/bin/python3", "-m", "pytest"]
 
 
 # ---------------------------------------------------------------------------
 # Test result parsing
 # ---------------------------------------------------------------------------
+
+
+def test_parse_test_results_from_summary_output() -> None:
+    output = "FAILED tests/test_foo.py::test_fail - AssertionError\nPASSED tests/test_foo.py::test_pass\n"
+    results = parse_test_results(output)
+    assert len(results) == 2
+    assert results[0].outcome == "failed"
+    assert results[1].outcome == "passed"
 
 
 def test_parse_test_results_from_verbose_output() -> None:
@@ -149,11 +160,11 @@ def test_apprun_payload_inserts_editor_vendor_before_pytest_import(
     before importing pytest, otherwise ChoreBoy (no system pytest) will raise
     ModuleNotFoundError and the Test Explorer fails."""
     monkeypatch.setattr(
-        "app.run.pytest_discovery_service.resolve_vendor_root",
+        "app.pytest.launch_plan.resolve_vendor_root",
         lambda: "/opt/cbcs/vendor",
     )
 
-    payload = _build_apprun_pytest_payload(["--collect-only", "-q"])
+    payload = build_apprun_pytest_payload(["--collect-only", "-q"])
 
     insert_pos = payload.find("sys.path.insert(0, '/opt/cbcs/vendor')")
     import_pos = payload.find("import pytest")
@@ -174,11 +185,11 @@ def test_apprun_payload_emits_marker_when_pytest_missing(
     PYTEST_MISSING_MARKER on stderr so the discovery error path can render
     a friendly message to the user."""
     monkeypatch.setattr(
-        "app.run.pytest_discovery_service.resolve_vendor_root",
+        "app.pytest.launch_plan.resolve_vendor_root",
         lambda: "/opt/cbcs/vendor",
     )
 
-    payload = _build_apprun_pytest_payload(["--collect-only", "-q"])
+    payload = build_apprun_pytest_payload(["--collect-only", "-q"])
 
     assert "except ModuleNotFoundError" in payload
     assert PYTEST_MISSING_MARKER in payload
@@ -191,7 +202,7 @@ def test_discover_tests_maps_pytest_missing_marker_to_friendly_message(
     result should surface the friendly message instead of leaking the raw
     marker token to the Test Explorer."""
     monkeypatch.setattr(
-        "app.run.pytest_discovery_service._build_collect_command",
+        "app.pytest.discovery_service._build_collect_command",
         lambda *, project_root: ["/bin/sh", "-c", ":"],
     )
 
@@ -201,7 +212,7 @@ def test_discover_tests_maps_pytest_missing_marker_to_friendly_message(
         stderr = PYTEST_MISSING_MARKER + "\n"
 
     monkeypatch.setattr(
-        "app.run.pytest_discovery_service.subprocess.run",
+        "app.pytest.discovery_service.subprocess.run",
         lambda *args, **kwargs: _FakeCompleted(),
     )
 

@@ -33,15 +33,21 @@ class _QuietConsole(code.InteractiveConsole):
         return line.rstrip("\n")
 
 
+_CLEAR_CONSOLE_HINT = (
+    "Use Run \u2192 Clear Console to clear run output "
+    "(Python Console, Run Log, and debug output)."
+)
+
+
 def _make_clear_helper() -> object:
     """Return a callable that tells the user how to clear the console."""
 
     class _ClearHint:
         def __repr__(self) -> str:
-            return "Use Run \u2192 Clear Console to clear the Python Console display."
+            return _CLEAR_CONSOLE_HINT
 
         def __call__(self) -> None:
-            print("Use Run \u2192 Clear Console to clear the Python Console display.")
+            print(_CLEAR_CONSOLE_HINT)
 
     return _ClearHint()
 
@@ -52,13 +58,13 @@ def _ensure_line_buffering() -> None:
     if callable(stdout_reconfigure):
         try:
             stdout_reconfigure(line_buffering=True)
-        except Exception as exc:
+        except (OSError, ValueError, AttributeError) as exc:
             print(f"[runner] failed to enable stdout line buffering: {exc}", file=sys.stderr)
     stderr_reconfigure = getattr(sys.stderr, "reconfigure", None)
     if callable(stderr_reconfigure):
         try:
             stderr_reconfigure(line_buffering=True)
-        except Exception as exc:
+        except (OSError, ValueError, AttributeError) as exc:
             print(f"[runner] failed to enable stderr line buffering: {exc}", file=sys.stderr)
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 import runpy
 import sys
@@ -15,9 +14,6 @@ from app.debug.debug_breakpoints import build_breakpoint
 from app.debug.debug_models import DebugExceptionPolicy, DebugTransportConfig
 from app.run.run_manifest import RunManifest
 from app.runner.debug_runner import run_debug_session
-from app.runner import output_bridge
-from app.runner.output_bridge import redirect_output_to_log
-
 pytestmark = pytest.mark.unit
 
 
@@ -62,10 +58,10 @@ def _build_manifest(tmp_path: Path, *, breakpoints=None, exception_policy: Debug
         working_directory=str(tmp_path.resolve()),
         log_file=str((tmp_path / "logs" / "run_debug_test.log").resolve()),
         mode=constants.RUN_MODE_PYTHON_DEBUG,
-        argv=[],
-        env={},
+        argv=(),
+        env=(),
         timestamp="2026-03-01T00:00:00",
-        breakpoints=[] if breakpoints is None else list(breakpoints),
+        breakpoints=() if breakpoints is None else tuple(breakpoints),
         debug_transport=DebugTransportConfig(
             protocol="cb-debug-v1",
             host="127.0.0.1",
@@ -282,7 +278,7 @@ def test_run_debug_session_updates_breakpoints_without_mutating_manifest(
     original_breakpoint = build_breakpoint(str(script_path.resolve()), 1)
     replacement_breakpoint = build_breakpoint(str(script_path.resolve()), 2)
     manifest = _build_manifest(tmp_path, breakpoints=[original_breakpoint])
-    original_manifest_breakpoints = list(manifest.breakpoints)
+    original_manifest_breakpoints = manifest.breakpoints
     replacement_payload = {
         "breakpoint_id": replacement_breakpoint.breakpoint_id,
         "file_path": replacement_breakpoint.file_path,
@@ -358,44 +354,3 @@ def test_run_debug_session_pauses_on_uncaught_exception_when_enabled(
     assert isinstance(exception_payload, Mapping)
     assert exception_payload["type_name"] == "ValueError"
 
-
-def test_redirect_output_to_log_mirrors_stdout_and_stderr(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stdout_capture = io.StringIO()
-    stderr_capture = io.StringIO()
-    monkeypatch.setattr(sys, "stdout", stdout_capture)
-    monkeypatch.setattr(sys, "stderr", stderr_capture)
-    log_path = tmp_path / "logs" / "run.log"
-
-    with redirect_output_to_log(str(log_path)):
-        print("STDOUT_MARKER")
-        print("STDERR_MARKER", file=sys.stderr)
-
-    log_text = log_path.read_text(encoding="utf-8")
-    assert "STDOUT_MARKER" in stdout_capture.getvalue()
-    assert "STDERR_MARKER" in stderr_capture.getvalue()
-    assert "STDOUT_MARKER" in log_text
-    assert "STDERR_MARKER" in log_text
-
-
-def test_redirect_output_to_log_falls_back_when_log_file_open_fails(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stdout_capture = io.StringIO()
-    stderr_capture = io.StringIO()
-    monkeypatch.setattr(sys, "stdout", stdout_capture)
-    monkeypatch.setattr(sys, "stderr", stderr_capture)
-
-    def _raise_open_error(_self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
-        raise OSError("open denied")
-
-    monkeypatch.setattr(output_bridge.Path, "open", _raise_open_error)
-
-    with redirect_output_to_log(str(tmp_path / "logs" / "run.log")):
-        print("FALLBACK_STDOUT")
-
-    assert "FALLBACK_STDOUT" in stdout_capture.getvalue()
-    assert "unable to open run log" in stderr_capture.getvalue()

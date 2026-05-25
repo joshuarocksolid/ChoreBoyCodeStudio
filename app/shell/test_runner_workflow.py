@@ -10,8 +10,9 @@ from app.core import constants
 from app.core.models import LoadedProject
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy
 from app.run.problem_parser import ProblemEntry
-from app.run.pytest_discovery_service import DiscoveryResult, discover_tests as default_discover_tests, parse_test_results
-from app.run.pytest_runner_service import PytestRunResult, identify_test_at_cursor
+from app.pytest.discovery_service import DiscoveryResult, discover_tests as default_discover_tests, parse_test_results
+from app.pytest.outcome_types import TestOutcome
+from app.pytest.runner_service import PytestRunResult, identify_test_at_cursor
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class TestExplorerView(Protocol):
     def update_discovery(self, result: DiscoveryResult) -> None:
         ...
 
-    def set_outcomes(self, outcomes: dict[str, str]) -> None:
+    def set_outcomes(self, outcomes: dict[str, TestOutcome]) -> None:
         ...
 
     def failed_node_ids(self) -> list[str]:
@@ -97,7 +98,7 @@ class TestRunnerWorkflow:
         self._auto_open_problems_on_failure = auto_open_problems_on_failure
         self._logger = logger
         self._test_discovery_result = DiscoveryResult()
-        self._test_outcomes_by_node_id: dict[str, str] = {}
+        self._test_outcomes_by_node_id: dict[str, TestOutcome] = {}
 
     def run_all_tests(self) -> None:
         loaded_project = self._require_project("Run Project Tests")

@@ -16,6 +16,8 @@ from app.intelligence.completion_providers import extract_completion_prefix
 
 _logger = logging.getLogger(__name__)
 
+REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK = "repl_jedi_fallback"
+
 _DOTTED_EXPR_PATTERN = re.compile(
     r"(?P<expr>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)?$"
 )
@@ -58,6 +60,7 @@ class ReplCompletionService:
             items=fallback_items,
             source="runtime",
             confidence="runtime_inspection" if fallback_items else "",
+            degradation_reason=REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK,
         )
 
     def _complete_with_jedi(self, request: ReplCompletionRequest) -> list[CompletionItem]:

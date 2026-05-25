@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from app.intelligence.completion_models import CompletionKind
-from app.runner.repl_completion import ReplCompletionRequest, ReplCompletionService
+from app.runner.repl_completion import (
+    REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK,
+    ReplCompletionRequest,
+    ReplCompletionService,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -43,3 +47,17 @@ def test_repl_completion_returns_dotted_runtime_members() -> None:
     assert method.replacement_end == len("obj.method_")
     assert method.source == "runtime" or method.source == "runtime_inspection"
     assert method.side_effect_risk
+
+
+def test_repl_completion_sets_degradation_reason_when_jedi_fallback_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = ReplCompletionService({"sample_value": 123})
+
+    def _raise_jedi_failure(_self: ReplCompletionService, _request: ReplCompletionRequest) -> list:
+        raise RuntimeError("jedi unavailable")
+
+    monkeypatch.setattr(ReplCompletionService, "_complete_with_jedi", _raise_jedi_failure)
+
+    envelope = service.complete(ReplCompletionRequest(line_buffer="sam", cursor_offset=3))
+
+    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK
+    assert any(item.label == "sample_value" for item in envelope.items)
