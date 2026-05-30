@@ -507,6 +507,7 @@ class MainWindow(QMainWindow):
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._is_shutting_down = False
+        self._suppress_tree_reveal = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
         self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
@@ -587,6 +588,10 @@ class MainWindow(QMainWindow):
             ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
             breakpoint_store=self._debug_control_workflow.breakpoint_store,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
+            capture_tree_state=lambda: self._get_project_tree_presenter().capture_full_state(),
+            restore_tree_state=lambda tree_state: self._get_project_tree_presenter().restore_full_state(tree_state),
+            reveal_tree_path=lambda file_path: self._get_project_tree_presenter().reveal_path(file_path),
+            set_tree_reveal_suppressed=lambda suppressed: setattr(self, "_suppress_tree_reveal", suppressed),
         )
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
             diagnostics_enabled=lambda: self._diagnostics_enabled,
@@ -3769,7 +3774,8 @@ class MainWindow(QMainWindow):
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_refresh_timer.stop()
         self._refresh_outline_for_active_tab()
-        self._get_project_tree_presenter().reveal_path(tab_path)
+        if not self._suppress_tree_reveal:
+            self._get_project_tree_presenter().reveal_path(tab_path)
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:

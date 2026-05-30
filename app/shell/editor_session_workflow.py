@@ -11,7 +11,13 @@ from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.shell.breakpoint_store import BreakpointStore
-from app.shell.session_persistence import SessionFileState, SessionState, load_session_file, save_session_file
+from app.shell.session_persistence import (
+    SessionFileState,
+    SessionState,
+    SessionTreeState,
+    load_session_file,
+    save_session_file,
+)
 
 
 class EditorSessionWorkflow:
@@ -29,6 +35,10 @@ class EditorSessionWorkflow:
         logger: logging.Logger,
         breakpoint_store: BreakpointStore | None = None,
         refresh_breakpoints_list: Callable[[], None] | None = None,
+        capture_tree_state: Callable[[], SessionTreeState | None] | None = None,
+        restore_tree_state: Callable[[SessionTreeState], None] | None = None,
+        reveal_tree_path: Callable[[str], None] | None = None,
+        set_tree_reveal_suppressed: Callable[[bool], None] | None = None,
     ) -> None:
         self._loaded_project = loaded_project
         self._editor_manager = editor_manager
@@ -39,6 +49,10 @@ class EditorSessionWorkflow:
         self._logger = logger
         self._breakpoint_store = breakpoint_store
         self._refresh_breakpoints_list = refresh_breakpoints_list
+        self._capture_tree_state = capture_tree_state
+        self._restore_tree_state = restore_tree_state
+        self._reveal_tree_path = reveal_tree_path
+        self._set_tree_reveal_suppressed = set_tree_reveal_suppressed
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -78,7 +92,14 @@ class EditorSessionWorkflow:
 
         active_tab = self._editor_manager.active_tab()
         active_file_path = None if active_tab is None else active_tab.file_path
-        session_state = SessionState(open_files=tuple(open_files), active_file_path=active_file_path)
+        project_tree = None
+        if self._capture_tree_state is not None:
+            project_tree = self._capture_tree_state()
+        session_state = SessionState(
+            open_files=tuple(open_files),
+            active_file_path=active_file_path,
+            project_tree=project_tree,
+        )
         try:
             save_session_file(target_project_root, session_state)
         except Exception as exc:
@@ -93,33 +114,44 @@ class EditorSessionWorkflow:
         if session_state is None:
             return
 
-        restored_by_file: dict[str, set[int]] = {}
-        for file_state in session_state.open_files:
-            if file_state.breakpoints:
-                restored_by_file[file_state.file_path] = set(file_state.breakpoints)
-        if self._breakpoint_store is not None:
-            self._breakpoint_store.restore_session_breakpoints(
-                restored_by_file,
-                ensure_spec=self._breakpoint_store.ensure_spec,
-            )
+        if self._set_tree_reveal_suppressed is not None:
+            self._set_tree_reveal_suppressed(True)
+        try:
+            restored_by_file: dict[str, set[int]] = {}
+            for file_state in session_state.open_files:
+                if file_state.breakpoints:
+                    restored_by_file[file_state.file_path] = set(file_state.breakpoints)
+            if self._breakpoint_store is not None:
+                self._breakpoint_store.restore_session_breakpoints(
+                    restored_by_file,
+                    ensure_spec=self._breakpoint_store.ensure_spec,
+                )
 
-        for file_state in session_state.open_files:
-            if not self._open_file_in_editor(file_state.file_path):
-                if self._breakpoint_store is not None:
-                    self._breakpoint_store.clear_file(file_state.file_path)
-                continue
-            editor_widget = self._editor_widget_for_path(file_state.file_path)
-            if editor_widget is None:
-                continue
-            restore_editor_cursor_and_scroll(editor_widget, file_state)
+            for file_state in session_state.open_files:
+                if not self._open_file_in_editor(file_state.file_path):
+                    if self._breakpoint_store is not None:
+                        self._breakpoint_store.clear_file(file_state.file_path)
+                    continue
+                editor_widget = self._editor_widget_for_path(file_state.file_path)
+                if editor_widget is None:
+                    continue
+                restore_editor_cursor_and_scroll(editor_widget, file_state)
 
-        if session_state.active_file_path is not None:
-            tab_index = self._tab_index_for_path(session_state.active_file_path)
-            if tab_index >= 0:
-                self._set_current_tab_index(tab_index)
+            if session_state.active_file_path is not None:
+                tab_index = self._tab_index_for_path(session_state.active_file_path)
+                if tab_index >= 0:
+                    self._set_current_tab_index(tab_index)
 
-        if self._refresh_breakpoints_list is not None:
-            self._refresh_breakpoints_list()
+            if session_state.project_tree is not None and self._restore_tree_state is not None:
+                self._restore_tree_state(session_state.project_tree)
+            elif session_state.active_file_path and self._reveal_tree_path is not None:
+                self._reveal_tree_path(session_state.active_file_path)
+
+            if self._refresh_breakpoints_list is not None:
+                self._refresh_breakpoints_list()
+        finally:
+            if self._set_tree_reveal_suppressed is not None:
+                self._set_tree_reveal_suppressed(False)
 
 
 def restore_editor_cursor_and_scroll(editor_widget: CodeEditorWidget, file_state: SessionFileState) -> None:

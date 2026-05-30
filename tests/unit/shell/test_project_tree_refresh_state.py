@@ -15,6 +15,7 @@ from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
 from app.shell.main_window import (  # noqa: E402
     MainWindow,
+    TREE_ROLE_IS_DIRECTORY,
     TREE_ROLE_RELATIVE_PATH,
     _filter_tree_signature_entries,
 )
@@ -32,6 +33,30 @@ def _find_item_by_relative_path(window: MainWindow, relative_path: str) -> QTree
         if str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "") == relative_path:
             return item
     return None
+
+
+def test_populate_project_tree_defaults_to_collapsed(tmp_path: Path) -> None:
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    project_root = tmp_path / "project"
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(schema_version=1, name="Tree", default_entry="src/main.py"),
+        entries=[
+            ProjectFileEntry(relative_path="src", absolute_path=str((project_root / "src").resolve()), is_directory=True),
+            ProjectFileEntry(relative_path="src/main.py", absolute_path=str((project_root / "src/main.py").resolve()), is_directory=False),
+            ProjectFileEntry(relative_path="docs", absolute_path=str((project_root / "docs").resolve()), is_directory=True),
+            ProjectFileEntry(relative_path="docs/readme.md", absolute_path=str((project_root / "docs/readme.md").resolve()), is_directory=False),
+        ],
+    )
+    window._loaded_project = loaded_project  # noqa: SLF001 - test harness setup
+    window._populate_project_tree(loaded_project)  # noqa: SLF001
+
+    for item in window._iter_project_tree_items():  # noqa: SLF001
+        if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
+            assert item.isExpanded() is False
+
+    window.close()
 
 
 def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path) -> None:

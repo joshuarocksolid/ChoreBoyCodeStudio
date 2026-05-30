@@ -29,6 +29,7 @@ from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.draft_autosave_workflow import DraftAutosaveWorkflow, _AutosaveTimer
 from app.shell.breakpoint_store import BreakpointStore
 from app.shell.editor_session_workflow import EditorSessionWorkflow
+from app.shell.session_persistence import SessionTreeState
 from app.shell.history_restore_picker import (
     HISTORY_RESTORE_ACTION_OPEN_TIMELINE,
     HISTORY_RESTORE_ACTION_RESTORE_LATEST,
@@ -71,6 +72,10 @@ class LocalHistoryWorkflow:
         ensure_breakpoint_spec: Callable[[str, int], object] | None = None,
         breakpoint_store: BreakpointStore | None = None,
         refresh_breakpoints_list: Callable[[], None] | None = None,
+        capture_tree_state: Callable[[], SessionTreeState | None] | None = None,
+        restore_tree_state: Callable[[SessionTreeState], None] | None = None,
+        reveal_tree_path: Callable[[str], None] | None = None,
+        set_tree_reveal_suppressed: Callable[[bool], None] | None = None,
     ) -> None:
         self._parent = parent
         self._local_history_store = local_history_store
@@ -99,6 +104,10 @@ class LocalHistoryWorkflow:
             logger=logger,
             breakpoint_store=breakpoint_store,
             refresh_breakpoints_list=refresh_breakpoints_list,
+            capture_tree_state=capture_tree_state,
+            restore_tree_state=restore_tree_state,
+            reveal_tree_path=reveal_tree_path,
+            set_tree_reveal_suppressed=set_tree_reveal_suppressed,
         )
         self._draft_autosave = DraftAutosaveWorkflow(
             parent=parent,

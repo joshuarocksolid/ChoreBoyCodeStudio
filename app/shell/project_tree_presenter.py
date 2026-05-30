@@ -11,6 +11,7 @@ from PySide2.QtWidgets import QAbstractItemView, QApplication, QMenu, QTreeWidge
 from app.core.models import LoadedProject
 from app.project.project_tree import build_project_tree
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
+from app.shell.session_persistence import SessionTreeState
 
 
 class ProjectTreePresenter:
@@ -49,17 +50,31 @@ class ProjectTreePresenter:
         for display_node in display_nodes:
             root_item = self.build_tree_item(display_node)
             window._project_tree_widget.addTopLevelItem(root_item)
-            if not preserve_state and display_node.is_directory:
-                root_item.setExpanded(True)
-                root_item.setIcon(0, window._tree_folder_open_icon)
         if preserve_state:
             self.restore_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
             # Qt finalizes scrollbar ranges after expansion is applied; defer the
             # restore to the next event-loop tick so setValue lands on a real range.
             self._restore_scroll_position(vertical_scroll, horizontal_scroll)
-        active_path = window._editor_manager.active_file_path()
-        if active_path:
-            self.reveal_path(active_path)
+
+    def capture_full_state(self) -> SessionTreeState:
+        expanded_paths, selected_paths = self.capture_state()
+        window = self._window
+        tree = window._project_tree_widget
+        if tree is None:
+            return SessionTreeState()
+        return SessionTreeState(
+            expanded_paths=tuple(sorted(expanded_paths)),
+            selected_paths=tuple(sorted(selected_paths)),
+            vertical_scroll=tree.verticalScrollBar().value(),
+            horizontal_scroll=tree.horizontalScrollBar().value(),
+        )
+
+    def restore_full_state(self, tree_state: SessionTreeState) -> None:
+        self.restore_state(
+            expanded_paths=set(tree_state.expanded_paths),
+            selected_paths=set(tree_state.selected_paths),
+        )
+        self._restore_scroll_position(tree_state.vertical_scroll, tree_state.horizontal_scroll)
 
     def _restore_scroll_position(self, vertical: int, horizontal: int) -> None:
         window = self._window

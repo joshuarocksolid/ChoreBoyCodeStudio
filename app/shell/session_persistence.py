@@ -34,18 +34,40 @@ class SessionFileState:
 
 
 @dataclass(frozen=True)
+class SessionTreeState:
+    """Serializable project-tree explorer state for a project."""
+
+    expanded_paths: tuple[str, ...] = ()
+    selected_paths: tuple[str, ...] = ()
+    vertical_scroll: int = 0
+    horizontal_scroll: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "expanded_paths": list(self.expanded_paths),
+            "selected_paths": list(self.selected_paths),
+            "vertical_scroll": self.vertical_scroll,
+            "horizontal_scroll": self.horizontal_scroll,
+        }
+
+
+@dataclass(frozen=True)
 class SessionState:
     """Serializable open-tab session state for a project."""
 
     open_files: tuple[SessionFileState, ...] = ()
     active_file_path: str | None = None
+    project_tree: SessionTreeState | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": SESSION_SCHEMA_VERSION,
             "open_files": [file_state.to_dict() for file_state in self.open_files],
             "active_file_path": self.active_file_path,
         }
+        if self.project_tree is not None:
+            payload["project_tree"] = self.project_tree.to_dict()
+        return payload
 
 
 def serialize_session_state(session_state: SessionState) -> dict[str, Any]:
@@ -73,7 +95,12 @@ def parse_session_state(payload: Mapping[str, Any]) -> SessionState:
     active_file_path = payload.get("active_file_path")
     if not isinstance(active_file_path, str) or active_file_path not in seen_paths:
         active_file_path = None
-    return SessionState(open_files=tuple(open_files), active_file_path=active_file_path)
+    project_tree = _parse_session_tree_state(payload.get("project_tree"))
+    return SessionState(
+        open_files=tuple(open_files),
+        active_file_path=active_file_path,
+        project_tree=project_tree,
+    )
 
 
 def save_session_file(project_root: PathInput, session_state: SessionState) -> Path:
@@ -138,6 +165,33 @@ def _parse_non_negative_int(raw_value: Any, *, default: int) -> int:
     if not isinstance(raw_value, int):
         return default
     return max(0, raw_value)
+
+
+def _parse_session_tree_state(raw_value: Any) -> SessionTreeState | None:
+    if not isinstance(raw_value, Mapping):
+        return None
+    return SessionTreeState(
+        expanded_paths=_parse_relative_paths(raw_value.get("expanded_paths")),
+        selected_paths=_parse_relative_paths(raw_value.get("selected_paths")),
+        vertical_scroll=_parse_non_negative_int(raw_value.get("vertical_scroll"), default=0),
+        horizontal_scroll=_parse_non_negative_int(raw_value.get("horizontal_scroll"), default=0),
+    )
+
+
+def _parse_relative_paths(raw_value: Any) -> tuple[str, ...]:
+    if not isinstance(raw_value, list):
+        return ()
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for entry in raw_value:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        normalized = entry.strip()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        parsed.append(normalized)
+    return tuple(parsed)
 
 
 def _parse_breakpoints(raw_value: Any) -> tuple[int, ...]:

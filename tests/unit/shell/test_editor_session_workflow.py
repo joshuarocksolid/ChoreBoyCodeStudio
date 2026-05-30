@@ -16,6 +16,13 @@ from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.shell.breakpoint_store import BreakpointStore  # noqa: E402
 from app.shell.editor_session_workflow import EditorSessionWorkflow  # noqa: E402
+from app.shell.session_persistence import (  # noqa: E402
+    SessionFileState,
+    SessionState,
+    SessionTreeState,
+    load_session_file,
+    save_session_file,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -132,3 +139,116 @@ def test_local_history_workflow_delegates_session_to_editor_session_module(
     workflow.persist_session_state(project_root=str(project_root.resolve()))
     workflow.restore_session_state(str(project_root.resolve()))
     assert manager.open_paths() == [file_path_str]
+
+
+def test_project_session_persist_includes_project_tree_state(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("hello\n", encoding="utf-8")
+    file_path_str = str(file_path.resolve())
+
+    manager = EditorManager()
+    manager.open_file(file_path_str)
+    tree_state = SessionTreeState(
+        expanded_paths=("src",),
+        selected_paths=("src/main.py",),
+        vertical_scroll=88,
+        horizontal_scroll=4,
+    )
+    workflow = EditorSessionWorkflow(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_manager=manager,
+        editor_widget_for_path=lambda _path: None,
+        open_file_in_editor=lambda _path: True,
+        tab_index_for_path=lambda _path: 0,
+        set_current_tab_index=lambda _index: None,
+        logger=logging.getLogger("test.editor_session_workflow"),
+        capture_tree_state=lambda: tree_state,
+    )
+
+    workflow.persist_session_state(project_root=str(project_root.resolve()))
+
+    loaded = load_session_file(str(project_root.resolve()))
+    assert loaded is not None
+    assert loaded.project_tree == tree_state
+
+
+def test_project_session_restore_applies_tree_state_and_suppresses_reveal(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("hello\n", encoding="utf-8")
+    file_path_str = str(file_path.resolve())
+
+    manager = EditorManager()
+    manager.open_file(file_path_str)
+    tree_state = SessionTreeState(
+        expanded_paths=("src",),
+        selected_paths=("src/main.py",),
+        vertical_scroll=42,
+        horizontal_scroll=0,
+    )
+    suppress_events: list[bool] = []
+    restored_tree_states: list[SessionTreeState] = []
+    reveal_calls: list[str] = []
+    selected_tabs: list[int] = []
+    workflow = EditorSessionWorkflow(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_manager=manager,
+        editor_widget_for_path=lambda _path: None,
+        open_file_in_editor=lambda path: manager.open_file(path) is not None,
+        tab_index_for_path=lambda path: 0 if path == file_path_str else -1,
+        set_current_tab_index=selected_tabs.append,
+        logger=logging.getLogger("test.editor_session_workflow"),
+        capture_tree_state=lambda: tree_state,
+        restore_tree_state=restored_tree_states.append,
+        reveal_tree_path=reveal_calls.append,
+        set_tree_reveal_suppressed=suppress_events.append,
+    )
+    workflow.persist_session_state(project_root=str(project_root.resolve()))
+
+    suppress_events.clear()
+    restored_tree_states.clear()
+    reveal_calls.clear()
+    selected_tabs.clear()
+
+    workflow.restore_session_state(str(project_root.resolve()))
+
+    assert suppress_events == [True, False]
+    assert restored_tree_states == [tree_state]
+    assert reveal_calls == []
+    assert selected_tabs == [0]
+
+
+def test_project_session_restore_legacy_session_reveals_active_file(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("hello\n", encoding="utf-8")
+    file_path_str = str(file_path.resolve())
+    save_session_file(
+        str(project_root.resolve()),
+        SessionState(
+            open_files=(SessionFileState(file_path=file_path_str),),
+            active_file_path=file_path_str,
+        ),
+    )
+
+    manager = EditorManager()
+    reveal_calls: list[str] = []
+    workflow = EditorSessionWorkflow(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_manager=manager,
+        editor_widget_for_path=lambda _path: None,
+        open_file_in_editor=lambda path: manager.open_file(path) is not None,
+        tab_index_for_path=lambda path: 0 if path == file_path_str else -1,
+        set_current_tab_index=lambda _index: None,
+        logger=logging.getLogger("test.editor_session_workflow"),
+        reveal_tree_path=reveal_calls.append,
+        set_tree_reveal_suppressed=lambda _suppressed: None,
+    )
+
+    workflow.restore_session_state(str(project_root.resolve()))
+
+    assert reveal_calls == [file_path_str]

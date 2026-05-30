@@ -8,6 +8,7 @@ from app.core import constants
 from app.shell.session_persistence import (
     SessionFileState,
     SessionState,
+    SessionTreeState,
     load_session_file,
     parse_session_state,
     save_session_file,
@@ -118,3 +119,72 @@ def test_save_and_load_session_file_round_trip(tmp_path) -> None:  # type: ignor
 
     assert session_path == (project_root / constants.PROJECT_META_DIRNAME / constants.PROJECT_SESSION_FILENAME).resolve()
     assert loaded == session_state
+
+
+def test_parse_session_state_round_trip_preserves_project_tree(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    file_one = tmp_path / "main.py"
+    file_one.write_text("print('one')\n", encoding="utf-8")
+    state = SessionState(
+        open_files=(
+            SessionFileState(
+                file_path=str(file_one.resolve()),
+                cursor_line=1,
+                cursor_column=1,
+            ),
+        ),
+        active_file_path=str(file_one.resolve()),
+        project_tree=SessionTreeState(
+            expanded_paths=("src", "src/app"),
+            selected_paths=("src/app/main.py",),
+            vertical_scroll=120,
+            horizontal_scroll=5,
+        ),
+    )
+
+    payload = serialize_session_state(state)
+    parsed = parse_session_state(payload)
+
+    assert parsed == state
+    assert payload["project_tree"] == {
+        "expanded_paths": ["src", "src/app"],
+        "selected_paths": ["src/app/main.py"],
+        "vertical_scroll": 120,
+        "horizontal_scroll": 5,
+    }
+
+
+def test_parse_session_state_filters_invalid_project_tree_paths(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    file_one = tmp_path / "main.py"
+    file_one.write_text("print('one')\n", encoding="utf-8")
+    payload = {
+        "open_files": [{"file_path": str(file_one.resolve())}],
+        "active_file_path": str(file_one.resolve()),
+        "project_tree": {
+            "expanded_paths": ["src", "", "src", 42, "docs"],
+            "selected_paths": ["src/main.py", None],
+            "vertical_scroll": -3,
+            "horizontal_scroll": "bad",
+        },
+    }
+
+    parsed = parse_session_state(payload)
+
+    assert parsed.project_tree == SessionTreeState(
+        expanded_paths=("src", "docs"),
+        selected_paths=("src/main.py",),
+        vertical_scroll=0,
+        horizontal_scroll=0,
+    )
+
+
+def test_parse_session_state_missing_project_tree_defaults_to_none(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    file_one = tmp_path / "main.py"
+    file_one.write_text("print('one')\n", encoding="utf-8")
+    payload = {
+        "open_files": [{"file_path": str(file_one.resolve())}],
+        "active_file_path": str(file_one.resolve()),
+    }
+
+    parsed = parse_session_state(payload)
+
+    assert parsed.project_tree is None
