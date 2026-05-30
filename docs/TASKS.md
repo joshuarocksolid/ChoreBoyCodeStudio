@@ -1543,7 +1543,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 
 ### I10 — Python Console live completion protocol
 
-- Status: `IN PROGRESS`
+- Status: `DONE`
 - Objective: add FreeCAD-style live object completion to the Python Console without executing user code in the editor process or polluting stdout/stderr.
 - Primary files:
   - `app/shell/python_console_widget.py`
@@ -1563,7 +1563,7 @@ Release class default for this phase: `RELEASE-CRITICAL`
 
 ### I11 — Polished completion popup widget (UX redesign)
 
-- Status: `IN PROGRESS`
+- Status: `DONE`
 - Objective: replace the stock `QCompleter` + `QStringListModel` popup used by both the editor and Python Console with a shared theme-aware widget: custom delegate-rendered rows (icon chip, fuzzy-bolded label, dim signature, right-aligned origin badge) plus a VS Code-style documentation side panel that updates with the highlighted item.
 - Primary files:
   - `app/editors/completion_popup/completion_kind_style.py`

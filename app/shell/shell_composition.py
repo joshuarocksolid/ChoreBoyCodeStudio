@@ -246,9 +246,16 @@ def build_settings_apply_workflow(window: Any) -> SettingsApplyWorkflow:
 
 
 def build_python_console_workflow(window: Any) -> PythonConsoleWorkflow:
+    def _start_background_work(work: Callable[[], None]) -> None:
+        window._background_tasks.run(
+            key="python_console_completion",
+            task=lambda _cancellation: work(),
+        )
+
     return PythonConsoleWorkflow(
         repl_manager=window._repl_manager,
         host=MainWindowPythonConsoleHost(window),
+        start_background_work=_start_background_work,
     )
 
 

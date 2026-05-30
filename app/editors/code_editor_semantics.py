@@ -87,10 +87,18 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         """Attach asynchronous signature-help requester used by inline calltips."""
         self._signature_help_requester = requester
 
-    def set_completion_preferences(self, *, enabled: bool, auto_trigger: bool, min_chars: int) -> None:
+    def set_completion_preferences(
+        self,
+        *,
+        enabled: bool,
+        auto_trigger: bool,
+        min_chars: int,
+        auto_trigger_period: bool = True,
+    ) -> None:
         """Apply completion behavior preferences."""
         self._completion_enabled = enabled
         self._completion_auto_trigger = auto_trigger
+        self._completion_auto_trigger_period = auto_trigger_period
         self._completion_min_chars = max(1, min_chars)
         if not enabled:
             self._completion_popup.hide()
@@ -271,22 +279,24 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
 
         super().keyPressEvent(e)
-        if not self._completion_enabled or not self._completion_auto_trigger:
-            if e.text() in {"(", ","}:
-                self._show_signature_help()
-            elif e.text() == ")":
-                QToolTip.hideText()
-            return
-
         inserted_text = e.text()
         if inserted_text in {"(", ","}:
             self._show_signature_help()
         elif inserted_text == ")":
             QToolTip.hideText()
-        if inserted_text == ".":
+
+        if (
+            inserted_text == "."
+            and self._completion_enabled
+            and self._completion_auto_trigger_period
+        ):
             self._pending_completion_trigger_character = "."
             self.trigger_completion(manual=True, force_empty_prefix=True)
             return
+
+        if not self._completion_enabled or not self._completion_auto_trigger:
+            return
+
         if inserted_text and (inserted_text.isalnum() or inserted_text == "_"):
             self.trigger_completion(manual=False)
             return

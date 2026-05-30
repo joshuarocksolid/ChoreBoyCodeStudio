@@ -104,6 +104,7 @@ class CodeEditorWidget(
         self._signature_help_requester: Callable[[str, int, int], None] | None = None
         self._completion_enabled = True
         self._completion_auto_trigger = True
+        self._completion_auto_trigger_period = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
         self._completion_request_generation = 0
         self._pending_completion_trigger_character = ""

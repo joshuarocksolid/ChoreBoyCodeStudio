@@ -9,6 +9,7 @@ from typing import Any
 
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_completion import ReplCompletionRequest, ReplCompletionService
+from app.runner.repl_introspection import ReplIntrospectionRequest, ReplIntrospectionService
 from app.runner.repl_protocol import dumps_message, envelope_to_dict, loads_message
 
 _logger = logging.getLogger(__name__)
@@ -19,7 +20,9 @@ class ReplControlServer:
 
     def __init__(self, *, config: ReplControlConfig, namespace: dict[str, Any]) -> None:
         self._config = config
-        self._completion_service = ReplCompletionService(namespace)
+        self._namespace_lock = threading.RLock()
+        self._completion_service = ReplCompletionService(namespace, namespace_lock=self._namespace_lock)
+        self._introspection_service = ReplIntrospectionService()
         self._server: socketserver.ThreadingTCPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -27,7 +30,9 @@ class ReplControlServer:
         """Start serving requests in a daemon thread."""
 
         completion_service = self._completion_service
+        introspection_service = self._introspection_service
         session_token = self._config.session_token
+        protocol = self._config.protocol
 
         class _Handler(socketserver.StreamRequestHandler):
             def handle(self) -> None:  # noqa: D401 - inherited protocol method
@@ -35,9 +40,10 @@ class ReplControlServer:
                     request_payload = loads_message(self.rfile.readline())
                     response_payload = _handle_request(
                         request_payload,
-                        protocol=self._config.protocol,
+                        protocol=protocol,
                         session_token=session_token,
                         completion_service=completion_service,
+                        introspection_service=introspection_service,
                     )
                 except (ValueError, TypeError, KeyError) as exc:
                     response_payload = {"ok": False, "error": str(exc)}
@@ -71,6 +77,7 @@ def _handle_request(
     protocol: str,
     session_token: str,
     completion_service: ReplCompletionService,
+    introspection_service: ReplIntrospectionService,
 ) -> dict[str, Any]:
     if payload.get("protocol") != protocol:
         return {"ok": False, "error": "Incompatible REPL control protocol."}
@@ -86,6 +93,17 @@ def _handle_request(
                 cursor_offset=int(payload.get("cursor_offset") or 0),
                 trigger_kind=str(payload.get("trigger_kind") or "invoked"),
                 trigger_character=str(payload.get("trigger_character") or ""),
+                max_results=int(payload.get("max_results") or 100),
+            )
+        )
+        return {"ok": True, "result": envelope_to_dict(envelope)}
+
+    if method == "introspect":
+        envelope = introspection_service.introspect(
+            ReplIntrospectionRequest(
+                target_path=str(payload.get("target_path") or ""),
+                member_prefix=str(payload.get("member_prefix") or ""),
+                include_private=bool(payload.get("include_private", True)),
                 max_results=int(payload.get("max_results") or 100),
             )
         )

@@ -66,6 +66,7 @@ class PythonConsoleWidget(QTextEdit):
         self._history_index: int = 0
         self._session_active: bool = False
         self._pending_block_lines: list[str] = []
+        self._auto_trigger_period: bool = True
         self._completion_request_generation: int = 0
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
@@ -328,7 +329,7 @@ class PythonConsoleWidget(QTextEdit):
             self.setTextCursor(cursor)
 
         super().keyPressEvent(event)
-        if event.text() == ".":
+        if event.text() == "." and self._auto_trigger_period:
             self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
 
     def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:

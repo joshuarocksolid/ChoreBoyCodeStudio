@@ -70,10 +70,30 @@ def test_typing_dot_triggers_manual_completion_with_empty_prefix(editor: CodeEdi
 
 
 def test_typing_dot_does_not_trigger_completion_when_auto_trigger_disabled(editor: CodeEditorWidget) -> None:
-    editor.set_completion_preferences(enabled=True, auto_trigger=False, min_chars=2)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=False,
+    )
     event = QKeyEvent(QEvent.KeyPress, Qt.Key_Period, Qt.NoModifier, ".")
 
     with patch.object(editor, "trigger_completion") as trigger_completion:
         editor.keyPressEvent(event)
 
     trigger_completion.assert_not_called()
+
+
+def test_typing_dot_triggers_completion_when_period_auto_trigger_enabled(editor: CodeEditorWidget) -> None:
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Period, Qt.NoModifier, ".")
+
+    with patch.object(editor, "trigger_completion") as trigger_completion:
+        editor.keyPressEvent(event)
+
+    trigger_completion.assert_called_once_with(manual=True, force_empty_prefix=True)

@@ -8,6 +8,7 @@ import inspect
 import keyword
 import logging
 import re
+import threading
 import time
 from typing import Any
 
@@ -17,6 +18,7 @@ from app.intelligence.completion_providers import extract_completion_prefix
 _logger = logging.getLogger(__name__)
 
 REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK = "repl_jedi_fallback"
+REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION = "repl_runtime_inspection"
 
 _DOTTED_EXPR_PATTERN = re.compile(
     r"(?P<expr>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)?$"
@@ -37,8 +39,14 @@ class ReplCompletionRequest:
 class ReplCompletionService:
     """Resolve completions against the live InteractiveConsole namespace."""
 
-    def __init__(self, namespace: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        namespace: dict[str, Any],
+        *,
+        namespace_lock: threading.RLock | None = None,
+    ) -> None:
         self._namespace = namespace
+        self._namespace_lock = namespace_lock or threading.RLock()
 
     def complete(self, request: ReplCompletionRequest) -> CompletionEnvelope:
         """Return completion candidates for a live REPL line buffer."""
@@ -46,7 +54,7 @@ class ReplCompletionService:
         started_at = time.perf_counter()
         try:
             jedi_items = self._complete_with_jedi(request)
-        except BaseException as exc:
+        except Exception as exc:
             _logger.debug("REPL Jedi completion failed: %s", exc)
             jedi_items = []
         if jedi_items:
@@ -56,11 +64,16 @@ class ReplCompletionService:
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         if elapsed_ms > 200.0:
             _logger.warning("Slow REPL completion: elapsed_ms=%.2f count=%s", elapsed_ms, len(fallback_items))
+        degradation_reason = ""
+        if fallback_items:
+            degradation_reason = REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
+        elif request.line_buffer.strip():
+            degradation_reason = REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK
         return CompletionEnvelope(
             items=fallback_items,
             source="runtime",
             confidence="runtime_inspection" if fallback_items else "",
-            degradation_reason=REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK,
+            degradation_reason=degradation_reason,
         )
 
     def _complete_with_jedi(self, request: ReplCompletionRequest) -> list[CompletionItem]:
@@ -68,8 +81,9 @@ class ReplCompletionService:
 
         cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
         line, column = _line_column(request.line_buffer, cursor)
-        script = jedi.Interpreter(request.line_buffer, [self._namespace])
-        completions = list(script.complete(line, column))
+        with self._namespace_lock:
+            script = jedi.Interpreter(request.line_buffer, [self._namespace])
+            completions = list(script.complete(line, column))
         prefix = extract_completion_prefix(request.line_buffer, cursor)
         replacement_start = cursor - len(prefix)
         items: list[CompletionItem] = []
@@ -152,12 +166,13 @@ class ReplCompletionService:
         request: ReplCompletionRequest,
     ) -> list[CompletionItem]:
         try:
-            value = eval(expression, {"__builtins__": builtins}, self._namespace)
+            with self._namespace_lock:
+                value = eval(expression, {"__builtins__": builtins}, self._namespace)
         except Exception:
             return []
         names: list[str]
         try:
-            names = sorted(name for name in dir(value) if not name.startswith("_"))
+            names = sorted(name for name in dir(value) if not name.startswith("__"))
         except Exception:
             return []
         items: list[CompletionItem] = []

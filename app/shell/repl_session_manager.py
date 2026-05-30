@@ -145,6 +145,44 @@ class ReplSessionManager:
             return CompletionEnvelope(items=[], degradation_reason="repl_invalid_response")
         return envelope_from_dict(result)
 
+    def introspect(
+        self,
+        *,
+        target_path: str,
+        member_prefix: str = "",
+        include_private: bool = True,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        """Request trusted runtime member listing from the active REPL control channel."""
+
+        config = self._control_config
+        if config is None or not self._supervisor.is_running():
+            return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
+        payload = {
+            "protocol": config.protocol,
+            "session_token": config.session_token,
+            "method": "introspect",
+            "target_path": target_path,
+            "member_prefix": member_prefix,
+            "include_private": include_private,
+            "max_results": max_results,
+        }
+        timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
+        try:
+            with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:
+                sock.settimeout(timeout_seconds)
+                sock.sendall(dumps_message(payload))
+                response = _read_json_line(sock)
+        except OSError as exc:
+            _logger.debug("REPL introspection request failed: %s", exc)
+            return CompletionEnvelope(items=[], degradation_reason="repl_control_unavailable")
+        if not response.get("ok"):
+            return CompletionEnvelope(items=[], degradation_reason=str(response.get("error") or "repl_error"))
+        result = response.get("result")
+        if not isinstance(result, dict):
+            return CompletionEnvelope(items=[], degradation_reason="repl_invalid_response")
+        return envelope_from_dict(result)
+
     def shutdown(self) -> None:
         """Permanent shutdown (call during app close)."""
         self._auto_restart = False

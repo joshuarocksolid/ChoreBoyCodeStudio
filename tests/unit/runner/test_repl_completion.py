@@ -6,7 +6,7 @@ import pytest
 
 from app.intelligence.completion_models import CompletionKind
 from app.runner.repl_completion import (
-    REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK,
+    REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION,
     ReplCompletionRequest,
     ReplCompletionService,
 )
@@ -59,5 +59,5 @@ def test_repl_completion_sets_degradation_reason_when_jedi_fallback_used(monkeyp
 
     envelope = service.complete(ReplCompletionRequest(line_buffer="sam", cursor_offset=3))
 
-    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK
+    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
     assert any(item.label == "sample_value" for item in envelope.items)

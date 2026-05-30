@@ -51,6 +51,14 @@ class PythonConsoleWorkflowHost(Protocol):
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 
 
+def _completion_degradation_message(reason: str) -> str:
+    if reason == "repl_runtime_inspection":
+        return "Python Console completion is using live runtime inspection."
+    if reason == "repl_jedi_fallback":
+        return "Python Console semantic completion is unavailable; showing fallback results."
+    return f"Python Console completion unavailable: {reason}"
+
+
 class PythonConsoleWorkflow:
     """Owns off-thread Python console completion requests and UI apply."""
 
@@ -93,10 +101,8 @@ class PythonConsoleWorkflow:
                     items=envelope.items,
                 )
                 if envelope.degradation_reason:
-                    self._host.show_status_message(
-                        f"Python Console completion unavailable: {envelope.degradation_reason}",
-                        4000,
-                    )
+                    message = _completion_degradation_message(envelope.degradation_reason)
+                    self._host.show_status_message(message, 4000)
 
             self._host.dispatch_to_main_thread(apply)
 

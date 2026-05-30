@@ -9,11 +9,17 @@ from typing import Any, Callable, Protocol, cast
 from PySide2.QtWidgets import QDialog, QInputDialog, QMessageBox
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.intelligence.completion_models import CompletionRequestResult
+from app.intelligence.completion_context import build_completion_context
+from app.intelligence.completion_models import CompletionItem, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.intelligence.outline_service import build_outline_from_source, flatten_symbols
+from app.intelligence.runtime_introspection import (
+    RuntimeIntrospectionCoordinator,
+    attach_replacement_metadata,
+    resolve_runtime_introspection_query_with_inference,
+)
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
 from app.support.runtime_explainer import build_import_issue_report
 
@@ -134,6 +140,23 @@ class SemanticNavigationHost(Protocol):
 
     def log_info(self, message: str, *args: object) -> None:
         ...
+
+    def runtime_introspection_coordinator(self) -> RuntimeIntrospectionCoordinator | None:
+        ...
+
+
+def _merge_completion_items(
+    primary: list[CompletionItem],
+    secondary: list[CompletionItem],
+) -> list[CompletionItem]:
+    seen = {item.label for item in primary}
+    merged = list(primary)
+    for item in secondary:
+        if item.label in seen:
+            continue
+        merged.append(item)
+        seen.add(item.label)
+    return merged
 
 
 class SemanticNavigationWorkflow:
@@ -459,8 +482,34 @@ class SemanticNavigationWorkflow:
             buffer_revision=requested_revision,
         )
         intelligence_controller = self._host.intelligence_controller()
+        completion_context = build_completion_context(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=file_path,
+            project_root=None if loaded_project is None else loaded_project.project_root,
+            trigger_is_manual=manual_trigger,
+            min_prefix_chars=self._host.completion_min_chars(),
+            max_results=100,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+            buffer_revision=requested_revision,
+        )
+        runtime_query = resolve_runtime_introspection_query_with_inference(
+            context=completion_context,
+            project_root=None if loaded_project is None else loaded_project.project_root,
+            current_file_path=file_path,
+            source_text=source_text,
+        )
+        coordinator = self._host.runtime_introspection_coordinator()
+        runtime_items: list[CompletionItem] = []
+        if coordinator is not None and runtime_query is not None:
+            cached = coordinator.cached_items(runtime_query)
+            if cached:
+                runtime_items = attach_replacement_metadata(cached, context=completion_context)
+
         fast_envelope = intelligence_controller.complete_fast(request=request)
-        if fast_envelope.items:
+        merged_fast_items = _merge_completion_items(fast_envelope.items, runtime_items)
+        if merged_fast_items:
             if not is_stale_revision_gated_editor_request(
                 file_path=file_path,
                 editor_widget=editor_widget,
@@ -479,8 +528,51 @@ class SemanticNavigationWorkflow:
                 editor_widget.show_completion_items_for_request(
                     request_generation=request_generation,
                     prefix=prefix,
-                    items=fast_envelope.items,
+                    items=merged_fast_items,
                 )
+
+        if (
+            coordinator is not None
+            and runtime_query is not None
+            and coordinator.cached_items(runtime_query) is None
+        ):
+            introspection_key = f"runtime_introspect:{runtime_query.target_path}"
+
+            def introspection_task(_cancellation: object) -> list[CompletionItem]:
+                return coordinator.fetch_and_cache_from_runner(runtime_query)
+
+            def introspection_success(items: list[CompletionItem]) -> None:
+                if is_stale_revision_gated_editor_request(
+                    file_path=file_path,
+                    editor_widget=editor_widget,
+                    requested_revision=requested_revision,
+                    editor_widget_for_path=self._host.editor_widget_for_path,
+                    buffer_revision=self._host.editor_buffer_revision,
+                ):
+                    return
+                attached = attach_replacement_metadata(items, context=completion_context)
+                if not attached:
+                    return
+                merged = _merge_completion_items(fast_envelope.items, attached)
+                editor_widget.show_completion_items_for_request(
+                    request_generation=request_generation,
+                    prefix=prefix,
+                    items=merged,
+                )
+
+            def introspection_error(exc: Exception) -> None:
+                self._host.log_warning(
+                    "Runtime introspection failed for %s: %s",
+                    runtime_query.target_path,
+                    exc,
+                )
+
+            self._host.background_tasks().run(
+                key=introspection_key,
+                task=introspection_task,
+                on_success=introspection_success,
+                on_error=introspection_error,
+            )
 
         def on_success(result: CompletionRequestResult) -> None:
             generation = result.request_generation
@@ -685,3 +777,6 @@ class MainWindowSemanticNavigationHost:
 
     def log_info(self, message: str, *args: object) -> None:
         self._window._logger.info(message, *args)
+
+    def runtime_introspection_coordinator(self) -> RuntimeIntrospectionCoordinator | None:
+        return self._window._runtime_introspection_coordinator

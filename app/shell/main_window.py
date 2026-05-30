@@ -58,7 +58,7 @@ from app.intelligence.completion_models import (
     CompletionResolveRequest,
     CompletionResolveResult,
 )
-from app.intelligence.completion_service import CompletionRequest
+from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
 from app.editors.editor_manager import EditorManager
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editorconfig import resolve_editorconfig_indentation
@@ -528,6 +528,9 @@ class MainWindow(QMainWindow):
             on_session_ended=self._enqueue_repl_ended,
             on_session_started=self._enqueue_repl_started,
             state_root=self._state_root,
+        )
+        self._runtime_introspection_coordinator = RuntimeIntrospectionCoordinator(
+            runner_port=self._repl_manager,
         )
         self._template_service = TemplateService()
         register_builtin_workflow_providers(
@@ -2876,6 +2879,7 @@ class MainWindow(QMainWindow):
                     if text:
                         self._append_python_console_line(text, stream=stream)
                 elif kind == "started":
+                    self._runtime_introspection_coordinator.clear_cache()
                     if self._python_console_widget is not None:
                         self._python_console_widget.set_session_active(True)
                 elif kind == "ended":
