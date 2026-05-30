@@ -206,6 +206,7 @@ Verify that a normal project can be opened from disk.
 - the project name or equivalent project state is visible in the UI
 - the project tree populates with project files
 - if metadata was missing but the folder is importable, `cbcs/project.json` is initialized automatically
+- `vendor/` is hidden from the explorer by default (vendored dependencies are managed via the Dependency panel); remove the `vendor` exclude in **Settings → File Excludes** if you need to browse vendored source files
 
 ---
 

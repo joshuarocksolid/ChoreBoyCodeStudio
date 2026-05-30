@@ -68,7 +68,7 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         ),
         state_root=str(state_root.resolve()),
     )
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):

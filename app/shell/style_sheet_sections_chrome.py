@@ -134,13 +134,31 @@ QStatusBar#shell\\.statusBar {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};
 }}
-QLabel#shell\\.startupStatusLabel,
-QLabel#shell\\.runStatusLabel,
-QLabel#shell\\.projectStatusLabel,
-QLabel#shell\\.editorStatusLabel,
-QLabel#shell\\.diagnosticsStatusLabel {{
+QStatusBar#shell\\.statusBar::item {{
+    border: none;
+    background: transparent;
+}}
+QStatusBar#shell\\.statusBar QLabel {{
     color: {tokens.text_muted};
     background: transparent;
+    font-size: 11px;
+    padding: 0 4px;
+}}
+QLabel#shell\\.startupStatusLabel[startupSeverity="warning"],
+QLabel#shell\\.startupStatusLabel[startupSeverity="unknown"] {{
+    color: {tokens.diag_warning_color};
+}}
+QLabel#shell\\.pythonToolingStatusLabel[pythonToolingSeverity="warning"] {{
+    color: {tokens.diag_warning_color};
+}}
+QLabel#shell\\.diagnosticsStatusLabel[diagnosticsSeverity="error"] {{
+    color: {tokens.diag_error_color};
+}}
+QLabel#shell\\.diagnosticsStatusLabel[diagnosticsSeverity="warning"] {{
+    color: {tokens.diag_warning_color};
+}}
+QLabel#shell\\.runStatusLabel[runSeverity="idle"] {{
+    color: {tokens.text_muted};
 }}
 QLabel#shell\\.runStatusLabel[runSeverity="running"] {{
     color: {tokens.debug_running_color};
@@ -154,6 +172,24 @@ QLabel#shell\\.runStatusLabel[runSeverity="error"] {{
 }}
 QLabel#shell\\.runStatusLabel[runSeverity="ok"] {{
     color: {tokens.debug_running_color};
+}}
+QToolButton#shell\\.statusBar\\.activeRunConfig {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+}}
+QToolButton#shell\\.statusBar\\.activeRunConfig:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QToolButton#shell\\.statusBar\\.activeRunConfig:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QToolButton#shell\\.statusBar\\.activeRunConfig:focus {{
+    border: {tokens.focus_border_width}px solid {tokens.accent};
 }}
 QWidget#shell\\.toolbar\\.runDebug {{
     background: {tokens.panel_bg};

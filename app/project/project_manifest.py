@@ -97,14 +97,14 @@ def build_default_project_manifest_payload(
             normalized_env_overrides[key] = value
 
     normalized_exclude_patterns: list[str] = []
-    if exclude_patterns is not None:
-        if not isinstance(exclude_patterns, list):
-            raise ValueError("exclude_patterns must be a list of strings.")
-        for item in exclude_patterns:
-            if not isinstance(item, str):
-                raise ValueError("exclude_patterns entries must be strings.")
-            if item.strip():
-                normalized_exclude_patterns.append(item.strip())
+    effective_exclude_patterns = ["vendor"] if exclude_patterns is None else exclude_patterns
+    if not isinstance(effective_exclude_patterns, list):
+        raise ValueError("exclude_patterns must be a list of strings.")
+    for item in effective_exclude_patterns:
+        if not isinstance(item, str):
+            raise ValueError("exclude_patterns entries must be strings.")
+        if item.strip():
+            normalized_exclude_patterns.append(item.strip())
 
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,

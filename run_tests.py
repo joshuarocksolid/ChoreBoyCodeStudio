@@ -103,6 +103,7 @@ def main() -> int:
 
     env = os.environ.copy()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env.setdefault("CBCS_SYNC_PROJECT_OPEN", "1")
 
     result = subprocess.run([APPRUN, "-c", payload], cwd=repo_root, env=env)
     return result.returncode

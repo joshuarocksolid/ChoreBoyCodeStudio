@@ -13,6 +13,8 @@ from app.project.project_tree import build_project_tree
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.shell.session_persistence import SessionTreeState
 
+TREE_ROLE_LAZY_UNLOADED = 259
+
 
 class ProjectTreePresenter:
     """Builds and restores the visual project tree."""
@@ -29,6 +31,7 @@ class ProjectTreePresenter:
         self._absolute_path_role = absolute_path_role
         self._is_directory_role = is_directory_role
         self._relative_path_role = relative_path_role
+        self._display_node_by_relative_path: dict[str, ProjectTreeDisplayNode] = {}
 
     def populate(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
         window = self._window
@@ -45,16 +48,34 @@ class ProjectTreePresenter:
             vertical_scroll = tree.verticalScrollBar().value()
             horizontal_scroll = tree.horizontalScrollBar().value()
         window._project_tree_widget.clear()
+        self._display_node_by_relative_path.clear()
+
         root_nodes = build_project_tree(loaded_project.entries)
         display_nodes = build_project_tree_display(root_nodes)
+        self._index_display_nodes(display_nodes)
         for display_node in display_nodes:
-            root_item = self.build_tree_item(display_node)
+            root_item = self.build_tree_item(display_node, lazy=True)
             window._project_tree_widget.addTopLevelItem(root_item)
         if preserve_state:
             self.restore_state(expanded_paths=expanded_paths, selected_paths=selected_paths)
-            # Qt finalizes scrollbar ranges after expansion is applied; defer the
-            # restore to the next event-loop tick so setValue lands on a real range.
             self._restore_scroll_position(vertical_scroll, horizontal_scroll)
+
+    def handle_item_expanded(self, item: QTreeWidgetItem) -> None:
+        self.ensure_children_loaded(item)
+
+    def ensure_children_loaded(self, item: QTreeWidgetItem) -> None:
+        if not bool(item.data(0, self._is_directory_role)):
+            return
+        if not bool(item.data(0, TREE_ROLE_LAZY_UNLOADED)):
+            return
+        relative_path = str(item.data(0, self._relative_path_role) or "")
+        display_node = self._display_node_by_relative_path.get(relative_path)
+        if display_node is None:
+            return
+        item.takeChildren()
+        item.setData(0, TREE_ROLE_LAZY_UNLOADED, False)
+        for child_node in display_node.children:
+            item.addChild(self.build_tree_item(child_node, lazy=True))
 
     def capture_full_state(self) -> SessionTreeState:
         expanded_paths, selected_paths = self.capture_state()
@@ -113,6 +134,9 @@ class ProjectTreePresenter:
         window = self._window
         if window._project_tree_widget is None:
             return
+        paths_to_materialize = set(expanded_paths) | set(selected_paths)
+        for relative_path in sorted(paths_to_materialize, key=lambda path: path.count("/")):
+            self._materialize_path(relative_path)
         for item in self.iter_items():
             relative_path = str(item.data(0, self._relative_path_role) or "")
             if not relative_path:
@@ -126,13 +150,7 @@ class ProjectTreePresenter:
             item.setSelected(relative_path in selected_paths)
 
     def reveal_path(self, file_path: str) -> None:
-        """Select and scroll to the tree item matching ``file_path``.
-
-        Expands ancestor folders so the item is visible, replaces any existing
-        selection, and centres the item in the viewport. Silently no-ops when
-        the path is empty, the tree is unavailable, or no matching item exists
-        (for example, when the active editor file lives outside the project).
-        """
+        """Select and scroll to the tree item matching ``file_path``."""
         window = self._window
         tree = window._project_tree_widget
         if tree is None or not file_path:
@@ -153,6 +171,7 @@ class ProjectTreePresenter:
                 continue
             parent = item.parent()
             while parent is not None:
+                self.ensure_children_loaded(parent)
                 if not parent.isExpanded():
                     parent.setExpanded(True)
                     if bool(parent.data(0, self._is_directory_role)):
@@ -185,14 +204,22 @@ class ProjectTreePresenter:
             collected.extend(self.collect_descendants(child_item))
         return collected
 
-    def build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
+    def build_tree_item(self, node: ProjectTreeDisplayNode, *, lazy: bool = False) -> QTreeWidgetItem:
         window = self._window
         item = QTreeWidgetItem([node.display_label])
         item.setData(0, self._absolute_path_role, node.absolute_path)
         item.setData(0, self._is_directory_role, node.is_directory)
         item.setData(0, self._relative_path_role, node.relative_path)
+        item.setData(0, TREE_ROLE_LAZY_UNLOADED, False)
         if node.is_directory:
             item.setIcon(0, window._tree_folder_icon)
+            if node.children:
+                if lazy:
+                    item.addChild(QTreeWidgetItem([""]))
+                    item.setData(0, TREE_ROLE_LAZY_UNLOADED, True)
+                else:
+                    for child_node in node.children:
+                        item.addChild(self.build_tree_item(child_node, lazy=False))
         else:
             filename = Path(node.absolute_path).name.lower()
             icon = window._tree_filename_icon_map.get(filename)
@@ -208,9 +235,6 @@ class ProjectTreePresenter:
                 font.setBold(True)
                 item.setFont(0, font)
                 item.setIcon(0, window._tree_entrypoint_icon)
-
-        for child_node in node.children:
-            item.addChild(self.build_tree_item(child_node))
         return item
 
     def selected_paths(self) -> list[tuple[str, str, bool]]:
@@ -391,3 +415,26 @@ class ProjectTreePresenter:
         elif chosen == copy_relative_path_action:
             rel_paths = [entry[1] for entry in selected]
             QApplication.clipboard().setText("\n".join(rel_paths))
+
+    def _index_display_nodes(self, nodes: list[ProjectTreeDisplayNode]) -> None:
+        for node in nodes:
+            self._display_node_by_relative_path[node.relative_path] = node
+            if node.children:
+                self._index_display_nodes(node.children)
+
+    def _materialize_path(self, relative_path: str) -> None:
+        if not relative_path:
+            return
+        parts = relative_path.split("/")
+        for depth in range(len(parts)):
+            partial = "/".join(parts[: depth + 1])
+            item = self._find_item_by_relative_path(partial)
+            if item is None:
+                continue
+            self.ensure_children_loaded(item)
+
+    def _find_item_by_relative_path(self, relative_path: str) -> QTreeWidgetItem | None:
+        for item in self.iter_items():
+            if str(item.data(0, self._relative_path_role) or "") == relative_path:
+                return item
+        return None

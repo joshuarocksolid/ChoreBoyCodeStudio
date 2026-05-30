@@ -235,6 +235,26 @@ def test_check_python_tooling_runtime_reports_api_integrity_details_when_unavail
     assert result.details["isort_missing_apis"] == []
 
 
+def test_check_treesitter_runtime_reports_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.treesitter.loader import TreeSitterRuntimeStatus
+
+    monkeypatch.setattr(
+        "app.treesitter.loader.initialize_tree_sitter_runtime",
+        lambda app_root=None: TreeSitterRuntimeStatus(False, "RuntimeError: incompatible binding"),
+    )
+    monkeypatch.setattr(
+        "app.treesitter.loader.runtime_traceback",
+        lambda: "traceback text",
+    )
+
+    result = capability_probe.check_treesitter_runtime()
+
+    assert result.check_id == capability_probe.TREESITTER_RUNTIME_CHECK_ID
+    assert result.is_available is False
+    assert "unavailable" in result.message.lower()
+    assert result.details["traceback"] == "traceback text"
+
+
 def test_run_startup_capability_probe_returns_structured_failures_instead_of_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -274,6 +294,11 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
         capability_probe,
         "check_python_tooling_runtime",
         lambda: CapabilityCheckResult("python_tooling_runtime", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_treesitter_runtime",
+        lambda: CapabilityCheckResult("treesitter_runtime", True, "ok"),
     )
 
     report = capability_probe.run_startup_capability_probe()
@@ -324,8 +349,12 @@ def test_run_minimal_startup_capability_probe_excludes_heavy_checks(
     def _unexpected_tooling() -> CapabilityCheckResult:
         raise AssertionError("minimal startup probe should not run tooling check")
 
+    def _unexpected_treesitter() -> CapabilityCheckResult:
+        raise AssertionError("minimal startup probe should not run tree-sitter check")
+
     monkeypatch.setattr(capability_probe, "check_freecad_availability", _unexpected_freecad)
     monkeypatch.setattr(capability_probe, "check_python_tooling_runtime", _unexpected_tooling)
+    monkeypatch.setattr(capability_probe, "check_treesitter_runtime", _unexpected_treesitter)
 
     report = capability_probe.run_minimal_startup_capability_probe()
     check_ids = [check.check_id for check in report.checks]

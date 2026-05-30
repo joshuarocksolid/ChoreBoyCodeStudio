@@ -63,7 +63,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     file_path.write_text("print('disk')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_apply_detected_indentation_for_widget", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_handle_editor_tab_changed", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_refresh_save_action_states", lambda: None)

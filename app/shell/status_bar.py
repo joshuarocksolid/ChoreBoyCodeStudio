@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
+from app.bootstrap.capability_probe import TREESITTER_RUNTIME_CHECK_ID
 from app.core.models import CapabilityProbeReport
 from app.shell.python_tooling_status_copy import format_python_tooling_status_copy
 from app.support.runtime_explainer import build_startup_issue_report
@@ -71,19 +72,42 @@ class IndentStatusView:
     details: str
 
 
+def _syntax_highlighting_status_suffix(report: Optional[CapabilityProbeReport]) -> str:
+    """Return a status-bar suffix when editor syntax highlighting is unavailable."""
+    if report is not None:
+        treesitter_check = next(
+            (check for check in report.checks if check.check_id == TREESITTER_RUNTIME_CHECK_ID),
+            None,
+        )
+        if treesitter_check is not None:
+            if not treesitter_check.is_available:
+                return " | Syntax highlighting off"
+            return ""
+
+    try:
+        from app.treesitter.loader import runtime_status
+
+        if not runtime_status().is_available:
+            return " | Syntax highlighting off"
+    except Exception:
+        return " | Syntax highlighting off"
+    return ""
+
+
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
     """Map capability probe output into deterministic status bar copy."""
+    syntax_suffix = _syntax_highlighting_status_suffix(report)
     if report is None:
         return StartupStatusView(
             severity="unknown",
-            text="Startup: Capability data unavailable",
+            text="Startup: Capability data unavailable" + syntax_suffix,
             details="Startup capability data was not provided to the editor shell.",
         )
 
     if report.all_available:
         return StartupStatusView(
             severity="ok",
-            text=f"Startup: Runtime ready ({report.available_count}/{report.total_count} checks)",
+            text=f"Startup: Runtime ready ({report.available_count}/{report.total_count} checks){syntax_suffix}",
             details="All startup capability checks passed.",
         )
 
@@ -92,7 +116,7 @@ def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> Sta
     detail_text = f"{issue_report.total_count} issue(s): {issue_titles}" if issue_titles else "Startup capability checks reported issues."
     return StartupStatusView(
         severity="warning",
-        text=f"Startup: Runtime issues ({report.available_count}/{report.total_count} checks)",
+        text=f"Startup: Runtime issues ({report.available_count}/{report.total_count} checks){syntax_suffix}",
         details=detail_text,
     )
 
@@ -227,6 +251,12 @@ class ShellStatusBarController:
         self._diagnostics_label = diagnostics_label
         self._indent_label = indent_label
 
+    def _refresh_widget_style(self, widget: "QLabel") -> None:
+        style = widget.style()
+        style.unpolish(widget)
+        style.polish(widget)
+        widget.update()
+
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Update startup status label from the latest probe output."""
         startup_status = map_startup_report_to_status(report)
@@ -236,6 +266,7 @@ class ShellStatusBarController:
             tooltip = f"{tooltip}\n\nClick to open Runtime Center."
         self._startup_label.setToolTip(tooltip)
         self._startup_label.setProperty("startupSeverity", startup_status.severity)  # type: ignore[arg-type]
+        self._refresh_widget_style(self._startup_label)
 
     def set_project_state_text(self, text: str) -> None:
         """Update lightweight project-status copy."""
@@ -259,6 +290,7 @@ class ShellStatusBarController:
         self._python_tooling_label.setText(view.text)
         self._python_tooling_label.setToolTip(view.details)
         self._python_tooling_label.setProperty("pythonToolingSeverity", view.severity)  # type: ignore[arg-type]
+        self._refresh_widget_style(self._python_tooling_label)
 
     def set_editor_status(self, file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> None:
         """Update current editor telemetry in the status bar."""
@@ -270,6 +302,14 @@ class ShellStatusBarController:
         text = format_diagnostics_counts(errors, warnings)
         self._diagnostics_label.setText(text)
         self._diagnostics_label.setVisible(bool(text))
+        if errors > 0:
+            severity = "error"
+        elif warnings > 0:
+            severity = "warning"
+        else:
+            severity = "none"
+        self._diagnostics_label.setProperty("diagnosticsSeverity", severity)  # type: ignore[arg-type]
+        self._refresh_widget_style(self._diagnostics_label)
 
     def set_indent_status(
         self,
@@ -290,6 +330,7 @@ class ShellStatusBarController:
         self._run_label.setText(run_view.text)
         self._run_label.setToolTip(run_view.details)
         self._run_label.setProperty("runSeverity", run_view.severity)  # type: ignore[arg-type]
+        self._refresh_widget_style(self._run_label)
 
     @property
     def status_bar(self) -> "QStatusBar":

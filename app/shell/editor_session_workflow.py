@@ -19,6 +19,8 @@ from app.shell.session_persistence import (
     save_session_file,
 )
 
+SESSION_RESTORE_BATCH_SIZE = 2
+
 
 class EditorSessionWorkflow:
     """Owns project session file persist/restore for open editors."""
@@ -127,31 +129,78 @@ class EditorSessionWorkflow:
                     ensure_spec=self._breakpoint_store.ensure_spec,
                 )
 
-            for file_state in session_state.open_files:
-                if not self._open_file_in_editor(file_state.file_path):
-                    if self._breakpoint_store is not None:
-                        self._breakpoint_store.clear_file(file_state.file_path)
-                    continue
-                editor_widget = self._editor_widget_for_path(file_state.file_path)
-                if editor_widget is None:
-                    continue
-                restore_editor_cursor_and_scroll(editor_widget, file_state)
+            ordered_files = _order_session_files_for_restore(
+                session_state.open_files,
+                active_file_path=session_state.active_file_path,
+            )
+            if not ordered_files:
+                self._finalize_session_restore(session_state)
+                return
 
-            if session_state.active_file_path is not None:
-                tab_index = self._tab_index_for_path(session_state.active_file_path)
-                if tab_index >= 0:
-                    self._set_current_tab_index(tab_index)
+            self._restore_file_state(ordered_files[0])
 
-            if session_state.project_tree is not None and self._restore_tree_state is not None:
-                self._restore_tree_state(session_state.project_tree)
-            elif session_state.active_file_path and self._reveal_tree_path is not None:
-                self._reveal_tree_path(session_state.active_file_path)
+            if len(ordered_files) == 1:
+                self._finalize_session_restore(session_state)
+                return
 
-            if self._refresh_breakpoints_list is not None:
-                self._refresh_breakpoints_list()
-        finally:
+            self._restore_remaining_session_files(
+                ordered_files[1:],
+                session_state,
+                start_index=0,
+            )
+        except Exception:
             if self._set_tree_reveal_suppressed is not None:
                 self._set_tree_reveal_suppressed(False)
+            raise
+
+    def _restore_file_state(self, file_state: SessionFileState) -> None:
+        if not self._open_file_in_editor(file_state.file_path):
+            if self._breakpoint_store is not None:
+                self._breakpoint_store.clear_file(file_state.file_path)
+            return
+        editor_widget = self._editor_widget_for_path(file_state.file_path)
+        if editor_widget is None:
+            return
+        restore_editor_cursor_and_scroll(editor_widget, file_state)
+
+    def _restore_remaining_session_files(
+        self,
+        remaining_files: tuple[SessionFileState, ...],
+        session_state: SessionState,
+        *,
+        start_index: int,
+    ) -> None:
+        end_index = min(start_index + SESSION_RESTORE_BATCH_SIZE, len(remaining_files))
+        for file_state in remaining_files[start_index:end_index]:
+            self._restore_file_state(file_state)
+
+        if end_index < len(remaining_files):
+            QTimer.singleShot(
+                0,
+                lambda: self._restore_remaining_session_files(
+                    remaining_files,
+                    session_state,
+                    start_index=end_index,
+                ),
+            )
+            return
+        self._finalize_session_restore(session_state)
+
+    def _finalize_session_restore(self, session_state: SessionState) -> None:
+        if session_state.active_file_path is not None:
+            tab_index = self._tab_index_for_path(session_state.active_file_path)
+            if tab_index >= 0:
+                self._set_current_tab_index(tab_index)
+
+        if session_state.project_tree is not None and self._restore_tree_state is not None:
+            self._restore_tree_state(session_state.project_tree)
+        elif session_state.active_file_path and self._reveal_tree_path is not None:
+            self._reveal_tree_path(session_state.active_file_path)
+
+        if self._refresh_breakpoints_list is not None:
+            self._refresh_breakpoints_list()
+        if self._set_tree_reveal_suppressed is not None:
+            self._set_tree_reveal_suppressed(False)
 
 
 def restore_editor_cursor_and_scroll(editor_widget: CodeEditorWidget, file_state: SessionFileState) -> None:
@@ -171,3 +220,19 @@ def restore_editor_cursor_and_scroll(editor_widget: CodeEditorWidget, file_state
     editor_widget.setTextCursor(cursor)
     scroll_position = max(0, file_state.scroll_position)
     QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
+
+
+def _order_session_files_for_restore(
+    open_files: tuple[SessionFileState, ...],
+    *,
+    active_file_path: str | None,
+) -> tuple[SessionFileState, ...]:
+    if not open_files:
+        return ()
+    if active_file_path is None:
+        return open_files
+    active_states = [file_state for file_state in open_files if file_state.file_path == active_file_path]
+    other_states = [file_state for file_state in open_files if file_state.file_path != active_file_path]
+    if not active_states:
+        return open_files
+    return tuple([*active_states, *other_states])

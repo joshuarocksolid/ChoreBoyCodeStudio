@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import pytest
 
@@ -31,6 +32,15 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     return app
 
 
+def _wait_for_open_paths(app, window, expected_paths: list[str], *, timeout_seconds: float = 2.0) -> None:
+    deadline = time.perf_counter() + timeout_seconds
+    while time.perf_counter() < deadline:
+        app.processEvents()
+        if window._editor_manager.open_paths() == expected_paths:
+            return
+    assert window._editor_manager.open_paths() == expected_paths
+
+
 def _set_cursor_position(editor_widget, *, line: int, column: int) -> None:  # type: ignore[no-untyped-def]
     cursor = editor_widget.textCursor()
     cursor.movePosition(QTextCursor.Start)
@@ -51,7 +61,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     file_two.write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     file_one_path = str(file_one.resolve())
@@ -68,6 +78,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     assert first_index >= 0
     assert window._editor_tabs_widget is not None
     window._editor_tabs_widget.setCurrentIndex(first_index)
+    window._handle_editor_tab_changed(first_index)
     breakpoint_store = window._debug_control_workflow.breakpoint_store
     breakpoint_store.set_line_enabled(file_one_path, 2, enabled=True)
     breakpoint_store.set_line_enabled(file_one_path, 5, enabled=True)
@@ -77,7 +88,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     window._reset_editor_tabs()
     breakpoint_store.clear_all()
     window._local_history_workflow.restore_session_state(str(project_root.resolve()))
-    app.processEvents()
+    _wait_for_open_paths(app, window, [file_one_path, file_two_path])
 
     assert window._editor_manager.open_paths() == [file_one_path, file_two_path]
     active_tab = window._editor_manager.active_tab()
@@ -115,7 +126,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     project_two_file.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
 
     assert window._open_project_by_path(str(project_one.resolve())) is True
     project_one_path = str(project_one_file.resolve())
@@ -132,8 +143,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
 
     # Reopen project one and verify its previous editor state is restored.
     assert window._open_project_by_path(str(project_one.resolve())) is True
-    app.processEvents()
-    assert project_one_path in window._editor_widgets_by_path
+    _wait_for_open_paths(app, window, [project_one_path])
     restored_widget = window._editor_widgets_by_path[project_one_path]
     assert restored_widget.textCursor().blockNumber() + 1 == 3
     assert restored_widget.textCursor().positionInBlock() + 1 == 2

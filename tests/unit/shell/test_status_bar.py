@@ -11,8 +11,17 @@ from app.shell.status_bar import (
     map_run_status_view,
     map_startup_report_to_status,
 )
+from app.treesitter.loader import TreeSitterRuntimeStatus
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _treesitter_runtime_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.treesitter.loader.runtime_status",
+        lambda: TreeSitterRuntimeStatus(True, "ready"),
+    )
 
 
 def test_map_startup_report_to_status_handles_missing_report() -> None:
@@ -30,12 +39,13 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
             CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("treesitter_runtime", True, "ok"),
         ]
     )
 
     status = map_startup_report_to_status(report)
     assert status.severity == "ok"
-    assert status.text == "Startup: Runtime ready (2/2 checks)"
+    assert status.text == "Startup: Runtime ready (3/3 checks)"
     assert status.details == "All startup capability checks passed."
 
 
@@ -54,6 +64,19 @@ def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
     status = map_startup_report_to_status(report)
     assert status.severity == "ok"
     assert status.text == "Startup: Runtime ready (5/5 checks)"
+
+
+def test_map_startup_report_to_status_appends_syntax_highlighting_warning() -> None:
+    report = CapabilityProbeReport(
+        checks=[
+            CapabilityCheckResult("apprun_presence", True, "ok"),
+            CapabilityCheckResult("treesitter_runtime", False, "missing binding"),
+        ]
+    )
+
+    status = map_startup_report_to_status(report)
+
+    assert "Syntax highlighting off" in status.text
 
 
 def test_map_startup_report_to_status_includes_issue_titles() -> None:

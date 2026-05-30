@@ -11,6 +11,7 @@ from app.bootstrap.capability_probe import (
     PYTHON_TOOLING_RUNTIME_CHECK_ID,
     STATE_ROOT_WRITABLE_CHECK_ID,
     TEMP_ROOT_WRITABLE_CHECK_ID,
+    TREESITTER_RUNTIME_CHECK_ID,
 )
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport, RuntimeIssue, RuntimeIssueReport
 from app.intelligence.diagnostics_service import ImportDiagnostic, explain_unresolved_import
@@ -317,6 +318,25 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
                 "Core open/edit/run workflows can still continue if no other blocking issues are present.",
                 "Review the reported tooling detail before relying on Python format/import actions.",
                 "Capture a support bundle if tooling should already be available in this deployment.",
+            ],
+            help_topic=HELP_TOPIC_GETTING_STARTED,
+            evidence=evidence,
+        )
+    if check.check_id == TREESITTER_RUNTIME_CHECK_ID:
+        return RuntimeIssue(
+            issue_id="runtime.treesitter_unavailable",
+            workflow=workflow,
+            severity="degraded",
+            title="Syntax highlighting is unavailable",
+            summary="Tree-sitter could not initialize, so editor files render as plain text.",
+            why_it_happened=(
+                "The vendored tree-sitter core binding must match the active AppRun Python ABI "
+                "(cp39 on ChoreBoy, cp311 in Cloud dev). A mismatched vendor tree is the most common cause."
+            ),
+            next_steps=[
+                "Run ./scripts/setup_vendor_py39.sh for local Python 3.9 AppRun dev, or ./scripts/setup_vendor_py311.sh for Cloud.",
+                "Verify the vendor symlink with ./run_dev.sh --probe.",
+                "Optionally set CBCS_VENDOR_PROFILE=py39 or py311 to force a vendor profile.",
             ],
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,

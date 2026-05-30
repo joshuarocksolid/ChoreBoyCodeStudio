@@ -69,7 +69,36 @@ This project favors **fewer, higher-value tests** over coverage chasing. Before 
 
 ### Running the editor (dev mode)
 
-Launch exactly as ChoreBoy does — through AppRun:
+Launch through AppRun with the repo dev script (prefers `~/opt/freecad/AppRun` when present):
+
+```bash
+./run_dev.sh
+```
+
+Dry-run to inspect the resolved command:
+
+```bash
+./run_dev.sh --dry-run
+```
+
+Verify tree-sitter / syntax-highlighting parity:
+
+```bash
+./run_dev.sh --probe
+```
+
+First-time local setup:
+
+```bash
+./scripts/setup_freecad_dev.sh      # ~/opt/freecad/AppRun (Python 3.9)
+./scripts/migrate_vendor_to_py311.sh  # if legacy artifacts/vendor/ exists
+./scripts/setup_vendor_py39.sh      # ChoreBoy-parity vendor bundle
+```
+
+See [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md) for the full dual-vendor workflow
+(`vendor_py39/` vs `vendor_py311/` under `ChoreBoyCodeStudio_artifacts/`).
+
+Cloud agents without `~/opt/freecad` can still use the raw AppRun one-liner:
 
 ```bash
 cd /workspace && /opt/freecad/AppRun -c "
@@ -81,7 +110,9 @@ runpy.run_path('/workspace/run_editor.py', run_name='__main__')
 "
 ```
 
-Requires `DISPLAY` (available as `:1` in Cloud). The status bar should show "Runtime ready (6/6 checks)".
+Requires `DISPLAY` (available as `:1` in Cloud). The status bar should show
+"Runtime ready" when capability checks pass; if tree-sitter failed to load it
+also shows `Syntax highlighting off`.
 
 ### Type checking (pyright)
 
@@ -121,8 +152,24 @@ the local `vendor/tree_sitter/` may legitimately hold a cp311 binding for
 Cloud-dev use without breaking `python package.py`. Grammar wheels
 (`tree_sitter_*`) are `abi3` and version-agnostic, so they are not affected.
 
-For local Cursor Cloud development only, you can populate `vendor/` with the
-current per-language tree-sitter bundle for the Cloud AppRun runtime:
+For local Cursor Cloud development only, populate the Python 3.11 bundle:
+
+```bash
+./scripts/setup_vendor_py311.sh
+```
+
+For local ChoreBoy-parity development (Python 3.9 via `~/opt/freecad/AppRun`):
+
+```bash
+./scripts/setup_vendor_py39.sh
+```
+
+Legacy `ChoreBoyCodeStudio_artifacts/vendor/` trees can be migrated once with
+`./scripts/migrate_vendor_to_py311.sh`. At launch, `dev_launch_editor.py`
+symlinks `repo/vendor` to `vendor_py39` or `vendor_py311` based on the active
+AppRun SOABI (override with `CBCS_VENDOR_PROFILE=py39|py311`).
+
+Manual Cloud-dev install (equivalent to `setup_vendor_py311.sh`):
 
 ```bash
 mkdir -p vendor

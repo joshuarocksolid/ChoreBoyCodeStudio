@@ -51,7 +51,7 @@ def test_quick_open_opens_selected_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     beta_file.write_text("print('beta')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     window._handle_quick_open_action()
@@ -90,7 +90,7 @@ def test_quick_open_preview_then_enter_promotes_to_permanent(
     target_file.write_text("print('beta')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     window._handle_quick_open_action()
@@ -134,7 +134,7 @@ def test_preview_tab_promotes_on_first_edit(
     second_file.write_text("print('second')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     window._handle_quick_open_action()
@@ -182,7 +182,7 @@ def test_quick_open_can_open_under_light_and_dark_themes(
     (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):

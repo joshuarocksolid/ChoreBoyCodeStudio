@@ -45,12 +45,43 @@ def test_resolve_apprun_path_uses_env_when_cli_missing(monkeypatch: pytest.Monke
     assert resolved == env_path.resolve()
 
 
-def test_resolve_apprun_path_uses_default_when_cli_and_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_apprun_path_uses_default_when_cli_and_env_missing(tmp_path: Path) -> None:
     """Default should target /opt/freecad/AppRun parity runtime path."""
-    monkeypatch.delenv(dev_launch_editor.APP_RUN_ENV_VAR, raising=False)
-
-    resolved = dev_launch_editor.resolve_apprun_path(None)
+    resolved = dev_launch_editor.resolve_apprun_path(None, env={}, home=tmp_path)
     assert resolved == Path("/opt/freecad/AppRun")
+
+
+def test_resolve_apprun_path_uses_freecad_apprun_when_cbcs_missing(tmp_path: Path) -> None:
+    """FREECAD_APPRUN should be used when CBCS_APPRUN is unset."""
+    freecad_path = tmp_path / "freecad-apprun"
+    env = {dev_launch_editor.FREECAD_APPRUN_ENV_VAR: str(freecad_path)}
+
+    resolved = dev_launch_editor.resolve_apprun_path(None, env=env, home=tmp_path)
+    assert resolved == freecad_path.resolve()
+
+
+def test_resolve_apprun_path_prefers_cbcs_over_freecad_apprun(tmp_path: Path) -> None:
+    """CBCS_APPRUN should win over FREECAD_APPRUN."""
+    cbcs_path = tmp_path / "cbcs-apprun"
+    freecad_path = tmp_path / "freecad-apprun"
+    env = {
+        dev_launch_editor.APP_RUN_ENV_VAR: str(cbcs_path),
+        dev_launch_editor.FREECAD_APPRUN_ENV_VAR: str(freecad_path),
+    }
+
+    resolved = dev_launch_editor.resolve_apprun_path(None, env=env, home=tmp_path)
+    assert resolved == cbcs_path.resolve()
+
+
+def test_resolve_apprun_path_uses_local_dev_apprun_when_executable(tmp_path: Path) -> None:
+    """Local ~/opt/freecad/AppRun should be preferred over the system default."""
+    local_apprun = tmp_path / "opt" / "freecad" / "AppRun"
+    local_apprun.parent.mkdir(parents=True)
+    local_apprun.write_text("", encoding="utf-8")
+    local_apprun.chmod(0o755)
+
+    resolved = dev_launch_editor.resolve_apprun_path(None, env={}, home=tmp_path)
+    assert resolved == local_apprun.resolve()
 
 
 def test_main_dry_run_prints_command_without_path_validation(
@@ -94,6 +125,7 @@ def test_main_launches_detached_with_start_new_session(
         return _FakeProcess()
 
     monkeypatch.setattr(dev_launch_editor, "resolve_repo_root", lambda: repo_root)
+    monkeypatch.setattr(dev_launch_editor, "probe_apprun_soabi", lambda _path: "cpython-311-x86_64-linux-gnu")
     monkeypatch.setattr(dev_launch_editor.subprocess, "Popen", fake_popen)
 
     exit_code = dev_launch_editor.main(["--apprun", str(app_run)])
@@ -123,6 +155,7 @@ def test_main_foreground_returns_child_exit_code(monkeypatch: pytest.MonkeyPatch
         return subprocess.CompletedProcess(args=command, returncode=17)
 
     monkeypatch.setattr(dev_launch_editor, "resolve_repo_root", lambda: repo_root)
+    monkeypatch.setattr(dev_launch_editor, "probe_apprun_soabi", lambda _path: "cpython-311-x86_64-linux-gnu")
     monkeypatch.setattr(dev_launch_editor.subprocess, "run", fake_run)
 
     exit_code = dev_launch_editor.main(["--foreground", "--apprun", str(app_run)])
@@ -151,8 +184,59 @@ def test_resolve_artifacts_dir_defaults_to_sibling(tmp_path: Path) -> None:
     assert resolved == (tmp_path / dev_launch_editor.DEFAULT_ARTIFACTS_DIRNAME).resolve()
 
 
+def test_resolve_vendor_profile_uses_env_override() -> None:
+    profile = dev_launch_editor.resolve_vendor_profile(None, env={dev_launch_editor.VENDOR_PROFILE_ENV_VAR: "py39"})
+    assert profile == dev_launch_editor.VENDOR_PY39_PROFILE
+
+
+def test_resolve_vendor_profile_maps_cp39_soabi(tmp_path: Path) -> None:
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("#!/bin/sh\n", encoding="utf-8")
+    app_run.chmod(0o755)
+
+    def fake_probe(path: Path) -> str | None:
+        assert path == app_run.resolve()
+        return "cpython-39-x86_64-linux-gnu"
+
+    original = dev_launch_editor.probe_apprun_soabi
+    dev_launch_editor.probe_apprun_soabi = fake_probe
+    try:
+        profile = dev_launch_editor.resolve_vendor_profile(app_run, env={})
+    finally:
+        dev_launch_editor.probe_apprun_soabi = original
+
+    assert profile == dev_launch_editor.VENDOR_PY39_PROFILE
+
+
+def test_ensure_vendor_symlink_creates_profile_symlink(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    artifacts_dir = tmp_path / "artifacts"
+    vendor_dir = artifacts_dir / dev_launch_editor.VENDOR_PY311_DIRNAME
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "dummy.py").write_text("x = 1\n", encoding="utf-8")
+
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("", encoding="utf-8")
+    app_run.chmod(0o755)
+
+    def fake_probe(_path: Path) -> str | None:
+        return "cpython-311-x86_64-linux-gnu"
+
+    original = dev_launch_editor.probe_apprun_soabi
+    dev_launch_editor.probe_apprun_soabi = fake_probe
+    try:
+        dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=app_run)
+    finally:
+        dev_launch_editor.probe_apprun_soabi = original
+
+    link = repo_root / "vendor"
+    assert link.is_symlink()
+    assert link.resolve() == vendor_dir.resolve()
+
+
 def test_ensure_vendor_symlink_creates_symlink(tmp_path: Path) -> None:
-    """Symlink should be created when artifacts vendor exists but repo vendor does not."""
+    """Legacy vendor/ directory should still be linked when profile dirs are absent."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     artifacts_dir = tmp_path / "artifacts"
@@ -160,7 +244,7 @@ def test_ensure_vendor_symlink_creates_symlink(tmp_path: Path) -> None:
     vendor_dir.mkdir(parents=True)
     (vendor_dir / "dummy.py").write_text("x = 1\n", encoding="utf-8")
 
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
 
     link = repo_root / "vendor"
     assert link.is_symlink()
@@ -178,7 +262,7 @@ def test_ensure_vendor_symlink_noop_when_vendor_already_exists(tmp_path: Path) -
     artifacts_dir = tmp_path / "artifacts"
     (artifacts_dir / "vendor").mkdir(parents=True)
 
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
 
     assert not existing_vendor.is_symlink()
     assert (existing_vendor / "local.py").read_text(encoding="utf-8") == "y = 2\n"
@@ -193,12 +277,12 @@ def test_ensure_vendor_symlink_warns_when_artifacts_vendor_missing(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir)
+    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
 
     assert not (repo_root / "vendor").exists()
     err = capsys.readouterr().err
     assert "not found" in err.lower()
-    assert dev_launch_editor.ARTIFACTS_DIR_ENV_VAR in err
+    assert dev_launch_editor.VENDOR_PY311_DIRNAME in err
 
 
 def test_main_returns_actionable_error_when_apprun_missing(

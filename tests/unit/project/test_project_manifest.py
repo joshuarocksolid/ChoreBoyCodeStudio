@@ -86,6 +86,7 @@ def test_build_default_project_manifest_payload_returns_canonical_defaults() -> 
         "run_configs": [],
         "env_overrides": {},
         "project_notes": "",
+        "exclude_patterns": ["vendor"],
     }
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.core import constants
@@ -89,3 +91,26 @@ def test_load_effective_exclude_patterns_skips_project_payload_when_no_root() ->
     effective = load_effective_exclude_patterns(service, project_root=None)
 
     assert effective == ["__pycache__"]
+
+
+def test_default_exclude_patterns_include_vendor() -> None:
+    from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
+
+    assert "vendor" in DEFAULT_EXCLUDE_PATTERNS
+
+
+def test_iter_project_entries_skips_vendor_directory(tmp_path: Path) -> None:
+    from app.project.file_inventory import iter_project_entries
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir()
+    for index in range(20):
+        (vendor_dir / f"mod_{index:02d}.py").write_text("x=1\n", encoding="utf-8")
+
+    entries = list(iter_project_entries(project_root, exclude_patterns=["vendor"]))
+
+    assert all("vendor" not in entry.relative_path for entry in entries)
+    assert any(entry.relative_path == "main.py" for entry in entries)

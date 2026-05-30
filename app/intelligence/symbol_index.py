@@ -6,7 +6,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 import threading
-from typing import Callable
+from typing import Callable, Sequence
 
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
 from app.project.file_inventory import iter_python_files
@@ -43,12 +43,14 @@ class SymbolIndexWorker:
         *,
         project_root: str,
         cache_db_path: str,
+        exclude_patterns: Sequence[str] = (),
         on_done: Callable[[int], None] | None = None,
         on_error: Callable[[str], None] | None = None,
         should_commit: Callable[[], bool] | None = None,
     ) -> None:
         self._project_root = str(Path(project_root).expanduser().resolve())
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
+        self._exclude_patterns = tuple(exclude_patterns)
         self._on_done = on_done
         self._on_error = on_error
         self._should_commit = should_commit
@@ -78,7 +80,7 @@ class SymbolIndexWorker:
         try:
             if not self._can_commit():
                 return
-            python_files = _list_python_source_files(self._project_root)
+            python_files = _list_python_source_files(self._project_root, self._exclude_patterns)
             current_fingerprints = {str(path): _file_fingerprint(path) for path in python_files}
             cache = SQLiteSymbolIndex(self._cache_db_path)
             cached_fingerprints = cache.lookup_file_fingerprints(self._project_root)
@@ -139,9 +141,13 @@ class SymbolIndexWorker:
                 self._on_error(str(exc))
 
 
-def build_python_symbol_index(project_root: str) -> dict[str, list[SymbolLocation]]:
+def build_python_symbol_index(
+    project_root: str,
+    *,
+    exclude_patterns: Sequence[str] = (),
+) -> dict[str, list[SymbolLocation]]:
     """Build symbol index for Python source files under project root."""
-    python_files = _list_python_source_files(project_root)
+    python_files = _list_python_source_files(project_root, exclude_patterns)
     index: dict[str, list[SymbolLocation]] = {}
     for file_path in python_files:
         symbols = _extract_symbols(file_path)
@@ -183,8 +189,11 @@ def _extract_symbols(file_path: Path) -> list[SymbolLocation]:
     return symbols
 
 
-def _list_python_source_files(project_root: str | Path) -> list[Path]:
-    return list(iter_python_files(project_root))
+def _list_python_source_files(
+    project_root: str | Path,
+    exclude_patterns: Sequence[str] = (),
+) -> list[Path]:
+    return list(iter_python_files(project_root, exclude_patterns=exclude_patterns))
 
 
 def _file_fingerprint(file_path: Path) -> tuple[int, int]:

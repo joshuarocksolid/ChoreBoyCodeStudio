@@ -29,6 +29,7 @@ STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
 GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
 TEMP_ROOT_WRITABLE_CHECK_ID = "temp_root_writable"
 PYTHON_TOOLING_RUNTIME_CHECK_ID = "python_tooling_runtime"
+TREESITTER_RUNTIME_CHECK_ID = "treesitter_runtime"
 MODULE_IMPORT_PROBE_TIMEOUT_SECONDS = 10
 
 
@@ -46,6 +47,7 @@ def run_startup_capability_probe(
         (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
         (TEMP_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_temp_path(temp_root=temp_root)),
         (PYTHON_TOOLING_RUNTIME_CHECK_ID, check_python_tooling_runtime),
+        (TREESITTER_RUNTIME_CHECK_ID, check_treesitter_runtime),
     ]
     checks: list[CapabilityCheckResult] = []
 
@@ -176,6 +178,35 @@ def check_writable_temp_path(temp_root: Optional[PathInput] = None) -> Capabilit
     """Check that app temp directory is writable."""
     directory = resolve_temp_root(temp_root)
     return _check_writable_directory(directory, TEMP_ROOT_WRITABLE_CHECK_ID, "Temp root")
+
+
+def check_treesitter_runtime() -> CapabilityCheckResult:
+    """Check whether the tree-sitter syntax-highlighting runtime is available."""
+    from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
+
+    status = initialize_tree_sitter_runtime()
+    if status.is_available:
+        grammar_count = len(status.available_language_keys)
+        return CapabilityCheckResult(
+            check_id=TREESITTER_RUNTIME_CHECK_ID,
+            is_available=True,
+            message=f"Tree-sitter runtime ready ({grammar_count} grammars).",
+            details={
+                "grammars": list(status.available_language_keys),
+                "status": status.message,
+            },
+        )
+
+    details: dict[str, object] = {"status": status.message}
+    failure_traceback = runtime_traceback()
+    if failure_traceback:
+        details["traceback"] = failure_traceback
+    return CapabilityCheckResult(
+        check_id=TREESITTER_RUNTIME_CHECK_ID,
+        is_available=False,
+        message=f"Tree-sitter runtime unavailable: {status.message}",
+        details=details,
+    )
 
 
 def check_python_tooling_runtime() -> CapabilityCheckResult:

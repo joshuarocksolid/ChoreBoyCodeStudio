@@ -22,6 +22,7 @@ DEFAULT_EXCLUDE_PATTERNS: list[str] = [
     "node_modules",
     ".venv",
     "venv",
+    "vendor",
 ]
 
 

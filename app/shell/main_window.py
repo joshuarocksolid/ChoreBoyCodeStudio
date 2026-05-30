@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 from dataclasses import replace
+import os
 from pathlib import Path
 import subprocess
 import threading
@@ -203,7 +204,6 @@ from app.shell.command_broker import CommandBroker
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.events import (
     ProjectOpenFailedEvent,
-    ProjectOpenedEvent,
     RunProcessExitEvent,
     RunProcessOutputEvent,
     RunProcessStateEvent,
@@ -212,6 +212,8 @@ from app.shell.events import (
 from app.shell.menu_wiring import build_main_window_menus, connect_test_explorer_navigation
 from app.shell.menus import MenuStubRegistry
 from app.shell.project_controller import ProjectController
+from app.shell.project_load_host import MainWindowProjectLoadHost
+from app.shell.project_load_workflow import ProjectLoadWorkflow
 from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.project_tree_presenter import ProjectTreePresenter as ShellProjectTreePresenter
@@ -627,7 +629,12 @@ class MainWindow(QMainWindow):
                 orchestrator=self._diagnostics_orchestrator,
             )
         )
-        self._project_controller = ProjectController(state_root=self._state_root, logger=self._logger)
+        self._project_controller = ProjectController(
+            state_root=self._state_root,
+            logger=self._logger,
+            dispatch_to_main_thread=self._dispatch_to_main_thread,
+        )
+        self._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(self))
         self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
         self._project_tree_action_coordinator = ProjectTreeActionCoordinator(
             project_tree_controller=self._project_tree_controller,
@@ -645,7 +652,7 @@ class MainWindow(QMainWindow):
             apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
             update_widget_language=self._update_widget_language_for_path,
             maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
-            reload_project=self._reload_current_project,
+            reload_project=self._refresh_project_tree_from_disk,
             record_deleted_path=self._local_history_workflow.record_deleted_path,
             remap_file_lineage=self._local_history_workflow.remap_file_lineage,
         )
@@ -2067,12 +2074,15 @@ class MainWindow(QMainWindow):
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
+        async_open = os.environ.get("CBCS_SYNC_PROJECT_OPEN") != "1"
         return self._project_controller.open_project_by_path(
             project_root,
             confirm_proceed=self._save_workflow.confirm_proceed_with_unsaved_changes,
+            on_loading=lambda: self.statusBar().showMessage("Opening project… (scanning files)", 0),
             on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
             on_error=self._show_open_project_error,
             exclude_patterns=self._load_effective_exclude_patterns(project_root),
+            async_open=async_open,
         )
 
     def _load_effective_exclude_patterns(self, project_root: str | None = None) -> list[str]:
@@ -2112,66 +2122,7 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
-        self._cancel_pending_project_tree_preview()
-        previous_project_root = self._loaded_project.project_root if self._loaded_project is not None else None
-        if previous_project_root is not None:
-            self._local_history_workflow.persist_session_state(project_root=previous_project_root)
-        self._loaded_project = loaded_project
-        self._latest_health_report = None
-        self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
-        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
-        self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
-        self._latest_run_issue_ids = ()
-        self._latest_runtime_issue_report = self._build_runtime_issue_report()
-        self._active_named_run_config_name = None
-        self._run_launch_workflow.refresh_active_run_config_indicator()
-        self._lint_rule_overrides = self._load_lint_rule_overrides()
-        self._selected_linter = self._load_selected_linter()
-        self._plugin_activation_workflow.reload()
-        self._refresh_python_tooling_status()
-        self._show_editor_screen()
-        self.set_project_placeholder(loaded_project.metadata.name)
-        self.setWindowTitle(f"ChoreBoy Code Studio v{constants.APP_VERSION} — {loaded_project.metadata.name}")
-        self._logger.info("Project loaded: %s", loaded_project.project_root)
-        self._update_explorer_buttons_enabled()
-        self._populate_project_tree(loaded_project)
-        self._project_tree_structure_signature = _filter_tree_signature_entries(
-            tuple(entry.relative_path for entry in loaded_project.entries)
-        )
-        self._reset_editor_tabs()
-        self._stored_lint_diagnostics.clear()
-        if self._search_sidebar is not None:
-            self._search_sidebar.set_project_root(loaded_project.project_root)
-            effective_excludes = compute_effective_excludes(
-                self._load_effective_exclude_patterns(loaded_project.project_root),
-                loaded_project.metadata.exclude_patterns,
-            )
-            self._search_sidebar.set_exclude_patterns(effective_excludes)
-        self._local_history_workflow.restore_session_state(loaded_project.project_root)
-        self._lint_all_open_files()
-        self._debug_control_workflow.refresh_breakpoints_list()
-        self._refresh_open_recent_menu()
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        if self._intelligence_runtime_settings.force_full_reindex_on_open:
-            self._rebuild_intelligence_cache()
-        self._start_symbol_indexing(loaded_project.project_root)
-        self._logger.info(
-            "Project open telemetry: root=%s files=%s elapsed_ms=%.2f",
-            loaded_project.project_root,
-            len(loaded_project.entries),
-            (time.perf_counter() - started_at) * 1000.0,
-        )
-        self._event_bus.publish(
-            ProjectOpenedEvent(
-                project_root=loaded_project.project_root,
-                project_name=loaded_project.metadata.name,
-            )
-        )
-        self._persist_last_project_path(loaded_project.project_root)
-        test_runner_workflow = getattr(self, "_test_runner_workflow", None)
-        if test_runner_workflow is not None:
-            test_runner_workflow.refresh_discovery()
+        self._project_load_workflow.apply(loaded_project, started_at=started_at)
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
@@ -3040,7 +2991,7 @@ class MainWindow(QMainWindow):
         self._stored_runtime_problems = problems
         self._render_merged_problems_panel()
 
-    def _start_symbol_indexing(self, project_root: str) -> None:
+    def _start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str] | None = None) -> None:
         if not self._intelligence_runtime_settings.cache_enabled:
             return
         if self._active_symbol_index_worker is not None and self._active_symbol_index_worker.is_running():
@@ -3048,9 +2999,16 @@ class MainWindow(QMainWindow):
         self._symbol_index_generation += 1
         generation = self._symbol_index_generation
         started_at = time.perf_counter()
+        effective_excludes = exclude_patterns
+        if effective_excludes is None and self._loaded_project is not None:
+            effective_excludes = compute_effective_excludes(
+                self._load_effective_exclude_patterns(self._loaded_project.project_root),
+                self._loaded_project.metadata.exclude_patterns,
+            )
         self._active_symbol_index_worker = SymbolIndexWorker(
             project_root=project_root,
             cache_db_path=self._symbol_cache_db_path,
+            exclude_patterns=effective_excludes or (),
             on_done=lambda count: self._handle_symbol_index_done(project_root, count, started_at, generation),
             on_error=lambda message: self._handle_symbol_index_error(project_root, message, generation),
             should_commit=lambda: generation == self._symbol_index_generation,
@@ -3261,6 +3219,7 @@ class MainWindow(QMainWindow):
             self._handle_tree_new_folder(target)
 
     def _handle_tree_item_expanded(self, item: QTreeWidgetItem) -> None:
+        self._get_project_tree_presenter().handle_item_expanded(item)
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
             item.setIcon(0, self._tree_folder_open_icon)
 
@@ -3518,6 +3477,26 @@ class MainWindow(QMainWindow):
                 self._save_import_update_policy(selected_policy)
         return selected_policy
 
+    def _refresh_project_tree_from_disk(self) -> None:
+        if self._loaded_project is None:
+            return
+        self._loaded_project = open_project(
+            self._loaded_project.project_root,
+            exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
+        )
+        self._populate_project_tree(self._loaded_project, preserve_state=True)
+        if self._search_sidebar is not None:
+            self._search_sidebar.set_project_root(self._loaded_project.project_root)
+            self._search_sidebar.set_exclude_patterns(
+                compute_effective_excludes(
+                    self._load_effective_exclude_patterns(self._loaded_project.project_root),
+                    self._loaded_project.metadata.exclude_patterns,
+                )
+            )
+        self._project_tree_structure_signature = _filter_tree_signature_entries(
+            tuple(entry.relative_path for entry in self._loaded_project.entries)
+        )
+
     def _reload_current_project(self) -> None:
         if self._loaded_project is None:
             return
@@ -3539,7 +3518,11 @@ class MainWindow(QMainWindow):
         self._project_tree_structure_signature = _filter_tree_signature_entries(
             tuple(entry.relative_path for entry in self._loaded_project.entries)
         )
-        self._start_symbol_indexing(self._loaded_project.project_root)
+        effective_excludes = compute_effective_excludes(
+            self._load_effective_exclude_patterns(self._loaded_project.project_root),
+            self._loaded_project.metadata.exclude_patterns,
+        )
+        self._start_symbol_indexing(self._loaded_project.project_root, exclude_patterns=effective_excludes)
         test_runner_workflow = getattr(self, "_test_runner_workflow", None)
         if test_runner_workflow is not None:
             test_runner_workflow.refresh_discovery()

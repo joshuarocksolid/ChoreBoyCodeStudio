@@ -63,7 +63,7 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     file_path.write_text("print('current')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 

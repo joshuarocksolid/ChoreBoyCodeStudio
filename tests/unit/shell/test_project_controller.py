@@ -65,6 +65,7 @@ def test_open_project_by_path_applies_loaded_project(monkeypatch: pytest.MonkeyP
         confirm_proceed=lambda _message: True,
         on_loaded=applied.append,
         on_error=lambda _path, _details: pytest.fail("unexpected error callback"),
+        async_open=False,
     )
 
     assert opened is True
@@ -84,6 +85,7 @@ def test_open_project_by_path_respects_unsaved_cancel(monkeypatch: pytest.Monkey
         confirm_proceed=lambda _message: False,
         on_loaded=lambda _loaded: pytest.fail("should not load project"),
         on_error=lambda _path, _details: pytest.fail("should not fail with error"),
+        async_open=False,
     )
 
     assert opened is False

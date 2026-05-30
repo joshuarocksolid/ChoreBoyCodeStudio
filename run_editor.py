@@ -12,6 +12,7 @@ from app.bootstrap.capability_probe import (
     run_minimal_startup_capability_probe,
     run_startup_capability_probe,
 )
+from app.bootstrap.memfd_shim import install as install_memfd_shim
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.core.models import CapabilityProbeReport
 from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
@@ -145,6 +146,8 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_minimal_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
+        if install_memfd_shim():
+            logger.info("Installed dev memfd shim for os.memfd_create.")
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:
             if getattr(tree_sitter_status, "missing_default_language_keys", ()):

@@ -76,6 +76,11 @@ def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path)
     window._loaded_project = loaded_project  # noqa: SLF001 - test harness setup
     window._populate_project_tree(loaded_project)  # noqa: SLF001 - direct tree population for state test
 
+    docs_item = _find_item_by_relative_path(window, "docs")
+    assert docs_item is not None
+    docs_item.setExpanded(True)
+    window._get_project_tree_presenter().ensure_children_loaded(docs_item)  # noqa: SLF001
+
     src_item = _find_item_by_relative_path(window, "src")
     docs_readme_item = _find_item_by_relative_path(window, "docs/readme.md")
     assert src_item is not None

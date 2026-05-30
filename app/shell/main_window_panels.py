@@ -130,7 +130,7 @@ def build_explorer_page(window: Any) -> QWidget:
     window._explorer_refresh_btn = _make_explorer_button(
         header, "Refresh Explorer", refresh_icon("#495057"),
     )
-    window._explorer_refresh_btn.clicked.connect(window._reload_current_project)
+    window._explorer_refresh_btn.clicked.connect(window._refresh_project_tree_from_disk)
     header_layout.addWidget(window._explorer_refresh_btn)
 
     layout.addWidget(header)

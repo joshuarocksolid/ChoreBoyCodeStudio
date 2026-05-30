@@ -43,7 +43,7 @@ def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
     readme.write_text("# Original\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda _project_root: None)
+    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
     assert window._open_project_by_path(str(project_root.resolve())) is True
 
     readme_path = str(readme.resolve())
