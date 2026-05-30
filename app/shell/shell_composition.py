@@ -115,6 +115,9 @@ class MainWindowSettingsApplyHost:
     def set_ui_font_weight(self, ui_font_weight: str) -> None:
         self._window._ui_font_weight = ui_font_weight
 
+    def set_dark_chrome_palette(self, dark_chrome_palette: str) -> None:
+        self._window._dark_chrome_palette = dark_chrome_palette
+
     def apply_theme_mode(self, theme_mode: str) -> None:
         self._window._handle_set_theme(theme_mode)
 
@@ -439,6 +442,10 @@ class MainWindowShellThemeHost:
     @property
     def ui_font_weight(self) -> str:
         return self._window._ui_font_weight
+
+    @property
+    def dark_chrome_palette(self) -> str:
+        return self._window._dark_chrome_palette
 
     @property
     def syntax_color_overrides(self) -> dict[str, dict[str, str]]:

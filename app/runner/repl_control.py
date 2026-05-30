@@ -21,8 +21,12 @@ class ReplControlServer:
     def __init__(self, *, config: ReplControlConfig, namespace: dict[str, Any]) -> None:
         self._config = config
         self._namespace_lock = threading.RLock()
-        self._completion_service = ReplCompletionService(namespace, namespace_lock=self._namespace_lock)
         self._introspection_service = ReplIntrospectionService()
+        self._completion_service = ReplCompletionService(
+            namespace,
+            namespace_lock=self._namespace_lock,
+            introspection_service=self._introspection_service,
+        )
         self._server: socketserver.ThreadingTCPServer | None = None
         self._thread: threading.Thread | None = None
 

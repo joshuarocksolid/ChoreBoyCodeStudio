@@ -78,6 +78,10 @@ CBCS_APPRUN=/opt/freecad/AppRun ./run_dev.sh --probe
 | `CBCS_ARTIFACTS_DIR` | Non-default artifacts location |
 | `CBCS_VENDOR_PROFILE` | Force `py39` or `py311` vendor tree |
 
+When using the Python 3.9 vendor tree, `black==24.10.0` requires `click<8.2`
+(Python 3.9 cannot import Click 8.2+). `./scripts/setup_vendor_py39.sh` pins
+that constraint automatically.
+
 ## memfd
 
 Tree-sitter native bindings load through memfd (see `docs/DISCOVERY.md` §4E).

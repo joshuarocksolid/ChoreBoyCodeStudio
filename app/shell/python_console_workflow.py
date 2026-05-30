@@ -54,8 +54,10 @@ BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 def _completion_degradation_message(reason: str) -> str:
     if reason == "repl_runtime_inspection":
         return "Python Console completion is using live runtime inspection."
-    if reason == "repl_jedi_fallback":
-        return "Python Console semantic completion is unavailable; showing fallback results."
+    if reason == "repl_jedi_unavailable":
+        return "Python Console semantic completion is unavailable (Jedi not loaded)."
+    if reason in {"repl_no_completions", "repl_jedi_fallback"}:
+        return "Python Console completion returned no results."
     return f"Python Console completion unavailable: {reason}"
 
 

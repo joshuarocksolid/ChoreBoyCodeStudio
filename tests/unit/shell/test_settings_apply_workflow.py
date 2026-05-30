@@ -49,6 +49,7 @@ class RecordingSettingsApplyHost:
 
     theme_modes: list[str] = field(default_factory=list)
     ui_font_weights: list[str] = field(default_factory=list)
+    dark_chrome_palettes: list[str] = field(default_factory=list)
     applied_bundles: list[ShellPreferencesBundle] = field(default_factory=list)
     relint_calls: int = 0
     cleared_diagnostics: int = 0
@@ -93,6 +94,9 @@ class RecordingSettingsApplyHost:
 
     def set_ui_font_weight(self, ui_font_weight: str) -> None:
         self.ui_font_weights.append(ui_font_weight)
+
+    def set_dark_chrome_palette(self, dark_chrome_palette: str) -> None:
+        self.dark_chrome_palettes.append(dark_chrome_palette)
 
     def apply_theme_mode(self, theme_mode: str) -> None:
         self.theme_modes.append(theme_mode)
@@ -186,6 +190,7 @@ def test_apply_after_settings_saved_applies_theme_and_preferences_bundle() -> No
         updated_snapshot=_updated_snapshot(
             theme_mode=constants.UI_THEME_MODE_DARK,
             ui_font_weight=constants.UI_THEME_FONT_WEIGHT_BOLD,
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
         ),
         baseline=baseline,
         project_root="/tmp/project",
@@ -193,6 +198,7 @@ def test_apply_after_settings_saved_applies_theme_and_preferences_bundle() -> No
 
     assert host.theme_modes == [constants.UI_THEME_MODE_DARK]
     assert host.ui_font_weights == [constants.UI_THEME_FONT_WEIGHT_BOLD]
+    assert host.dark_chrome_palettes == [constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY]
     assert len(host.applied_bundles) == 1
     assert host.project_placeholders == ["Demo Project"]
     assert host.logged_updates == 1

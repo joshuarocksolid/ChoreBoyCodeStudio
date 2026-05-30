@@ -39,6 +39,7 @@ class GeneralTabState:
     force_full_reindex_on_open: bool
     theme_mode: str
     ui_font_weight: str
+    dark_chrome_palette: str
     auto_open_console_on_run_output: bool
     auto_open_problems_on_run_failure: bool
     highlighting_adaptive_mode: str

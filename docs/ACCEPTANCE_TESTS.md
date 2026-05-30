@@ -1155,6 +1155,35 @@ Verify the two High Contrast theme modes (HC Light, HC Dark) are selectable, per
 
 ---
 
+## AT-THEME-NEUTRAL-DARK — Neutral dark-gray chrome palette (request #38)
+
+**Purpose:**  
+Verify the opt-in **Neutral gray dark** dark-chrome palette applies neutral gray surfaces in standard Dark mode while preserving the blue accent and #37 contrast floors. The default **Standard (blue-tinted dark)** must remain unchanged for existing users.
+
+**Preconditions:**  
+
+- editor is running with Theme set to **Dark** (or **System** on a dark desktop)
+- a project with at least one file open
+
+**Steps:**  
+
+1. Open **File > Settings... > General > Appearance**. Confirm **Dark chrome palette** offers **Standard (blue-tinted dark)** and **Neutral gray dark**.
+2. With **Standard** selected, save and verify panel/editor chrome matches the prior blue-tinted dark look (e.g. panel background `#262C33`).
+3. Select **Neutral gray dark**, save, and verify:
+   - Panel and window chrome read as neutral gray (~`#303030` panel), not blue-tinted.
+   - Selection, current-line, and debug current-frame highlights are neutral gray lifts (not blue-gray).
+   - Focus rings, links, and the runtime-ready indicator still use the blue accent (`#5B8CFF`).
+4. Switch Theme to **Light** and **High Contrast Dark** with **Neutral gray dark** still selected. Verify chrome follows Light / HC tokens (setting has no visible effect outside standard dark).
+5. Restart the editor and confirm `theme.dark_chrome_palette` persists in global `settings.json`.
+
+**Expected Result:**  
+
+- Default installs keep **Standard** until the user opts into **Neutral gray dark**.
+- Neutral palette applies only in non-HC dark chrome; text contrast remains at or above WCAG AA on critical surfaces.
+- HC and Light modes are unaffected by the setting.
+
+---
+
 ## AT-35 — Syntax color customization (light + dark) persists
 
 **Purpose:**  

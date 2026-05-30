@@ -140,6 +140,57 @@ def test_request_completion_async_shows_degradation_status() -> None:
     ]
 
 
+def test_request_completion_async_shows_jedi_unavailable_status() -> None:
+    repl = FakeReplManager(
+        envelope=CompletionEnvelope(items=[], degradation_reason="repl_jedi_unavailable")
+    )
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(
+        repl_manager=repl,
+        host=host,
+        start_background_work=lambda work: work(),
+    )
+
+    workflow.request_completion_async(
+        line_buffer="from FreeCAD",
+        cursor_offset=len("from FreeCAD"),
+        request_generation=1,
+        trigger_kind="manual",
+        trigger_character="",
+    )
+
+    assert host.status_messages == [
+        (
+            "Python Console semantic completion is unavailable (Jedi not loaded).",
+            4000,
+        )
+    ]
+
+
+def test_request_completion_async_shows_no_completions_status() -> None:
+    repl = FakeReplManager(
+        envelope=CompletionEnvelope(items=[], degradation_reason="repl_no_completions")
+    )
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(
+        repl_manager=repl,
+        host=host,
+        start_background_work=lambda work: work(),
+    )
+
+    workflow.request_completion_async(
+        line_buffer="from FreeCAD",
+        cursor_offset=len("from FreeCAD"),
+        request_generation=1,
+        trigger_kind="manual",
+        trigger_character="",
+    )
+
+    assert host.status_messages == [
+        ("Python Console completion returned no results.", 4000)
+    ]
+
+
 def test_request_completion_async_skips_apply_when_widget_missing() -> None:
     repl = FakeReplManager(
         envelope=CompletionEnvelope(

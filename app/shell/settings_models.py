@@ -63,6 +63,7 @@ class EditorSettingsSnapshot:
     )
     theme_mode: str = constants.UI_THEME_MODE_DEFAULT
     ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT
+    dark_chrome_palette: str = constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
     auto_open_console_on_run_output: bool = constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT
     auto_open_problems_on_run_failure: bool = constants.UI_OUTPUT_AUTO_OPEN_PROBLEMS_ON_RUN_FAILURE_DEFAULT
     selected_linter: str = constants.LINTER_PROVIDER_DEFAULT
@@ -132,6 +133,15 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         str(ui_font_weight_raw)
         if str(ui_font_weight_raw) in constants.UI_THEME_FONT_WEIGHT_VALUES
         else constants.UI_THEME_FONT_WEIGHT_DEFAULT
+    )
+    dark_chrome_palette_raw = theme_settings.get(
+        constants.UI_THEME_DARK_CHROME_PALETTE_KEY,
+        constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT,
+    )
+    dark_chrome_palette = (
+        str(dark_chrome_palette_raw)
+        if str(dark_chrome_palette_raw) in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES
+        else constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
     )
 
     tab_width = _coerce_int(
@@ -267,6 +277,7 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         highlighting_lexical_only_threshold_chars=runtime_settings.highlighting_lexical_only_threshold_chars,
         theme_mode=theme_mode,
         ui_font_weight=ui_font_weight,
+        dark_chrome_palette=dark_chrome_palette,
         auto_open_console_on_run_output=_coerce_bool(
             output_settings.get(constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY),
             default=constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_DEFAULT,
@@ -476,9 +487,15 @@ def merge_editor_settings_snapshot(
         if snapshot.ui_font_weight in constants.UI_THEME_FONT_WEIGHT_VALUES
         else constants.UI_THEME_FONT_WEIGHT_DEFAULT
     )
+    dark_chrome_palette = (
+        snapshot.dark_chrome_palette
+        if snapshot.dark_chrome_palette in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES
+        else constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+    )
     merged[constants.UI_THEME_SETTINGS_KEY] = {
         constants.UI_THEME_MODE_KEY: mode,
         constants.UI_THEME_FONT_WEIGHT_KEY: ui_font_weight,
+        constants.UI_THEME_DARK_CHROME_PALETTE_KEY: dark_chrome_palette,
     }
     merged[constants.UI_OUTPUT_SETTINGS_KEY] = {
         constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: bool(snapshot.auto_open_console_on_run_output),

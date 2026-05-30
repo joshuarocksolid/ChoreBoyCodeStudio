@@ -98,8 +98,45 @@ class TestTokensFromPalette:
         )
         assert tokens.ui_font_weight_css == "normal"
 
-    @pytest.mark.parametrize("mode", ["light", "dark"])
-    def test_chrome_text_contrast_meets_wcag_aa(self, mode: str) -> None:
+    def test_dark_standard_and_neutral_produce_different_chrome(self) -> None:
+        standard = tokens_from_palette(
+            _make_palette(),
+            force_mode="dark",
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD,
+        )
+        neutral = tokens_from_palette(
+            _make_palette(),
+            force_mode="dark",
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
+        )
+        assert standard.panel_bg != neutral.panel_bg
+        assert neutral.panel_bg == "#303030"
+        assert standard.text_muted == neutral.text_muted
+
+    def test_neutral_gray_ignored_for_light_and_high_contrast(self) -> None:
+        light = tokens_from_palette(
+            _make_palette(),
+            force_mode="light",
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
+        )
+        hc_dark = tokens_from_palette(
+            _make_palette(),
+            force_mode=constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
+        )
+        assert light.panel_bg == "#FFFFFF"
+        assert hc_dark.panel_bg == "#000000"
+
+    @pytest.mark.parametrize(
+        ("mode", "dark_chrome_palette"),
+        [
+            ("light", constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD),
+            ("light", constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY),
+            ("dark", constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD),
+            ("dark", constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY),
+        ],
+    )
+    def test_chrome_text_contrast_meets_wcag_aa(self, mode: str, dark_chrome_palette: str) -> None:
         """Guard the user-visible readability promise of #37 Tier 1.
 
         Both ``text_muted`` and ``gutter_text`` previously fell below WCAG AA
@@ -108,7 +145,9 @@ class TestTokensFromPalette:
         text threshold so a future palette tweak cannot silently regress
         readability.
         """
-        tokens = tokens_from_palette(_make_palette(), force_mode=mode)
+        tokens = tokens_from_palette(
+            _make_palette(), force_mode=mode, dark_chrome_palette=dark_chrome_palette
+        )
         critical_pairs = (
             (tokens.text_muted, tokens.panel_bg, "text_muted on panel_bg"),
             (tokens.text_muted, tokens.editor_bg, "text_muted on editor_bg"),

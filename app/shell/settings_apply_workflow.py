@@ -54,6 +54,9 @@ class SettingsApplyHostPorts(Protocol):
     def set_ui_font_weight(self, ui_font_weight: str) -> None:
         ...
 
+    def set_dark_chrome_palette(self, dark_chrome_palette: str) -> None:
+        ...
+
     def apply_theme_mode(self, theme_mode: str) -> None:
         ...
 
@@ -145,6 +148,7 @@ class SettingsApplyWorkflow:
         if updated_snapshot.theme_mode != baseline.theme_mode:
             self._host.apply_theme_mode(updated_snapshot.theme_mode)
         self._host.set_ui_font_weight(updated_snapshot.ui_font_weight)
+        self._host.set_dark_chrome_palette(updated_snapshot.dark_chrome_palette)
 
         preferences_bundle = load_shell_preferences_bundle(
             self._settings_service,

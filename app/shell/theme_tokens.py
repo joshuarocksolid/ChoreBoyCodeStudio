@@ -40,6 +40,106 @@ def resolve_ui_font_weight_css(ui_font_weight: str) -> str:
     return _UI_FONT_WEIGHT_CSS_MAP.get(ui_font_weight, _UI_FONT_WEIGHT_CSS_MAP[constants.UI_THEME_FONT_WEIGHT_DEFAULT])
 
 
+def resolve_dark_chrome_palette(dark_chrome_palette: str) -> str:
+    """Normalize persisted dark_chrome_palette to a known variant."""
+    if dark_chrome_palette in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES:
+        return dark_chrome_palette
+    return constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
+
+def _shell_theme_tokens_dark_standard(
+    *,
+    syntax_kwargs: dict[str, Any],
+    ui_font_weight_css: str,
+) -> ShellThemeTokens:
+    # Contrast notes (vs panel_bg #262C33):
+    #   text_muted #C2C9D1   -> 8.43:1  (was #ADB5BD = 6.79:1)
+    #   gutter_text #8B949E  -> 4.58:1 on panel; 5.09:1 on gutter_bg
+    #     (was #6C757D = 3.00:1, 3.34:1 -- below WCAG AA)
+    return ShellThemeTokens(
+        window_bg="#1F2428",
+        panel_bg="#262C33",
+        editor_bg="#1B1F23",
+        text_primary="#E9ECEF",
+        text_muted="#C2C9D1",
+        border="#3C434A",
+        accent="#5B8CFF",
+        gutter_bg="#1F2428",
+        gutter_text="#8B949E",
+        line_highlight="#252B33",
+        is_dark=True,
+        tree_hover_bg="#2A3038",
+        tree_selected_bg="#2D3A4A",
+        icon_primary="#CED4DA",
+        icon_muted="#5B8CFF",
+        debug_paused_color="#E5A100",
+        debug_running_color="#3FB950",
+        debug_current_frame_bg="#2D3A4A",
+        row_alt_bg="#1E2329",
+        search_match_bg="#3A3D41",
+        search_current_match_bg="#515C6A",
+        activity_bar_bg="#1A1E22",
+        input_bg="#1B1F23",
+        badge_bg="#3C434A",
+        diag_error_color="#FF6B6B",
+        diag_warning_color="#E5A100",
+        diag_info_color="#5B8CFF",
+        test_passed_color="#3FB950",
+        popup_bg="#262C33",
+        popup_border="#3C434A",
+        popup_shadow="#000000",
+        ui_font_weight_css=ui_font_weight_css,
+        **syntax_kwargs,
+    )
+
+
+def _shell_theme_tokens_dark_neutral_gray(
+    *,
+    syntax_kwargs: dict[str, Any],
+    ui_font_weight_css: str,
+) -> ShellThemeTokens:
+    # Neutral dark-gray chrome (request #38). Text tokens match standard dark
+    # to preserve #37 contrast floors; surfaces use neutral grays (~#303030).
+    # Contrast notes (vs panel_bg #303030):
+    #   text_muted #C2C9D1   -> ~8.2:1
+    #   gutter_text #8B949E  -> ~4.5:1+ on panel and gutter_bg
+    return ShellThemeTokens(
+        window_bg="#2B2B2B",
+        panel_bg="#303030",
+        editor_bg="#282828",
+        text_primary="#E9ECEF",
+        text_muted="#C2C9D1",
+        border="#454545",
+        accent="#5B8CFF",
+        gutter_bg="#2B2B2B",
+        gutter_text="#8B949E",
+        line_highlight="#333333",
+        is_dark=True,
+        tree_hover_bg="#353535",
+        tree_selected_bg="#3A3A3A",
+        icon_primary="#CED4DA",
+        icon_muted="#5B8CFF",
+        debug_paused_color="#E5A100",
+        debug_running_color="#3FB950",
+        debug_current_frame_bg="#3A3A3A",
+        row_alt_bg="#2A2A2A",
+        search_match_bg="#404040",
+        search_current_match_bg="#4A4A4A",
+        activity_bar_bg="#262626",
+        input_bg="#282828",
+        badge_bg="#3A3A3A",
+        diag_error_color="#FF6B6B",
+        diag_warning_color="#E5A100",
+        diag_info_color="#5B8CFF",
+        test_passed_color="#3FB950",
+        popup_bg="#303030",
+        popup_border="#454545",
+        popup_shadow="#000000",
+        ui_font_weight_css=ui_font_weight_css,
+        **syntax_kwargs,
+    )
+
+
 @dataclass(frozen=True)
 class ShellThemeTokens:
     window_bg: str
@@ -115,6 +215,7 @@ def tokens_from_palette(
     prefer_dark: bool = False,
     force_mode: str | None = None,
     ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT,
+    dark_chrome_palette: str = constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT,
 ) -> ShellThemeTokens:
     """Derive theme tokens.
 
@@ -124,7 +225,11 @@ def tokens_from_palette(
 
     ``ui_font_weight`` accepts ``"normal"``, ``"medium"``, or ``"bold"`` and
     controls chrome-text weight via :attr:`ShellThemeTokens.ui_font_weight_css`.
+
+    ``dark_chrome_palette`` accepts ``"standard"`` (blue-tinted dark) or
+    ``"neutral_gray"``.  Applies only to non-high-contrast dark chrome.
     """
+    resolved_dark_chrome_palette = resolve_dark_chrome_palette(dark_chrome_palette)
     is_high_contrast = is_high_contrast_mode(force_mode or "")
     if force_mode == constants.UI_THEME_MODE_HIGH_CONTRAST_DARK:
         is_dark = True
@@ -232,44 +337,14 @@ def tokens_from_palette(
             **syntax_kwargs,
         )
     if is_dark:
-        # Contrast notes (vs panel_bg #262C33):
-        #   text_muted #C2C9D1   -> 8.43:1  (was #ADB5BD = 6.79:1)
-        #   gutter_text #8B949E  -> 4.58:1 on panel; 5.09:1 on gutter_bg
-        #     (was #6C757D = 3.00:1, 3.34:1 -- below WCAG AA)
-        return ShellThemeTokens(
-            window_bg="#1F2428",
-            panel_bg="#262C33",
-            editor_bg="#1B1F23",
-            text_primary="#E9ECEF",
-            text_muted="#C2C9D1",
-            border="#3C434A",
-            accent="#5B8CFF",
-            gutter_bg="#1F2428",
-            gutter_text="#8B949E",
-            line_highlight="#252B33",
-            is_dark=True,
-            tree_hover_bg="#2A3038",
-            tree_selected_bg="#2D3A4A",
-            icon_primary="#CED4DA",
-            icon_muted="#5B8CFF",
-            debug_paused_color="#E5A100",
-            debug_running_color="#3FB950",
-            debug_current_frame_bg="#2D3A4A",
-            row_alt_bg="#1E2329",
-            search_match_bg="#3A3D41",
-            search_current_match_bg="#515C6A",
-            activity_bar_bg="#1A1E22",
-            input_bg="#1B1F23",
-            badge_bg="#3C434A",
-            diag_error_color="#FF6B6B",
-            diag_warning_color="#E5A100",
-            diag_info_color="#5B8CFF",
-            test_passed_color="#3FB950",
-            popup_bg="#262C33",
-            popup_border="#3C434A",
-            popup_shadow="#000000",
+        if resolved_dark_chrome_palette == constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY:
+            return _shell_theme_tokens_dark_neutral_gray(
+                syntax_kwargs=syntax_kwargs,
+                ui_font_weight_css=ui_font_weight_css,
+            )
+        return _shell_theme_tokens_dark_standard(
+            syntax_kwargs=syntax_kwargs,
             ui_font_weight_css=ui_font_weight_css,
-            **syntax_kwargs,
         )
     # Contrast notes (light mode):
     #   text_muted #5A6168   -> 6.28:1 on white (was #6C757D = 4.69:1)

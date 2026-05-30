@@ -54,7 +54,7 @@ def test_envelope_round_trip_preserves_degradation_metadata() -> None:
                 confidence="runtime_inspection",
             )
         ],
-        degradation_reason="repl_jedi_fallback",
+        degradation_reason="repl_no_completions",
         source="runtime",
         confidence="runtime_inspection",
     )

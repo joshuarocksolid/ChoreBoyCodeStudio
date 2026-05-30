@@ -400,6 +400,7 @@ class MainWindow(QMainWindow):
         self._keep_preview_open_shortcut: QShortcut | None = None
         self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
         self._ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT
+        self._dark_chrome_palette: str = constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
         self._loaded_project: LoadedProject | None = None
         self._plugin_activation_workflow = PluginActivationWorkflow(
             state_root=self._state_root,
@@ -467,6 +468,7 @@ class MainWindow(QMainWindow):
         self._local_history_retention_policy = self._load_local_history_retention_policy()
         self._theme_mode = ShellThemeWorkflow.load_theme_mode(self._settings_service)
         self._ui_font_weight = ShellThemeWorkflow.load_ui_font_weight(self._settings_service)
+        self._dark_chrome_palette = ShellThemeWorkflow.load_dark_chrome_palette(self._settings_service)
         self._shortcut_overrides = self._load_shortcut_overrides()
         self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
         self._syntax_color_overrides = ShellThemeWorkflow.load_syntax_color_overrides(self._settings_service)

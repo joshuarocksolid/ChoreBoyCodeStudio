@@ -12,13 +12,25 @@ import threading
 import time
 from typing import Any
 
+from app.intelligence.api_index import provide_api_index_member_items
+from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext, build_completion_context
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind
 from app.intelligence.completion_providers import extract_completion_prefix
+from app.intelligence.runtime_introspection import attach_replacement_metadata, resolve_runtime_introspection_query
+from app.runner.repl_introspection import (
+    ReplIntrospectionRequest,
+    ReplIntrospectionService,
+    is_whitelisted_target_path,
+    resolve_whitelisted_target,
+)
 
 _logger = logging.getLogger(__name__)
 
-REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK = "repl_jedi_fallback"
+REPL_COMPLETION_DEGRADATION_JEDI_UNAVAILABLE = "repl_jedi_unavailable"
+REPL_COMPLETION_DEGRADATION_NO_COMPLETIONS = "repl_no_completions"
 REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION = "repl_runtime_inspection"
+
+_PYTHON_CONSOLE_FILE_PATH = "<python_console>"
 
 _DOTTED_EXPR_PATTERN = re.compile(
     r"(?P<expr>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)?$"
@@ -44,21 +56,41 @@ class ReplCompletionService:
         namespace: dict[str, Any],
         *,
         namespace_lock: threading.RLock | None = None,
+        introspection_service: ReplIntrospectionService | None = None,
     ) -> None:
         self._namespace = namespace
         self._namespace_lock = namespace_lock or threading.RLock()
+        self._introspection_service = introspection_service or ReplIntrospectionService()
 
     def complete(self, request: ReplCompletionRequest) -> CompletionEnvelope:
         """Return completion candidates for a live REPL line buffer."""
 
         started_at = time.perf_counter()
+        jedi_unavailable = False
         try:
             jedi_items = self._complete_with_jedi(request)
         except Exception as exc:
             _logger.debug("REPL Jedi completion failed: %s", exc)
             jedi_items = []
+            jedi_unavailable = True
         if jedi_items:
             return CompletionEnvelope(items=jedi_items, source="runtime", confidence="semantic")
+
+        trusted_items = self._complete_with_trusted_runtime(request)
+        if trusted_items:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            if elapsed_ms > 200.0:
+                _logger.warning(
+                    "Slow REPL completion: elapsed_ms=%.2f count=%s",
+                    elapsed_ms,
+                    len(trusted_items),
+                )
+            return CompletionEnvelope(
+                items=trusted_items,
+                source="runtime_introspection",
+                confidence="runtime_inspection",
+                degradation_reason=REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION,
+            )
 
         fallback_items = self._complete_with_fallback(request)
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -67,8 +99,10 @@ class ReplCompletionService:
         degradation_reason = ""
         if fallback_items:
             degradation_reason = REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
+        elif jedi_unavailable:
+            degradation_reason = REPL_COMPLETION_DEGRADATION_JEDI_UNAVAILABLE
         elif request.line_buffer.strip():
-            degradation_reason = REPL_COMPLETION_DEGRADATION_JEDI_FALLBACK
+            degradation_reason = REPL_COMPLETION_DEGRADATION_NO_COMPLETIONS
         return CompletionEnvelope(
             items=fallback_items,
             source="runtime",
@@ -77,6 +111,12 @@ class ReplCompletionService:
         )
 
     def _complete_with_jedi(self, request: ReplCompletionRequest) -> list[CompletionItem]:
+        from app.intelligence.jedi_runtime import initialize_jedi_runtime
+
+        jedi_status = initialize_jedi_runtime()
+        if not jedi_status.is_available:
+            raise RuntimeError(jedi_status.message)
+
         import jedi
 
         cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
@@ -112,6 +152,70 @@ class ReplCompletionService:
                 )
             )
         return items
+
+    def _complete_with_trusted_runtime(self, request: ReplCompletionRequest) -> list[CompletionItem]:
+        cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
+        limit = max(1, int(request.max_results))
+        context = build_completion_context(
+            source_text=request.line_buffer,
+            cursor_position=cursor,
+            current_file_path=_PYTHON_CONSOLE_FILE_PATH,
+            project_root=None,
+            trigger_is_manual=request.trigger_kind == "manual",
+            min_prefix_chars=1,
+            max_results=limit,
+            trigger_kind=request.trigger_kind,
+            trigger_character=request.trigger_character,
+        )
+
+        if context.syntactic_context in {
+            CompletionSyntacticContext.IMPORT_FROM_MEMBER,
+            CompletionSyntacticContext.IMPORT_MODULE,
+        }:
+            indexed_items = provide_api_index_member_items(
+                module_name=context.module_name,
+                member_prefix=context.prefix,
+                limit=limit,
+            )
+            if indexed_items:
+                return attach_replacement_metadata(indexed_items[:limit], context=context)
+            target_path = context.trusted_runtime_module or context.module_name
+            if not is_whitelisted_target_path(target_path):
+                return []
+            return self._introspect_for_context(context, target_path=target_path, limit=limit)
+
+        if context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER:
+            query = resolve_runtime_introspection_query(context)
+            if query is None:
+                return []
+            return self._introspect_for_context(
+                context,
+                target_path=query.target_path,
+                limit=limit,
+                member_prefix=query.member_prefix,
+            )
+
+        return []
+
+    def _introspect_for_context(
+        self,
+        context: CompletionContext,
+        *,
+        target_path: str,
+        limit: int,
+        member_prefix: str | None = None,
+    ) -> list[CompletionItem]:
+        envelope = self._introspection_service.introspect(
+            ReplIntrospectionRequest(
+                target_path=target_path,
+                member_prefix=context.prefix if member_prefix is None else member_prefix,
+                max_results=limit,
+            )
+        )
+        items = list(envelope.items or [])
+        if not items:
+            return []
+        return attach_replacement_metadata(items[:limit], context=context)
 
     def _complete_with_fallback(self, request: ReplCompletionRequest) -> list[CompletionItem]:
         cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
@@ -165,11 +269,18 @@ class ReplCompletionService:
         replacement_end: int,
         request: ReplCompletionRequest,
     ) -> list[CompletionItem]:
-        try:
-            with self._namespace_lock:
-                value = eval(expression, {"__builtins__": builtins}, self._namespace)
-        except Exception:
-            return []
+        value: Any | None = None
+        if is_whitelisted_target_path(expression):
+            try:
+                value = resolve_whitelisted_target(expression)
+            except Exception:
+                value = None
+        if value is None:
+            try:
+                with self._namespace_lock:
+                    value = eval(expression, {"__builtins__": builtins}, self._namespace)
+            except Exception:
+                return []
         names: list[str]
         try:
             names = sorted(name for name in dir(value) if not name.startswith("__"))

@@ -86,6 +86,20 @@ def build_general_tab(
         "Adjust the weight of menus, panels, and dialogs. The code editor font is unaffected."
     )
     appearance_form.addRow("UI font weight", dialog._ui_font_weight_input)
+
+    dialog._dark_chrome_palette_input = QComboBox(appearance_group)
+    for label, value in (
+        ("Standard (blue-tinted dark)", constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD),
+        ("Neutral gray dark", constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY),
+    ):
+        dialog._dark_chrome_palette_input.addItem(label, value)
+    palette_index = dialog._dark_chrome_palette_input.findData(snapshot.dark_chrome_palette)
+    dialog._dark_chrome_palette_input.setCurrentIndex(palette_index if palette_index >= 0 else 0)
+    dialog._dark_chrome_palette_input.setToolTip(
+        "Chrome surface colors when Theme is Dark or System resolves to dark. "
+        "No effect in Light or High Contrast modes."
+    )
+    appearance_form.addRow("Dark chrome palette", dialog._dark_chrome_palette_input)
     general_layout.addWidget(appearance_group)
 
     output_group = QGroupBox("Output")
@@ -276,6 +290,7 @@ def general_tab_state_from_controls(dialog: "SettingsDialog") -> GeneralTabState
         force_full_reindex_on_open=dialog._force_reindex_on_open_input.isChecked(),
         theme_mode=dialog._normalized_theme_mode_value(),
         ui_font_weight=dialog._normalized_ui_font_weight_value(),
+        dark_chrome_palette=dialog._normalized_dark_chrome_palette_value(),
         auto_open_console_on_run_output=dialog._auto_open_console_on_run_output_input.isChecked(),
         auto_open_problems_on_run_failure=dialog._auto_open_problems_on_run_failure_input.isChecked(),
         highlighting_adaptive_mode=dialog._baseline_highlighting_adaptive_mode,
@@ -320,6 +335,8 @@ def apply_general_tab_state_to_controls(dialog: "SettingsDialog", state: General
     dialog._theme_mode_input.setCurrentIndex(theme_index if theme_index >= 0 else 0)
     weight_index = dialog._ui_font_weight_input.findData(state.ui_font_weight)
     dialog._ui_font_weight_input.setCurrentIndex(weight_index if weight_index >= 0 else 0)
+    palette_index = dialog._dark_chrome_palette_input.findData(state.dark_chrome_palette)
+    dialog._dark_chrome_palette_input.setCurrentIndex(palette_index if palette_index >= 0 else 0)
 
     dialog._baseline_highlighting_adaptive_mode = state.highlighting_adaptive_mode
     dialog._baseline_highlighting_reduced_threshold_chars = state.highlighting_reduced_threshold_chars

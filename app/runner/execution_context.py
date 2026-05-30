@@ -10,6 +10,7 @@ import sys
 from types import ModuleType
 from typing import Iterator
 
+from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
 from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.run.run_manifest import RunManifest
@@ -67,6 +68,7 @@ def apply_execution_context(execution_context: RunnerExecutionContext) -> Iterat
     try:
         os.chdir(execution_context.working_directory)
         sys.argv = [execution_context.entry_script_path, *execution_context.argv]
+        ensure_vendor_path_on_sys_path()
         sys.path.insert(0, execution_context.project_root)
 
         for module_name in list(sys.modules.keys()):

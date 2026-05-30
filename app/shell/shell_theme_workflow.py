@@ -89,6 +89,7 @@ class ShellThemeWorkflowHost:
     palette_accessor: Callable[[], object] | PaletteAccessor
     theme_mode: str
     ui_font_weight: str
+    dark_chrome_palette: str
     syntax_color_overrides: dict[str, dict[str, str]]
     child_callbacks: ShellThemeChildCallbacks
     explorer: ExplorerThemeHost | None = None
@@ -119,6 +120,12 @@ class ShellThemeWorkflow:
         return snapshot.ui_font_weight
 
     @staticmethod
+    def load_dark_chrome_palette(settings_service: ThemeSettingsReader) -> str:
+        settings_payload = settings_service.load_global()
+        snapshot = parse_editor_settings_snapshot(settings_payload)
+        return snapshot.dark_chrome_palette
+
+    @staticmethod
     def load_syntax_color_overrides(settings_service: ThemeSettingsReader) -> dict[str, dict[str, str]]:
         settings_payload = settings_service.load_global()
         return parse_syntax_color_overrides(settings_payload)
@@ -140,12 +147,14 @@ class ShellThemeWorkflow:
                 palette,
                 force_mode=mode,
                 ui_font_weight=host.ui_font_weight,
+                dark_chrome_palette=host.dark_chrome_palette,
             )
         else:
             base_tokens = tokens_from_palette(
                 palette,
                 prefer_dark=self.system_prefers_dark_theme(),
                 ui_font_weight=host.ui_font_weight,
+                dark_chrome_palette=host.dark_chrome_palette,
             )
         if base_tokens.is_high_contrast:
             theme_key = (

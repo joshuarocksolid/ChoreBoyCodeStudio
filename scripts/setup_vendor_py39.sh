@@ -24,7 +24,7 @@ pip3 install \
   --only-binary=:all: \
   --platform=manylinux_2_17_x86_64
 
-pip3 install "black==24.10.0" --no-binary=black --target="$TARGET"
+pip3 install "black==24.10.0" "click>=8.0,<8.2" --no-binary=black --target="$TARGET" --upgrade --force-reinstall
 
 echo "Overlaying cp39 tree-sitter core binding..."
 python3 "$ROOT/scripts/overlay_cp39_tree_sitter_binding.py" --artifacts-dir "$ARTIFACTS_DIR"

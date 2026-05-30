@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.bootstrap.vendor_paths import resolve_vendor_root
 from app.core import constants
 from app.python_tools.vendor_runtime import import_python_tooling_modules, initialize_python_tooling_runtime
 
@@ -25,12 +26,12 @@ def test_python_tooling_runtime_uses_vendor_and_creates_no_hidden_paths(tmp_path
     project_root.mkdir(parents=True, exist_ok=True)
     state_root.mkdir(parents=True, exist_ok=True)
 
+    vendor_root = resolve_vendor_root()
+    if not vendor_root.exists():
+        pytest.skip(f"Vendor directory missing at {vendor_root}; rebuild with ./scripts/setup_vendor_py39.sh")
+
     status = initialize_python_tooling_runtime()
-    if not status.is_available:
-        with pytest.raises(RuntimeError, match="Python tooling runtime unavailable"):
-            import_python_tooling_modules()
-        assert "black" in status.message.lower() or "isort" in status.message.lower() or "tomli" in status.message.lower()
-        return
+    assert status.is_available is True, status.message
 
     black, isort, tomli = import_python_tooling_modules()
 

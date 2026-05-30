@@ -413,6 +413,61 @@ def test_ui_font_weight_is_global_only_not_project_overridable() -> None:
     assert new_global["theme"]["ui_font_weight"] == constants.UI_THEME_FONT_WEIGHT_NORMAL
 
 
+# --- dark_chrome_palette tests (request #38) ---
+
+
+def test_parse_dark_chrome_palette_defaults_for_missing_key() -> None:
+    snapshot = parse_editor_settings_snapshot({})
+    assert snapshot.dark_chrome_palette == constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD,
+        constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
+    ],
+)
+def test_parse_dark_chrome_palette_reads_explicit_value(value: str) -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"dark_chrome_palette": value}})
+    assert snapshot.dark_chrome_palette == value
+
+
+def test_parse_dark_chrome_palette_invalid_falls_back_to_default() -> None:
+    snapshot = parse_editor_settings_snapshot({"theme": {"dark_chrome_palette": "warm_gray"}})
+    assert snapshot.dark_chrome_palette == constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
+
+def test_merge_dark_chrome_palette_round_trip() -> None:
+    for palette in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES:
+        snapshot = EditorSettingsSnapshot(dark_chrome_palette=palette)
+        merged = merge_editor_settings_snapshot({}, snapshot)
+        restored = parse_editor_settings_snapshot(merged)
+        assert restored.dark_chrome_palette == palette
+
+
+def test_merge_invalid_dark_chrome_palette_falls_back_to_default() -> None:
+    snapshot = EditorSettingsSnapshot(dark_chrome_palette="warm_gray")
+    merged = merge_editor_settings_snapshot({}, snapshot)
+    assert merged["theme"]["dark_chrome_palette"] == constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
+
+def test_dark_chrome_palette_is_global_only_not_project_overridable() -> None:
+    base_global = merge_editor_settings_snapshot(
+        {},
+        EditorSettingsSnapshot(dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD),
+    )
+    project_payload: dict = {}
+    new_global, new_project = merge_editor_settings_snapshot_for_scope(
+        scope=SETTINGS_SCOPE_PROJECT,
+        global_settings_payload=base_global,
+        project_settings_payload=project_payload,
+        snapshot=EditorSettingsSnapshot(dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY),
+    )
+    assert "theme" not in new_project
+    assert new_global["theme"]["dark_chrome_palette"] == constants.UI_THEME_DARK_CHROME_PALETTE_STANDARD
+
+
 # --- font_family tests ---
 
 

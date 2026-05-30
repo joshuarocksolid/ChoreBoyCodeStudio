@@ -9,6 +9,7 @@ import types
 
 import pytest
 
+from app.bootstrap.vendor_paths import resolve_vendor_root
 from app.core import constants
 from app.core.errors import RunLifecycleError
 from app.run.run_manifest import ReplControlConfig, RunManifest
@@ -104,11 +105,14 @@ def test_apply_execution_context_sets_and_restores_runtime_state(tmp_path: Path)
     sentinel_app_module = types.ModuleType("sentinel_app")
     sys.modules["app"] = sentinel_app_module
 
+    vendor_root = str(resolve_vendor_root())
+
     with apply_execution_context(context):
         assert Path.cwd() == Path(context.working_directory)
         assert sys.argv[0] == context.entry_script_path
         assert sys.argv[1:] == ["--arg"]
         assert sys.path[0] == context.project_root
+        assert vendor_root in sys.path
         assert "CUSTOM_ENV" in os.environ
 
     assert Path.cwd() == previous_cwd

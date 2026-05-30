@@ -297,6 +297,12 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
             return raw
         return constants.UI_THEME_FONT_WEIGHT_DEFAULT
 
+    def _normalized_dark_chrome_palette_value(self) -> str:
+        raw = self._dark_chrome_palette_input.currentData()
+        if isinstance(raw, str) and raw in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES:
+            return raw
+        return constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
     def _normalized_theme_mode_value(self) -> str:
         raw = self._theme_mode_input.currentData()
         if isinstance(raw, str) and raw in constants.UI_THEME_MODE_VALUES:

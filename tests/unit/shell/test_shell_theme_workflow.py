@@ -71,6 +71,7 @@ def _build_host(
     *,
     theme_mode: str = constants.UI_THEME_MODE_LIGHT,
     ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT,
+    dark_chrome_palette: str = constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT,
     syntax_color_overrides: dict[str, dict[str, str]] | None = None,
     recording: RecordingChildCallbacks | None = None,
     explorer: ExplorerThemeHost | None = None,
@@ -81,6 +82,7 @@ def _build_host(
         palette_accessor=lambda: _make_palette(),
         theme_mode=theme_mode,
         ui_font_weight=ui_font_weight,
+        dark_chrome_palette=dark_chrome_palette,
         syntax_color_overrides=syntax_color_overrides or {},
         child_callbacks=recording.as_shell_callbacks(),
         explorer=explorer,
@@ -119,8 +121,34 @@ class TestLoadSettings:
 
         assert ShellThemeWorkflow.load_ui_font_weight(settings) == "bold"
 
+    def test_load_dark_chrome_palette_from_editor_snapshot(self) -> None:
+        settings = MagicMock()
+        settings.load_global.return_value = {
+            constants.UI_THEME_SETTINGS_KEY: {
+                constants.UI_THEME_DARK_CHROME_PALETTE_KEY: (
+                    constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY
+                ),
+            },
+        }
+
+        assert (
+            ShellThemeWorkflow.load_dark_chrome_palette(settings)
+            == constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY
+        )
+
 
 class TestResolveThemeTokens:
+    def test_resolve_theme_tokens_uses_neutral_dark_chrome_palette(self) -> None:
+        host = _build_host(
+            theme_mode=constants.UI_THEME_MODE_DARK,
+            dark_chrome_palette=constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY,
+        )
+        workflow = ShellThemeWorkflow(host)
+
+        tokens = workflow.resolve_theme_tokens()
+
+        assert tokens.panel_bg == "#303030"
+
     def test_applies_high_contrast_syntax_overrides(self) -> None:
         payload = {
             constants.UI_SYNTAX_COLORS_SETTINGS_KEY: {
