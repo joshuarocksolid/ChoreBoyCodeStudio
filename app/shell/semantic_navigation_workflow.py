@@ -284,6 +284,7 @@ class SemanticNavigationWorkflow:
                 known_runtime_modules=known_modules,
                 allow_runtime_import_probe=True,
                 lint_rule_overrides=lint_rule_overrides,
+                project_metadata=loaded_project.metadata,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]

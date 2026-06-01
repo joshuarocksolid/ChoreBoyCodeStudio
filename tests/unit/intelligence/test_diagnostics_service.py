@@ -193,6 +193,22 @@ def test_find_unresolved_imports_uses_source_overrides(tmp_path: Path) -> None:
     assert "nonexistent_module" in diagnostics_buffer[0].message
 
 
+def test_explain_unresolved_import_classifies_source_root_missing(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    src_dir = project_root / "src"
+    src_dir.mkdir(parents=True)
+    (src_dir / "__init__.py").write_text("", encoding="utf-8")
+    package_dir = src_dir / "app"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "util.py").write_text("", encoding="utf-8")
+
+    explanation = explain_unresolved_import(str(project_root), "app.util")
+
+    assert explanation.kind == "source_root_missing"
+    assert "src" in explanation.next_steps[0]
+
+
 def test_explain_unresolved_import_classifies_project_module_missing(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     package_dir = project_root / "app"

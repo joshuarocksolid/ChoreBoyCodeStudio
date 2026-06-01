@@ -125,6 +125,19 @@ def test_resolve_project_import_runtime_probe_fallback(
 # ---------------------------------------------------------------------------
 
 
+def test_resolve_project_import_resolves_src_layout_module(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "src" / "pkg"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "util.py").write_text("x = 1\n", encoding="utf-8")
+
+    resolved = resolve_project_import(str(project_root), "pkg.util")
+
+    assert resolved.is_resolved is True
+    assert resolved.resolved_path is not None and resolved.resolved_path.endswith("util.py")
+
+
 def test_resolve_project_import_resolves_vendor_module(tmp_path: Path) -> None:
     """A .py file under vendor/ should resolve."""
     project_root = tmp_path / "project"

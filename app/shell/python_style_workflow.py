@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from PySide2.QtWidgets import QMessageBox
@@ -139,6 +140,7 @@ class PythonStyleWorkflow:
             QMessageBox.information(window, "Apply Safe Fixes", "Safe fixes currently support Python files only.")
             return
         project_root = None if window._loaded_project is None else window._loaded_project.project_root
+        project_metadata = None if window._loaded_project is None else window._loaded_project.metadata
         _provider, diagnostics = analyze_python_with_workflow(
             window._workflow_broker,
             file_path=file_path,
@@ -147,8 +149,14 @@ class PythonStyleWorkflow:
             allow_runtime_import_probe=True,
             selected_linter=window._selected_linter,
             lint_rule_overrides=window._lint_rule_overrides,
+            project_metadata=project_metadata,
         )
-        fixes = plan_safe_fixes_for_file(file_path, diagnostics, project_root=project_root)
+        fixes = plan_safe_fixes_for_file(
+            file_path,
+            diagnostics,
+            project_root=project_root,
+            project_metadata=project_metadata,
+        )
         if not fixes:
             QMessageBox.information(window, "Apply Safe Fixes", "No safe fixes available for current file.")
             return
@@ -171,7 +179,10 @@ class PythonStyleWorkflow:
                 return
 
         try:
-            changed_lines = apply_quick_fixes(fixes)
+            source_root_fixes = [fix for fix in fixes if fix.action_kind == "add_source_root"]
+            other_fixes = [fix for fix in fixes if fix.action_kind != "add_source_root"]
+            changed_lines = apply_quick_fixes(other_fixes)
+            changed_lines += self._apply_source_root_fixes(source_root_fixes, project_metadata=project_metadata)
         except OSError as exc:
             QMessageBox.warning(window, "Apply Safe Fixes", f"Failed to apply fixes: {exc}")
             return
@@ -191,3 +202,31 @@ class PythonStyleWorkflow:
             window._reload_current_project()
         window._render_lint_diagnostics_for_file(file_path, trigger="manual")
         QMessageBox.information(window, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
+
+    def _apply_source_root_fixes(self, fixes, *, project_metadata) -> int:  # type: ignore[no-untyped-def]
+        from app.bootstrap.paths import project_manifest_path
+        from app.project.project_manifest import append_project_source_root
+
+        window = self._window
+        if window._loaded_project is None:
+            return 0
+        manifest_path = project_manifest_path(window._loaded_project.project_root)
+        applied = 0
+        seen_roots: set[str] = set()
+        for fix in fixes:
+            source_root = str(fix.replacement_text or "").strip()
+            if not source_root or source_root in seen_roots:
+                continue
+            seen_roots.add(source_root)
+            updated_metadata = append_project_source_root(
+                manifest_path,
+                source_root,
+                metadata_if_absent=window._loaded_project.metadata,
+            )
+            window._loaded_project = replace(
+                window._loaded_project,
+                metadata=updated_metadata,
+                manifest_materialized=True,
+            )
+            applied += 1
+        return applied

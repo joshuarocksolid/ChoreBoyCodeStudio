@@ -14,7 +14,7 @@ from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
 from app.shell.run_config_controller import RunConfigController
 from app.shell.run_launch_workflow import RunLaunchWorkflow
-from app.shell.run_with_arguments_dialog import RunInvocation
+from app.shell.run_with_arguments_dialog import RunInvocation, RunWithArgumentsResult
 
 pytestmark = pytest.mark.unit
 
@@ -203,13 +203,15 @@ def test_handle_run_with_arguments_action_persists_argv_text_in_recent_history(
 
     monkeypatch.setattr(
         "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
-        lambda *_args, **_kwargs: RunInvocation(
-            entry_file="app.py",
-            argv=["--alpha"],
-            argv_text="--alpha",
-            working_directory=None,
-            env_overrides={},
-            save_request=False,
+        lambda *_args, **_kwargs: RunWithArgumentsResult(
+            invocation=RunInvocation(
+                entry_file="app.py",
+                argv=["--alpha"],
+                argv_text="--alpha",
+                working_directory=None,
+                env_overrides={},
+                save_request=False,
+            )
         ),
     )
 
@@ -234,8 +236,28 @@ def test_handle_run_with_arguments_action_cancelled_dialog_does_not_run(
 
     monkeypatch.setattr(
         "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
-        lambda *_args, **_kwargs: None,
+        lambda *_args, **_kwargs: RunWithArgumentsResult(),
     )
 
     assert workflow.handle_run_with_arguments_action() is False
     assert host.settings_service().load_recent_argv_history() == []
+
+
+def test_handle_run_with_arguments_action_open_configurations_redirects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loaded = _loaded_project_with_configs(tmp_path)
+    workflow, _host = _build_run_launch_workflow(loaded)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
+        lambda *_args, **_kwargs: RunWithArgumentsResult(open_configurations=True),
+    )
+    workflow.handle_run_with_configuration_action = lambda: calls.append("configs") or True  # type: ignore[method-assign]
+    workflow.start_session = lambda **_kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("session must not start when opening configurations")
+    )
+
+    assert workflow.handle_run_with_arguments_action() is True
+    assert calls == ["configs"]

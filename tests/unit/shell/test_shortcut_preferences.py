@@ -22,6 +22,7 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["shell.action.run.debug"] == "Ctrl+F5"
     assert defaults["shell.action.run.runProject"] == "Shift+F5"
     assert defaults["shell.action.run.debugProject"] == "Ctrl+Shift+F5"
+    assert defaults["shell.action.run.runWithArgs"] == "Ctrl+Shift+A"
     assert defaults["shell.action.run.stop"] == "Shift+F2"
     assert defaults["shell.action.run.restart"] == "Ctrl+Shift+F2"
     assert defaults["shell.action.edit.hoverInfo"] == "Ctrl+Shift+I"

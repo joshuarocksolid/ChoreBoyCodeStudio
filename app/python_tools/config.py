@@ -7,6 +7,7 @@ from typing import Any
 
 from app.bootstrap.toml_io import read_toml_mapping
 from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
+from app.project.import_layout import resolve_configured_src_paths
 from app.python_tools.models import (
     PYTHON_TOOLING_CONFIG_SOURCE_DEFAULTS,
     PYTHON_TOOLING_CONFIG_SOURCE_PROJECT_PYPROJECT,
@@ -67,7 +68,10 @@ def resolve_python_tooling_settings(*, project_root: str, file_path: str) -> Pyt
         black_preview=_coerce_bool(black_section.get("preview"), default=False),
         isort_profile=_coerce_str(isort_section.get("profile"), default="black"),
         isort_line_length=isort_line_length,
-        isort_src_paths=_resolve_src_paths(project_root_path, isort_section.get("src_paths")),
+        isort_src_paths=resolve_configured_src_paths(
+            project_root_path,
+            isort_section.get("src_paths"),
+        ),
         isort_known_first_party=_coerce_str_tuple(isort_section.get("known_first_party")),
     )
 
@@ -121,24 +125,6 @@ def _resolve_python_target_minor(target_versions: tuple[str, ...]) -> int:
         if suffix.isdigit():
             parsed.append(int(suffix))
     return min(parsed) if parsed else DEFAULT_PYTHON_TARGET_MINOR
-
-
-def _resolve_src_paths(project_root: Path, raw_value: Any) -> tuple[Path, ...]:
-    resolved: list[Path] = []
-    values = raw_value if isinstance(raw_value, list) else []
-    for entry in values:
-        if not isinstance(entry, str):
-            continue
-        stripped = entry.strip()
-        if not stripped:
-            continue
-        resolved.append((project_root / stripped).resolve())
-    if resolved:
-        return tuple(resolved)
-    default_src = project_root / "src"
-    if default_src.is_dir():
-        return (default_src.resolve(),)
-    return tuple()
 
 
 def _normalize_target_versions(raw_value: Any) -> tuple[str, ...]:

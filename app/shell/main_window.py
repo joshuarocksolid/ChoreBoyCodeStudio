@@ -2125,6 +2125,7 @@ class MainWindow(QMainWindow):
 
     def _apply_loaded_project(self, loaded_project: LoadedProject, *, started_at: float) -> None:
         self._project_load_workflow.apply(loaded_project, started_at=started_at)
+        self._maybe_prompt_import_source_roots()
 
     def _persist_last_project_path(self, project_root: str) -> None:
         try:
@@ -2258,6 +2259,63 @@ class MainWindow(QMainWindow):
         if not accepted or not selected:
             return None
         return str(selected)
+
+    def _handle_tree_mark_source_root(self, relative_path: str) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return
+        from app.project.project_manifest import append_project_source_root
+
+        try:
+            updated_metadata = append_project_source_root(
+                loaded_project.manifest_path,
+                relative_path,
+                metadata_if_absent=None
+                if loaded_project.manifest_materialized
+                else loaded_project.metadata,
+            )
+        except (ProjectManifestValidationError, ValueError) as exc:
+            QMessageBox.warning(self, "Sources Root", str(exc))
+            return
+        self._loaded_project = replace(loaded_project, metadata=updated_metadata, manifest_materialized=True)
+        self._reload_current_project()
+
+    def _handle_tree_unmark_source_root(self, relative_path: str) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None:
+            return
+        from app.project.project_manifest import remove_project_source_root
+
+        try:
+            updated_metadata = remove_project_source_root(loaded_project.manifest_path, relative_path)
+        except (ProjectManifestValidationError, ValueError) as exc:
+            QMessageBox.warning(self, "Sources Root", str(exc))
+            return
+        self._loaded_project = replace(loaded_project, metadata=updated_metadata)
+        self._reload_current_project()
+
+    def _maybe_prompt_import_source_roots(self) -> None:
+        loaded_project = self._loaded_project
+        if loaded_project is None or loaded_project.metadata.source_roots:
+            return
+        from app.project.import_layout import detect_suggested_source_root
+
+        suggested = detect_suggested_source_root(loaded_project.project_root)
+        if suggested is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Import Roots",
+            (
+                f"This project looks like it uses a `{suggested}/` layout. "
+                f"Mark `{suggested}` as a source root so local imports resolve correctly?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        self._handle_tree_mark_source_root(suggested)
 
     def _set_project_entry_point(self, relative_path: str) -> bool:
         loaded_project = self._loaded_project
@@ -2453,6 +2511,7 @@ class MainWindow(QMainWindow):
         key = f"lint::{file_path}"
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            project_metadata = None if self._loaded_project is None else self._loaded_project.metadata
             _provider, diagnostics = analyze_python_with_workflow(
                 self._workflow_broker,
                 file_path=file_path,
@@ -2462,6 +2521,7 @@ class MainWindow(QMainWindow):
                 allow_runtime_import_probe=allow_runtime_import_probe,
                 selected_linter=self._selected_linter,
                 lint_rule_overrides=self._lint_rule_overrides,
+                project_metadata=project_metadata,
             )
             return diagnostics
 

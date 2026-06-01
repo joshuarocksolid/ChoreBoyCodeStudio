@@ -25,6 +25,7 @@ from app.shell.style_sheet_sections import (
     shell_section_problems_panel,
     shell_section_quick_open,
     shell_section_run_log_panel,
+    shell_section_run_dialog,
     shell_section_runtime_center_dialog,
     shell_section_search_sidebar,
     shell_section_tab_bar,
@@ -78,3 +79,17 @@ def build_settings_style_sheet(tokens: ShellThemeTokens) -> str:
         + settings_section_tables_lists_scroll_area(tokens)
         + settings_section_scrollbars_shortcuts_validation(tokens)
     )
+
+
+def build_run_dialog_style_sheet(tokens: ShellThemeTokens) -> str:
+    """Return stylesheet string for run/configuration modal dialogs."""
+    return "\n" + (
+        shell_section_chrome_font_weight(tokens)
+        + shell_section_dialog_chrome(tokens)
+        + shell_section_run_dialog(tokens)
+    )
+
+
+def build_run_with_arguments_style_sheet(tokens: ShellThemeTokens) -> str:
+    """Backward-compatible alias for :func:`build_run_dialog_style_sheet`."""
+    return build_run_dialog_style_sheet(tokens)

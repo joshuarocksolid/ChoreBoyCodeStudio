@@ -32,7 +32,7 @@ class JediEngine:
     def __init__(self, *, state_root: Optional[PathInput] = None) -> None:
         self._state_root = state_root
         self._lock = threading.RLock()
-        self._project_cache: dict[str, Any] = {}
+        self._project_cache: dict[tuple[str, tuple[str, ...]], Any] = {}
 
     def is_available(self) -> bool:
         """Return whether the Jedi runtime is importable."""
@@ -318,32 +318,43 @@ class JediEngine:
         return jedi.Script(code=source_text, path=current_file_path, project=project)
 
     def _project(self, project_root: str):
+        from app.bootstrap.paths import project_manifest_path
+        from app.project.import_layout import resolve_project_import_layout
+        from app.project.project_manifest import load_project_manifest
+
         normalized_root = str(Path(project_root).expanduser().resolve())
-        cached = self._project_cache.get(normalized_root)
+        root = Path(normalized_root)
+        metadata = None
+        manifest_path = project_manifest_path(root)
+        if manifest_path.is_file():
+            try:
+                metadata = load_project_manifest(manifest_path)
+            except Exception:
+                metadata = None
+        layout = resolve_project_import_layout(root, metadata)
+        cache_key = (normalized_root, tuple(str(path) for path in layout.source_roots))
+        cached = self._project_cache.get(cache_key)
         if cached is not None:
             return cached
 
         import jedi
 
-        root = Path(normalized_root)
-        added_sys_path: list[str] = []
-        vendor_dir = root / "vendor"
-        if vendor_dir.is_dir():
-            added_sys_path.append(str(vendor_dir.resolve()))
         project = jedi.Project(
             normalized_root,
-            added_sys_path=tuple(added_sys_path),
+            added_sys_path=layout.jedi_added_sys_path,
             load_unsafe_extensions=False,
             smart_sys_path=True,
         )
-        self._project_cache[normalized_root] = project
+        self._project_cache[cache_key] = project
         return project
 
     def invalidate_project_cache(self, project_root: str | None = None) -> None:
         """Clear cached Jedi project(s) so the next query rebuilds paths."""
         if project_root is not None:
             normalized = str(Path(project_root).expanduser().resolve())
-            self._project_cache.pop(normalized, None)
+            keys_to_remove = [key for key in self._project_cache if key[0] == normalized]
+            for key in keys_to_remove:
+                self._project_cache.pop(key, None)
         else:
             self._project_cache.clear()
 

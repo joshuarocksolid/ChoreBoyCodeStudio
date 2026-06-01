@@ -384,6 +384,12 @@ def _extract_target_names(target: ast.AST) -> set[str]:
 
 
 def _module_name_from_path(project_root: Path, file_path: Path) -> str | None:
+    from app.project.import_layout import module_name_for_file, resolve_project_import_layout
+
+    layout = resolve_project_import_layout(project_root)
+    canonical = module_name_for_file(layout, file_path)
+    if canonical is not None:
+        return canonical
     relative_path = file_path.relative_to(project_root).as_posix()
     return _module_name_from_relative_path(relative_path)
 

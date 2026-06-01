@@ -28,13 +28,20 @@ def build_runpy_bootstrap_payload(
     *,
     script_path: str,
     path_entry: str | None = None,
+    path_entries: tuple[str, ...] | None = None,
     argv: list[str] | None = None,
 ) -> str:
     resolved_script = str(Path(script_path).expanduser().resolve())
     statements: list[str] = ["import runpy, sys;"]
-    if path_entry:
-        resolved_path_entry = str(Path(path_entry).expanduser().resolve())
-        statements.append(f"sys.path.insert(0, {resolved_path_entry!r}) if {resolved_path_entry!r} not in sys.path else None;")
+    resolved_entries: list[str] = []
+    if path_entries:
+        resolved_entries.extend(str(Path(entry).expanduser().resolve()) for entry in path_entries)
+    elif path_entry:
+        resolved_entries.append(str(Path(path_entry).expanduser().resolve()))
+    for resolved_path_entry in reversed(resolved_entries):
+        statements.append(
+            f"sys.path.insert(0, {resolved_path_entry!r}) if {resolved_path_entry!r} not in sys.path else None;"
+        )
     if argv is not None:
         statements.append(f"sys.argv={[str(a) for a in argv]!r};")
     statements.append(f"runpy.run_path({resolved_script!r}, run_name='__main__')")

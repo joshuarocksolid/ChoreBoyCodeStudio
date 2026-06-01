@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 from typing import Any, Protocol
 
 from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
@@ -120,7 +121,25 @@ def infer_trusted_runtime_target_path(
 
     try:
         if project_root:
-            project = jedi.Project(path=project_root)
+            from app.bootstrap.paths import project_manifest_path
+            from app.project.import_layout import resolve_project_import_layout
+            from app.project.project_manifest import load_project_manifest
+
+            root = Path(project_root).expanduser().resolve()
+            metadata = None
+            manifest_path = project_manifest_path(root)
+            if manifest_path.is_file():
+                try:
+                    metadata = load_project_manifest(manifest_path)
+                except Exception:
+                    metadata = None
+            layout = resolve_project_import_layout(root, metadata)
+            project = jedi.Project(
+                str(root),
+                added_sys_path=layout.jedi_added_sys_path,
+                load_unsafe_extensions=False,
+                smart_sys_path=True,
+            )
             script = jedi.Script(code=source_text, path=current_file_path, project=project)
         else:
             script = jedi.Script(code=source_text, path=current_file_path)

@@ -33,6 +33,7 @@ This chapter lists the default shortcuts shipped with Code Studio.
 - `Shift+F5` — Run Project
 - `Ctrl+F5` — Debug Active File
 - `Ctrl+Shift+F5` — Debug Project
+- `Ctrl+Shift+A` — Run With Arguments
 - `Shift+F2` — Stop
 - `F10` — Step Over
 - `F11` — Step Into

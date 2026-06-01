@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from app.core.models import ProjectMetadata
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
+from app.project.import_layout import (
+    ProjectImportLayout,
+    resolve_import_at_base,
+    resolve_project_import_layout,
+)
 
 
 @dataclass(frozen=True)
@@ -21,20 +27,25 @@ def resolve_project_import(
     module_name: str,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    *,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
 ) -> ImportResolution:
     """Resolve absolute module import against project files and runtime modules."""
     top_level = module_name.split(".")[0]
     if known_runtime_modules and top_level in known_runtime_modules:
         return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=None)
-    root = Path(project_root).expanduser().resolve()
-    module_path = Path(*module_name.split("."))
-    for base in (root, root / "vendor"):
-        module_file = (base / module_path).with_suffix(".py")
-        package_init = base / module_path / "__init__.py"
-        if module_file.exists():
-            return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(module_file.resolve()))
-        if package_init.exists():
-            return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=str(package_init.resolve()))
+
+    resolved_layout = layout or resolve_project_import_layout(project_root, metadata)
+    for base in resolved_layout.import_search_bases:
+        resolved_path = resolve_import_at_base(base, module_name)
+        if resolved_path is not None:
+            return ImportResolution(
+                module_name=module_name,
+                is_resolved=True,
+                resolved_path=resolved_path,
+            )
+
     if allow_runtime_import_probe and is_runtime_module_importable(top_level):
         return ImportResolution(module_name=module_name, is_resolved=True, resolved_path=None)
     return ImportResolution(module_name=module_name, is_resolved=False, resolved_path=None)
@@ -47,6 +58,8 @@ def resolve_module_binding(
     binding_name: str,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
 ) -> ImportResolution:
     """Resolve a local import-binding name into a project module."""
     module_name = bindings.get(binding_name)
@@ -57,4 +70,6 @@ def resolve_module_binding(
         module_name,
         known_runtime_modules=known_runtime_modules,
         allow_runtime_import_probe=allow_runtime_import_probe,
+        metadata=metadata,
+        layout=layout,
     )

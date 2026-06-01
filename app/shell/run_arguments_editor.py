@@ -69,9 +69,7 @@ class RunArgumentsEditorRow(QWidget):
         self._argv_preview_label = QLabel(self)
         self._argv_preview_label.setObjectName(f"{object_name_prefix}.argvPreview")
         self._argv_preview_label.setWordWrap(True)
-        muted_color = tokens.text_muted or tokens.text_primary
         self._argv_preview_label.setProperty("previewLabel", True)
-        self._argv_preview_label.setStyleSheet(f"color: {muted_color};")
         layout.addWidget(self._argv_preview_label)
 
         self._update_argv_preview()
@@ -94,7 +92,7 @@ class RunArgumentsEditorRow(QWidget):
 
     def _populate_recent(self, recent_argv_history: Sequence[str]) -> None:
         self._recent_combo.clear()
-        self._recent_combo.addItem("Pick recent…", "")
+        self._recent_combo.addItem("Recent\u2026", "")
         for entry in recent_argv_history:
             display = entry if len(entry) <= 80 else f"{entry[:77]}..."
             self._recent_combo.addItem(display, entry)
@@ -123,4 +121,6 @@ class RunArgumentsEditorRow(QWidget):
             self._argv_preview_label.setText(f"Parsed argv: (unable to parse — {error})")
             return
         preview = ", ".join(repr(token) for token in tokens or []) or "<empty>"
-        self._argv_preview_label.setText(f"Parsed argv: [{preview}]")
+        count = len(tokens or [])
+        suffix = "token" if count == 1 else "tokens"
+        self._argv_preview_label.setText(f"Parsed argv ({count} {suffix}): [{preview}]")

@@ -70,18 +70,22 @@ def analyze_python_with_workflow(
     selected_linter: str = constants.LINTER_PROVIDER_DEFAULT,
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     preferred_provider_key: str | None = None,
+    project_metadata: Any | None = None,
 ) -> tuple[WorkflowProviderDescriptor, list[CodeDiagnostic]]:
+    request: dict[str, Any] = {
+        "file_path": file_path,
+        "project_root": project_root,
+        "source": source,
+        "known_runtime_modules": sorted(known_runtime_modules or ()),
+        "allow_runtime_import_probe": allow_runtime_import_probe,
+        "selected_linter": selected_linter,
+        "lint_rule_overrides": dict(lint_rule_overrides or {}),
+    }
+    if project_metadata is not None:
+        request["project_metadata"] = project_metadata.to_dict()
     descriptor, result = broker.invoke_query(
         kind=constants.WORKFLOW_PROVIDER_KIND_DIAGNOSTICS,
-        request={
-            "file_path": file_path,
-            "project_root": project_root,
-            "source": source,
-            "known_runtime_modules": sorted(known_runtime_modules or ()),
-            "allow_runtime_import_probe": allow_runtime_import_probe,
-            "selected_linter": selected_linter,
-            "lint_rule_overrides": dict(lint_rule_overrides or {}),
-        },
+        request=request,
         language="python",
         file_path=file_path,
         preferred_provider_key=preferred_provider_key,

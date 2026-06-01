@@ -1,23 +1,14 @@
-"""Modal dialog for editing named run configurations and the project default argv.
-
-Mirrors the JetBrains "Edit Run/Debug Configurations" / VS Code ``launch.json`` UX. The dialog
-collects the user's intent and returns a structured :class:`RunConfigurationsResult`; the caller
-is responsible for persisting the result (typically via
-:class:`~app.shell.run_config_controller.RunConfigController` and
-:func:`~app.project.project_manifest.set_project_default_argv`). Keeping persistence outside
-the dialog keeps it testable and aligns with the existing dialog conventions in this package.
-"""
+"""Modal dialog for editing named run configurations and the project default argv."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Optional, Sequence, cast
+from typing import Mapping, Optional, Sequence
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
     QAbstractItemView,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -33,14 +24,20 @@ from PySide2.QtWidgets import (
 )
 
 from app.core.errors import AppValidationError
-from app.project.run_configs import (
-    RunConfiguration,
-    env_overrides_to_text,
-    parse_env_overrides_text,
+from app.project.run_configs import RunConfiguration
+from app.shell.dialog_chrome import (
+    FOOTER_ROLE_PRIMARY,
+    FOOTER_ROLE_SECONDARY,
+    add_footer_button,
+    add_footer_stretch,
+    add_meta_chip,
+    build_dialog_chrome,
 )
+from app.shell.run_arguments_editor import RunArgumentsEditorRow
 from app.shell.run_config_controller import tokenize_argv_text
+from app.shell.run_env_overrides_row import RunEnvOverridesRow
 from app.shell.run_with_arguments_dialog import _join_argv_for_display
-from app.shell.style_sheet import build_settings_style_sheet
+from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 
@@ -79,12 +76,12 @@ class RunConfigurationsDialog(QDialog):
         self.setWindowTitle("Run Configurations")
         self.setModal(True)
         self.setObjectName("shell.runConfigurationsDialog")
-        self.resize(860, 560)
+        self.resize(860, 580)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
         self._tokens = tokens
-        self.setStyleSheet(build_settings_style_sheet(tokens))
+        self.setStyleSheet(build_run_dialog_style_sheet(tokens))
 
         self._initial = initial
         self._configurations: list[RunConfiguration] = [
@@ -95,6 +92,7 @@ class RunConfigurationsDialog(QDialog):
         self._result: RunConfigurationsResult | None = None
 
         self._build_ui()
+        self._refresh_config_count_chip()
         self._populate_list(select_name=initial.initial_selection_name)
 
     @classmethod
@@ -114,33 +112,57 @@ class RunConfigurationsDialog(QDialog):
         return self._result
 
     def _build_ui(self) -> None:
-        outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(16, 16, 16, 16)
-        outer_layout.setSpacing(12)
+        config_count = len(self._configurations)
+        subtitle = (
+            f"{config_count} saved configuration{'s' if config_count != 1 else ''}. "
+            "Changes persist to cbcs/project.json when you save."
+        )
+        chrome = build_dialog_chrome(
+            self,
+            title="Run Configurations",
+            subtitle=subtitle,
+            object_name="shell.runConfigurationsDialog",
+            body_margins=True,
+        )
+        self._chrome = chrome
+        self._config_count_chip = add_meta_chip(
+            chrome.meta_row,
+            f"{config_count} configuration{'s' if config_count != 1 else ''}",
+        )
 
-        default_group = QGroupBox("Default arguments for Run Project (F5 Project)", self)
+        body_layout = chrome.body.layout()
+        assert isinstance(body_layout, QVBoxLayout)
+
+        default_group = QGroupBox("Default arguments for Run Project (F5 Project)", chrome.body)
         default_group.setObjectName("shell.runConfigurationsDialog.defaultArgvGroup")
         default_layout = QFormLayout(default_group)
         default_layout.setContentsMargins(12, 12, 12, 12)
         default_layout.setHorizontalSpacing(12)
         default_layout.setVerticalSpacing(8)
-        self._default_argv_edit = QLineEdit(default_group)
-        self._default_argv_edit.setObjectName("shell.runConfigurationsDialog.defaultArgv")
-        self._default_argv_edit.setPlaceholderText('e.g. --config "/tmp/cfg.toml"')
-        self._default_argv_edit.setText(_join_argv_for_display(self._initial.default_argv))
-        default_layout.addRow("Arguments:", self._default_argv_edit)
+        self._default_argv_editor = RunArgumentsEditorRow(
+            default_group,
+            tokens=self._tokens,
+            object_name_prefix="shell.runConfigurationsDialog.defaultArgv",
+            show_recent=False,
+        )
+        self._default_argv_editor.set_argv_from_tokens(self._initial.default_argv)
+        default_layout.addRow("Arguments:", self._default_argv_editor)
 
         default_entry_label = QLabel(self._initial.default_entry or "(not set)", default_group)
         default_entry_label.setObjectName("shell.runConfigurationsDialog.defaultEntryLabel")
-        muted_color = self._tokens.text_muted or self._tokens.text_primary
-        default_entry_label.setStyleSheet(f"color: {muted_color};")
         default_layout.addRow("Entry file:", default_entry_label)
-        outer_layout.addWidget(default_group)
+        body_layout.addWidget(default_group)
 
-        body_widget = QWidget(self)
-        body_layout = QHBoxLayout(body_widget)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(12)
+        configs_group = QGroupBox("Configurations", chrome.body)
+        configs_group.setObjectName("shell.runConfigurationsDialog.configsGroup")
+        configs_group_layout = QVBoxLayout(configs_group)
+        configs_group_layout.setContentsMargins(12, 12, 12, 12)
+        configs_group_layout.setSpacing(8)
+
+        body_widget = QWidget(configs_group)
+        body_layout_inner = QHBoxLayout(body_widget)
+        body_layout_inner.setContentsMargins(0, 0, 0, 0)
+        body_layout_inner.setSpacing(12)
 
         left_panel = QWidget(body_widget)
         left_layout = QVBoxLayout(left_panel)
@@ -171,7 +193,7 @@ class RunConfigurationsDialog(QDialog):
         list_buttons_layout.addWidget(self._delete_button)
         left_layout.addWidget(list_buttons)
         left_panel.setFixedWidth(260)
-        body_layout.addWidget(left_panel, 0)
+        body_layout_inner.addWidget(left_panel, 0)
 
         right_panel = QWidget(body_widget)
         right_layout = QVBoxLayout(right_panel)
@@ -197,22 +219,19 @@ class RunConfigurationsDialog(QDialog):
         entry_row_layout.setContentsMargins(0, 0, 0, 0)
         entry_row_layout.setSpacing(8)
         entry_row_layout.addWidget(self._entry_edit, 1)
-        browse_entry_button = QPushButton("Browse...", entry_row)
-        browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
-        entry_row_layout.addWidget(browse_entry_button, 0)
+        self._browse_entry_button = QPushButton("Browse\u2026", entry_row)
+        self._browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
+        entry_row_layout.addWidget(self._browse_entry_button, 0)
         form_layout.addRow("Entry file:", entry_row)
 
-        self._argv_edit = QLineEdit(right_panel)
-        self._argv_edit.setObjectName("shell.runConfigurationsDialog.argvField")
-        self._argv_edit.setPlaceholderText('e.g. --config "/tmp/cfg.toml" --verbose')
-        self._argv_edit.textEdited.connect(self._on_argv_changed)
-        form_layout.addRow("Arguments:", self._argv_edit)
-
-        self._argv_preview_label = QLabel(right_panel)
-        self._argv_preview_label.setObjectName("shell.runConfigurationsDialog.argvPreview")
-        self._argv_preview_label.setWordWrap(True)
-        self._argv_preview_label.setStyleSheet(f"color: {muted_color};")
-        form_layout.addRow("", self._argv_preview_label)
+        self._argv_editor = RunArgumentsEditorRow(
+            right_panel,
+            tokens=self._tokens,
+            object_name_prefix="shell.runConfigurationsDialog.argv",
+            show_recent=False,
+        )
+        self._argv_editor.validation_changed.connect(self._on_argv_changed)
+        form_layout.addRow("Arguments:", self._argv_editor)
 
         self._working_dir_edit = QLineEdit(right_panel)
         self._working_dir_edit.setObjectName("shell.runConfigurationsDialog.workingDirField")
@@ -222,16 +241,18 @@ class RunConfigurationsDialog(QDialog):
         wd_row_layout.setContentsMargins(0, 0, 0, 0)
         wd_row_layout.setSpacing(8)
         wd_row_layout.addWidget(self._working_dir_edit, 1)
-        browse_wd_button = QPushButton("Browse...", wd_row)
-        browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
-        wd_row_layout.addWidget(browse_wd_button, 0)
+        self._browse_wd_button = QPushButton("Browse\u2026", wd_row)
+        self._browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
+        wd_row_layout.addWidget(self._browse_wd_button, 0)
         form_layout.addRow("Working directory:", wd_row)
 
-        self._env_edit = QLineEdit(right_panel)
-        self._env_edit.setObjectName("shell.runConfigurationsDialog.envField")
-        self._env_edit.setPlaceholderText("KEY1=value1, KEY2=value2")
-        self._env_edit.textEdited.connect(self._on_env_changed)
-        form_layout.addRow("Environment overrides:", self._env_edit)
+        self._env_row = RunEnvOverridesRow(
+            right_panel,
+            tokens=self._tokens,
+            object_name_prefix="shell.runConfigurationsDialog.env",
+        )
+        self._env_row.value_changed.connect(self._on_env_changed)
+        form_layout.addRow("Environment:", self._env_row)
         right_layout.addLayout(form_layout)
 
         right_layout.addStretch(1)
@@ -239,8 +260,6 @@ class RunConfigurationsDialog(QDialog):
         self._error_label = QLabel(right_panel)
         self._error_label.setObjectName("shell.runConfigurationsDialog.error")
         self._error_label.setWordWrap(True)
-        error_color = self._tokens.diag_error_color or "#d9534f"
-        self._error_label.setStyleSheet(f"color: {error_color};")
         self._error_label.hide()
         right_layout.addWidget(self._error_label)
 
@@ -249,53 +268,51 @@ class RunConfigurationsDialog(QDialog):
             right_panel,
         )
         self._empty_state_label.setObjectName("shell.runConfigurationsDialog.emptyState")
-        self._empty_state_label.setStyleSheet(f"color: {muted_color};")
         self._empty_state_label.setAlignment(Qt.AlignCenter)
         self._empty_state_label.hide()
         right_layout.addWidget(self._empty_state_label)
 
-        body_layout.addWidget(right_panel, 1)
-        outer_layout.addWidget(body_widget, 1)
+        body_layout_inner.addWidget(right_panel, 1)
+        configs_group_layout.addWidget(body_widget, 1)
+        body_layout.addWidget(configs_group, 1)
 
-        button_box = QDialogButtonBox(self)
-        self._save_run_button = cast(
-            QPushButton,
-            button_box.addButton("Save and Run Selected", QDialogButtonBox.AcceptRole),
+        add_footer_stretch(chrome)
+        self._save_run_button = add_footer_button(
+            chrome,
+            "Save and Run Selected",
+            role=FOOTER_ROLE_SECONDARY,
         )
-        self._save_run_button.setObjectName("shell.runConfigurationsDialog.saveRunButton")
         self._save_run_button.setToolTip(
             "Commit edits to cbcs/project.json and immediately launch the selected configuration."
         )
         self._save_run_button.clicked.connect(self._on_save_and_run_clicked)
-
-        self._save_button = cast(
-            QPushButton, button_box.addButton("Save", QDialogButtonBox.AcceptRole)
-        )
-        self._save_button.setObjectName("shell.runConfigurationsDialog.saveButton")
-        self._save_button.setDefault(True)
+        cancel_button = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
+        self._save_button = add_footer_button(chrome, "Save", role=FOOTER_ROLE_PRIMARY, default=True)
         self._save_button.clicked.connect(self._on_save_clicked)
-
-        cancel_button = cast(QPushButton, button_box.addButton(QDialogButtonBox.Cancel))
-        cancel_button.setObjectName("shell.runConfigurationsDialog.cancelButton")
         cancel_button.clicked.connect(self.reject)
-
-        outer_layout.addWidget(button_box)
 
         self._form_widgets: list[QWidget] = [
             self._name_edit,
             self._entry_edit,
-            self._argv_edit,
+            self._argv_editor,
             self._working_dir_edit,
-            self._env_edit,
-            browse_entry_button,
-            browse_wd_button,
+            self._env_row,
+            self._browse_entry_button,
+            self._browse_wd_button,
         ]
+
+    def _refresh_config_count_chip(self) -> None:
+        count = len(self._configurations)
+        self._config_count_chip.setText(
+            f"{count} configuration{'s' if count != 1 else ''}"
+        )
 
     def _populate_list(self, *, select_name: str | None = None) -> None:
         self._configs_list.clear()
         for config in self._configurations:
             item = QListWidgetItem(config.name)
             self._configs_list.addItem(item)
+        self._refresh_config_count_chip()
         if not self._configurations:
             self._current_index = -1
             self._update_form_enabled(False)
@@ -325,12 +342,11 @@ class RunConfigurationsDialog(QDialog):
         try:
             self._name_edit.setText(config.name)
             self._entry_edit.setText(config.entry_file)
-            self._argv_edit.setText(_join_argv_for_display(config.argv))
+            self._argv_editor.set_argv_from_tokens(config.argv)
             self._working_dir_edit.setText(config.working_directory or "")
-            self._env_edit.setText(env_overrides_to_text(config.env_overrides))
+            self._env_row.set_env_overrides(config.env_overrides)
         finally:
             self._suppress_field_signals = False
-        self._update_argv_preview()
         self._clear_error()
 
     def _clear_form(self) -> None:
@@ -338,10 +354,9 @@ class RunConfigurationsDialog(QDialog):
         try:
             self._name_edit.clear()
             self._entry_edit.clear()
-            self._argv_edit.clear()
+            self._argv_editor.set_argv_text("")
             self._working_dir_edit.clear()
-            self._env_edit.clear()
-            self._argv_preview_label.setText("")
+            self._env_row.set_env_overrides({})
         finally:
             self._suppress_field_signals = False
         self._clear_error()
@@ -365,12 +380,11 @@ class RunConfigurationsDialog(QDialog):
         config = self._configurations[self._current_index]
         self._configurations[self._current_index] = _replace_config(config, entry_file=text)
 
-    def _on_argv_changed(self, _text: str) -> None:
+    def _on_argv_changed(self) -> None:
         if self._suppress_field_signals or self._current_index < 0:
             return
-        self._update_argv_preview()
         try:
-            tokens = tokenize_argv_text(self._argv_edit.text())
+            tokens = tokenize_argv_text(self._argv_editor.argv_text())
         except AppValidationError:
             return
         config = self._configurations[self._current_index]
@@ -385,15 +399,14 @@ class RunConfigurationsDialog(QDialog):
             config, working_directory=normalized
         )
 
-    def _on_env_changed(self, _text: str) -> None:
+    def _on_env_changed(self) -> None:
         if self._suppress_field_signals or self._current_index < 0:
             return
-        try:
-            env = parse_env_overrides_text(self._env_edit.text())
-        except ValueError:
-            return
         config = self._configurations[self._current_index]
-        self._configurations[self._current_index] = _replace_config(config, env_overrides=env)
+        self._configurations[self._current_index] = _replace_config(
+            config,
+            env_overrides=self._env_row.env_overrides(),
+        )
 
     def _on_browse_entry_clicked(self) -> None:
         start_dir = self._initial.project_root or ""
@@ -414,19 +427,6 @@ class RunConfigurationsDialog(QDialog):
             self._working_dir_edit.setText(selected_dir)
             self._on_working_dir_changed(selected_dir)
 
-    def _update_argv_preview(self) -> None:
-        text = self._argv_edit.text()
-        if not text.strip():
-            self._argv_preview_label.setText("Parsed argv: []")
-            return
-        try:
-            tokens = tokenize_argv_text(text)
-        except AppValidationError as exc:
-            self._argv_preview_label.setText(f"(unable to parse arguments: {exc})")
-            return
-        preview = ", ".join(repr(token) for token in tokens)
-        self._argv_preview_label.setText(f"Parsed argv: [{preview}]")
-
     def _on_add_clicked(self) -> None:
         name = self._propose_unique_name("New Configuration")
         new_config = RunConfiguration(
@@ -443,6 +443,7 @@ class RunConfigurationsDialog(QDialog):
         finally:
             self._configs_list.blockSignals(False)
         self._empty_state_label.hide()
+        self._refresh_config_count_chip()
         self._configs_list.setCurrentRow(len(self._configurations) - 1)
         self._name_edit.setFocus()
         self._name_edit.selectAll()
@@ -460,6 +461,7 @@ class RunConfigurationsDialog(QDialog):
             self._configs_list.insertItem(insert_index, QListWidgetItem(new_name))
         finally:
             self._configs_list.blockSignals(False)
+        self._refresh_config_count_chip()
         self._configs_list.setCurrentRow(insert_index)
 
     def _on_delete_clicked(self) -> None:
@@ -482,6 +484,7 @@ class RunConfigurationsDialog(QDialog):
             self._configs_list.takeItem(removed_index)
         finally:
             self._configs_list.blockSignals(False)
+        self._refresh_config_count_chip()
         if not self._configurations:
             self._current_index = -1
             self._update_form_enabled(False)
@@ -510,12 +513,11 @@ class RunConfigurationsDialog(QDialog):
         self._error_label.setText("")
 
     def _validate_default_argv(self) -> list[str] | None:
-        text = self._default_argv_edit.text()
         try:
-            return tokenize_argv_text(text)
+            return tokenize_argv_text(self._default_argv_editor.argv_text())
         except AppValidationError as exc:
             self._show_error(f"Default arguments: {exc}")
-            self._default_argv_edit.setFocus()
+            self._default_argv_editor.focus_argv_field()
             return None
 
     def _validate_configurations(self) -> bool:

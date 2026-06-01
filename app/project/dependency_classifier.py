@@ -29,8 +29,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.models import ProjectMetadata
 from app.intelligence.import_resolver import resolve_project_import
 from app.intelligence.runtime_import_probe import is_runtime_module_importable
+from app.project.import_layout import ProjectImportLayout
 
 # Defensive fallback: well-known Python 3.9 stdlib top-level module names.
 # Used when the runtime probe has not yet completed or failed, so common
@@ -124,6 +126,8 @@ def classify_module(
     module_name: str,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
 ) -> ClassifiedModule:
     """Classify an absolute Python import name against project + runtime layers.
 
@@ -157,6 +161,8 @@ def classify_module(
         module_name,
         known_runtime_modules=frozenset(),
         allow_runtime_import_probe=False,
+        metadata=metadata,
+        layout=layout,
     )
     if resolution.is_resolved and resolution.resolved_path:
         resolved_path = Path(resolution.resolved_path).resolve()
@@ -209,6 +215,8 @@ def is_module_resolvable(
     *,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
 ) -> bool:
     """Return True if the import looks resolvable for the editor diagnostics linter.
 
@@ -228,6 +236,8 @@ def is_module_resolvable(
         module_name,
         known_runtime_modules=frozenset(),
         allow_runtime_import_probe=False,
+        metadata=metadata,
+        layout=layout,
     )
     if resolution.is_resolved:
         return True

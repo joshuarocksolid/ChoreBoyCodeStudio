@@ -196,6 +196,7 @@ class ProjectMetadata:
     env_overrides: dict[str, str] = field(default_factory=dict)
     project_notes: str = ""
     exclude_patterns: list[str] = field(default_factory=list)
+    source_roots: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation with explicit defaults."""
@@ -213,6 +214,8 @@ class ProjectMetadata:
         }
         if self.exclude_patterns:
             payload["exclude_patterns"] = list(self.exclude_patterns)
+        if self.source_roots:
+            payload["source_roots"] = list(self.source_roots)
         return payload
 
 

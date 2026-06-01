@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 from shutil import which
 
+from app.bootstrap.paths import project_manifest_path
 from app.bootstrap.vendor_paths import resolve_vendor_root
+from app.project.import_layout import resolve_project_import_layout
+from app.project.project_manifest import load_project_manifest
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
@@ -36,6 +39,19 @@ class PytestLaunchPlan:
     use_apprun_inline_payload: bool
 
 
+def _pytest_path_entries(project_root: str) -> tuple[str, ...]:
+    root = Path(project_root).expanduser().resolve()
+    metadata = None
+    manifest_path = project_manifest_path(root)
+    if manifest_path.is_file():
+        try:
+            metadata = load_project_manifest(manifest_path)
+        except Exception:
+            metadata = None
+    layout = resolve_project_import_layout(root, metadata)
+    return layout.runtime_sys_path_entries
+
+
 def build_pytest_launch_plan(project_root: str) -> PytestLaunchPlan:
     """Resolve the pytest launch contract shared by discovery and runner."""
 
@@ -58,7 +74,7 @@ def build_pytest_command(plan: PytestLaunchPlan, pytest_args: list[str]) -> list
         if plan.use_apprun_inline_payload:
             payload = build_runpy_bootstrap_payload(
                 script_path=str(plan.run_tests_script),
-                path_entry=plan.project_root,
+                path_entries=_pytest_path_entries(plan.project_root),
                 argv=[str(plan.run_tests_script), *normalized_args],
             )
             return [plan.runtime_executable, "-c", payload]

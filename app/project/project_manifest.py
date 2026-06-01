@@ -12,8 +12,10 @@ import uuid
 from app.bootstrap.paths import PathInput, project_manifest_path
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import ProjectMetadata
+from app.project.import_layout import normalize_source_root_entries
 
-PROJECT_METADATA_SCHEMA_VERSION = 1
+PROJECT_METADATA_SCHEMA_VERSION = 2
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2})
 PROJECT_ID_PREFIX = "proj_"
 _UNKNOWN_LEGACY_PROJECT_ID = f"{PROJECT_ID_PREFIX}legacy_unknown"
 
@@ -65,6 +67,7 @@ def build_default_project_manifest_payload(
     env_overrides: Optional[Mapping[str, str]] = None,
     project_notes: str = "",
     exclude_patterns: Optional[list[str]] = None,
+    source_roots: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Build a canonical manifest payload for new/imported projects."""
     if not _is_non_empty_string(project_name):
@@ -106,6 +109,12 @@ def build_default_project_manifest_payload(
         if item.strip():
             normalized_exclude_patterns.append(item.strip())
 
+    normalized_source_roots: list[str] = []
+    if source_roots is not None:
+        if not isinstance(source_roots, list):
+            raise ValueError("source_roots must be a list of strings.")
+        normalized_source_roots = list(source_roots)
+
     metadata = ProjectMetadata(
         schema_version=PROJECT_METADATA_SCHEMA_VERSION,
         project_id=normalized_project_id,
@@ -118,6 +127,7 @@ def build_default_project_manifest_payload(
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
         exclude_patterns=normalized_exclude_patterns,
+        source_roots=normalized_source_roots,
     )
     return metadata.to_dict()
 
@@ -177,6 +187,53 @@ def set_project_default_entry(
     else:
         _raise_validation_error("Manifest file not found.", manifest_path=path)
     updated_metadata = replace(metadata, default_entry=normalized_entry)
+    save_project_manifest(manifest_path, updated_metadata)
+    return updated_metadata
+
+
+def append_project_source_root(
+    manifest_path: PathInput,
+    source_root: str,
+    *,
+    metadata_if_absent: Optional[ProjectMetadata] = None,
+) -> ProjectMetadata:
+    """Append one import source root and persist manifest metadata."""
+    path = Path(manifest_path).expanduser().resolve()
+    project_root = path.parent.parent
+    normalized = normalize_source_root_entries(project_root, [source_root])
+    if not normalized:
+        raise ValueError(f"Invalid source root: {source_root}")
+    relative_root = normalized[0]
+    if path.is_file():
+        metadata = load_project_manifest(manifest_path)
+    elif metadata_if_absent is not None:
+        metadata = metadata_if_absent
+    else:
+        _raise_validation_error("Manifest file not found.", manifest_path=path)
+    existing = list(metadata.source_roots)
+    if relative_root not in existing:
+        existing.append(relative_root)
+    updated_metadata = replace(
+        metadata,
+        schema_version=max(metadata.schema_version, PROJECT_METADATA_SCHEMA_VERSION),
+        source_roots=existing,
+    )
+    save_project_manifest(manifest_path, updated_metadata)
+    return updated_metadata
+
+
+def remove_project_source_root(
+    manifest_path: PathInput,
+    source_root: str,
+) -> ProjectMetadata:
+    """Remove one import source root and persist manifest metadata."""
+    path = Path(manifest_path).expanduser().resolve()
+    metadata = load_project_manifest(manifest_path)
+    project_root = path.parent.parent
+    normalized = normalize_source_root_entries(project_root, [source_root])
+    relative_root = normalized[0] if normalized else source_root.strip().replace("\\", "/").strip("/")
+    existing = [entry for entry in metadata.source_roots if entry != relative_root]
+    updated_metadata = replace(metadata, source_roots=existing)
     save_project_manifest(manifest_path, updated_metadata)
     return updated_metadata
 
@@ -244,9 +301,9 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
     schema_version = _require_field(payload, "schema_version", manifest_path=resolved_path)
     if not _is_int(schema_version):
         _raise_validation_error("schema_version must be an integer.", field="schema_version", manifest_path=resolved_path)
-    if schema_version != PROJECT_METADATA_SCHEMA_VERSION:
+    if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
         _raise_validation_error(
-            f"Unsupported schema_version: {schema_version}. Expected {PROJECT_METADATA_SCHEMA_VERSION}.",
+            f"Unsupported schema_version: {schema_version}. Expected one of {sorted(_SUPPORTED_SCHEMA_VERSIONS)}.",
             field="schema_version",
             manifest_path=resolved_path,
         )
@@ -355,6 +412,33 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         if item.strip():
             normalized_exclude_patterns.append(item.strip())
 
+    source_roots_raw = payload.get("source_roots", [])
+    if source_roots_raw is None:
+        source_roots_raw = []
+    if not isinstance(source_roots_raw, list):
+        _raise_validation_error(
+            "source_roots must be a list.",
+            field="source_roots",
+            manifest_path=resolved_path,
+        )
+    normalized_source_roots: list[str] = []
+    for index, item in enumerate(source_roots_raw):
+        if not isinstance(item, str):
+            _raise_validation_error(
+                "source_roots entries must be strings.",
+                field=f"source_roots[{index}]",
+                manifest_path=resolved_path,
+            )
+        stripped = item.strip()
+        if stripped:
+            normalized_source_roots.append(stripped)
+
+    manifest_project_root = resolved_path.parent.parent if resolved_path is not None else None
+    if manifest_project_root is not None and normalized_source_roots:
+        normalized_source_roots = list(
+            normalize_source_root_entries(manifest_project_root, normalized_source_roots)
+        )
+
     return ProjectMetadata(
         schema_version=schema_version,
         project_id=project_id,
@@ -367,6 +451,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         env_overrides=normalized_env_overrides,
         project_notes=project_notes,
         exclude_patterns=normalized_exclude_patterns,
+        source_roots=normalized_source_roots,
     )
 
 

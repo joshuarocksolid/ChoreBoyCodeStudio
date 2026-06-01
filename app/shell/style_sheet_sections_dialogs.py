@@ -410,6 +410,158 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
     background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
 }}
 """
+
+
+def shell_section_run_dialog(tokens: ShellThemeTokens) -> str:
+    """Run With Arguments, Run Configurations, and env-overrides table dialogs."""
+    muted = tokens.text_muted or tokens.text_primary
+    error_color = tokens.diag_error_color or ("#FF6B6B" if tokens.is_dark else "#E03131")
+    dialog_ids = (
+        "shell\\.runWithArgumentsDialog",
+        "shell\\.runConfigurationsDialog",
+        "shell\\.runEnvOverridesDialog",
+    )
+    table_rules = ""
+    for dialog_id in dialog_ids:
+        table_rules += f"""
+QDialog#{dialog_id} QTableWidget {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    gridline-color: {tokens.border};
+    alternate-background-color: {tokens.row_alt_bg};
+    outline: none;
+    font-size: 12px;
+}}
+QDialog#{dialog_id} QTableWidget::item {{
+    padding: 4px 8px;
+}}
+QDialog#{dialog_id} QTableWidget::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QDialog#{dialog_id} QHeaderView::section {{
+    background: {tokens.panel_bg};
+    color: {muted};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    border-right: 1px solid {tokens.border};
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+"""
+    return f"""/* -- Run dialogs (arguments / configurations / env) -------------------- */
+QLabel#shell\\.runWithArgumentsDialog\\.commandPreview,
+QLabel#shell\\.runConfigurationsDialog\\.commandPreview {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: monospace;
+    font-size: 12px;
+}}
+QLabel#shell\\.runWithArgumentsDialog\\.error,
+QLabel#shell\\.runConfigurationsDialog\\.error {{
+    color: {error_color};
+    font-size: 12px;
+}}
+QLabel[previewLabel="true"] {{
+    color: {muted};
+    font-size: 11px;
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup,
+QGroupBox#shell\\.runConfigurationsDialog\\.defaultArgvGroup,
+QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup {{
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 12px 10px 10px 10px;
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::title,
+QGroupBox#shell\\.runConfigurationsDialog\\.defaultArgvGroup::title,
+QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup::title {{
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: {muted};
+}}
+QDialog#shell\\.runWithArgumentsDialog QLineEdit,
+QDialog#shell\\.runWithArgumentsDialog QComboBox,
+QDialog#shell\\.runWithArgumentsDialog QPlainTextEdit,
+QDialog#shell\\.runConfigurationsDialog QLineEdit,
+QDialog#shell\\.runConfigurationsDialog QComboBox,
+QDialog#shell\\.runConfigurationsDialog QPlainTextEdit,
+QDialog#shell\\.runEnvOverridesDialog QLineEdit {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 6px 8px;
+}}
+QDialog#shell\\.runWithArgumentsDialog QLineEdit:focus,
+QDialog#shell\\.runWithArgumentsDialog QComboBox:focus,
+QDialog#shell\\.runWithArgumentsDialog QPlainTextEdit:focus,
+QDialog#shell\\.runConfigurationsDialog QLineEdit:focus,
+QDialog#shell\\.runConfigurationsDialog QComboBox:focus,
+QDialog#shell\\.runConfigurationsDialog QPlainTextEdit:focus,
+QDialog#shell\\.runEnvOverridesDialog QLineEdit:focus {{
+    border-color: {tokens.accent};
+    border-width: {tokens.focus_border_width}px;
+}}
+QLineEdit#shell\\.runEnvOverridesRow\\.summary[readOnly="true"] {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+}}
+QLabel#shell\\.runConfigurationsDialog\\.defaultEntryLabel,
+QLabel#shell\\.runConfigurationsDialog\\.emptyState {{
+    color: {muted};
+}}
+QListWidget#shell\\.runConfigurationsDialog\\.list {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    outline: none;
+    font-size: 12px;
+}}
+QListWidget#shell\\.runConfigurationsDialog\\.list::item {{
+    padding: 6px 8px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListWidget#shell\\.runConfigurationsDialog\\.list::item:last {{
+    border-bottom: none;
+}}
+QListWidget#shell\\.runConfigurationsDialog\\.list::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListWidget#shell\\.runConfigurationsDialog\\.list::item:selected {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
+QPushButton#shell\\.runConfigurationsDialog\\.addButton,
+QPushButton#shell\\.runConfigurationsDialog\\.duplicateButton,
+QPushButton#shell\\.runConfigurationsDialog\\.deleteButton {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+}}
+QPushButton#shell\\.runConfigurationsDialog\\.addButton:hover,
+QPushButton#shell\\.runConfigurationsDialog\\.duplicateButton:hover,
+QPushButton#shell\\.runConfigurationsDialog\\.deleteButton:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+{table_rules}
+"""
+
+
 def shell_section_package_wizard(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Package wizard ------------------------------------------------------ */
 QWizard#shell\\.packageWizard {{

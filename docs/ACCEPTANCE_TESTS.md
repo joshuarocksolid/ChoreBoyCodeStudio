@@ -2346,6 +2346,32 @@ Verify that unresolved imports and runtime-module mismatches produce clear, Chor
 
 ---
 
+## AT-83 — Source roots resolve `src/` layout imports in Problems and Run
+
+**Purpose:**  
+Verify that projects using a conventional `src/` package layout get correct import
+diagnostics and runtime imports without manual `sys.path` hacks.
+
+**Preconditions:**  
+
+- a sample project exists with `src/<package>/` Python modules and `import <package>` usage
+- the project has no `source_roots` in `cbcs/project.json` initially (auto-detect applies)
+
+**Steps:**  
+
+1. Open the sample project.
+2. Accept or apply the import-root onboarding prompt when offered (or mark `src` as Sources Root).
+3. Open a file that imports the package and inspect Problems for PY200 on that import.
+4. Set the entry point to a module under `src/` and Run.
+
+**Expected Result:**  
+
+- after source roots are configured (auto or manual), first-party imports under `src/` are not flagged PY200
+- Run succeeds without adding `sys.path.append(...)` to entry files
+- the project tree shows `src/` labeled as a source root when configured
+
+---
+
 ## AT-78 — Packaging preflight explains export blockers before packaging
 
 **Purpose:**  
@@ -2923,10 +2949,10 @@ Verify the shlex-based tokenizer preserves whitespace inside quoted argv values.
 
 ---
 
-## AT-RUN-ARGS-THEME — Run arguments UI is readable in light and dark themes
+## AT-RUN-ARGS-THEME — Run arguments UI is readable in all four themes
 
 **Purpose:**
-Verify the new dialogs and the status-bar indicator meet the dual-theme rule (`.cursor/rules/ui_light_dark_mode.mdc`).
+Verify the run-arguments dialogs and the status-bar indicator meet the four-theme rule (`.cursor/rules/ui_light_dark_mode.mdc`).
 
 **Preconditions:**
 
@@ -2935,14 +2961,14 @@ Verify the new dialogs and the status-bar indicator meet the dual-theme rule (`.
 **Steps:**
 
 1. Toggle to **Light** theme via Settings.
-2. Open **Run With Arguments...** and **Run Configurations...** in turn; observe labels, fields, inline-error text, "Parsed argv" preview line, list items, and buttons.
+2. Open **Run With Arguments...** and **Run Configurations...** in turn; observe labels, fields, inline-error text, "Parsed argv" preview line, list items, and buttons. Open the environment overrides table via **Browse...**.
 3. Hover the status-bar active-config indicator and open its popup menu.
-4. Toggle to **Dark** theme and repeat steps 2–3.
+4. Repeat steps 2–3 for **Dark**, **High Contrast Light**, and **High Contrast Dark** themes.
 
 **Expected Result:**
 
-- All text, inline error states, selected-row highlights, button focus rings, and the active-config indicator render with adequate contrast in both themes.
-- No control is clipped, invisible, or rendered with a hardcoded color that disappears in the other theme.
+- All text, inline error states, selected-row highlights, button focus rings, and the active-config indicator render with adequate contrast in all four themes.
+- No control is clipped, invisible, or rendered with a hardcoded color that disappears in another theme.
 
 ---
 

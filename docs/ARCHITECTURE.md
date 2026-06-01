@@ -795,6 +795,29 @@ Owns trusted language intelligence and refactoring contracts:
 The intelligence layer should keep semantic engines behind narrow interfaces so the
 shell and editor widgets do not depend on library-specific APIs directly.
 
+### 12.12.1 Project import layout (source roots)
+
+`app/project/import_layout.py` is the single source of truth for **where local
+imports resolve** in diagnostics (PY200), Jedi `added_sys_path`, and runner/pytest
+`sys.path` setup.
+
+**Source root precedence:**
+
+1. `cbcs/project.json` → `source_roots` (schema v1/v2)
+2. `pyproject.toml` → `[tool.isort].src_paths`
+3. Auto-detect `src/` when it is a directory without `src/__init__.py` (Pylance-aligned)
+4. Fallback: imports resolve from project root and `vendor/` only
+
+**Runtime `sys.path` order (first wins for shadowing):**
+
+1. Entry script directory (sibling imports beside `src/pkg/main.py`)
+2. Configured source roots (manifest order, last listed nearest to front)
+3. Project root
+4. Vendor path (via bootstrap, unchanged)
+
+Users can mark folders as **Sources Root** in the project tree; the choice persists
+in `source_roots` and reloads the tree with a `[source root]` label.
+
 ---
 
 ## 13. Runner Contract

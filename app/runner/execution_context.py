@@ -10,9 +10,12 @@ import sys
 from types import ModuleType
 from typing import Iterator
 
+from app.bootstrap.paths import project_manifest_path
 from app.bootstrap.vendor_paths import ensure_vendor_path_on_sys_path
 from app.core import constants
 from app.core.errors import RunLifecycleError
+from app.project.import_layout import resolve_project_import_layout
+from app.project.project_manifest import load_project_manifest
 from app.run.run_manifest import RunManifest
 
 
@@ -69,7 +72,7 @@ def apply_execution_context(execution_context: RunnerExecutionContext) -> Iterat
         os.chdir(execution_context.working_directory)
         sys.argv = [execution_context.entry_script_path, *execution_context.argv]
         ensure_vendor_path_on_sys_path()
-        sys.path.insert(0, execution_context.project_root)
+        _apply_project_sys_path(execution_context)
 
         for module_name in list(sys.modules.keys()):
             if module_name == "app" or module_name.startswith("app."):
@@ -91,3 +94,25 @@ def apply_execution_context(execution_context: RunnerExecutionContext) -> Iterat
         sys.argv = previous_argv
         sys.path[:] = previous_path
         os.chdir(previous_cwd)
+
+
+def _apply_project_sys_path(execution_context: RunnerExecutionContext) -> None:
+    project_root = Path(execution_context.project_root).expanduser().resolve()
+    metadata = None
+    manifest_path = project_manifest_path(project_root)
+    if manifest_path.is_file():
+        try:
+            metadata = load_project_manifest(manifest_path)
+        except Exception:
+            metadata = None
+    layout = resolve_project_import_layout(project_root, metadata)
+    sys.path.insert(0, str(project_root))
+    for entry in reversed(layout.source_roots):
+        entry_text = str(entry)
+        if entry_text not in sys.path:
+            sys.path.insert(0, entry_text)
+    entry_script = execution_context.entry_script_path
+    if entry_script != "<python_repl>":
+        entry_parent = str(Path(entry_script).resolve().parent)
+        if entry_parent not in sys.path:
+            sys.path.insert(0, entry_parent)

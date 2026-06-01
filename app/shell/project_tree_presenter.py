@@ -51,7 +51,10 @@ class ProjectTreePresenter:
         self._display_node_by_relative_path.clear()
 
         root_nodes = build_project_tree(loaded_project.entries)
-        display_nodes = build_project_tree_display(root_nodes)
+        display_nodes = build_project_tree_display(
+            root_nodes,
+            source_roots=tuple(loaded_project.metadata.source_roots),
+        )
         self._index_display_nodes(display_nodes)
         for display_node in display_nodes:
             root_item = self.build_tree_item(display_node, lazy=True)
@@ -307,6 +310,16 @@ class ProjectTreePresenter:
         copy_path_action = menu.addAction("Copy Path")
         copy_relative_path_action = menu.addAction("Copy Relative Path")
         reveal_action = menu.addAction("Reveal in File Manager")
+        mark_source_root_action = None
+        unmark_source_root_action = None
+        if is_directory and window._loaded_project is not None:
+            configured_roots = set(window._loaded_project.metadata.source_roots)
+            normalized_relative = relative_path.replace("\\", "/").strip("/")
+            menu.addSeparator()
+            if normalized_relative in configured_roots:
+                unmark_source_root_action = menu.addAction("Unmark Sources Root")
+            else:
+                mark_source_root_action = menu.addAction("Mark as Sources Root")
         local_history_action = None
         if not is_directory:
             local_history_action = menu.addAction("Local History...")
@@ -369,6 +382,10 @@ class ProjectTreePresenter:
             window._run_launch_workflow.handle_tree_run_file_with_arguments(absolute_path)
         elif set_entry_point_action is not None and chosen == set_entry_point_action:
             window._set_project_entry_point(relative_path)
+        elif mark_source_root_action is not None and chosen == mark_source_root_action:
+            window._handle_tree_mark_source_root(relative_path)
+        elif unmark_source_root_action is not None and chosen == unmark_source_root_action:
+            window._handle_tree_unmark_source_root(relative_path)
 
     def show_bulk_context_menu(
         self,

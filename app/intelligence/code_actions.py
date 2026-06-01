@@ -12,9 +12,17 @@ import difflib
 from pathlib import Path
 import re
 
+from app.core.models import ProjectMetadata
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.persistence.atomic_write import atomic_write_text
 from app.project.file_inventory import iter_python_files
+from app.project.import_layout import (
+    ProjectImportLayout,
+    discover_canonical_project_modules,
+    resolve_import_at_base,
+    resolve_project_import_layout,
+    suggest_missing_source_root,
+)
 
 
 @dataclass(frozen=True)
@@ -37,11 +45,15 @@ def plan_safe_fixes_for_file(
     diagnostics: list[CodeDiagnostic],
     *,
     project_root: str | None = None,
+    project_metadata: ProjectMetadata | None = None,
 ) -> list[QuickFix]:
     """Return safe quick fixes for known diagnostics."""
     normalized_path = str(Path(file_path).expanduser().resolve())
     normalized_project_root = None if project_root is None else str(Path(project_root).expanduser().resolve())
     source_lines = _read_source_lines(Path(normalized_path))
+    layout = None
+    if normalized_project_root is not None:
+        layout = resolve_project_import_layout(normalized_project_root, project_metadata)
     fixes: list[QuickFix] = []
     seen_keys: set[tuple[str, int, str, str, str]] = set()
     for diagnostic in diagnostics:
@@ -61,32 +73,44 @@ def plan_safe_fixes_for_file(
                 project_root=normalized_project_root,
                 expected_line_text=expected_line,
             )
-        elif diagnostic.code == "PY200" and normalized_project_root is not None:
+        elif diagnostic.code == "PY200" and normalized_project_root is not None and layout is not None:
             unresolved_module = _extract_unresolved_module_name(diagnostic.message)
             if unresolved_module is None:
                 continue
-            suggested_module = _suggest_module_replacement(normalized_project_root, unresolved_module)
-            if suggested_module is not None and suggested_module != unresolved_module:
+            missing_root = suggest_missing_source_root(layout, unresolved_module)
+            if missing_root is not None:
                 fix = QuickFix(
-                    title=f"Replace import '{unresolved_module}' with '{suggested_module}'",
+                    title=f"Add '{missing_root}' as a source root",
                     file_path=normalized_path,
                     line_number=diagnostic.line_number,
-                    action_kind="replace_import_module",
+                    action_kind="add_source_root",
                     project_root=normalized_project_root,
-                    match_text=unresolved_module,
-                    replacement_text=suggested_module,
+                    replacement_text=missing_root,
                     expected_line_text=expected_line,
                 )
             else:
-                target_path = _module_target_path(normalized_project_root, unresolved_module)
-                fix = QuickFix(
-                    title=f"Create missing module '{unresolved_module}'",
-                    file_path=normalized_path,
-                    line_number=diagnostic.line_number,
-                    action_kind="create_module_file",
-                    target_path=target_path,
-                    project_root=normalized_project_root,
-                )
+                suggested_module = _suggest_module_replacement(layout, unresolved_module)
+                if suggested_module is not None and suggested_module != unresolved_module:
+                    fix = QuickFix(
+                        title=f"Replace import '{unresolved_module}' with '{suggested_module}'",
+                        file_path=normalized_path,
+                        line_number=diagnostic.line_number,
+                        action_kind="replace_import_module",
+                        project_root=normalized_project_root,
+                        match_text=unresolved_module,
+                        replacement_text=suggested_module,
+                        expected_line_text=expected_line,
+                    )
+                else:
+                    target_path = _module_target_path(layout, unresolved_module)
+                    fix = QuickFix(
+                        title=f"Create missing module '{unresolved_module}'",
+                        file_path=normalized_path,
+                        line_number=diagnostic.line_number,
+                        action_kind="create_module_file",
+                        target_path=target_path,
+                        project_root=normalized_project_root,
+                    )
         else:
             continue
         key = (
@@ -247,34 +271,28 @@ def _extract_unresolved_module_name(message: str) -> str | None:
     return module_name
 
 
-def _module_target_path(project_root: str, module_name: str) -> str:
+def _module_target_path(layout: ProjectImportLayout, module_name: str) -> str:
     module_parts = [part for part in module_name.split(".") if part]
-    path = Path(project_root).expanduser().resolve()
-    return str((path / Path(*module_parts)).with_suffix(".py"))
+    for base in layout.import_search_bases:
+        if base == layout.vendor_root:
+            continue
+        resolved = resolve_import_at_base(base, module_name)
+        if resolved is not None and resolved.endswith(".py"):
+            return resolved
+        candidate = (base / Path(*module_parts)).with_suffix(".py")
+        if candidate.parent.exists() or base == layout.project_root:
+            return str(candidate.resolve())
+    return str((layout.project_root / Path(*module_parts)).with_suffix(".py"))
 
 
-def _suggest_module_replacement(project_root: str, unresolved_module: str) -> str | None:
-    available_modules = sorted(_discover_project_modules(project_root))
+def _suggest_module_replacement(layout: ProjectImportLayout, unresolved_module: str) -> str | None:
+    available_modules = sorted(discover_canonical_project_modules(layout, iter_python_files=iter_python_files))
     if not available_modules:
         return None
     closest_matches = difflib.get_close_matches(unresolved_module, available_modules, n=1, cutoff=0.75)
     if not closest_matches:
         return None
     return closest_matches[0]
-
-
-def _discover_project_modules(project_root: str) -> set[str]:
-    root = Path(project_root).expanduser().resolve()
-    discovered: set[str] = set()
-    for file_path in iter_python_files(root):
-        relative = file_path.relative_to(root)
-        if relative.name == "__init__.py":
-            module_name = ".".join(relative.parts[:-1])
-        else:
-            module_name = ".".join(relative.with_suffix("").parts)
-        if module_name:
-            discovered.add(module_name)
-    return discovered
 
 
 def _replace_import_module_in_line(

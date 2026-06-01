@@ -1,15 +1,9 @@
-"""Modal dialog for launching a one-off run with custom CLI arguments.
-
-Modeled after VS Code's launch configuration args and PyCharm's Program arguments row,
-but scoped to a single ad-hoc invocation that does **not** persist into ``cbcs/project.json``
-unless the user saves as a named configuration.
-"""
+"""Modal dialog for launching a one-off run with custom CLI arguments."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, cast
+from typing import Callable, Mapping, Optional, Sequence
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
@@ -18,10 +12,10 @@ from PySide2.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QShortcut,
     QVBoxLayout,
@@ -29,13 +23,14 @@ from PySide2.QtWidgets import (
 )
 
 from app.core.errors import AppValidationError
-from app.project.run_configs import RunConfiguration, env_overrides_to_text, parse_env_overrides_text
+from app.project.run_configs import RunConfiguration
 from app.shell.dialog_chrome import (
     FOOTER_ROLE_LINK,
     FOOTER_ROLE_PRIMARY,
     FOOTER_ROLE_SECONDARY,
     add_footer_button,
     add_footer_stretch,
+    add_meta_chip,
     build_dialog_chrome,
 )
 from app.shell.run_arguments_editor import RunArgumentsEditorRow
@@ -45,16 +40,20 @@ from app.shell.run_arguments_helpers import (
     join_argv_for_display,
     normalize_entry_path_for_project,
     try_parse_argv_text,
-    try_parse_env_text,
 )
 from app.shell.run_config_controller import tokenize_argv_text
-from app.shell.style_sheet import build_run_with_arguments_style_sheet
+from app.shell.run_env_overrides_row import RunEnvOverridesRow
+from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 _DIALOG_OBJECT_NAME = "shell.runWithArgumentsDialog"
 _SUBTITLE = (
-    "One-off run — does not change cbcs/project.json unless you save as a configuration. "
-    "ChoreBoy has no terminal; this is how you set sys.argv."
+    "Run once with custom arguments. Nothing is saved to the project "
+    "unless you choose Save as Configuration."
+)
+_ARGV_FIELD_TOOLTIP = (
+    "Shell-style quoting is supported. ChoreBoy has no terminal; "
+    "this is how you set sys.argv for the runner."
 )
 
 
@@ -108,12 +107,12 @@ class RunWithArgumentsDialog(QDialog):
         self.setWindowTitle("Run With Arguments")
         self.setModal(True)
         self.setObjectName(_DIALOG_OBJECT_NAME)
-        self.resize(680, 520)
+        self.resize(680, 560)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
         self._tokens = tokens
-        self.setStyleSheet(build_run_with_arguments_style_sheet(tokens))
+        self.setStyleSheet(build_run_dialog_style_sheet(tokens))
 
         self._initial = initial
         self._on_manage_configurations = on_manage_configurations
@@ -128,6 +127,7 @@ class RunWithArgumentsDialog(QDialog):
             body_margins=True,
         )
         self._chrome = chrome
+        add_meta_chip(chrome.meta_row, "One-off run")
 
         body_layout = chrome.body.layout()
         assert isinstance(body_layout, QVBoxLayout)
@@ -149,7 +149,7 @@ class RunWithArgumentsDialog(QDialog):
         if initial.named_configurations:
             self._prefill_combo = QComboBox(form_host)
             self._prefill_combo.setObjectName("shell.runWithArgumentsDialog.prefill")
-            self._prefill_combo.addItem("Prefill from configuration…", None)
+            self._prefill_combo.addItem("Prefill from configuration\u2026", None)
             for config in initial.named_configurations:
                 self._prefill_combo.addItem(config.name, config)
             self._prefill_combo.currentIndexChanged.connect(self._on_prefill_selected)
@@ -166,12 +166,14 @@ class RunWithArgumentsDialog(QDialog):
         entry_row_layout.setContentsMargins(0, 0, 0, 0)
         entry_row_layout.setSpacing(8)
         entry_row_layout.addWidget(self._entry_combo, 1)
-        browse_entry_button = QPushButton("Browse…", entry_row)
+        browse_entry_button = QPushButton("Browse\u2026", entry_row)
         browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
         entry_row_layout.addWidget(browse_entry_button, 0)
         form_layout.addRow("Entry file:", entry_row)
         self._entry_combo.currentTextChanged.connect(self._refresh_validation_state)
 
+        argv_label = QLabel("Arguments:", form_host)
+        argv_label.setToolTip(_ARGV_FIELD_TOOLTIP)
         self._argv_editor = RunArgumentsEditorRow(
             form_host,
             tokens=tokens,
@@ -179,28 +181,46 @@ class RunWithArgumentsDialog(QDialog):
             object_name_prefix="shell.runWithArgumentsDialog",
             show_recent=True,
         )
-        form_layout.addRow("Arguments:", self._argv_editor)
+        form_layout.addRow(argv_label, self._argv_editor)
         self._argv_editor.validation_changed.connect(self._refresh_validation_state)
 
-        self._working_dir_edit = QLineEdit(form_host)
+        self._advanced_group = QGroupBox("Advanced", form_host)
+        self._advanced_group.setObjectName("shell.runWithArgumentsDialog.advancedGroup")
+        self._advanced_group.setCheckable(True)
+        advanced_layout = QFormLayout(self._advanced_group)
+        advanced_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        advanced_layout.setHorizontalSpacing(12)
+        advanced_layout.setVerticalSpacing(8)
+        advanced_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        self._working_dir_edit = QLineEdit(self._advanced_group)
         self._working_dir_edit.setObjectName("shell.runWithArgumentsDialog.workingDir")
         self._working_dir_edit.setPlaceholderText("Leave empty to use project root")
-        wd_row = QWidget(form_host)
+        wd_row = QWidget(self._advanced_group)
         wd_row_layout = QHBoxLayout(wd_row)
         wd_row_layout.setContentsMargins(0, 0, 0, 0)
         wd_row_layout.setSpacing(8)
         wd_row_layout.addWidget(self._working_dir_edit, 1)
-        browse_wd_button = QPushButton("Browse…", wd_row)
+        browse_wd_button = QPushButton("Browse\u2026", wd_row)
         browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
         wd_row_layout.addWidget(browse_wd_button, 0)
-        form_layout.addRow("Working directory:", wd_row)
+        advanced_layout.addRow("Working directory:", wd_row)
         self._working_dir_edit.textChanged.connect(self._refresh_validation_state)
 
-        self._env_edit = QLineEdit(form_host)
-        self._env_edit.setObjectName("shell.runWithArgumentsDialog.env")
-        self._env_edit.setPlaceholderText("e.g. DEBUG=1, LOG_LEVEL=debug")
-        form_layout.addRow("Environment overrides:", self._env_edit)
-        self._env_edit.textChanged.connect(self._refresh_validation_state)
+        self._env_row = RunEnvOverridesRow(
+            self._advanced_group,
+            tokens=tokens,
+            object_name_prefix="shell.runWithArgumentsDialog.env",
+        )
+        advanced_layout.addRow("Environment:", self._env_row)
+        self._env_row.value_changed.connect(self._refresh_validation_state)
+
+        has_advanced_values = bool(
+            (initial.working_directory or "").strip() or initial.env_overrides
+        )
+        self._advanced_group.setChecked(has_advanced_values)
+        self._advanced_group.toggled.connect(self._on_advanced_toggled)
+        form_layout.addRow(self._advanced_group)
 
         body_layout.addWidget(form_host, 1)
 
@@ -210,17 +230,16 @@ class RunWithArgumentsDialog(QDialog):
         self._error_label.hide()
         body_layout.addWidget(self._error_label)
 
-        manage_button = None
         if on_manage_configurations is not None:
             manage_button = add_footer_button(
-                chrome, "Manage configurations…", role=FOOTER_ROLE_LINK
+                chrome, "Manage configurations\u2026", role=FOOTER_ROLE_LINK
             )
             manage_button.clicked.connect(self._on_manage_configurations_clicked)
 
         add_footer_stretch(chrome)
         self._save_button = add_footer_button(
             chrome,
-            "Save as Configuration…",
+            "Save as Configuration\u2026",
             role=FOOTER_ROLE_SECONDARY,
         )
         self._save_button.setToolTip(
@@ -237,6 +256,7 @@ class RunWithArgumentsDialog(QDialog):
         run_shortcut.activated.connect(self._on_run_clicked)
 
         self._seed_initial_values()
+        self._on_advanced_toggled(self._advanced_group.isChecked())
         self._refresh_validation_state()
         if (initial.entry_file or "").strip():
             self._argv_editor.focus_argv_field()
@@ -278,10 +298,16 @@ class RunWithArgumentsDialog(QDialog):
                 self._entry_combo.setEditText(normalized_entry)
         self._argv_editor.set_argv_from_tokens(self._initial.argv)
         self._working_dir_edit.setText(self._initial.working_directory or "")
-        self._env_edit.setText(env_overrides_to_text(self._initial.env_overrides))
+        self._env_row.set_env_overrides(self._initial.env_overrides)
 
     def _entry_file_text(self) -> str:
         return self._entry_combo.currentText().strip()
+
+    def _on_advanced_toggled(self, expanded: bool) -> None:
+        self._working_dir_edit.setEnabled(expanded)
+        self._env_row.setEnabled(expanded)
+        for child in self._advanced_group.findChildren(QPushButton):
+            child.setEnabled(expanded)
 
     def _on_prefill_selected(self, index: int) -> None:
         if self._prefill_combo is None or index <= 0:
@@ -301,7 +327,9 @@ class RunWithArgumentsDialog(QDialog):
                 self._entry_combo.setEditText(entry)
         self._argv_editor.set_argv_from_tokens(config.argv)
         self._working_dir_edit.setText(config.working_directory or "")
-        self._env_edit.setText(env_overrides_to_text(config.env_overrides))
+        self._env_row.set_env_overrides(config.env_overrides)
+        if config.working_directory or config.env_overrides:
+            self._advanced_group.setChecked(True)
         self._prefill_combo.setCurrentIndex(0)
         self._refresh_validation_state()
 
@@ -339,14 +367,11 @@ class RunWithArgumentsDialog(QDialog):
     def _refresh_validation_state(self) -> None:
         entry = self._entry_file_text()
         argv_text = self._argv_editor.argv_text()
-        env_text = self._env_edit.text()
+        env_overrides = self._env_row.env_overrides()
 
         argv_tokens, argv_error = try_parse_argv_text(argv_text)
-        env_mapping, env_error = try_parse_env_text(env_text)
         if argv_error is not None:
             argv_tokens = []
-        if env_error is not None:
-            env_mapping = {}
 
         working_dir = self._working_dir_edit.text().strip() or None
         preview_lines = format_command_preview_lines(
@@ -354,14 +379,14 @@ class RunWithArgumentsDialog(QDialog):
             argv_tokens=argv_tokens or [],
             working_directory=working_dir,
             project_root=self._initial.project_root,
-            env_overrides=env_mapping or {},
+            env_overrides=env_overrides,
         )
         self._command_preview.setText("\n".join(preview_lines))
 
         can_submit, error_message = can_submit_run_invocation(
             entry_file=entry,
             argv_text=argv_text,
-            env_text=env_text,
+            env_text=env_overrides_to_text_for_validation(env_overrides),
         )
         self._run_button.setEnabled(can_submit)
         self._save_button.setEnabled(can_submit)
@@ -394,14 +419,7 @@ class RunWithArgumentsDialog(QDialog):
             self._argv_editor.focus_argv_field()
             return None
 
-        env_text = self._env_edit.text()
-        try:
-            env_overrides = parse_env_overrides_text(env_text)
-        except ValueError as exc:
-            self._show_error(f"Invalid environment overrides: {exc}")
-            self._env_edit.setFocus()
-            return None
-
+        env_overrides = self._env_row.env_overrides()
         working_dir = self._working_dir_edit.text().strip() or None
 
         return RunInvocation(
@@ -432,6 +450,14 @@ class RunWithArgumentsDialog(QDialog):
             return
         self._result = invocation
         self.accept()
+
+
+def env_overrides_to_text_for_validation(env_overrides: Mapping[str, str]) -> str:
+    """Serialize env overrides for :func:`can_submit_run_invocation` validation."""
+
+    from app.project.run_configs import env_overrides_to_text
+
+    return env_overrides_to_text(env_overrides)
 
 
 def _join_argv_for_display(argv: Sequence[str]) -> str:

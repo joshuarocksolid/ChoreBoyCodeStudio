@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, Sequence
 
 from PySide2.QtWidgets import QWidget
 
 from app.core import constants
 from app.core.models import LoadedProject
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
+from app.project.file_inventory import iter_python_files
 from app.project.run_configs import RunConfiguration
 from app.shell.run_config_controller import RunConfigController
 from app.shell.run_configurations_dialog import RunConfigurationsDialog, RunConfigurationsInitial, RunConfigurationsResult
@@ -24,8 +25,70 @@ from app.shell.run_launch.debug_targets import (
     debug_target_from_mapping,
 )
 from app.shell.run_launch.run_configuration_workflow import RunConfigurationWorkflow, proposed_new_config_name
-from app.shell.run_with_arguments_dialog import RunInvocation, RunWithArgumentsDialog, RunWithArgumentsInitial
+from app.shell.run_with_arguments_dialog import (
+    RunInvocation,
+    RunWithArgumentsDialog,
+    RunWithArgumentsInitial,
+    RunWithArgumentsResult,
+)
+from app.shell.run_arguments_helpers import normalize_entry_path_for_project
 from app.support.preflight import build_run_preflight
+
+
+def _collect_project_entry_file_choices(project_root: str | None) -> tuple[str, ...]:
+    if project_root is None:
+        return ()
+    root = Path(project_root).expanduser().resolve()
+    return tuple(
+        sorted(
+            candidate.relative_to(root).as_posix()
+            for candidate in iter_python_files(root)
+            if candidate.is_file()
+        )
+    )
+
+
+def _resolve_run_with_arguments_dialog_result(
+    result: RunWithArgumentsResult,
+) -> tuple[RunInvocation | None, bool]:
+    if result.open_configurations:
+        return None, True
+    return result.invocation, False
+
+
+def _build_run_with_arguments_initial(
+    host: RunLaunchWorkflowHost,
+    *,
+    entry_file: str,
+    argv: Sequence[str],
+    working_directory: str | None,
+    env_overrides: Mapping[str, str],
+) -> RunWithArgumentsInitial:
+    loaded_project = host.loaded_project()
+    project_root: str | None = None
+    named_configurations: tuple[RunConfiguration, ...] = ()
+    entry_choices: tuple[str, ...] = ()
+
+    if loaded_project is not None:
+        project_root = loaded_project.project_root
+        named_configurations = tuple(host.run_config_controller().load_configs(loaded_project))
+        entry_choices = _collect_project_entry_file_choices(project_root)
+
+    normalized_entry = normalize_entry_path_for_project(
+        entry_file,
+        project_root=project_root,
+    )
+
+    return RunWithArgumentsInitial(
+        entry_file=normalized_entry or entry_file,
+        argv=argv,
+        working_directory=working_directory,
+        env_overrides=env_overrides,
+        recent_argv_history=tuple(host.settings_service().load_recent_argv_history()),
+        project_root=project_root,
+        entry_file_choices=entry_choices,
+        named_configurations=named_configurations,
+    )
 
 # Re-export debug target types for backward-compatible imports.
 __all__ = [
@@ -249,27 +312,28 @@ class RunLaunchWorkflow:
         default_entry = ""
         default_argv: tuple[str, ...] = ()
         default_env: Mapping[str, str] = {}
-        project_root: str | None = None
         if loaded_project is not None:
             default_entry = (loaded_project.metadata.default_entry or "").strip()
             default_argv = tuple(loaded_project.metadata.default_argv)
             default_env = dict(loaded_project.metadata.env_overrides)
-            project_root = loaded_project.project_root
 
         initial_entry = active_file_path or default_entry
-        initial = RunWithArgumentsInitial(
+        initial = _build_run_with_arguments_initial(
+            self._host,
             entry_file=initial_entry,
             argv=default_argv,
             working_directory=None,
             env_overrides=default_env,
-            recent_argv_history=tuple(self._host.settings_service().load_recent_argv_history()),
-            project_root=project_root,
         )
-        invocation = RunWithArgumentsDialog.run_dialog(
+        result = RunWithArgumentsDialog.run_dialog(
             self._host.dialog_parent(),
             initial=initial,
             tokens=self._host.resolve_theme_tokens(),
+            on_manage_configurations=self.handle_run_with_configuration_action,
         )
+        invocation, open_configurations = _resolve_run_with_arguments_dialog_result(result)
+        if open_configurations:
+            return self.handle_run_with_configuration_action()
         if invocation is None:
             return False
         if invocation.argv_text:
@@ -351,25 +415,27 @@ class RunLaunchWorkflow:
         if entry_path.suffix.lower() != ".py":
             return False
         loaded_project = self._host.loaded_project()
-        project_root = loaded_project.project_root if loaded_project is not None else None
         default_env: Mapping[str, str] = (
             dict(loaded_project.metadata.env_overrides)
             if loaded_project is not None
             else {}
         )
-        initial = RunWithArgumentsInitial(
+        initial = _build_run_with_arguments_initial(
+            self._host,
             entry_file=str(entry_path),
             argv=(),
             working_directory=None,
             env_overrides=default_env,
-            recent_argv_history=tuple(self._host.settings_service().load_recent_argv_history()),
-            project_root=project_root,
         )
-        invocation = RunWithArgumentsDialog.run_dialog(
+        result = RunWithArgumentsDialog.run_dialog(
             self._host.dialog_parent(),
             initial=initial,
             tokens=self._host.resolve_theme_tokens(),
+            on_manage_configurations=self.handle_run_with_configuration_action,
         )
+        invocation, open_configurations = _resolve_run_with_arguments_dialog_result(result)
+        if open_configurations:
+            return self.handle_run_with_configuration_action()
         if invocation is None:
             return False
         if invocation.argv_text:

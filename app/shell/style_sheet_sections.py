@@ -32,6 +32,7 @@ from app.shell.style_sheet_sections_dialogs import (
     shell_section_draft_recovery_dialog,
     shell_section_help_dialog,
     shell_section_package_wizard,
+    shell_section_run_dialog,
     shell_section_runtime_center_dialog,
     shell_section_unsaved_changes_dialog,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "shell_section_problems_panel",
     "shell_section_quick_open",
     "shell_section_run_log_panel",
+    "shell_section_run_dialog",
     "shell_section_runtime_center_dialog",
     "shell_section_search_sidebar",
     "shell_section_tab_bar",

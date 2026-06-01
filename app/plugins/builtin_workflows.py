@@ -111,6 +111,7 @@ def _run_builtin_diagnostics_query(request: Mapping[str, Any]) -> list[CodeDiagn
         if isinstance(known_runtime_modules_payload, list)
         else None
     )
+    project_metadata = _optional_project_metadata(request)
     return analyze_python_file(
         _require_string(request, "file_path"),
         project_root=_optional_string(request, "project_root"),
@@ -119,6 +120,7 @@ def _run_builtin_diagnostics_query(request: Mapping[str, Any]) -> list[CodeDiagn
         allow_runtime_import_probe=bool(request.get("allow_runtime_import_probe", False)),
         selected_linter=_optional_string(request, "selected_linter") or constants.LINTER_PROVIDER_DEFAULT,
         lint_rule_overrides=_mapping_value(request, "lint_rule_overrides"),
+        project_metadata=project_metadata,
     )
 
 
@@ -369,6 +371,28 @@ def _parse_project_metadata(raw_value: Any) -> ProjectMetadata | None:
         exclude_patterns=[
             item for item in raw_value.get("exclude_patterns", []) if isinstance(item, str)
         ] if isinstance(raw_value.get("exclude_patterns", []), list) else [],
+        source_roots=[
+            item.strip()
+            for item in raw_value.get("source_roots", [])
+            if isinstance(item, str) and item.strip()
+        ] if isinstance(raw_value.get("source_roots", []), list) else [],
+    )
+
+
+def _optional_project_metadata(payload: Mapping[str, Any]) -> ProjectMetadata | None:
+    raw_metadata = payload.get("project_metadata")
+    if raw_metadata is not None:
+        return _parse_project_metadata(raw_metadata)
+    source_roots = payload.get("source_roots")
+    if not isinstance(source_roots, list):
+        return None
+    normalized_roots = [item.strip() for item in source_roots if isinstance(item, str) and item.strip()]
+    if not normalized_roots:
+        return None
+    return ProjectMetadata(
+        schema_version=2,
+        name="project",
+        source_roots=normalized_roots,
     )
 
 

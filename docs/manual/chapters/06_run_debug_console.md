@@ -26,13 +26,13 @@ Code Studio runs do not have a terminal, but `sys.argv` and environment variable
 
 ### One-off: Run With Arguments…
 
-`Run` → `Run With Arguments…` opens a small dialog that collects an entry file, an **Arguments** string, a **Working directory**, and **Environment overrides** (comma-separated `KEY=VALUE`). The dialog parses the argument string with shell-style quoting, so `--config "/tmp/a b/c.toml" --verbose` parses into three argv tokens with the path's space preserved. A "Recent…" dropdown next to the field remembers the last 10 argument strings across projects.
+`Run` → `Run With Arguments…` (shortcut: `Ctrl+Shift+A`) opens a dialog with a live command preview, an entry file picker, an **Arguments** field, and an expandable **Advanced** section for working directory and environment overrides. Arguments use shell-style quoting, so `--config "/tmp/a b/c.toml" --verbose` parses into three argv tokens with the path's space preserved. A **Recent…** dropdown remembers the last 10 argument strings across projects. Environment overrides are edited through a **Browse…** button that opens a name/value table editor.
 
 The dialog runs the configuration once and does **not** modify `cbcs/project.json`. Click **Save as Configuration…** instead of **Run** to promote the values into a named entry through the Run Configurations editor.
 
 ### Persistent: Run Configurations…
 
-`Run` → `Run Configurations…` opens a two-pane editor. The left pane lists named configurations stored in `cbcs/project.json` under `run_configs`; the right pane edits the selected configuration's Name, Entry file, Arguments, Working directory, and Environment overrides. Use the buttons under the list to **Add**, **Duplicate**, or **Delete** entries. **Save** writes the full edited list back to `cbcs/project.json` in one commit.
+`Run` → `Run Configurations…` opens a two-pane editor. The left pane lists named configurations stored in `cbcs/project.json` under `run_configs`; the right pane edits the selected configuration's Name, Entry file, Arguments, Working directory, and Environment overrides (via the same table editor as Run With Arguments). Use the buttons under the list to **Add**, **Duplicate**, or **Delete** entries. **Save** writes the full edited list back to `cbcs/project.json` in one commit.
 
 The top of the dialog also exposes a **Default arguments for Run Project** field, which edits the project's `default_argv` — the argv that F5 uses when no named configuration is active.
 
