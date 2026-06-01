@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,6 +12,14 @@ from app.core import constants
 from app.persistence.settings_store import load_json_object, save_json_object
 
 SESSION_SCHEMA_VERSION = 1
+
+
+class TreeRestorePolicy(str, Enum):
+    """How to restore project-tree explorer state after session load."""
+
+    RESTORE_SAVED = "restore_saved"
+    REVEAL_ACTIVE_FILE = "reveal_active_file"
+    SKIP = "skip"
 
 
 @dataclass(frozen=True)
@@ -58,12 +67,14 @@ class SessionState:
     open_files: tuple[SessionFileState, ...] = ()
     active_file_path: str | None = None
     project_tree: SessionTreeState | None = None
+    tree_restore_policy: TreeRestorePolicy = TreeRestorePolicy.REVEAL_ACTIVE_FILE
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "schema_version": SESSION_SCHEMA_VERSION,
             "open_files": [file_state.to_dict() for file_state in self.open_files],
             "active_file_path": self.active_file_path,
+            "tree_restore_policy": self.tree_restore_policy.value,
         }
         if self.project_tree is not None:
             payload["project_tree"] = self.project_tree.to_dict()
@@ -95,11 +106,19 @@ def parse_session_state(payload: Mapping[str, Any]) -> SessionState:
     active_file_path = payload.get("active_file_path")
     if not isinstance(active_file_path, str) or active_file_path not in seen_paths:
         active_file_path = None
-    project_tree = _parse_session_tree_state(payload.get("project_tree"))
+    raw_project_tree = payload.get("project_tree")
+    project_tree = _parse_session_tree_state(raw_project_tree)
+    tree_restore_policy = _parse_tree_restore_policy(
+        payload.get("tree_restore_policy"),
+        has_saved_tree=project_tree is not None,
+    )
+    if project_tree is None and tree_restore_policy == TreeRestorePolicy.RESTORE_SAVED:
+        tree_restore_policy = TreeRestorePolicy.REVEAL_ACTIVE_FILE
     return SessionState(
         open_files=tuple(open_files),
         active_file_path=active_file_path,
         project_tree=project_tree,
+        tree_restore_policy=tree_restore_policy,
     )
 
 
@@ -165,6 +184,16 @@ def _parse_non_negative_int(raw_value: Any, *, default: int) -> int:
     if not isinstance(raw_value, int):
         return default
     return max(0, raw_value)
+
+
+def _parse_tree_restore_policy(raw_value: Any, *, has_saved_tree: bool) -> TreeRestorePolicy:
+    if isinstance(raw_value, str):
+        for policy in TreeRestorePolicy:
+            if policy.value == raw_value:
+                return policy
+    if has_saved_tree:
+        return TreeRestorePolicy.RESTORE_SAVED
+    return TreeRestorePolicy.REVEAL_ACTIVE_FILE
 
 
 def _parse_session_tree_state(raw_value: Any) -> SessionTreeState | None:

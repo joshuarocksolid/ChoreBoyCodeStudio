@@ -90,7 +90,8 @@ def can_submit_run_invocation(
     *,
     entry_file: str,
     argv_text: str,
-    env_text: str,
+    env_text: str = "",
+    env_overrides: Mapping[str, str] | None = None,
 ) -> tuple[bool, str | None]:
     """Return whether Run/Save actions should be enabled and an optional error message."""
 
@@ -101,11 +102,47 @@ def can_submit_run_invocation(
     if argv_error is not None:
         return False, argv_error
 
+    if env_overrides is not None:
+        return True, None
+
     _env_mapping, env_error = try_parse_env_text(env_text)
     if env_error is not None:
         return False, env_error
 
     return True, None
+
+
+def collect_run_invocation_fields(
+    *,
+    entry_file: str,
+    argv_text: str,
+    env_overrides: Mapping[str, str],
+    working_directory: str | None,
+) -> tuple[dict[str, object] | None, str | None]:
+    """Validate run fields for live preview and submit; returns field dict or error message."""
+
+    if not (entry_file or "").strip():
+        return None, "Entry file is required."
+
+    argv_tokens, argv_error = try_parse_argv_text(argv_text)
+    if argv_error is not None:
+        return None, argv_error
+
+    can_submit, submit_error = can_submit_run_invocation(
+        entry_file=entry_file,
+        argv_text=argv_text,
+        env_overrides=env_overrides,
+    )
+    if not can_submit:
+        return None, submit_error
+
+    return {
+        "entry_file": entry_file.strip(),
+        "argv_tokens": argv_tokens or [],
+        "argv_text": argv_text.strip(),
+        "working_directory": (working_directory or "").strip() or None,
+        "env_overrides": dict(env_overrides),
+    }, None
 
 
 def join_argv_for_display(argv: Sequence[str]) -> str:

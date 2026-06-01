@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 import os
 from pathlib import Path
 
 from app.bootstrap.paths import project_manifest_path
-from app.core.models import LoadedProject, ProjectMetadata
+from app.core.models import LoadedProject
 from app.project.project_manifest import save_project_manifest
 
 VENDOR_DIRNAME = "vendor"
@@ -24,7 +25,7 @@ def maybe_persist_vendor_exclude(
     Idempotent: no-op when the manifest already lists exclude patterns or vendor
     is absent/small.
     """
-    if loaded_project.metadata.exclude_patterns:
+    if "vendor" in loaded_project.metadata.exclude_patterns:
         return loaded_project
 
     project_root = Path(loaded_project.project_root).expanduser().resolve()
@@ -36,19 +37,10 @@ def maybe_persist_vendor_exclude(
     if file_count <= LARGE_VENDOR_FILE_THRESHOLD:
         return loaded_project
 
-    updated_metadata = ProjectMetadata(
-        schema_version=loaded_project.metadata.schema_version,
-        project_id=loaded_project.metadata.project_id,
-        name=loaded_project.metadata.name,
-        default_entry=loaded_project.metadata.default_entry,
-        default_argv=list(loaded_project.metadata.default_argv),
-        working_directory=loaded_project.metadata.working_directory,
-        template=loaded_project.metadata.template,
-        run_configs=list(loaded_project.metadata.run_configs),
-        env_overrides=dict(loaded_project.metadata.env_overrides),
-        project_notes=loaded_project.metadata.project_notes,
-        exclude_patterns=[VENDOR_DIRNAME],
-    )
+    patterns = list(loaded_project.metadata.exclude_patterns)
+    if VENDOR_DIRNAME not in patterns:
+        patterns.append(VENDOR_DIRNAME)
+    updated_metadata = replace(loaded_project.metadata, exclude_patterns=patterns)
     manifest_path = project_manifest_path(project_root)
     save_project_manifest(manifest_path, updated_metadata)
     if logger is not None:

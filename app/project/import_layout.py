@@ -4,13 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence, TypeVar
 
-from app.bootstrap.paths import PathInput
+from app.bootstrap.paths import PathInput, project_manifest_path
 from app.bootstrap.toml_io import read_toml_mapping
 from app.core.models import ProjectMetadata
 
 _RESERVED_ROOT_NAMES = frozenset({"vendor", "cbcs"})
+
+_T = TypeVar("_T")
+
+
+def _ordered_unique(values: Sequence[_T], *, key: Callable[[_T], str]) -> tuple[_T, ...]:
+    """Preserve order while deduplicating by a resolved string key."""
+    seen: set[str] = set()
+    ordered: list[_T] = []
+    for value in values:
+        normalized = key(value)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(value)
+    return tuple(ordered)
 
 
 @dataclass(frozen=True)
@@ -34,25 +49,20 @@ class ProjectImportLayout:
     @property
     def runtime_sys_path_entries(self) -> tuple[str, ...]:
         """Paths to prepend for runner/Jedi (project root + source roots, no vendor duplicate)."""
-        entries: list[str] = [str(self.project_root)]
-        for root in self.source_roots:
-            text = str(root)
-            if text not in entries:
-                entries.append(text)
-        return tuple(entries)
+        unique_paths = _ordered_unique(
+            (self.project_root, *self.source_roots),
+            key=lambda path: str(path.resolve()),
+        )
+        return tuple(str(path) for path in unique_paths)
 
     @property
     def jedi_added_sys_path(self) -> tuple[str, ...]:
         """Extra sys.path entries for Jedi (source roots + vendor)."""
-        entries: list[str] = []
-        for root in self.source_roots:
-            text = str(root)
-            if text not in entries:
-                entries.append(text)
-        vendor_text = str(self.vendor_root)
-        if vendor_text not in entries:
-            entries.append(vendor_text)
-        return tuple(entries)
+        unique_paths = _ordered_unique(
+            (*self.source_roots, self.vendor_root),
+            key=lambda path: str(path.resolve()),
+        )
+        return tuple(str(path) for path in unique_paths)
 
 
 def resolve_configured_src_paths(
@@ -129,6 +139,21 @@ def normalize_source_root_entries(
     return tuple(normalized)
 
 
+def load_project_import_layout(project_root: PathInput) -> ProjectImportLayout:
+    """Load manifest (when present) and resolve the canonical import layout."""
+    from app.project.project_manifest import load_project_manifest
+
+    root = Path(project_root).expanduser().resolve()
+    metadata: ProjectMetadata | None = None
+    manifest = project_manifest_path(root)
+    if manifest.is_file():
+        try:
+            metadata = load_project_manifest(manifest)
+        except Exception:
+            metadata = None
+    return resolve_project_import_layout(root, metadata)
+
+
 def resolve_project_import_layout(
     project_root: PathInput,
     metadata: ProjectMetadata | None = None,
@@ -137,7 +162,7 @@ def resolve_project_import_layout(
     root = Path(project_root).expanduser().resolve()
     vendor_root = root / "vendor"
 
-    if metadata is not None and metadata.source_roots:
+    if metadata is not None:
         configured = resolve_configured_src_paths(
             root,
             list(metadata.source_roots),
@@ -217,12 +242,15 @@ def _strip_source_root_prefix(layout: ProjectImportLayout, dotted_module: str) -
 def discover_canonical_project_modules(
     layout: ProjectImportLayout,
     *,
-    iter_python_files,
+    iter_python_files: Callable[[Path], Any] | None = None,
 ) -> set[str]:
     """Collect importable module names using canonical naming."""
+    from app.project.file_inventory import iter_python_files as default_iter_python_files
+
+    iterator = iter_python_files or default_iter_python_files
     discovered: set[str] = set()
-    for file_path in iter_python_files(layout.project_root):
-        module_name = module_name_for_file(layout, file_path)
+    for file_path in iterator(layout.project_root):
+        module_name = module_name_for_file(layout, Path(file_path))
         if module_name:
             discovered.add(module_name)
     return discovered
@@ -236,7 +264,7 @@ def module_path_prefix_exists(layout: ProjectImportLayout, module_name: str) -> 
     return False
 
 
-def _module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
+def module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
     if not base.exists():
         return False
     probe_base = base
@@ -245,6 +273,10 @@ def _module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
             return True
         probe_base = probe_base / part
     return False
+
+
+def _module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
+    return module_path_prefix_exists_at_base(base, module_name)
 
 
 def resolve_import_at_base(base: Path, module_name: str) -> str | None:
@@ -265,13 +297,9 @@ def resolve_import_at_base(base: Path, module_name: str) -> str | None:
 
 def detect_suggested_source_root(project_root: PathInput) -> str | None:
     """Return a relative source-root path worth offering during project import."""
-    root = Path(project_root).expanduser().resolve()
-    auto_roots = _auto_detect_src_root(root)
-    if auto_roots:
-        return auto_roots[0].relative_to(root).as_posix()
-    pyproject_roots = _read_pyproject_src_paths(root)
-    if pyproject_roots:
-        return pyproject_roots[0].relative_to(root).as_posix()
+    layout = resolve_project_import_layout(project_root, metadata=None)
+    if layout.source_roots:
+        return layout.source_roots[0].relative_to(layout.project_root).as_posix()
     return None
 
 

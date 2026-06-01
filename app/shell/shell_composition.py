@@ -116,7 +116,9 @@ class MainWindowSettingsApplyHost:
         self._window._ui_font_weight = ui_font_weight
 
     def set_dark_chrome_palette(self, dark_chrome_palette: str) -> None:
-        self._window._dark_chrome_palette = dark_chrome_palette
+        from app.shell.settings_models import resolve_dark_chrome_palette
+
+        self._window._dark_chrome_palette = resolve_dark_chrome_palette(dark_chrome_palette)
 
     def apply_theme_mode(self, theme_mode: str) -> None:
         self._window._handle_set_theme(theme_mode)

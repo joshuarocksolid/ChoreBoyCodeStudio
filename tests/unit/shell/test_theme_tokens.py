@@ -112,6 +112,22 @@ class TestTokensFromPalette:
         assert standard.panel_bg != neutral.panel_bg
         assert neutral.panel_bg == "#303030"
         assert standard.text_muted == neutral.text_muted
+        for field_name in (
+            "text_primary",
+            "text_muted",
+            "accent",
+            "gutter_text",
+            "icon_primary",
+            "icon_muted",
+            "debug_paused_color",
+            "debug_running_color",
+            "diag_error_color",
+            "diag_warning_color",
+            "diag_info_color",
+            "test_passed_color",
+            "popup_shadow",
+        ):
+            assert getattr(standard, field_name) == getattr(neutral, field_name), field_name
 
     def test_neutral_gray_ignored_for_light_and_high_contrast(self) -> None:
         light = tokens_from_palette(

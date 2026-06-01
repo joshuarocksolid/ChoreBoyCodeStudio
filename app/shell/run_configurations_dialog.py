@@ -36,7 +36,7 @@ from app.shell.dialog_chrome import (
 from app.shell.run_arguments_editor import RunArgumentsEditorRow
 from app.shell.run_config_controller import tokenize_argv_text
 from app.shell.run_env_overrides_row import RunEnvOverridesRow
-from app.shell.run_with_arguments_dialog import _join_argv_for_display
+from app.shell.run_arguments_helpers import join_argv_for_display
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 

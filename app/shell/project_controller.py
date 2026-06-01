@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from logging import Logger
 from typing import Callable
 
@@ -28,6 +29,7 @@ class ProjectController:
         self._state_root = state_root
         self._logger = logger
         self._dispatch_to_main_thread = dispatch_to_main_thread
+        self._default_async_open = os.environ.get("CBCS_SYNC_PROJECT_OPEN") != "1"
         self._open_generation = 0
         self._active_open_worker: ProjectOpenWorker | None = None
 
@@ -40,8 +42,10 @@ class ProjectController:
         on_error: Callable[[str, str], None],
         on_loading: Callable[[], None] | None = None,
         exclude_patterns: list[str] | None = None,
-        async_open: bool = True,
+        async_open: bool | None = None,
     ) -> bool:
+        if async_open is None:
+            async_open = self._default_async_open
         if not confirm_proceed("opening another project"):
             return False
 
@@ -127,6 +131,9 @@ class ProjectController:
             if generation != self._open_generation:
                 return
             self._active_open_worker = None
+            from app.project.recent_projects import remember_recent_project
+
+            remember_recent_project(loaded_project.project_root, state_root=self._state_root)
             on_loaded(loaded_project)
 
         self._dispatch(apply)

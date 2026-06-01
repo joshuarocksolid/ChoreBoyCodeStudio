@@ -214,9 +214,13 @@ from app.shell.menus import MenuStubRegistry
 from app.shell.project_controller import ProjectController
 from app.shell.project_load_host import MainWindowProjectLoadHost
 from app.shell.project_load_workflow import ProjectLoadWorkflow
+from app.shell.project_rescan_workflow import MainWindowProjectRescanHost, ProjectRescanWorkflow
+from app.shell.project_tree_utils import effective_excludes_for, filter_tree_signature_entries
+from app.shell.source_root_workflow import build_source_root_workflow
 from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.project_tree_presenter import ProjectTreePresenter as ShellProjectTreePresenter
+from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
 from app.shell.problems_controller import ProblemsController
 from app.shell.python_style_workflow import PythonStyleWorkflow
 from app.shell.repl_session_manager import ReplSessionManager
@@ -261,27 +265,7 @@ from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
 
-TREE_ROLE_ABSOLUTE_PATH = 256
-TREE_ROLE_IS_DIRECTORY = 257
-TREE_ROLE_RELATIVE_PATH = 258
 EVENT_QUEUE_BATCH_LIMIT = 200
-
-# Run/debug sessions write log and manifest files under cbcs/runs/ and cbcs/logs/
-# every time the user starts a session. Those churn must NOT trigger the project
-# reload cascade (which clears the file tree, restarts the symbol indexer, etc.),
-# so they are excluded from the structure signature used by external-change polling.
-PROJECT_TREE_SIGNATURE_IGNORED_PREFIXES: tuple[str, ...] = (
-    f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_RUNS_DIRNAME}/",
-    f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_LOGS_DIRNAME}/",
-)
-
-
-def _filter_tree_signature_entries(relative_paths: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(
-        path for path in relative_paths
-        if not any(path.startswith(prefix) for prefix in PROJECT_TREE_SIGNATURE_IGNORED_PREFIXES)
-    )
-
 
 ShellEventT = TypeVar("ShellEventT")
 ReplEvent = tuple[str, object, object]
@@ -313,12 +297,7 @@ class MainWindow(QMainWindow):
         self._tree_folder_icon = folder_icon("#3366FF")
         self._tree_folder_open_icon = folder_open_icon("#3366FF")
         self._tree_entrypoint_icon = icon_run("#16A34A")
-        self._project_tree_presenter = ShellProjectTreePresenter(
-            self,
-            absolute_path_role=TREE_ROLE_ABSOLUTE_PATH,
-            is_directory_role=TREE_ROLE_IS_DIRECTORY,
-            relative_path_role=TREE_ROLE_RELATIVE_PATH,
-        )
+        self._project_tree_presenter = ShellProjectTreePresenter(self)
         self._editor_tabs_widget: QTabWidget | None = None
         self._editor_tabs_coordinator = EditorTabsCoordinator(self)
         self._activity_bar: ActivityBar | None = None
@@ -511,7 +490,6 @@ class MainWindow(QMainWindow):
         self._debug_execution_editor: CodeEditorWidget | None = None
         self._active_symbol_index_worker: SymbolIndexWorker | None = None
         self._is_shutting_down = False
-        self._suppress_tree_reveal = False
         self._symbol_index_generation = 0
         self._latest_health_report: ProjectHealthReport | None = None
         self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
@@ -568,6 +546,12 @@ class MainWindow(QMainWindow):
             latest_package_issue_report=lambda: self._latest_package_issue_report,
             set_latest_package_issue_report=lambda report: setattr(self, "_latest_package_issue_report", report),
             set_latest_runtime_issue_report=lambda report: setattr(self, "_latest_runtime_issue_report", report),
+            set_latest_import_issue_report=lambda report: setattr(self, "_latest_import_issue_report", report),
+            set_latest_run_issue_report=lambda report: setattr(self, "_latest_run_issue_report", report),
+            clear_active_run_config=lambda: (
+                setattr(self, "_active_named_run_config_name", None),
+                setattr(self, "_latest_run_issue_ids", ()),
+            ),
             build_runtime_issue_report=self._build_runtime_issue_report,
             open_runtime_center_dialog=lambda **kwargs: self._open_runtime_center_dialog(**kwargs),
             active_run_session_log_path=lambda: self._run_session_controller.session_store.log_path,
@@ -595,10 +579,12 @@ class MainWindow(QMainWindow):
             ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
             breakpoint_store=self._debug_control_workflow.breakpoint_store,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
-            capture_tree_state=lambda: self._get_project_tree_presenter().capture_full_state(),
-            restore_tree_state=lambda tree_state: self._get_project_tree_presenter().restore_full_state(tree_state),
+            capture_tree_state=lambda: self._get_project_tree_presenter().capture_view_state(),
+            restore_tree_state=lambda tree_state: self._get_project_tree_presenter().restore_view_state(tree_state),
             reveal_tree_path=lambda file_path: self._get_project_tree_presenter().reveal_path(file_path),
-            set_tree_reveal_suppressed=lambda suppressed: setattr(self, "_suppress_tree_reveal", suppressed),
+            set_tree_reveal_suppressed=lambda suppressed: self._get_project_tree_presenter().set_reveal_suppressed(
+                suppressed
+            ),
         )
         self._diagnostics_orchestrator = DiagnosticsOrchestrator(
             diagnostics_enabled=lambda: self._diagnostics_enabled,
@@ -637,6 +623,8 @@ class MainWindow(QMainWindow):
             dispatch_to_main_thread=self._dispatch_to_main_thread,
         )
         self._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(self))
+        self._project_rescan_workflow = ProjectRescanWorkflow(MainWindowProjectRescanHost(self))
+        self._source_root_workflow = build_source_root_workflow(self)
         self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
         self._project_tree_action_coordinator = ProjectTreeActionCoordinator(
             project_tree_controller=self._project_tree_controller,
@@ -2076,7 +2064,6 @@ class MainWindow(QMainWindow):
 
     def _open_project_by_path(self, project_root: str) -> bool:
         started_at = time.perf_counter()
-        async_open = os.environ.get("CBCS_SYNC_PROJECT_OPEN") != "1"
         return self._project_controller.open_project_by_path(
             project_root,
             confirm_proceed=self._save_workflow.confirm_proceed_with_unsaved_changes,
@@ -2084,7 +2071,6 @@ class MainWindow(QMainWindow):
             on_loaded=lambda loaded_project: self._apply_loaded_project(loaded_project, started_at=started_at),
             on_error=self._show_open_project_error,
             exclude_patterns=self._load_effective_exclude_patterns(project_root),
-            async_open=async_open,
         )
 
     def _load_effective_exclude_patterns(self, project_root: str | None = None) -> list[str]:
@@ -2136,16 +2122,7 @@ class MainWindow(QMainWindow):
             self._logger.warning("Failed to persist last project path: %s", exc)
 
     def _get_project_tree_presenter(self) -> ShellProjectTreePresenter:
-        presenter = getattr(self, "_project_tree_presenter", None)
-        if presenter is None:
-            presenter = ShellProjectTreePresenter(
-                self,
-                absolute_path_role=TREE_ROLE_ABSOLUTE_PATH,
-                is_directory_role=TREE_ROLE_IS_DIRECTORY,
-                relative_path_role=TREE_ROLE_RELATIVE_PATH,
-            )
-            self._project_tree_presenter = presenter
-        return presenter
+        return self._project_tree_presenter
 
     def _get_editor_tabs_coordinator(self) -> EditorTabsCoordinator:
         coordinator = getattr(self, "_editor_tabs_coordinator", None)
@@ -2261,61 +2238,13 @@ class MainWindow(QMainWindow):
         return str(selected)
 
     def _handle_tree_mark_source_root(self, relative_path: str) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            return
-        from app.project.project_manifest import append_project_source_root
-
-        try:
-            updated_metadata = append_project_source_root(
-                loaded_project.manifest_path,
-                relative_path,
-                metadata_if_absent=None
-                if loaded_project.manifest_materialized
-                else loaded_project.metadata,
-            )
-        except (ProjectManifestValidationError, ValueError) as exc:
-            QMessageBox.warning(self, "Sources Root", str(exc))
-            return
-        self._loaded_project = replace(loaded_project, metadata=updated_metadata, manifest_materialized=True)
-        self._reload_current_project()
+        self._source_root_workflow.mark_source_root(relative_path)
 
     def _handle_tree_unmark_source_root(self, relative_path: str) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            return
-        from app.project.project_manifest import remove_project_source_root
-
-        try:
-            updated_metadata = remove_project_source_root(loaded_project.manifest_path, relative_path)
-        except (ProjectManifestValidationError, ValueError) as exc:
-            QMessageBox.warning(self, "Sources Root", str(exc))
-            return
-        self._loaded_project = replace(loaded_project, metadata=updated_metadata)
-        self._reload_current_project()
+        self._source_root_workflow.unmark_source_root(relative_path)
 
     def _maybe_prompt_import_source_roots(self) -> None:
-        loaded_project = self._loaded_project
-        if loaded_project is None or loaded_project.metadata.source_roots:
-            return
-        from app.project.import_layout import detect_suggested_source_root
-
-        suggested = detect_suggested_source_root(loaded_project.project_root)
-        if suggested is None:
-            return
-        confirm = QMessageBox.question(
-            self,
-            "Import Roots",
-            (
-                f"This project looks like it uses a `{suggested}/` layout. "
-                f"Mark `{suggested}` as a source root so local imports resolve correctly?"
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if confirm != QMessageBox.Yes:
-            return
-        self._handle_tree_mark_source_root(suggested)
+        self._source_root_workflow.maybe_prompt_import_source_roots()
 
     def _set_project_entry_point(self, relative_path: str) -> bool:
         loaded_project = self._loaded_project
@@ -3257,18 +3186,7 @@ class MainWindow(QMainWindow):
 
     def _selected_tree_directory(self) -> str | None:
         """Return the directory path for the selected tree item, or the project root."""
-        if self._loaded_project is None:
-            return None
-        if self._project_tree_widget is None:
-            return self._loaded_project.project_root
-        current = self._project_tree_widget.currentItem()
-        if current is None:
-            return self._loaded_project.project_root
-        abs_path = str(current.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-        is_dir = bool(current.data(0, TREE_ROLE_IS_DIRECTORY))
-        if not abs_path:
-            return self._loaded_project.project_root
-        return abs_path if is_dir else str(Path(abs_path).parent)
+        return self._get_project_tree_presenter().selected_destination_directory()
 
     def _handle_explorer_new_file(self) -> None:
         target = self._selected_tree_directory()
@@ -3281,25 +3199,17 @@ class MainWindow(QMainWindow):
             self._handle_tree_new_folder(target)
 
     def _handle_tree_item_expanded(self, item: QTreeWidgetItem) -> None:
-        self._get_project_tree_presenter().handle_item_expanded(item)
+        presenter = self._get_project_tree_presenter()
+        presenter.handle_item_expanded(item)
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
-            item.setIcon(0, self._tree_folder_open_icon)
+            presenter.set_folder_icon(item, expanded=True)
 
     def _handle_tree_item_collapsed(self, item: QTreeWidgetItem) -> None:
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
-            item.setIcon(0, self._tree_folder_icon)
+            self._get_project_tree_presenter().set_folder_icon(item, expanded=False)
 
     def _populate_project_tree(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
         self._get_project_tree_presenter().populate(loaded_project, preserve_state=preserve_state)
-
-    def _capture_project_tree_state(self) -> tuple[set[str], set[str]]:
-        return self._get_project_tree_presenter().capture_state()
-
-    def _restore_project_tree_state(self, *, expanded_paths: set[str], selected_paths: set[str]) -> None:
-        self._get_project_tree_presenter().restore_state(
-            expanded_paths=expanded_paths,
-            selected_paths=selected_paths,
-        )
 
     def _iter_project_tree_items(self) -> list[QTreeWidgetItem]:
         return self._get_project_tree_presenter().iter_items()
@@ -3311,11 +3221,13 @@ class MainWindow(QMainWindow):
         return self._get_project_tree_presenter().build_tree_item(node)
 
     def _handle_project_tree_item_click(self, item: QTreeWidgetItem, _column: int) -> None:
-        if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
+        entry = self._get_project_tree_presenter().item_entry(item)
+        if entry is None:
             return
-        absolute_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-        if not absolute_path:
+        _, _, is_directory = entry
+        if is_directory:
             return
+        absolute_path = entry[0]
         if not self._editor_enable_preview:
             self._cancel_pending_project_tree_preview()
             self._editor_tab_factory.open_file_in_editor(absolute_path, preview=False)
@@ -3337,11 +3249,13 @@ class MainWindow(QMainWindow):
 
     def _handle_project_tree_item_activation(self, item: QTreeWidgetItem, _column: int) -> None:
         self._cancel_pending_project_tree_preview()
-        is_directory = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
-        absolute_path = item.data(0, TREE_ROLE_ABSOLUTE_PATH)
+        entry = self._get_project_tree_presenter().item_entry(item)
+        if entry is None:
+            return
+        absolute_path, _, is_directory = entry
         if is_directory or not absolute_path:
             return
-        self._editor_tab_factory.open_file_in_editor(str(absolute_path), preview=False)
+        self._editor_tab_factory.open_file_in_editor(absolute_path, preview=False)
 
     def _get_selected_tree_paths(self) -> list[tuple[str, str, bool]]:
         """Return (absolute_path, relative_path, is_directory) for each selected tree item."""
@@ -3540,54 +3454,10 @@ class MainWindow(QMainWindow):
         return selected_policy
 
     def _refresh_project_tree_from_disk(self) -> None:
-        if self._loaded_project is None:
-            return
-        self._loaded_project = open_project(
-            self._loaded_project.project_root,
-            exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
-        )
-        self._populate_project_tree(self._loaded_project, preserve_state=True)
-        if self._search_sidebar is not None:
-            self._search_sidebar.set_project_root(self._loaded_project.project_root)
-            self._search_sidebar.set_exclude_patterns(
-                compute_effective_excludes(
-                    self._load_effective_exclude_patterns(self._loaded_project.project_root),
-                    self._loaded_project.metadata.exclude_patterns,
-                )
-            )
-        self._project_tree_structure_signature = _filter_tree_signature_entries(
-            tuple(entry.relative_path for entry in self._loaded_project.entries)
-        )
+        self._project_rescan_workflow.rescan_from_disk()
 
     def _reload_current_project(self) -> None:
-        if self._loaded_project is None:
-            return
-        self._loaded_project = open_project(
-            self._loaded_project.project_root,
-            exclude_patterns=self._load_effective_exclude_patterns(self._loaded_project.project_root),
-        )
-        self._plugin_activation_workflow.reload()
-        self._refresh_python_tooling_status()
-        self._populate_project_tree(self._loaded_project, preserve_state=True)
-        if self._search_sidebar is not None:
-            self._search_sidebar.set_project_root(self._loaded_project.project_root)
-            self._search_sidebar.set_exclude_patterns(
-                compute_effective_excludes(
-                    self._load_effective_exclude_patterns(self._loaded_project.project_root),
-                    self._loaded_project.metadata.exclude_patterns,
-                )
-            )
-        self._project_tree_structure_signature = _filter_tree_signature_entries(
-            tuple(entry.relative_path for entry in self._loaded_project.entries)
-        )
-        effective_excludes = compute_effective_excludes(
-            self._load_effective_exclude_patterns(self._loaded_project.project_root),
-            self._loaded_project.metadata.exclude_patterns,
-        )
-        self._start_symbol_indexing(self._loaded_project.project_root, exclude_patterns=effective_excludes)
-        test_runner_workflow = getattr(self, "_test_runner_workflow", None)
-        if test_runner_workflow is not None:
-            test_runner_workflow.refresh_discovery()
+        self._project_rescan_workflow.rescan_from_disk(reload_plugins=True, reindex=True)
 
     def _open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
         if not self._editor_tab_factory.open_file_in_editor(file_path, preview=preview):
@@ -3823,8 +3693,7 @@ class MainWindow(QMainWindow):
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_refresh_timer.stop()
         self._refresh_outline_for_active_tab()
-        if not self._suppress_tree_reveal:
-            self._get_project_tree_presenter().reveal_path(tab_path)
+        self._get_project_tree_presenter().reveal_path(tab_path)
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:
@@ -4107,7 +3976,7 @@ class MainWindow(QMainWindow):
             loaded_project.project_root,
             exclude_patterns=effective_excludes,
         )
-        return _filter_tree_signature_entries(tuple(entry.relative_path for entry in entries))
+        return filter_tree_signature_entries(tuple(entry.relative_path for entry in entries))
 
 
 def _enable_auto_reindent_flat_python_paste_in_payload(payload: dict[str, Any]) -> dict[str, Any]:

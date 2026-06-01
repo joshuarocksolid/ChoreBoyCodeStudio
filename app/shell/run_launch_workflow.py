@@ -29,6 +29,7 @@ from app.shell.run_with_arguments_dialog import (
     RunInvocation,
     RunWithArgumentsDialog,
     RunWithArgumentsInitial,
+    RunWithArgumentsOutcomeKind,
     RunWithArgumentsResult,
 )
 from app.shell.run_arguments_helpers import normalize_entry_path_for_project
@@ -46,14 +47,6 @@ def _collect_project_entry_file_choices(project_root: str | None) -> tuple[str, 
             if candidate.is_file()
         )
     )
-
-
-def _resolve_run_with_arguments_dialog_result(
-    result: RunWithArgumentsResult,
-) -> tuple[RunInvocation | None, bool]:
-    if result.open_configurations:
-        return None, True
-    return result.invocation, False
 
 
 def _build_run_with_arguments_initial(
@@ -318,24 +311,37 @@ class RunLaunchWorkflow:
             default_env = dict(loaded_project.metadata.env_overrides)
 
         initial_entry = active_file_path or default_entry
-        initial = _build_run_with_arguments_initial(
-            self._host,
+        return self._prompt_run_with_arguments_and_launch(
             entry_file=initial_entry,
             argv=default_argv,
-            working_directory=None,
             env_overrides=default_env,
+        )
+
+    def _prompt_run_with_arguments_and_launch(
+        self,
+        *,
+        entry_file: str,
+        argv: Sequence[str],
+        env_overrides: Mapping[str, str],
+        working_directory: str | None = None,
+    ) -> bool:
+        initial = _build_run_with_arguments_initial(
+            self._host,
+            entry_file=entry_file,
+            argv=argv,
+            working_directory=working_directory,
+            env_overrides=env_overrides,
         )
         result = RunWithArgumentsDialog.run_dialog(
             self._host.dialog_parent(),
             initial=initial,
             tokens=self._host.resolve_theme_tokens(),
-            on_manage_configurations=self.handle_run_with_configuration_action,
         )
-        invocation, open_configurations = _resolve_run_with_arguments_dialog_result(result)
-        if open_configurations:
+        if result.outcome == RunWithArgumentsOutcomeKind.OPEN_CONFIGURATIONS:
             return self.handle_run_with_configuration_action()
-        if invocation is None:
+        if result.outcome != RunWithArgumentsOutcomeKind.RUN or result.invocation is None:
             return False
+        invocation = result.invocation
         if invocation.argv_text:
             self._host.settings_service().push_recent_argv_history(invocation.argv_text)
         return self.launch_ad_hoc_run_invocation(invocation)
@@ -420,27 +426,11 @@ class RunLaunchWorkflow:
             if loaded_project is not None
             else {}
         )
-        initial = _build_run_with_arguments_initial(
-            self._host,
+        return self._prompt_run_with_arguments_and_launch(
             entry_file=str(entry_path),
             argv=(),
-            working_directory=None,
             env_overrides=default_env,
         )
-        result = RunWithArgumentsDialog.run_dialog(
-            self._host.dialog_parent(),
-            initial=initial,
-            tokens=self._host.resolve_theme_tokens(),
-            on_manage_configurations=self.handle_run_with_configuration_action,
-        )
-        invocation, open_configurations = _resolve_run_with_arguments_dialog_result(result)
-        if open_configurations:
-            return self.handle_run_with_configuration_action()
-        if invocation is None:
-            return False
-        if invocation.argv_text:
-            self._host.settings_service().push_recent_argv_history(invocation.argv_text)
-        return self.launch_ad_hoc_run_invocation(invocation)
 
     def install_active_run_config_indicator(self) -> None:
         self._run_configuration.install_active_run_config_indicator()

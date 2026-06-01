@@ -168,27 +168,27 @@ def resolve_vendor_profile(
         return override
 
     if app_run_path is None:
-        return VENDOR_PY311_PROFILE
+        _eprint(
+            "Cannot resolve vendor profile: AppRun path is missing. "
+            f"Set {VENDOR_PROFILE_ENV_VAR}=py39|py311 or configure AppRun."
+        )
+        raise SystemExit(1)
 
     soabi = probe_apprun_soabi(app_run_path)
     if soabi is not None and soabi.startswith("cpython-39"):
         return VENDOR_PY39_PROFILE
     if soabi is not None and soabi.startswith("cpython-311"):
         return VENDOR_PY311_PROFILE
-    return VENDOR_PY311_PROFILE
+    _eprint(
+        "Cannot detect AppRun Python SOABI (probe failed or unsupported version). "
+        f"Set {VENDOR_PROFILE_ENV_VAR}=py39|py311 explicitly."
+    )
+    raise SystemExit(1)
 
 
 def resolve_artifacts_vendor_dir(artifacts_dir: Path, profile: str) -> Path:
-    """Return the artifacts vendor directory for a profile, with legacy fallback."""
-    preferred = artifacts_dir / vendor_dirname_for_profile(profile)
-    if preferred.is_dir():
-        return preferred.resolve()
-
-    legacy = artifacts_dir / LEGACY_VENDOR_DIRNAME
-    if legacy.is_dir() or legacy.is_symlink():
-        return legacy.resolve()
-
-    return preferred.resolve()
+    """Return the artifacts vendor directory for a profile."""
+    return (artifacts_dir / vendor_dirname_for_profile(profile)).resolve()
 
 
 def ensure_vendor_symlink(
@@ -216,7 +216,11 @@ def ensure_vendor_symlink(
             return
         repo_vendor.unlink()
     elif repo_vendor.exists():
-        return
+        _eprint(
+            f"Refusing to replace existing vendor directory: {repo_vendor}\n"
+            "Remove it or migrate with scripts/migrate_vendor_to_py311.sh, then retry."
+        )
+        raise SystemExit(1)
 
     repo_vendor.symlink_to(artifacts_vendor)
     print(f"Linked vendor profile '{profile}': {repo_vendor} -> {artifacts_vendor}")
@@ -332,8 +336,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     repo_root = resolve_repo_root()
     artifacts_dir = resolve_artifacts_dir(repo_root=repo_root)
     app_run_path = resolve_apprun_path(args.apprun)
-    ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=app_run_path)
     editor_boot_path = resolve_editor_boot_path(repo_root=repo_root)
+
+    if args.dry_run:
+        command = build_apprun_command(app_run_path=app_run_path, editor_boot_path=editor_boot_path)
+        _print_dry_run(command, app_run_path, editor_boot_path, args.foreground)
+        return 0
+
+    ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=app_run_path)
 
     if args.probe:
         profile = resolve_vendor_profile(app_run_path)
@@ -345,10 +355,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_treesitter_probe(app_run_path, repo_root)
 
     command = build_apprun_command(app_run_path=app_run_path, editor_boot_path=editor_boot_path)
-
-    if args.dry_run:
-        _print_dry_run(command, app_run_path, editor_boot_path, args.foreground)
-        return 0
 
     validation_code = _validate_launch_paths(app_run_path, editor_boot_path)
     if validation_code != 0:

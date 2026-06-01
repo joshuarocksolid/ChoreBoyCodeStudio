@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ctypes
 import importlib
 import importlib.machinery
 import importlib.util
@@ -224,14 +223,7 @@ def _write_memfd(shared_object_path: Path, label: str) -> str:
 
 
 def _memfd_create(name: str, flags: int) -> int:
-    """Call memfd_create, falling back to libc ctypes when os.memfd_create is missing."""
-    if hasattr(os, "memfd_create"):
-        return os.memfd_create(name, flags)
-    libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    libc.memfd_create.argtypes = [ctypes.c_char_p, ctypes.c_uint]
-    libc.memfd_create.restype = ctypes.c_int
-    fd = libc.memfd_create(name.encode("utf-8"), flags)
-    if fd < 0:
-        errno = ctypes.get_errno()
-        raise OSError(errno, os.strerror(errno), name)
-    return fd
+    """Call memfd_create via the canonical bootstrap shim."""
+    from app.bootstrap.memfd_shim import memfd_create
+
+    return memfd_create(name, flags)

@@ -36,12 +36,15 @@ class RuntimeSupportWorkflow:
         loaded_project: Callable[[], LoadedProject | None],
         startup_report: Callable[[], CapabilityProbeReport | None],
         latest_health_report: Callable[[], ProjectHealthReport | None],
-        set_latest_health_report: Callable[[ProjectHealthReport], None],
+        set_latest_health_report: Callable[[ProjectHealthReport | None], None],
         latest_import_issue_report: Callable[[], RuntimeIssueReport],
         latest_run_issue_report: Callable[[], RuntimeIssueReport],
         latest_package_issue_report: Callable[[], RuntimeIssueReport],
         set_latest_package_issue_report: Callable[[RuntimeIssueReport], None],
         set_latest_runtime_issue_report: Callable[[RuntimeIssueReport], None],
+        set_latest_import_issue_report: Callable[[RuntimeIssueReport], None],
+        set_latest_run_issue_report: Callable[[RuntimeIssueReport], None],
+        clear_active_run_config: Callable[[], None],
         build_runtime_issue_report: Callable[[], RuntimeIssueReport],
         open_runtime_center_dialog: Callable[..., None],
         active_run_session_log_path: Callable[[], str | None],
@@ -60,10 +63,22 @@ class RuntimeSupportWorkflow:
         self._latest_package_issue_report = latest_package_issue_report
         self._set_latest_package_issue_report = set_latest_package_issue_report
         self._set_latest_runtime_issue_report = set_latest_runtime_issue_report
+        self._set_latest_import_issue_report = set_latest_import_issue_report
+        self._set_latest_run_issue_report = set_latest_run_issue_report
+        self._clear_active_run_config = clear_active_run_config
         self._build_runtime_issue_report = build_runtime_issue_report
         self._open_runtime_center_dialog = open_runtime_center_dialog
         self._active_run_session_log_path = active_run_session_log_path
         self._known_runtime_modules = known_runtime_modules
+
+    def clear_issue_state_for_project_change(self) -> None:
+        """Reset runtime/import/run/package issue reports when switching projects."""
+        self._set_latest_health_report(None)
+        self._set_latest_import_issue_report(RuntimeIssueReport(workflow="import", issues=[]))
+        self._set_latest_run_issue_report(RuntimeIssueReport(workflow="run", issues=[]))
+        self._set_latest_package_issue_report(RuntimeIssueReport(workflow="package", issues=[]))
+        self._clear_active_run_config()
+        self._set_latest_runtime_issue_report(self._build_runtime_issue_report())
 
     def handle_project_health_check_action(self) -> None:
         loaded_project = self._loaded_project()

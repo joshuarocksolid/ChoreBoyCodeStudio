@@ -9,6 +9,7 @@ from app.shell.session_persistence import (
     SessionFileState,
     SessionState,
     SessionTreeState,
+    TreeRestorePolicy,
     load_session_file,
     parse_session_state,
     save_session_file,
@@ -177,7 +178,7 @@ def test_parse_session_state_filters_invalid_project_tree_paths(tmp_path) -> Non
     )
 
 
-def test_parse_session_state_missing_project_tree_defaults_to_none(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_parse_session_state_missing_project_tree_defaults_to_reveal_policy(tmp_path) -> None:  # type: ignore[no-untyped-def]
     file_one = tmp_path / "main.py"
     file_one.write_text("print('one')\n", encoding="utf-8")
     payload = {
@@ -188,3 +189,24 @@ def test_parse_session_state_missing_project_tree_defaults_to_none(tmp_path) -> 
     parsed = parse_session_state(payload)
 
     assert parsed.project_tree is None
+    assert parsed.tree_restore_policy == TreeRestorePolicy.REVEAL_ACTIVE_FILE
+
+
+def test_parse_session_state_saved_tree_uses_restore_saved_policy(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    file_one = tmp_path / "main.py"
+    file_one.write_text("print('one')\n", encoding="utf-8")
+    payload = {
+        "open_files": [{"file_path": str(file_one.resolve())}],
+        "active_file_path": str(file_one.resolve()),
+        "project_tree": {
+            "expanded_paths": ["src"],
+            "selected_paths": [],
+            "vertical_scroll": 0,
+            "horizontal_scroll": 0,
+        },
+    }
+
+    parsed = parse_session_state(payload)
+
+    assert parsed.tree_restore_policy == TreeRestorePolicy.RESTORE_SAVED
+    assert parsed.project_tree == SessionTreeState(expanded_paths=("src",))

@@ -32,10 +32,11 @@ from app.shell.style_sheet_sections_dialogs import (
     shell_section_draft_recovery_dialog,
     shell_section_help_dialog,
     shell_section_package_wizard,
-    shell_section_run_dialog,
     shell_section_runtime_center_dialog,
     shell_section_unsaved_changes_dialog,
 )
+
+from app.shell.style_sheet_sections_run_dialogs import shell_section_run_dialog
 
 from app.shell.style_sheet_sections_settings import (
     settings_section_dialog_and_tabs,

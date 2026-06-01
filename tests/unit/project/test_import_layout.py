@@ -45,6 +45,18 @@ def test_resolve_project_import_layout_skips_src_when_init_present(tmp_path: Pat
     assert layout.source_roots == ()
 
 
+def test_manifest_empty_source_roots_skips_auto_detect(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    src_dir = project_root / "src" / "pkg"
+    src_dir.mkdir(parents=True)
+    (src_dir / "__init__.py").write_text("", encoding="utf-8")
+    metadata = ProjectMetadata(schema_version=2, name="demo", source_roots=[])
+
+    layout = resolve_project_import_layout(project_root, metadata)
+
+    assert layout.source_roots == ()
+
+
 def test_manifest_source_roots_override_auto_detect(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     lib_dir = project_root / "lib" / "pkg"
@@ -100,3 +112,37 @@ def test_detect_suggested_source_root_returns_src_for_src_layout(tmp_path: Path)
     (project_root / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
 
     assert detect_suggested_source_root(project_root) == "src"
+
+
+def test_runtime_sys_path_entries_deduplicates_by_resolved_path(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    src_dir = project_root / "src"
+    src_dir.mkdir(parents=True)
+    layout = resolve_project_import_layout(project_root)
+
+    duplicate_layout = resolve_project_import_layout(project_root)
+    duplicate_layout = type(duplicate_layout)(
+        project_root=duplicate_layout.project_root,
+        source_roots=(src_dir, src_dir.resolve()),
+        vendor_root=duplicate_layout.vendor_root,
+    )
+
+    entries = duplicate_layout.runtime_sys_path_entries
+    assert len(entries) == len(set(entries))
+
+
+def test_unresolved_relative_import_emits_py200(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("from .missing import value\n", encoding="utf-8")
+
+    diagnostics = analyze_python_file(
+        str(file_path),
+        project_root=str(project_root),
+        known_runtime_modules=frozenset(),
+    )
+    py200 = [item for item in diagnostics if item.code == "PY200"]
+
+    assert len(py200) == 1
+    assert "Unresolved import:" in py200[0].message

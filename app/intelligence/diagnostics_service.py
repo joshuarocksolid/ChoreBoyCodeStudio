@@ -25,6 +25,7 @@ from app.project.dependency_classifier import (
     has_compiled_extension_candidate,
     is_module_resolvable,
 )
+from app.intelligence.import_diagnostics import collect_unresolved_import_diagnostics
 from app.project.file_inventory import iter_python_files
 from app.project.import_layout import (
     ProjectImportLayout,
@@ -175,7 +176,7 @@ def analyze_python_file(
             resolved_root = Path(project_root).expanduser().resolve()
             layout = resolve_project_import_layout(resolved_root, project_metadata)
             diagnostics.extend(
-                _unresolved_import_diagnostics(
+                collect_unresolved_import_diagnostics(
                     resolved_root,
                     path,
                     syntax_tree,
@@ -214,7 +215,7 @@ def _diagnostics_for_file(
 
     resolved_layout = layout or resolve_project_import_layout(project_root, project_metadata)
     diagnostics: list[ImportDiagnostic] = []
-    for diagnostic in _unresolved_import_diagnostics(
+    for diagnostic in collect_unresolved_import_diagnostics(
         project_root,
         file_path.resolve(),
         tree,
@@ -262,7 +263,9 @@ def explain_unresolved_import(
         probe_result = probe_runtime_module_importability(top_level)
 
     project_prefix_exists = module_path_prefix_exists(layout, module_name)
-    vendor_prefix_exists = _module_path_prefix_exists(vendor_root, module_name)
+    from app.project.import_layout import _module_path_prefix_exists_at_base
+
+    vendor_prefix_exists = _module_path_prefix_exists_at_base(vendor_root, module_name)
     missing_source_root = suggest_missing_source_root(layout, module_name)
     compiled_extension_candidate = has_compiled_extension_candidate(root, top_level) or has_compiled_extension_candidate(
         vendor_root,
@@ -367,132 +370,12 @@ def explain_unresolved_import(
     )
 
 
-def _module_path_prefix_exists(base: Path, module_name: str) -> bool:
-    if not base.exists():
-        return False
-    probe_base = base
-    for part in [segment for segment in module_name.split(".") if segment.strip()]:
-        if (probe_base / f"{part}.py").exists() or (probe_base / part).exists():
-            return True
-        probe_base = probe_base / part
-    return False
-
-
 def _looks_like_runtime_specific_module(top_level: str) -> bool:
     if not top_level:
         return False
     if top_level[0].isupper():
         return True
     return top_level.startswith("PySide")
-
-
-def _unresolved_import_diagnostics(
-    project_root: Path,
-    file_path: Path,
-    syntax_tree: ast.AST,
-    *,
-    known_runtime_modules: frozenset[str] | None = None,
-    allow_runtime_import_probe: bool = False,
-    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
-    layout: ProjectImportLayout | None = None,
-    project_metadata: ProjectMetadata | None = None,
-) -> list[CodeDiagnostic]:
-    is_enabled, severity = resolve_lint_rule_settings("PY200", lint_rule_overrides)
-    if not is_enabled:
-        return []
-    diagnostic_severity = _severity_from_profile_value(severity)
-    resolved_layout = layout or resolve_project_import_layout(project_root, project_metadata)
-    diagnostics: list[CodeDiagnostic] = []
-    for node in ast.walk(syntax_tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if is_module_resolvable(
-                    project_root,
-                    alias.name,
-                    known_runtime_modules=known_runtime_modules,
-                    allow_runtime_import_probe=allow_runtime_import_probe,
-                    metadata=project_metadata,
-                    layout=resolved_layout,
-                ):
-                    continue
-                diagnostics.append(
-                    CodeDiagnostic(
-                        code="PY200",
-                        severity=diagnostic_severity,
-                        file_path=str(file_path),
-                        line_number=int(node.lineno),
-                        message=f"Unresolved import: {alias.name}",
-                        col_start=_col_offset(node),
-                        col_end=_end_col_offset(node),
-                    )
-                )
-        elif isinstance(node, ast.ImportFrom):
-            if node.module is None:
-                continue
-            resolved_module = _resolve_import_from_module(
-                file_path,
-                node.module,
-                int(node.level),
-                layout=resolved_layout,
-            )
-            if resolved_module is None:
-                continue
-            if is_module_resolvable(
-                project_root,
-                resolved_module,
-                known_runtime_modules=known_runtime_modules,
-                allow_runtime_import_probe=allow_runtime_import_probe,
-                metadata=project_metadata,
-                layout=resolved_layout,
-            ):
-                continue
-            display_module = resolved_module
-            diagnostics.append(
-                CodeDiagnostic(
-                    code="PY200",
-                    severity=diagnostic_severity,
-                    file_path=str(file_path),
-                    line_number=int(node.lineno),
-                    message=f"Unresolved import: {display_module}",
-                    col_start=_col_offset(node),
-                    col_end=_end_col_offset(node),
-                )
-            )
-    return diagnostics
-
-
-def _resolve_import_from_module(
-    file_path: Path,
-    module: str | None,
-    level: int,
-    *,
-    layout: ProjectImportLayout,
-) -> str | None:
-    if level <= 0:
-        return module
-    package_name = _package_name_for_file(file_path, layout=layout)
-    if package_name is None:
-        return None
-    try:
-        from importlib.util import resolve_name
-
-        relative_spec = module if module is not None else ""
-        return resolve_name(relative_spec, package_name, level)
-    except (ImportError, ValueError):
-        return None
-
-
-def _package_name_for_file(file_path: Path, *, layout: ProjectImportLayout) -> str | None:
-    from app.project.import_layout import module_name_for_file
-
-    module_name = module_name_for_file(layout, file_path)
-    if module_name is None:
-        return None
-    if file_path.name == "__init__.py":
-        return module_name
-    if "." not in module_name:
-        return None
-    return module_name.rsplit(".", 1)[0]
 
 
 def _duplicate_definition_diagnostics(syntax_tree: ast.AST, file_path: Path) -> list[CodeDiagnostic]:

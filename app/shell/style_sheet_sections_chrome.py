@@ -5,6 +5,58 @@ from __future__ import annotations
 from app.shell.theme_tokens import ShellThemeTokens
 
 
+def _chrome_icon_tool_button_qss(
+    selector: str,
+    tokens: ShellThemeTokens,
+    *,
+    padding: str = "3px",
+    font_size: str | None = None,
+    include_focus: bool = True,
+) -> str:
+    font_rule = f"\n    font-size: {font_size};" if font_size else ""
+    focus_rule = ""
+    if include_focus:
+        focus_rule = f"""
+{selector}:focus {{
+    border: {tokens.focus_border_width}px solid {tokens.accent};
+}}"""
+    return f"""{selector} {{
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: {padding};{font_rule}
+}}
+{selector}:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+{selector}:pressed {{
+    background: {tokens.tree_selected_bg};
+}}{focus_rule}
+"""
+
+
+def _toolbar_accent_button_qss(
+    selector: str,
+    tokens: ShellThemeTokens,
+    *,
+    bg: str,
+    hover_bg: str,
+    pressed_bg: str,
+    fg: str,
+) -> str:
+    return f"""{selector} {{
+    background: {bg};
+    color: {fg};
+}}
+{selector}:hover {{
+    background: {hover_bg};
+}}
+{selector}:pressed {{
+    background: {pressed_bg};
+}}
+"""
+
+
 def shell_section_chrome_font_weight(tokens: ShellThemeTokens) -> str:
     """Apply the user's UI font-weight preference to chrome surfaces.
 
@@ -78,25 +130,10 @@ QMenu::item:selected {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
 }}
-QMenu::item:disabled {{
-    color: {tokens.text_muted};
-}}
 QMenu::separator {{
     height: 1px;
     background: {tokens.border};
-    margin: 4px 12px;
-}}
-QMenu::indicator {{
-    width: 14px;
-    height: 14px;
-    margin-left: 6px;
-}}
-QMenu::indicator:checked {{
-    background: {tokens.accent};
-    border-radius: 3px;
-}}
-QMenu::indicator:unchecked {{
-    background: transparent;
+    margin: 4px 8px;
 }}
 QMenu::right-arrow {{
     width: 8px;
@@ -104,7 +141,10 @@ QMenu::right-arrow {{
     margin-right: 8px;
 }}
 """
+
+
 def shell_section_explorer_status_toolbar_chrome(tokens: ShellThemeTokens) -> str:
+    explorer_action_btn = _chrome_icon_tool_button_qss("QToolButton#shell\\.explorerAction", tokens)
     return f"""QLabel#shell\\.leftRegion\\.title {{
     color: {tokens.text_muted};
     font-size: 11px;
@@ -117,18 +157,7 @@ QLabel#shell\\.leftRegion\\.body {{
 QWidget#shell\\.explorerHeader {{
     background: transparent;
 }}
-QToolButton#shell\\.explorerAction {{
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 3px;
-}}
-QToolButton#shell\\.explorerAction:hover {{
-    background: {tokens.tree_hover_bg};
-}}
-QToolButton#shell\\.explorerAction:pressed {{
-    background: {tokens.tree_selected_bg};
-}}
+{explorer_action_btn}
 QStatusBar#shell\\.statusBar {{
     border-top: 1px solid {tokens.border};
     background: {tokens.panel_bg};
@@ -196,7 +225,41 @@ QWidget#shell\\.toolbar\\.runDebug {{
     border-bottom: 1px solid {tokens.border};
 }}
 """
+
+
 def shell_section_toolbar_buttons(tokens: ShellThemeTokens) -> str:
+    run_btn = _toolbar_accent_button_qss(
+        "QToolButton#shell\\.toolbar\\.btn\\.run",
+        tokens,
+        bg=tokens.toolbar_run_bg,
+        hover_bg=tokens.toolbar_run_hover_bg,
+        pressed_bg=tokens.toolbar_run_pressed_bg,
+        fg=tokens.toolbar_run_fg,
+    )
+    stop_btn = _toolbar_accent_button_qss(
+        "QToolButton#shell\\.toolbar\\.btn\\.stop",
+        tokens,
+        bg=tokens.toolbar_stop_bg,
+        hover_bg=tokens.toolbar_stop_hover_bg,
+        pressed_bg=tokens.toolbar_stop_pressed_bg,
+        fg=tokens.toolbar_stop_fg,
+    )
+    debug_btn = _toolbar_accent_button_qss(
+        "QToolButton#shell\\.toolbar\\.btn\\.debug",
+        tokens,
+        bg=tokens.toolbar_debug_bg,
+        hover_bg=tokens.toolbar_debug_hover_bg,
+        pressed_bg=tokens.toolbar_debug_pressed_bg,
+        fg=tokens.toolbar_debug_fg,
+    )
+    package_btn = _toolbar_accent_button_qss(
+        "QToolButton#shell\\.toolbar\\.btn\\.package",
+        tokens,
+        bg=tokens.toolbar_package_bg,
+        hover_bg=tokens.toolbar_package_hover_bg,
+        pressed_bg=tokens.toolbar_package_pressed_bg,
+        fg=tokens.toolbar_package_fg,
+    )
     return f"""/* -- Default toolbar button style --------------------------------------- */
 QToolButton[objectName^="shell.toolbar.btn"] {{
     background: transparent;
@@ -213,60 +276,21 @@ QToolButton[objectName^="shell.toolbar.btn"]:hover {{
 QToolButton[objectName^="shell.toolbar.btn"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-/* -- Run button (green accent) ------------------------------------------ */
-QToolButton#shell\\.toolbar\\.btn\\.run {{
-    background: {"#1B3D1B" if tokens.is_dark else "#E6F4EA"};
-    color: {"#4ADE80" if tokens.is_dark else "#15803D"};
+QToolButton[objectName^="shell.toolbar.btn"]:focus {{
+    border: {tokens.focus_border_width}px solid {tokens.accent};
 }}
-QToolButton#shell\\.toolbar\\.btn\\.run:hover {{
-    background: {"#22502A" if tokens.is_dark else "#D1EDDA"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.run:pressed {{
-    background: {"#2A6434" if tokens.is_dark else "#B7DFC6"};
-}}
-/* -- Stop button (red accent) ------------------------------------------- */
-QToolButton#shell\\.toolbar\\.btn\\.stop {{
-    background: {"#3D1B1B" if tokens.is_dark else "#FEE2E2"};
-    color: {"#F87171" if tokens.is_dark else "#B91C1C"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.stop:hover {{
-    background: {"#502222" if tokens.is_dark else "#FECACA"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.stop:pressed {{
-    background: {"#642A2A" if tokens.is_dark else "#FCA5A5"};
-}}
-/* -- Debug button (amber accent) ---------------------------------------- */
-QToolButton#shell\\.toolbar\\.btn\\.debug {{
-    background: {"#3D2E0A" if tokens.is_dark else "#FEF3C7"};
-    color: {"#FBBF24" if tokens.is_dark else "#B45309"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.debug:hover {{
-    background: {"#50400E" if tokens.is_dark else "#FDE68A"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.debug:pressed {{
-    background: {"#645214" if tokens.is_dark else "#FCD34D"};
-}}
-/* -- Package button (blue accent) -------------------------------------- */
-QToolButton#shell\\.toolbar\\.btn\\.package {{
-    background: {"#1B2A4A" if tokens.is_dark else "#E8EEFF"};
-    color: {"#7EA8FF" if tokens.is_dark else "#2952CC"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.package:hover {{
-    background: {"#243758" if tokens.is_dark else "#D6E0FF"};
-}}
-QToolButton#shell\\.toolbar\\.btn\\.package:pressed {{
-    background: {"#2E4468" if tokens.is_dark else "#C4D4FF"};
-}}
+{run_btn}
+{stop_btn}
+{debug_btn}
+{package_btn}
 QFrame#shell\\.toolbar\\.separator {{
     color: {tokens.border};
 }}
 """
+
+
 def shell_section_tab_bar(tokens: ShellThemeTokens) -> str:
-    return f"""QToolButton#shell\\.explorerAction,
-QToolButton {{
-    color: {tokens.text_primary};
-}}
-QTabBar::tab {{
+    return f"""QTabBar::tab {{
     background: {tokens.panel_bg};
     color: {tokens.text_muted};
     padding: 6px 10px;
@@ -283,26 +307,30 @@ QTabBar::close-button {{
 }}
 QTabBar::close-button:hover {{
     image: url({tokens.tab_close_icon_hover_path});
-    background: {"rgba(255, 255, 255, 0.1)" if tokens.is_dark else "rgba(0, 0, 0, 0.08)"};
+    background: {tokens.chrome_hover_overlay};
     border-radius: 3px;
 }}
 """
+
+
 def shell_section_activity_bar(tokens: ShellThemeTokens) -> str:
+    activity_btn = _chrome_icon_tool_button_qss(
+        'QToolButton[objectName^="shell.activityBar.btn"]',
+        tokens,
+        padding="4px",
+        font_size="14px",
+        include_focus=True,
+    )
     return f"""/* -- Activity bar -------------------------------------------------------- */
 QWidget#shell\\.activityBar {{
     background: {tokens.activity_bar_bg};
     border-right: 1px solid {tokens.border};
 }}
+{activity_btn}
 QToolButton[objectName^="shell.activityBar.btn"] {{
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 4px;
-    font-size: 14px;
     color: {tokens.text_muted};
 }}
 QToolButton[objectName^="shell.activityBar.btn"]:hover {{
-    background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
 }}
 QToolButton[objectName^="shell.activityBar.btn"]:checked {{

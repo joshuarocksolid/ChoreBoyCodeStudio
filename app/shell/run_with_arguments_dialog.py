@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Optional, Sequence
+from enum import Enum
+from typing import Mapping, Optional, Sequence
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeySequence
@@ -35,7 +36,7 @@ from app.shell.dialog_chrome import (
 )
 from app.shell.run_arguments_editor import RunArgumentsEditorRow
 from app.shell.run_arguments_helpers import (
-    can_submit_run_invocation,
+    collect_run_invocation_fields,
     format_command_preview_lines,
     join_argv_for_display,
     normalize_entry_path_for_project,
@@ -70,12 +71,20 @@ class RunInvocation:
     save_name: str = ""
 
 
+class RunWithArgumentsOutcomeKind(Enum):
+    """How :meth:`RunWithArgumentsDialog.run_dialog` closed."""
+
+    CANCELLED = "cancelled"
+    RUN = "run"
+    OPEN_CONFIGURATIONS = "open_configurations"
+
+
 @dataclass(frozen=True)
 class RunWithArgumentsResult:
     """Outcome of :meth:`RunWithArgumentsDialog.run_dialog`."""
 
+    outcome: RunWithArgumentsOutcomeKind = RunWithArgumentsOutcomeKind.CANCELLED
     invocation: RunInvocation | None = None
-    open_configurations: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,7 +110,6 @@ class RunWithArgumentsDialog(QDialog):
         parent: QWidget | None = None,
         *,
         tokens: ShellThemeTokens | None = None,
-        on_manage_configurations: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Run With Arguments")
@@ -116,9 +124,8 @@ class RunWithArgumentsDialog(QDialog):
         self.setStyleSheet(build_run_dialog_style_sheet(tokens))
 
         self._initial = initial
-        self._on_manage_configurations = on_manage_configurations
         self._result: RunInvocation | None = None
-        self._open_configurations = False
+        self._outcome = RunWithArgumentsOutcomeKind.CANCELLED
 
         chrome = build_dialog_chrome(
             self,
@@ -231,11 +238,10 @@ class RunWithArgumentsDialog(QDialog):
         self._error_label.hide()
         body_layout.addWidget(self._error_label)
 
-        if on_manage_configurations is not None:
-            manage_button = add_footer_button(
-                chrome, "Manage configurations\u2026", role=FOOTER_ROLE_LINK
-            )
-            manage_button.clicked.connect(self._on_manage_configurations_clicked)
+        manage_button = add_footer_button(
+            chrome, "Manage configurations\u2026", role=FOOTER_ROLE_LINK
+        )
+        manage_button.clicked.connect(self._on_manage_configurations_clicked)
 
         add_footer_stretch(chrome)
         self._save_button = add_footer_button(
@@ -269,19 +275,18 @@ class RunWithArgumentsDialog(QDialog):
         *,
         initial: RunWithArgumentsInitial,
         tokens: ShellThemeTokens | None = None,
-        on_manage_configurations: Callable[[], None] | None = None,
     ) -> RunWithArgumentsResult:
         dialog = cls(
             initial,
             parent=parent,
             tokens=tokens,
-            on_manage_configurations=on_manage_configurations,
         )
         if dialog.exec_() != QDialog.Accepted:
-            if dialog._open_configurations:
-                return RunWithArgumentsResult(open_configurations=True)
-            return RunWithArgumentsResult()
-        return RunWithArgumentsResult(invocation=dialog.invocation())
+            return RunWithArgumentsResult(outcome=dialog._outcome)
+        return RunWithArgumentsResult(
+            outcome=RunWithArgumentsOutcomeKind.RUN,
+            invocation=dialog.invocation(),
+        )
 
     def invocation(self) -> RunInvocation | None:
         return self._result
@@ -360,9 +365,7 @@ class RunWithArgumentsDialog(QDialog):
             self._working_dir_edit.setText(selected_dir)
 
     def _on_manage_configurations_clicked(self) -> None:
-        self._open_configurations = True
-        if self._on_manage_configurations is not None:
-            self._on_manage_configurations()
+        self._outcome = RunWithArgumentsOutcomeKind.OPEN_CONFIGURATIONS
         self.reject()
 
     def _refresh_validation_state(self) -> None:
@@ -384,11 +387,13 @@ class RunWithArgumentsDialog(QDialog):
         )
         self._command_preview.setText("\n".join(preview_lines))
 
-        can_submit, error_message = can_submit_run_invocation(
+        _fields, error_message = collect_run_invocation_fields(
             entry_file=entry,
             argv_text=argv_text,
-            env_text=env_overrides_to_text_for_validation(env_overrides),
+            env_overrides=env_overrides,
+            working_directory=working_dir,
         )
+        can_submit = _fields is not None
         self._run_button.setEnabled(can_submit)
         self._save_button.setEnabled(can_submit)
         if error_message and not can_submit:
@@ -451,14 +456,6 @@ class RunWithArgumentsDialog(QDialog):
             return
         self._result = invocation
         self.accept()
-
-
-def env_overrides_to_text_for_validation(env_overrides: Mapping[str, str]) -> str:
-    """Serialize env overrides for :func:`can_submit_run_invocation` validation."""
-
-    from app.project.run_configs import env_overrides_to_text
-
-    return env_overrides_to_text(env_overrides)
 
 
 def _join_argv_for_display(argv: Sequence[str]) -> str:

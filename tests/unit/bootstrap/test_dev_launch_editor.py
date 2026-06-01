@@ -235,37 +235,33 @@ def test_ensure_vendor_symlink_creates_profile_symlink(tmp_path: Path) -> None:
     assert link.resolve() == vendor_dir.resolve()
 
 
-def test_ensure_vendor_symlink_creates_symlink(tmp_path: Path) -> None:
-    """Legacy vendor/ directory should still be linked when profile dirs are absent."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    artifacts_dir = tmp_path / "artifacts"
-    vendor_dir = artifacts_dir / "vendor"
-    vendor_dir.mkdir(parents=True)
-    (vendor_dir / "dummy.py").write_text("x = 1\n", encoding="utf-8")
-
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
-
-    link = repo_root / "vendor"
-    assert link.is_symlink()
-    assert link.resolve() == vendor_dir.resolve()
-    assert (link / "dummy.py").read_text(encoding="utf-8") == "x = 1\n"
-
-
-def test_ensure_vendor_symlink_noop_when_vendor_already_exists(tmp_path: Path) -> None:
-    """No symlink should be created when vendor/ already exists at repo root."""
+def test_ensure_vendor_symlink_exits_when_repo_vendor_is_real_directory(tmp_path: Path) -> None:
+    """A real vendor/ directory at repo root must be removed before profile symlink can apply."""
     repo_root = tmp_path / "repo"
     existing_vendor = repo_root / "vendor"
     existing_vendor.mkdir(parents=True)
     (existing_vendor / "local.py").write_text("y = 2\n", encoding="utf-8")
 
     artifacts_dir = tmp_path / "artifacts"
-    (artifacts_dir / "vendor").mkdir(parents=True)
+    vendor_dir = artifacts_dir / dev_launch_editor.VENDOR_PY311_DIRNAME
+    vendor_dir.mkdir(parents=True)
 
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("", encoding="utf-8")
+    app_run.chmod(0o755)
+
+    def fake_probe(_path: Path) -> str | None:
+        return "cpython-311-x86_64-linux-gnu"
+
+    original = dev_launch_editor.probe_apprun_soabi
+    dev_launch_editor.probe_apprun_soabi = fake_probe
+    try:
+        with pytest.raises(SystemExit):
+            dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=app_run)
+    finally:
+        dev_launch_editor.probe_apprun_soabi = original
 
     assert not existing_vendor.is_symlink()
-    assert (existing_vendor / "local.py").read_text(encoding="utf-8") == "y = 2\n"
 
 
 def test_ensure_vendor_symlink_warns_when_artifacts_vendor_missing(
@@ -277,7 +273,19 @@ def test_ensure_vendor_symlink_warns_when_artifacts_vendor_missing(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=tmp_path / "AppRun")
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("", encoding="utf-8")
+    app_run.chmod(0o755)
+
+    def fake_probe(_path: Path) -> str | None:
+        return "cpython-311-x86_64-linux-gnu"
+
+    original = dev_launch_editor.probe_apprun_soabi
+    dev_launch_editor.probe_apprun_soabi = fake_probe
+    try:
+        dev_launch_editor.ensure_vendor_symlink(repo_root, artifacts_dir, app_run_path=app_run)
+    finally:
+        dev_launch_editor.probe_apprun_soabi = original
 
     assert not (repo_root / "vendor").exists()
     err = capsys.readouterr().err
@@ -295,6 +303,11 @@ def test_main_returns_actionable_error_when_apprun_missing(
     missing = tmp_path / "missing-app-run"
 
     monkeypatch.setattr(dev_launch_editor, "resolve_repo_root", lambda: repo_root)
+    monkeypatch.setattr(
+        dev_launch_editor,
+        "ensure_vendor_symlink",
+        lambda *_args, **_kwargs: None,
+    )
 
     exit_code = dev_launch_editor.main(["--apprun", str(missing)])
     error_output = capsys.readouterr().err

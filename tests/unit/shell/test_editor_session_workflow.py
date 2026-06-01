@@ -20,6 +20,7 @@ from app.shell.session_persistence import (  # noqa: E402
     SessionFileState,
     SessionState,
     SessionTreeState,
+    TreeRestorePolicy,
     load_session_file,
     save_session_file,
 )
@@ -172,6 +173,7 @@ def test_project_session_persist_includes_project_tree_state(tmp_path: Path) -> 
     loaded = load_session_file(str(project_root.resolve()))
     assert loaded is not None
     assert loaded.project_tree == tree_state
+    assert loaded.tree_restore_policy == TreeRestorePolicy.RESTORE_SAVED
 
 
 def test_project_session_restore_applies_tree_state_and_suppresses_reveal(tmp_path: Path) -> None:
@@ -237,6 +239,7 @@ def test_project_session_restore_legacy_session_reveals_active_file(tmp_path: Pa
 
     manager = EditorManager()
     reveal_calls: list[str] = []
+    suppress_events: list[bool] = []
     workflow = EditorSessionWorkflow(
         loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
@@ -246,9 +249,52 @@ def test_project_session_restore_legacy_session_reveals_active_file(tmp_path: Pa
         set_current_tab_index=lambda _index: None,
         logger=logging.getLogger("test.editor_session_workflow"),
         reveal_tree_path=reveal_calls.append,
-        set_tree_reveal_suppressed=lambda _suppressed: None,
+        set_tree_reveal_suppressed=suppress_events.append,
     )
 
     workflow.restore_session_state(str(project_root.resolve()))
 
+    assert suppress_events == [True, False]
     assert reveal_calls == [file_path_str]
+
+
+def test_restore_clears_reveal_suppression_when_deferred_batch_raises(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    paths = []
+    for name in ("a.py", "b.py", "c.py"):
+        file_path = project_root / name
+        file_path.write_text("x\n", encoding="utf-8")
+        paths.append(str(file_path.resolve()))
+
+    session_state = SessionState(
+        open_files=tuple(SessionFileState(file_path=path) for path in paths),
+        active_file_path=paths[0],
+    )
+
+    manager = EditorManager()
+    open_calls: list[str] = []
+    suppress_events: list[bool] = []
+
+    def open_file(path: str) -> bool:
+        open_calls.append(path)
+        if path == paths[2]:
+            raise RuntimeError("simulated restore failure")
+        return manager.open_file(path) is not None
+
+    workflow = EditorSessionWorkflow(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_manager=manager,
+        editor_widget_for_path=lambda _path: None,
+        open_file_in_editor=open_file,
+        tab_index_for_path=lambda _path: -1,
+        set_current_tab_index=lambda _index: None,
+        logger=logging.getLogger("test.editor_session_workflow"),
+        set_tree_reveal_suppressed=suppress_events.append,
+    )
+
+    workflow._begin_tree_reveal_suppression()
+    with pytest.raises(RuntimeError, match="simulated restore failure"):
+        workflow._run_restore_batches(session_state.open_files, session_state, start_index=2)
+
+    assert suppress_events == [True, False]

@@ -99,6 +99,14 @@ SETTINGS_SCOPE_PROJECT = "project"
 SETTINGS_SCOPES: tuple[str, str] = (SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT)
 
 
+def resolve_dark_chrome_palette(raw_value: Any) -> str:
+    """Normalize persisted dark_chrome_palette to a known variant."""
+    value = str(raw_value)
+    if value in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES:
+        return value
+    return constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+
+
 def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> EditorSettingsSnapshot:
     """Parse persisted settings payload into editable snapshot."""
     editor_settings = settings_payload.get(constants.UI_EDITOR_SETTINGS_KEY, {})
@@ -134,14 +142,11 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         if str(ui_font_weight_raw) in constants.UI_THEME_FONT_WEIGHT_VALUES
         else constants.UI_THEME_FONT_WEIGHT_DEFAULT
     )
-    dark_chrome_palette_raw = theme_settings.get(
-        constants.UI_THEME_DARK_CHROME_PALETTE_KEY,
-        constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT,
-    )
-    dark_chrome_palette = (
-        str(dark_chrome_palette_raw)
-        if str(dark_chrome_palette_raw) in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES
-        else constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
+    dark_chrome_palette = resolve_dark_chrome_palette(
+        theme_settings.get(
+            constants.UI_THEME_DARK_CHROME_PALETTE_KEY,
+            constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT,
+        )
     )
 
     tab_width = _coerce_int(
@@ -487,11 +492,7 @@ def merge_editor_settings_snapshot(
         if snapshot.ui_font_weight in constants.UI_THEME_FONT_WEIGHT_VALUES
         else constants.UI_THEME_FONT_WEIGHT_DEFAULT
     )
-    dark_chrome_palette = (
-        snapshot.dark_chrome_palette
-        if snapshot.dark_chrome_palette in constants.UI_THEME_DARK_CHROME_PALETTE_VALUES
-        else constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
-    )
+    dark_chrome_palette = resolve_dark_chrome_palette(snapshot.dark_chrome_palette)
     merged[constants.UI_THEME_SETTINGS_KEY] = {
         constants.UI_THEME_MODE_KEY: mode,
         constants.UI_THEME_FONT_WEIGHT_KEY: ui_font_weight,

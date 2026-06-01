@@ -7,7 +7,7 @@ from typing import Callable
 
 from app.core.errors import AppValidationError
 from app.core.models import LoadedProject
-from app.project.project_service import open_project_and_track_recent
+from app.project.project_service import open_project
 
 OpenProjectTask = Callable[[], LoadedProject]
 OpenProjectSuccess = Callable[[LoadedProject], None]
@@ -15,7 +15,7 @@ OpenProjectError = Callable[[str], None]
 
 
 class ProjectOpenWorker:
-    """Runs ``open_project_and_track_recent`` on a background thread."""
+    """Runs ``open_project`` on a background thread (recents updated on main-thread commit)."""
 
     def __init__(
         self,
@@ -59,9 +59,8 @@ class ProjectOpenWorker:
         try:
             if not self._can_commit():
                 return
-            loaded_project = open_project_and_track_recent(
+            loaded_project = open_project(
                 self._project_root,
-                state_root=self._state_root,
                 exclude_patterns=self._exclude_patterns,
             )
             if not self._can_commit():

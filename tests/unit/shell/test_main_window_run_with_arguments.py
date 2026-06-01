@@ -14,7 +14,11 @@ from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
 from app.shell.run_config_controller import RunConfigController
 from app.shell.run_launch_workflow import RunLaunchWorkflow
-from app.shell.run_with_arguments_dialog import RunInvocation, RunWithArgumentsResult
+from app.shell.run_with_arguments_dialog import (
+    RunInvocation,
+    RunWithArgumentsOutcomeKind,
+    RunWithArgumentsResult,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -204,6 +208,7 @@ def test_handle_run_with_arguments_action_persists_argv_text_in_recent_history(
     monkeypatch.setattr(
         "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
         lambda *_args, **_kwargs: RunWithArgumentsResult(
+            outcome=RunWithArgumentsOutcomeKind.RUN,
             invocation=RunInvocation(
                 entry_file="app.py",
                 argv=["--alpha"],
@@ -211,7 +216,7 @@ def test_handle_run_with_arguments_action_persists_argv_text_in_recent_history(
                 working_directory=None,
                 env_overrides={},
                 save_request=False,
-            )
+            ),
         ),
     )
 
@@ -243,6 +248,20 @@ def test_handle_run_with_arguments_action_cancelled_dialog_does_not_run(
     assert host.settings_service().load_recent_argv_history() == []
 
 
+def test_manage_configurations_click_sets_outcome_only() -> None:
+    from PySide2.QtWidgets import QApplication
+
+    from app.shell.run_with_arguments_dialog import RunWithArgumentsDialog, RunWithArgumentsInitial
+
+    app = QApplication.instance() or QApplication([])
+    _ = app
+
+    dialog = RunWithArgumentsDialog(RunWithArgumentsInitial())
+    dialog._on_manage_configurations_clicked()
+
+    assert dialog._outcome == RunWithArgumentsOutcomeKind.OPEN_CONFIGURATIONS
+
+
 def test_handle_run_with_arguments_action_open_configurations_redirects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -252,7 +271,9 @@ def test_handle_run_with_arguments_action_open_configurations_redirects(
 
     monkeypatch.setattr(
         "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
-        lambda *_args, **_kwargs: RunWithArgumentsResult(open_configurations=True),
+        lambda *_args, **_kwargs: RunWithArgumentsResult(
+            outcome=RunWithArgumentsOutcomeKind.OPEN_CONFIGURATIONS,
+        ),
     )
     workflow.handle_run_with_configuration_action = lambda: calls.append("configs") or True  # type: ignore[method-assign]
     workflow.start_session = lambda **_kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]

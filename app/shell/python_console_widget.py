@@ -28,7 +28,10 @@ from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 
 from app.editors.completion_popup import CompletionController
 from app.intelligence.completion_models import CompletionItem
+from app.shell.run_log_panel import _classify_line
 from app.shell.theme_tokens import ShellThemeTokens
+
+_STDERR_TAG = "[stderr] "
 
 _PROMPT = ">>> "
 _CONT_PROMPT = "... "
@@ -208,13 +211,13 @@ class PythonConsoleWidget(QTextEdit):
     def _append_at_end(self, text: str, stream: str) -> None:
         cursor = QTextCursor(self.document())
         cursor.movePosition(QTextCursor.End)
-        text_to_insert = text if text.endswith("\n") else text + "\n"
+        text_to_insert = _tag_stream_text(text, stream)
         cursor.insertText(text_to_insert, self._fmt_for(stream, text))
 
     def _insert_before_prompt(self, text: str, stream: str) -> None:
         """Insert *text* before the prompt line, updating ``_prompt_anchor``."""
         prompt_start = self._prompt_anchor - _PROMPT_LEN
-        text_to_insert = text if text.endswith("\n") else text + "\n"
+        text_to_insert = _tag_stream_text(text, stream)
 
         cursor = QTextCursor(self.document())
         cursor.setPosition(prompt_start)
@@ -621,14 +624,28 @@ class PythonConsoleWidget(QTextEdit):
 
         return fmt
 
-    def _fmt_for_output_line(self, line: str) -> QTextCharFormat:
-        """Return char format for a persisted output line during theme refresh."""
-        if line.lstrip().startswith("Starting Python Console"):
+    def _fmt_for_output_line(self, line: str, *, in_traceback: bool) -> tuple[QTextCharFormat, bool]:
+        """Return char format and updated traceback state for theme refresh."""
+        stripped = line.lstrip()
+        if stripped.startswith("Starting Python Console"):
             fmt = QTextCharFormat()
             fmt.setForeground(QColor(self._col_muted))
             fmt.setFontItalic(True)
-            return fmt
-        return self._fmt_for("stdout", line)
+            return fmt, False
+        if stripped.startswith(_STDERR_TAG):
+            body = stripped[len(_STDERR_TAG) :]
+            return self._fmt_for("stderr", body or stripped), in_traceback
+        category, next_in_traceback = _classify_line(line, in_traceback)
+        if category == "error":
+            return self._fmt_for("stderr", line), next_in_traceback
+        if category == "meta" or stripped.startswith(("[system]", "[runner]", "[debug]")):
+            stream = "system"
+            if stripped.startswith("[runner]"):
+                stream = "stdout"
+            elif stripped.startswith("[debug]"):
+                stream = "stdout"
+            return self._fmt_for(stream, line), next_in_traceback
+        return self._fmt_for("stdout", line), next_in_traceback
 
     def _prompt_start_from_anchor(self, plain: str, anchor: int) -> int:
         if anchor < 0:
@@ -657,10 +674,12 @@ class PythonConsoleWidget(QTextEdit):
         if output_lines:
             cursor = QTextCursor(self.document())
             cursor.beginEditBlock()
+            in_traceback = False
             for index, line in enumerate(output_lines):
                 if index > 0:
                     cursor.insertText("\n")
-                cursor.insertText(line, self._fmt_for_output_line(line))
+                line_fmt, in_traceback = self._fmt_for_output_line(line, in_traceback=in_traceback)
+                cursor.insertText(line, line_fmt)
             cursor.endEditBlock()
 
         if session_active:
@@ -710,6 +729,21 @@ class PythonConsoleWidget(QTextEdit):
         if not accepted or not selected:
             return
         self._replace_input(str(selected))
+
+
+def _tag_stream_text(text: str, stream: str) -> str:
+    """Normalize trailing newline and persist stderr lines with a reformat tag."""
+    text_to_insert = text if text.endswith("\n") else text + "\n"
+    if stream != "stderr":
+        return text_to_insert
+    tagged: list[str] = []
+    for line in text_to_insert.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped and not stripped.startswith(_STDERR_TAG):
+            tagged.append(f"{_STDERR_TAG}{line}")
+        else:
+            tagged.append(line)
+    return "".join(tagged)
 
 
 def _is_source_complete(source: str) -> bool:

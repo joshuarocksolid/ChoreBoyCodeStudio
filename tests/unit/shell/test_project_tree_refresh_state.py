@@ -13,12 +13,9 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
-from app.shell.main_window import (  # noqa: E402
-    MainWindow,
-    TREE_ROLE_IS_DIRECTORY,
-    TREE_ROLE_RELATIVE_PATH,
-    _filter_tree_signature_entries,
-)
+from app.shell.main_window import MainWindow  # noqa: E402
+from app.shell.project_tree_utils import filter_tree_signature_entries  # noqa: E402
+from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY, TREE_ROLE_RELATIVE_PATH  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -157,7 +154,7 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
         "src/main.py",
     )
     window_any._scan_project_tree_signature = (
-        lambda _project: _filter_tree_signature_entries(raw_entries)
+        lambda _project: filter_tree_signature_entries(raw_entries)
     )
 
     MainWindow._poll_external_file_changes(window)
@@ -166,7 +163,7 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
     assert window_any._project_tree_structure_signature == baseline
 
 
-def test_filter_tree_signature_entries_strips_run_artifacts_only() -> None:
+def testfilter_tree_signature_entries_strips_run_artifacts_only() -> None:
     raw = (
         "cbcs/project.json",
         "cbcs/runs/run_1.json",
@@ -177,7 +174,7 @@ def test_filter_tree_signature_entries_strips_run_artifacts_only() -> None:
         "logs/keepme.txt",
     )
 
-    filtered = _filter_tree_signature_entries(raw)
+    filtered = filter_tree_signature_entries(raw)
 
     assert filtered == (
         "cbcs/project.json",

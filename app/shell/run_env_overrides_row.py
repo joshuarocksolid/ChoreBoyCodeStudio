@@ -35,6 +35,7 @@ class RunEnvOverridesRow(QWidget):
 
         self._summary_edit = QLineEdit(self)
         self._summary_edit.setObjectName(f"{object_name_prefix}.summary")
+        self._summary_edit.setProperty("envSummary", True)
         self._summary_edit.setReadOnly(True)
         self._summary_edit.setPlaceholderText("(none)")
         layout.addWidget(self._summary_edit, 1)

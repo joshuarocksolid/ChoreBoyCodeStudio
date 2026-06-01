@@ -15,7 +15,6 @@ import re
 from app.core.models import ProjectMetadata
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.persistence.atomic_write import atomic_write_text
-from app.project.file_inventory import iter_python_files
 from app.project.import_layout import (
     ProjectImportLayout,
     discover_canonical_project_modules,
@@ -74,43 +73,15 @@ def plan_safe_fixes_for_file(
                 expected_line_text=expected_line,
             )
         elif diagnostic.code == "PY200" and normalized_project_root is not None and layout is not None:
-            unresolved_module = _extract_unresolved_module_name(diagnostic.message)
-            if unresolved_module is None:
+            fix = _plan_py200_quick_fix(
+                diagnostic,
+                layout=layout,
+                normalized_path=normalized_path,
+                normalized_project_root=normalized_project_root,
+                expected_line=expected_line,
+            )
+            if fix is None:
                 continue
-            missing_root = suggest_missing_source_root(layout, unresolved_module)
-            if missing_root is not None:
-                fix = QuickFix(
-                    title=f"Add '{missing_root}' as a source root",
-                    file_path=normalized_path,
-                    line_number=diagnostic.line_number,
-                    action_kind="add_source_root",
-                    project_root=normalized_project_root,
-                    replacement_text=missing_root,
-                    expected_line_text=expected_line,
-                )
-            else:
-                suggested_module = _suggest_module_replacement(layout, unresolved_module)
-                if suggested_module is not None and suggested_module != unresolved_module:
-                    fix = QuickFix(
-                        title=f"Replace import '{unresolved_module}' with '{suggested_module}'",
-                        file_path=normalized_path,
-                        line_number=diagnostic.line_number,
-                        action_kind="replace_import_module",
-                        project_root=normalized_project_root,
-                        match_text=unresolved_module,
-                        replacement_text=suggested_module,
-                        expected_line_text=expected_line,
-                    )
-                else:
-                    target_path = _module_target_path(layout, unresolved_module)
-                    fix = QuickFix(
-                        title=f"Create missing module '{unresolved_module}'",
-                        file_path=normalized_path,
-                        line_number=diagnostic.line_number,
-                        action_kind="create_module_file",
-                        target_path=target_path,
-                        project_root=normalized_project_root,
-                    )
         else:
             continue
         key = (
@@ -261,6 +232,51 @@ def _ensure_package_inits(
         current = parent
 
 
+def _plan_py200_quick_fix(
+    diagnostic: CodeDiagnostic,
+    *,
+    layout: ProjectImportLayout,
+    normalized_path: str,
+    normalized_project_root: str,
+    expected_line: str | None,
+) -> QuickFix | None:
+    unresolved_module = _extract_unresolved_module_name(diagnostic.message)
+    if unresolved_module is None:
+        return None
+    missing_root = suggest_missing_source_root(layout, unresolved_module)
+    if missing_root is not None:
+        return QuickFix(
+            title=f"Add '{missing_root}' as a source root",
+            file_path=normalized_path,
+            line_number=diagnostic.line_number,
+            action_kind="add_source_root",
+            project_root=normalized_project_root,
+            replacement_text=missing_root,
+            expected_line_text=expected_line,
+        )
+    suggested_module = _suggest_module_replacement(layout, unresolved_module)
+    if suggested_module is not None and suggested_module != unresolved_module:
+        return QuickFix(
+            title=f"Replace import '{unresolved_module}' with '{suggested_module}'",
+            file_path=normalized_path,
+            line_number=diagnostic.line_number,
+            action_kind="replace_import_module",
+            project_root=normalized_project_root,
+            match_text=unresolved_module,
+            replacement_text=suggested_module,
+            expected_line_text=expected_line,
+        )
+    target_path = _module_target_path(layout, unresolved_module)
+    return QuickFix(
+        title=f"Create missing module '{unresolved_module}'",
+        file_path=normalized_path,
+        line_number=diagnostic.line_number,
+        action_kind="create_module_file",
+        target_path=target_path,
+        project_root=normalized_project_root,
+    )
+
+
 def _extract_unresolved_module_name(message: str) -> str | None:
     prefix = "Unresolved import:"
     if not message.startswith(prefix):
@@ -286,7 +302,7 @@ def _module_target_path(layout: ProjectImportLayout, module_name: str) -> str:
 
 
 def _suggest_module_replacement(layout: ProjectImportLayout, unresolved_module: str) -> str | None:
-    available_modules = sorted(discover_canonical_project_modules(layout, iter_python_files=iter_python_files))
+    available_modules = sorted(discover_canonical_project_modules(layout))
     if not available_modules:
         return None
     closest_matches = difflib.get_close_matches(unresolved_module, available_modules, n=1, cutoff=0.75)
