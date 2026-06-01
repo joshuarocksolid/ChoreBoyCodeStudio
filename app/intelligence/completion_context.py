@@ -7,6 +7,8 @@ from enum import Enum
 import hashlib
 import re
 
+from app.intelligence.trusted_runtime_whitelist import TRUSTED_RUNTIME_ROOTS
+
 
 class CompletionSyntacticContext(str, Enum):
     """Syntactic shape of a completion request."""
@@ -98,9 +100,6 @@ _IMPORT_FROM_CONTEXT_PATTERN = re.compile(
 _IMPORT_MODULE_CONTEXT_PATTERN = re.compile(
     r"\bimport\s+(" + _DOTTED_NAME + r")\.([A-Za-z_][A-Za-z0-9_]*)?$"
 )
-
-_TRUSTED_RUNTIME_ROOTS = frozenset({"FreeCAD", "PySide2", "QtCore", "QtGui", "QtWidgets"})
-
 
 def build_completion_context(
     *,
@@ -345,7 +344,7 @@ def _trusted_runtime_module(module_name: str) -> str:
     if not module_name:
         return ""
     root = module_name.split(".")[0]
-    if root in _TRUSTED_RUNTIME_ROOTS:
+    if root in TRUSTED_RUNTIME_ROOTS:
         return module_name
     return ""
 

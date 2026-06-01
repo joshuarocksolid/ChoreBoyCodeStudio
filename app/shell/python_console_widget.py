@@ -116,6 +116,7 @@ class PythonConsoleWidget(QTextEdit):
         palette.setColor(QPalette.Text, QColor(tokens.text_primary))
         self.setPalette(palette)
         self._completion_popup.apply_theme(tokens)
+        self._reformat_existing_output()
 
     def set_completion_requester(self, requester: Any) -> None:
         """Attach asynchronous live-completion requester."""
@@ -181,7 +182,7 @@ class PythonConsoleWidget(QTextEdit):
         """Append *text* from the runner before the current prompt line.
 
         - ``stderr`` output is rendered in the error color.
-        - Lines starting with ``[system]`` or ``[debug]`` get distinct styles.
+        - Lines starting with ``[system]``, ``[runner]``, or ``[debug]`` get distinct styles.
         - Known FreeCAD teardown noise is silently dropped.
         - Auto-scroll only fires when the view was already pinned to the bottom.
         """
@@ -597,21 +598,75 @@ class PythonConsoleWidget(QTextEdit):
         """
         fmt = QTextCharFormat()
         fmt.setFontWeight(QFont.Normal)
+        stripped = text.lstrip()
 
         if stream == "stderr":
             if _is_traceback_context(text):
                 fmt.setForeground(QColor(self._col_error_dim))
             else:
                 fmt.setForeground(QColor(self._col_error))
-        elif stream == "system" or text.lstrip().startswith("[system]"):
+            fmt.setFontItalic(False)
+        elif stream == "system" or stripped.startswith("[system]"):
             fmt.setForeground(QColor(self._col_muted))
             fmt.setFontItalic(True)
-        elif text.lstrip().startswith("[debug]"):
+        elif stripped.startswith("[runner]"):
+            fmt.setForeground(QColor(self._col_muted))
+            fmt.setFontItalic(False)
+        elif stripped.startswith("[debug]"):
             fmt.setForeground(QColor(self._col_accent))
+            fmt.setFontItalic(False)
         else:
             fmt.setForeground(QColor(self._col_text))
+            fmt.setFontItalic(False)
 
         return fmt
+
+    def _fmt_for_output_line(self, line: str) -> QTextCharFormat:
+        """Return char format for a persisted output line during theme refresh."""
+        if line.lstrip().startswith("Starting Python Console"):
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(self._col_muted))
+            fmt.setFontItalic(True)
+            return fmt
+        return self._fmt_for("stdout", line)
+
+    def _prompt_start_from_anchor(self, plain: str, anchor: int) -> int:
+        if anchor < 0:
+            return len(plain)
+        for prompt in (_PROMPT, _CONT_PROMPT):
+            start = anchor - len(prompt)
+            if start >= 0 and plain[start:anchor] == prompt:
+                return start
+        return max(0, anchor - _PROMPT_LEN)
+
+    def _reformat_existing_output(self) -> None:
+        """Re-render existing text with updated theme colors."""
+        raw = self.toPlainText()
+        if not raw:
+            return
+
+        saved_anchor = self._prompt_anchor
+        input_text = self._get_input_text() if saved_anchor >= 0 else ""
+        session_active = self._session_active
+        output_end = self._prompt_start_from_anchor(raw, saved_anchor) if saved_anchor >= 0 else len(raw)
+        output_lines = raw[:output_end].splitlines()
+
+        self._prompt_anchor = -1
+        super().clear()
+
+        if output_lines:
+            cursor = QTextCursor(self.document())
+            cursor.beginEditBlock()
+            for index, line in enumerate(output_lines):
+                if index > 0:
+                    cursor.insertText("\n")
+                cursor.insertText(line, self._fmt_for_output_line(line))
+            cursor.endEditBlock()
+
+        if session_active:
+            self._show_prompt(input_text)
+        else:
+            self.setCurrentCharFormat(self._default_fmt())
 
     # ------------------------------------------------------------------
     # Expose internals for testing

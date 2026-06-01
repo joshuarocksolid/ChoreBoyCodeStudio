@@ -6,26 +6,14 @@ from dataclasses import dataclass
 import importlib
 import inspect
 import logging
-import re
 from typing import Any
 
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind
+from app.intelligence.trusted_runtime_whitelist import is_whitelisted_target_path
 
 _logger = logging.getLogger(__name__)
 
 REPL_INTROSPECTION_DEGRADATION_IMPORT_FAILED = "repl_introspection_import_failed"
-
-_TRUSTED_ROOTS = frozenset(
-    {
-        "FreeCAD",
-        "FreeCADGui",
-        "PySide2",
-        "QtCore",
-        "QtGui",
-        "QtWidgets",
-    }
-)
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True)
@@ -72,17 +60,6 @@ class ReplIntrospectionService:
             source="runtime_introspection",
             confidence="runtime_inspection",
         )
-
-
-def is_whitelisted_target_path(target_path: str) -> bool:
-    """Return whether ``target_path`` is allowed for runner-side introspection."""
-
-    parts = [part for part in str(target_path or "").split(".") if part]
-    if not parts or not _IDENTIFIER.match(parts[0]):
-        return False
-    if parts[0] not in _TRUSTED_ROOTS:
-        return False
-    return all(_IDENTIFIER.match(part) for part in parts)
 
 
 def resolve_whitelisted_target(target_path: str) -> Any:

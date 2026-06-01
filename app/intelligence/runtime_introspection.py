@@ -10,7 +10,7 @@ from app.intelligence.completion_context import CompletionContext, CompletionSyn
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import collect_import_module_bindings
 from app.intelligence.runtime_introspection_cache import RuntimeIntrospectionCache, clone_completion_items
-from app.runner.repl_introspection import is_whitelisted_target_path
+from app.intelligence.trusted_runtime_whitelist import is_whitelisted_target_path
 
 _logger = logging.getLogger(__name__)
 

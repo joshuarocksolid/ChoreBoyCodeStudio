@@ -63,6 +63,8 @@ def _add_launch_actions(ctx: MenuBuildContext, run_menu: Any) -> None:
     for action_id, label, shortcut, callback in [
         ("shell.action.run.runProject", "Run Project", "Shift+F5", callbacks.on_run_project),
         ("shell.action.run.debugProject", "Debug Project", "Ctrl+Shift+F5", callbacks.on_debug_project),
+        ("shell.action.run.runWithArgs", "Run With Arguments...", None, callbacks.on_run_with_args),
+        ("shell.action.run.runWithConfig", "Run Configurations...", None, callbacks.on_run_with_config),
     ]:
         _add_run_action(ctx, run_menu, action_id, label, shortcut, callback)
 
@@ -95,8 +97,6 @@ def _add_test_and_session_actions(ctx: MenuBuildContext, run_menu: Any) -> None:
             None,
             callbacks.on_debug_pytest_failed,
         ),
-        ("shell.action.run.runWithArgs", "Run With Arguments...", None, callbacks.on_run_with_args),
-        ("shell.action.run.runWithConfig", "Run Configurations...", None, callbacks.on_run_with_config),
         ("shell.action.run.stop", "Stop", "Shift+F2", callbacks.on_stop),
         ("shell.action.run.restart", "Restart", "Ctrl+Shift+F2", callbacks.on_restart),
         (

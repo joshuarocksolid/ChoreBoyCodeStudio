@@ -555,3 +555,21 @@ class TestTracebackStyling:
     def test_stderr_file_line_uses_dim_error_color(self, active_widget: PythonConsoleWidget) -> None:
         fmt = active_widget._fmt_for("stderr", '  File "<console>", line 1, in <module>')
         assert fmt.foreground().color() == QColor(active_widget._col_error_dim)
+
+
+class TestRunnerMetadataStyling:
+    def test_runner_metadata_uses_muted_color(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for(
+            "stdout",
+            "[runner] run_id=20240530_171630_413892 mode=python_repl entry=__repl__.py",
+        )
+        assert fmt.foreground().color() == QColor(active_widget._col_muted)
+
+    def test_runner_metadata_is_not_italic(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for("stdout", "[runner] run_id=abc mode=python_repl entry=__repl__.py")
+        assert not fmt.fontItalic()
+
+    def test_system_line_is_italic(self, active_widget: PythonConsoleWidget) -> None:
+        fmt = active_widget._fmt_for("stdout", "[system] Python console session ended.")
+        assert fmt.fontItalic()
+        assert fmt.foreground().color() == QColor(active_widget._col_muted)

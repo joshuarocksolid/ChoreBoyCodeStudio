@@ -100,6 +100,8 @@ def _menu_registry() -> MenuStubRegistry:
         "shell.action.run.toggleBreakpoint": _FakeAction(),
         "shell.action.run.pythonConsole": _FakeAction(),
         "shell.action.run.removeAllBreakpoints": _FakeAction(),
+        "shell.action.run.runWithArgs": _FakeAction(),
+        "shell.action.run.runWithConfig": _FakeAction(),
     }
     return MenuStubRegistry(actions=actions)
 
@@ -294,14 +296,20 @@ def test_refresh_action_states_updates_run_action_enablement() -> None:
     assert registry.action("shell.action.run.run").enabled is False
     assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.pythonConsole").enabled is True
+    assert registry.action("shell.action.run.runWithArgs").enabled is False
+    assert registry.action("shell.action.run.runWithConfig").enabled is False
 
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is True
     assert registry.action("shell.action.run.debugProject").enabled is True
     assert registry.action("shell.action.run.stop").enabled is False
+    assert registry.action("shell.action.run.runWithArgs").enabled is True
+    assert registry.action("shell.action.run.runWithConfig").enabled is True
 
     run_service.supervisor._running = True
     controller.refresh_action_states(registry, has_project=True)
     assert registry.action("shell.action.run.run").enabled is False
     assert registry.action("shell.action.run.runProject").enabled is False
     assert registry.action("shell.action.run.stop").enabled is True
+    assert registry.action("shell.action.run.runWithArgs").enabled is False
+    assert registry.action("shell.action.run.runWithConfig").enabled is False
