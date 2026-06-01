@@ -139,4 +139,4 @@ class MainWindowDebugInspectorHost:
         self._window._debug_execution_editor = editor
 
     def open_file_at_line(self, file_path: str, line_number: int, *, preview: bool = False) -> None:
-        self._window._open_file_at_line(file_path, line_number, preview=preview)
+        self._window._editor_tab_workflow.open_file_at_line(file_path, line_number, preview=preview)

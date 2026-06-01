@@ -2,165 +2,174 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any, cast
+import logging
+from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-
-from app.shell.main_window import MainWindow  # noqa: E402
+from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
 
 pytestmark = pytest.mark.unit
 
 
-def _make_window_with_open_files(file_paths: list[str]) -> tuple[MainWindow, list[str]]:
-    """Create a bare MainWindow with stub editor widgets and diagnostics tracking."""
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-
-    window_any._editor_widgets_by_path = {
-        fp: SimpleNamespace(toPlainText=lambda: "")
-        for fp in file_paths
-    }
-    window_any._workspace_controller = SimpleNamespace(open_editor_paths=lambda: list(file_paths))
-    window_any._diagnostics_enabled = True
-    window_any._diagnostics_realtime = True
-
+def _make_orchestrator(
+    *,
+    open_paths: list[str],
+) -> tuple[DiagnosticsOrchestrator, list[str], list[bool]]:
     relinted: list[str] = []
+    merged: list[bool] = []
 
-    def fake_render_lint(file_path: str, *, trigger: str) -> None:
-        relinted.append(file_path)
-
-    window_any._render_lint_diagnostics_for_file = fake_render_lint
-    window_any._render_merged_problems_panel = lambda: None
-
-    return window, relinted
+    orchestrator = DiagnosticsOrchestrator(
+        diagnostics_enabled=lambda: True,
+        diagnostics_realtime=lambda: True,
+        set_pending_realtime_file_path=lambda _path: None,
+        get_pending_realtime_file_path=lambda: None,
+        start_realtime_timer=lambda: None,
+        get_active_tab_file_path=lambda: None,
+        render_lint_for_file=lambda file_path, trigger: relinted.append(f"{file_path}:{trigger}"),
+        get_open_editor_paths=lambda: list(open_paths),
+        render_merged_problems_panel=lambda: merged.append(True),
+        set_known_runtime_modules=lambda _modules: None,
+        run_background_task=lambda **_kwargs: None,
+        state_root=lambda: None,
+        logger=logging.getLogger("test.runtime_probe_relint"),
+        show_runtime_probe_warning=lambda _message: None,
+    )
+    return orchestrator, relinted, merged
 
 
 def test_relint_open_python_files_lints_all_py_files() -> None:
-    window, relinted = _make_window_with_open_files([
-        "/project/main.py",
-        "/project/utils.py",
-        "/project/README.md",
-    ])
+    orchestrator, relinted, merged = _make_orchestrator(
+        open_paths=[
+            "/project/main.py",
+            "/project/utils.py",
+            "/project/README.md",
+        ]
+    )
 
-    MainWindow._relint_open_python_files(window)
+    orchestrator.relint_open_python_files()
 
-    assert sorted(relinted) == ["/project/main.py", "/project/utils.py"]
+    assert sorted(relinted) == [
+        "/project/main.py:tab_change",
+        "/project/utils.py:tab_change",
+    ]
+    assert merged == [True]
 
 
 def test_relint_open_python_files_skips_non_py() -> None:
-    window, relinted = _make_window_with_open_files([
-        "/project/config.json",
-        "/project/notes.txt",
-    ])
+    orchestrator, relinted, merged = _make_orchestrator(
+        open_paths=[
+            "/project/config.json",
+            "/project/notes.txt",
+        ]
+    )
 
-    MainWindow._relint_open_python_files(window)
+    orchestrator.relint_open_python_files()
 
     assert relinted == []
+    assert merged == [True]
 
 
 def test_relint_open_python_files_handles_empty_editor_set() -> None:
-    window, relinted = _make_window_with_open_files([])
+    orchestrator, relinted, merged = _make_orchestrator(open_paths=[])
 
-    MainWindow._relint_open_python_files(window)
+    orchestrator.relint_open_python_files()
 
     assert relinted == []
+    assert merged == [True]
 
 
 def test_probe_on_success_triggers_relint() -> None:
-    """After probe completes, open Python files must be re-linted."""
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-
-    window_any._known_runtime_modules = None
-    window_any._state_root = None
-    window_any._logger = SimpleNamespace(
-        info=lambda *_a, **_kw: None,
-        warning=lambda *_a, **_kw: None,
-    )
-
     relint_calls: list[bool] = []
-    window_any._relint_open_python_files = lambda: relint_calls.append(True)
+    known_modules: list[frozenset[str]] = []
+    captured: dict[str, Any] = {}
 
-    captured_on_success = {}
+    orchestrator = DiagnosticsOrchestrator(
+        diagnostics_enabled=lambda: True,
+        diagnostics_realtime=lambda: True,
+        set_pending_realtime_file_path=lambda _path: None,
+        get_pending_realtime_file_path=lambda: None,
+        start_realtime_timer=lambda: None,
+        get_active_tab_file_path=lambda: None,
+        render_lint_for_file=lambda *_args, **_kwargs: None,
+        get_open_editor_paths=lambda: [],
+        render_merged_problems_panel=lambda: None,
+        set_known_runtime_modules=lambda modules: known_modules.append(modules),
+        run_background_task=lambda *, key, task, on_success, on_error: captured.update(
+            {"key": key, "task": task, "on_success": on_success, "on_error": on_error}
+        ),
+        state_root=lambda: None,
+        logger=logging.getLogger("test.runtime_probe_relint"),
+        show_runtime_probe_warning=lambda _message: None,
+    )
+    orchestrator.relint_open_python_files = lambda: relint_calls.append(True)  # type: ignore[method-assign]
 
-    class FakeBackgroundTasks:
-        def run(self, *, key: str, task: Any, on_success: Any, on_error: Any) -> None:
-            captured_on_success[key] = on_success
+    orchestrator.start_runtime_module_probe()
 
-    window_any._background_tasks = FakeBackgroundTasks()
-
-    MainWindow._start_runtime_module_probe(window)
-
-    assert "runtime_module_probe" in captured_on_success
-
+    assert captured["key"] == "runtime_module_probe"
     modules = frozenset(["os", "sys", "json"])
-    captured_on_success["runtime_module_probe"](modules)
+    captured["on_success"](modules)
 
-    assert window_any._known_runtime_modules == modules
+    assert known_modules == [modules]
     assert relint_calls == [True]
 
 
-def test_probe_on_success_empty_modules_logs_warning_and_skips_relint() -> None:
-    """Empty probe payload should not relint and should be diagnosable."""
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-
-    warning_messages: list[str] = []
-    window_any._known_runtime_modules = None
-    window_any._state_root = None
-    window_any._logger = SimpleNamespace(
-        info=lambda *_a, **_kw: None,
-        warning=lambda message, *_a, **_kw: warning_messages.append(str(message)),
-    )
+def test_probe_on_success_empty_modules_logs_warning_and_skips_relint(caplog: pytest.LogCaptureFixture) -> None:
     relint_calls: list[bool] = []
-    window_any._relint_open_python_files = lambda: relint_calls.append(True)
+    captured: dict[str, Any] = {}
 
-    captured_on_success = {}
+    orchestrator = DiagnosticsOrchestrator(
+        diagnostics_enabled=lambda: True,
+        diagnostics_realtime=lambda: True,
+        set_pending_realtime_file_path=lambda _path: None,
+        get_pending_realtime_file_path=lambda: None,
+        start_realtime_timer=lambda: None,
+        get_active_tab_file_path=lambda: None,
+        render_lint_for_file=lambda *_args, **_kwargs: None,
+        get_open_editor_paths=lambda: [],
+        render_merged_problems_panel=lambda: None,
+        set_known_runtime_modules=lambda _modules: None,
+        run_background_task=lambda *, key, task, on_success, on_error: captured.update(
+            {"on_success": on_success}
+        ),
+        state_root=lambda: None,
+        logger=logging.getLogger("test.runtime_probe_relint"),
+        show_runtime_probe_warning=lambda _message: None,
+    )
+    orchestrator.relint_open_python_files = lambda: relint_calls.append(True)  # type: ignore[method-assign]
 
-    class FakeBackgroundTasks:
-        def run(self, *, key: str, task: Any, on_success: Any, on_error: Any) -> None:
-            captured_on_success[key] = on_success
-
-    window_any._background_tasks = FakeBackgroundTasks()
-
-    MainWindow._start_runtime_module_probe(window)
-    captured_on_success["runtime_module_probe"](frozenset())
+    orchestrator.start_runtime_module_probe()
+    with caplog.at_level(logging.WARNING):
+        captured["on_success"](frozenset())
 
     assert relint_calls == []
-    assert warning_messages
+    assert "empty module set" in caplog.text.lower()
 
 
-def test_probe_on_success_empty_modules_user_initiated_shows_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Manual refresh should show a warning when probe returns no modules."""
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-
-    window_any._known_runtime_modules = None
-    window_any._state_root = None
-    window_any._logger = SimpleNamespace(
-        info=lambda *_a, **_kw: None,
-        warning=lambda *_a, **_kw: None,
-    )
-    window_any._relint_open_python_files = lambda: None
-
+def test_probe_on_success_empty_modules_user_initiated_shows_warning() -> None:
     shown_messages: list[str] = []
-    monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
-        lambda _parent, _title, text: shown_messages.append(text),
+    captured: dict[str, Any] = {}
+
+    orchestrator = DiagnosticsOrchestrator(
+        diagnostics_enabled=lambda: True,
+        diagnostics_realtime=lambda: True,
+        set_pending_realtime_file_path=lambda _path: None,
+        get_pending_realtime_file_path=lambda: None,
+        start_realtime_timer=lambda: None,
+        get_active_tab_file_path=lambda: None,
+        render_lint_for_file=lambda *_args, **_kwargs: None,
+        get_open_editor_paths=lambda: [],
+        render_merged_problems_panel=lambda: None,
+        set_known_runtime_modules=lambda _modules: None,
+        run_background_task=lambda *, key, task, on_success, on_error: captured.update(
+            {"on_success": on_success}
+        ),
+        state_root=lambda: None,
+        logger=logging.getLogger("test.runtime_probe_relint"),
+        show_runtime_probe_warning=lambda message: shown_messages.append(message),
     )
 
-    captured_on_success = {}
-
-    class FakeBackgroundTasks:
-        def run(self, *, key: str, task: Any, on_success: Any, on_error: Any) -> None:
-            captured_on_success[key] = on_success
-
-    window_any._background_tasks = FakeBackgroundTasks()
-
-    MainWindow._start_runtime_module_probe(window, user_initiated=True)
-    captured_on_success["runtime_module_probe"](frozenset())
+    orchestrator.start_runtime_module_probe(user_initiated=True)
+    captured["on_success"](frozenset())
 
     assert shown_messages

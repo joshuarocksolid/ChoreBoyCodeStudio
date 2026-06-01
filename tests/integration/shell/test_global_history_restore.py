@@ -16,6 +16,7 @@ from PySide2.QtWidgets import QDialog
 from app.project.project_service import create_blank_project
 from app.shell.history_restore_picker import HISTORY_RESTORE_ACTION_RESTORE_LATEST
 from app.shell.main_window import MainWindow
+from app.shell.main_window_lifecycle import MainWindowLifecycle
 
 pytestmark = pytest.mark.integration
 
@@ -32,8 +33,8 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
 
 def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
     window._is_shutting_down = True
-    window._begin_shutdown_teardown()
-    window._stop_active_run_before_close()
+    MainWindowLifecycle.begin_shutdown_teardown(window)
+    MainWindowLifecycle.stop_active_run_before_close(window)
     window.deleteLater()
     app.processEvents()
 
@@ -63,14 +64,14 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     file_path.write_text("print('disk')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_apply_detected_indentation_for_widget", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_handle_editor_tab_changed", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window, "_refresh_save_action_states", lambda: None)
     monkeypatch.setattr(window, "_update_editor_status_for_path", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(window, "_render_lint_diagnostics_for_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(window._lint_workflow, "render_diagnostics_for_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window._local_history_workflow, "schedule_autosave", lambda *_args, **_kwargs: None)
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 
     window._local_history_workflow.local_history_store.create_checkpoint(

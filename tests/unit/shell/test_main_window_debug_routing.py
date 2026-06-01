@@ -11,7 +11,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
 from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
-from app.shell.editor_tab_workflow import EditorTabWorkflow, MainWindowEditorTabHost  # noqa: E402
+from app.shell.project_tree_ui_workflow import ProjectTreeUiWorkflow  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.run_debug_presenter import RunDebugPresenter  # noqa: E402
 from app.shell.run_launch_workflow import ProjectTarget, RunLaunchWorkflow  # noqa: E402
@@ -29,6 +29,19 @@ def _attach_run_launch_workflow(window: MainWindow) -> RunLaunchWorkflow:
     workflow = RunLaunchWorkflow(MainWindowRunLaunchHost(window))
     window_any._run_launch_workflow = workflow
     return workflow
+
+
+def _stub_presenter_dependencies(window_any: Any) -> None:
+    window_any._prepare_for_session_start = lambda: None
+    window_any._run_event_workflow = SimpleNamespace(
+        append_console_line=lambda _text, _stream="stdout": None,
+        set_run_status=lambda _status, return_code=None: None,
+        refresh_run_action_states=lambda: None,
+    )
+    window_any._repl_event_workflow = SimpleNamespace(
+        append_python_console_line=lambda _text, _stream="stdout": None,
+    )
+    window_any._auto_open_console_on_run_output = False
 
 
 class _FakeDebugPanel:
@@ -89,12 +102,7 @@ def test_start_session_in_debug_enables_debug_input() -> None:
     window_any._run_session_controller = _FakeRunSessionController(constants.RUN_MODE_PYTHON_DEBUG)
     window_any._debug_panel = _FakeDebugPanel()
     window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
-    window_any._prepare_for_session_start = lambda: None
-    window_any._append_console_line = lambda _text, _stream="stdout": None
-    window_any._append_python_console_line = lambda _text, _stream="stdout": None
-    window_any._refresh_run_action_states = lambda: None
-    window_any._auto_open_console_on_run_output = False
-    window_any._set_run_status = lambda _status: None
+    _stub_presenter_dependencies(window_any)
     window_any._is_shutting_down = False
     window_any._event_bus = SimpleNamespace(publish=lambda _event: None)
     workflow = _attach_run_launch_workflow(window)
@@ -130,7 +138,7 @@ def test_handle_rerun_last_debug_target_replays_current_test_debug() -> None:
         open_file_in_editor=lambda file_path, preview=False: calls.append(("open", file_path)) or True
     )
     window_any._editor_tabs_widget = SimpleNamespace(setCurrentIndex=lambda index: calls.append(("tab", index)))
-    window_any._tab_index_for_path = lambda _file_path: 2
+    window_any._editor_tab_workflow = SimpleNamespace(tab_index_for_path=lambda _file_path: 2)
     window_any._test_runner_workflow = SimpleNamespace(
         debug_current_file_tests=lambda: calls.append(("debug", "current_test"))
     )
@@ -157,12 +165,7 @@ def test_start_session_failure_uses_reason_code_for_warning_title(monkeypatch: p
     )
     window_any._debug_panel = None
     window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
-    window_any._prepare_for_session_start = lambda: None
-    window_any._append_console_line = lambda _text, _stream="stdout": None
-    window_any._append_python_console_line = lambda _text, _stream="stdout": None
-    window_any._refresh_run_action_states = lambda: None
-    window_any._auto_open_console_on_run_output = False
-    window_any._set_run_status = lambda _status: None
+    _stub_presenter_dependencies(window_any)
     workflow = _attach_run_launch_workflow(window)
 
     warnings: list[tuple[str, str]] = []
@@ -190,12 +193,7 @@ def test_start_session_already_running_reason_shows_warning(monkeypatch: pytest.
     )
     window_any._debug_panel = None
     window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
-    window_any._prepare_for_session_start = lambda: None
-    window_any._append_console_line = lambda _text, _stream="stdout": None
-    window_any._append_python_console_line = lambda _text, _stream="stdout": None
-    window_any._refresh_run_action_states = lambda: None
-    window_any._auto_open_console_on_run_output = False
-    window_any._set_run_status = lambda _status: None
+    _stub_presenter_dependencies(window_any)
     workflow = _attach_run_launch_workflow(window)
 
     warnings: list[tuple[str, str]] = []
@@ -220,7 +218,9 @@ def test_handle_debug_navigate_preview_ignores_non_project_file() -> None:
     window_any = cast(Any, window)
     window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
     open_calls: list[tuple[str, int | None]] = []
-    window_any._open_file_at_line = lambda file_path, line_number: open_calls.append((file_path, line_number))
+    window_any._editor_tab_workflow = SimpleNamespace(
+        open_file_at_line=lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number))
+    )
 
     DebugControlWorkflow(window).handle_debug_navigate_preview("/tmp/ide/app/shell/main_window.py", 99)
 
@@ -232,8 +232,10 @@ def test_handle_debug_navigate_preview_opens_project_file_as_preview() -> None:
     window_any = cast(Any, window)
     window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
     open_calls: list[tuple[str, int | None, bool]] = []
-    window_any._open_file_at_line = (
-        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
+    window_any._editor_tab_workflow = SimpleNamespace(
+        open_file_at_line=lambda file_path, line_number, preview=False: open_calls.append(
+            (file_path, line_number, preview)
+        )
     )
 
     DebugControlWorkflow(window).handle_debug_navigate_preview("/tmp/project/app/main.py", 17)
@@ -246,8 +248,10 @@ def test_handle_debug_navigate_permanent_opens_project_file_as_permanent() -> No
     window_any = cast(Any, window)
     window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
     open_calls: list[tuple[str, int | None, bool]] = []
-    window_any._open_file_at_line = (
-        lambda file_path, line_number, preview=False: open_calls.append((file_path, line_number, preview))
+    window_any._editor_tab_workflow = SimpleNamespace(
+        open_file_at_line=lambda file_path, line_number, preview=False: open_calls.append(
+            (file_path, line_number, preview)
+        )
     )
 
     DebugControlWorkflow(window).handle_debug_navigate_permanent("/tmp/project/app/main.py", 18)
@@ -260,25 +264,22 @@ def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
     window_any = cast(Any, window)
     editor = _FakeEditorWidget()
     window_any._debug_execution_editor = editor
-    window_any._markdown_panes_by_path = {}
-    window_any._debug_inspector_workflow = SimpleNamespace(
+    cleared: list[bool] = []
+
+    host = SimpleNamespace(
+        debug_execution_editor=lambda: window_any._debug_execution_editor,
         clear_debug_execution_indicator=lambda: (
             setattr(window_any, "_debug_execution_editor", None),
             editor.clear_debug_execution_line(),
-        )
+            cleared.append(True),
+        ),
+        markdown_panes_by_path=lambda: {},
     )
-    window_any._editor_tab_workflow = EditorTabWorkflow(
-        host=MainWindowEditorTabHost(window_any),
-        editor_manager=SimpleNamespace(),
-        editor_tabs_coordinator=cast(Any, SimpleNamespace()),
-        save_workflow=SimpleNamespace(),
-        local_history_workflow=SimpleNamespace(),
-        debug_control_workflow=SimpleNamespace(breakpoint_store=SimpleNamespace()),
-        external_file_change_workflow=SimpleNamespace(check_and_handle=lambda *_args, **_kwargs: None),
-    )
+    workflow = ProjectTreeUiWorkflow(host)
 
-    MainWindow._release_editor_widget(window, editor)
+    workflow.release_editor_widget(editor)
 
     assert window_any._debug_execution_editor is None
     assert editor.clear_calls == 1
     assert editor.delete_calls == 1
+    assert cleared == [True]

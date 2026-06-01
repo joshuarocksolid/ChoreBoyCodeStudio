@@ -12,6 +12,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication
 
 from app.shell.main_window import MainWindow
+from app.shell.main_window_lifecycle import MainWindowLifecycle
 from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.unit
@@ -56,13 +57,21 @@ def test_shutdown_main_window_for_test_returns_executor_threads_to_baseline(
     assert _shell_task_thread_count() == baseline
 
 
-def test_shutdown_main_window_for_test_invokes_full_close_teardown_sequence() -> None:
+def test_shutdown_main_window_for_test_invokes_full_close_teardown_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test helper should mirror closeEvent teardown order."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        MainWindowLifecycle,
+        "begin_shutdown_teardown",
+        lambda window: calls.append("begin"),
+    )
+    monkeypatch.setattr(
+        MainWindowLifecycle,
+        "stop_active_run_before_close",
+        lambda window: calls.append("stop"),
+    )
     window = MainWindow.__new__(MainWindow)
     window_any = window
-    calls: list[str] = []
-    window_any._begin_shutdown_teardown = lambda: calls.append("begin")  # type: ignore[attr-defined]
-    window_any._stop_active_run_before_close = lambda: calls.append("stop")  # type: ignore[attr-defined]
     window_any._is_shutting_down = False  # type: ignore[attr-defined]
 
     shutdown_main_window_for_test(window)

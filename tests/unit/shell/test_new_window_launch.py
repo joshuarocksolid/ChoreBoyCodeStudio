@@ -3,24 +3,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.shell.main_window import MainWindow
+from app.shell.file_project_commands_workflow import FileProjectCommandsWorkflow
 
 pytestmark = pytest.mark.unit
 
 
 def test_build_new_window_command_uses_apprun_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
-    window = MainWindow.__new__(MainWindow)
-    monkeypatch.setattr("app.shell.main_window.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    workflow = FileProjectCommandsWorkflow(SimpleNamespace())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        "app.shell.file_project_commands_workflow.resolve_runtime_executable",
+        lambda _runtime: "/opt/freecad/AppRun",
+    )
     repo_root = Path("/tmp/repo")
     editor_boot = repo_root / "run_editor.py"
 
-    command = MainWindow._build_new_window_command(window, repo_root=repo_root, editor_boot=editor_boot)
+    command = workflow._build_new_window_command(repo_root=repo_root, editor_boot=editor_boot)
 
     assert command[0] == "/opt/freecad/AppRun"
     assert command[1] == "-c"
@@ -29,12 +33,15 @@ def test_build_new_window_command_uses_apprun_bootstrap(monkeypatch: pytest.Monk
 
 
 def test_build_new_window_command_falls_back_to_python_execution(monkeypatch: pytest.MonkeyPatch) -> None:
-    window = MainWindow.__new__(MainWindow)
-    monkeypatch.setattr("app.shell.main_window.resolve_runtime_executable", lambda _runtime: "/usr/bin/python3")
+    workflow = FileProjectCommandsWorkflow(SimpleNamespace())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        "app.shell.file_project_commands_workflow.resolve_runtime_executable",
+        lambda _runtime: "/usr/bin/python3",
+    )
     repo_root = Path("/tmp/repo")
     editor_boot = repo_root / "run_editor.py"
 
-    command = MainWindow._build_new_window_command(window, repo_root=repo_root, editor_boot=editor_boot)
+    command = workflow._build_new_window_command(repo_root=repo_root, editor_boot=editor_boot)
 
     assert command == ["/usr/bin/python3", str(editor_boot)]
 
@@ -45,10 +52,9 @@ def test_handle_new_window_action_launches_detached_process(tmp_path: Path, monk
     editor_boot = repo_root / "run_editor.py"
     editor_boot.write_text("print('boot')\n", encoding="utf-8")
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._resolve_repo_root_for_launch = lambda: repo_root
-    window_any._build_new_window_command = lambda **_kwargs: ["python3", str(editor_boot)]
+    workflow = FileProjectCommandsWorkflow(SimpleNamespace(dialog_parent=lambda: None))  # type: ignore[arg-type]
+    workflow._resolve_repo_root_for_launch = lambda: repo_root  # type: ignore[method-assign]
+    workflow._build_new_window_command = lambda **_kwargs: ["python3", str(editor_boot)]  # type: ignore[method-assign]
 
     popen_calls: list[tuple[list[str], dict[str, object]]] = []
 
@@ -56,9 +62,9 @@ def test_handle_new_window_action_launches_detached_process(tmp_path: Path, monk
         popen_calls.append((command, kwargs))
         return object()
 
-    monkeypatch.setattr("app.shell.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr("app.shell.file_project_commands_workflow.subprocess.Popen", _fake_popen)
 
-    MainWindow._handle_new_window_action(window)
+    workflow.handle_new_window_action()
 
     assert len(popen_calls) == 1
     command, kwargs = popen_calls[0]

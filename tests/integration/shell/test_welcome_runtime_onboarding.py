@@ -57,12 +57,12 @@ def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_aut
 
     onboarding_calls: list[str] = []
 
-    def _record_onboarding_action(self) -> None:  # type: ignore[no-untyped-def]
-        onboarding_calls.append("opened")
-
-    monkeypatch.setattr(MainWindow, "_handle_runtime_onboarding_action", _record_onboarding_action)
-
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    monkeypatch.setattr(
+        window._runtime_onboarding_workflow,
+        "handle_runtime_onboarding_action",
+        lambda: onboarding_calls.append("opened"),
+    )
     try:
         app.processEvents()
         app.processEvents()

@@ -55,22 +55,22 @@ class DebugControlWorkflow:
         except Exception as exc:
             QMessageBox.warning(self._dialog_parent(window), "Debug", f"Debug command failed: {exc}")
             return
-        window._append_debug_output_line("[debug] %s" % (command_name.replace("_", " "),))
+        window._debug_inspector_workflow.append_debug_output_line("[debug] %s" % (command_name.replace("_", " "),))
 
     def handle_pause_debug_action(self) -> None:
         window = self._window
         paused, error_message = window._run_session_controller.pause_session(
-            append_python_console_line=window._append_python_console_line,
-            append_debug_output_line=window._append_debug_output_line,
+            append_python_console_line=window._repl_event_workflow.append_python_console_line,
+            append_debug_output_line=window._debug_inspector_workflow.append_debug_output_line,
         )
         if error_message is not None:
             QMessageBox.warning(self._dialog_parent(window), "Debug", f"Pause failed: {error_message}")
         if paused:
-            window._refresh_run_action_states()
+            window._run_event_workflow.refresh_run_action_states()
 
     def handle_toggle_breakpoint_action(self) -> None:
         window = self._window
-        editor_widget = window._active_editor_widget()
+        editor_widget = window._editor_tab_workflow.active_editor_widget()
         if editor_widget is None:
             QMessageBox.information(self._dialog_parent(window), "Toggle Breakpoint", "Open a Python file first.")
             return
@@ -84,7 +84,7 @@ class DebugControlWorkflow:
             editor_widget.set_breakpoints(set())
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
-        window._refresh_run_action_states()
+        window._run_event_workflow.refresh_run_action_states()
 
     def handle_editor_breakpoint_toggled(self, file_path: str, line_number: int, enabled: bool) -> None:
         window = self._window
@@ -92,7 +92,7 @@ class DebugControlWorkflow:
         self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
-        window._refresh_run_action_states()
+        window._run_event_workflow.refresh_run_action_states()
 
     def refresh_breakpoints_list(self) -> None:
         window = self._window
@@ -166,12 +166,12 @@ class DebugControlWorkflow:
     def handle_debug_navigate_preview(self, file_path: str, line_number: int) -> None:
         if not self.is_debug_navigation_target_allowed(file_path):
             return
-        self._window._open_file_at_line(file_path, line_number, preview=True)
+        self._window._editor_tab_workflow.open_file_at_line(file_path, line_number, preview=True)
 
     def handle_debug_navigate_permanent(self, file_path: str, line_number: int) -> None:
         if not self.is_debug_navigation_target_allowed(file_path):
             return
-        self._window._open_file_at_line(file_path, line_number, preview=False)
+        self._window._editor_tab_workflow.open_file_at_line(file_path, line_number, preview=False)
 
     def is_debug_navigation_target_allowed(self, file_path: str) -> bool:
         window = self._window
@@ -212,7 +212,7 @@ class DebugControlWorkflow:
         self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
-        window._refresh_run_action_states()
+        window._run_event_workflow.refresh_run_action_states()
 
     def handle_debug_breakpoint_toggle(self, file_path: str, line_number: int, enabled: bool) -> None:
         window = self._window
@@ -224,7 +224,7 @@ class DebugControlWorkflow:
         self._sync_editor_breakpoints(file_path)
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
-        window._refresh_run_action_states()
+        window._run_event_workflow.refresh_run_action_states()
 
     def handle_debug_breakpoint_edit(self, file_path: str, line_number: int) -> None:
         window = self._window
@@ -259,7 +259,7 @@ class DebugControlWorkflow:
         )
         self.refresh_breakpoints_list()
         self.sync_breakpoints_to_active_debug_session()
-        window._refresh_run_action_states()
+        window._run_event_workflow.refresh_run_action_states()
 
     def sync_breakpoints_to_active_debug_session(self) -> None:
         window = self._window

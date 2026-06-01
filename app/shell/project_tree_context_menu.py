@@ -68,19 +68,20 @@ def show_single_item_tree_context_menu(
     assert paste_action is not None
     paste_action.setEnabled(len(window._tree_clipboard_paths) > 0)
     chosen = menu.exec_(window._project_tree_widget.viewport().mapToGlobal(position))
+    workflow = window._project_tree_ui_workflow
     if chosen is None:
         return
 
     if chosen == new_file_action:
-        window._handle_tree_new_file(absolute_path if is_directory else str(Path(absolute_path).parent))
+        workflow.handle_tree_new_file(absolute_path if is_directory else str(Path(absolute_path).parent))
     elif chosen == new_folder_action:
-        window._handle_tree_new_folder(absolute_path if is_directory else str(Path(absolute_path).parent))
+        workflow.handle_tree_new_folder(absolute_path if is_directory else str(Path(absolute_path).parent))
     elif chosen == rename_action:
-        window._handle_tree_rename(absolute_path)
+        workflow.handle_tree_rename(absolute_path)
     elif chosen == delete_action:
-        window._handle_tree_delete(absolute_path)
+        workflow.handle_tree_delete(absolute_path)
     elif chosen == duplicate_action:
-        window._handle_tree_duplicate(absolute_path)
+        workflow.handle_tree_duplicate(absolute_path)
     elif chosen == copy_action:
         window._tree_clipboard_paths = [absolute_path]
         window._tree_clipboard_cut = False
@@ -88,13 +89,13 @@ def show_single_item_tree_context_menu(
         window._tree_clipboard_paths = [absolute_path]
         window._tree_clipboard_cut = True
     elif chosen == paste_action:
-        window._handle_tree_paste(absolute_path if is_directory else str(Path(absolute_path).parent))
+        workflow.handle_tree_paste(absolute_path if is_directory else str(Path(absolute_path).parent))
     elif chosen == copy_path_action:
         QApplication.clipboard().setText(absolute_path)
     elif chosen == copy_relative_path_action:
         QApplication.clipboard().setText(relative_path)
     elif chosen == reveal_action:
-        window._reveal_path_in_file_manager(absolute_path)
+        workflow.reveal_path_in_file_manager(absolute_path)
     elif not is_directory and local_history_action is not None and chosen == local_history_action:
         window._local_history_workflow.show_local_history_for_path(absolute_path)
     elif run_file_action is not None and chosen == run_file_action:
@@ -102,11 +103,11 @@ def show_single_item_tree_context_menu(
     elif run_file_with_args_action is not None and chosen == run_file_with_args_action:
         window._run_launch_workflow.handle_tree_run_file_with_arguments(absolute_path)
     elif set_entry_point_action is not None and chosen == set_entry_point_action:
-        window._set_project_entry_point(relative_path)
+        workflow.set_project_entry_point(relative_path)
     elif mark_source_root_action is not None and chosen == mark_source_root_action:
-        window._handle_tree_mark_source_root(relative_path)
+        workflow.handle_tree_mark_source_root(relative_path)
     elif unmark_source_root_action is not None and chosen == unmark_source_root_action:
-        window._handle_tree_unmark_source_root(relative_path)
+        workflow.handle_tree_unmark_source_root(relative_path)
 
 
 def show_bulk_tree_context_menu(
@@ -134,10 +135,11 @@ def show_bulk_tree_context_menu(
     if chosen is None:
         return
 
+    workflow = window._project_tree_ui_workflow
     if chosen == delete_action:
-        window._handle_tree_bulk_delete(abs_paths)
+        workflow.handle_tree_bulk_delete(abs_paths)
     elif chosen == duplicate_action:
-        window._handle_tree_bulk_duplicate(abs_paths)
+        workflow.handle_tree_bulk_duplicate(abs_paths)
     elif chosen == copy_action:
         window._tree_clipboard_paths = list(abs_paths)
         window._tree_clipboard_cut = False
@@ -147,7 +149,7 @@ def show_bulk_tree_context_menu(
     elif chosen == paste_action:
         first_abs, _, first_is_dir = selected[0]
         dest = first_abs if first_is_dir else str(Path(first_abs).parent)
-        window._handle_tree_paste(dest)
+        workflow.handle_tree_paste(dest)
     elif chosen == copy_path_action:
         QApplication.clipboard().setText("\n".join(abs_paths))
     elif chosen == copy_relative_path_action:

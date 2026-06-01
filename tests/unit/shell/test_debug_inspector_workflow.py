@@ -51,8 +51,10 @@ class _FakeDebugInspectorHost:
         self.open_calls: list[tuple[str, int | None]] = []
         window = MainWindow.__new__(MainWindow)
         cast(Any, window)._loaded_project = self.loaded_project
-        cast(Any, window)._open_file_at_line = lambda file_path, line_number, preview=False: self.open_calls.append(
-            (file_path, line_number)
+        cast(Any, window)._editor_tab_workflow = SimpleNamespace(
+            open_file_at_line=lambda file_path, line_number, preview=False: self.open_calls.append(
+                (file_path, line_number)
+            )
         )
         self.debug_control_workflow = DebugControlWorkflow(window)
         self.debug_session = SimpleNamespace(

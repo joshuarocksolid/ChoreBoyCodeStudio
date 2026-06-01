@@ -167,10 +167,10 @@ class EditorTabWorkflowHost(Protocol):
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
         ...
 
-    def clear_debug_execution_indicator(self) -> None:
+    def editor_tab_factory(self) -> Any:
         ...
 
-    def open_file_at_line(self, file_path: str, line_number: int, *, preview: bool = False) -> None:
+    def clear_debug_execution_indicator(self) -> None:
         ...
 
     def show_local_history_for_path(self, file_path: str) -> None:
@@ -258,7 +258,17 @@ class EditorTabWorkflow:
             outline_panel.highlight_symbol_at_line(line_number)
 
     def handle_outline_symbol_activated(self, file_path: str, line_number: int) -> None:
-        self._host.open_file_at_line(file_path, line_number)
+        self.open_file_at_line(file_path, line_number)
+
+    def open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
+        if not self._host.editor_tab_factory().open_file_in_editor(file_path, preview=preview):
+            return
+        editor_widget = self._host.editor_widgets_by_path().get(
+            str(Path(file_path).expanduser().resolve())
+        )
+        if editor_widget is None or line_number is None:
+            return
+        editor_widget.go_to_line(line_number)
 
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
@@ -868,28 +878,28 @@ class MainWindowEditorTabHost:
         self._window._refresh_save_action_states()
 
     def refresh_run_action_states(self) -> None:
-        self._window._refresh_run_action_states()
+        self._window._run_event_workflow.refresh_run_action_states()
 
     def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
-        self._window._render_lint_diagnostics_for_file(file_path, trigger=trigger)
+        self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
 
     def render_merged_problems_panel(self) -> None:
-        self._window._render_merged_problems_panel()
+        self._window._problems_controller.render_merged_problems_panel()
 
     def reveal_project_tree_path(self, file_path: str) -> None:
         self._window._project_tree_presenter.reveal_path(file_path)
 
     def reload_current_project(self) -> None:
-        self._window._reload_current_project()
+        self._window._project_tree_ui_workflow.reload_current_project()
 
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
-        return self._window._load_effective_exclude_patterns(project_root)
+        return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
 
     def clear_debug_execution_indicator(self) -> None:
-        self._window._clear_debug_execution_indicator()
+        self._window._debug_inspector_workflow.clear_debug_execution_indicator()
 
-    def open_file_at_line(self, file_path: str, line_number: int, *, preview: bool = False) -> None:
-        self._window._open_file_at_line(file_path, line_number, preview=preview)
+    def editor_tab_factory(self) -> Any:
+        return self._window._editor_tab_factory
 
     def show_local_history_for_path(self, file_path: str) -> None:
         self._window._local_history_workflow.show_local_history_for_path(file_path)

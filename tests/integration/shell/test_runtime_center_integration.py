@@ -94,7 +94,7 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
     try:
-        assert window._open_project_by_path(str(project_root.resolve())) is True
+        assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
         fake_report = ProjectHealthReport(
             project_root=str(project_root.resolve()),

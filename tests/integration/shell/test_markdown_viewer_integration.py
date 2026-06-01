@@ -43,8 +43,8 @@ def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
     readme.write_text("# Original\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     readme_path = str(readme.resolve())
     assert window._editor_tab_factory.open_file_in_editor(readme_path) is True

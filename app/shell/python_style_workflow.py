@@ -26,7 +26,7 @@ class PythonStyleWorkflow:
     def handle_format_current_file_action(self) -> None:
         window = self._window
         active_tab = window._editor_manager.active_tab()
-        editor_widget = window._active_editor_widget()
+        editor_widget = window._editor_tab_workflow.active_editor_widget()
         if active_tab is None or editor_widget is None:
             QMessageBox.warning(window, "Format Current File", "Open a file tab first.")
             return
@@ -76,7 +76,7 @@ class PythonStyleWorkflow:
     def handle_organize_imports_action(self) -> None:
         window = self._window
         active_tab = window._editor_manager.active_tab()
-        editor_widget = window._active_editor_widget()
+        editor_widget = window._editor_tab_workflow.active_editor_widget()
         if active_tab is None or editor_widget is None:
             QMessageBox.warning(window, "Organize Imports", "Open a file tab first.")
             return
@@ -121,7 +121,7 @@ class PythonStyleWorkflow:
         if not active_tab.file_path.lower().endswith(".py"):
             QMessageBox.information(window, "Lint Current File", "Linting is currently available for Python files only.")
             return
-        window._render_lint_diagnostics_for_file(active_tab.file_path, trigger="manual")
+        window._lint_workflow.render_diagnostics_for_file(active_tab.file_path, trigger="manual")
 
     def handle_apply_safe_fixes_action(self) -> None:
         window = self._window
@@ -199,8 +199,8 @@ class PythonStyleWorkflow:
         )
         window._refresh_open_tabs_from_disk(affected_files)
         if window._loaded_project is not None and any(path != file_path for path in affected_files):
-            window._reload_current_project()
-        window._render_lint_diagnostics_for_file(file_path, trigger="manual")
+            window._project_tree_ui_workflow.reload_current_project()
+        window._lint_workflow.render_diagnostics_for_file(file_path, trigger="manual")
         QMessageBox.information(window, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
 
     def _apply_source_root_fixes(self, fixes, *, project_metadata) -> int:  # type: ignore[no-untyped-def]

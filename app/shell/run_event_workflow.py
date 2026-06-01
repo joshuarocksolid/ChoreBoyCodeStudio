@@ -502,7 +502,7 @@ class MainWindowRunEventHost:
         return Path(active_tab.file_path).suffix.lower() == ".py"
 
     def render_merged_problems_panel(self) -> None:
-        self._window._render_merged_problems_panel()
+        self._window._problems_controller.render_merged_problems_panel()
 
     def build_runtime_issue_report(self) -> RuntimeIssueReport:
         report = self._window._runtime_onboarding_workflow.build_runtime_issue_report()
@@ -513,10 +513,22 @@ class MainWindowRunEventHost:
         self._window._runtime_onboarding_workflow.open_runtime_center_dialog(title=title, report=report)
 
     def focus_run_log_tab(self) -> None:
-        self._window._focus_run_log_tab()
+        bottom_tabs = self._window._bottom_tabs_widget
+        run_log = self._window._run_log_panel
+        if bottom_tabs is None or run_log is None:
+            return
+        index = bottom_tabs.indexOf(run_log)
+        if index >= 0:
+            bottom_tabs.setCurrentIndex(index)
 
     def focus_problems_tab(self) -> None:
-        self._window._focus_problems_tab()
+        bottom_tabs = self._window._bottom_tabs_widget
+        problems = self._window._problems_panel
+        if bottom_tabs is None or problems is None:
+            return
+        index = bottom_tabs.indexOf(problems)
+        if index >= 0:
+            bottom_tabs.setCurrentIndex(index)
 
     def append_debug_output_line(self, text: str) -> None:
         self._window._debug_inspector_workflow.append_debug_output_line(text)

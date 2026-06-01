@@ -15,6 +15,7 @@ from PySide2.QtWidgets import QDialog
 from app.core import constants
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
+from app.shell.main_window_lifecycle import MainWindowLifecycle
 
 pytestmark = pytest.mark.integration
 
@@ -31,8 +32,8 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
 
 def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
     window._is_shutting_down = True
-    window._begin_shutdown_teardown()
-    window._stop_active_run_before_close()
+    MainWindowLifecycle.begin_shutdown_teardown(window)
+    MainWindowLifecycle.stop_active_run_before_close(window)
     window.deleteLater()
     app.processEvents()
 
@@ -63,8 +64,8 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     file_path.write_text("print('current')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 
     window._local_history_workflow.local_history_store.create_checkpoint(
@@ -89,7 +90,7 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_history_restore_exec)
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-        window._handle_set_theme(mode)
+        window._shell_preferences_runtime.handle_set_theme(mode)
         window._local_history_workflow.show_local_history_for_path(str(file_path.resolve()))
         window._local_history_workflow.open_global_history()
         assert _wait_for(lambda: window._local_history_workflow.history_restore_picker_dialog is not None, app)

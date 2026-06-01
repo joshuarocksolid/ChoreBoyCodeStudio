@@ -25,12 +25,12 @@ class MainWindowProjectLoadHost:
         return self._window._logger
 
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
-        return self._window._load_effective_exclude_patterns(project_root)
+        return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
 
     def prepare_project_switch(self) -> None:
         window = self._window
         window.statusBar().showMessage("Opening project…", 0)
-        window._cancel_pending_project_tree_preview()
+        window._project_tree_ui_workflow.cancel_pending_project_tree_preview()
         previous_project = window._loaded_project
         if previous_project is not None:
             window._local_history_workflow.persist_session_state(
@@ -39,7 +39,7 @@ class MainWindowProjectLoadHost:
 
     def populate_project_tree(self, loaded_project: LoadedProject) -> None:
         self._window.statusBar().showMessage("Building project tree…", 0)
-        self._window._populate_project_tree(loaded_project)
+        self._window._project_tree_ui_workflow.populate_project_tree(loaded_project)
 
     def apply_project_surface(self, loaded_project: LoadedProject) -> None:
         apply_project_surface(

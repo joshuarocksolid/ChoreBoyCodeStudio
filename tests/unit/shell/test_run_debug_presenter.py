@@ -33,11 +33,15 @@ def _make_presenter_window(result: RunSessionStartResult) -> MainWindow:
     window_any._debug_panel = None
     window_any._save_workflow = SimpleNamespace(handle_save_all_action=lambda: True)
     window_any._prepare_for_session_start = lambda: None
-    window_any._append_console_line = lambda _text, _stream="stdout": None
-    window_any._append_python_console_line = lambda _text, _stream="stdout": None
-    window_any._refresh_run_action_states = lambda: None
+    window_any._run_event_workflow = SimpleNamespace(
+        append_console_line=lambda _text, _stream="stdout": None,
+        set_run_status=lambda _status, return_code=None: None,
+        refresh_run_action_states=lambda: None,
+    )
+    window_any._repl_event_workflow = SimpleNamespace(
+        append_python_console_line=lambda _text, _stream="stdout": None,
+    )
     window_any._auto_open_console_on_run_output = False
-    window_any._set_run_status = lambda _status: None
     return window
 
 

@@ -87,7 +87,7 @@ def test_close_event_blocks_post_close_run_event_application(
     monkeypatch.setattr(window._save_workflow, "confirm_proceed_with_unsaved_changes", lambda _action: True)
     monkeypatch.setattr(window._run_service.supervisor, "is_running", lambda: True)
     monkeypatch.setattr(window._run_service, "stop_run", lambda: stop_calls.append("stop"))
-    monkeypatch.setattr(window, "_apply_run_event", lambda event: applied_events.append(event))
+    monkeypatch.setattr(window._run_event_workflow, "apply_run_event", lambda event: applied_events.append(event))
 
     # Seed a queued event to verify shutdown drains it rather than applying.
     window._run_event_queue.put(ProcessEvent(event_type="state", state="running"))
@@ -101,8 +101,8 @@ def test_close_event_blocks_post_close_run_event_application(
     assert applied_events == []
 
     # New events arriving from background threads are ignored once shutdown begins.
-    window._enqueue_run_event(ProcessEvent(event_type="state", state="exited"))
-    window._process_queued_run_events()
+    window._run_event_workflow.enqueue_run_event(ProcessEvent(event_type="state", state="exited"))
+    window._run_event_workflow.process_queued_run_events()
     assert window._run_event_queue.empty() is True
     assert applied_events == []
 

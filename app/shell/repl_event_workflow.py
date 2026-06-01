@@ -117,6 +117,9 @@ class ReplEventWorkflow:
                 self._host.log_exception("Failed to process Python Console event")
             processed += 1
 
+    def append_python_console_line(self, text: str, stream: str = "stdout") -> None:
+        self._host.append_python_console_line(text, stream)
+
 
 class MainWindowReplEventHost:
     """Adapts :class:`MainWindow` to :class:`ReplEventWorkflowHost`."""
@@ -141,7 +144,9 @@ class MainWindowReplEventHost:
         return self._window._runtime_introspection_coordinator
 
     def append_python_console_line(self, text: str, stream: str = "stdout") -> None:
-        self._window._append_python_console_line(text, stream)
+        widget = self._window._python_console_widget
+        if widget is not None:
+            widget.append_output(text, stream)
 
     def log_exception(self, message: str) -> None:
         self._window._logger.exception(message)

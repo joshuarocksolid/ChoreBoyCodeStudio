@@ -45,8 +45,8 @@ class RunDebugPresenter:
             skip_save=skip_save,
             save_all=window._save_workflow.handle_save_all_action,
             before_start=window._prepare_for_session_start,
-            append_console_line=lambda text, stream: window._append_console_line(text, stream=stream),
-            append_python_console_line=window._append_python_console_line,
+            append_console_line=window._run_event_workflow.append_console_line,
+            append_python_console_line=window._repl_event_workflow.append_python_console_line,
         )
         if not result.started:
             if result.failure_reason == RunSessionStartFailureReason.NO_PROJECT:
@@ -61,8 +61,8 @@ class RunDebugPresenter:
                 )
             elif result.error_message:
                 QMessageBox.warning(window, "Run failed to start", result.error_message)
-            window._set_run_status("idle")
-            window._refresh_run_action_states()
+            window._run_event_workflow.set_run_status("idle")
+            window._run_event_workflow.refresh_run_action_states()
             return False
 
         if result.session is not None:
@@ -78,8 +78,13 @@ class RunDebugPresenter:
             window._debug_panel.set_command_input_enabled(
                 window._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG
             )
-        window._set_run_status("running")
+        window._run_event_workflow.set_run_status("running")
         if window._auto_open_console_on_run_output:
-            window._focus_run_log_tab()
-        window._refresh_run_action_states()
+            bottom_tabs = window._bottom_tabs_widget
+            run_log = window._run_log_panel
+            if bottom_tabs is not None and run_log is not None:
+                index = bottom_tabs.indexOf(run_log)
+                if index >= 0:
+                    bottom_tabs.setCurrentIndex(index)
+        window._run_event_workflow.refresh_run_action_states()
         return True

@@ -54,6 +54,8 @@ from app.shell.layout_persistence import (
     DEFAULT_OUTLINE_SORT_MODE,
 )
 from app.shell.local_history_workflow import LocalHistoryWorkflow
+from app.shell.lint_workflow import build_lint_workflow
+from app.shell.shell_layout_workflow import build_shell_layout_workflow
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.menu_wiring import build_main_window_menus, connect_test_explorer_navigation
 from app.shell.menus import MenuStubRegistry
@@ -80,6 +82,12 @@ from app.shell.runtime_onboarding_workflow import (
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import SaveWorkflow
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
+from app.shell.intelligence_cache_workflow import build_intelligence_cache_workflow
+from app.shell.main_window_layout import build_layout_shell, configure_window_frame
+from app.shell.file_project_commands_workflow import build_file_project_commands_workflow
+from app.shell.plugin_dialog_workflow import build_plugin_dialog_workflow
+from app.shell.project_tree_ui_workflow import build_project_tree_ui_workflow
+from app.shell.shell_preferences_runtime import build_shell_preferences_runtime
 from app.shell.shell_composition import (
     build_external_file_change_workflow,
     build_find_replace_workflow,
@@ -103,6 +111,16 @@ from app.examples.example_project_service import ExampleProjectService
 from app.editors.code_editor_widget import CodeEditorWidget
 
 
+def _focus_bottom_tab(window: Any, widget: QWidget | None) -> None:
+    bottom_tabs = getattr(window, "_bottom_tabs_widget", None)
+    if bottom_tabs is None or widget is None:
+        return
+    index = bottom_tabs.indexOf(widget)
+    if index < 0:
+        return
+    bottom_tabs.setCurrentIndex(index)
+
+
 def install_main_window_composition(
     window: Any,
     *,
@@ -118,6 +136,7 @@ def install_main_window_composition(
     )
     window._python_console_history_path = global_python_console_history_path(window._state_root)
     window._settings_service = SettingsService(state_root=window._state_root)
+    window._shell_preferences_runtime = build_shell_preferences_runtime(window)
     window._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
     window._stored_runtime_problems: list[ProblemEntry] = []
     window._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
@@ -131,7 +150,7 @@ def install_main_window_composition(
     window._plugin_api_broker = PluginApiBroker(window._plugin_runtime_manager)
     window._workflow_broker = WorkflowBroker(window._plugin_api_broker)
     window._workflow_provider_catalog = WorkflowProviderCatalog([])
-    window._plugin_safe_mode = window._load_plugin_safe_mode()
+    window._plugin_safe_mode = window._shell_preferences_runtime.load_plugin_safe_mode()
     window._declarative_contribution_manager = DeclarativeContributionManager(
         register_runtime_command=lambda command_id, handler, replace: window.register_runtime_command(
             command_id=command_id,
@@ -149,8 +168,15 @@ def install_main_window_composition(
             payload,
             activation_event=activation_event,
         ),
-        on_runtime_command_success=window._clear_plugin_runtime_failure,
-        on_runtime_command_failure=window._record_plugin_runtime_failure,
+        on_runtime_command_success=lambda plugin_id, version: window._plugin_dialog_workflow.clear_plugin_runtime_failure(
+            plugin_id,
+            version,
+        ),
+        on_runtime_command_failure=lambda plugin_id, version, error_message: window._plugin_dialog_workflow.record_plugin_runtime_failure(
+            plugin_id,
+            version,
+            error_message,
+        ),
     )
     window._status_controller = None
     window._startup_report: CapabilityProbeReport | None = startup_report
@@ -175,6 +201,7 @@ def install_main_window_composition(
         workflow_broker=window._workflow_broker,
         on_catalog_changed=lambda catalog: setattr(window, "_workflow_provider_catalog", catalog),
     )
+    window._plugin_dialog_workflow = build_plugin_dialog_workflow(window)
     window._project_tree_structure_signature: tuple[str, ...] | None = None
     window._workspace_controller = EditorWorkspaceController()
     window._editor_manager = EditorManager()
@@ -185,7 +212,7 @@ def install_main_window_composition(
     window._debug_exception_policy = DebugExceptionPolicy()
     window._tree_clipboard_paths: list[str] = []
     window._tree_clipboard_cut: bool = False
-    window._import_update_policy = window._load_import_update_policy()
+    window._import_update_policy = window._shell_preferences_runtime.load_import_update_policy()
     (
         window._editor_tab_width,
         window._editor_font_size,
@@ -202,39 +229,38 @@ def install_main_window_composition(
         window._editor_exit_behavior,
         window._editor_hover_tooltip_enabled,
         window._editor_auto_reindent_flat_python_paste,
-    ) = window._load_editor_preferences()
+    ) = window._shell_preferences_runtime.load_editor_preferences()
     window._pending_project_tree_preview_path: str | None = None
     window._project_tree_preview_click_timer = QTimer(window)
     window._project_tree_preview_click_timer.setSingleShot(True)
     window._project_tree_preview_click_timer.setInterval(175)
-    window._project_tree_preview_click_timer.timeout.connect(window._open_pending_project_tree_preview)
     window._zoom_delta: int = 0
     (
         window._completion_enabled,
         window._completion_auto_trigger,
         window._completion_min_chars,
-    ) = window._load_completion_preferences()
+    ) = window._shell_preferences_runtime.load_completion_preferences()
     window._reported_completion_degradation_reasons: set[str] = set()
     (
         window._diagnostics_enabled,
         window._diagnostics_realtime,
         window._quick_fixes_enabled,
         window._quick_fix_require_preview_for_multifile,
-    ) = window._load_diagnostics_preferences()
+    ) = window._shell_preferences_runtime.load_diagnostics_preferences()
     (
         window._auto_open_console_on_run_output,
         window._auto_open_problems_on_run_failure,
-    ) = window._load_output_preferences()
-    window._intelligence_runtime_settings = window._load_intelligence_runtime_settings()
-    window._local_history_retention_policy = window._load_local_history_retention_policy()
+    ) = window._shell_preferences_runtime.load_output_preferences()
+    window._intelligence_runtime_settings = window._shell_preferences_runtime.load_intelligence_runtime_settings()
+    window._local_history_retention_policy = window._shell_preferences_runtime.load_local_history_retention_policy()
     window._theme_mode = ShellThemeWorkflow.load_theme_mode(window._settings_service)
     window._ui_font_weight = ShellThemeWorkflow.load_ui_font_weight(window._settings_service)
     window._dark_chrome_palette = ShellThemeWorkflow.load_dark_chrome_palette(window._settings_service)
-    window._shortcut_overrides = window._load_shortcut_overrides()
+    window._shortcut_overrides = window._shell_preferences_runtime.load_shortcut_overrides()
     window._effective_shortcuts = build_effective_shortcut_map(window._shortcut_overrides)
     window._syntax_color_overrides = ShellThemeWorkflow.load_syntax_color_overrides(window._settings_service)
-    window._lint_rule_overrides = window._load_lint_rule_overrides()
-    window._selected_linter = window._load_selected_linter()
+    window._lint_rule_overrides = window._shell_preferences_runtime.load_lint_rule_overrides()
+    window._selected_linter = window._shell_preferences_runtime.load_selected_linter()
     window._symbol_cache_db_path = str(global_cache_dir(window._state_root) / "symbols.sqlite3")
     local_history_store = LocalHistoryStore(
         state_root=window._state_root,
@@ -260,7 +286,6 @@ def install_main_window_composition(
     window._outline_refresh_timer = QTimer(window)
     window._outline_refresh_timer.setSingleShot(True)
     window._outline_refresh_timer.setInterval(300)
-    window._outline_refresh_timer.timeout.connect(window._refresh_outline_for_active_tab)
     window._outline_collapsed: bool = DEFAULT_OUTLINE_COLLAPSED
     window._outline_follow_cursor: bool = DEFAULT_OUTLINE_FOLLOW_CURSOR
     window._outline_sort_mode: str = DEFAULT_OUTLINE_SORT_MODE
@@ -278,9 +303,12 @@ def install_main_window_composition(
     window._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
     window._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
     window._latest_run_issue_ids: tuple[str, ...] = ()
-    window._run_service = RunService(on_event=window._enqueue_run_event, state_root=window._state_root)
-    window._run_session_controller = RunSessionController(window._run_service)
     window._run_event_workflow = RunEventWorkflow(MainWindowRunEventHost(window))
+    window._run_service = RunService(
+        on_event=window._run_event_workflow.enqueue_run_event,
+        state_root=window._state_root,
+    )
+    window._run_session_controller = RunSessionController(window._run_service)
     window._run_debug_presenter = RunDebugPresenter(window)
     window._run_config_controller = RunConfigController()
     window._debug_control_workflow = DebugControlWorkflow(window)
@@ -289,9 +317,9 @@ def install_main_window_composition(
     window._repl_event_queue: queue.Queue[ReplEvent] = queue.Queue()
     window._repl_event_workflow = ReplEventWorkflow(MainWindowReplEventHost(window))
     window._repl_manager = ReplSessionManager(
-        on_output=window._enqueue_repl_output,
-        on_session_ended=window._enqueue_repl_ended,
-        on_session_started=window._enqueue_repl_started,
+        on_output=window._repl_event_workflow.enqueue_output,
+        on_session_ended=window._repl_event_workflow.enqueue_ended,
+        on_session_started=window._repl_event_workflow.enqueue_started,
         state_root=window._state_root,
     )
     window._runtime_introspection_coordinator = RuntimeIntrospectionCoordinator(
@@ -352,8 +380,8 @@ def install_main_window_composition(
         open_file_in_editor=lambda file_path: window._editor_tab_factory.open_file_in_editor(file_path, preview=False),
         open_restored_history_buffer=window._editor_tab_factory.open_restored_history_buffer,
         apply_text_to_open_tab=window._apply_text_to_open_tab,
-        tab_index_for_path=window._tab_index_for_path,
-        refresh_tab_presentation=window._refresh_tab_presentation,
+        tab_index_for_path=lambda file_path: window._editor_tab_workflow.tab_index_for_path(file_path),
+        refresh_tab_presentation=lambda file_path: window._editor_tab_workflow.refresh_tab_presentation(file_path),
         set_current_tab_index=lambda tab_index: window._editor_tabs_widget.setCurrentIndex(tab_index)
         if window._editor_tabs_widget is not None
         else None,
@@ -371,6 +399,47 @@ def install_main_window_composition(
             suppressed
         ),
     )
+    window._project_controller = ProjectController(
+        state_root=window._state_root,
+        logger=window._logger,
+        dispatch_to_main_thread=window._dispatch_to_main_thread,
+    )
+    window._file_project_commands_workflow = build_file_project_commands_workflow(window)
+    window._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(window))
+    window._project_rescan_workflow = ProjectRescanWorkflow(MainWindowProjectRescanHost(window))
+    window._source_root_workflow = build_source_root_workflow(window)
+    window._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
+    window._external_file_change_workflow = build_external_file_change_workflow(window)
+    window._editor_tab_workflow = build_editor_tab_workflow(window)
+    window._outline_refresh_timer.timeout.connect(window._editor_tab_workflow.refresh_outline_for_active_tab)
+    window._intelligence_cache_workflow = build_intelligence_cache_workflow(window)
+    window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
+    window._project_tree_preview_click_timer.timeout.connect(
+        window._project_tree_ui_workflow.open_pending_project_tree_preview
+    )
+    window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
+        project_tree_controller=window._project_tree_controller,
+        editor_widgets_by_path=window._editor_widgets_by_path,
+        tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
+        remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
+        if window._editor_tabs_widget is not None
+        else None,
+        release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
+        close_editor_file=window._editor_manager.close_file,
+        breakpoint_store=window._debug_control_workflow.breakpoint_store,
+        refresh_breakpoints_list=window._debug_control_workflow.refresh_breakpoints_list,
+        remap_editor_paths=window._editor_manager.remap_paths_for_move,
+        update_tab_path_and_name=window._project_tree_ui_workflow.update_tab_path_and_name,
+        apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
+        update_widget_language=window._project_tree_ui_workflow.update_widget_language_for_path,
+        maybe_rewrite_imports=window._project_tree_ui_workflow.maybe_rewrite_imports_for_move,
+        reload_project=window._project_tree_ui_workflow.refresh_project_tree_from_disk,
+        record_deleted_path=window._local_history_workflow.record_deleted_path,
+        remap_file_lineage=window._local_history_workflow.remap_file_lineage,
+    )
+    window._project_tree_action_workflow = build_project_tree_action_workflow(window)
+    window._shell_layout_workflow = build_shell_layout_workflow(window)
+    window._lint_workflow = build_lint_workflow(window)
     window._diagnostics_orchestrator = DiagnosticsOrchestrator(
         diagnostics_enabled=lambda: window._diagnostics_enabled,
         diagnostics_realtime=lambda: window._diagnostics_realtime,
@@ -380,12 +449,12 @@ def install_main_window_composition(
         get_pending_realtime_file_path=lambda: window._pending_realtime_lint_file_path,
         start_realtime_timer=window._realtime_lint_timer.start,
         get_active_tab_file_path=window._editor_manager.active_file_path,
-        render_lint_for_file=lambda file_path, trigger: window._render_lint_diagnostics_for_file(
+        render_lint_for_file=lambda file_path, trigger: window._lint_workflow.render_diagnostics_for_file(
             file_path,
             trigger=trigger,
         ),
         get_open_editor_paths=window._workspace_controller.open_editor_paths,
-        render_merged_problems_panel=window._render_merged_problems_panel,
+        render_merged_problems_panel=lambda: window._problems_controller.render_merged_problems_panel(),
         set_known_runtime_modules=lambda modules: setattr(window, "_known_runtime_modules", modules),
         run_background_task=window._background_tasks.run,
         state_root=lambda: window._state_root,
@@ -402,38 +471,6 @@ def install_main_window_composition(
             orchestrator=window._diagnostics_orchestrator,
         )
     )
-    window._project_controller = ProjectController(
-        state_root=window._state_root,
-        logger=window._logger,
-        dispatch_to_main_thread=window._dispatch_to_main_thread,
-    )
-    window._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(window))
-    window._project_rescan_workflow = ProjectRescanWorkflow(MainWindowProjectRescanHost(window))
-    window._source_root_workflow = build_source_root_workflow(window)
-    window._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
-    window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
-        project_tree_controller=window._project_tree_controller,
-        editor_widgets_by_path=window._editor_widgets_by_path,
-        tab_index_for_path=window._tab_index_for_path,
-        remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
-        if window._editor_tabs_widget is not None
-        else None,
-        release_editor_widget=window._release_editor_widget,
-        close_editor_file=window._editor_manager.close_file,
-        breakpoint_store=window._debug_control_workflow.breakpoint_store,
-        refresh_breakpoints_list=window._debug_control_workflow.refresh_breakpoints_list,
-        remap_editor_paths=window._editor_manager.remap_paths_for_move,
-        update_tab_path_and_name=window._update_tab_path_and_name,
-        apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
-        update_widget_language=window._update_widget_language_for_path,
-        maybe_rewrite_imports=window._maybe_rewrite_imports_for_move,
-        reload_project=window._refresh_project_tree_from_disk,
-        record_deleted_path=window._local_history_workflow.record_deleted_path,
-        remap_file_lineage=window._local_history_workflow.remap_file_lineage,
-    )
-    window._project_tree_action_workflow = build_project_tree_action_workflow(window)
-    window._external_file_change_workflow = build_external_file_change_workflow(window)
-    window._editor_tab_workflow = build_editor_tab_workflow(window)
     window._settings_apply_workflow = build_settings_apply_workflow(window)
     window._python_console_workflow = build_python_console_workflow(window)
     window._find_replace_workflow = build_find_replace_workflow(window)
@@ -442,17 +479,17 @@ def install_main_window_composition(
     window._help_controller = ShellHelpController(
         state_root=window._state_root,
         resolve_theme_tokens=window._shell_theme_workflow.resolve_theme_tokens,
-        reveal_path_in_file_manager=window._reveal_path_in_file_manager,
+        reveal_path_in_file_manager=window._project_tree_ui_workflow.reveal_path_in_file_manager,
         get_effective_shortcuts=lambda: window._effective_shortcuts,
     )
 
-    window._configure_window_frame()
-    window._build_layout_shell()
+    configure_window_frame(window)
+    build_layout_shell(window)
     window._run_launch_workflow = build_run_launch_workflow(window)
 
     def active_test_editor() -> ActiveTestEditor | None:
         active_tab = window._editor_manager.active_tab()
-        editor_widget = window._active_editor_widget()
+        editor_widget = window._editor_tab_workflow.active_editor_widget()
         if active_tab is None or editor_widget is None:
             return None
         return ActiveTestEditor(
@@ -471,10 +508,10 @@ def install_main_window_composition(
         start_debug_session=window._run_launch_workflow.start_session,
         build_debug_breakpoints=window._debug_control_workflow.build_debug_breakpoints_for_launch,
         debug_exception_policy_provider=lambda: window._debug_exception_policy,
-        append_console_line=lambda text, stream: window._append_console_line(text, stream=stream),
-        set_problems=window._set_problems,
-        focus_run_log_tab=window._focus_run_log_tab,
-        focus_problems_tab=window._focus_problems_tab,
+        append_console_line=window._run_event_workflow.append_console_line,
+        set_problems=window._run_event_workflow.set_problems,
+        focus_run_log_tab=lambda: _focus_bottom_tab(window, window._run_log_panel),
+        focus_problems_tab=lambda: _focus_bottom_tab(window, window._problems_panel),
         show_warning=lambda title, message: QMessageBox.warning(window, title, message),
         show_information=lambda title, message: QMessageBox.information(window, title, message),
         record_debug_target=window._run_launch_workflow.record_debug_target_from_dict,
@@ -484,8 +521,8 @@ def install_main_window_composition(
     )
 
     connect_test_explorer_navigation(window)
-    window._configure_close_tab_shortcut()
-    window._configure_keep_preview_open_shortcut()
+    window._shell_preferences_runtime.configure_close_tab_shortcut()
+    window._shell_preferences_runtime.configure_keep_preview_open_shortcut()
     window._menu_registry = build_main_window_menus(window, shortcut_overrides=window._effective_shortcuts)
     if window._menu_registry is not None:
         window._action_registry = ShellActionRegistry(
@@ -495,7 +532,7 @@ def install_main_window_composition(
     window._status_controller = create_shell_status_bar(
         window,
         startup_report=startup_report,
-        on_startup_activated=window._handle_runtime_center_action,
+        on_startup_activated=window._runtime_onboarding_workflow.handle_runtime_center_action,
     )
     window._run_launch_workflow.install_active_run_config_indicator()
     window._refresh_python_tooling_status()
@@ -507,42 +544,50 @@ def install_main_window_composition(
             if isinstance(center_layout, QVBoxLayout):
                 center_layout.insertWidget(0, window._toolbar, 0)
     window._shell_theme_workflow.apply_theme_styles()
-    window._apply_runtime_intelligence_preferences_to_open_editors()
-    window._sync_theme_menu_check_state()
+    window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
+    window._shell_preferences_runtime.sync_theme_menu_check_state()
     window._sync_auto_save_menu_state()
-    window._restore_layout_from_settings()
-    window._refresh_open_recent_menu()
+    window._shell_layout_workflow.restore_from_settings()
+    window._file_project_commands_workflow.refresh_open_recent_menu()
     window._refresh_save_action_states()
-    window._refresh_run_action_states()
-    window._refresh_markdown_action_states()
+    window._run_event_workflow.refresh_run_action_states()
+    window._editor_tab_workflow.refresh_markdown_action_states()
     window._test_runner_workflow.refresh_discovery()
     window._plugin_activation_workflow.reload()
     window._run_event_timer = QTimer(window)
     window._run_event_timer.setInterval(50)
-    window._run_event_timer.timeout.connect(window._process_queued_run_events)
+    window._run_event_timer.timeout.connect(window._run_event_workflow.process_queued_run_events)
     window._run_event_timer.start()
     window._repl_event_timer = QTimer(window)
     window._repl_event_timer.setInterval(50)
-    window._repl_event_timer.timeout.connect(window._process_queued_repl_events)
+    window._repl_event_timer.timeout.connect(window._repl_event_workflow.process_queued_events)
     window._repl_event_timer.start()
     window._external_change_poll_timer = QTimer(window)
     window._external_change_poll_timer.setInterval(1000)
-    window._external_change_poll_timer.timeout.connect(window._poll_external_file_changes)
+    window._external_change_poll_timer.timeout.connect(window._editor_tab_workflow.poll_external_file_changes)
     window._external_change_poll_timer.start()
     window._restore_project_timer = QTimer(window)
     window._restore_project_timer.setSingleShot(True)
-    window._restore_project_timer.timeout.connect(window._try_restore_last_project)
+    window._restore_project_timer.timeout.connect(
+        window._file_project_commands_workflow.try_restore_last_project
+    )
     window._restore_project_timer.start(0)
     window._auto_start_repl_timer = QTimer(window)
     window._auto_start_repl_timer.setSingleShot(True)
-    window._auto_start_repl_timer.timeout.connect(window._auto_start_repl)
+    window._auto_start_repl_timer.timeout.connect(window._repl_manager.start)
     window._auto_start_repl_timer.start(100)
     window._runtime_probe_timer = QTimer(window)
     window._runtime_probe_timer.setSingleShot(True)
-    window._runtime_probe_timer.timeout.connect(window._start_runtime_module_probe)
+    window._runtime_probe_timer.timeout.connect(
+        lambda: window._diagnostics_orchestrator.start_runtime_module_probe()
+    )
     window._runtime_probe_timer.start(200)
     window._startup_probe_refresh_timer = QTimer(window)
     window._startup_probe_refresh_timer.setSingleShot(True)
-    window._startup_probe_refresh_timer.timeout.connect(window._refresh_startup_capability_report_async)
+    window._startup_probe_refresh_timer.timeout.connect(
+        window._runtime_onboarding_workflow.refresh_startup_capability_report_async
+    )
     window._startup_probe_refresh_timer.start(0)
-    window._startup_capability_facade.set_refresh_callback(window._handle_startup_report_refresh)
+    window._startup_capability_facade.set_refresh_callback(
+        window._runtime_onboarding_workflow.handle_startup_report_refresh
+    )

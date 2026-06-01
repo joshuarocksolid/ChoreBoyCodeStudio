@@ -50,7 +50,7 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch) -> QApplication:
 
 
 def _stub_background_project_open(window: MainWindow) -> None:
-    window._start_symbol_indexing = lambda _project_root, exclude_patterns=None: None  # type: ignore[method-assign]
+    window._intelligence_cache_workflow.start_symbol_indexing = lambda _project_root, exclude_patterns=None: None  # type: ignore[method-assign]
     test_runner_workflow = getattr(window, "_test_runner_workflow", None)
     if test_runner_workflow is not None:
         test_runner_workflow.refresh_discovery = lambda: None  # type: ignore[method-assign]
@@ -98,7 +98,7 @@ def test_full_project_open_vendor_heavy_under_threshold(
     _stub_background_project_open(window)
 
     start = time.perf_counter()
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
     elapsed = time.perf_counter() - start
 
     assert window._loaded_project is not None

@@ -355,6 +355,11 @@ choreboy_code_studio/
     shell/
       __init__.py
       main_window.py
+      main_window_composition.py
+      main_window_layout.py
+      main_window_panels.py
+      main_window_lifecycle.py
+      menu_wiring.py
       background_tasks.py
       main_thread_dispatcher.py
       menus.py
@@ -660,23 +665,57 @@ Owns the main window and top-level composition.
 It coordinates services but should not contain deep business logic.
 
 Current implementation keeps `MainWindow` as composition root and delegates
-domain orchestration to focused shell controllers:
+domain orchestration to focused shell controllers and workflows:
+
+**Composition and layout**
+
+- `main_window_composition.py` — service graph, workflow construction, timer wiring
+- `main_window_layout.py` / `main_window_panels.py` — frame, splitters, and panel assembly
+- `main_window_lifecycle.py` — close/shutdown teardown and persistence hooks
+- `menu_wiring.py` — menu callback binding to workflows (hard cutover; no long-lived `MainWindow` delegators)
+
+**Project, tree, and editor tabs**
 
 - `project_controller` for open/recent project flows
-- `run_session_controller` for run/debug/repl lifecycle control wiring
+- `file_project_commands_workflow` for file/project menu commands, quick open, and settings entry
+- `project_tree_ui_workflow` for explorer/search sidebar UI actions
 - `project_tree_controller` for tree move/delete/remap side effects
 - `editor_workspace_controller` for open-editor ownership and monotonic buffer revisions
 - `editor_tab_factory` for editor widget materialization and per-tab signal wiring
+- `editor_tab_workflow` for tab lifecycle, markdown mode, zoom, outline hooks, and external-change polling
 - `editor_intelligence_controller` for semantic request routing and inline result formatting
+
+**Run, debug, and console**
+
+- `run_session_controller` for run/debug/repl lifecycle control wiring
+- `run_event_workflow` and `repl_event_workflow` for process and REPL event queues
 - `debug_control_workflow` for breakpoint state, debug panel command routing, and debugger transport commands
+- `debug_inspector_workflow` for debug inspector panel sync
+
+**Intelligence, diagnostics, and navigation**
+
+- `semantic_navigation_workflow` for find references, rename, and completion resolve
+- `lint_workflow` and `diagnostics_search_coordinator.DiagnosticsOrchestrator` for lint execution, realtime scheduling, and runtime module probing
+- `intelligence_cache_workflow` for symbol index worker lifecycle and cache rebuild
+
+**Preferences, theme, and onboarding**
+
+- `shell_preferences_runtime` for settings load/apply, theme mode, and shortcut wiring
+- `shell_layout_workflow` for layout restore/persist and outline panel behavior
+- `runtime_onboarding_workflow` for welcome/onboarding and Runtime Center presentation
+
+**Other focused workflows**
+
 - `runtime_support_workflow` for project health checks, support bundles, and project packaging UI actions
 - `python_style_workflow` and `save_workflow` for explicit formatting/import/lint actions and save-time transforms
 - `test_runner_workflow` for pytest discovery, run scopes, explorer outcomes, and debug-test targeting
-- `plugin_activation_workflow` for plugin discovery/config refresh, contribution activation, workflow-provider catalog rebuilds, and runtime-plugin reloads
+- `plugin_activation_workflow` and `plugin_dialog_workflow` for plugin discovery, dialogs, and runtime reload
 - `background_tasks` for keyed off-UI-thread task execution and replacement
 - `startup_facade` for bootstrap capability-refresh hooks that cross into repo-root launch code
 - `python_tooling_status_controller` and `python_tooling_status_copy` for Python tooling status/config copy used by the status bar and settings dialog
 - `settings_dialog_sections` and `style_sheet_sections` for decomposed UI construction and styling builders
+
+`MainWindow` itself (~700 lines) retains plugin/command registration seams, a small set of editor command handlers, run stop/restart/clear-console entry points, REPL submit/interrupt, project-entry resolution for project runs, and `closeEvent` routing. It does not host thin private-method forwarding to workflows.
 
 Key shell responsibilities include:
 
@@ -1910,8 +1949,16 @@ recovery.
 
 **Decision:** keep `MainWindow` responsible for wiring controllers, views, and
 cross-cutting services, while moving workflow logic into focused shell/editor modules.
+Service construction and timer wiring live in `main_window_composition.py`; menu
+callbacks bind to workflow objects directly (`menu_wiring.py`) rather than through
+long-lived private-method delegators on `MainWindow`.
 **Why:** section 8 of the next-level editor analysis identified shell sprawl as a
 direct drag on reliability and future feature velocity.
+
+**Implementation notes (2026-06):** `main_window.py` is capped under 1,000 lines
+(currently ~700). New shell behavior should land in a named workflow or controller
+module and be wired from `install_main_window_composition()` or `menu_wiring.py`.
+See section 12.3 for the module map.
 
 ## AD-016: Single-owner semantic session
 

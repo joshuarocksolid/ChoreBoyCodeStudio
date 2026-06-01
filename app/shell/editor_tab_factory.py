@@ -59,13 +59,13 @@ class EditorTabFactory:
             return False
 
         if opened_result.closed_preview_path:
-            window._remove_tab_widget_for_path(opened_result.closed_preview_path)
+            window._editor_tab_workflow.remove_tab_widget_for_path(opened_result.closed_preview_path)
 
         if opened_result.was_already_open:
-            existing_index = window._tab_index_for_path(opened_result.tab.file_path)
+            existing_index = window._editor_tab_workflow.tab_index_for_path(opened_result.tab.file_path)
             if existing_index >= 0:
                 window._editor_tabs_widget.setCurrentIndex(existing_index)
-                window._refresh_tab_presentation(opened_result.tab.file_path)
+                window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
             window._refresh_save_action_states()
             window._update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -86,7 +86,7 @@ class EditorTabFactory:
             auto_trigger=window._completion_auto_trigger,
             min_chars=window._completion_min_chars,
         )
-        window._apply_runtime_intelligence_preferences_to_editor(editor_widget)
+        window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
         editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
@@ -137,7 +137,7 @@ class EditorTabFactory:
             cursor_position: int,
             request_generation: int,
         ) -> None:
-            window._request_completion_item_resolve_async(
+            window._semantic_navigation_workflow.request_completion_item_resolve_async(
                 file_path=tab_file_path,
                 editor_widget=editor_widget,
                 item=item,
@@ -150,10 +150,10 @@ class EditorTabFactory:
             window._debug_control_workflow.handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
 
         def on_text_changed() -> None:
-            window._handle_editor_text_changed(tab_file_path, editor_widget)
+            window._editor_tab_workflow.handle_editor_text_changed(tab_file_path, editor_widget)
 
         def on_cursor_position_changed() -> None:
-            window._handle_editor_cursor_position_changed(tab_file_path, editor_widget)
+            window._editor_tab_workflow.handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
         def on_completion_accepted(item: CompletionItem) -> None:
             window._intelligence_controller.record_completion_acceptance(item)
@@ -194,7 +194,7 @@ class EditorTabFactory:
         tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
         window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
-        window._refresh_tab_presentation(opened_result.tab.file_path)
+        window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
         if restore_draft:
             window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
         window._apply_detected_indentation_for_widget(
@@ -202,7 +202,7 @@ class EditorTabFactory:
             editor_widget,
             editor_widget.toPlainText(),
         )
-        window._handle_editor_tab_changed(tab_index)
+        window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
         window._refresh_save_action_states()
         window._update_editor_status_for_path(opened_result.tab.file_path)
         if started_at is not None:

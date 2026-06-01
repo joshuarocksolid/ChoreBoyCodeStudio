@@ -32,7 +32,7 @@ class EditorTabsCoordinator:
         tab_state = window._editor_manager.get_tab(file_path)
         if tab_state is None:
             return
-        tab_index = window._tab_index_for_path(file_path)
+        tab_index = window._editor_tab_workflow.tab_index_for_path(file_path)
         if tab_index < 0:
             return
         suffix = " *" if tab_state.is_dirty else ""
@@ -51,7 +51,7 @@ class EditorTabsCoordinator:
         if promoted_tab is None:
             return False
         if not promoted_tab.is_preview:
-            window._refresh_tab_presentation(promoted_tab.file_path)
+            window._editor_tab_workflow.refresh_tab_presentation(promoted_tab.file_path)
         return True
 
     def promote_existing_preview_tab(self) -> bool:
@@ -59,7 +59,7 @@ class EditorTabsCoordinator:
         preview_tab = window._editor_manager.preview_tab()
         if preview_tab is None:
             return False
-        return window._promote_preview_tab(preview_tab.file_path)
+        return window._editor_tab_workflow.promote_preview_tab(preview_tab.file_path)
 
     def active_editor_widget(self) -> object | None:
         window = self._window

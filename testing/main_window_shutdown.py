@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.shell.main_window import MainWindow
+from app.shell.main_window_lifecycle import MainWindowLifecycle
 
 
 def shutdown_main_window_for_test(window: MainWindow) -> None:
@@ -12,5 +13,5 @@ def shutdown_main_window_for_test(window: MainWindow) -> None:
     non-daemon ThreadPoolExecutor threads do not keep the interpreter alive.
     """
     window._is_shutting_down = True
-    window._begin_shutdown_teardown()
-    window._stop_active_run_before_close()
+    MainWindowLifecycle.begin_shutdown_teardown(window)
+    MainWindowLifecycle.stop_active_run_before_close(window)

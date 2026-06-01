@@ -132,7 +132,7 @@ class MainWindowFindReplaceHost:
         self._window = window
 
     def active_editor_widget(self) -> CodeEditorWidget | None:
-        return self._window._active_editor_widget()
+        return self._window._editor_tab_workflow.active_editor_widget()
 
     def find_replace_bar(self) -> FindReplaceBar | None:
         return self._window._find_replace_bar
@@ -143,7 +143,7 @@ class MainWindowFindReplaceHost:
     def set_activity_view(self, view_id: str) -> None:
         if self._window._activity_bar is not None:
             self._window._activity_bar.set_active_view(view_id)
-        self._window._handle_sidebar_view_changed(view_id)
+        self._window._project_tree_ui_workflow.handle_sidebar_view_changed(view_id)
 
     def focus_search_sidebar(self, initial: str) -> None:
         if self._window._search_sidebar is not None:

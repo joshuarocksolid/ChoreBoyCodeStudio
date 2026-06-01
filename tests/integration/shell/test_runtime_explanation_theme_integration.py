@@ -15,6 +15,7 @@ from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
+from app.shell.main_window_lifecycle import MainWindowLifecycle
 
 pytestmark = pytest.mark.integration
 
@@ -31,8 +32,8 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
 
 def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
     window._is_shutting_down = True
-    window._begin_shutdown_teardown()
-    window._stop_active_run_before_close()
+    MainWindowLifecycle.begin_shutdown_teardown(window)
+    MainWindowLifecycle.stop_active_run_before_close(window)
     window.deleteLater()
     app.processEvents()
 
@@ -68,16 +69,16 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         ),
         state_root=str(state_root.resolve()),
     )
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-        window._handle_set_theme(mode)
+        window._shell_preferences_runtime.handle_set_theme(mode)
         style_sheet = window.styleSheet()
         assert "QDialog#shell\\.runtimeCenterDialog" in style_sheet
         assert "QWidget#shell\\.welcome\\.onboardingCard" in style_sheet
 
-        window._handle_runtime_center_action()
+        window._runtime_onboarding_workflow.handle_runtime_center_action()
         app.processEvents()
 
         assert runtime_dialogs
@@ -86,7 +87,7 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         assert runtime_dialog.issue_list.count() == 1
         assert runtime_dialog.findChild(QTextBrowser, "shell.runtimeCenterDialog.detailBrowser") is not None
 
-        window._handle_runtime_onboarding_action()
+        window._runtime_onboarding_workflow.handle_runtime_onboarding_action()
         app.processEvents()
 
         assert onboarding_dialogs

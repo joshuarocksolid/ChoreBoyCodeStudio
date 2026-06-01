@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.shell.main_window import MainWindow
+from app.shell.file_project_commands_workflow import FileProjectCommandsWorkflow
 from app.shell.theme_tokens import ShellThemeTokens
 
 pytestmark = pytest.mark.unit
@@ -61,58 +61,79 @@ def _dir_entry(relative_path: str, absolute_path: str) -> SimpleNamespace:
     return SimpleNamespace(relative_path=relative_path, absolute_path=absolute_path, is_directory=True)
 
 
+def _make_quick_open_workflow(
+    *,
+    loaded_project: object | None,
+) -> tuple[FileProjectCommandsWorkflow, SimpleNamespace, dict[str, Any]]:
+    host = SimpleNamespace(
+        dialog_parent=lambda: None,
+        loaded_project=loaded_project,
+        editor_manager=lambda: host._editor_manager_impl,
+    )
+    host._editor_manager_impl = SimpleNamespace(active_tab=lambda: None)
+    opened_with_preview: list[tuple[str, bool]] = []
+    opened_at_line_with_preview: list[tuple[str, int, bool]] = []
+
+    host.editor_tab_factory = lambda: SimpleNamespace(
+        open_file_in_editor=lambda path, preview=False: opened_with_preview.append((path, preview)) or True
+    )
+    host.open_file_at_line = (
+        lambda path, line, preview=False: opened_at_line_with_preview.append((path, line, preview))
+    )
+    host.shell_theme_workflow = lambda: SimpleNamespace(
+        resolve_theme_tokens=lambda: _DUMMY_TOKENS,
+    )
+    host.tree_file_icon_map = lambda: {}
+    host.tree_filename_icon_map = lambda: {}
+
+    def _set_quick_open_dialog(dialog: object | None) -> None:
+        host._quick_open_dialog_impl = dialog
+
+    host.set_quick_open_dialog = _set_quick_open_dialog
+    host.quick_open_dialog = lambda: host._quick_open_dialog_impl
+    host._quick_open_dialog_impl = None
+
+    workflow = FileProjectCommandsWorkflow(host)  # type: ignore[arg-type]
+    return workflow, host, {
+        "opened_with_preview": opened_with_preview,
+        "opened_at_line_with_preview": opened_at_line_with_preview,
+    }
+
+
 def test_handle_quick_open_without_project_shows_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = None
-    window_any._quick_open_dialog = None
+    workflow, _host, _captured = _make_quick_open_workflow(loaded_project=None)
 
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.main_window.QMessageBox.warning",
+        "app.shell.file_project_commands_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    MainWindow._handle_quick_open_action(window)
+    workflow.handle_quick_open_action()
 
     assert warnings == [("Quick Open unavailable", "Open a project first.")]
 
 
 def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeQuickOpenDialog.instances.clear()
-    monkeypatch.setattr("app.shell.main_window.QuickOpenDialog", _FakeQuickOpenDialog)
+    monkeypatch.setattr("app.shell.file_project_commands_workflow.QuickOpenDialog", _FakeQuickOpenDialog)
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = SimpleNamespace(
-        entries=[
-            _file_entry("src/main.py", "/tmp/project/src/main.py"),
-            _dir_entry("src", "/tmp/project/src"),
-            _file_entry("README.md", "/tmp/project/README.md"),
-        ]
+    workflow, host, captured = _make_quick_open_workflow(
+        loaded_project=SimpleNamespace(
+            entries=[
+                _file_entry("src/main.py", "/tmp/project/src/main.py"),
+                _dir_entry("src", "/tmp/project/src"),
+                _file_entry("README.md", "/tmp/project/README.md"),
+            ]
+        )
     )
-    window_any._quick_open_dialog = None
-    window_any._editor_manager = None
-    window_any._tree_file_icon_map = {}
-    window_any._tree_filename_icon_map = {}
-    opened_paths: list[str] = []
-    opened_with_preview: list[tuple[str, bool]] = []
-    opened_at_line_with_preview: list[tuple[str, int, bool]] = []
-    window_any._editor_tab_factory = SimpleNamespace(
-        open_file_in_editor=lambda path, preview=False: opened_with_preview.append((path, preview)) or True
-    )
-    window_any._open_file_at_line = (
-        lambda path, line, preview=False: opened_at_line_with_preview.append((path, line, preview))
-    )
-    window_any._shell_theme_workflow = SimpleNamespace(
-        resolve_theme_tokens=lambda: _DUMMY_TOKENS,
-    )
+    host._editor_manager_impl = SimpleNamespace(open_paths=lambda: set())
 
-    MainWindow._handle_quick_open_action(window)
+    workflow.handle_quick_open_action()
 
     assert len(_FakeQuickOpenDialog.instances) == 1
     dialog = _FakeQuickOpenDialog.instances[0]
-    assert window_any._quick_open_dialog is dialog
+    assert host._quick_open_dialog_impl is dialog
     assert dialog.open_calls == 1
     assert [candidate.relative_path for candidate in dialog.set_candidates_calls[0]] == [
         "src/main.py",
@@ -123,17 +144,17 @@ def test_handle_quick_open_filters_directories_and_reuses_dialog(monkeypatch: py
     dialog.file_selected.emit("/tmp/project/src/main.py")
     dialog.file_preview_at_line_requested.emit("/tmp/project/src/main.py", 27)
     dialog.file_selected_at_line.emit("/tmp/project/src/main.py", 9)
-    assert opened_with_preview == [
+    assert captured["opened_with_preview"] == [
         ("/tmp/project/README.md", True),
         ("/tmp/project/src/main.py", False),
     ]
-    assert opened_at_line_with_preview == [
+    assert captured["opened_at_line_with_preview"] == [
         ("/tmp/project/src/main.py", 27, True),
         ("/tmp/project/src/main.py", 9, False),
     ]
 
-    window_any._loaded_project = SimpleNamespace(entries=[_file_entry("pkg/new_file.py", "/tmp/project/pkg/new_file.py")])
-    MainWindow._handle_quick_open_action(window)
+    host.loaded_project = SimpleNamespace(entries=[_file_entry("pkg/new_file.py", "/tmp/project/pkg/new_file.py")])
+    workflow.handle_quick_open_action()
 
     assert len(_FakeQuickOpenDialog.instances) == 1
     assert dialog.open_calls == 2

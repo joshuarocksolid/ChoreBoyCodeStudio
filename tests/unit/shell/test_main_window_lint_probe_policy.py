@@ -1,4 +1,4 @@
-"""Unit tests for lint runtime-probe policy in MainWindow."""
+"""Unit tests for lint runtime-probe policy in LintWorkflow."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
+from app.intelligence.diagnostics_service import CodeDiagnostic  # noqa: E402
+from app.shell.lint_workflow import LintWorkflow, MainWindowLintHost  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -40,14 +42,16 @@ def _build_window_stub() -> MainWindow:
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: None)
     window_any._background_tasks = _FakeBackgroundTasks()
     window_any._workflow_broker = object()
-    window_any._workspace_controller = SimpleNamespace(
-        buffer_revision=lambda _path: 1,
-        open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()),
+    window_any._workspace_controller = SimpleNamespace(open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()))
+    window_any._problems_controller = SimpleNamespace(
+        apply_lint_diagnostics_result=lambda *_args, **_kwargs: None,
+        render_merged_problems_panel=lambda: None,
+        update_status_bar_diagnostics=lambda *_args, **_kwargs: None,
     )
-    window_any._push_diagnostics_to_editor = lambda *_args, **_kwargs: None
-    window_any._update_tab_diagnostic_indicator = lambda *_args, **_kwargs: None
-    window_any._render_merged_problems_panel = lambda: None
-    window_any._update_status_bar_diagnostics = lambda *_args, **_kwargs: None
+    window_any._editor_tab_workflow = SimpleNamespace(
+        buffer_revision=lambda _path: 1,
+    )
+    window_any._lint_workflow = LintWorkflow(MainWindowLintHost(window))
     return window
 
 
@@ -60,9 +64,9 @@ def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.Mon
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
         return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
+    monkeypatch.setattr("app.shell.lint_workflow.analyze_python_with_workflow", _fake_analyze)
 
-    MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="manual")
+    window_any._lint_workflow.render_diagnostics_for_file("/tmp/main.py", trigger="manual")
     background_call = window_any._background_tasks.calls[0]
     background_call["task"](threading.Event())
 
@@ -78,9 +82,9 @@ def test_render_lint_save_trigger_disables_runtime_probe(monkeypatch: pytest.Mon
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
         return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
+    monkeypatch.setattr("app.shell.lint_workflow.analyze_python_with_workflow", _fake_analyze)
 
-    MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="save")
+    window_any._lint_workflow.render_diagnostics_for_file("/tmp/main.py", trigger="save")
     background_call = window_any._background_tasks.calls[0]
     background_call["task"](threading.Event())
 
@@ -100,9 +104,9 @@ def test_lint_all_open_files_disables_runtime_probe(monkeypatch: pytest.MonkeyPa
         captured.append(bool(kwargs.get("allow_runtime_import_probe")))
         return (SimpleNamespace(title="lint"), [])
 
-    monkeypatch.setattr("app.shell.main_window.analyze_python_with_workflow", _fake_analyze)
+    monkeypatch.setattr("app.shell.lint_workflow.analyze_python_with_workflow", _fake_analyze)
 
-    MainWindow._lint_all_open_files(window)
+    window_any._lint_workflow.lint_all_open_files()
     assert len(window_any._background_tasks.calls) == 2
     for background_call in window_any._background_tasks.calls:
         background_call["task"](threading.Event())
@@ -115,15 +119,19 @@ def test_render_lint_drops_stale_results_for_changed_buffer() -> None:
     window_any = cast(Any, window)
     editor_widget = SimpleNamespace(toPlainText=lambda: "print('a')\n")
     window_any._editor_widgets_by_path = {"/tmp/main.py": editor_widget}
-    applied: list[tuple[str, list[object]]] = []
+    applied: list[tuple[str, list[CodeDiagnostic]]] = []
     revisions = {"current": 1}
-    window_any._workspace_controller = SimpleNamespace(
+    window_any._editor_tab_workflow = SimpleNamespace(
         buffer_revision=lambda _path: revisions["current"],
-        open_editor_paths=lambda: list(window_any._editor_widgets_by_path.keys()),
     )
-    window_any._apply_lint_diagnostics_result = lambda file_path, diagnostics: applied.append((file_path, diagnostics))
+    window_any._lint_workflow = LintWorkflow(MainWindowLintHost(window))
+    window_any._problems_controller = SimpleNamespace(
+        apply_lint_diagnostics_result=lambda file_path, diagnostics: applied.append((file_path, diagnostics)),
+        render_merged_problems_panel=lambda: None,
+        update_status_bar_diagnostics=lambda *_args, **_kwargs: None,
+    )
 
-    MainWindow._render_lint_diagnostics_for_file(window, "/tmp/main.py", trigger="save")
+    window_any._lint_workflow.render_diagnostics_for_file("/tmp/main.py", trigger="save")
     background_call = window_any._background_tasks.calls[0]
 
     revisions["current"] = 2

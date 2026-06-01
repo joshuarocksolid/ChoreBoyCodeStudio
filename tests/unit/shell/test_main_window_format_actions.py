@@ -102,6 +102,7 @@ def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWid
     editor_widget = _FakeEditorWidget(text)
     window_any._editor_manager = SimpleNamespace(active_tab=lambda: SimpleNamespace(file_path=file_path))
     window_any._editor_widgets_by_path = {file_path: editor_widget}
+    window_any._editor_tab_workflow = SimpleNamespace(active_editor_widget=lambda: editor_widget)
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
     window_any._workflow_broker = object()
     window_any._save_workflow = SaveWorkflow(window)
@@ -134,8 +135,8 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
     window_any._background_tasks = SimpleNamespace(run=lambda **_kwargs: None)
     window_any._test_explorer_panel = None
     window_any._test_outcomes_by_node_id = {}
-    window_any._render_lint_diagnostics_for_file = lambda *_args, **_kwargs: None
-    window_any._start_symbol_indexing = lambda *_args, **_kwargs: None
+    window_any._lint_workflow = SimpleNamespace(render_diagnostics_for_file=lambda *_args, **_kwargs: None)
+    window_any._intelligence_cache_workflow = SimpleNamespace(start_symbol_indexing=lambda *_args, **_kwargs: None)
     window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
     window_any._save_workflow = SaveWorkflow(window)
     return window, editor_manager

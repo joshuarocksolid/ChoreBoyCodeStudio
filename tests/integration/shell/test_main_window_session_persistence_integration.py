@@ -61,8 +61,8 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     file_two.write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
-    assert window._open_project_by_path(str(project_root.resolve())) is True
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     file_one_path = str(file_one.resolve())
     file_two_path = str(file_two.resolve())
@@ -74,11 +74,11 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     _set_cursor_position(first_widget, line=4, column=3)
     _set_cursor_position(second_widget, line=2, column=2)
 
-    first_index = window._tab_index_for_path(file_one_path)
+    first_index = window._editor_tab_workflow.tab_index_for_path(file_one_path)
     assert first_index >= 0
     assert window._editor_tabs_widget is not None
     window._editor_tabs_widget.setCurrentIndex(first_index)
-    window._handle_editor_tab_changed(first_index)
+    window._editor_tab_workflow.handle_editor_tab_changed(first_index)
     breakpoint_store = window._debug_control_workflow.breakpoint_store
     breakpoint_store.set_line_enabled(file_one_path, 2, enabled=True)
     breakpoint_store.set_line_enabled(file_one_path, 5, enabled=True)
@@ -126,9 +126,9 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     project_two_file.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window, "_start_symbol_indexing", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
 
-    assert window._open_project_by_path(str(project_one.resolve())) is True
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     project_one_path = str(project_one_file.resolve())
     assert window._editor_tab_factory.open_file_in_editor(project_one_path) is True
     widget_one = window._editor_widgets_by_path[project_one_path]
@@ -137,12 +137,12 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     breakpoint_store.set_line_enabled(project_one_path, 2, enabled=True)
 
     # Opening another project should persist current project-one session state.
-    assert window._open_project_by_path(str(project_two.resolve())) is True
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_two.resolve())) is True
     project_two_path = str(project_two_file.resolve())
     assert window._editor_tab_factory.open_file_in_editor(project_two_path) is True
 
     # Reopen project one and verify its previous editor state is restored.
-    assert window._open_project_by_path(str(project_one.resolve())) is True
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     _wait_for_open_paths(app, window, [project_one_path])
     restored_widget = window._editor_widgets_by_path[project_one_path]
     assert restored_widget.textCursor().blockNumber() + 1 == 3

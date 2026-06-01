@@ -210,13 +210,13 @@ class MainWindowRuntimeOnboardingHost:
         self._window._help_controller.show_getting_started(parent=self._window)
 
     def handle_new_project_action(self) -> None:
-        self._window._handle_new_project_action()
+        self._window._file_project_commands_workflow.handle_new_project_action()
 
     def handle_open_project_action(self) -> None:
-        self._window._handle_open_project_action()
+        self._window._file_project_commands_workflow.handle_open_project_action()
 
     def open_project_by_path(self, project_path: str) -> bool:
-        return self._window._open_project_by_path(project_path)
+        return self._window._file_project_commands_workflow.open_project_by_path(project_path)
 
     def handle_getting_started_action(self) -> None:
         self._window._handle_getting_started_action()
@@ -225,7 +225,7 @@ class MainWindowRuntimeOnboardingHost:
         self._window._runtime_support_workflow.handle_project_health_check_action()
 
     def handle_load_example_project_action(self) -> None:
-        self._window._handle_load_example_project_action()
+        self._window._file_project_commands_workflow.handle_load_example_project_action()
 
     def show_headless_notes(self) -> None:
         self._window._help_controller.show_headless_notes(parent=self._window)

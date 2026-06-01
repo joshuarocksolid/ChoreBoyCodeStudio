@@ -98,7 +98,7 @@ class MainWindowClearConsoleHost:
         self._window._debug_session = DebugSession()
 
     def clear_debug_execution_indicator(self) -> None:
-        self._window._clear_debug_execution_indicator()
+        self._window._debug_inspector_workflow.clear_debug_execution_indicator()
 
     def run_log_begin_run(self) -> None:
         run_log_panel = self._window._run_log_panel

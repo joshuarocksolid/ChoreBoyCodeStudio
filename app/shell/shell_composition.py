@@ -10,6 +10,10 @@ from PySide2.QtWidgets import QMessageBox, QWidget
 from app.editors.editor_manager import EditorManager
 from app.shell.editor_sync_workflow import EditorSyncWorkflow
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
+from app.shell.file_project_commands_workflow import (
+    FileProjectCommandsWorkflow,
+    MainWindowFileProjectCommandsHost,
+)
 from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_settings_apply_baseline
 from app.shell.python_console_workflow import PythonConsoleWorkflow
 from app.shell.project_tree_action_workflow import ProjectTreeActionWorkflow
@@ -125,10 +129,10 @@ class MainWindowSettingsApplyHost:
         self._window._dark_chrome_palette = resolve_dark_chrome_palette(dark_chrome_palette)
 
     def apply_theme_mode(self, theme_mode: str) -> None:
-        self._window._handle_set_theme(theme_mode)
+        self._window._shell_preferences_runtime.handle_set_theme(theme_mode)
 
     def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
-        self._window._apply_preferences_bundle(bundle)
+        self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
 
     def sync_auto_save_menu_state(self) -> None:
         self._window._sync_auto_save_menu_state()
@@ -148,7 +152,7 @@ class MainWindowSettingsApplyHost:
             worker.cancel()
 
     def start_symbol_indexing(self, project_root: str) -> None:
-        self._window._start_symbol_indexing(project_root)
+        self._window._intelligence_cache_workflow.start_symbol_indexing(project_root)
 
     def apply_editor_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
@@ -157,31 +161,31 @@ class MainWindowSettingsApplyHost:
         self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
 
     def apply_shortcut_overrides_runtime(self) -> None:
-        self._window._apply_shortcut_overrides_runtime()
+        self._window._shell_preferences_runtime.apply_shortcut_overrides_runtime()
 
     def apply_theme_styles(self) -> None:
         self._window._shell_theme_workflow.apply_theme_styles()
 
     def cancel_pending_project_tree_preview(self) -> None:
-        self._window._cancel_pending_project_tree_preview()
+        self._window._project_tree_ui_workflow.cancel_pending_project_tree_preview()
 
     def promote_existing_preview_tab(self) -> None:
         self._window._editor_tab_workflow.promote_existing_preview_tab()
 
     def relint_open_python_files(self) -> None:
-        self._window._relint_open_python_files()
+        self._window._diagnostics_orchestrator.relint_open_python_files()
 
     def clear_stored_lint_diagnostics(self) -> None:
         self._window._stored_lint_diagnostics.clear()
 
     def render_merged_problems_panel(self) -> None:
-        self._window._render_merged_problems_panel()
+        self._window._problems_controller.render_merged_problems_panel()
 
     def load_effective_exclude_patterns(self, project_root: str | None) -> list[str]:
-        return self._window._load_effective_exclude_patterns(project_root)
+        return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
 
     def reload_current_project(self) -> None:
-        self._window._reload_current_project()
+        self._window._project_tree_ui_workflow.reload_current_project()
 
     def refresh_search_sidebar_excludes(self) -> None:
         sidebar = self._window._search_sidebar
@@ -192,7 +196,9 @@ class MainWindowSettingsApplyHost:
 
         sidebar.set_exclude_patterns(
             compute_effective_excludes(
-                self._window._load_effective_exclude_patterns(loaded.project_root),
+                self._window._file_project_commands_workflow.load_effective_exclude_patterns(
+                    loaded.project_root
+                ),
                 loaded.metadata.exclude_patterns,
             )
         )
@@ -326,10 +332,10 @@ class MainWindowRunLaunchHost:
         return self._window._shell_theme_workflow.resolve_theme_tokens()
 
     def show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
-        self._window._show_run_preflight_result(title, summary, issues)
+        self._window._run_event_workflow.show_run_preflight_result(title, summary, issues)
 
     def refresh_run_action_states(self) -> None:
-        self._window._refresh_run_action_states()
+        self._window._run_event_workflow.refresh_run_action_states()
 
     def editor_tab_factory(self) -> Any:
         return self._window._editor_tab_factory
@@ -338,7 +344,7 @@ class MainWindowRunLaunchHost:
         return self._window._editor_tabs_widget
 
     def tab_index_for_path(self, file_path: str) -> int:
-        return self._window._tab_index_for_path(file_path)
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
 
     def test_runner_workflow(self) -> Any:
         return self._window._test_runner_workflow
@@ -526,6 +532,10 @@ class MainWindowShellThemeHost:
 
 def build_shell_theme_workflow(window: Any) -> ShellThemeWorkflow:
     return ShellThemeWorkflow(MainWindowShellThemeHost(window))
+
+
+def build_file_project_commands_workflow(window: Any) -> FileProjectCommandsWorkflow:
+    return FileProjectCommandsWorkflow(MainWindowFileProjectCommandsHost(window))
 
 
 def build_realtime_lint_runner(

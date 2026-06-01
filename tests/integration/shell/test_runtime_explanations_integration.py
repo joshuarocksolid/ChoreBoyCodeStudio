@@ -52,7 +52,7 @@ def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
     try:
-        assert window._open_project_by_path(str(project_root.resolve())) is True
+        assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
         opened_dialogs: list[dict[str, object]] = []
         monkeypatch.setattr(
@@ -116,7 +116,7 @@ def test_packaging_preflight_opens_runtime_center_before_export(
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
     try:
-        assert window._open_project_by_path(str(project_root.resolve())) is True
+        assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
         class _FakeWizard:
             def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]

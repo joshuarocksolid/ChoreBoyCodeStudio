@@ -193,9 +193,9 @@ class SaveWorkflow:
             return False
 
         if window._editor_tabs_widget is not None:
-            tab_index = window._tab_index_for_path(saved_tab.file_path)
+            tab_index = window._editor_tab_workflow.tab_index_for_path(saved_tab.file_path)
             if tab_index >= 0:
-                window._refresh_tab_presentation(saved_tab.file_path)
+                window._editor_tab_workflow.refresh_tab_presentation(saved_tab.file_path)
 
         window._local_history_workflow.discard_pending_autosave(saved_tab.file_path)
         window._local_history_workflow.record_checkpoint(
@@ -206,16 +206,16 @@ class SaveWorkflow:
         window._local_history_workflow.delete_draft(saved_tab.file_path)
         project_id, _project_root = window._local_history_workflow.local_history_context_for_path(saved_tab.file_path)
         if not path_existed_before_save and project_id is not None:
-            window._reload_current_project()
+            window._project_tree_ui_workflow.reload_current_project()
         window._refresh_save_action_states()
         window._update_editor_status_for_path(saved_tab.file_path)
         if should_refresh_index_after_save(
             window._intelligence_runtime_settings,
             has_loaded_project=window._loaded_project is not None,
         ) and window._loaded_project is not None:
-            window._start_symbol_indexing(window._loaded_project.project_root)
+            window._intelligence_cache_workflow.start_symbol_indexing(window._loaded_project.project_root)
         if saved_tab.file_path.lower().endswith(".py"):
-            window._render_lint_diagnostics_for_file(saved_tab.file_path, trigger="save")
+            window._lint_workflow.render_diagnostics_for_file(saved_tab.file_path, trigger="save")
             test_runner_workflow = getattr(window, "_test_runner_workflow", None)
             if test_runner_workflow is not None:
                 test_runner_workflow.refresh_discovery()

@@ -77,21 +77,31 @@ class StubDebugShellHost:
     debug_output_lines: list[str] = field(default_factory=list)
     refresh_run_action_calls: int = 0
     opened_files: list[tuple[str, int, bool]] = field(default_factory=list)
+    _active_editor: Any | None = None
 
-    def _active_editor_widget(self) -> Any | None:
-        return None
+    def __post_init__(self) -> None:
+        self._editor_tab_workflow = SimpleNamespace(
+            active_editor_widget=lambda: self._active_editor,
+            open_file_at_line=lambda file_path, line_number, preview=False: self.opened_files.append(
+                (file_path, line_number, preview)
+            ),
+        )
+        self._debug_inspector_workflow = SimpleNamespace(
+            append_debug_output_line=self._append_debug_output_line,
+        )
+        self._repl_event_workflow = SimpleNamespace(
+            append_python_console_line=lambda _text, _stream="stdout": None,
+        )
+        self._run_event_workflow = SimpleNamespace(
+            refresh_run_action_states=lambda: setattr(
+                self,
+                "refresh_run_action_calls",
+                self.refresh_run_action_calls + 1,
+            ),
+        )
 
     def _append_debug_output_line(self, text: str) -> None:
         self.debug_output_lines.append(text)
-
-    def _append_python_console_line(self, text: str) -> None:
-        return None
-
-    def _refresh_run_action_states(self) -> None:
-        self.refresh_run_action_calls += 1
-
-    def _open_file_at_line(self, file_path: str, line_number: int, *, preview: bool = False) -> None:
-        self.opened_files.append((file_path, line_number, preview))
 
 
 def _workflow(host: StubDebugShellHost) -> DebugControlWorkflow:

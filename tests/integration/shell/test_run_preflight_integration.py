@@ -57,7 +57,7 @@ def test_run_project_preflight_opens_runtime_center_for_missing_entry(
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
     try:
-        assert window._open_project_by_path(str(project_root.resolve())) is True
+        assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
         opened_dialogs: list[dict[str, object]] = []
         monkeypatch.setattr(

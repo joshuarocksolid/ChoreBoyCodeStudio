@@ -36,7 +36,7 @@ class ProblemsController:
         window = self._window
         if window._editor_tabs_widget is None:
             return
-        tab_index = window._tab_index_for_path(file_path)
+        tab_index = window._editor_tab_workflow.tab_index_for_path(file_path)
         if tab_index < 0:
             return
         has_error = any(d.severity == DiagnosticSeverity.ERROR for d in diagnostics)

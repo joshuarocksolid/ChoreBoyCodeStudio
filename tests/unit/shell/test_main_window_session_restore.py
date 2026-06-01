@@ -11,29 +11,20 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
-from app.shell.main_window import MainWindow
+from app.shell.file_project_commands_workflow import FileProjectCommandsWorkflow
 
 pytestmark = pytest.mark.unit
 
 
-def _make_window_for_restore(
+def _make_workflow_for_restore(
     *,
     last_path: str | None,
     loaded_project: object | None = None,
-) -> tuple[MainWindow, list[str]]:
-    """Build a bare MainWindow shell suitable for ``_try_restore_last_project``."""
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._is_shutting_down = False
-    window_any._loaded_project = loaded_project
-
+) -> tuple[FileProjectCommandsWorkflow, list[str]]:
+    """Build a bare workflow suitable for ``try_restore_last_project``."""
     settings_payload: dict[str, Any] = {}
     if last_path is not None:
         settings_payload[constants.LAST_PROJECT_PATH_KEY] = last_path
-
-    window_any._settings_service = SimpleNamespace(
-        load_global=lambda: dict(settings_payload),
-    )
 
     opened: list[str] = []
 
@@ -41,8 +32,15 @@ def _make_window_for_restore(
         opened.append(project_root)
         return True
 
-    window_any._open_project_by_path = _record
-    return window, opened
+    host = SimpleNamespace(
+        is_shutting_down=False,
+        loaded_project=loaded_project,
+        settings_service=lambda: SimpleNamespace(load_global=lambda: dict(settings_payload)),
+        logger=lambda: SimpleNamespace(debug=lambda *_args, **_kwargs: None),
+    )
+    workflow = FileProjectCommandsWorkflow(host)  # type: ignore[arg-type]
+    workflow.open_project_by_path = _record  # type: ignore[method-assign]
+    return workflow, opened
 
 
 def test_try_restore_last_project_reopens_canonical_project(tmp_path: Path) -> None:
@@ -54,9 +52,9 @@ def test_try_restore_last_project_reopens_canonical_project(tmp_path: Path) -> N
     )
     (project_root / "main.py").write_text("# entry\n")
 
-    window, opened = _make_window_for_restore(last_path=str(project_root))
+    workflow, opened = _make_workflow_for_restore(last_path=str(project_root))
 
-    MainWindow._try_restore_last_project(window)
+    workflow.try_restore_last_project()
 
     assert opened == [str(project_root)]
 
@@ -69,9 +67,9 @@ def test_try_restore_last_project_reopens_importable_project_without_manifest(
     project_root.mkdir()
     (project_root / "main.py").write_text("# entry\n")
 
-    window, opened = _make_window_for_restore(last_path=str(project_root))
+    workflow, opened = _make_workflow_for_restore(last_path=str(project_root))
 
-    MainWindow._try_restore_last_project(window)
+    workflow.try_restore_last_project()
 
     assert opened == [str(project_root)]
 
@@ -79,17 +77,17 @@ def test_try_restore_last_project_reopens_importable_project_without_manifest(
 def test_try_restore_last_project_skips_invalid_path(tmp_path: Path) -> None:
     missing_root = tmp_path / "does_not_exist"
 
-    window, opened = _make_window_for_restore(last_path=str(missing_root))
+    workflow, opened = _make_workflow_for_restore(last_path=str(missing_root))
 
-    MainWindow._try_restore_last_project(window)
+    workflow.try_restore_last_project()
 
     assert opened == []
 
 
 def test_try_restore_last_project_skips_when_no_last_path() -> None:
-    window, opened = _make_window_for_restore(last_path=None)
+    workflow, opened = _make_workflow_for_restore(last_path=None)
 
-    MainWindow._try_restore_last_project(window)
+    workflow.try_restore_last_project()
 
     assert opened == []
 
@@ -99,32 +97,33 @@ def test_try_restore_last_project_skips_when_project_already_loaded(tmp_path: Pa
     project_root.mkdir()
     (project_root / "main.py").write_text("# entry\n")
 
-    window, opened = _make_window_for_restore(
+    workflow, opened = _make_workflow_for_restore(
         last_path=str(project_root),
         loaded_project=SimpleNamespace(project_root=str(project_root)),
     )
 
-    MainWindow._try_restore_last_project(window)
+    workflow.try_restore_last_project()
 
     assert opened == []
 
 
-def _make_window_for_open_file(
+def _make_workflow_for_open_file(
     *,
     loaded_project: object | None,
     selected_files: list[str],
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[MainWindow, dict[str, Any]]:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded_project
-    window_any._editor_manager = SimpleNamespace(active_tab=lambda: None)
-
+) -> tuple[FileProjectCommandsWorkflow, dict[str, Any], SimpleNamespace]:
     captured: dict[str, Any] = {
         "opened_files": [],
         "opened_projects": [],
         "show_editor_calls": 0,
     }
+
+    host = SimpleNamespace(
+        dialog_parent=lambda: None,
+        loaded_project=loaded_project,
+        editor_manager=lambda: SimpleNamespace(active_tab=lambda: None),
+    )
 
     def _open_file(file_path: str, *, preview: bool = False) -> bool:
         captured["opened_files"].append((file_path, preview))
@@ -132,24 +131,24 @@ def _make_window_for_open_file(
 
     def _open_project(project_root: str) -> bool:
         captured["opened_projects"].append(project_root)
-        # Simulate the project successfully loading so subsequent file opens
-        # behave as if a project is now loaded.
-        window_any._loaded_project = SimpleNamespace(project_root=project_root)
+        host.loaded_project = SimpleNamespace(project_root=project_root)
         return True
 
     def _show_editor() -> None:
         captured["show_editor_calls"] += 1
 
-    window_any._editor_tab_factory = SimpleNamespace(open_file_in_editor=_open_file)
-    window_any._open_project_by_path = _open_project
-    window_any._show_editor_screen = _show_editor
+    host.editor_tab_factory = lambda: SimpleNamespace(open_file_in_editor=_open_file)
+    host.show_editor_screen = _show_editor
+
+    workflow = FileProjectCommandsWorkflow(host)  # type: ignore[arg-type]
+    workflow.open_project_by_path = _open_project  # type: ignore[method-assign]
 
     monkeypatch.setattr(
-        "app.shell.main_window.choose_open_files",
+        "app.shell.file_project_commands_workflow.choose_open_files",
         lambda *_args, **_kwargs: list(selected_files),
     )
 
-    return window, captured
+    return workflow, captured, host
 
 
 def test_handle_open_file_action_opens_parent_as_project_when_no_project_loaded(
@@ -161,13 +160,13 @@ def test_handle_open_file_action_opens_parent_as_project_when_no_project_loaded(
     target_file = parent_dir / "capability_test.py"
     target_file.write_text("print('hi')\n")
 
-    window, captured = _make_window_for_open_file(
+    workflow, captured, _host = _make_workflow_for_open_file(
         loaded_project=None,
         selected_files=[str(target_file)],
         monkeypatch=monkeypatch,
     )
 
-    MainWindow._handle_open_file_action(window)
+    workflow.handle_open_file_action()
 
     assert captured["opened_projects"] == [str(parent_dir.resolve())]
     assert captured["opened_files"] == [(str(target_file), False)]
@@ -185,13 +184,13 @@ def test_handle_open_file_action_does_not_switch_project_when_project_loaded(
 
     loaded_project = SimpleNamespace(project_root=str(tmp_path / "current_proj"))
 
-    window, captured = _make_window_for_open_file(
+    workflow, captured, _host = _make_workflow_for_open_file(
         loaded_project=loaded_project,
         selected_files=[str(target_file)],
         monkeypatch=monkeypatch,
     )
 
-    MainWindow._handle_open_file_action(window)
+    workflow.handle_open_file_action()
 
     assert captured["opened_projects"] == []
     assert captured["opened_files"] == [(str(target_file), False)]
@@ -201,13 +200,13 @@ def test_handle_open_file_action_does_not_switch_project_when_project_loaded(
 def test_handle_open_file_action_dialog_cancel_is_noop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, captured = _make_window_for_open_file(
+    workflow, captured, _host = _make_workflow_for_open_file(
         loaded_project=None,
         selected_files=[],
         monkeypatch=monkeypatch,
     )
 
-    MainWindow._handle_open_file_action(window)
+    workflow.handle_open_file_action()
 
     assert captured["opened_projects"] == []
     assert captured["opened_files"] == []

@@ -82,10 +82,10 @@ class MainWindowProjectRescanHost:
         self._window._loaded_project = project
 
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
-        return self._window._load_effective_exclude_patterns(project_root)
+        return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
 
     def populate_project_tree(self, project: LoadedProject, *, preserve_state: bool) -> None:
-        self._window._populate_project_tree(project, preserve_state=preserve_state)
+        self._window._project_tree_ui_workflow.populate_project_tree(project, preserve_state=preserve_state)
 
     def configure_search_sidebar(self, project: LoadedProject) -> None:
         if self._window._search_sidebar is None:
@@ -96,7 +96,7 @@ class MainWindowProjectRescanHost:
         self._window._search_sidebar.set_exclude_patterns(
             effective_excludes_for(
                 project,
-                load_effective_exclude_patterns=self._window._load_effective_exclude_patterns,
+                load_effective_exclude_patterns=self._window._file_project_commands_workflow.load_effective_exclude_patterns,
             )
         )
 
@@ -110,7 +110,7 @@ class MainWindowProjectRescanHost:
         self._window._refresh_python_tooling_status()
 
     def start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str]) -> None:
-        self._window._start_symbol_indexing(project_root, exclude_patterns=exclude_patterns)
+        self._window._intelligence_cache_workflow.start_symbol_indexing(project_root, exclude_patterns=exclude_patterns)
 
     def refresh_test_discovery(self) -> None:
         test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)

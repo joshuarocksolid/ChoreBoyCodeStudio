@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -13,6 +14,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from app.core.models import LoadedProject, ProjectMetadata
 from app.project.project_manifest import build_synthetic_project_metadata, load_project_manifest
 from app.shell.main_window import MainWindow
+from app.shell.project_tree_ui_workflow import build_project_tree_ui_workflow
 
 pytestmark = pytest.mark.unit
 
@@ -60,9 +62,10 @@ def test_set_project_entry_point_materializes_lazy_manifest(tmp_path: Path) -> N
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._loaded_project = loaded_project
-    window_any._populate_project_tree = lambda *_a, **_k: None
+    window_any._project_tree_presenter = SimpleNamespace(populate=lambda *_a, **_k: None)
+    window_any._project_tree_ui_workflow = build_project_tree_ui_workflow(window_any)
 
-    assert MainWindow._set_project_entry_point(window, "scripts/entry.py") is True
+    assert window_any._project_tree_ui_workflow.set_project_entry_point("scripts/entry.py") is True
     assert manifest_path.is_file()
     assert load_project_manifest(manifest_path).default_entry == "scripts/entry.py"
     assert window_any._loaded_project.manifest_materialized is True
@@ -78,9 +81,12 @@ def test_set_project_entry_point_persists_manifest_and_refreshes_tree(tmp_path: 
     window_any = cast(Any, window)
     window_any._loaded_project = loaded_project
     refresh_calls: list[LoadedProject] = []
-    window_any._populate_project_tree = lambda project, **_kwargs: refresh_calls.append(project)
+    window_any._project_tree_presenter = SimpleNamespace(
+        populate=lambda project, **_kwargs: refresh_calls.append(project)
+    )
+    window_any._project_tree_ui_workflow = build_project_tree_ui_workflow(window_any)
 
-    updated = MainWindow._set_project_entry_point(window, "scripts/entry.py")
+    updated = window_any._project_tree_ui_workflow.set_project_entry_point("scripts/entry.py")
 
     assert updated is True
     assert window_any._loaded_project.metadata.default_entry == "scripts/entry.py"
@@ -98,7 +104,9 @@ def test_resolve_project_entry_for_project_run_prompts_when_default_entry_missin
     window_any._loaded_project = loaded_project
     window_any._prompt_for_project_entry_replacement = lambda _missing: "app.py"
     set_calls: list[str] = []
-    window_any._set_project_entry_point = lambda relative_path: set_calls.append(relative_path) or True
+    window_any._project_tree_ui_workflow = SimpleNamespace(
+        set_project_entry_point=lambda relative_path: set_calls.append(relative_path) or True
+    )
 
     resolved = MainWindow._resolve_project_entry_for_project_run(window)
 

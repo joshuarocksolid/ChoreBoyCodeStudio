@@ -27,7 +27,7 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 def _find_item_by_relative_path(window: MainWindow, relative_path: str) -> QTreeWidgetItem | None:
-    for item in window._iter_project_tree_items():  # noqa: SLF001 - intentional tree-state verification
+    for item in window._project_tree_ui_workflow.iter_project_tree_items():  # noqa: SLF001 - intentional tree-state verification
         if str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "") == relative_path:
             return item
     return None
@@ -48,9 +48,9 @@ def test_populate_project_tree_defaults_to_collapsed(tmp_path: Path) -> None:
         ],
     )
     window._loaded_project = loaded_project  # noqa: SLF001 - test harness setup
-    window._populate_project_tree(loaded_project)  # noqa: SLF001
+    window._project_tree_ui_workflow.populate_project_tree(loaded_project)  # noqa: SLF001
 
-    for item in window._iter_project_tree_items():  # noqa: SLF001
+    for item in window._project_tree_ui_workflow.iter_project_tree_items():  # noqa: SLF001
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
             assert item.isExpanded() is False
 
@@ -72,7 +72,7 @@ def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path)
         ],
     )
     window._loaded_project = loaded_project  # noqa: SLF001 - test harness setup
-    window._populate_project_tree(loaded_project)  # noqa: SLF001 - direct tree population for state test
+    window._project_tree_ui_workflow.populate_project_tree(loaded_project)  # noqa: SLF001 - direct tree population for state test
 
     docs_item = _find_item_by_relative_path(window, "docs")
     assert docs_item is not None
@@ -87,7 +87,7 @@ def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path)
     src_item.setExpanded(False)
     docs_readme_item.setSelected(True)
 
-    window._populate_project_tree(loaded_project, preserve_state=True)  # noqa: SLF001
+    window._project_tree_ui_workflow.populate_project_tree(loaded_project, preserve_state=True)  # noqa: SLF001
 
     restored_src = _find_item_by_relative_path(window, "src")
     restored_docs_readme = _find_item_by_relative_path(window, "docs/readme.md")
@@ -129,7 +129,9 @@ def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -
     window_any._loaded_project = loaded_project
     window_any._project_tree_structure_signature = ("src", "src/main.py")
     reload_calls: list[bool] = []
-    window_any._reload_current_project = lambda: reload_calls.append(True)
+    window_any._project_tree_ui_workflow = SimpleNamespace(
+        reload_current_project=lambda: reload_calls.append(True)
+    )
     workflow = _attach_poll_editor_tab_workflow(window_any)
     workflow.scan_project_tree_signature = (  # type: ignore[method-assign]
         lambda _project: ("src", "src/main.py", "docs")
@@ -162,7 +164,9 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
     baseline = ("cbcs/project.json", "src", "src/main.py")
     window_any._project_tree_structure_signature = baseline
     reload_calls: list[bool] = []
-    window_any._reload_current_project = lambda: reload_calls.append(True)
+    window_any._project_tree_ui_workflow = SimpleNamespace(
+        reload_current_project=lambda: reload_calls.append(True)
+    )
 
     raw_entries = (
         "cbcs/project.json",
