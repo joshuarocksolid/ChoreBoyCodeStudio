@@ -76,7 +76,8 @@ class RunConfigurationsDialog(QDialog):
         self.setWindowTitle("Run Configurations")
         self.setModal(True)
         self.setObjectName("shell.runConfigurationsDialog")
-        self.resize(860, 580)
+        self.setMinimumSize(820, 560)
+        self.resize(920, 640)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
@@ -138,7 +139,7 @@ class RunConfigurationsDialog(QDialog):
         default_layout = QFormLayout(default_group)
         default_layout.setContentsMargins(12, 12, 12, 12)
         default_layout.setHorizontalSpacing(12)
-        default_layout.setVerticalSpacing(8)
+        default_layout.setVerticalSpacing(10)
         self._default_argv_editor = RunArgumentsEditorRow(
             default_group,
             tokens=self._tokens,
@@ -203,7 +204,7 @@ class RunConfigurationsDialog(QDialog):
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(8)
+        form_layout.setVerticalSpacing(10)
         form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self._name_edit = QLineEdit(right_panel)

@@ -52,7 +52,7 @@ class RunArgumentsEditorRow(QWidget):
             'e.g. --config "/home/user/app.toml" --verbose'
         )
         self._argv_edit.setTabChangesFocus(True)
-        self._argv_edit.setMaximumHeight(72)
+        self._argv_edit.setMaximumHeight(96)
         self._argv_edit.textChanged.connect(self._emit_validation_changed)
         argv_row_layout.addWidget(self._argv_edit, 1)
 

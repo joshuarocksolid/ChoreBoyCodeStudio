@@ -56,7 +56,8 @@ class RunEnvOverridesDialog(QDialog):
         self.setWindowTitle("Environment Variables")
         self.setModal(True)
         self.setObjectName(_DIALOG_OBJECT_NAME)
-        self.resize(560, 420)
+        self.setMinimumSize(560, 400)
+        self.resize(640, 480)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())

@@ -421,7 +421,12 @@ def shell_section_run_dialog(tokens: ShellThemeTokens) -> str:
         "shell\\.runConfigurationsDialog",
         "shell\\.runEnvOverridesDialog",
     )
+    dialog_selectors = ",\n".join(f"QDialog#{dialog_id}" for dialog_id in dialog_ids)
     table_rules = ""
+    push_button_rules = ""
+    label_rules = ""
+    combo_rules = ""
+    disabled_input_rules = ""
     for dialog_id in dialog_ids:
         table_rules += f"""
 QDialog#{dialog_id} QTableWidget {{
@@ -451,7 +456,73 @@ QDialog#{dialog_id} QHeaderView::section {{
     font-weight: 600;
 }}
 """
+        push_button_rules += f"""
+QDialog#{dialog_id} QPushButton {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QDialog#{dialog_id} QPushButton:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+    color: {tokens.accent};
+}}
+QDialog#{dialog_id} QPushButton:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QDialog#{dialog_id} QPushButton:disabled {{
+    background: {tokens.panel_bg};
+    color: {muted};
+    border-color: {tokens.border};
+}}
+"""
+        label_rules += f"""
+QDialog#{dialog_id} QLabel {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+    background: transparent;
+}}
+"""
+        combo_rules += f"""
+QDialog#{dialog_id} QComboBox {{
+    padding: 6px 24px 6px 8px;
+    font-size: 12px;
+    min-height: 20px;
+}}
+QDialog#{dialog_id} QComboBox:hover {{
+    border-color: {tokens.accent};
+}}
+QDialog#{dialog_id} QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+QDialog#{dialog_id} QComboBox QAbstractItemView {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    selection-background-color: {tokens.tree_selected_bg};
+    selection-color: {tokens.text_primary};
+    outline: none;
+}}
+"""
+        disabled_input_rules += f"""
+QDialog#{dialog_id} QLineEdit:disabled,
+QDialog#{dialog_id} QComboBox:disabled,
+QDialog#{dialog_id} QPlainTextEdit:disabled {{
+    background: {tokens.panel_bg};
+    color: {muted};
+    border-color: {tokens.border};
+}}
+"""
     return f"""/* -- Run dialogs (arguments / configurations / env) -------------------- */
+{dialog_selectors} {{
+    background: {tokens.window_bg};
+    color: {tokens.text_primary};
+}}
 QLabel#shell\\.runWithArgumentsDialog\\.commandPreview,
 QLabel#shell\\.runConfigurationsDialog\\.commandPreview {{
     background: {tokens.input_bg};
@@ -489,6 +560,25 @@ QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup::title {{
     padding: 0 4px;
     color: {muted};
 }}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {tokens.border};
+    border-radius: 3px;
+    background: {tokens.input_bg};
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::indicator:checked {{
+    background: {tokens.accent};
+    border-color: {tokens.accent};
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::indicator:disabled {{
+    background: {tokens.panel_bg};
+    border-color: {tokens.border};
+}}
+{label_rules}
+{push_button_rules}
+{combo_rules}
+{disabled_input_rules}
 QDialog#shell\\.runWithArgumentsDialog QLineEdit,
 QDialog#shell\\.runWithArgumentsDialog QComboBox,
 QDialog#shell\\.runWithArgumentsDialog QPlainTextEdit,

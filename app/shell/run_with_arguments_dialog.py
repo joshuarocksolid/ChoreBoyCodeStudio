@@ -107,7 +107,8 @@ class RunWithArgumentsDialog(QDialog):
         self.setWindowTitle("Run With Arguments")
         self.setModal(True)
         self.setObjectName(_DIALOG_OBJECT_NAME)
-        self.resize(680, 560)
+        self.setMinimumSize(640, 520)
+        self.resize(720, 620)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
@@ -142,7 +143,7 @@ class RunWithArgumentsDialog(QDialog):
         form_layout = QFormLayout(form_host)
         form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(8)
+        form_layout.setVerticalSpacing(10)
         form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self._prefill_combo: QComboBox | None = None
@@ -190,7 +191,7 @@ class RunWithArgumentsDialog(QDialog):
         advanced_layout = QFormLayout(self._advanced_group)
         advanced_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         advanced_layout.setHorizontalSpacing(12)
-        advanced_layout.setVerticalSpacing(8)
+        advanced_layout.setVerticalSpacing(10)
         advanced_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self._working_dir_edit = QLineEdit(self._advanced_group)
