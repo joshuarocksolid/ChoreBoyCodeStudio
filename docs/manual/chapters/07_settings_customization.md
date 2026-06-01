@@ -22,6 +22,10 @@ Use `View > Theme` to switch:
 - System
 - Light
 - Dark
+- High Contrast Light
+- High Contrast Dark
+
+High Contrast modes target stronger body-text contrast and wider focus rings for users who need WCAG AAA readability. They are optional; most users can stay on System, Light, or Dark.
 
 Use `View > Zoom In/Out/Reset` for text readability.
 
@@ -37,7 +41,7 @@ In Settings, **Keybindings** tab lets you:
 ## Syntax colors
 
 Use **Syntax Colors** tab to customize token colors.
-You can control light and dark colors separately.
+Four scopes are available: Light, Dark, High Contrast Light, and High Contrast Dark. Overrides persist independently under `syntax_colors.*` in settings.
 
 ## Linter controls
 
@@ -52,7 +56,7 @@ In **Linter** tab you can:
 
 For most hobby users:
 
-1. Keep theme on System or Dark.
+1. Keep theme on System or Dark (or High Contrast if you need stronger contrast).
 2. Keep linting enabled.
 3. Use default shortcuts first, then customize only what you use daily.
 4. Use project scope only for settings that truly belong to that project.

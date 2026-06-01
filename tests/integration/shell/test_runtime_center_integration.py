@@ -45,7 +45,7 @@ def test_startup_status_click_opens_runtime_center(monkeypatch: pytest.MonkeyPat
             opened_dialogs[-1]["executed"] = True
             return 0
 
-    monkeypatch.setattr("app.shell.main_window.RuntimeCenterDialog", _FakeRuntimeCenterDialog)
+    monkeypatch.setattr("app.shell.runtime_onboarding_workflow.RuntimeCenterDialog", _FakeRuntimeCenterDialog)
     window = MainWindow(
         startup_report=CapabilityProbeReport(
             checks=[
@@ -86,7 +86,7 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
             opened_dialogs[-1]["executed"] = True
             return 0
 
-    monkeypatch.setattr("app.shell.main_window.RuntimeCenterDialog", _FakeRuntimeCenterDialog)
+    monkeypatch.setattr("app.shell.runtime_onboarding_workflow.RuntimeCenterDialog", _FakeRuntimeCenterDialog)
 
     project_root = tmp_path / "project"
     project_root.mkdir()

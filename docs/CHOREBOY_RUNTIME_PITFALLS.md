@@ -2,7 +2,8 @@
 
 Lessons learned from running PySide2 desktop applications on the ChoreBoy
 desktop runtime. Every issue in this document worked correctly in the
-development environment (system Python 3.12, PostgreSQL 16, UTF-8) but failed
+development environment (Cloud Python 3.11 or local `~/opt/freecad` Python 3.9,
+PostgreSQL 16, UTF-8) but failed
 on the production ChoreBoy stack (FreeCAD AppRun Python 3.9, PostgreSQL 9.3,
 SQL_ASCII encoding).
 
@@ -31,7 +32,7 @@ recommended hardening step has already been adopted everywhere in this repo.
 
 | Aspect              | Development             | ChoreBoy production          |
 |---------------------|-------------------------|------------------------------|
-| Python              | 3.12 (system)           | 3.9.2 (FreeCAD AppRun)       |
+| Python              | 3.11.13 (Cloud) or 3.9.2 (local AppRun) | 3.9.2 (FreeCAD AppRun)       |
 | Qt binding          | (not always loaded)     | PySide2                       |
 | PostgreSQL          | 16                      | 9.3                           |
 | Database encoding   | UTF-8                   | SQL_ASCII                     |

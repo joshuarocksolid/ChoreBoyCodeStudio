@@ -245,7 +245,7 @@ Workflow plugins must respect ChoreBoy constraints:
 * do not rely on native extensions or arbitrary binaries
 * do not assume terminal access
 * do not create hidden directories such as `.cbcs`, `.pytest_cache`, `.ropeproject`, or
-  `.jedi`
+  `.jedi` (note: `.cbcs-plugin.zip` is a **filename extension** for plugin distribution, not a hidden storage directory — that naming is allowed)
 * do not write project files directly for formatting/refactoring flows; return structured
   results and let the editor apply them
 

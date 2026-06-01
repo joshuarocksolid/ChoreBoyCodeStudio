@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import queue
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -20,7 +19,6 @@ from PySide2.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QShortcut,
     QSizePolicy,
@@ -30,7 +28,6 @@ from PySide2.QtWidgets import (
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -41,17 +38,14 @@ from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
 from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssueReport
-from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugExecutionState, DebugSourceMap
+from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.debug.debug_session import DebugSession
 from app.intelligence.cache_controls import (
     IntelligenceRuntimeSettings,
     rebuild_symbol_cache,
 )
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, analyze_python_file
-from app.intelligence.outline_service import (
-    OutlineSymbol,
-    build_outline_from_source,
-)
+from app.intelligence.outline_service import OutlineSymbol
 from app.intelligence.semantic_session import SemanticSession
 from app.intelligence.symbol_index import SymbolIndexWorker
 from app.intelligence.completion_models import (
@@ -62,12 +56,10 @@ from app.intelligence.completion_models import (
 from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
 from app.editors.editor_manager import EditorManager
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.find_replace_bar import FindReplaceBar
-from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
+from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.editors.markdown_rendering import is_markdown_path
 from app.editors.quick_open_dialog import QuickOpenDialog
-from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.quick_open import QuickOpenCandidate
 from app.editors.search_panel import SearchMatch, SearchWorker
 from app.editors.text_editing import FlatPythonIndentRepairResult
@@ -82,9 +74,8 @@ from app.shell.clear_console_policy import (
     prepare_new_run,
 )
 from app.shell.console_model import ConsoleModel
-from app.shell.exit_status import describe_exit_code
 from app.shell.output_tail_buffer import OutputTailBuffer
-from app.run.problem_parser import ProblemEntry, parse_traceback_problems
+from app.run.problem_parser import ProblemEntry
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.run.runtime_launch import (
@@ -92,7 +83,7 @@ from app.run.runtime_launch import (
     is_freecad_runtime_executable,
     resolve_runtime_executable,
 )
-from app.shell.run_log_panel import RunInfo, RunLogPanel
+from app.shell.run_log_panel import RunLogPanel
 from app.shell.test_runner_workflow import ActiveTestEditor, TestRunnerWorkflow
 from app.shell.plugin_activation_workflow import PluginActivationWorkflow
 from app.packaging.layout import resolve_entry_path
@@ -114,14 +105,6 @@ from app.plugins.workflow_adapters import (
 from app.plugins.workflow_broker import WorkflowBroker
 from app.plugins.workflow_catalog import WorkflowProviderCatalog
 from app.support.diagnostics import ProjectHealthReport
-from app.support.runtime_explainer import (
-    HELP_TOPIC_GETTING_STARTED,
-    HELP_TOPIC_HEADLESS_NOTES,
-    build_project_health_issue_report,
-    build_startup_issue_report,
-    explain_runtime_message,
-    merge_runtime_issue_reports,
-)
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.examples.example_project_service import ExampleProjectService
 from app.shell.layout_persistence import (
@@ -173,7 +156,7 @@ from app.shell.dependency_panel import DependencyInspectorDialog
 from app.shell.dependency_wizard_dialog import AddDependencyWizardDialog
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.python_console_history import load_python_console_history, save_python_console_history
-from app.shell.runtime_center_dialog import RuntimeCenterDialog
+from app.shell.runtime_onboarding_workflow import RuntimeOnboardingWorkflow
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.theme_tokens import ShellThemeTokens
 from app.project.project_tree_widget import ProjectTreeWidget
@@ -189,23 +172,19 @@ from app.project.project_service import (
     ProjectRootState,
     assess_project_root,
     create_blank_project,
-    enumerate_project_entries,
     open_project,
 )
 from app.project.project_manifest import (
     set_project_default_entry,
 )
-from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.action_registry import ShellActionRegistry
 from app.shell.command_broker import CommandBroker
 from app.shell.debug_control_workflow import DebugControlWorkflow
+from app.shell.debug_inspector_workflow import DebugInspectorWorkflow
 from app.shell.events import (
     ProjectOpenFailedEvent,
-    RunProcessExitEvent,
-    RunProcessOutputEvent,
-    RunProcessStateEvent,
     ShellEventBus,
 )
 from app.shell.menu_wiring import build_main_window_menus, connect_test_explorer_navigation
@@ -214,7 +193,6 @@ from app.shell.project_controller import ProjectController
 from app.shell.project_load_host import MainWindowProjectLoadHost
 from app.shell.project_load_workflow import ProjectLoadWorkflow
 from app.shell.project_rescan_workflow import MainWindowProjectRescanHost, ProjectRescanWorkflow
-from app.shell.project_tree_utils import effective_excludes_for, filter_tree_signature_entries
 from app.shell.source_root_workflow import build_source_root_workflow
 from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.project_tree_controller import ProjectTreeController
@@ -222,15 +200,15 @@ from app.shell.project_tree_presenter import ProjectTreePresenter as ShellProjec
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
 from app.shell.problems_controller import ProblemsController
 from app.shell.python_style_workflow import PythonStyleWorkflow
+from app.shell.repl_event_workflow import ReplEventWorkflow
 from app.shell.repl_session_manager import ReplSessionManager
-from app.shell.run_session_controller import RunSessionController
-from app.shell.run_output_coordinator import RunOutputCoordinator
-from app.shell.run_config_controller import RunConfigController
 from app.shell.run_debug_presenter import RunDebugPresenter
+from app.shell.run_event_workflow import RunEventWorkflow
+from app.shell.run_output_coordinator import RunOutputCoordinator
+from app.shell.run_session_controller import RunSessionController
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import SaveWorkflow
 from app.shell.shell_composition import (
-    build_external_file_change_workflow,
     build_find_replace_workflow,
     build_project_tree_action_workflow,
     build_python_console_workflow,
@@ -242,15 +220,17 @@ from app.shell.shell_composition import (
 )
 from app.shell.shell_theme_workflow import ShellThemeWorkflow
 from app.shell.settings_apply_workflow import capture_settings_apply_baseline
-from app.shell.document_safety import DocumentCloseIntent, DocumentScope
+from app.shell.document_safety import DocumentScope
 from app.shell.editor_intelligence_controller import EditorIntelligenceController
 from app.shell.editor_tab_factory import EditorTabFactory
+from app.shell.editor_tab_workflow import EditorTabWorkflow
 from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
 from app.shell.help_controller import ShellHelpController
+from app.shell.main_window_composition import install_main_window_composition
 from app.shell.main_window_layout import (
     build_layout_shell,
     configure_window_frame,
@@ -258,16 +238,12 @@ from app.shell.main_window_layout import (
 from app.shell.status_bar import (
     ShellStatusBarController,
     create_shell_status_bar,
-    map_startup_report_to_status,
 )
 from app.shell.toolbar import build_run_toolbar_widget
 from app.shell.toolbar_icons import icon_run
 from app.shell.welcome_widget import WelcomeWidget
 
-EVENT_QUEUE_BATCH_LIMIT = 200
-
 ShellEventT = TypeVar("ShellEventT")
-ReplEvent = tuple[str, object, object]
 
 
 class _ConnectableSignal(Protocol):
@@ -307,7 +283,11 @@ class MainWindow(QMainWindow):
         self._local_history_workflow: LocalHistoryWorkflow
         self._plugin_activation_workflow: PluginActivationWorkflow
         self._debug_control_workflow: DebugControlWorkflow
+        self._debug_inspector_workflow: DebugInspectorWorkflow
+        self._repl_event_workflow: ReplEventWorkflow
+        self._run_event_workflow: RunEventWorkflow
         self._editor_tab_factory: EditorTabFactory
+        self._editor_tab_workflow: EditorTabWorkflow
         self._save_workflow: SaveWorkflow
         self._python_style_workflow: PythonStyleWorkflow
         self._semantic_navigation_workflow: Any
@@ -323,442 +303,12 @@ class MainWindow(QMainWindow):
         self._problems_controller = ProblemsController(self)
         self._test_runner_workflow: TestRunnerWorkflow
         self._runtime_support_workflow: RuntimeSupportWorkflow
-        self._state_root = state_root
-        self._logger = get_subsystem_logger("shell")
-        self._startup_capability_facade = StartupCapabilityFacade()
-        self._python_tooling_status_controller = PythonToolingStatusController(
-            current_project_root=self._current_project_root
-        )
-        self._python_console_history_path = global_python_console_history_path(self._state_root)
-        self._settings_service = SettingsService(state_root=self._state_root)
-        (
-            self._runtime_onboarding_dismissed,
-            self._runtime_onboarding_completed,
-        ) = self._load_runtime_onboarding_state()
-        self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
-        self._stored_runtime_problems: list[ProblemEntry] = []
-        self._known_runtime_modules: frozenset[str] | None = load_cached_runtime_modules(
-            state_root=self._state_root,
-        )
-        self._menu_registry: MenuStubRegistry | None = None
-        self._command_broker = CommandBroker()
-        self._action_registry: ShellActionRegistry | None = None
-        self._event_bus = ShellEventBus()
-        self._plugin_runtime_manager = PluginRuntimeManager(state_root=self._state_root)
-        self._plugin_api_broker = PluginApiBroker(self._plugin_runtime_manager)
-        self._workflow_broker = WorkflowBroker(self._plugin_api_broker)
-        self._workflow_provider_catalog = WorkflowProviderCatalog([])
-        self._plugin_safe_mode = self._load_plugin_safe_mode()
-        self._declarative_contribution_manager = DeclarativeContributionManager(
-            register_runtime_command=lambda command_id, handler, replace: self.register_runtime_command(
-                command_id=command_id,
-                handler=handler,
-                replace=replace,
-            ),
-            register_runtime_menu_command=lambda **kwargs: self.register_runtime_menu_command(**kwargs),
-            unregister_runtime_menu_command=self.unregister_runtime_menu_command,
-            execute_runtime_command=self.execute_runtime_command,
-            subscribe_shell_event=lambda event_type, handler: self.subscribe_shell_event(event_type, handler),
-            unsubscribe_shell_event=lambda event_type, handler: self.unsubscribe_shell_event(event_type, handler),
-            emit_message=lambda message: QMessageBox.information(self, "Plugin Command", message),
-            execute_plugin_runtime_command=lambda command_id, payload, activation_event: self._plugin_api_broker.invoke_runtime_command_for_event(
-                command_id,
-                payload,
-                activation_event=activation_event,
-            ),
-            on_runtime_command_success=self._clear_plugin_runtime_failure,
-            on_runtime_command_failure=self._record_plugin_runtime_failure,
-        )
-        self._status_controller: ShellStatusBarController | None = None
-        self._startup_report: CapabilityProbeReport | None = startup_report
-        self._toolbar = None
-        self._top_splitter: QSplitter | None = None
-        self._vertical_splitter: QSplitter | None = None
-        self._close_tab_shortcut: QShortcut | None = None
-        self._keep_preview_open_shortcut: QShortcut | None = None
-        self._theme_mode: str = constants.UI_THEME_MODE_DEFAULT
-        self._ui_font_weight: str = constants.UI_THEME_FONT_WEIGHT_DEFAULT
-        self._dark_chrome_palette: str = constants.UI_THEME_DARK_CHROME_PALETTE_DEFAULT
-        self._loaded_project: LoadedProject | None = None
-        self._plugin_activation_workflow = PluginActivationWorkflow(
-            state_root=self._state_root,
-            project_root_provider=lambda: None
-            if self._loaded_project is None
-            else self._loaded_project.project_root,
-            safe_mode_enabled=lambda: self._plugin_safe_mode,
-            contribution_manager=self._declarative_contribution_manager,
-            runtime_manager=self._plugin_runtime_manager,
-            plugin_api_broker=self._plugin_api_broker,
-            workflow_broker=self._workflow_broker,
-            on_catalog_changed=lambda catalog: setattr(self, "_workflow_provider_catalog", catalog),
-        )
-        self._project_tree_structure_signature: tuple[str, ...] | None = None
-        self._workspace_controller = EditorWorkspaceController()
-        self._editor_manager = EditorManager()
-        self._editor_widgets_by_path = self._workspace_controller.editor_widgets_by_path
-        self._markdown_panes_by_path: dict[str, MarkdownEditorPane] = {}
-        self._editor_tab_factory = EditorTabFactory(self)
-        self._indent_source_by_path: dict[str, tuple[str, int, str]] = {}
-        self._debug_exception_policy = DebugExceptionPolicy()
-        self._tree_clipboard_paths: list[str] = []
-        self._tree_clipboard_cut: bool = False
-        self._import_update_policy = self._load_import_update_policy()
-        (
-            self._editor_tab_width,
-            self._editor_font_size,
-            self._editor_font_family,
-            self._editor_indent_style,
-            self._editor_indent_size,
-            self._editor_detect_indentation_from_file,
-            self._editor_format_on_save,
-            self._editor_organize_imports_on_save,
-            self._editor_trim_trailing_whitespace_on_save,
-            self._editor_insert_final_newline_on_save,
-            self._editor_enable_preview,
-            self._editor_auto_save,
-            self._editor_exit_behavior,
-            self._editor_hover_tooltip_enabled,
-            self._editor_auto_reindent_flat_python_paste,
-        ) = self._load_editor_preferences()
-        self._pending_project_tree_preview_path: str | None = None
-        self._project_tree_preview_click_timer = QTimer(self)
-        self._project_tree_preview_click_timer.setSingleShot(True)
-        self._project_tree_preview_click_timer.setInterval(175)
-        self._project_tree_preview_click_timer.timeout.connect(self._open_pending_project_tree_preview)
-        self._zoom_delta: int = 0
-        (
-            self._completion_enabled,
-            self._completion_auto_trigger,
-            self._completion_min_chars,
-        ) = self._load_completion_preferences()
-        self._reported_completion_degradation_reasons: set[str] = set()
-        (
-            self._diagnostics_enabled,
-            self._diagnostics_realtime,
-            self._quick_fixes_enabled,
-            self._quick_fix_require_preview_for_multifile,
-        ) = self._load_diagnostics_preferences()
-        (
-            self._auto_open_console_on_run_output,
-            self._auto_open_problems_on_run_failure,
-        ) = self._load_output_preferences()
-        self._intelligence_runtime_settings = self._load_intelligence_runtime_settings()
-        self._local_history_retention_policy = self._load_local_history_retention_policy()
-        self._theme_mode = ShellThemeWorkflow.load_theme_mode(self._settings_service)
-        self._ui_font_weight = ShellThemeWorkflow.load_ui_font_weight(self._settings_service)
-        self._dark_chrome_palette = ShellThemeWorkflow.load_dark_chrome_palette(self._settings_service)
-        self._shortcut_overrides = self._load_shortcut_overrides()
-        self._effective_shortcuts = build_effective_shortcut_map(self._shortcut_overrides)
-        self._syntax_color_overrides = ShellThemeWorkflow.load_syntax_color_overrides(self._settings_service)
-        self._lint_rule_overrides = self._load_lint_rule_overrides()
-        self._selected_linter = self._load_selected_linter()
-        self._symbol_cache_db_path = str(global_cache_dir(self._state_root) / "symbols.sqlite3")
-        local_history_store = LocalHistoryStore(
-            state_root=self._state_root,
-            retention_policy=self._local_history_retention_policy,
-        )
-        autosave_store = AutosaveStore(
-            state_root=self._state_root,
-            history_store=local_history_store,
-        )
-        self._save_workflow = SaveWorkflow(self)
-        self._python_style_workflow = PythonStyleWorkflow(self)
-        self._auto_save_to_file_timer = QTimer(self)
-        self._auto_save_to_file_timer.setSingleShot(True)
-        self._auto_save_to_file_timer.setInterval(1000)
-        self._auto_save_to_file_timer.timeout.connect(self._save_workflow.flush_auto_save_to_file)
-        self._pending_realtime_lint_file_path: str | None = None
-        self._realtime_lint_timer = QTimer(self)
-        self._realtime_lint_timer.setSingleShot(True)
-        self._realtime_lint_timer.setInterval(300)
-        self._outline_panel: OutlinePanel | None = None
-        self._explorer_splitter: QSplitter | None = None
-        self._outline_symbols_by_path: dict[str, tuple[OutlineSymbol, ...]] = {}
-        self._outline_refresh_timer = QTimer(self)
-        self._outline_refresh_timer.setSingleShot(True)
-        self._outline_refresh_timer.setInterval(300)
-        self._outline_refresh_timer.timeout.connect(self._refresh_outline_for_active_tab)
-        self._outline_collapsed: bool = DEFAULT_OUTLINE_COLLAPSED
-        self._outline_follow_cursor: bool = DEFAULT_OUTLINE_FOLLOW_CURSOR
-        self._outline_sort_mode: str = DEFAULT_OUTLINE_SORT_MODE
-        self._console_model = ConsoleModel()
-        self._run_event_queue: queue.Queue[ProcessEvent] = queue.Queue()
-        self._active_run_output_tail = OutputTailBuffer(max_chars=300_000, max_chunks=6_000)
-        self._active_transient_entry_file_path: str | None = None
-        self._debug_session = DebugSession()
-        self._debug_execution_editor: CodeEditorWidget | None = None
-        self._active_symbol_index_worker: SymbolIndexWorker | None = None
-        self._is_shutting_down = False
-        self._symbol_index_generation = 0
-        self._latest_health_report: ProjectHealthReport | None = None
-        self._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
-        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
-        self._latest_package_issue_report = RuntimeIssueReport(workflow="package", issues=[])
-        self._latest_run_issue_ids: tuple[str, ...] = ()
-        self._latest_runtime_issue_report: RuntimeIssueReport = self._build_runtime_issue_report()
-        self._run_output_coordinator: RunOutputCoordinator | None = None
-        self._run_service = RunService(on_event=self._enqueue_run_event, state_root=self._state_root)
-        self._run_session_controller = RunSessionController(self._run_service)
-        self._run_debug_presenter = RunDebugPresenter(self)
-        self._run_config_controller = RunConfigController()
-        self._debug_control_workflow = DebugControlWorkflow(self)
-        self._active_named_run_config_name: str | None = None
-        self._repl_event_queue: queue.Queue[ReplEvent] = queue.Queue()
-        self._repl_manager = ReplSessionManager(
-            on_output=self._enqueue_repl_output,
-            on_session_ended=self._enqueue_repl_ended,
-            on_session_started=self._enqueue_repl_started,
-            state_root=self._state_root,
-        )
-        self._runtime_introspection_coordinator = RuntimeIntrospectionCoordinator(
-            runner_port=self._repl_manager,
-        )
-        self._template_service = TemplateService()
-        register_builtin_workflow_providers(
-            self._workflow_broker,
-            template_service=self._template_service,
-        )
-        self._example_project_service = ExampleProjectService()
-        self._main_thread_dispatcher = MainThreadDispatcher(self)
-        self._semantic_session = SemanticSession(
-            dispatch_to_main_thread=self._dispatch_to_main_thread,
-            cache_db_path=self._symbol_cache_db_path,
-            state_root=self._state_root,
-        )
-        self._intelligence_controller = EditorIntelligenceController(
-            semantic_session=self._semantic_session,
-        )
-        self._background_tasks = GeneralTaskScheduler(
-            dispatch_to_main_thread=self._dispatch_to_main_thread
-        )
-        self._runtime_support_workflow = RuntimeSupportWorkflow(
-            parent=self,
-            state_root=self._state_root,
-            background_tasks=self._background_tasks,
-            workflow_broker=self._workflow_broker,
-            loaded_project=lambda: self._loaded_project,
-            startup_report=lambda: self._startup_report,
-            latest_health_report=lambda: self._latest_health_report,
-            set_latest_health_report=lambda report: setattr(self, "_latest_health_report", report),
-            latest_import_issue_report=lambda: self._latest_import_issue_report,
-            latest_run_issue_report=lambda: self._latest_run_issue_report,
-            latest_package_issue_report=lambda: self._latest_package_issue_report,
-            set_latest_package_issue_report=lambda report: setattr(self, "_latest_package_issue_report", report),
-            set_latest_runtime_issue_report=lambda report: setattr(self, "_latest_runtime_issue_report", report),
-            set_latest_import_issue_report=lambda report: setattr(self, "_latest_import_issue_report", report),
-            set_latest_run_issue_report=lambda report: setattr(self, "_latest_run_issue_report", report),
-            clear_active_run_config=lambda: (
-                setattr(self, "_active_named_run_config_name", None),
-                setattr(self, "_latest_run_issue_ids", ()),
-            ),
-            build_runtime_issue_report=self._build_runtime_issue_report,
-            open_runtime_center_dialog=lambda **kwargs: self._open_runtime_center_dialog(**kwargs),
-            active_run_session_log_path=lambda: self._run_session_controller.session_store.log_path,
-            known_runtime_modules=lambda: self._known_runtime_modules,
-        )
-        self._local_history_workflow = LocalHistoryWorkflow(
-            parent=self,
-            local_history_store=local_history_store,
-            autosave_store=autosave_store,
-            loaded_project=lambda: self._loaded_project,
-            editor_manager=self._editor_manager,
-            editor_widget_for_path=self._workspace_controller.widget_for_path,
-            open_file_in_editor=lambda file_path: self._editor_tab_factory.open_file_in_editor(file_path, preview=False),
-            open_restored_history_buffer=self._editor_tab_factory.open_restored_history_buffer,
-            apply_text_to_open_tab=self._apply_text_to_open_tab,
-            tab_index_for_path=self._tab_index_for_path,
-            refresh_tab_presentation=self._refresh_tab_presentation,
-            set_current_tab_index=lambda tab_index: self._editor_tabs_widget.setCurrentIndex(tab_index)
-            if self._editor_tabs_widget is not None
-            else None,
-            show_status_message=lambda message, timeout: self.statusBar().showMessage(message, timeout),
-            logger=self._logger,
-            background_tasks=self._background_tasks,
-            retention_policy=self._local_history_retention_policy,
-            ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
-            breakpoint_store=self._debug_control_workflow.breakpoint_store,
-            refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
-            capture_tree_state=lambda: self._project_tree_presenter.capture_view_state(),
-            restore_tree_state=lambda tree_state: self._project_tree_presenter.restore_view_state(tree_state),
-            reveal_tree_path=lambda file_path: self._project_tree_presenter.reveal_path(file_path),
-            set_tree_reveal_suppressed=lambda suppressed: self._project_tree_presenter.set_reveal_suppressed(
-                suppressed
-            ),
-        )
-        self._diagnostics_orchestrator = DiagnosticsOrchestrator(
-            diagnostics_enabled=lambda: self._diagnostics_enabled,
-            diagnostics_realtime=lambda: self._diagnostics_realtime,
-            set_pending_realtime_file_path=lambda file_path: setattr(
-                self, "_pending_realtime_lint_file_path", file_path
-            ),
-            get_pending_realtime_file_path=lambda: self._pending_realtime_lint_file_path,
-            start_realtime_timer=self._realtime_lint_timer.start,
-            get_active_tab_file_path=self._editor_manager.active_file_path,
-            render_lint_for_file=lambda file_path, trigger: self._render_lint_diagnostics_for_file(
-                file_path,
-                trigger=trigger,
-            ),
-            get_open_editor_paths=self._workspace_controller.open_editor_paths,
-            render_merged_problems_panel=self._render_merged_problems_panel,
-            set_known_runtime_modules=lambda modules: setattr(self, "_known_runtime_modules", modules),
-            run_background_task=self._background_tasks.run,
-            state_root=lambda: self._state_root,
-            logger=self._logger,
-            show_runtime_probe_warning=lambda message: QMessageBox.warning(
-                self,
-                "Refresh Runtime Modules",
-                message,
-            ),
-        )
-        self._realtime_lint_timer.timeout.connect(
-            build_realtime_lint_runner(
-                is_shutting_down=lambda: self._is_shutting_down,
-                orchestrator=self._diagnostics_orchestrator,
-            )
-        )
-        self._project_controller = ProjectController(
-            state_root=self._state_root,
-            logger=self._logger,
-            dispatch_to_main_thread=self._dispatch_to_main_thread,
-        )
-        self._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(self))
-        self._project_rescan_workflow = ProjectRescanWorkflow(MainWindowProjectRescanHost(self))
-        self._source_root_workflow = build_source_root_workflow(self)
-        self._project_tree_controller: ProjectTreeController[CodeEditorWidget] = ProjectTreeController()
-        self._project_tree_action_coordinator = ProjectTreeActionCoordinator(
-            project_tree_controller=self._project_tree_controller,
-            editor_widgets_by_path=self._editor_widgets_by_path,
-            tab_index_for_path=self._tab_index_for_path,
-            remove_tab_at_index=lambda tab_index: self._editor_tabs_widget.removeTab(tab_index)
-            if self._editor_tabs_widget is not None
-            else None,
-            release_editor_widget=self._release_editor_widget,
-            close_editor_file=self._editor_manager.close_file,
-            breakpoint_store=self._debug_control_workflow.breakpoint_store,
-            refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
-            remap_editor_paths=self._editor_manager.remap_paths_for_move,
-            update_tab_path_and_name=self._update_tab_path_and_name,
-            apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
-            update_widget_language=self._update_widget_language_for_path,
-            maybe_rewrite_imports=self._maybe_rewrite_imports_for_move,
-            reload_project=self._refresh_project_tree_from_disk,
-            record_deleted_path=self._local_history_workflow.record_deleted_path,
-            remap_file_lineage=self._local_history_workflow.remap_file_lineage,
-        )
-        self._project_tree_action_workflow = build_project_tree_action_workflow(self)
-        self._external_file_change_workflow = build_external_file_change_workflow(self)
-        self._settings_apply_workflow = build_settings_apply_workflow(self)
-        self._python_console_workflow = build_python_console_workflow(self)
-        self._find_replace_workflow = build_find_replace_workflow(self)
-        self._semantic_navigation_workflow = build_semantic_navigation_workflow(self)
-        self._shell_theme_workflow = build_shell_theme_workflow(self)
-        self._help_controller = ShellHelpController(
-            state_root=self._state_root,
-            resolve_theme_tokens=self._shell_theme_workflow.resolve_theme_tokens,
-            reveal_path_in_file_manager=self._reveal_path_in_file_manager,
-            get_effective_shortcuts=lambda: self._effective_shortcuts,
-        )
-
-        self._configure_window_frame()
-        self._build_layout_shell()
-        self._run_launch_workflow = build_run_launch_workflow(self)
-
-        def active_test_editor() -> ActiveTestEditor | None:
-            active_tab = self._editor_manager.active_tab()
-            editor_widget = self._active_editor_widget()
-            if active_tab is None or editor_widget is None:
-                return None
-            return ActiveTestEditor(
-                file_path=active_tab.file_path,
-                source_text=active_tab.current_content,
-                cursor_line=editor_widget.textCursor().blockNumber() + 1,
-            )
-
-        self._test_runner_workflow = TestRunnerWorkflow(
-            loaded_project_provider=lambda: self._loaded_project,
-            active_editor_provider=active_test_editor,
-            workflow_broker=self._workflow_broker,
-            background_tasks=self._background_tasks,
-            test_explorer_panel=self._test_explorer_panel,
-            run_pytest_with_workflow=run_pytest_with_workflow,
-            start_debug_session=self._run_launch_workflow.start_session,
-            build_debug_breakpoints=self._debug_control_workflow.build_debug_breakpoints_for_launch,
-            debug_exception_policy_provider=lambda: self._debug_exception_policy,
-            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
-            set_problems=self._set_problems,
-            focus_run_log_tab=self._focus_run_log_tab,
-            focus_problems_tab=self._focus_problems_tab,
-            show_warning=lambda title, message: QMessageBox.warning(self, title, message),
-            show_information=lambda title, message: QMessageBox.information(self, title, message),
-            record_debug_target=self._run_launch_workflow.record_debug_target_from_dict,
-            auto_open_console_on_output=lambda: self._auto_open_console_on_run_output,
-            auto_open_problems_on_failure=lambda: self._auto_open_problems_on_run_failure,
-            logger=self._logger,
-        )
-
-        connect_test_explorer_navigation(self)
-        self._configure_close_tab_shortcut()
-        self._configure_keep_preview_open_shortcut()
-        self._menu_registry = build_main_window_menus(self, shortcut_overrides=self._effective_shortcuts)
-        if self._menu_registry is not None:
-            self._action_registry = ShellActionRegistry(
-                menu_registry=self._menu_registry,
-                command_broker=self._command_broker,
-            )
-        self._status_controller = create_shell_status_bar(
+        self._runtime_onboarding_workflow: RuntimeOnboardingWorkflow
+        install_main_window_composition(
             self,
             startup_report=startup_report,
-            on_startup_activated=self._handle_runtime_center_action,
+            state_root=state_root,
         )
-        self._run_launch_workflow.install_active_run_config_indicator()
-        self._refresh_python_tooling_status()
-        self._toolbar = build_run_toolbar_widget(self._menu_registry)
-        if self._toolbar is not None:
-            center_panel = self.findChild(QWidget, "shell.centerPanel")
-            if center_panel is not None:
-                center_layout = center_panel.layout()
-                if isinstance(center_layout, QVBoxLayout):
-                    center_layout.insertWidget(0, self._toolbar, 0)
-        self._shell_theme_workflow.apply_theme_styles()
-        self._apply_runtime_intelligence_preferences_to_open_editors()
-        self._sync_theme_menu_check_state()
-        self._sync_auto_save_menu_state()
-        self._restore_layout_from_settings()
-        self._refresh_open_recent_menu()
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        self._refresh_markdown_action_states()
-        self._test_runner_workflow.refresh_discovery()
-        self._plugin_activation_workflow.reload()
-        self._run_event_timer = QTimer(self)
-        self._run_event_timer.setInterval(50)
-        self._run_event_timer.timeout.connect(self._process_queued_run_events)
-        self._run_event_timer.start()
-        self._repl_event_timer = QTimer(self)
-        self._repl_event_timer.setInterval(50)
-        self._repl_event_timer.timeout.connect(self._process_queued_repl_events)
-        self._repl_event_timer.start()
-        self._external_change_poll_timer = QTimer(self)
-        self._external_change_poll_timer.setInterval(1000)
-        self._external_change_poll_timer.timeout.connect(self._poll_external_file_changes)
-        self._external_change_poll_timer.start()
-        self._restore_project_timer = QTimer(self)
-        self._restore_project_timer.setSingleShot(True)
-        self._restore_project_timer.timeout.connect(self._try_restore_last_project)
-        self._restore_project_timer.start(0)
-        self._auto_start_repl_timer = QTimer(self)
-        self._auto_start_repl_timer.setSingleShot(True)
-        self._auto_start_repl_timer.timeout.connect(self._auto_start_repl)
-        self._auto_start_repl_timer.start(100)
-        self._runtime_probe_timer = QTimer(self)
-        self._runtime_probe_timer.setSingleShot(True)
-        self._runtime_probe_timer.timeout.connect(self._start_runtime_module_probe)
-        self._runtime_probe_timer.start(200)
-        self._startup_probe_refresh_timer = QTimer(self)
-        self._startup_probe_refresh_timer.setSingleShot(True)
-        self._startup_probe_refresh_timer.timeout.connect(self._refresh_startup_capability_report_async)
-        self._startup_probe_refresh_timer.start(0)
-        self._startup_capability_facade.set_refresh_callback(self._handle_startup_report_refresh)
 
     def _try_restore_last_project(self) -> None:
         """Attempt to reopen the last project from the previous session.
@@ -791,67 +341,16 @@ class MainWindow(QMainWindow):
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Extension seam for startup status refresh from bootstrap updates."""
-        self._startup_report = report
-        self._latest_runtime_issue_report = self._build_runtime_issue_report()
-        self._refresh_welcome_project_list()
-        if self._status_controller is None:
-            return
-        self._status_controller.set_startup_report(report)
+        self._runtime_onboarding_workflow.set_startup_report(report)
 
     def _refresh_startup_capability_report_async(self) -> None:
-        def task(cancel_event):  # type: ignore[no-untyped-def]
-            report = self._startup_capability_facade.refresh_report()
-            if cancel_event.is_set():
-                return None
-            return report
-
-        def on_success(report: object) -> None:
-            if not isinstance(report, CapabilityProbeReport):
-                return
-            self.set_startup_report(report)
-
-        def on_error(exc: Exception) -> None:
-            self._logger.warning("Deferred startup capability probe failed: %s", exc)
-
-        self._background_tasks.run(
-            key="startup_capability_refresh",
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
+        self._runtime_onboarding_workflow.refresh_startup_capability_report_async()
 
     def _handle_startup_report_refresh(self, report: CapabilityProbeReport) -> None:
-        self._dispatch_to_main_thread(lambda: self.set_startup_report(report))
+        self._runtime_onboarding_workflow.handle_startup_report_refresh(report)
 
     def _build_runtime_issue_report(self) -> RuntimeIssueReport:
-        reports: list[RuntimeIssueReport] = []
-        startup_issues = (
-            build_startup_issue_report(self._startup_report)
-            if self._startup_report is not None
-            else RuntimeIssueReport(workflow="startup", issues=[])
-        )
-        reports.append(startup_issues)
-        if self._latest_health_report is not None:
-            reports.append(build_project_health_issue_report(self._latest_health_report))
-        if self._latest_import_issue_report.issues:
-            reports.append(self._latest_import_issue_report)
-        if self._latest_run_issue_report.issues:
-            reports.append(self._latest_run_issue_report)
-        if self._latest_package_issue_report.issues:
-            reports.append(self._latest_package_issue_report)
-        return merge_runtime_issue_reports(*reports, workflow="runtime_center")
-
-    def _open_runtime_help_topic(self, topic_id: str) -> None:
-        if topic_id == HELP_TOPIC_HEADLESS_NOTES:
-            self._help_controller.show_headless_notes(parent=self)
-            return
-        if topic_id == "packaging_backup":
-            self._help_controller.show_packaging_backup(parent=self)
-            return
-        if topic_id == HELP_TOPIC_GETTING_STARTED:
-            self._help_controller.show_getting_started(parent=self)
-            return
-        self._help_controller.show_getting_started(parent=self)
+        return self._runtime_onboarding_workflow.build_runtime_issue_report()
 
     def _open_runtime_center_dialog(
         self,
@@ -859,81 +358,10 @@ class MainWindow(QMainWindow):
         title: str = "Runtime Center",
         report: RuntimeIssueReport | None = None,
     ) -> None:
-        dialog = RuntimeCenterDialog(
-            title=title,
-            report=report or self._latest_runtime_issue_report,
-            tokens=self._shell_theme_workflow.resolve_theme_tokens(),
-            open_help_topic=self._open_runtime_help_topic,
-            parent=self,
-        )
-        dialog.exec_()
+        self._runtime_onboarding_workflow.open_runtime_center_dialog(title=title, report=report)
 
     def _handle_runtime_center_action(self) -> None:
-        self._latest_runtime_issue_report = self._build_runtime_issue_report()
-        self._open_runtime_center_dialog()
-
-    def _load_runtime_onboarding_state(self) -> tuple[bool, bool]:
-        try:
-            settings_payload = self._settings_service.load_global()
-        except Exception as exc:
-            self._logger.debug("Runtime onboarding state unavailable; using defaults: %s", exc)
-            return False, False
-        onboarding_payload = settings_payload.get(constants.UI_ONBOARDING_SETTINGS_KEY)
-        if not isinstance(onboarding_payload, Mapping):
-            return False, False
-        return (
-            bool(onboarding_payload.get(constants.UI_ONBOARDING_RUNTIME_GUIDE_DISMISSED_KEY, False)),
-            bool(onboarding_payload.get(constants.UI_ONBOARDING_RUNTIME_GUIDE_COMPLETED_KEY, False)),
-        )
-
-    def _persist_runtime_onboarding_state(self, *, dismissed: bool | None = None, completed: bool | None = None) -> None:
-        if dismissed is not None:
-            self._runtime_onboarding_dismissed = dismissed
-        if completed is not None:
-            self._runtime_onboarding_completed = completed
-        try:
-            self._settings_service.update_global(
-                lambda settings: self._merge_runtime_onboarding_settings(
-                    settings,
-                    dismissed=self._runtime_onboarding_dismissed,
-                    completed=self._runtime_onboarding_completed,
-                )
-            )
-        except Exception as exc:
-            self._logger.warning("Failed to persist runtime onboarding state: %s", exc)
-        self._refresh_welcome_project_list()
-
-    def _merge_runtime_onboarding_settings(
-        self,
-        settings: Mapping[str, Any],
-        *,
-        dismissed: bool,
-        completed: bool,
-    ) -> dict[str, Any]:
-        updated = dict(settings)
-        existing = settings.get(constants.UI_ONBOARDING_SETTINGS_KEY)
-        onboarding_payload = dict(existing) if isinstance(existing, Mapping) else {}
-        onboarding_payload[constants.UI_ONBOARDING_RUNTIME_GUIDE_DISMISSED_KEY] = dismissed
-        onboarding_payload[constants.UI_ONBOARDING_RUNTIME_GUIDE_COMPLETED_KEY] = completed
-        updated[constants.UI_ONBOARDING_SETTINGS_KEY] = onboarding_payload
-        return updated
-
-    def _refresh_welcome_widget_state(
-        self,
-        widget: WelcomeWidget,
-        *,
-        force_show_onboarding: bool = False,
-    ) -> None:
-        try:
-            recent_paths = load_recent_projects(state_root=self._state_root)
-        except Exception as exc:
-            self._logger.debug("Recent projects unavailable for welcome widget: %s", exc)
-            recent_paths = []
-        widget.set_recent_projects(recent_paths)
-        startup_status = map_startup_report_to_status(self._startup_report)
-        widget.set_runtime_summary(startup_status.text, startup_status.details)
-        widget.set_project_health_available(self._loaded_project is not None)
-        widget.set_onboarding_visible(force_show_onboarding)
+        self._runtime_onboarding_workflow.handle_runtime_center_action()
 
     def _connect_welcome_widget_actions(
         self,
@@ -941,91 +369,13 @@ class MainWindow(QMainWindow):
         *,
         close_after_action: Callable[[], None] | None = None,
     ) -> None:
-        widget.new_project_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_new_project_action, close_after_action)
+        self._runtime_onboarding_workflow.connect_welcome_widget_actions(
+            widget,
+            close_after_action=close_after_action,
         )
-        widget.open_project_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_open_project_action, close_after_action)
-        )
-        widget.project_selected.connect(
-            lambda project_path: self._handle_welcome_project_selected(project_path, close_after_action)
-        )
-        widget.runtime_center_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_runtime_center_action, close_after_action)
-        )
-        widget.getting_started_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_getting_started_action, close_after_action)
-        )
-        widget.project_health_requested.connect(
-            lambda: self._invoke_welcome_action(
-                self._runtime_support_workflow.handle_project_health_check_action,
-                close_after_action,
-            )
-        )
-        widget.example_project_requested.connect(
-            lambda: self._invoke_welcome_action(self._handle_load_example_project_action, close_after_action)
-        )
-        widget.headless_notes_requested.connect(
-            lambda: self._invoke_welcome_action(
-                lambda: self._help_controller.show_headless_notes(parent=self),
-                close_after_action,
-            )
-        )
-        widget.dismiss_onboarding_requested.connect(
-            lambda: self._handle_runtime_onboarding_dismiss_action(close_after_action=close_after_action)
-        )
-        widget.complete_onboarding_requested.connect(
-            lambda: self._handle_runtime_onboarding_complete_action(close_after_action=close_after_action)
-        )
-
-    def _invoke_welcome_action(
-        self,
-        action: Callable[[], None],
-        close_after_action: Callable[[], None] | None = None,
-    ) -> None:
-        if close_after_action is not None:
-            close_after_action()
-        action()
-
-    def _handle_welcome_project_selected(
-        self,
-        project_path: str,
-        close_after_action: Callable[[], None] | None = None,
-    ) -> None:
-        opened = self._open_project_by_path(project_path)
-        if opened and close_after_action is not None:
-            close_after_action()
-
-    def _handle_runtime_onboarding_dismiss_action(
-        self,
-        *,
-        close_after_action: Callable[[], None] | None = None,
-    ) -> None:
-        self._persist_runtime_onboarding_state(dismissed=True, completed=False)
-        if close_after_action is not None:
-            close_after_action()
-
-    def _handle_runtime_onboarding_complete_action(
-        self,
-        *,
-        close_after_action: Callable[[], None] | None = None,
-    ) -> None:
-        self._persist_runtime_onboarding_state(dismissed=False, completed=True)
-        if close_after_action is not None:
-            close_after_action()
 
     def _handle_runtime_onboarding_action(self) -> None:
-        dialog = QDialog(self)
-        dialog.setObjectName("shell.runtimeOnboardingDialog")
-        dialog.setWindowTitle("Runtime Onboarding")
-        dialog.resize(760, 720)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(0, 0, 0, 0)
-        onboarding_widget = WelcomeWidget(dialog)
-        self._connect_welcome_widget_actions(onboarding_widget, close_after_action=dialog.accept)
-        self._refresh_welcome_widget_state(onboarding_widget, force_show_onboarding=True)
-        layout.addWidget(onboarding_widget)
-        dialog.exec_()
+        self._runtime_onboarding_workflow.handle_runtime_onboarding_action()
 
     def set_project_placeholder(self, project_text: str) -> None:
         """Extension seam for T09/T10 project-shell wiring."""
@@ -1240,19 +590,13 @@ class MainWindow(QMainWindow):
                 action.setChecked(action_id == active_id)
 
     def _handle_zoom_in(self) -> None:
-        if self._editor_font_size + self._zoom_delta < 72:
-            self._zoom_delta += 1
-            self._apply_editor_preferences_to_open_editors()
+        self._editor_tab_workflow.handle_zoom_in()
 
     def _handle_zoom_out(self) -> None:
-        if self._editor_font_size + self._zoom_delta > 8:
-            self._zoom_delta -= 1
-            self._apply_editor_preferences_to_open_editors()
+        self._editor_tab_workflow.handle_zoom_out()
 
     def _handle_zoom_reset(self) -> None:
-        if self._zoom_delta != 0:
-            self._zoom_delta = 0
-            self._apply_editor_preferences_to_open_editors()
+        self._editor_tab_workflow.handle_zoom_reset()
 
     def _save_import_update_policy(self, policy: ImportUpdatePolicy) -> None:
         self._settings_service.update_global(
@@ -2082,20 +1426,15 @@ class MainWindow(QMainWindow):
         )
 
     def _refresh_welcome_project_list(self) -> None:
-        if self._welcome_widget is None:
-            return
-        self._refresh_welcome_widget_state(self._welcome_widget)
+        self._runtime_onboarding_workflow.refresh_welcome_project_list()
 
     def _show_welcome_screen(self) -> None:
         """Switch the center stack back to the welcome page."""
-        if self._center_stack is not None:
-            self._refresh_welcome_project_list()
-            self._center_stack.setCurrentIndex(0)
+        self._runtime_onboarding_workflow.show_welcome_screen()
 
     def _show_editor_screen(self) -> None:
         """Switch the center stack to the editor page."""
-        if self._center_stack is not None:
-            self._center_stack.setCurrentIndex(1)
+        self._runtime_onboarding_workflow.show_editor_screen()
 
     def _show_open_project_error(self, project_root: str, details: str) -> None:
         self._logger.warning("Project open failed for %s: %s", project_root, details)
@@ -2181,9 +1520,7 @@ class MainWindow(QMainWindow):
             save_all_action.setEnabled(has_dirty_tabs)
 
     def _show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
-        report = RuntimeIssueReport(workflow="run", issues=list(issues))
-        self._open_runtime_center_dialog(title=title, report=report)
-        self._append_console_line(summary, stream="system")
+        self._run_event_workflow.show_run_preflight_result(title, summary, issues)
 
     def _resolve_project_entry_for_project_run(self) -> str | None:
         loaded_project = self._loaded_project
@@ -2666,42 +2003,13 @@ class MainWindow(QMainWindow):
         )
 
     def _append_debug_output_line(self, text: str) -> None:
-        if self._debug_panel is None:
-            return
-        self._debug_panel.append_output(text)
+        self._debug_inspector_workflow.append_debug_output_line(text)
 
     def _apply_debug_inspector_event(self) -> None:
-        if self._debug_panel is None:
-            return
-        state = self._debug_session.state
-        self._debug_panel.update_from_state(state)
-
-        frame = state.selected_frame
-        if state.execution_state == DebugExecutionState.PAUSED and frame is not None:
-            if not self._debug_control_workflow.is_debug_navigation_target_allowed(frame.file_path):
-                self._clear_debug_execution_indicator()
-                return
-            self._open_file_at_line(frame.file_path, frame.line_number)
-            resolved = str(Path(frame.file_path).expanduser().resolve())
-            editor = self._editor_widgets_by_path.get(resolved)
-            if editor is not None:
-                if self._debug_execution_editor is not None and self._debug_execution_editor is not editor:
-                    self._clear_debug_execution_indicator()
-                editor.set_debug_execution_line(frame.line_number)
-                self._debug_execution_editor = editor
-        elif state.execution_state in {DebugExecutionState.RUNNING, DebugExecutionState.EXITED}:
-            self._clear_debug_execution_indicator()
+        self._debug_inspector_workflow.apply_debug_inspector_event()
 
     def _clear_debug_execution_indicator(self) -> None:
-        if self._debug_execution_editor is None:
-            return
-        editor = self._debug_execution_editor
-        self._debug_execution_editor = None
-        try:
-            editor.clear_debug_execution_line()
-        except RuntimeError:
-            # Widget wrapper may already be invalid while the window is closing.
-            return
+        self._debug_inspector_workflow.clear_debug_execution_indicator()
 
     def _focus_bottom_tab(self, widget: QWidget | None) -> None:
         bottom_tabs = getattr(self, "_bottom_tabs_widget", None)
@@ -2722,261 +2030,54 @@ class MainWindow(QMainWindow):
         self._focus_bottom_tab(self._problems_panel)
 
     def _set_run_status(self, status: str, *, return_code: int | None = None) -> None:
-        status_controller = getattr(self, "_status_controller", None)
-        if status_controller is None:
-            return
-        status_controller.set_run_status(status, return_code=return_code)
+        self._run_event_workflow.set_run_status(status, return_code=return_code)
 
     def _refresh_run_action_states(self) -> None:
-        self._run_session_controller.refresh_action_states(
-            self._menu_registry,
-            has_project=self._loaded_project is not None,
-            has_active_file=self._has_active_python_file(),
-            has_breakpoints=self._debug_control_workflow.breakpoint_store.has_any_breakpoints(),
-            debug_execution_state=self._debug_session.state.execution_state,
-        )
-        if self._menu_registry is None:
-            return
-        debug_current_test_action = self._menu_registry.action("shell.action.run.debugPytestCurrentFile")
-        if debug_current_test_action is not None:
-            debug_current_test_action.setEnabled(
-                self._loaded_project is not None
-                and self._has_active_python_file()
-                and not self._run_service.supervisor.is_running()
-            )
-        run_test_at_cursor_action = self._menu_registry.action("shell.action.run.pytestAtCursor")
-        if run_test_at_cursor_action is not None:
-            run_test_at_cursor_action.setEnabled(
-                self._loaded_project is not None
-                and self._has_active_python_file()
-                and not self._run_service.supervisor.is_running()
-            )
-        debug_failed_test_action = self._menu_registry.action("shell.action.run.debugPytestFailed")
-        if debug_failed_test_action is not None:
-            test_runner_workflow = getattr(self, "_test_runner_workflow", None)
-            debug_failed_test_action.setEnabled(
-                self._loaded_project is not None
-                and test_runner_workflow is not None
-                and test_runner_workflow.has_failed_tests()
-                and not self._run_service.supervisor.is_running()
-            )
-        rerun_last_debug_action = self._menu_registry.action("shell.action.run.rerunLastDebugTarget")
-        if rerun_last_debug_action is not None:
-            rerun_last_debug_action.setEnabled(
-                self._run_launch_workflow.has_rerun_target()
-                and not self._run_service.supervisor.is_running()
-            )
-        exception_settings_action = self._menu_registry.action("shell.action.run.debugExceptionStops")
-        if exception_settings_action is not None:
-            exception_settings_action.setEnabled(
-                self._loaded_project is not None and not self._run_service.supervisor.is_running()
-            )
+        self._run_event_workflow.refresh_run_action_states()
 
     def _has_active_python_file(self) -> bool:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return False
-        return Path(active_tab.file_path).suffix.lower() == ".py"
+        return self._run_event_workflow.has_active_python_file()
 
     def _enqueue_run_event(self, event: ProcessEvent) -> None:
-        if self._is_shutting_down:
-            return
-        self._run_event_queue.put(event)
+        self._run_event_workflow.enqueue_run_event(event)
 
     # -- REPL event queue (separate from script/debug) --------------------
 
     def _enqueue_repl_output(self, text: str, stream: str) -> None:
-        if self._is_shutting_down:
-            return
-        self._repl_event_queue.put(("output", text, stream))
+        self._repl_event_workflow.enqueue_output(text, stream)
 
     def _enqueue_repl_ended(self, return_code: int | None, terminated_by_user: bool) -> None:
-        if self._is_shutting_down:
-            return
-        self._repl_event_queue.put(("ended", return_code, terminated_by_user))
+        self._repl_event_workflow.enqueue_ended(return_code, terminated_by_user)
 
     def _enqueue_repl_started(self) -> None:
-        if self._is_shutting_down:
-            return
-        self._repl_event_queue.put(("started", None, False))
+        self._repl_event_workflow.enqueue_started()
 
     def _process_queued_repl_events(self) -> None:
-        if self._is_shutting_down:
-            return
-        processed = 0
-        while processed < EVENT_QUEUE_BATCH_LIMIT:
-            try:
-                item = self._repl_event_queue.get_nowait()
-            except queue.Empty:
-                break
-            try:
-                kind, arg1, arg2 = item
-                if kind == "output":
-                    text: str = arg1  # type: ignore[assignment]
-                    stream: str = arg2  # type: ignore[assignment]
-                    if text:
-                        self._append_python_console_line(text, stream=stream)
-                elif kind == "started":
-                    self._runtime_introspection_coordinator.clear_cache()
-                    if self._python_console_widget is not None:
-                        self._python_console_widget.set_session_active(True)
-                elif kind == "ended":
-                    return_code: int | None = arg1  # type: ignore[assignment]
-                    terminated_by_user: bool = arg2  # type: ignore[assignment]
-                    if self._python_console_widget is not None:
-                        self._python_console_widget.set_session_active(False)
-                    if not terminated_by_user:
-                        exit_detail = describe_exit_code(return_code)
-                        if return_code is not None and return_code < 0:
-                            self._append_python_console_line(
-                                f"[system] Python console process was terminated by {exit_detail}. The script may have crashed in native code.",
-                                stream="system",
-                            )
-                        else:
-                            self._append_python_console_line(
-                                f"[system] Python console session ended ({exit_detail}).",
-                                stream="system",
-                            )
-            except Exception:
-                self._logger.exception("Failed to process Python Console event")
-            processed += 1
+        self._repl_event_workflow.process_queued_events()
 
     def _auto_start_repl(self) -> None:
         self._repl_manager.start()
 
     def _get_run_output_coordinator(self) -> RunOutputCoordinator:
-        coordinator = getattr(self, "_run_output_coordinator", None)
-        if coordinator is not None:
-            return coordinator
-        output_tail = getattr(self, "_active_run_output_tail", None)
-        append_output_tail = output_tail.append if output_tail is not None else (lambda _chunk: None)
-        coordinator = RunOutputCoordinator(
-            is_shutting_down=lambda: self._is_shutting_down,
-            get_active_session_mode=lambda: self._run_session_controller.active_session_mode,
-            set_active_session_mode=self._run_session_controller.set_active_session_mode,
-            get_debug_session=lambda: self._debug_session,
-            append_output_tail=append_output_tail,
-            append_console_line=lambda text, stream: self._append_console_line(text, stream=stream),
-            append_debug_output_line=self._append_debug_output_line,
-            apply_debug_inspector_event=self._apply_debug_inspector_event,
-            refresh_run_action_states=self._refresh_run_action_states,
-            set_run_status=lambda status, return_code=None: self._set_run_status(status, return_code=return_code),
-            focus_run_log_tab=self._focus_run_log_tab,
-            focus_problems_tab=self._focus_problems_tab,
-            set_debug_command_input_enabled=lambda enabled: (
-                self._debug_panel.set_command_input_enabled(enabled)
-                if self._debug_panel is not None
-                else None
-            ),
-            finalize_run_log=self._finalize_run_log,
-            update_problems_from_output=self._update_problems_from_output,
-            auto_open_console_on_run_output_enabled=lambda: bool(
-                getattr(self, "_auto_open_console_on_run_output", False)
-            ),
-            auto_open_problems_on_run_failure_enabled=lambda: bool(
-                getattr(self, "_auto_open_problems_on_run_failure", False)
-            ),
-        )
-        self._run_output_coordinator = coordinator
-        return coordinator
+        return self._run_event_workflow.get_run_output_coordinator()
 
     def _process_queued_run_events(self) -> None:
-        if self._is_shutting_down:
-            self._drain_run_event_queue()
-            return
-        processed = 0
-        while processed < EVENT_QUEUE_BATCH_LIMIT:
-            try:
-                event = self._run_event_queue.get_nowait()
-            except queue.Empty:
-                break
-            try:
-                self._apply_run_event(event)
-            except Exception:
-                self._logger.exception("Failed to process run event")
-            processed += 1
+        self._run_event_workflow.process_queued_run_events()
 
     def _apply_run_event(self, event: ProcessEvent) -> None:
-        active_session = self._run_session_controller.session_store.active_session
-        run_id = active_session.run_id if active_session is not None else None
-        mode = active_session.mode if active_session is not None else None
-        self._get_run_output_coordinator().apply(event)
-        if event.event_type == "output":
-            self._event_bus.publish(
-                RunProcessOutputEvent(
-                    run_id=run_id,
-                    mode=mode,
-                    stream=event.stream or "stdout",
-                    text=event.text or "",
-                )
-            )
-        elif event.event_type == "state":
-            self._event_bus.publish(
-                RunProcessStateEvent(
-                    run_id=run_id,
-                    mode=mode,
-                    state=event.state,
-                    terminated_by_user=event.terminated_by_user,
-                )
-            )
-        elif event.event_type == "exit":
-            self._event_bus.publish(
-                RunProcessExitEvent(
-                    run_id=run_id,
-                    mode=mode,
-                    return_code=event.return_code,
-                    terminated_by_user=event.terminated_by_user,
-                )
-            )
-            transient_entry_file = getattr(self, "_active_transient_entry_file_path", None)
-            if transient_entry_file:
-                self._run_launch_workflow.delete_transient_entry_file(transient_entry_file)
-                self._active_transient_entry_file_path = None
+        self._run_event_workflow.apply_run_event(event)
 
     def _append_console_line(self, text: str, *, stream: str = "stdout") -> None:
-        self._console_model.append(stream, text)
-        if self._run_log_panel is not None:
-            self._run_log_panel.append_live_line(text, stream=stream)
+        self._run_event_workflow.append_console_line(text, stream=stream)
 
     def _finalize_run_log(self, return_code: int | None = None) -> None:
-        panel = getattr(self, "_run_log_panel", None)
-        if panel is None:
-            return
-        active_session = self._run_session_controller.session_store.active_session
-        run_info = RunInfo(
-            run_id=active_session.run_id if active_session else "",
-            mode=active_session.mode if active_session else "",
-            entry_file=active_session.entry_file if active_session else "",
-            exit_code=return_code,
-        )
-        active_log_path = self._run_session_controller.session_store.log_path
-        log_path_str: str | None = None
-        if active_log_path:
-            log_path = Path(active_log_path)
-            if log_path.exists():
-                log_path_str = str(log_path)
-        panel.end_run(run_info, log_path=log_path_str)
+        self._run_event_workflow.finalize_run_log(return_code)
 
     def _update_problems_from_output(self) -> list[ProblemEntry]:
-        output_text = self._active_run_output_tail.text()
-        problems = parse_traceback_problems(output_text)
-        run_issues = explain_runtime_message(output_text, workflow="run")
-        issue_ids = tuple(issue.issue_id for issue in run_issues)
-        if issue_ids != self._latest_run_issue_ids and run_issues:
-            summaries = "; ".join(issue.title for issue in run_issues)
-            self._append_console_line(
-                f"[system] Runtime explanation available: {summaries}. Open Runtime Center for details.",
-                stream="system",
-            )
-        self._latest_run_issue_ids = issue_ids
-        self._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=run_issues)
-        self._latest_runtime_issue_report = self._build_runtime_issue_report()
-        self._set_problems(problems)
-        return problems
+        return self._run_event_workflow.update_problems_from_output()
 
     def _set_problems(self, problems: list[ProblemEntry]) -> None:
-        self._stored_runtime_problems = problems
-        self._render_merged_problems_panel()
+        self._run_event_workflow.set_problems(problems)
 
     def _start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str] | None = None) -> None:
         if not self._intelligence_runtime_settings.cache_enabled:
@@ -3122,11 +2223,7 @@ class MainWindow(QMainWindow):
             self._debug_panel.set_command_input_enabled(False)
 
     def _drain_run_event_queue(self) -> None:
-        while True:
-            try:
-                self._run_event_queue.get_nowait()
-            except queue.Empty:
-                break
+        self._run_event_workflow.drain_run_event_queue()
 
     def _stop_active_run_before_close(self) -> None:
         if self._run_service.supervisor.is_running():
@@ -3445,171 +2542,64 @@ class MainWindow(QMainWindow):
         editor_widget.go_to_line(line_number)
 
     def _refresh_outline_for_active_tab(self) -> None:
-        if self._outline_panel is None:
-            return
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            self._outline_panel.set_unsupported_language("python")
-            return
-        file_path = active_tab.file_path
-        if Path(file_path).suffix.lower() not in {".py", ".pyw", ".pyi"}:
-            self._outline_panel.set_unsupported_language(
-                Path(file_path).suffix.lstrip(".") or "this"
-            )
-            self._outline_symbols_by_path.pop(file_path, None)
-            return
-        editor_widget = self._editor_widgets_by_path.get(
-            str(Path(file_path).expanduser().resolve())
-        )
-        source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
-        symbols = build_outline_from_source(source or "")
-        self._outline_symbols_by_path[file_path] = symbols
-        self._outline_panel.set_outline(symbols, file_path)
-        if editor_widget is not None and self._outline_follow_cursor:
-            line_number = editor_widget.textCursor().blockNumber() + 1
-            self._outline_panel.highlight_symbol_at_line(line_number)
+        self._editor_tab_workflow.refresh_outline_for_active_tab()
 
     def _handle_outline_symbol_activated(self, file_path: str, line_number: int) -> None:
-        self._open_file_at_line(file_path, line_number)
+        self._editor_tab_workflow.handle_outline_symbol_activated(file_path, line_number)
 
     def _tab_index_for_path(self, file_path: str) -> int:
-        return self._get_editor_tabs_coordinator().tab_index_for_path(file_path)
+        return self._editor_tab_workflow.tab_index_for_path(file_path)
 
     def _remove_tab_widget_for_path(self, file_path: str) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        tab_index = self._tab_index_for_path(file_path)
-        if tab_index < 0:
-            return
-        self._editor_tabs_widget.removeTab(tab_index)
-        widget = self._workspace_controller.pop_editor(file_path)
-        if widget is not None:
-            self._release_editor_widget(widget)
-        self._indent_source_by_path.pop(file_path, None)
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        if self._editor_tabs_widget.count() == 0 and self._status_controller is not None:
-            self._status_controller.set_indent_status(style=None, size=None, source=None)
+        self._editor_tab_workflow.remove_tab_widget_for_path(file_path)
 
     def _refresh_tab_presentation(self, file_path: str) -> None:
-        self._get_editor_tabs_coordinator().refresh_tab_presentation(file_path)
+        self._editor_tab_workflow.refresh_tab_presentation(file_path)
 
     def _promote_preview_tab(self, file_path: str) -> bool:
-        return self._get_editor_tabs_coordinator().promote_preview_tab(file_path)
+        return self._editor_tab_workflow.promote_preview_tab(file_path)
 
     def _promote_existing_preview_tab(self) -> bool:
-        return self._get_editor_tabs_coordinator().promote_existing_preview_tab()
+        return self._editor_tab_workflow.promote_existing_preview_tab()
 
     def _active_markdown_pane(self) -> MarkdownEditorPane | None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return None
-        return self._markdown_panes_by_path.get(active_tab.file_path)
+        return self._editor_tab_workflow.active_markdown_pane()
 
     def _set_active_markdown_mode(self, mode: str) -> None:
-        markdown_pane = self._active_markdown_pane()
-        if markdown_pane is None:
-            return
-        markdown_pane.set_mode(mode)
-        self._refresh_markdown_action_states()
+        self._editor_tab_workflow.set_active_markdown_mode(mode)
 
     def _handle_markdown_show_source_action(self) -> None:
-        self._set_active_markdown_mode(MarkdownPreviewMode.SOURCE)
+        self._editor_tab_workflow.handle_markdown_show_source_action()
 
     def _handle_markdown_show_preview_action(self) -> None:
-        self._set_active_markdown_mode(MarkdownPreviewMode.PREVIEW)
+        self._editor_tab_workflow.handle_markdown_show_preview_action()
 
     def _handle_markdown_show_split_action(self) -> None:
-        self._set_active_markdown_mode(MarkdownPreviewMode.SPLIT)
+        self._editor_tab_workflow.handle_markdown_show_split_action()
 
     def _handle_markdown_toggle_preview_action(self) -> None:
-        markdown_pane = self._active_markdown_pane()
-        if markdown_pane is None:
-            return
-        markdown_pane.toggle_preview()
-        self._refresh_markdown_action_states()
+        self._editor_tab_workflow.handle_markdown_toggle_preview_action()
 
     def _refresh_markdown_action_states(self) -> None:
-        if self._menu_registry is None:
-            return
-        markdown_pane = self._active_markdown_pane()
-        enabled = markdown_pane is not None
-        for action_id in (
-            "shell.action.view.markdownTogglePreview",
-            "shell.action.view.markdownShowSource",
-            "shell.action.view.markdownShowPreview",
-            "shell.action.view.markdownShowSplit",
-        ):
-            action = self._menu_registry.action(action_id)
-            if action is not None:
-                action.setEnabled(enabled)
+        self._editor_tab_workflow.refresh_markdown_action_states()
 
     def _handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
-        if self._editor_manager.get_tab(file_path) is None:
-            return
-        self._advance_editor_buffer_revision(file_path)
-        tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
-        if tab_state.is_preview and tab_state.is_dirty:
-            self._promote_preview_tab(file_path)
-            refreshed_state = self._editor_manager.get_tab(file_path)
-            if refreshed_state is not None:
-                tab_state = refreshed_state
-        if self._editor_tabs_widget is None:
-            return
-
-        tab_index = self._tab_index_for_path(tab_state.file_path)
-        if tab_index < 0:
-            return
-        self._refresh_tab_presentation(tab_state.file_path)
-        if tab_state.is_dirty:
-            self._local_history_workflow.schedule_autosave(tab_state.file_path, tab_state.current_content)
-            if self._editor_auto_save:
-                self._auto_save_to_file_timer.start()
-        else:
-            self._local_history_workflow.discard_pending_autosave(tab_state.file_path)
-            self._local_history_workflow.delete_draft(tab_state.file_path)
-        self._refresh_save_action_states()
-        self._update_editor_status_for_path(tab_state.file_path)
-        if not self._is_shutting_down:
-            self._diagnostics_orchestrator.schedule_realtime_lint(tab_state.file_path)
-        self._outline_refresh_timer.start()
+        self._editor_tab_workflow.handle_editor_text_changed(file_path, editor_widget)
 
     def _handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is None or self._status_controller is None:
-            return
-        line_number = editor_widget.textCursor().blockNumber() + 1
-        self._status_controller.set_editor_status(
-            file_name=tab_state.display_name,
-            line=line_number,
-            column=editor_widget.textCursor().positionInBlock() + 1,
-            is_dirty=tab_state.is_dirty,
-        )
-        if self._outline_panel is not None and self._outline_follow_cursor:
-            self._outline_panel.highlight_symbol_at_line(line_number)
+        self._editor_tab_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
 
     def _update_editor_status_for_path(self, file_path: str) -> None:
-        if self._status_controller is None:
-            return
-        tab_state = self._editor_manager.get_tab(file_path)
-        editor_widget = self._editor_widgets_by_path.get(file_path)
-        if tab_state is None or editor_widget is None:
-            self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
-            return
-        self._status_controller.set_editor_status(
-            file_name=tab_state.display_name,
-            line=editor_widget.textCursor().blockNumber() + 1,
-            column=editor_widget.textCursor().positionInBlock() + 1,
-            is_dirty=tab_state.is_dirty,
-        )
+        self._editor_tab_workflow.update_editor_status_for_path(file_path)
+
     def _active_editor_widget(self) -> CodeEditorWidget | None:
-        return cast(Optional[CodeEditorWidget], self._get_editor_tabs_coordinator().active_editor_widget())
+        return self._editor_tab_workflow.active_editor_widget()
 
     def _advance_editor_buffer_revision(self, file_path: str) -> int:
-        return self._get_editor_tabs_coordinator().advance_buffer_revision(file_path)
+        return self._editor_tab_workflow.advance_buffer_revision(file_path)
 
     def _editor_buffer_revision(self, file_path: str) -> int | None:
-        return self._get_editor_tabs_coordinator().buffer_revision(file_path)
+        return self._editor_tab_workflow.buffer_revision(file_path)
 
     def _request_completion_item_resolve_async(
         self,
@@ -3654,177 +2644,37 @@ class MainWindow(QMainWindow):
         )
 
     def _handle_editor_tab_changed(self, tab_index: int) -> None:
-        if tab_index < 0 or self._editor_tabs_widget is None:
-            return
-
-        tab_path = self._editor_tabs_widget.tabToolTip(tab_index)
-        if not tab_path:
-            return
-        self._editor_manager.set_active_file(tab_path)
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        self._refresh_markdown_action_states()
-        self._update_editor_status_for_path(tab_path)
-        self._update_indent_status_for_path(tab_path)
-        self._check_for_external_file_change(tab_path)
-        self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
-        self._outline_refresh_timer.stop()
-        self._refresh_outline_for_active_tab()
-        self._project_tree_presenter.reveal_path(tab_path)
+        self._editor_tab_workflow.handle_editor_tab_changed(tab_index)
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        file_path = self._editor_tabs_widget.tabToolTip(tab_index)
-        if not file_path:
-            return
-        self._promote_preview_tab(file_path)
+        self._editor_tab_workflow.handle_editor_tab_header_double_click(tab_index)
 
     def _handle_keep_preview_open_shortcut(self) -> None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return
-        if not active_tab.is_preview:
-            return
-        self._promote_preview_tab(active_tab.file_path)
+        self._editor_tab_workflow.handle_keep_preview_open_shortcut()
 
     def _show_editor_tab_context_menu(self, position: QPoint) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        tab_bar = self._editor_tabs_widget.tabBar()
-        tab_index = tab_bar.tabAt(position)
-        if tab_index < 0:
-            return
-        file_path = self._editor_tabs_widget.tabToolTip(tab_index)
-        if not file_path:
-            return
-
-        menu = QMenu(self)
-        markdown_source_action = None
-        markdown_preview_action = None
-        markdown_split_action = None
-        markdown_pane = self._markdown_panes_by_path.get(file_path)
-        if markdown_pane is not None:
-            markdown_source_action = menu.addAction("Markdown: Show Source")
-            markdown_preview_action = menu.addAction("Markdown: Show Preview")
-            markdown_split_action = menu.addAction("Markdown: Show Split View")
-            menu.addSeparator()
-        local_history_action = menu.addAction("Local History...")
-        menu.addSeparator()
-        close_action = menu.addAction("Close")
-        chosen = menu.exec_(tab_bar.mapToGlobal(position))
-        if markdown_pane is not None and chosen == markdown_source_action:
-            markdown_pane.set_mode(MarkdownPreviewMode.SOURCE)
-            self._refresh_markdown_action_states()
-        elif markdown_pane is not None and chosen == markdown_preview_action:
-            markdown_pane.set_mode(MarkdownPreviewMode.PREVIEW)
-            self._refresh_markdown_action_states()
-        elif markdown_pane is not None and chosen == markdown_split_action:
-            markdown_pane.set_mode(MarkdownPreviewMode.SPLIT)
-            self._refresh_markdown_action_states()
-        elif chosen == local_history_action:
-            self._local_history_workflow.show_local_history_for_path(file_path)
-        elif chosen == close_action:
-            self._handle_tab_close_requested(tab_index)
+        self._editor_tab_workflow.show_editor_tab_context_menu(position)
 
     def _handle_tab_close_requested(self, tab_index: int) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        file_path = self._editor_tabs_widget.tabToolTip(tab_index)
-        if not file_path:
-            return
-
-        tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is not None and tab_state.is_dirty:
-            decision = self._save_workflow.request_unsaved_changes_decision(
-                "closing this tab",
-                scope=DocumentScope.TAB,
-                allow_keep_for_next_launch=False,
-                dirty_buffers=(tab_state,),
-            )
-            if decision.intent is DocumentCloseIntent.CANCEL:
-                return
-            if not self._save_workflow.apply_unsaved_changes_decision(decision):
-                return
-
-        self._editor_tabs_widget.removeTab(tab_index)
-        widget = self._workspace_controller.pop_editor(file_path)
-        if widget is not None:
-            self._release_editor_widget(widget)
-        self._editor_manager.close_file(file_path)
-        self._debug_control_workflow.breakpoint_store.clear_file(file_path)
-        self._stored_lint_diagnostics.pop(file_path, None)
-        self._render_merged_problems_panel()
-        self._debug_control_workflow.refresh_breakpoints_list()
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        self._refresh_markdown_action_states()
+        self._editor_tab_workflow.handle_tab_close_requested(tab_index)
 
     def _close_active_tab(self) -> None:
-        if self._editor_tabs_widget is None:
-            return
-        tab_index = self._editor_tabs_widget.currentIndex()
-        if tab_index >= 0:
-            self._handle_tab_close_requested(tab_index)
+        self._editor_tab_workflow.close_active_tab()
 
     def _reset_editor_tabs(self) -> None:
-        if self._editor_tabs_widget is not None:
-            for path in list(self._workspace_controller.open_editor_paths()):
-                widget = self._workspace_controller.pop_editor(path)
-                if widget is not None:
-                    self._release_editor_widget(widget)
-            self._editor_tabs_widget.clear()
-        self._local_history_workflow.stop_autosave_timer()
-        self._auto_save_to_file_timer.stop()
-        self._realtime_lint_timer.stop()
-        self._local_history_workflow.clear_pending_autosaves()
-        self._pending_realtime_lint_file_path = None
-        self._clear_debug_execution_indicator()
-        self._workspace_controller.clear()
-        self._editor_manager = EditorManager()
-        self._markdown_panes_by_path.clear()
-        self._local_history_workflow.set_editor_manager(self._editor_manager)
-        self._indent_source_by_path.clear()
-        self._refresh_save_action_states()
-        self._refresh_run_action_states()
-        self._refresh_markdown_action_states()
-        if self._status_controller is not None:
-            self._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
-            self._status_controller.set_indent_status(style=None, size=None, source=None)
+        self._editor_tab_workflow.reset_editor_tabs()
 
     def _effective_font_size(self) -> int:
-        return max(8, min(72, self._editor_font_size + self._zoom_delta))
+        return self._editor_tab_workflow.effective_font_size()
 
     def _apply_editor_preferences_to_open_editors(self) -> None:
-        effective_size = self._effective_font_size()
-        for file_path, editor_widget in self._editor_widgets_by_path.items():
-            editor_widget.set_editor_preferences(
-                tab_width=self._editor_tab_width,
-                font_point_size=effective_size,
-                font_family=self._editor_font_family,
-                indent_style=self._editor_indent_style,
-                indent_size=self._editor_indent_size,
-                hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
-                auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
-            )
-            self._apply_detected_indentation_for_widget(file_path, editor_widget, editor_widget.toPlainText())
-            editor_widget.set_completion_preferences(
-                enabled=self._completion_enabled,
-                auto_trigger=self._completion_auto_trigger,
-                min_chars=self._completion_min_chars,
-            )
+        self._editor_tab_workflow.apply_editor_preferences_to_open_editors()
 
     def _apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
-        for editor_widget in self._editor_widgets_by_path.values():
-            self._apply_runtime_intelligence_preferences_to_editor(editor_widget)
+        self._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
 
     def _apply_runtime_intelligence_preferences_to_editor(self, editor_widget: CodeEditorWidget) -> None:
-        editor_widget.set_metrics_logging_enabled(self._intelligence_runtime_settings.metrics_logging_enabled)
-        editor_widget.set_highlighting_policy(
-            adaptive_mode=self._intelligence_runtime_settings.highlighting_adaptive_mode,
-            reduced_threshold_chars=self._intelligence_runtime_settings.highlighting_reduced_threshold_chars,
-            lexical_only_threshold_chars=self._intelligence_runtime_settings.highlighting_lexical_only_threshold_chars,
-        )
+        self._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
 
     def _apply_detected_indentation_for_widget(
         self,
@@ -3832,46 +2682,11 @@ class MainWindow(QMainWindow):
         editor_widget: CodeEditorWidget,
         source_text: str,
     ) -> None:
-        project_root = None if self._loaded_project is None else self._loaded_project.project_root
-        editorconfig_indent = resolve_editorconfig_indentation(file_path, project_root=project_root)
-        if editorconfig_indent is not None:
-            effective_style = editorconfig_indent.indent_style
-            effective_size = max(1, editorconfig_indent.indent_size)
-            editor_widget.set_editor_preferences(
-                tab_width=max(1, editorconfig_indent.tab_width),
-                font_point_size=self._effective_font_size(),
-                font_family=self._editor_font_family,
-                indent_style=effective_style,
-                indent_size=effective_size,
-                hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
-                auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
-            )
-            self._record_indent_source(file_path, effective_style, effective_size, "editorconfig")
-            return
-        if not self._editor_detect_indentation_from_file or not file_path.lower().endswith(
-            (".py", ".json", ".md", ".txt")
-        ):
-            self._record_indent_source(
-                file_path, self._editor_indent_style, self._editor_indent_size, "user"
-            )
-            return
-        detected = detect_indentation_style_and_size(source_text)
-        if detected is None:
-            self._record_indent_source(
-                file_path, self._editor_indent_style, self._editor_indent_size, "user"
-            )
-            return
-        style, size = detected
-        editor_widget.set_editor_preferences(
-            tab_width=self._editor_tab_width,
-            font_point_size=self._effective_font_size(),
-            font_family=self._editor_font_family,
-            indent_style=style,
-            indent_size=size,
-            hover_tooltip_enabled=self._editor_hover_tooltip_enabled,
-            auto_reindent_flat_python_paste=self._editor_auto_reindent_flat_python_paste,
+        self._editor_tab_workflow.apply_detected_indentation_for_widget(
+            file_path,
+            editor_widget,
+            source_text,
         )
-        self._record_indent_source(file_path, style, size, "auto")
 
     def _record_indent_source(
         self,
@@ -3880,80 +2695,22 @@ class MainWindow(QMainWindow):
         size: int,
         source: str,
     ) -> None:
-        self._indent_source_by_path[file_path] = (style, int(size), source)
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is not None and active_tab.file_path == file_path:
-            self._update_indent_status_for_path(file_path)
+        self._editor_tab_workflow.record_indent_source(file_path, style, size, source)
 
     def _update_indent_status_for_path(self, file_path: str | None) -> None:
-        if self._status_controller is None:
-            return
-        if file_path is None:
-            self._status_controller.set_indent_status(style=None, size=None, source=None)
-            return
-        record = self._indent_source_by_path.get(file_path)
-        if record is None:
-            self._status_controller.set_indent_status(style=None, size=None, source=None)
-            return
-        style, size, source = record
-        self._status_controller.set_indent_status(style=style, size=size, source=source)
+        self._editor_tab_workflow.update_indent_status_for_path(file_path)
 
     def _refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
-        for file_path in file_paths:
-            tab_state = self._editor_manager.get_tab(file_path)
-            editor_widget = self._editor_widgets_by_path.get(file_path)
-            if tab_state is None or editor_widget is None:
-                continue
-            try:
-                refreshed = Path(file_path).read_text(encoding="utf-8")
-            except OSError:
-                continue
-            editor_widget.blockSignals(True)
-            editor_widget.setPlainText(refreshed)
-            editor_widget.blockSignals(False)
-            self._advance_editor_buffer_revision(file_path)
-            self._apply_detected_indentation_for_widget(file_path, editor_widget, refreshed)
-            updated_tab = self._editor_manager.update_tab_content(file_path, refreshed)
-            updated_tab.mark_saved(last_known_mtime=self._editor_manager.current_disk_mtime(file_path))
-            tab_index = self._tab_index_for_path(file_path)
-            if self._editor_tabs_widget is not None and tab_index >= 0:
-                self._refresh_tab_presentation(file_path)
-        self._refresh_save_action_states()
+        self._editor_tab_workflow.refresh_open_tabs_from_disk(file_paths)
 
     def _check_for_external_file_change(self, file_path: str) -> None:
-        self._external_file_change_workflow.check_and_handle(file_path)
+        self._editor_tab_workflow.check_for_external_file_change(file_path)
 
     def _poll_external_file_changes(self) -> None:
-        stale_paths = self._editor_manager.stale_open_paths()
-        if stale_paths:
-            active_tab = self._editor_manager.active_tab()
-            if active_tab is not None and active_tab.file_path in stale_paths:
-                self._check_for_external_file_change(active_tab.file_path)
-
-        loaded_project = self._loaded_project
-        if loaded_project is None:
-            return
-        current_signature = self._scan_project_tree_signature(loaded_project)
-        previous_signature = self._project_tree_structure_signature
-        if previous_signature is None:
-            self._project_tree_structure_signature = current_signature
-            return
-        if current_signature == previous_signature:
-            return
-        self._project_tree_structure_signature = current_signature
-        self._reload_current_project()
+        self._editor_tab_workflow.poll_external_file_changes()
 
     def _scan_project_tree_signature(self, loaded_project: LoadedProject) -> tuple[str, ...]:
-        layered_excludes = self._load_effective_exclude_patterns(loaded_project.project_root)
-        effective_excludes = compute_effective_excludes(
-            layered_excludes,
-            loaded_project.metadata.exclude_patterns,
-        )
-        entries = enumerate_project_entries(
-            loaded_project.project_root,
-            exclude_patterns=effective_excludes,
-        )
-        return filter_tree_signature_entries(tuple(entry.relative_path for entry in entries))
+        return self._editor_tab_workflow.scan_project_tree_signature(loaded_project)
 
 
 def _enable_auto_reindent_flat_python_paste_in_payload(payload: dict[str, Any]) -> dict[str, Any]:

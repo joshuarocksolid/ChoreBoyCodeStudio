@@ -25,4 +25,4 @@ python3 run_tests.py tests/unit/run/test_run_service.py
 python3 run_tests.py -k test_project_service
 ```
 
-`run_tests.py` automatically applies `--import-mode=importlib` and `QT_QPA_PLATFORM=offscreen`; do not pass them by hand. Markers from `pyproject.toml` (`unit`, `integration`, `runtime_parity`, `manual_acceptance`, `slow`) can still be combined with `-m` for ad-hoc filtering, but prefer the shard names above for routine work.
+`run_tests.py` automatically applies `--import-mode=importlib` and `QT_QPA_PLATFORM=offscreen`; do not pass them by hand. Markers from `pyproject.toml` (`unit`, `integration`, `runtime_parity`, `manual_acceptance`, `slow`, `performance`) can still be combined with `-m` for ad-hoc filtering, but prefer the shard names above for routine work.

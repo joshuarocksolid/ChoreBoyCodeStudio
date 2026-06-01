@@ -13,13 +13,16 @@ It aligns with:
 
 ## 2) Framework and markers
 
-- Test runner: `pytest` (shipped inside the FreeCAD AppRun runtime)
+- Test runner: `pytest` bundled in repo **`vendor/`** (injected onto `sys.path` by [`run_tests.py`](../run_tests.py) before `pytest.main`). Tests execute inside FreeCAD AppRun; pytest is **not** assumed to be preinstalled in AppRun site-packages.
 - Markers (defined in `pyproject.toml`):
   - `unit`
   - `integration`
   - `runtime_parity`
   - `manual_acceptance`
   - `slow` — wall-time exceeds the agent fast-lane budget (subprocess polling, debug-session waits). Carries a `pytest.mark.timeout(180)` override; excluded from the `fast` shard.
+  - `performance` — wall-clock benchmarks under `tests/integration/performance/`; excluded from default `run_tests.py` and the `fast`/`integration` shards unless explicitly targeted.
+
+Global `timeout = 30` in `pyproject.toml` requires `pytest-timeout` (optional install into AppRun site-packages per `AGENTS.md`; not bundled in vendor setup scripts).
 
 ## 3) Test layout
 
@@ -134,23 +137,23 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 9) Current baseline result
 
-Latest validation checkpoint (2026-04-25, end-to-end maintainability refactor branch):
+Latest validation checkpoint (2026-06-01, `main` branch). Pass counts are maintained in [`AGENTS.md`](../AGENTS.md); this section records wall times and shard outcomes.
 
-- `python3 testing/run_test_shard.py fast` -> **~36-45s wall time**, passed.
-- `python3 testing/run_test_shard.py integration` -> **~43s wall time**, passed.
-- `python3 testing/run_test_shard.py runtime_parity` -> **~6s wall time**, passed.
-- `python3 testing/run_test_shard.py performance` -> baseline pass in this branch.
+- `python3 testing/run_test_shard.py fast` -> **~34–49s wall time**, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
+- `python3 testing/run_test_shard.py integration` -> **~37–43s wall time**, **59 passed**.
+- `python3 testing/run_test_shard.py runtime_parity` -> **~4–6s wall time**, **17 passed**.
+- `python3 testing/run_test_shard.py performance` -> **~34s wall time**, **15 passed, 2 pre-existing failures** (`test_local_history_performance` regressions tracked separately).
 - `npx pyright` -> 0 errors, 0 warnings, 0 informations.
 - `npx pyright -p pyrightconfig.tests.json` -> 0 errors, 0 warnings, 0 informations.
-- `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need light/dark validation.
+- `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need four-theme validation.
 
 Compared to the pre-refactor baseline of `~92s` for the full suite, the agent fast lane is now **~2.9x faster** while still exercising every Qt-touching unit test and every non-slow integration test.
 
 ## 10) Test speed notes
 
-Speed audit re-run on 2026-04-24 after the fast-lane refactor:
+Speed audit re-run on 2026-04-24 after the fast-lane refactor (counts aligned with [`AGENTS.md`](../AGENTS.md) checkpoint on 2026-06-01):
 
-- `python3 testing/run_test_shard.py fast` -> **~32s** wall time (1354 passed, 17 deselected via `-m "not slow"`, 1 skipped). This is the agent default loop.
+- `python3 testing/run_test_shard.py fast` -> **~32–49s** wall time (**1445 passed**, 17 deselected via `-m "not slow"`, 1 skipped). This is the agent default loop.
 - The full pre-refactor suite (`python3 run_tests.py`) was ~92s; the fast shard is roughly **2.9x** faster while still exercising every Qt-touching unit test and every non-slow integration test.
 - The `slow` marker now scopes the four worst offenders (`test_process_supervisor_integration`, `test_run_service_integration`, `test_breakpoint_stepping_flow`, `test_debug_session_integration`) with `pytest.mark.timeout(180)` overrides, so the new global `timeout = 30` applies cleanly to everything else.
 

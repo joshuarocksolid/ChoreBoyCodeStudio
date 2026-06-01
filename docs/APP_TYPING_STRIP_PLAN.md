@@ -5,7 +5,7 @@ overview: Strip parameter, return, and local-variable type annotations across `a
 todos:
 
 - id: section-1-tooling
-content: "Section 1: Build LibCST codemod (scripts/typing_strip/), add fixture tests, pin libcst in requirements-dev.txt, relax pyrightconfig.json to typeCheckingMode: off, update AGENTS.md, add no_new_annotations.mdc rule, commit docs/TYPING_STRIP_PLAN.md."
+content: "Section 1: Build LibCST codemod (scripts/typing_strip/), add fixture tests, pin libcst in requirements-dev.txt, relax pyrightconfig.json to typeCheckingMode: off, update AGENTS.md, add no_new_annotations.mdc rule, commit docs/APP_TYPING_STRIP_PLAN.md."
 status: pending
 - id: section-2-leaves
 content: "Section 2: Strip app/core, app/filesystem, app/templates, app/examples, app/ui (~12 files). Validates codemod end-to-end."
@@ -41,7 +41,7 @@ status: pending
 content: "Section 12: Strip app/shell controllers/coordinators/services (~26 files). Run integration + runtime_parity."
 status: pending
 - id: final-cleanup
-content: "Final: refresh AGENTS.md checkpoint numbers, decide whether to keep or delete the codemod, mark TYPING_STRIP_PLAN.md complete."
+content: "Final: refresh AGENTS.md checkpoint numbers, decide whether to keep or delete the codemod, mark APP_TYPING_STRIP_PLAN.md complete."
 status: pending
 isProject: false
 
@@ -134,7 +134,7 @@ For each section:
   - Cases where we rely on `Optional[X] = None` only as documentation — fine, value semantics unchanged.
   - Cases where a `Protocol` was implicitly the only typing of a parameter that crosses into a dataclass field — already preserved.
   - Any `cast(T, x)` whose `T` import got dropped — restore the import.
-4. Run `python3 testing/run_test_shard.py fast`. Must remain at the AGENTS.md baseline (1347 passed, 5 pre-existing fails).
+4. Run `python3 testing/run_test_shard.py fast`. Must match the [`AGENTS.md`](../AGENTS.md) fast-shard checkpoint at merge time.
 5. If the section touches debug/run/intelligence subprocess code, also run `python3 testing/run_test_shard.py integration`.
 6. Run `npx pyright` — should report 0 errors after relaxation (Section 1 turns this gate off).
 7. Open PR. Title: `chore(typing): strip annotations in app/<section>`. Body lists file count and any manual fixups.
@@ -230,7 +230,7 @@ flowchart TD
 
 ## Documentation deliverable
 
-The full plan above will be committed to `**docs/TYPING_STRIP_PLAN.md**` as part of Section 1, with each section's checkbox flipping to done as PRs merge. That keeps the rolling status visible without needing a separate tracker.
+The full plan above lives in **`docs/APP_TYPING_STRIP_PLAN.md`**, with each section's checkbox flipping to done as PRs merge. That keeps the rolling status visible without needing a separate tracker.
 
 ## Out of scope (explicitly)
 

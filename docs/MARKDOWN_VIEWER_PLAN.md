@@ -1,15 +1,10 @@
 # Markdown Viewer Feature Plan
 
+> **Status: SHIPPED** (2026). Implementation: `app/editors/markdown_editor_pane.py`, manual ch.5. This document is retained for design history only.
+
 ## Purpose
 
-ChoreBoy Code Studio already opens `.md` files as source text and has
-tree-sitter Markdown highlighting, but many product, architecture, manual, and
-plugin documents are authored in Markdown. Users need a first-class way to read
-those files as formatted documents without leaving the editor.
-
-The target experience is similar to modern code editors: a Markdown file opens
-inside the normal editor tab area, and the user can switch between raw Markdown,
-rendered Preview, and an optional split view.
+ChoreBoy Code Studio ships a first-class Markdown reading experience inside the editor tab area. Users switch between raw Markdown source, rendered Preview, and an optional Split view without leaving Code Studio.
 
 ## Current Codebase Fit
 

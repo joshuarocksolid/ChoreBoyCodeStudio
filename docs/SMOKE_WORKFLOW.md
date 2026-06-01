@@ -64,7 +64,7 @@ Run on a **real DISPLAY** (not only offscreen). Use sample projects from [ACCEPT
 | **M2 — Welcome / onboarding** | Without autoload (or after clearing last project): welcome is usable; **Help → runtime onboarding** opens and text is readable. With autoload: onboarding does not auto-open; still reachable from **Help** (see integration test above). |
 | **M3 — Run / preflight**      | **F5** (active file) and **Shift+F5** (project) launch; stdout/stderr in run log; failures show traceback; **Stop** works on a long-running script. **Preflight / missing entry** dialogs should be actionable (no hang).                 |
 | **M4 — Test explorer**        | Open the **Test** activity / sidebar; discovery populates; **run one test**, **run all**, **rerun failed** (after a failure) if available; **navigate to test** opens the editor at the right line.                                       |
-| **M5 — Themes**               | Toggle **light / dark**; **welcome**, **test explorer**, and **runtime/onboarding** dialogs stay readable (contrast, icons).                                                                                                              |
+| **M5 — Themes**               | Cycle **Light, Dark, High Contrast Light, High Contrast Dark** (`View > Theme`); verify welcome, test explorer, runtime/onboarding, and settings dialog stay readable in all four.                                                                                                              |
 | **M6 — Spot-checks**          | Edit `main.py`: dirty marker and save; optional: project tree **file type icons** look correct.                                                                                                                                           |
 
 

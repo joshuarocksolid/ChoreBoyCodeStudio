@@ -13,6 +13,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
+from app.shell.editor_tab_workflow import EditorTabWorkflow, MainWindowEditorTabHost
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.project_tree_utils import filter_tree_signature_entries  # noqa: E402
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY, TREE_ROLE_RELATIVE_PATH  # noqa: E402
@@ -98,6 +99,20 @@ def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path)
     window.close()
 
 
+def _attach_poll_editor_tab_workflow(window_any: Any) -> EditorTabWorkflow:
+    workflow = EditorTabWorkflow(
+        host=MainWindowEditorTabHost(window_any),
+        editor_manager=window_any._editor_manager,
+        editor_tabs_coordinator=cast(Any, SimpleNamespace()),
+        save_workflow=SimpleNamespace(),
+        local_history_workflow=SimpleNamespace(),
+        debug_control_workflow=SimpleNamespace(breakpoint_store=SimpleNamespace()),
+        external_file_change_workflow=SimpleNamespace(check_and_handle=lambda *_args, **_kwargs: None),
+    )
+    window_any._editor_tab_workflow = workflow
+    return workflow
+
+
 def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
@@ -115,7 +130,10 @@ def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -
     window_any._project_tree_structure_signature = ("src", "src/main.py")
     reload_calls: list[bool] = []
     window_any._reload_current_project = lambda: reload_calls.append(True)
-    window_any._scan_project_tree_signature = lambda _project: ("src", "src/main.py", "docs")
+    workflow = _attach_poll_editor_tab_workflow(window_any)
+    workflow.scan_project_tree_signature = (  # type: ignore[method-assign]
+        lambda _project: ("src", "src/main.py", "docs")
+    )
 
     MainWindow._poll_external_file_changes(window)
 
@@ -153,7 +171,8 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
         "src",
         "src/main.py",
     )
-    window_any._scan_project_tree_signature = (
+    workflow = _attach_poll_editor_tab_workflow(window_any)
+    workflow.scan_project_tree_signature = (  # type: ignore[method-assign]
         lambda _project: filter_tree_signature_entries(raw_entries)
     )
 

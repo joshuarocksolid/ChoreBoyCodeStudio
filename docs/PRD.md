@@ -179,9 +179,13 @@ The "Run with FreeCAD headless backend" toggle remains a separate future slice �
 
 ### Run
 
-- Run (F5)
-- Run With Arguments…
-- Stop (kills runner process)
+- Run Active File (F5)
+- Run Project (Shift+F5)
+- Debug Active File (Ctrl+F5)
+- Debug Project (Ctrl+Shift+F5)
+- Run With Arguments… (Ctrl+Shift+A)
+- Stop (Shift+F2) — kills runner process
+- Restart Python Console (Ctrl+`)
 - Clear Console
 - Run Configurations…
 
@@ -203,17 +207,20 @@ The "Run with FreeCAD headless backend" toggle remains a separate future slice �
 
 ## Keyboard shortcuts (must-have)
 
-- F5 Run
-- Shift+F5 Stop
+- F5 Run Active File
+- Shift+F5 Run Project
+- Shift+F2 Stop
 - Ctrl+S Save
 - Ctrl+Shift+S Save All
 - Ctrl+P Quick Open
 - Ctrl+F Find
 - Ctrl+Shift+F Find in Files
 - Ctrl+G Go to Line
-- Ctrl+` Console toggle
+- Ctrl+` Restart Python Console
 
-(ChoreBoy users already value shortcut keys; make them visible and printable.) 
+Full default shortcut table: [`docs/manual/chapters/11_shortcuts.md`](manual/chapters/11_shortcuts.md) and in-app **Help → Keyboard Shortcuts**. Last verified against `app/shell/shortcut_preferences.py` on 2026-06-01.
+
+(ChoreBoy users already value shortcut keys; make them visible and printable.)
 
 ---
 

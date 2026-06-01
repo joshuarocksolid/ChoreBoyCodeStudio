@@ -750,10 +750,13 @@ class MainWindowSemanticNavigationHost:
         self._window._latest_import_issue_report = report
 
     def refresh_latest_runtime_issue_report(self) -> None:
-        self._window._latest_runtime_issue_report = self._window._build_runtime_issue_report()
+        self._window._runtime_onboarding_workflow.refresh_latest_runtime_issue_report()
 
     def open_runtime_center_dialog(self, *, title: str, report: object) -> None:
-        self._window._open_runtime_center_dialog(title=title, report=report)
+        self._window._runtime_onboarding_workflow.open_runtime_center_dialog(
+            title=title,
+            report=report,
+        )
 
     def known_runtime_modules(self) -> set[str]:
         return self._window._known_runtime_modules

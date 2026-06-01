@@ -31,7 +31,7 @@ class MainWindowEditorSyncHost:
         self._window = window
 
     def advance_buffer_revision(self, file_path: str) -> None:
-        self._window._advance_editor_buffer_revision(file_path)
+        self._window._editor_tab_workflow.advance_buffer_revision(file_path)
 
     def apply_detected_indentation(
         self,
@@ -39,16 +39,20 @@ class MainWindowEditorSyncHost:
         editor_widget: object,
         content: str,
     ) -> None:
-        self._window._apply_detected_indentation_for_widget(file_path, editor_widget, content)
+        self._window._editor_tab_workflow.apply_detected_indentation_for_widget(
+            file_path,
+            editor_widget,
+            content,
+        )
 
     def tab_index_for_path(self, file_path: str) -> int:
-        return self._window._tab_index_for_path(file_path)
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
 
     def has_editor_tabs_widget(self) -> bool:
         return self._window._editor_tabs_widget is not None
 
     def refresh_tab_presentation(self, file_path: str) -> None:
-        self._window._refresh_tab_presentation(file_path)
+        self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
 
 
 class MainWindowExternalFileChangeHost:
@@ -74,7 +78,7 @@ class MainWindowExternalFileChangeHost:
         self._window._refresh_save_action_states()
 
     def update_editor_status_for_path(self, file_path: str) -> None:
-        self._window._update_editor_status_for_path(file_path)
+        self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
 
 
 class MainWindowSettingsApplyHost:
@@ -147,10 +151,10 @@ class MainWindowSettingsApplyHost:
         self._window._start_symbol_indexing(project_root)
 
     def apply_editor_preferences_to_open_editors(self) -> None:
-        self._window._apply_editor_preferences_to_open_editors()
+        self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
-        self._window._apply_runtime_intelligence_preferences_to_open_editors()
+        self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
 
     def apply_shortcut_overrides_runtime(self) -> None:
         self._window._apply_shortcut_overrides_runtime()
@@ -162,7 +166,7 @@ class MainWindowSettingsApplyHost:
         self._window._cancel_pending_project_tree_preview()
 
     def promote_existing_preview_tab(self) -> None:
-        self._window._promote_existing_preview_tab()
+        self._window._editor_tab_workflow.promote_existing_preview_tab()
 
     def relint_open_python_files(self) -> None:
         self._window._relint_open_python_files()

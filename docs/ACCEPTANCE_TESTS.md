@@ -15,6 +15,14 @@ This file is the canonical definition of MVP validation.
 
 ---
 
+## Theme validation convention
+
+- **Four-theme ATs** (explicit “all four themes” or `AT-THEME-*`): require Light, Dark, High Contrast Light, and High Contrast Dark.
+- **Legacy “both themes” / “light/dark” ATs** (e.g. AT-51, AT-64, AT-84): minimum Light + Dark; **recommended** to also spot-check HC modes when touching those surfaces. When updating a legacy AT during UI work, upgrade wording to four-theme.
+- Cross-reference: [`.cursor/rules/ui_light_dark_mode.mdc`](../.cursor/rules/ui_light_dark_mode.mdc)
+
+---
+
 ## 2. Scope
 
 These acceptance tests focus on the first high-value vertical slice:

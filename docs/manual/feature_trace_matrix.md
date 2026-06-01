@@ -40,6 +40,8 @@ This matrix links user-facing features to manual chapters.
 
 - Global vs project settings scope -> Chapter 7
 - Theme switching -> Chapter 7
+- High Contrast themes -> Chapter 7
+- Per-theme syntax overrides (four scopes) -> Chapter 7
 - Shortcut customization -> Chapter 7, 11
 - Syntax colors -> Chapter 7
 - Linter provider and rules -> Chapter 7

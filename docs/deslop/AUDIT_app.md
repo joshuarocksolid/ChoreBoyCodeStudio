@@ -1,5 +1,7 @@
 # Deslop Audit — `app/`
 
+> **ARCHIVE / HISTORICAL.** Do not execute Agent L migration tasks. Visible-path migration is **complete** per [`.cursor/rules/no_hidden_folders.mdc`](../../.cursor/rules/no_hidden_folders.mdc). Prefer [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md) for current follow-up work.
+
 Status: draft v1
 Scope: everything under `/home/joshua/Documents/ChoreBoyCodeStudio/app/`
 Out of scope (this pass): `tests/`, `scripts/`, `bundled_plugins/`, `templates/` (top-level), `example_projects/`, `packaging/` at repo root, `vendor/`, top-level `*.py` launchers
@@ -182,7 +184,7 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
 3. **The intelligence layer has parallel orphan engines.** `hover_service.py`, `signature_service.py`, `navigation_service.py`, `refactor_service.py` and the `find_references` heuristic in `reference_service.py` are not imported from any module under `app/`. They duplicate `SemanticSession` / `SemanticFacade` capability and exist only because tests reference them, which directly contradicts AD-016 ("Single-owner semantic session").
 4. **Silent fallback in completion ranking.** `app/intelligence/completion_service.py` lines 51–62 swallow Jedi failures into an empty list and then continue to rank approximate-only candidates as if Jedi had simply returned nothing. ARCHITECTURE 17.4.1 requires degradation states to be **visible**.
 5. `**app/designer/` is dead code.** No `.py` files; not in git; no imports anywhere in `app/` or `tests/`. The directory exists only because old `__pycache__/` was left behind.
-6. **Stale rule documentation.** `.cursor/rules/no_hidden_folders.mdc` claims `app/core/constants.py` still uses `.cbcs` and `.choreboy_code_studio`. The constants file already migrated to `cbcs` and `choreboy_code_studio_state` (see lines 7 and 211).
+6. **~~Stale rule documentation.~~ (RESOLVED 2026-04-24.)** Visible-path migration is complete; [`.cursor/rules/no_hidden_folders.mdc`](../../.cursor/rules/no_hidden_folders.mdc) documents `cbcs/` and `choreboy_code_studio_state/`. Do not re-run Agent L migration tasks.
 7. **Architecture example diverges from implementation.** `docs/ARCHITECTURE.md` §13.1 example uses `debug_options`; the runtime serializer in `app/run/run_manifest.py` uses `debug_exception_policy`.
 8. **Frozen dataclass mutated in place.** `RunManifest` is `frozen=True`, but `app/runner/debug_runner.py` line 350 does `self._manifest.breakpoints[:] = breakpoints  # type: ignore[misc]`. This compiles, but breaks the immutable manifest story.
 9. **Vestigial debug stdout marker path.** `app/debug/debug_event_protocol.py` and `DebugSession.ingest_output_line` parse `__CB_DEBUG_*__` markers from stdout. Production routes through the dedicated transport (matching ARCHITECTURE §13.4A), so the stdout path is not exercised. It survives only in tests of itself. Hard cutover applies.
@@ -1034,21 +1036,7 @@ Metrics for this phase: Agent L scoped `app/` diff `-94` LOC, `MainWindow` metho
    rm -rf /home/joshua/Documents/ChoreBoyCodeStudio/app/designer
   ```
    Do not commit a placeholder. The plan in `docs/designer/` continues to describe the intended subsystem; this directory will be created when implementation actually begins.
-2. Update [.cursor/rules/no_hidden_folders.mdc](../../.cursor/rules/no_hidden_folders.mdc) "Current migration status" section. The rule currently states:
-  > `app/core/constants.py` still defines `PROJECT_META_DIRNAME = ".cbcs"` and `GLOBAL_STATE_DIRNAME = ".choreboy_code_studio"`. These are known legacy values tracked for migration to visible names.
-  >  The actual constants are:
-
-```7:7:app/core/constants.py
-GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"
-```
-
-```211:211:app/core/constants.py
-PROJECT_META_DIRNAME = "cbcs"
-```
-
-   Either delete the "Current migration status" section entirely (cleanest) or rewrite it to: "Migration complete: `PROJECT_META_DIRNAME` and `GLOBAL_STATE_DIRNAME` use visible names; agents must not introduce new dot-prefixed paths."
-
-1. Update `docs/ARCHITECTURE.md` §13.1. The example JSON uses `debug_options`; the runtime serializer uses `debug_exception_policy`:
+2. **~~Update no_hidden_folders.mdc migration status.~~ (RESOLVED 2026-04-24.)** The rule now states migration is complete. Constants use visible names (`cbcs/`, `choreboy_code_studio_state/`). **Do not re-run this step.**
 
 ```71:74:app/run/run_manifest.py
             "debug_exception_policy": {

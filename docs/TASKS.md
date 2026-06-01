@@ -74,7 +74,7 @@ The repository is no longer “empty scaffolding.” Core foundation work is alr
 | Acceptance coverage vs MVP gate          | PARTIAL         | broad automated coverage exists; manual acceptance lane remains required for release |
 
 
-> Baseline test signal at rewrite time: `539 passed` (cloud VM, Qt-dependent tests skipped when PySide2 shared libs unavailable).
+> **Historical only (2026-03-01 rewrite baseline):** `539 passed` (cloud VM, Qt-dependent tests skipped when PySide2 shared libs unavailable). **Current counts:** see [`AGENTS.md`](../AGENTS.md).
 
 ---
 

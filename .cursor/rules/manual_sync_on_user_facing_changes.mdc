@@ -27,7 +27,7 @@ When this rule triggers, you must do all of the following in the same change:
    - `python3 docs/manual/build_manual.py --check`
    - `python3 docs/manual/build_manual.py --pdf`
 6. Ensure generated PDF exists at:
-   - `docs/manual/dist/ChoreBoy_Code_Studio_User_Manual_v0.1.pdf`
+   - `docs/manual/dist/ChoreBoy_Code_Studio_User_Manual_v0.2.pdf`
 
 ## Hard constraints
 

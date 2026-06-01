@@ -18,6 +18,18 @@ Documents/
 `dev_launch_editor.py` probes the selected AppRun SOABI and symlinks
 `ChoreBoyCodeStudio/vendor` to the matching artifacts vendor tree before launch.
 
+## Environment comparison
+
+| Aspect | ChoreBoy production | Cursor Cloud / local dev |
+|--------|---------------------|---------------------------|
+| Python | 3.9.2 (AppRun only) | 3.11.13 (Cloud `/opt/freecad`) or 3.9.2 (`~/opt/freecad/AppRun`) |
+| AppRun | `/opt/freecad/AppRun` | Same default; local setup prefers `~/opt/freecad/AppRun` |
+| Qt / PySide2 | 5.15.2 (probed on device) | 5.15.15 (Cloud conda bundle) |
+| Subprocess policy | AppArmor: only `/bin/sh` whitelisted | Unrestricted on typical dev machines |
+| Source compatibility | Python 3.9 syntax required | Same — see `pyrightconfig.json` |
+
+See also [`docs/CHOREBOY_RUNTIME_PITFALLS.md`](CHOREBOY_RUNTIME_PITFALLS.md) for cross-project pitfall patterns.
+
 ## First-time setup
 
 ### 1. FreeCAD AppRun (Python 3.9)

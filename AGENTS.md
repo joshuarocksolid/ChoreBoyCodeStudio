@@ -56,12 +56,14 @@ python3 run_tests.py -k test_project_service
 
 `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
 
-Latest checkpoint (2026-04-24, this branch):
+Latest checkpoint (2026-06-01, `main` branch):
 
-- `python3 testing/run_test_shard.py fast` -> ~34s, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
-- `python3 testing/run_test_shard.py integration` -> ~37s, **59 passed**.
+- `python3 testing/run_test_shard.py fast` -> ~34–49s, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
+- `python3 testing/run_test_shard.py integration` -> ~37–43s, **59 passed**.
 - `python3 testing/run_test_shard.py performance` -> ~34s, **15 passed, 2 pre-existing failures** (`test_local_history_performance` regressions tracked separately).
-- `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.
+- `python3 testing/run_test_shard.py runtime_parity` -> ~4–6s, **17 passed**.
+
+Canonical test command catalog: [`docs/TESTS.md`](docs/TESTS.md) §5.
 
 ### Testing philosophy
 

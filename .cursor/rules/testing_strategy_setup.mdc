@@ -21,6 +21,8 @@ Follow the markers defined in `pyproject.toml`:
 - `integration` — cross-module, real subprocess/filesystem/protocol behavior.
 - `runtime_parity` — tied to FreeCAD AppRun behavior; must fail with actionable diagnostics or skip clearly when prerequisites are missing.
 - `manual_acceptance` — broad UI workflow validation lives in `docs/ACCEPTANCE_TESTS.md`, not in pytest.
+- `slow` — subprocess polling, debug-session waits; excluded from the `fast` shard.
+- `performance` — wall-clock benchmarks under `tests/integration/performance/`; excluded from default `run_tests.py` unless explicitly targeted.
 
 ## Layering expectations
 
