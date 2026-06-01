@@ -177,7 +177,6 @@ from app.shell.runtime_center_dialog import RuntimeCenterDialog
 from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.theme_tokens import ShellThemeTokens
 from app.project.project_tree_widget import ProjectTreeWidget
-from app.project.project_tree_presenter import ProjectTreeDisplayNode
 from app.project.file_excludes import (
     compute_effective_excludes,
     load_effective_exclude_patterns,
@@ -579,10 +578,10 @@ class MainWindow(QMainWindow):
             ensure_breakpoint_spec=self._debug_control_workflow.ensure_breakpoint_spec,
             breakpoint_store=self._debug_control_workflow.breakpoint_store,
             refresh_breakpoints_list=self._debug_control_workflow.refresh_breakpoints_list,
-            capture_tree_state=lambda: self._get_project_tree_presenter().capture_view_state(),
-            restore_tree_state=lambda tree_state: self._get_project_tree_presenter().restore_view_state(tree_state),
-            reveal_tree_path=lambda file_path: self._get_project_tree_presenter().reveal_path(file_path),
-            set_tree_reveal_suppressed=lambda suppressed: self._get_project_tree_presenter().set_reveal_suppressed(
+            capture_tree_state=lambda: self._project_tree_presenter.capture_view_state(),
+            restore_tree_state=lambda tree_state: self._project_tree_presenter.restore_view_state(tree_state),
+            reveal_tree_path=lambda file_path: self._project_tree_presenter.reveal_path(file_path),
+            set_tree_reveal_suppressed=lambda suppressed: self._project_tree_presenter.set_reveal_suppressed(
                 suppressed
             ),
         )
@@ -2121,9 +2120,6 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._logger.warning("Failed to persist last project path: %s", exc)
 
-    def _get_project_tree_presenter(self) -> ShellProjectTreePresenter:
-        return self._project_tree_presenter
-
     def _get_editor_tabs_coordinator(self) -> EditorTabsCoordinator:
         coordinator = getattr(self, "_editor_tabs_coordinator", None)
         if coordinator is None:
@@ -3186,7 +3182,7 @@ class MainWindow(QMainWindow):
 
     def _selected_tree_directory(self) -> str | None:
         """Return the directory path for the selected tree item, or the project root."""
-        return self._get_project_tree_presenter().selected_destination_directory()
+        return self._project_tree_presenter.selected_destination_directory()
 
     def _handle_explorer_new_file(self) -> None:
         target = self._selected_tree_directory()
@@ -3199,29 +3195,23 @@ class MainWindow(QMainWindow):
             self._handle_tree_new_folder(target)
 
     def _handle_tree_item_expanded(self, item: QTreeWidgetItem) -> None:
-        presenter = self._get_project_tree_presenter()
+        presenter = self._project_tree_presenter
         presenter.handle_item_expanded(item)
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
             presenter.set_folder_icon(item, expanded=True)
 
     def _handle_tree_item_collapsed(self, item: QTreeWidgetItem) -> None:
         if bool(item.data(0, TREE_ROLE_IS_DIRECTORY)):
-            self._get_project_tree_presenter().set_folder_icon(item, expanded=False)
+            self._project_tree_presenter.set_folder_icon(item, expanded=False)
 
     def _populate_project_tree(self, loaded_project: LoadedProject, *, preserve_state: bool = False) -> None:
-        self._get_project_tree_presenter().populate(loaded_project, preserve_state=preserve_state)
+        self._project_tree_presenter.populate(loaded_project, preserve_state=preserve_state)
 
     def _iter_project_tree_items(self) -> list[QTreeWidgetItem]:
-        return self._get_project_tree_presenter().iter_items()
-
-    def _collect_tree_descendants(self, root_item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
-        return self._get_project_tree_presenter().collect_descendants(root_item)
-
-    def _build_tree_item(self, node: ProjectTreeDisplayNode) -> QTreeWidgetItem:
-        return self._get_project_tree_presenter().build_tree_item(node)
+        return self._project_tree_presenter.iter_items()
 
     def _handle_project_tree_item_click(self, item: QTreeWidgetItem, _column: int) -> None:
-        entry = self._get_project_tree_presenter().item_entry(item)
+        entry = self._project_tree_presenter.item_entry(item)
         if entry is None:
             return
         _, _, is_directory = entry
@@ -3249,7 +3239,7 @@ class MainWindow(QMainWindow):
 
     def _handle_project_tree_item_activation(self, item: QTreeWidgetItem, _column: int) -> None:
         self._cancel_pending_project_tree_preview()
-        entry = self._get_project_tree_presenter().item_entry(item)
+        entry = self._project_tree_presenter.item_entry(item)
         if entry is None:
             return
         absolute_path, _, is_directory = entry
@@ -3259,23 +3249,10 @@ class MainWindow(QMainWindow):
 
     def _get_selected_tree_paths(self) -> list[tuple[str, str, bool]]:
         """Return (absolute_path, relative_path, is_directory) for each selected tree item."""
-        return self._get_project_tree_presenter().selected_paths()
-
-    def _tree_item_entry(self, item: QTreeWidgetItem | None) -> tuple[str, str, bool] | None:
-        return self._get_project_tree_presenter().item_entry(item)
+        return self._project_tree_presenter.selected_paths()
 
     def _show_project_tree_context_menu(self, position) -> None:  # type: ignore[no-untyped-def]
-        self._get_project_tree_presenter().show_context_menu(position)
-
-    def _show_single_item_context_menu(
-        self, position: object, entry: tuple[str, str, bool],
-    ) -> None:
-        self._get_project_tree_presenter().show_single_item_context_menu(position, entry)
-
-    def _show_bulk_context_menu(
-        self, position: object, selected: list[tuple[str, str, bool]],
-    ) -> None:
-        self._get_project_tree_presenter().show_bulk_context_menu(position, selected)
+        self._project_tree_presenter.show_context_menu(position)
 
     def _handle_tree_new_file(self, destination_directory: str) -> None:
         file_name, ok = QInputDialog.getText(self, "New File", "File name:", QLineEdit.Normal, "")
@@ -3693,7 +3670,7 @@ class MainWindow(QMainWindow):
         self._render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_refresh_timer.stop()
         self._refresh_outline_for_active_tab()
-        self._get_project_tree_presenter().reveal_path(tab_path)
+        self._project_tree_presenter.reveal_path(tab_path)
 
     def _handle_editor_tab_header_double_click(self, tab_index: int) -> None:
         if self._editor_tabs_widget is None:

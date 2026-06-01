@@ -76,7 +76,7 @@ def test_populate_project_tree_preserves_expansion_and_selection(tmp_path: Path)
     docs_item = _find_item_by_relative_path(window, "docs")
     assert docs_item is not None
     docs_item.setExpanded(True)
-    window._get_project_tree_presenter().ensure_children_loaded(docs_item)  # noqa: SLF001
+    window._project_tree_presenter.ensure_children_loaded(docs_item)  # noqa: SLF001
 
     src_item = _find_item_by_relative_path(window, "src")
     docs_readme_item = _find_item_by_relative_path(window, "docs/readme.md")

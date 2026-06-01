@@ -25,6 +25,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+import dev_launch_editor
 
 APPRUN = os.environ.get("CBCS_APPRUN", "/opt/freecad/AppRun")
 PYTEST_WORKERS_ENV_VAR = "CBCS_PYTEST_WORKERS"
@@ -82,7 +85,8 @@ def _selects_performance_path(args: list[str]) -> bool:
 
 
 def main() -> int:
-    if not os.path.isfile(APPRUN):
+    app_run_path = Path(APPRUN)
+    if not app_run_path.is_file():
         print(
             f"ERROR: FreeCAD AppRun not found at {APPRUN}\n"
             "Set CBCS_APPRUN to override the path.",
@@ -90,13 +94,19 @@ def main() -> int:
         )
         return 1
 
-    repo_root = os.path.dirname(os.path.abspath(__file__))
-    vendor_root = os.path.join(repo_root, "vendor")
+    repo_root = Path(__file__).resolve().parent
+    dev_launch_editor.ensure_vendor_symlink(
+        repo_root,
+        dev_launch_editor.resolve_artifacts_dir(repo_root),
+        app_run_path=app_run_path,
+    )
+    repo_root_str = str(repo_root)
+    vendor_root = str((repo_root / "vendor").resolve())
     pytest_args = repr(_pytest_argv())
 
     payload = (
         "import sys, os;"
-        f"sys.path.insert(0, {repo_root!r});"
+        f"sys.path.insert(0, {repo_root_str!r});"
         f"sys.path.insert(0, {vendor_root!r});"
         f"os._exit(__import__('pytest').main({pytest_args}))"
     )
@@ -105,7 +115,7 @@ def main() -> int:
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env.setdefault("CBCS_SYNC_PROJECT_OPEN", "1")
 
-    result = subprocess.run([APPRUN, "-c", payload], cwd=repo_root, env=env)
+    result = subprocess.run([str(app_run_path), "-c", payload], cwd=str(repo_root), env=env)
     return result.returncode
 
 

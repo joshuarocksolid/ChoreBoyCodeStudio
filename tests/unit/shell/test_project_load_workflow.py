@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 import pytest
@@ -24,21 +25,24 @@ class RecordingProjectLoadHost:
     def loaded_project(self) -> LoadedProject | None:
         return self.loaded
 
+    @property
+    def logger(self) -> Any:
+        return logging.getLogger("test.project_load_workflow")
+
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
         return [f"exclude:{project_root}"]
 
-    def prepare_project_switch(self, telemetry: ProjectOpenTelemetry) -> None:
+    def prepare_project_switch(self) -> None:
         self.phases.append("prepare")
 
-    def apply_project_surface(
-        self,
-        loaded_project: LoadedProject,
-        telemetry: ProjectOpenTelemetry,
-    ) -> None:
+    def apply_project_surface(self, loaded_project: LoadedProject) -> None:
         self.loaded = loaded_project
         self.phases.append("surface")
 
-    def restore_project_session(self, project_root: str, telemetry: ProjectOpenTelemetry) -> None:
+    def populate_project_tree(self, loaded_project: LoadedProject) -> None:
+        self.phases.append("tree")
+
+    def restore_project_session(self, project_root: str) -> None:
         self.phases.append("session")
 
     def finalize_project_open(
@@ -50,11 +54,6 @@ class RecordingProjectLoadHost:
     ) -> None:
         self.exclude_patterns = list(exclude_patterns)
         self.phases.append("finalize")
-
-    def migration_logger(self) -> Any:
-        import logging
-
-        return logging.getLogger("test.project_load_workflow")
 
 
 def _loaded_project(tmp_path) -> LoadedProject:
@@ -77,6 +76,6 @@ def test_project_load_workflow_runs_phases_in_order(tmp_path) -> None:
 
     telemetry = workflow.apply(loaded_project, started_at=0.0)
 
-    assert host.phases == ["prepare", "surface", "session", "finalize"]
+    assert host.phases == ["prepare", "surface", "tree", "session", "finalize"]
     assert telemetry.project_root == loaded_project.project_root
     assert host.exclude_patterns == [f"exclude:{loaded_project.project_root}"]

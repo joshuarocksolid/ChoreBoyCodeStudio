@@ -224,6 +224,8 @@ def _write_memfd(shared_object_path: Path, label: str) -> str:
 
 def _memfd_create(name: str, flags: int) -> int:
     """Call memfd_create via the canonical bootstrap shim."""
-    from app.bootstrap.memfd_shim import memfd_create
+    if not hasattr(os, "memfd_create"):
+        from app.bootstrap import memfd_shim
 
-    return memfd_create(name, flags)
+        memfd_shim.install()
+    return os.memfd_create(name, flags)

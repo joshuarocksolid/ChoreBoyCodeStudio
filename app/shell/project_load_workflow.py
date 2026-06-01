@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import Protocol
 
 from app.core.models import LoadedProject
@@ -19,17 +19,20 @@ class ProjectLoadHost(Protocol):
     def loaded_project(self) -> LoadedProject | None:
         ...
 
-    def prepare_project_switch(self, telemetry: ProjectOpenTelemetry) -> None:
+    @property
+    def logger(self) -> logging.Logger:
         ...
 
-    def apply_project_surface(
-        self,
-        loaded_project: LoadedProject,
-        telemetry: ProjectOpenTelemetry,
-    ) -> None:
+    def prepare_project_switch(self) -> None:
         ...
 
-    def restore_project_session(self, project_root: str, telemetry: ProjectOpenTelemetry) -> None:
+    def apply_project_surface(self, loaded_project: LoadedProject) -> None:
+        ...
+
+    def populate_project_tree(self, loaded_project: LoadedProject) -> None:
+        ...
+
+    def restore_project_session(self, project_root: str) -> None:
         ...
 
     def finalize_project_open(
@@ -39,9 +42,6 @@ class ProjectLoadHost(Protocol):
         *,
         exclude_patterns: list[str],
     ) -> None:
-        ...
-
-    def migration_logger(self) -> logging.Logger:
         ...
 
     def load_effective_exclude_patterns(self, project_root: str) -> list[str]:
@@ -68,8 +68,8 @@ class ProjectLoadWorkflow:
         return telemetry
 
     def prepare_switch(self, loaded_project: LoadedProject, telemetry: ProjectOpenTelemetry) -> None:
-        del loaded_project
-        self._host.prepare_project_switch(telemetry)
+        del loaded_project, telemetry
+        self._host.prepare_project_switch()
 
     def enumerate_project(
         self,
@@ -79,18 +79,21 @@ class ProjectLoadWorkflow:
         enumerate_started = time.perf_counter()
         loaded_project = maybe_persist_vendor_exclude(
             loaded_project,
-            logger=self._host.migration_logger(),
+            logger=self._host.logger,
         )
         telemetry.mark_enumerate(entry_count=len(loaded_project.entries))
         telemetry.enumerate_ms = (time.perf_counter() - enumerate_started) * 1000.0
         return loaded_project
 
     def apply_surface(self, loaded_project: LoadedProject, telemetry: ProjectOpenTelemetry) -> None:
-        self._host.apply_project_surface(loaded_project, telemetry)
+        self._host.apply_project_surface(loaded_project)
+        tree_started = time.perf_counter()
+        self._host.populate_project_tree(loaded_project)
+        telemetry.tree_ms = (time.perf_counter() - tree_started) * 1000.0
 
     def restore_session(self, loaded_project: LoadedProject, telemetry: ProjectOpenTelemetry) -> None:
         session_started = time.perf_counter()
-        self._host.restore_project_session(loaded_project.project_root, telemetry)
+        self._host.restore_project_session(loaded_project.project_root)
         telemetry.session_restore_ms = (time.perf_counter() - session_started) * 1000.0
 
     def finalize_open(
