@@ -57,12 +57,17 @@ def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_aut
 
     onboarding_calls: list[str] = []
 
+    def _record_onboarding_exec(dialog) -> int:  # type: ignore[no-untyped-def]
+        if dialog.objectName() == "shell.runtimeOnboardingDialog":
+            onboarding_calls.append("opened")
+        return 0
+
+    # Intercept the modal dialog at the QDialog boundary; patching the workflow
+    # method is ineffective because the Help action is wired to the bound method
+    # at composition time (before this test could patch the instance).
+    monkeypatch.setattr("app.shell.runtime_onboarding_workflow.QDialog.exec_", _record_onboarding_exec)
+
     window = MainWindow(state_root=str(tmp_path.resolve()))
-    monkeypatch.setattr(
-        window._runtime_onboarding_workflow,
-        "handle_runtime_onboarding_action",
-        lambda: onboarding_calls.append("opened"),
-    )
     try:
         app.processEvents()
         app.processEvents()

@@ -24,6 +24,24 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     return app
 
 
+def _record_runtime_center_dialogs(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Intercept Runtime Center dialog opens at the dialog boundary."""
+    opened: list[dict[str, object]] = []
+
+    class _RecordingRuntimeCenterDialog:
+        def __init__(self, *, title: str = "Runtime Center", report: object = None, **_kwargs: object) -> None:
+            opened.append({"title": title, "report": report})
+
+        def exec_(self) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "app.shell.runtime_onboarding_workflow.RuntimeCenterDialog",
+        _RecordingRuntimeCenterDialog,
+    )
+    return opened
+
+
 def _write_project(
     project_root: Path,
     *,
@@ -59,14 +77,7 @@ def test_run_project_preflight_opens_runtime_center_for_missing_entry(
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
-        opened_dialogs: list[dict[str, object]] = []
-        monkeypatch.setattr(
-            window,
-            "_open_runtime_center_dialog",
-            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
-                {"title": title, "report": report}
-            ),
-        )
+        opened_dialogs = _record_runtime_center_dialogs(monkeypatch)
         monkeypatch.setattr(
             window._run_launch_workflow,
             "start_session",

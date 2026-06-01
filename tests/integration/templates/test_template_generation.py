@@ -38,7 +38,10 @@ def _run_generated_project(loaded_project: LoadedProject) -> list[ProcessEvent]:
     events: list[ProcessEvent] = []
     service = RunService(on_event=events.append, runner_boot_path=_runner_boot_path())
     service.start_run(loaded_project)
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    try:
+        assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+    finally:
+        service.stop_run()
     return events
 
 

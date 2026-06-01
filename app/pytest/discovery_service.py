@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
+from typing import cast
 
 from app.pytest.launch_plan import (
     PYTEST_MISSING_MARKER,
@@ -129,7 +130,7 @@ def _parse_summary_result_line(stripped: str) -> tuple[str, TestOutcome] | None:
         if stripped.startswith(prefix):
             node_id = stripped[len(prefix) :].split(" - ", 1)[0].strip()
             if node_id:
-                return (node_id, outcome)
+                return (node_id, cast(TestOutcome, outcome))
     return None
 
 

@@ -329,16 +329,15 @@ class QuickOpenDialog(QDialog):
         self._search_input.clear()
         self._refresh_results()
         self._search_input.setFocus()
-        if self.parent() is not None:
-            parent_widget = self.parent()
-            if hasattr(parent_widget, "rect"):
-                parent_rect = parent_widget.rect()
-                dialog_width = min(max(600, int(parent_rect.width() * 0.45)), 700)
-                self.setFixedWidth(dialog_width)
-                x = (parent_rect.width() - dialog_width) // 2
-                y = parent_rect.height() // 6
-                global_pos = parent_widget.mapToGlobal(parent_rect.topLeft())  # type: ignore[union-attr]
-                self.move(global_pos.x() + x, global_pos.y() + y)
+        parent_widget = self.parent()
+        if isinstance(parent_widget, QWidget):
+            parent_rect = parent_widget.rect()
+            dialog_width = min(max(600, int(parent_rect.width() * 0.45)), 700)
+            self.setFixedWidth(dialog_width)
+            x = (parent_rect.width() - dialog_width) // 2
+            y = parent_rect.height() // 6
+            global_pos = parent_widget.mapToGlobal(parent_rect.topLeft())
+            self.move(global_pos.x() + x, global_pos.y() + y)
         self.show()
 
     def keyPressEvent(self, arg__1: QKeyEvent) -> None:  # noqa: N802

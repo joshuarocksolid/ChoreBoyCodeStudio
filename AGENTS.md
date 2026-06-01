@@ -58,10 +58,10 @@ python3 run_tests.py -k test_project_service
 
 Latest checkpoint (2026-06-01, `main` branch):
 
-- `python3 testing/run_test_shard.py fast` -> ~34–49s, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
-- `python3 testing/run_test_shard.py integration` -> ~37–43s, **59 passed**.
-- `python3 testing/run_test_shard.py performance` -> ~34s, **15 passed, 2 pre-existing failures** (`test_local_history_performance` regressions tracked separately).
-- `python3 testing/run_test_shard.py runtime_parity` -> ~4–6s, **17 passed**.
+- `python3 testing/run_test_shard.py fast` -> ~40–68s, **1949 passed, 17 deselected, 0 failures**. (Suite grew from 1445 to 1949 collected; per-test cost is unchanged, the wall time reflects the larger suite. Sub-60s on a quiet machine.)
+- `python3 testing/run_test_shard.py integration` -> ~55s, **64 passed, 3 skipped, 0 failures**. Slow debug integration tests skip when AppRun emits no debug channel or no `stopped` pause event (see `docs/DISCOVERY.md` §4D; guards in `tests/support/debug_transport_guards.py`).
+- `python3 testing/run_test_shard.py performance` -> ~74s, **11 passed, 0 failures** (four modules under `tests/integration/performance/`).
+- `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.
 
 Canonical test command catalog: [`docs/TESTS.md`](docs/TESTS.md) §5.
 
@@ -128,7 +128,7 @@ Focused test typing:
 npx pyright -p pyrightconfig.tests.json
 ```
 
-`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages`. `pyrightconfig.tests.json` is a staged, low-noise test coverage config. Latest checkpoint: both commands -> `0 errors, 0 warnings, 0 informations`.
+`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages` (prefer `~/opt/freecad/lib/python3.9/site-packages` when present — see `scripts/resolve_pyright_extrapaths.sh`). PySide2 Shiboken stub noise is scoped via execution-environment `report*` overrides documented in `docs/LOCAL_DEV.md`. Pin: `package.json` → `pyright@1.1.410`. `pyrightconfig.tests.json` is a staged, low-noise test coverage config. Latest checkpoint: both commands -> `0 errors, 0 warnings, 0 informations`.
 
 ### Vendored dependencies
 

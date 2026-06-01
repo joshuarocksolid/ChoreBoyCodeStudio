@@ -6,6 +6,11 @@ addopts = "-ra --import-mode=importlib"
 # need longer (subprocess polling, supervisor lifecycle, debug session waits)
 # carry @pytest.mark.timeout(...) overrides locally.
 timeout = 30
+# Use the thread method (not signal) so a test blocked in a C-level call (Qt
+# modal exec_, blocking subprocess/IO, native joins) is still force-terminated
+# at the timeout instead of hanging the whole shard forever. SIGALRM-based
+# signal timeouts cannot interrupt those frames.
+timeout_method = "thread"
 testpaths = ["tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]

@@ -53,7 +53,7 @@ worker prioritization, and completion latency gates
 
 This section is the canonical "how to run tests" instruction. Other docs (`AGENTS.md`, `tests/README.md`, `docs/SMOKE_WORKFLOW.md`, the per-task `Validation method:` snippets in `docs/TASKS.md`) point here.
 
-### 5.1 Agent inner loop — fast shard (~30 s)
+### 5.1 Agent inner loop — fast shard (~55–60 s)
 
 ```bash
 python3 testing/run_test_shard.py fast
@@ -139,22 +139,22 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 Latest validation checkpoint (2026-06-01, `main` branch). Pass counts are maintained in [`AGENTS.md`](../AGENTS.md); this section records wall times and shard outcomes.
 
-- `python3 testing/run_test_shard.py fast` -> **~34–49s wall time**, **1445 passed, 1 skipped, 17 deselected, 0 failures**.
-- `python3 testing/run_test_shard.py integration` -> **~37–43s wall time**, **59 passed**.
-- `python3 testing/run_test_shard.py runtime_parity` -> **~4–6s wall time**, **17 passed**.
-- `python3 testing/run_test_shard.py performance` -> **~34s wall time**, **15 passed, 2 pre-existing failures** (`test_local_history_performance` regressions tracked separately).
+- `python3 testing/run_test_shard.py fast` -> **~54–68s wall time**, **1949 passed, 17 deselected, 0 failures**.
+- `python3 testing/run_test_shard.py integration` -> **~55s wall time**, **64 passed, 3 skipped, 0 failures** (slow debug tests skip when no debug channel or no `stopped` pause on this AppRun build; see `docs/DISCOVERY.md` §4D).
+- `python3 testing/run_test_shard.py runtime_parity` -> **~4s wall time**, **17 passed**.
+- `python3 testing/run_test_shard.py performance` -> **~74s wall time**, **11 passed, 0 failures** (all modules under `tests/integration/performance/`).
 - `npx pyright` -> 0 errors, 0 warnings, 0 informations.
 - `npx pyright -p pyrightconfig.tests.json` -> 0 errors, 0 warnings, 0 informations.
 - `AT-72` remains the required manual confirmation step when touched shell/editor surfaces need four-theme validation.
 
-Compared to the pre-refactor baseline of `~92s` for the full suite, the agent fast lane is now **~2.9x faster** while still exercising every Qt-touching unit test and every non-slow integration test.
+The fast shard collects **1949 tests** (the 2026-06-01 MainWindow shell-workflow extraction added ~500 tests vs the prior 1445 checkpoint). Per-test cost is unchanged; the higher wall time is suite growth, not regression. A modal-dialog hang (`test_welcome_runtime_onboarding`) that previously stalled the shard past 180s is fixed, and `timeout_method = "thread"` now force-terminates any future C-level block at the 30s timeout instead of hanging.
 
 ## 10) Test speed notes
 
 Speed audit re-run on 2026-04-24 after the fast-lane refactor (counts aligned with [`AGENTS.md`](../AGENTS.md) checkpoint on 2026-06-01):
 
-- `python3 testing/run_test_shard.py fast` -> **~32–49s** wall time (**1445 passed**, 17 deselected via `-m "not slow"`, 1 skipped). This is the agent default loop.
-- The full pre-refactor suite (`python3 run_tests.py`) was ~92s; the fast shard is roughly **2.9x** faster while still exercising every Qt-touching unit test and every non-slow integration test.
+- `python3 testing/run_test_shard.py fast` -> **~54–68s** wall time (**1949 passed**, 17 deselected via `-m "not slow"`). This is the agent default loop.
+- The suite grew from 1445 to 1949 collected fast-shard tests after the 2026-06-01 MainWindow shell-workflow extraction; per-test cost is unchanged, so the wall time tracks the larger suite. Still exercises every Qt-touching unit test and every non-slow integration test.
 - The `slow` marker now scopes the four worst offenders (`test_process_supervisor_integration`, `test_run_service_integration`, `test_breakpoint_stepping_flow`, `test_debug_session_integration`) with `pytest.mark.timeout(180)` overrides, so the new global `timeout = 30` applies cleanly to everything else.
 
 The 2026-03-25 audit had already flagged `pytest-xdist` as net-negative; the 2026-04-24 re-benchmark re-confirms it after the session-scoped `qapp` fixture and lazy tree-sitter init landed:
@@ -167,5 +167,6 @@ Recommendations:
 - Default to **serial shards** (`fast`, `integration`, `performance`, `runtime_parity`).
 - Treat `--workers <count>` as a per-shard experiment knob, not a steady-state speed-up.
 - Keep `tests/integration/performance` in its own serial lane (still excluded from the `integration` shard).
-- The global `timeout = 30` in `pyproject.toml` is the new safety net; tests legitimately needing longer carry `pytest.mark.timeout(...)` overrides instead of inflating the default.
+- The global `timeout = 30` in `pyproject.toml` is the safety net; tests legitimately needing longer carry `pytest.mark.timeout(...)` overrides instead of inflating the default. `timeout_method = "thread"` is set so a test blocked in a C-level call (Qt modal `exec_`, blocking subprocess/IO, native joins) is force-terminated at the timeout — the default `signal` method cannot interrupt those frames and would hang the whole shard.
+- `tests/conftest.py` reaps any leaked `run_plugin_host`/`run_runner` AppRun children (descendants of the pytest process) at `pytest_sessionfinish`, so an aborted or failing run that spawned editor-side supervisors does not leave orphaned subprocesses behind.
 

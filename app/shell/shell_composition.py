@@ -192,7 +192,7 @@ class MainWindowSettingsApplyHost:
         loaded = self._window._loaded_project
         if sidebar is None or loaded is None:
             return
-        from app.project.exclude_policy import compute_effective_excludes
+        from app.project.file_excludes import compute_effective_excludes
 
         sidebar.set_exclude_patterns(
             compute_effective_excludes(

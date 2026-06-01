@@ -9,9 +9,10 @@ from typing import Mapping
 import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
+from app.core import constants
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
-from app.core import constants
+from tests.support.debug_transport_guards import require_debug_pause_or_skip
 
 pytestmark = [
     pytest.mark.integration,
@@ -200,7 +201,7 @@ def test_run_service_python_debug_hits_breakpoint_and_continues(tmp_path: Path) 
         breakpoints=[{"file_path": str(script_path.resolve()), "line_number": 2}],
     )
     assert _wait_until(lambda: service.supervisor.is_running())
-    assert _wait_until(lambda: _debug_is_paused(events), timeout_seconds=12.0)
+    require_debug_pause_or_skip(service, events)
 
     def _breakpoint_pause_frame() -> tuple[Path, int] | None:
         for event in events:

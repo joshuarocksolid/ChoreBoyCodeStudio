@@ -137,7 +137,7 @@ def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -
         lambda _project: ("src", "src/main.py", "docs")
     )
 
-    MainWindow._poll_external_file_changes(window)
+    workflow.poll_external_file_changes()
 
     assert reload_calls == [True]
 
@@ -180,7 +180,7 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
         lambda _project: filter_tree_signature_entries(raw_entries)
     )
 
-    MainWindow._poll_external_file_changes(window)
+    workflow.poll_external_file_changes()
 
     assert reload_calls == []
     assert window_any._project_tree_structure_signature == baseline

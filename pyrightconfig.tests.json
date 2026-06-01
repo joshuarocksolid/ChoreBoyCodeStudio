@@ -1,6 +1,7 @@
 {
   "pythonVersion": "3.9",
   "verboseOutput": true,
+  "stubPath": "typings",
   "include": [
     "tests/support",
     "tests/unit/debug/test_safe_eval.py",

@@ -208,7 +208,7 @@ class SaveWorkflow:
         if not path_existed_before_save and project_id is not None:
             window._project_tree_ui_workflow.reload_current_project()
         window._refresh_save_action_states()
-        window._update_editor_status_for_path(saved_tab.file_path)
+        window._editor_tab_workflow.update_editor_status_for_path(saved_tab.file_path)
         if should_refresh_index_after_save(
             window._intelligence_runtime_settings,
             has_loaded_project=window._loaded_project is not None,

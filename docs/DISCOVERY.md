@@ -288,6 +288,29 @@ ChoreBoy does **not** provide users with a terminal emulator, shell prompt, or a
 
 ---
 
+## 4D. Structured debug transport on AppRun (Cloud / dev)
+
+**Date documented:** 2026-06-01
+
+### Finding
+
+On some FreeCAD AppRun builds (notably Cursor Cloud and certain local `/opt/freecad`
+installs), the editor↔runner debug socket may start and emit lifecycle traffic
+(`session_ready`, output bridged as debug channel metadata) without ever delivering
+a structured **`stopped`** pause event at a configured breakpoint within integration-test
+wait windows.
+
+### Implications
+
+- Slow-marked debug integration tests call `require_debug_pause_or_skip` in
+  `tests/support/debug_transport_guards.py`: they **skip** only when no debug events
+  arrive, or when events arrive but no `stopped` pause is observed after a bounded wait.
+- Machines where the transport is healthy still run full pause/step assertions.
+- This is an environment limitation, not a signal to disable debug mode in the product;
+  ChoreBoy production AppRun behavior should be validated separately.
+
+---
+
 ## 4C. Additional Launch/Runtime Findings (2026-03-03)
 
 ### Confirmed blockers

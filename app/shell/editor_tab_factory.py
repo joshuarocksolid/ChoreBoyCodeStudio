@@ -67,14 +67,14 @@ class EditorTabFactory:
                 window._editor_tabs_widget.setCurrentIndex(existing_index)
                 window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
             window._refresh_save_action_states()
-            window._update_editor_status_for_path(opened_result.tab.file_path)
+            window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
 
         editor_widget = CodeEditorWidget(window._editor_tabs_widget)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
         editor_widget.set_editor_preferences(
             tab_width=window._editor_tab_width,
-            font_point_size=window._effective_font_size(),
+            font_point_size=window._editor_tab_workflow.effective_font_size(),
             font_family=window._editor_font_family,
             indent_style=window._editor_indent_style,
             indent_size=window._editor_indent_size,
@@ -197,14 +197,14 @@ class EditorTabFactory:
         window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
         if restore_draft:
             window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
-        window._apply_detected_indentation_for_widget(
+        window._editor_tab_workflow.apply_detected_indentation_for_widget(
             opened_result.tab.file_path,
             editor_widget,
             editor_widget.toPlainText(),
         )
         window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
         window._refresh_save_action_states()
-        window._update_editor_status_for_path(opened_result.tab.file_path)
+        window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
         if started_at is not None:
             window._logger.info(
                 "File open telemetry: file=%s elapsed_ms=%.2f",

@@ -85,7 +85,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     breakpoint_store.set_line_enabled(file_two_path, 3, enabled=True)
 
     window._local_history_workflow.persist_session_state()
-    window._reset_editor_tabs()
+    window._editor_tab_workflow.reset_editor_tabs()
     breakpoint_store.clear_all()
     window._local_history_workflow.restore_session_state(str(project_root.resolve()))
     _wait_for_open_paths(app, window, [file_one_path, file_two_path])

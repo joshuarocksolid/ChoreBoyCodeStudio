@@ -1,5 +1,7 @@
 """Service and workflow wiring for the main editor window shell."""
 
+# pyright: reportInvalidTypeForm=false
+
 from __future__ import annotations
 
 import queue

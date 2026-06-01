@@ -65,10 +65,22 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
 
     window = MainWindow(state_root=str(state_root.resolve()))
     monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(window, "_apply_detected_indentation_for_widget", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(window, "_handle_editor_tab_changed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        window._editor_tab_workflow,
+        "apply_detected_indentation_for_widget",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        window._editor_tab_workflow,
+        "handle_editor_tab_changed",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(window, "_refresh_save_action_states", lambda: None)
-    monkeypatch.setattr(window, "_update_editor_status_for_path", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        window._editor_tab_workflow,
+        "update_editor_status_for_path",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(window._lint_workflow, "render_diagnostics_for_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(window._local_history_workflow, "schedule_autosave", lambda *_args, **_kwargs: None)
     assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True

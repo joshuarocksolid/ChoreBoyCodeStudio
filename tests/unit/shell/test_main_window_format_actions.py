@@ -128,7 +128,10 @@ def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEdit
         local_history_context_for_path=lambda *_args, **_kwargs: (None, None),
     )
     window_any._refresh_save_action_states = lambda: None
-    window_any._update_editor_status_for_path = lambda *_args, **_kwargs: None
+    window_any._editor_tab_workflow = SimpleNamespace(
+        update_editor_status_for_path=lambda *_args, **_kwargs: None,
+        refresh_tab_presentation=lambda *_args, **_kwargs: None,
+    )
     window_any._intelligence_runtime_settings = SimpleNamespace()
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
     window_any._workflow_broker = object()

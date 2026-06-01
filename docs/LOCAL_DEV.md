@@ -66,6 +66,23 @@ For Cloud / Python 3.11 dev:
 ./run_dev.sh
 ```
 
+## Pyright (static analysis)
+
+```bash
+npm install   # once, pins pyright@1.1.410 from package.json
+npx pyright
+npx pyright -p pyrightconfig.tests.json
+```
+
+`pyrightconfig.json` adds FreeCAD `site-packages` to `extraPaths` so `PySide2`
+imports resolve. Shipped PySide2 `.pyi` stubs are incomplete for Shiboken
+subclasses; the `app` execution environment sets `reportArgumentType`,
+`reportAttributeAccessIssue`, `reportCallIssue`, `reportIncompatibleMethodOverride`,
+`reportReturnType`, and `reportAssignmentType` to `"none"` so real syntax/import
+issues still surface without ~1700 Qt noise diagnostics. Use
+`scripts/resolve_pyright_extrapaths.sh` to print the preferred site-packages path
+(`~/opt/freecad` py39 when present, else Cloud `/opt/freecad` py311).
+
 ## Verification
 
 ```bash

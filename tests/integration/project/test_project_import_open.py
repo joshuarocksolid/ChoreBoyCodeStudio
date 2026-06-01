@@ -93,11 +93,13 @@ def test_open_plain_python_folder_ignores_package_callable_pyproject_target_when
         runner_boot_path=_runner_boot_path(),
     )
     run_service.start_run(loaded_project)
-
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
-    assert "RUN_FALLBACK_OK" in combined_output
-    assert "PACKAGE_MAIN" not in combined_output
+    try:
+        assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+        combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
+        assert "RUN_FALLBACK_OK" in combined_output
+        assert "PACKAGE_MAIN" not in combined_output
+    finally:
+        run_service.stop_run()
 
 
 def test_auto_initialized_project_runs_successfully(tmp_path: Path) -> None:
@@ -115,9 +117,11 @@ def test_auto_initialized_project_runs_successfully(tmp_path: Path) -> None:
         runtime_executable=sys.executable,
         runner_boot_path=_runner_boot_path(),
     )
-    session = run_service.start_run(loaded_project)
-
-    assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
-    assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
-    combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
-    assert "IMPORTED_RUN_OK" in combined_output
+    run_service.start_run(loaded_project)
+    try:
+        assert _wait_until(lambda: any(event.event_type == "exit" for event in events))
+        assert any(event.event_type == "exit" and event.return_code == 0 for event in events)
+        combined_output = "".join(event.text or "" for event in events if event.event_type == "output")
+        assert "IMPORTED_RUN_OK" in combined_output
+    finally:
+        run_service.stop_run()

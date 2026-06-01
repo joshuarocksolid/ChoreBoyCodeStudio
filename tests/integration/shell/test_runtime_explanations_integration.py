@@ -25,6 +25,24 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     return app
 
 
+def _record_runtime_center_dialogs(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Intercept Runtime Center dialog opens at the dialog boundary."""
+    opened: list[dict[str, object]] = []
+
+    class _RecordingRuntimeCenterDialog:
+        def __init__(self, *, title: str = "Runtime Center", report: object = None, **_kwargs: object) -> None:
+            opened.append({"title": title, "report": report})
+
+        def exec_(self) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "app.shell.runtime_onboarding_workflow.RuntimeCenterDialog",
+        _RecordingRuntimeCenterDialog,
+    )
+    return opened
+
+
 def _write_project(project_root: Path, *, source_text: str, default_entry: str = "run.py") -> None:
     (project_root / "cbcs").mkdir(parents=True, exist_ok=True)
     (project_root / default_entry).write_text(source_text, encoding="utf-8")
@@ -54,14 +72,7 @@ def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
-        opened_dialogs: list[dict[str, object]] = []
-        monkeypatch.setattr(
-            window,
-            "_open_runtime_center_dialog",
-            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
-                {"title": title, "report": report}
-            ),
-        )
+        opened_dialogs = _record_runtime_center_dialogs(monkeypatch)
 
         def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
             _ = key
@@ -92,7 +103,7 @@ def test_headless_runtime_signature_updates_latest_run_issue_report(
             "Traceback...\nCannot load Gui module in console application\n"
         )
 
-        problems = window._update_problems_from_output()
+        problems = window._run_event_workflow.update_problems_from_output()
 
         assert problems == []
         assert [issue.issue_id for issue in window._latest_run_issue_report.issues] == [
@@ -130,15 +141,8 @@ def test_packaging_preflight_opens_runtime_center_before_export(
             def build_package_config(self):  # type: ignore[no-untyped-def]
                 return self._package_config
 
-        opened_dialogs: list[dict[str, object]] = []
         monkeypatch.setattr("app.shell.runtime_support_workflow.PackageProjectWizard", _FakeWizard)
-        monkeypatch.setattr(
-            window,
-            "_open_runtime_center_dialog",
-            lambda *, title="Runtime Center", report=None: opened_dialogs.append(
-                {"title": title, "report": report}
-            ),
-        )
+        opened_dialogs = _record_runtime_center_dialogs(monkeypatch)
 
         def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
             _ = key

@@ -61,7 +61,7 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         return QDialog.Rejected
 
     monkeypatch.setattr("app.shell.runtime_onboarding_workflow.RuntimeCenterDialog.exec_", fake_runtime_center_exec)
-    monkeypatch.setattr("app.shell.main_window.QDialog.exec_", fake_dialog_exec)
+    monkeypatch.setattr("app.shell.runtime_onboarding_workflow.QDialog.exec_", fake_dialog_exec)
 
     window = MainWindow(
         startup_report=CapabilityProbeReport(

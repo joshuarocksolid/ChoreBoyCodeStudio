@@ -316,6 +316,9 @@ class RunEventWorkflow:
         self._host.stored_runtime_problems = problems
         self._host.render_merged_problems_panel()
 
+    def focus_problems_tab(self) -> None:
+        self._host.focus_problems_tab()
+
     def refresh_run_action_states(self) -> None:
         self._host.run_session_controller.refresh_action_states(
             self._host.menu_registry,
