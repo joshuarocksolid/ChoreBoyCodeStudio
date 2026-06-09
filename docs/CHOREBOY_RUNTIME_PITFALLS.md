@@ -262,6 +262,51 @@ Qt internals are still valid. See `packages/choreboy_runtime/bootstrap.py`
 by Qt's event loop before the process exits; do not rely on Python/PySide
 teardown to destroy them.
 
+### D-3. FreeCAD Qt `QPrinter.PdfFormat` can generate blank PDFs
+
+**Symptom.** Report previews open in the PDF viewer with the correct page
+count, page size, and file size, but every page is blank. The same
+`QTextDocument` can draw visible content to an offscreen `QImage`, and the same
+PDFium preview backend can render Jasper-generated PDFs correctly.
+
+**Root cause.** The FreeCAD AppRun PySide2/Qt print backend does not reliably
+render text into `QPrinter.PdfFormat` output. Runtime probes showed that even a
+simple `QPainter.drawText()` into a Qt PDF printer produced a PDF with no
+visible ink under FreeCAD AppRun, while similar code can pass under a local
+developer PySide2 install. The failure is accompanied by warnings like:
+
+```text
+QPaintDevice::metrics: Device has no metric information
+Unrecognised metric 1!
+Unrecognised metric 2!
+```
+
+**Fix pattern.** Do not use Qt's PDF printer as the production digital-report
+renderer. For report PDFs, fill a Jasper template and preview/print the exact
+Jasper PDF bytes through the shared PDFium/CUPS path:
+
+```python
+result = print_service.print_report_interactive(
+    report_key="machines",
+    title="Report - Machines",
+    columns=columns,
+    rows=rows,
+    filters=filters,
+    qt_widgets=QtWidgets,
+    parent_widget=page_widget,
+)
+```
+
+Do not use `QPrintPreviewDialog` or `QTextDocument.print_()` for in-app report
+printing. All tabular report output must go through Jasper PDF generation and
+the shared PDFium preview/print stack.
+
+**Prevention.** Add a FreeCAD-runtime PDF regression test for every report
+template that matters. The test should export through Jasper, render the first
+page with PDFium, assert landscape dimensions when required, and assert a
+non-zero count of non-white sampled pixels. See
+`tests/unit/test_jasper_report_pdf_render.py`.
+
 ---
 
 ## E. Shared-connection transaction poisoning
@@ -315,6 +360,34 @@ def transaction_guard(executor):
 
 - Add unit tests that simulate executor failures and verify that `rollback()`
   is called.
+
+---
+
+## PDFium: one bootstrap per process session
+
+Iron Advantage loads PDFium through the vendored `cb_pdfium` package for
+email attachment preview. Jasper report preview historically loaded a
+**second** copy of `pypdfium2` from `jasper_bridge/vendor/pypdfium2/`.
+Two memfd bootstraps in the same session can collide in `sys.modules` and
+leave email PDF preview broken after Jasper preview (or after logout/login).
+
+**Required pattern**
+
+- Route **all** PDFium loading through `cb_pdfium.bootstrap()` (Jasper's
+  `pdfium_loader.load()` delegates there).
+- On logout / session teardown, call `cb_pdfium.reset_bootstrap()` from
+  `teardown_authenticated_session()` after `print_service.shutdown()`.
+  That destroys the native library, closes memfds, and clears
+  `pypdfium2` imports so the next preview can bootstrap cleanly.
+- Defer `from cb_pdfium import PdfDocument` until preview time; never
+  `import pypdfium2` at module level in app code.
+
+**Email attachment paths after mark-read**
+
+FaxMail mark-read renames the message folder (strips the unread `!` flag).
+Attachment chips and preview tabs cache absolute paths at open time. Re-base
+stale paths onto the current `message_path` folder before previewing or
+updating open tabs.
 
 ---
 
