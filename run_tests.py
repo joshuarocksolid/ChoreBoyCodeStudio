@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import dev_launch_editor
+from app.run.runtime_launch import sanitize_apprun_child_env
 
 APPRUN = os.environ.get("CBCS_APPRUN", "/opt/freecad/AppRun")
 PYTEST_WORKERS_ENV_VAR = "CBCS_PYTEST_WORKERS"
@@ -111,7 +112,7 @@ def main() -> int:
         f"os._exit(__import__('pytest').main({pytest_args}))"
     )
 
-    env = os.environ.copy()
+    env = sanitize_apprun_child_env()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env.setdefault("CBCS_SYNC_PROJECT_OPEN", "1")
 

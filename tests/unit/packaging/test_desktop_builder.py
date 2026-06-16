@@ -7,7 +7,6 @@ import pytest
 from app.packaging.desktop_builder import (
     build_installed_launcher,
     build_installer_package_launcher,
-    build_portable_launcher,
 )
 from app.packaging.installer_manifest import create_distribution_manifest
 from app.packaging.models import (
@@ -46,16 +45,17 @@ def test_installer_launcher_omits_icon_when_no_value_given() -> None:
 
     content = build_installer_package_launcher(
         manifest=manifest,
-        package_root_name="test_app_installer_v1.0.0",
+        package_root="/home/default/test_app_installer_v1.0.0",
     )
 
     assert "Icon=" not in content
     assert "Install Test App" in content
     assert "/opt/freecad/AppRun" in content
-    assert "/bin/sh" in content
-    assert "dummy %k" in content
+    assert "Path=/home/default/test_app_installer_v1.0.0" in content
+    assert "/bin/sh" not in content
+    assert "%k" not in content
     assert "CBCS_PACKAGE_ROOT" in content
-    assert "/home/default/test_app_installer_v1.0.0" not in content
+    assert "bootstrap.py" in content
 
 
 def test_installer_launcher_includes_icon_when_value_given() -> None:
@@ -63,7 +63,7 @@ def test_installer_launcher_includes_icon_when_value_given() -> None:
 
     content = build_installer_package_launcher(
         manifest=manifest,
-        package_root_name="test_app_installer_v1.0.0",
+        package_root="/home/default/test_app_installer_v1.0.0",
         icon_value="/home/default/test_app_installer_v1.0.0/installer_icon.png",
     )
 

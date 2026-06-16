@@ -288,6 +288,34 @@ class ProjectTreeUiWorkflow:
         else:
             self.handle_tree_bulk_delete([entry[0] for entry in selected])
 
+    def handle_project_tree_rename_key(self) -> None:
+        selected = self.get_selected_tree_paths()
+        if len(selected) != 1:
+            return
+        self.handle_tree_rename(selected[0][0])
+
+    def handle_project_tree_copy_key(self) -> None:
+        selected = self.get_selected_tree_paths()
+        if not selected:
+            return
+        self._host.set_tree_clipboard_paths([entry[0] for entry in selected])
+        self._host.set_tree_clipboard_cut(False)
+
+    def handle_project_tree_cut_key(self) -> None:
+        selected = self.get_selected_tree_paths()
+        if not selected:
+            return
+        self._host.set_tree_clipboard_paths([entry[0] for entry in selected])
+        self._host.set_tree_clipboard_cut(True)
+
+    def handle_project_tree_paste_key(self) -> None:
+        if not self._host.tree_clipboard_paths():
+            return
+        destination = self.selected_tree_directory()
+        if destination is None:
+            return
+        self.handle_tree_paste(destination)
+
     def handle_tree_delete(self, target_path: str) -> None:
         self._host.project_tree_action_workflow().delete_paths(target_path)
 

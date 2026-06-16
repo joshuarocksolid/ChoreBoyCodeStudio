@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core import constants
-from app.core.models import ProjectMetadata
+from app.core.models import ProjectMetadata, RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
 from app.packaging.artifact_builder import build_project_package_artifact
 from app.packaging.config import load_or_create_project_package_config, save_project_package_config
 from app.packaging.layout import (
@@ -13,7 +13,9 @@ from app.packaging.layout import (
     sanitize_project_name,
 )
 from app.packaging.models import (
+    DependencyAuditReport,
     PACKAGE_PROFILE_INSTALLABLE,
+    PackageValidationReport,
     PackageExportResult,
     ProjectPackageConfig,
 )
@@ -33,6 +35,20 @@ def package_project(
     known_runtime_modules: frozenset[str] | None = None,
 ) -> PackageResult:
     """Build a manifest-driven project package artifact."""
+    if profile != PACKAGE_PROFILE_INSTALLABLE:
+        return PackageResult(
+            profile=profile,
+            success=False,
+            artifact_root="",
+            manifest_path="",
+            report_path="",
+            readme_path="",
+            install_notes_path="",
+            launcher_path=None,
+            validation=_unsupported_profile_validation_report(profile=profile),
+            error=f"Unsupported package profile: {profile}. Use installable.",
+        )
+
     root = Path(project_root).expanduser().resolve()
     if not root.is_dir():
         empty_validation = _empty_validation_report(profile=profile)
@@ -74,9 +90,6 @@ def package_project(
 
 
 def _empty_validation_report(*, profile: str):
-    from app.packaging.models import DependencyAuditReport, PackageValidationReport
-    from app.core.models import RuntimeIssueReport, WorkflowPreflightResult
-
     preflight = WorkflowPreflightResult(
         workflow="package",
         issues=[],
@@ -89,6 +102,40 @@ def _empty_validation_report(*, profile: str):
         summary="Packaging did not start.",
     )
     issue_report = RuntimeIssueReport(workflow="package", issues=[])
+    return PackageValidationReport(
+        profile=profile,
+        preflight=preflight,
+        dependency_audit=audit,
+        issue_report=issue_report,
+    )
+
+
+def _unsupported_profile_validation_report(*, profile: str) -> PackageValidationReport:
+    issue = RuntimeIssue(
+        issue_id="package.profile.unsupported",
+        workflow="package",
+        severity="blocking",
+        title="Package profile is no longer supported",
+        summary="Only installable packages are supported on ChoreBoy.",
+        why_it_happened="Real desktop probes showed the old portable launcher contract depends on desktop metadata that ChoreBoy does not reliably provide.",
+        next_steps=[
+            "Export the project using the installable profile.",
+            "Keep the installer folder together and launch it from its generated .desktop file.",
+        ],
+        evidence={"profile": profile},
+    )
+    preflight = WorkflowPreflightResult(
+        workflow="package",
+        issues=[issue],
+        summary="Packaging needs attention before export.",
+    )
+    audit = DependencyAuditReport(
+        project_root="",
+        records=[],
+        issues=[],
+        summary="Dependency audit skipped because the requested package profile is unsupported.",
+    )
+    issue_report = RuntimeIssueReport(workflow="package", issues=[issue])
     return PackageValidationReport(
         profile=profile,
         preflight=preflight,

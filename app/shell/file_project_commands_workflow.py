@@ -25,6 +25,7 @@ from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
     resolve_runtime_executable,
+    sanitize_apprun_child_env,
 )
 from app.shell.events import ProjectOpenFailedEvent, ShellEventBus
 from app.shell.file_dialogs import choose_existing_directory, choose_open_files
@@ -357,8 +358,9 @@ class FileProjectCommandsWorkflow:
             )
             return
         command = self._build_new_window_command(repo_root=repo_root, editor_boot=editor_boot)
+        env = sanitize_apprun_child_env() if command and is_freecad_runtime_executable(command[0]) else None
         try:
-            subprocess.Popen(command, cwd=str(repo_root), start_new_session=True)
+            subprocess.Popen(command, cwd=str(repo_root), env=env, start_new_session=True)
         except OSError as exc:
             QMessageBox.warning(parent, "New Window unavailable", f"Unable to launch new window: {exc}")
 

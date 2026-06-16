@@ -10,6 +10,7 @@ FreeCAD AppRun).
 Documents/
   ChoreBoyCodeStudio/                 application repo (`vendor` → symlink)
   ChoreBoyCodeStudio_artifacts/
+    .venv-editor/                    optional editor tooling venv (pyright only)
     vendor_py39/                      Python 3.9 bundle (local ~/opt/freecad)
     vendor_py311/                      Python 3.11 bundle (Cloud /opt/freecad)
     vendor_cp39_cache/                cached cp39 tree-sitter wheel downloads
@@ -60,11 +61,25 @@ For Cloud / Python 3.11 dev:
 ./scripts/setup_vendor_py311.sh
 ```
 
-### 3. Launch
+### 3. Editor tooling venv
+
+```bash
+./scripts/setup_venv_editor.sh
+```
+
+Creates `ChoreBoyCodeStudio_artifacts/.venv-editor` with the pinned pyright
+tooling used by the workspace settings. This venv is for IDE/static-analysis
+tools only; do not activate it before `./run_dev.sh`.
+
+### 4. Launch
 
 ```bash
 ./run_dev.sh
 ```
+
+`run_dev.sh` launches through FreeCAD AppRun, not `.venv-editor`. If a shell
+venv is active, the launcher strips virtualenv activation variables before
+starting AppRun so FreeCAD does not try to load stale `activate_this.py` files.
 
 ## Pyright (static analysis)
 

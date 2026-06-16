@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import stat
 import sys
@@ -34,6 +35,7 @@ from PySide2.QtWidgets import (
 )
 
 PACKAGE_MANIFEST_FILENAME = "package_manifest.json"
+CBCS_PACKAGE_ROOT_ENV = "CBCS_PACKAGE_ROOT"
 
 
 @dataclass(frozen=True)
@@ -71,11 +73,21 @@ class PackageManifest:
     checksums: tuple[ArtifactChecksum, ...]
 
 
+@dataclass(frozen=True)
+class ShortcutPublishResult:
+    ok: bool
+    path: str
+    error: str = ""
+
+
 def _source_root() -> Path:
     return Path(__file__).resolve().parent
 
 
 def _package_root() -> Path:
+    env_root = os.environ.get(CBCS_PACKAGE_ROOT_ENV, "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
     return _source_root().parent
 
 
@@ -242,12 +254,19 @@ def write_installed_package_record(install_dir: Path, manifest: PackageManifest)
     )
 
 
-def publish_launcher_copy(launcher_path: Path, destination_dir: Path) -> Path:
-    destination_dir.mkdir(parents=True, exist_ok=True)
+def publish_launcher_copy(launcher_path: Path, destination_dir: Path) -> ShortcutPublishResult:
     destination_path = destination_dir / launcher_path.name
-    shutil.copy2(str(launcher_path), str(destination_path))
-    destination_path.chmod(destination_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return destination_path
+    try:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(launcher_path), str(destination_path))
+        destination_path.chmod(destination_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError as exc:
+        return ShortcutPublishResult(
+            ok=False,
+            path=str(destination_path),
+            error=f"{exc.__class__.__name__}: {exc}",
+        )
+    return ShortcutPublishResult(ok=True, path=str(destination_path))
 
 
 class InstallWorker(QThread):
@@ -272,6 +291,7 @@ class InstallWorker(QThread):
         self.publish_menu_entry = publish_menu_entry
         self.publish_desktop_shortcut = publish_desktop_shortcut
         self.cleanup_install_dirs = cleanup_install_dirs
+        self.shortcut_warnings: list[str] = []
 
     def run(self) -> None:
         try:
@@ -346,15 +366,23 @@ class InstallWorker(QThread):
         self.progress.emit(92)
         final_launcher_path = self.install_dir / self.manifest.launcher_filename
         if self.publish_menu_entry:
-            publish_launcher_copy(
+            menu_result = publish_launcher_copy(
                 final_launcher_path,
                 Path.home() / ".local" / "share" / "applications",
             )
+            if not menu_result.ok:
+                self.shortcut_warnings.append(
+                    f"Application-menu launcher was not published at {menu_result.path}: {menu_result.error}"
+                )
         if self.publish_desktop_shortcut:
-            publish_launcher_copy(
+            desktop_result = publish_launcher_copy(
                 final_launcher_path,
                 Path.home() / "Desktop",
             )
+            if not desktop_result.ok:
+                raise RuntimeError(
+                    f"Desktop shortcut was not published at {desktop_result.path}: {desktop_result.error}"
+                )
 
         if self.cleanup_install_dirs:
             self.status.emit("Cleaning older versions ...")
@@ -589,6 +617,12 @@ class DonePage(QWizardPage):
             lines.extend(["", f"Application menu launcher: <code>{Path.home() / '.local' / 'share' / 'applications' / self._manifest.launcher_filename}</code>"])
         if bool(self.field("publish_desktop_shortcut")):
             lines.extend(["", f"Desktop shortcut: <code>{Path.home() / 'Desktop' / self._manifest.launcher_filename}</code>"])
+        install_page = self.wizard().page(3)
+        worker = getattr(install_page, "worker", None)
+        warnings = tuple(getattr(worker, "shortcut_warnings", ()))
+        if warnings:
+            lines.extend(["", "<b>Shortcut warnings:</b>"])
+            lines.extend(warnings)
         lines.extend(
             [
                 "",

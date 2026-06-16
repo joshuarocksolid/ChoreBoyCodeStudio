@@ -11,6 +11,11 @@ from PySide2.QtTest import QTest  # noqa: E402
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.project.project_tree_widget import ProjectTreeWidget  # noqa: E402
+from app.shell.project_tree_shortcuts import configure_project_tree_widget_shortcuts  # noqa: E402
+from app.shell.shortcut_preferences import (  # noqa: E402
+    build_effective_shortcut_map,
+    project_tree_copy_shortcut_id,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -23,6 +28,11 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 @pytest.fixture()
 def tree_widget():  # type: ignore[no-untyped-def]
     widget = ProjectTreeWidget()
+    effective_shortcuts = build_effective_shortcut_map()
+    configure_project_tree_widget_shortcuts(
+        widget,
+        lambda action_id, shortcuts=effective_shortcuts: shortcuts.get(action_id, ""),
+    )
     return widget
 
 
@@ -45,6 +55,50 @@ def test_other_key_does_not_emit_delete_requested(tree_widget: ProjectTreeWidget
     tree_widget.deleteRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_A)
     assert received == []
+
+
+def test_f2_emits_rename_requested(tree_widget: ProjectTreeWidget) -> None:
+    received: list[bool] = []
+    tree_widget.renameRequested.connect(lambda: received.append(True))
+    QTest.keyPress(tree_widget, Qt.Key_F2)
+    assert received == [True]
+
+
+def test_ctrl_c_emits_copy_requested(tree_widget: ProjectTreeWidget) -> None:
+    received: list[bool] = []
+    tree_widget.copyRequested.connect(lambda: received.append(True))
+    QTest.keyPress(tree_widget, Qt.Key_C, Qt.ControlModifier)
+    assert received == [True]
+
+
+def test_ctrl_x_emits_cut_requested(tree_widget: ProjectTreeWidget) -> None:
+    received: list[bool] = []
+    tree_widget.cutRequested.connect(lambda: received.append(True))
+    QTest.keyPress(tree_widget, Qt.Key_X, Qt.ControlModifier)
+    assert received == [True]
+
+
+def test_ctrl_v_emits_paste_requested(tree_widget: ProjectTreeWidget) -> None:
+    received: list[bool] = []
+    tree_widget.pasteRequested.connect(lambda: received.append(True))
+    QTest.keyPress(tree_widget, Qt.Key_V, Qt.ControlModifier)
+    assert received == [True]
+
+
+def test_reconfigured_shortcut_is_used(tree_widget: ProjectTreeWidget) -> None:
+    effective_shortcuts = build_effective_shortcut_map(
+        {project_tree_copy_shortcut_id(): "Ctrl+Shift+C"}
+    )
+    configure_project_tree_widget_shortcuts(
+        tree_widget,
+        lambda action_id: effective_shortcuts.get(action_id, ""),
+    )
+    received: list[bool] = []
+    tree_widget.copyRequested.connect(lambda: received.append(True))
+    QTest.keyPress(tree_widget, Qt.Key_C, Qt.ControlModifier)
+    assert received == []
+    QTest.keyPress(tree_widget, Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier)
+    assert received == [True]
 
 
 # ---------------------------------------------------------------------------

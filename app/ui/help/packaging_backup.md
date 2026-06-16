@@ -10,14 +10,12 @@ The supported default profile is `installable`.
 An installable export contains:
 
 - an installer launcher `.desktop` file
+- `installer/bootstrap.py`
 - `installer/install.py`
 - `installer/launcher_bootstrap.py`
 - `payload/app_files/` with the packaged project source
 - `package_manifest.json` and `package_report.json`
 - generated `README.txt` and `INSTALL.txt`
-
-Portable export is still available, but it depends on the `.desktop` file staying
-in the same folder as the packaged files.
 
 ## What gets left out
 
@@ -49,17 +47,12 @@ For installable exports:
 - copy the whole exported folder to `/home/default/`
 - keep the installer `.desktop`, `installer/`, `payload/`, and package manifest files together
 - run the installer and choose the final install folder
-- let the installer publish an application-menu launcher and optional Desktop shortcut
+- let the installer publish a Desktop shortcut and, when available, an application-menu launcher
 
-The installer launcher resolves the exported package folder from its own
-`.desktop` path. After install, project packages launch from the installed
-`app_files/` folder so project-relative imports and resources still work.
-
-For portable exports:
-
-- keep the `.desktop` file in the export root
-- move/copy the whole folder together
-- if portable launch fails on the target desktop, re-export as `installable`
+The installer launcher uses its `.desktop` `Path=` value as the package root.
+If the exported folder is moved after packaging, regenerate the package or update
+`Path=` before launching. After install, project packages launch from the
+installed `app_files/` folder so project-relative imports and resources still work.
 
 ## Before packaging
 

@@ -11,7 +11,7 @@ from app.packaging.dependency_audit import run_dependency_audit
 from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import (
     DependencyAuditReport,
-    PACKAGE_PROFILE_PORTABLE,
+    PACKAGE_PROFILE_INSTALLABLE,
     PackageValidationReport,
     ProjectPackageConfig,
 )
@@ -104,6 +104,26 @@ def validate_package_config(
     """Return package-config issues that should surface before export."""
     root = Path(project_root).expanduser().resolve()
     issues: list[RuntimeIssue] = []
+
+    if profile != PACKAGE_PROFILE_INSTALLABLE:
+        issues.append(
+            RuntimeIssue(
+                issue_id="package.profile.unsupported",
+                workflow="package",
+                severity="blocking",
+                title="Package profile is no longer supported",
+                summary="Only installable packages are supported on ChoreBoy.",
+                why_it_happened=(
+                    "Real desktop probes showed portable launchers depend on desktop metadata "
+                    "that ChoreBoy does not reliably provide."
+                ),
+                next_steps=[
+                    "Export the project using the installable profile.",
+                ],
+                help_topic=HELP_TOPIC_PACKAGING,
+                evidence={"profile": profile},
+            )
+        )
 
     if not _PACKAGE_ID_RE.match(package_config.package_id):
         issues.append(
@@ -226,23 +246,6 @@ def validate_package_config(
                 ],
                 help_topic=HELP_TOPIC_PACKAGING,
                 evidence={"hidden_paths": hidden_paths[:10]},
-            )
-        )
-
-    if profile == PACKAGE_PROFILE_PORTABLE:
-        issues.append(
-            RuntimeIssue(
-                issue_id="package.profile.portable_review",
-                workflow="package",
-                severity="advisory",
-                title="Portable profile remains stricter about launcher placement",
-                summary="Portable packages depend on the `.desktop` file staying beside the packaged files.",
-                why_it_happened="Portable launchers resolve package root from the launcher location instead of an installed absolute path.",
-                next_steps=[
-                    "Keep the portable `.desktop` file in the export root.",
-                    "Prefer the installable profile when you want application-menu shortcuts and a clearer upgrade path.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
             )
         )
 

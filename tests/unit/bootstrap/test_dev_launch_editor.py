@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import subprocess
+from typing import cast
 
 import pytest
 
@@ -124,6 +125,8 @@ def test_main_launches_detached_with_start_new_session(
         calls["kwargs"] = kwargs
         return _FakeProcess()
 
+    monkeypatch.setenv("VIRTUAL_ENV", "/tmp/stale-venv")
+    monkeypatch.setenv("VIRTUAL_ENV_PROMPT", "(.venv-editor) ")
     monkeypatch.setattr(dev_launch_editor, "resolve_repo_root", lambda: repo_root)
     monkeypatch.setattr(dev_launch_editor, "probe_apprun_soabi", lambda _path: "cpython-311-x86_64-linux-gnu")
     monkeypatch.setattr(dev_launch_editor.subprocess, "Popen", fake_popen)
@@ -132,9 +135,12 @@ def test_main_launches_detached_with_start_new_session(
 
     assert exit_code == 0
     assert calls["command"] is not None
-    kwargs = calls["kwargs"]
+    kwargs = cast(dict[str, object], calls["kwargs"])
     assert kwargs["start_new_session"] is True
     assert kwargs["cwd"] == str(repo_root)
+    env = cast(dict[str, str], kwargs["env"])
+    assert "VIRTUAL_ENV" not in env
+    assert "VIRTUAL_ENV_PROMPT" not in env
 
 
 def test_main_foreground_returns_child_exit_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -1988,9 +1988,9 @@ manifest-driven packaging substrate. `app.packaging.artifact_builder` owns the
 shared installable artifact writer, and `app.packaging.product_builder` owns the
 product-specific payload, vendor, cp39 tree-sitter, archive, and budget policy
 behind the thin repo-root `package.py` CLI. Project-side packaging metadata lives
-in `cbcs/package.json`, installable packages are the supported default, and
-portable packages remain a stricter profile that resolves package root from the
-launcher location.
+in `cbcs/package.json`, and installable packages are the only supported profile.
+Installer launchers are Path-keyed to the package folder; installed app launchers
+remain fixed-root to the chosen install directory.
 **Why:** ChoreBoy packaging has to stay AppRun-native, supportable, and explicit
 about upgrade/install behavior under `noexec`, offline-first, and no-terminal
 constraints. A shared manifest/installer contract is safer than letting product

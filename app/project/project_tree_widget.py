@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide2.QtCore import QUrl, Qt, Signal
+from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 
 
@@ -13,11 +14,17 @@ class ProjectTreeWidget(QTreeWidget):
     """QTreeWidget extension that delegates drag/drop file moves to callback."""
 
     deleteRequested: Any = Signal()
+    renameRequested: Any = Signal()
+    copyRequested: Any = Signal()
+    cutRequested: Any = Signal()
+    pasteRequested: Any = Signal()
 
     def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self._drag_source_path: str | None = None
         self._drop_callback: Callable[[str, str], bool] | None = None
+        self._shortcut_bindings: list[tuple[str, str]] = []
+        self._shortcut_resolver: Callable[[str], str] | None = None
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -26,11 +33,35 @@ class ProjectTreeWidget(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
 
+    def configure_shortcut_bindings(
+        self,
+        bindings: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+        resolver: Callable[[str], str],
+    ) -> None:
+        self._shortcut_bindings = list(bindings)
+        self._shortcut_resolver = resolver
+
     def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+        if event.key() == Qt.Key_Backspace:
             self.deleteRequested.emit()
             return
+        for action_id, signal_name in self._shortcut_bindings:
+            if self._event_matches_configured_shortcut(event, action_id):
+                getattr(self, signal_name).emit()
+                return
         super().keyPressEvent(event)
+
+    def _event_matches_configured_shortcut(self, event: object, action_id: str) -> bool:
+        if self._shortcut_resolver is None:
+            return False
+        shortcut_text = self._shortcut_resolver(action_id).strip()
+        if not shortcut_text:
+            return False
+        key = event.key()  # type: ignore[attr-defined]
+        modifiers = event.modifiers()  # type: ignore[attr-defined]
+        pressed = QKeySequence(key | int(modifiers))
+        configured = QKeySequence(shortcut_text)
+        return configured.matches(pressed) == QKeySequence.ExactMatch
 
     def set_drop_callback(self, callback: Callable[[str, str], bool] | None) -> None:
         self._drop_callback = callback

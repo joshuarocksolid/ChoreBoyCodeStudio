@@ -11,6 +11,7 @@ import threading
 from typing import IO, Callable, Literal, Mapping, Sequence
 
 from app.core.errors import RunLifecycleError
+from app.run.runtime_launch import is_freecad_runtime_executable, sanitize_apprun_child_env
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +36,12 @@ class _ProcessResources:
     reader_threads: list[threading.Thread]
     reader_streams: list[IO[str]]
     cleaned: bool = False
+
+
+def _popen_env_for_command(command: Sequence[str], env: Mapping[str, str] | None) -> dict[str, str] | None:
+    if command and is_freecad_runtime_executable(command[0]):
+        return sanitize_apprun_child_env(env)
+    return None if env is None else dict(env)
 
 
 class ProcessSupervisor:
@@ -74,7 +81,7 @@ class ProcessSupervisor:
                 process = subprocess.Popen(
                     command,
                     cwd=cwd,
-                    env=None if env is None else dict(env),
+                    env=_popen_env_for_command(command, env),
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,

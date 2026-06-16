@@ -27,6 +27,7 @@ from app.shell.icon_provider import new_file_icon, new_folder_icon, refresh_icon
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.layout_persistence import DEFAULT_EXPLORER_SPLITTER_SIZES
 from app.shell.outline import OutlinePanel
+from app.shell.project_tree_shortcuts import configure_project_tree_widget_shortcuts
 from app.shell.problems_panel import ProblemsPanel
 from app.shell.python_console_widget import PythonConsoleWidget
 from app.shell.run_log_panel import RunLogPanel
@@ -166,7 +167,15 @@ def build_explorer_page(window: Any) -> QWidget:
     window._project_tree_widget.set_drop_callback(workflow.handle_project_tree_drop)
     window._project_tree_widget.itemExpanded.connect(workflow.handle_tree_item_expanded)
     window._project_tree_widget.itemCollapsed.connect(workflow.handle_tree_item_collapsed)
+    configure_project_tree_widget_shortcuts(
+        window._project_tree_widget,
+        lambda action_id: window._effective_shortcuts.get(action_id, ""),
+    )
     window._project_tree_widget.deleteRequested.connect(workflow.handle_project_tree_delete_key)
+    window._project_tree_widget.renameRequested.connect(workflow.handle_project_tree_rename_key)
+    window._project_tree_widget.copyRequested.connect(workflow.handle_project_tree_copy_key)
+    window._project_tree_widget.cutRequested.connect(workflow.handle_project_tree_cut_key)
+    window._project_tree_widget.pasteRequested.connect(workflow.handle_project_tree_paste_key)
 
     window._explorer_splitter = QSplitter(Qt.Vertical, page)
     window._explorer_splitter.setObjectName("shell.explorerSplitter")

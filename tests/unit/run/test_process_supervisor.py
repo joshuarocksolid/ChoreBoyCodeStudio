@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
+import app.run.process_supervisor as process_supervisor_module
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor, _ProcessResources
 
 pytestmark = pytest.mark.unit
@@ -22,6 +25,64 @@ class _FakeProcess:
 
     def poll(self) -> int:
         return self.returncode
+
+
+class _FakeRunningProcess:
+    pid = 4004
+    returncode = None
+    stdout = None
+    stderr = None
+    stdin = None
+
+    def wait(self) -> int:
+        return 0
+
+    def poll(self) -> None:
+        return None
+
+
+def test_start_sanitizes_virtualenv_for_apprun_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_popen(command: list[str], **kwargs: object) -> _FakeRunningProcess:
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        return _FakeRunningProcess()
+
+    monkeypatch.setattr(process_supervisor_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(ProcessSupervisor, "_start_waiter_thread", lambda self, process: None)
+
+    supervisor = ProcessSupervisor()
+    supervisor.start(
+        ["/opt/freecad/AppRun", "-c", "print('ok')"],
+        cwd="/tmp",
+        env={
+            "PATH": "/usr/bin",
+            "VIRTUAL_ENV": "/tmp/stale-venv",
+            "VIRTUAL_ENV_PROMPT": "(.venv-editor) ",
+        },
+    )
+
+    kwargs = cast(dict[str, object], calls["kwargs"])
+    assert kwargs["env"] == {"PATH": "/usr/bin"}
+
+
+def test_start_preserves_default_env_for_plain_python_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_popen(command: list[str], **kwargs: object) -> _FakeRunningProcess:
+        calls["command"] = command
+        calls["kwargs"] = kwargs
+        return _FakeRunningProcess()
+
+    monkeypatch.setattr(process_supervisor_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(ProcessSupervisor, "_start_waiter_thread", lambda self, process: None)
+
+    supervisor = ProcessSupervisor()
+    supervisor.start(["/usr/bin/python3", "script.py"], cwd="/tmp")
+
+    kwargs = cast(dict[str, object], calls["kwargs"])
+    assert kwargs["env"] is None
 
 
 def test_wait_for_exit_ignores_stale_process_when_new_process_is_active() -> None:

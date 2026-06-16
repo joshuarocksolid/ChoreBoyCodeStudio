@@ -5,7 +5,102 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtWidgets import QApplication, QMenu
+from PySide2.QtCore import QSize
+from PySide2.QtGui import QIcon
+from PySide2.QtWidgets import QAction, QApplication, QMenu
+
+from app.shell.icon_provider import (
+    copy_icon,
+    copy_path_icon,
+    cut_icon,
+    duplicate_icon,
+    history_icon,
+    new_file_icon,
+    new_folder_icon,
+    paste_icon,
+    rename_icon,
+    reveal_icon,
+    source_root_icon,
+    source_root_unmark_icon,
+    trash_icon,
+)
+from app.shell.project_tree_shortcuts import (
+    configured_tree_shortcut,
+    effective_shortcuts_for_window,
+    project_tree_copy_shortcut_id,
+    project_tree_cut_shortcut_id,
+    project_tree_delete_shortcut_id,
+    project_tree_paste_shortcut_id,
+    project_tree_rename_shortcut_id,
+)
+from app.shell.theme_tokens import ShellThemeTokens
+from app.shell.toolbar_icons import icon_run, icon_run_file
+
+
+_TREE_MENU_ICON_SIZE = 16
+
+
+def _tree_menu_shortcuts(window: Any) -> dict[str, str | None]:
+    effective = effective_shortcuts_for_window(window)
+    return {
+        "rename": configured_tree_shortcut(effective, project_tree_rename_shortcut_id()),
+        "delete": configured_tree_shortcut(effective, project_tree_delete_shortcut_id()),
+        "copy": configured_tree_shortcut(effective, project_tree_copy_shortcut_id()),
+        "cut": configured_tree_shortcut(effective, project_tree_cut_shortcut_id()),
+        "paste": configured_tree_shortcut(effective, project_tree_paste_shortcut_id()),
+    }
+
+
+def _tree_menu_icons(tokens: ShellThemeTokens) -> dict[str, QIcon]:
+    primary = tokens.icon_primary or tokens.text_primary
+    muted = tokens.icon_muted or primary
+    danger = tokens.diag_error_color or primary
+    running = tokens.debug_running_color or primary
+    return {
+        "new_file": new_file_icon(primary, muted),
+        "new_folder": new_folder_icon(primary, muted),
+        "rename": rename_icon(primary),
+        "trash": trash_icon(danger),
+        "duplicate": duplicate_icon(primary),
+        "copy": copy_icon(primary),
+        "cut": cut_icon(primary),
+        "paste": paste_icon(primary),
+        "copy_path": copy_path_icon(muted),
+        "reveal": reveal_icon(muted),
+        "source_root": source_root_icon(primary),
+        "source_root_unmark": source_root_unmark_icon(primary),
+        "history": history_icon(primary),
+        "run": icon_run(color=running),
+        "run_file": icon_run_file(color=running),
+    }
+
+
+def _new_tree_menu(window: Any) -> tuple[QMenu, dict[str, QIcon]]:
+    menu = QMenu(window)
+    set_icon_size = getattr(menu, "setIconSize", None)
+    if callable(set_icon_size):
+        set_icon_size(QSize(_TREE_MENU_ICON_SIZE, _TREE_MENU_ICON_SIZE))
+    return menu, _tree_menu_icons(window.current_theme_tokens())
+
+
+def _add_menu_action(
+    menu: QMenu,
+    icon: QIcon,
+    label: str,
+    *,
+    shortcut: str | None = None,
+    status_tip: str | None = None,
+    enabled: bool = True,
+) -> QAction:
+    action = QAction(icon, label, menu)
+    if shortcut:
+        action.setShortcut(shortcut)
+    if status_tip:
+        action.setStatusTip(status_tip)
+        action.setToolTip(status_tip)
+    action.setEnabled(enabled)
+    menu.addAction(action)
+    return action
 
 
 def show_single_item_tree_context_menu(
@@ -16,21 +111,57 @@ def show_single_item_tree_context_menu(
     assert window._project_tree_widget is not None
     absolute_path, relative_path, is_directory = entry
 
-    menu = QMenu(window)
-    new_file_action = menu.addAction("New File…")
-    new_folder_action = menu.addAction("New Folder…")
+    menu, icons = _new_tree_menu(window)
+    shortcuts = _tree_menu_shortcuts(window)
+    new_file_action = _add_menu_action(menu, icons["new_file"], "New File…")
+    new_folder_action = _add_menu_action(menu, icons["new_folder"], "New Folder…")
     menu.addSeparator()
-    rename_action = menu.addAction("Rename…")
-    delete_action = menu.addAction("Move to Trash")
-    duplicate_action = menu.addAction("Duplicate")
+    rename_action = _add_menu_action(
+        menu,
+        icons["rename"],
+        "Rename…",
+        shortcut=shortcuts["rename"],
+    )
+    delete_action = _add_menu_action(
+        menu,
+        icons["trash"],
+        "Move to Trash",
+        shortcut=shortcuts["delete"],
+        status_tip="Move the selected item to the trash.",
+    )
+    duplicate_action = _add_menu_action(menu, icons["duplicate"], "Duplicate")
     menu.addSeparator()
-    copy_action = menu.addAction("Copy")
-    cut_action = menu.addAction("Cut")
-    paste_action = menu.addAction("Paste")
+    copy_action = _add_menu_action(
+        menu,
+        icons["copy"],
+        "Copy",
+        shortcut=shortcuts["copy"],
+    )
+    cut_action = _add_menu_action(
+        menu,
+        icons["cut"],
+        "Cut",
+        shortcut=shortcuts["cut"],
+    )
+    paste_action = _add_menu_action(
+        menu,
+        icons["paste"],
+        "Paste",
+        shortcut=shortcuts["paste"],
+    )
     menu.addSeparator()
-    copy_path_action = menu.addAction("Copy Path")
-    copy_relative_path_action = menu.addAction("Copy Relative Path")
-    reveal_action = menu.addAction("Reveal in File Manager")
+    copy_path_action = _add_menu_action(menu, icons["copy_path"], "Copy Path")
+    copy_relative_path_action = _add_menu_action(
+        menu,
+        icons["copy_path"],
+        "Copy Relative Path",
+    )
+    reveal_action = _add_menu_action(
+        menu,
+        icons["reveal"],
+        "Reveal in File Manager",
+        status_tip="Open this item in the system file manager.",
+    )
     mark_source_root_action = None
     unmark_source_root_action = None
     if is_directory and window._loaded_project is not None:
@@ -38,12 +169,27 @@ def show_single_item_tree_context_menu(
         normalized_relative = relative_path.replace("\\", "/").strip("/")
         menu.addSeparator()
         if normalized_relative in configured_roots:
-            unmark_source_root_action = menu.addAction("Unmark Sources Root")
+            unmark_source_root_action = _add_menu_action(
+                menu,
+                icons["source_root_unmark"],
+                "Unmark Sources Root",
+                status_tip="Remove this folder from the project's source roots.",
+            )
         else:
-            mark_source_root_action = menu.addAction("Mark as Sources Root")
+            mark_source_root_action = _add_menu_action(
+                menu,
+                icons["source_root"],
+                "Mark as Sources Root",
+                status_tip="Use this folder as a project source root.",
+            )
     local_history_action = None
     if not is_directory:
-        local_history_action = menu.addAction("Local History...")
+        local_history_action = _add_menu_action(
+            menu,
+            icons["history"],
+            "Local History…",
+            status_tip="Review saved local-history entries for this file.",
+        )
     run_file_action = None
     run_file_with_args_action = None
     set_entry_point_action = None
@@ -53,19 +199,30 @@ def show_single_item_tree_context_menu(
         and Path(absolute_path).suffix.lower() == ".py"
     ):
         menu.addSeparator()
-        run_file_action = menu.addAction("Run")
-        assert run_file_action is not None
         run_is_idle = not window._run_service.supervisor.is_running()
-        run_file_action.setEnabled(run_is_idle)
-        run_file_with_args_action = menu.addAction("Run With Arguments...")
-        assert run_file_with_args_action is not None
-        run_file_with_args_action.setEnabled(run_is_idle)
-        set_entry_point_action = menu.addAction("Set as Entry Point")
-        assert set_entry_point_action is not None
+        run_file_action = _add_menu_action(
+            menu,
+            icons["run"],
+            "Run",
+            status_tip="Run this Python file. Output appears in the Run Log tab.",
+            enabled=run_is_idle,
+        )
+        run_file_with_args_action = _add_menu_action(
+            menu,
+            icons["run_file"],
+            "Run With Arguments…",
+            status_tip="Run this Python file with custom arguments.",
+            enabled=run_is_idle,
+        )
+        set_entry_point_action = _add_menu_action(
+            menu,
+            icons["run"],
+            "Set as Entry Point",
+            status_tip="Use this file as the project's default entry point.",
+        )
         if relative_path == window._loaded_project.metadata.default_entry:
             set_entry_point_action.setEnabled(False)
 
-    assert paste_action is not None
     paste_action.setEnabled(len(window._tree_clipboard_paths) > 0)
     chosen = menu.exec_(window._project_tree_widget.viewport().mapToGlobal(position))
     workflow = window._project_tree_ui_workflow
@@ -118,18 +275,47 @@ def show_bulk_tree_context_menu(
     assert window._project_tree_widget is not None
     abs_paths = [entry[0] for entry in selected]
 
-    menu = QMenu(window)
-    delete_action = menu.addAction(f"Move {len(selected)} Items to Trash")
-    duplicate_action = menu.addAction(f"Duplicate {len(selected)} Items")
+    menu, icons = _new_tree_menu(window)
+    shortcuts = _tree_menu_shortcuts(window)
+    delete_action = _add_menu_action(
+        menu,
+        icons["trash"],
+        f"Move {len(selected)} Items to Trash",
+        shortcut=shortcuts["delete"],
+        status_tip="Move the selected items to the trash.",
+    )
+    duplicate_action = _add_menu_action(
+        menu,
+        icons["duplicate"],
+        f"Duplicate {len(selected)} Items",
+    )
     menu.addSeparator()
-    copy_action = menu.addAction("Copy")
-    cut_action = menu.addAction("Cut")
-    paste_action = menu.addAction("Paste")
+    copy_action = _add_menu_action(
+        menu,
+        icons["copy"],
+        "Copy",
+        shortcut=shortcuts["copy"],
+    )
+    cut_action = _add_menu_action(
+        menu,
+        icons["cut"],
+        "Cut",
+        shortcut=shortcuts["cut"],
+    )
+    paste_action = _add_menu_action(
+        menu,
+        icons["paste"],
+        "Paste",
+        shortcut=shortcuts["paste"],
+    )
     menu.addSeparator()
-    copy_path_action = menu.addAction("Copy Paths")
-    copy_relative_path_action = menu.addAction("Copy Relative Paths")
+    copy_path_action = _add_menu_action(menu, icons["copy_path"], "Copy Paths")
+    copy_relative_path_action = _add_menu_action(
+        menu,
+        icons["copy_path"],
+        "Copy Relative Paths",
+    )
 
-    assert paste_action is not None
     paste_action.setEnabled(len(window._tree_clipboard_paths) > 0)
     chosen = menu.exec_(window._project_tree_widget.viewport().mapToGlobal(position))
     if chosen is None:

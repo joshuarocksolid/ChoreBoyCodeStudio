@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide2.QtWidgets import (
-    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,21 +21,9 @@ from PySide2.QtWidgets import (
 from app.core.models import ProjectMetadata
 from app.packaging.models import (
     PACKAGE_PROFILE_INSTALLABLE,
-    PACKAGE_PROFILE_PORTABLE,
     ProjectPackageConfig,
 )
 from app.shell.file_dialogs import choose_existing_directory, choose_open_file
-
-_PROFILE_DESCRIPTIONS = {
-    PACKAGE_PROFILE_INSTALLABLE: (
-        "Supported default. Exports a standalone installer folder with checksum verification, "
-        "launcher publishing, and upgrade-aware install behavior."
-    ),
-    PACKAGE_PROFILE_PORTABLE: (
-        "Portable launcher profile. Keep the `.desktop` file in the export root beside the packaged files. "
-        "Use installable when you want menu integration or the clearest upgrade path."
-    ),
-}
 
 
 class PackageProjectWizard(QWizard):
@@ -100,12 +87,12 @@ class _PackageProfilePage(QWizardPage):
         self._project_root = project_root
         self._project_metadata = project_metadata
         self._initial_config = initial_config
-        self.setTitle("Choose Packaging Profile")
-        self.setSubTitle("Select the export style and destination folder.")
+        self.setTitle("Choose Package Destination")
+        self.setSubTitle("Select where the installable export should be written.")
 
         outer = QVBoxLayout(self)
         intro = QLabel(
-            "Package Project now exports manifest-driven artifacts. Validation and dependency audit "
+            "Package Project exports installable, manifest-driven artifacts. Validation and dependency audit "
             "run after you finish the wizard."
         )
         intro.setWordWrap(True)
@@ -113,12 +100,6 @@ class _PackageProfilePage(QWizardPage):
 
         form_group = QGroupBox("Export Setup", self)
         form = QFormLayout(form_group)
-        self._profile_combo = QComboBox(form_group)
-        self._profile_combo.addItem("Installable", PACKAGE_PROFILE_INSTALLABLE)
-        self._profile_combo.addItem("Portable", PACKAGE_PROFILE_PORTABLE)
-        self._profile_combo.currentIndexChanged.connect(self._refresh_profile_description)
-        form.addRow("Profile", self._profile_combo)
-
         output_row = QHBoxLayout()
         self._output_line = QLineEdit(str(Path.home()))
         browse_button = QPushButton("Browse...", form_group)
@@ -130,12 +111,15 @@ class _PackageProfilePage(QWizardPage):
 
         self._profile_description = QLabel(self)
         self._profile_description.setWordWrap(True)
+        self._profile_description.setText(
+            "Installable exports include a checksum-verified installer, Desktop shortcut publishing, "
+            "and upgrade-aware install behavior."
+        )
         outer.addWidget(self._profile_description)
         outer.addStretch()
-        self._refresh_profile_description()
 
     def selected_profile(self) -> str:
-        return str(self._profile_combo.currentData())
+        return PACKAGE_PROFILE_INSTALLABLE
 
     def output_dir(self) -> str:
         return self._output_line.text().strip()
@@ -150,11 +134,6 @@ class _PackageProfilePage(QWizardPage):
         selected = choose_existing_directory(self, "Choose Package Output Folder", self.output_dir() or str(Path.home()))
         if selected:
             self._output_line.setText(selected)
-
-    def _refresh_profile_description(self) -> None:
-        profile = self.selected_profile()
-        self._profile_description.setText(_PROFILE_DESCRIPTIONS.get(profile, ""))
-
 
 class _PackageMetadataPage(QWizardPage):
     def __init__(

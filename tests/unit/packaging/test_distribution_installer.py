@@ -94,6 +94,7 @@ def _make_product_repo(root: Path) -> Path:
     (root / "example_projects" / "demo.py").write_text("print('demo')\n", encoding="utf-8")
     (root / "packaging").mkdir(parents=True, exist_ok=True)
     (root / "packaging" / "install.py").write_text("print('install')\n", encoding="utf-8")
+    (root / "packaging" / "bootstrap.py").write_text("print('bootstrap')\n", encoding="utf-8")
     for file_name in product_package.INCLUDE_FILES:
         (root / file_name).parent.mkdir(parents=True, exist_ok=True)
         (root / file_name).write_text(f"{file_name}\n", encoding="utf-8")
@@ -119,12 +120,12 @@ def test_distribution_installer_desktop_entry_resolves_package_root_from_desktop
     )
 
     assert "installer" in desktop_entry
-    assert "install.py" in desktop_entry
+    assert "bootstrap.py" in desktop_entry
     assert "/opt/freecad/AppRun" in desktop_entry
-    assert "/bin/sh" in desktop_entry
-    assert "dummy %k" in desktop_entry
+    assert "Path=/home/default/choreboy_code_studio_installer_v0.2" in desktop_entry
+    assert "/bin/sh" not in desktop_entry
+    assert "%k" not in desktop_entry
     assert "CBCS_PACKAGE_ROOT" in desktop_entry
-    assert "/home/default/choreboy_code_studio_installer_v0.2" not in desktop_entry
 
 
 def test_distribution_archive_budget_is_15_mb() -> None:
@@ -294,6 +295,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
         archive_names = set(archive.namelist())
     package_root = result.staging_dir.name
     assert f"{package_root}/package_manifest.json" in archive_names
+    assert f"{package_root}/installer/bootstrap.py" in archive_names
     assert f"{package_root}/installer/launcher_bootstrap.py" in archive_names
     assert f"{package_root}/payload/run_editor.py" in archive_names
     assert all(".hidden_cache" not in name for name in archive_names)
@@ -359,6 +361,35 @@ def test_installed_project_desktop_entry_runs_from_app_files_root() -> None:
     assert "entry_rel='app_files/app/main.py'" in desktop_entry
     assert "os.path.join(root, 'app_files')" in desktop_entry
     assert "os.chdir(runtime_root)" in desktop_entry
+
+
+def test_package_root_prefers_desktop_launcher_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer_env_root", "packaging/install.py")
+    package_root = tmp_path / "package_root"
+    package_root.mkdir()
+    monkeypatch.setenv(installer_module.CBCS_PACKAGE_ROOT_ENV, str(package_root))
+
+    assert installer_module._package_root() == package_root.resolve()
+
+
+def test_publish_launcher_copy_returns_warning_on_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installer_module = _load_module("distribution_installer_publish", "packaging/install.py")
+    launcher_path = tmp_path / "app.desktop"
+    launcher_path.write_text("[Desktop Entry]\n", encoding="utf-8")
+
+    def _raise_permission(*_args, **_kwargs):
+        raise PermissionError("menu denied")
+
+    monkeypatch.setattr(installer_module.shutil, "copy2", _raise_permission)
+
+    result = installer_module.publish_launcher_copy(launcher_path, tmp_path / "applications")
+
+    assert result.ok is False
+    assert "PermissionError" in result.error
+    assert result.path.endswith("applications/app.desktop")
 
 
 def test_build_staging_location_warning_requires_home_default_staging() -> None:

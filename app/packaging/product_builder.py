@@ -135,7 +135,7 @@ def build_installer_desktop_entry(staging_path: str, *, version: str | None = No
     )
     return build_installer_package_launcher(
         manifest=manifest,
-        package_root_name=Path(staging_path).name,
+        package_root=staging_path,
     )
 
 
@@ -275,7 +275,7 @@ def build_product_artifact(
     written = write_installable_artifact_tree(
         artifact_root=staging,
         manifest=manifest,
-        package_root_name=package_name,
+        package_root=Path(staging_parent) / package_name,
         copy_payload=_copy_product_payload,
         report_payload={},
         checksum_skip_relative_paths=(

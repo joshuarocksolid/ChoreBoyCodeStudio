@@ -6,14 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from app.core import constants
-from app.packaging.desktop_builder import build_portable_launcher
-from app.packaging.installer_manifest import create_distribution_manifest
-from app.packaging.models import (
-    LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
-    PACKAGE_KIND_PROJECT,
-    PACKAGE_PROFILE_PORTABLE,
-)
 from app.packaging.packager import (
     PackageResult,
     _paths_overlap,
@@ -33,44 +25,11 @@ def _make_project(path: Path) -> Path:
     return path
 
 
-def _build_portable_desktop_entry(project_name: str, entry_file: str, install_dir: str) -> str:
-    manifest = create_distribution_manifest(
-        package_kind=PACKAGE_KIND_PROJECT,
-        profile=PACKAGE_PROFILE_PORTABLE,
-        package_id=sanitize_project_name(project_name),
-        display_name=project_name,
-        version="0.1.0",
-        description="",
-        entry_relative_path=Path(install_dir, entry_file).as_posix(),
-        launcher_mode=LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
-        app_run_path=constants.APP_RUN_PATH,
-    )
-    return build_portable_launcher(manifest)
-
-
 def test_sanitize_project_name_normalizes_expected_cases() -> None:
     assert sanitize_project_name("My Cool App") == "my_cool_app"
     assert sanitize_project_name("app@v2!#test") == "app_v2_test"
     assert sanitize_project_name("my-app_v2") == "my-app_v2"
     assert sanitize_project_name("!!!") == "project"
-
-
-def test_portable_launcher_uses_shell_wrapper_with_percent_k_argument() -> None:
-    content = _build_portable_desktop_entry("Cool Tool", "main.py", "app_files")
-
-    assert "[Desktop Entry]" in content
-    assert "Name=Cool Tool" in content
-    assert "/opt/freecad/AppRun" in content
-    assert "%k" in content
-    assert '" dummy %k' in content
-    assert "/bin/sh -c" in content
-    assert 'entry_rel=\\"app_files/main.py\\"' in content
-    assert "entry=os.path.abspath(os.path.join(root, entry_rel))" in content
-
-
-def test_portable_launcher_rejects_unsafe_entry_relative_path() -> None:
-    with pytest.raises(ValueError, match="entry_relative_path"):
-        _build_portable_desktop_entry("Unsafe Tool", "../main.py", "app_files")
 
 
 def test_package_project_builds_installable_artifact_by_default(tmp_path: Path) -> None:
@@ -91,6 +50,7 @@ def test_package_project_builds_installable_artifact_by_default(tmp_path: Path) 
     assert (artifact_root / "package_report.json").is_file()
     assert (artifact_root / "README.txt").is_file()
     assert (artifact_root / "INSTALL.txt").is_file()
+    assert (artifact_root / "installer" / "bootstrap.py").is_file()
     assert (artifact_root / "installer" / "install.py").is_file()
     assert (artifact_root / "installer" / "launcher_bootstrap.py").is_file()
     assert (artifact_root / "payload" / "app_files" / "main.py").is_file()
@@ -112,7 +72,7 @@ def test_package_project_writes_project_package_config_on_export(tmp_path: Path)
     assert (project / "cbcs" / "package.json").is_file()
 
 
-def test_package_project_portable_profile_uses_root_launcher_and_app_files(tmp_path: Path) -> None:
+def test_package_project_rejects_portable_profile(tmp_path: Path) -> None:
     project = _make_project(tmp_path / "project")
 
     result = package_project(
@@ -123,14 +83,9 @@ def test_package_project_portable_profile_uses_root_launcher_and_app_files(tmp_p
         profile="portable",
     )
 
-    assert result.success is True
-    artifact_root = Path(result.artifact_root)
-    launcher_path = artifact_root / "portable_tool.desktop"
-    assert launcher_path.is_file()
-    assert (artifact_root / "app_files" / "main.py").is_file()
-    content = launcher_path.read_text(encoding="utf-8")
-    assert "%k" in content
-    assert "payload/" not in content
+    assert result.success is False
+    assert result.error == "Unsupported package profile: portable. Use installable."
+    assert any(issue.issue_id == "package.profile.unsupported" for issue in result.validation.issue_report.issues)
 
 
 def test_package_project_excludes_hidden_cache_and_log_content(tmp_path: Path) -> None:

@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.packaging.models import PACKAGE_PROFILE_INSTALLABLE, PACKAGE_PROFILE_PORTABLE
-
 _EXCLUDED_RELATIVE_PREFIXES = (
     "cbcs/runs",
     "cbcs/logs",
@@ -47,14 +45,29 @@ def build_artifact_root_name(display_name: str, version: str, profile: str) -> s
     """Return the export folder name for one profile."""
     safe_name = sanitize_project_name(display_name)
     safe_version = version.strip() or "dev"
-    if profile == PACKAGE_PROFILE_PORTABLE:
-        return f"{safe_name}_portable_v{safe_version}"
     return f"{safe_name}_installer_v{safe_version}"
 
 
 def build_installer_launcher_filename(display_name: str) -> str:
     """Return the launcher used to start the installer package itself."""
     return f"install_{sanitize_project_name(display_name)}.desktop"
+
+
+def rewrite_installer_desktop_path(launcher_path: Path, package_root: str | Path) -> None:
+    """Rewrite the Path= key in an installer launcher to match *package_root*."""
+    resolved_package_root = str(Path(package_root).expanduser().resolve())
+    lines = launcher_path.read_text(encoding="utf-8").splitlines()
+    rewritten: list[str] = []
+    path_written = False
+    for line in lines:
+        if line.startswith("Path="):
+            rewritten.append(f"Path={resolved_package_root}")
+            path_written = True
+            continue
+        rewritten.append(line)
+    if not path_written:
+        rewritten.append(f"Path={resolved_package_root}")
+    launcher_path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
 
 
 def paths_overlap(a: Path, b: Path) -> bool:

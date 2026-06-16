@@ -2493,40 +2493,41 @@ Verify that installable packages have a clear, supportable install/upgrade story
 **Steps:**  
 
 1. Copy the installable package to `/home/default/`.
-2. Run the installer launcher and install the package.
-3. Re-run a newer version of the same package and choose a side-by-side or replacement-style install.
-4. Review launcher publishing and older-version cleanup behavior.
+2. Inspect the installer `.desktop` and confirm `Path=` points at the copied package folder.
+3. Double-click the installer launcher and install the package.
+4. Re-run a newer version of the same package and choose a side-by-side or replacement-style install.
+5. Review launcher publishing and older-version cleanup behavior.
 
 **Expected Result:**  
 
 - the installer verifies package contents before copying files
+- the installer launcher uses `Path=` + direct AppRun, not `/bin/sh` or `%k`
 - the installed launcher hardcodes the final install directory
-- the installer can publish an application-menu launcher and optional Desktop shortcut
+- the installer can publish a Desktop shortcut
+- application-menu publishing is best-effort; permission failures are reported as warnings without failing installation
 - later installs can detect older versions of the same package and offer cleanup without relying on hidden app-owned metadata
 
 ---
 
-## AT-83 — Portable packaging stays explicit and AppRun-compatible
+## AT-83 — Retired portable packaging profile
 
 **Purpose:**  
-Verify that portable packaging remains available only with a clear, explicit launcher contract.
+Record that the old portable packaging profile is intentionally unsupported.
 
 **Preconditions:**  
 
-- portable profile is implemented
-- a valid project is available
+- packaging wizard is implemented
 
 **Steps:**  
 
-1. Export a project using the `portable` profile.
-2. Inspect the generated launcher and packaged files.
-3. Launch the portable package on the real AppRun runtime while keeping the `.desktop` file beside the export contents.
+1. Open `Run > Package Project...`.
+2. Review the export profile choices.
 
 **Expected Result:**  
 
-- the portable launcher uses a spec-compliant shell wrapper to hand package-root context into AppRun
-- the launcher resolves package root from the desktop-file location rather than a hardcoded install path
-- docs and UI clearly explain that portable mode requires the launcher to stay with the package contents
+- only the installable packaging flow is offered
+- no portable `.desktop` launcher is generated
+- programmatic portable export requests fail with a clear unsupported-profile error
 
 ---
 

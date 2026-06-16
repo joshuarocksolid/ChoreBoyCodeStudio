@@ -11,6 +11,7 @@ from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
     resolve_runtime_executable,
+    sanitize_apprun_child_env,
 )
 
 pytestmark = pytest.mark.unit
@@ -34,6 +35,23 @@ def test_build_runpy_bootstrap_payload_includes_path_and_argv() -> None:
     assert "sys.path.insert(0" in payload
     assert "sys.argv=['run_runner.py', '--manifest', '/tmp/manifest.json']" in payload
     assert "runpy.run_path('/workspace/run_runner.py'" in payload
+
+
+def test_sanitize_apprun_child_env_drops_virtualenv_activation() -> None:
+    env = {
+        "PATH": "/usr/bin",
+        "VIRTUAL_ENV": "/tmp/stale-venv",
+        "VIRTUAL_ENV_PROMPT": "(.venv-editor) ",
+        "CBCS_APPRUN": "/opt/freecad/AppRun",
+    }
+
+    sanitized = sanitize_apprun_child_env(env)
+
+    assert sanitized == {
+        "PATH": "/usr/bin",
+        "CBCS_APPRUN": "/opt/freecad/AppRun",
+    }
+    assert env["VIRTUAL_ENV"] == "/tmp/stale-venv"
 
 
 def test_resolve_runtime_executable_prefers_explicit_override(tmp_path: Path) -> None:

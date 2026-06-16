@@ -9,6 +9,11 @@ from app.core import constants
 
 _SHORTCUT_ID_CLOSE_TAB = "shell.shortcut.closeTab"
 _SHORTCUT_ID_KEEP_PREVIEW_OPEN = "shell.shortcut.keepPreviewOpen"
+_SHORTCUT_ID_PROJECT_TREE_RENAME = "shell.shortcut.projectTree.rename"
+_SHORTCUT_ID_PROJECT_TREE_COPY = "shell.shortcut.projectTree.copy"
+_SHORTCUT_ID_PROJECT_TREE_CUT = "shell.shortcut.projectTree.cut"
+_SHORTCUT_ID_PROJECT_TREE_PASTE = "shell.shortcut.projectTree.paste"
+_SHORTCUT_ID_PROJECT_TREE_DELETE = "shell.shortcut.projectTree.delete"
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,11 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.view.markdownShowSource", "Markdown: Show Source", "", "View"),
     ShortcutCommand("shell.action.view.markdownShowPreview", "Markdown: Show Preview", "", "View"),
     ShortcutCommand("shell.action.view.markdownShowSplit", "Markdown: Show Split View", "Ctrl+K, V", "View"),
+    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_RENAME, "Rename Project Item", "F2", "Explorer"),
+    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_COPY, "Copy Project Item", "Ctrl+C", "Explorer"),
+    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_CUT, "Cut Project Item", "Ctrl+X", "Explorer"),
+    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_PASTE, "Paste Project Item", "Ctrl+V", "Explorer"),
+    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_DELETE, "Move Project Item to Trash", "Delete", "Explorer"),
     ShortcutCommand(_SHORTCUT_ID_CLOSE_TAB, "Close Tab", "Ctrl+W", "Editor"),
     ShortcutCommand(_SHORTCUT_ID_KEEP_PREVIEW_OPEN, "Keep Preview Tab Open", "Ctrl+K, Enter", "Editor"),
 )
@@ -94,6 +104,26 @@ def close_tab_shortcut_id() -> str:
 def keep_preview_open_shortcut_id() -> str:
     """Return synthetic action id for keep-preview-open shortcut."""
     return _SHORTCUT_ID_KEEP_PREVIEW_OPEN
+
+
+def project_tree_rename_shortcut_id() -> str:
+    return _SHORTCUT_ID_PROJECT_TREE_RENAME
+
+
+def project_tree_copy_shortcut_id() -> str:
+    return _SHORTCUT_ID_PROJECT_TREE_COPY
+
+
+def project_tree_cut_shortcut_id() -> str:
+    return _SHORTCUT_ID_PROJECT_TREE_CUT
+
+
+def project_tree_paste_shortcut_id() -> str:
+    return _SHORTCUT_ID_PROJECT_TREE_PASTE
+
+
+def project_tree_delete_shortcut_id() -> str:
+    return _SHORTCUT_ID_PROJECT_TREE_DELETE
 
 
 def default_shortcut_map() -> dict[str, str]:

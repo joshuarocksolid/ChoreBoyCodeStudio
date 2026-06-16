@@ -16,7 +16,7 @@ import subprocess
 import sys
 from typing import Mapping, Sequence
 
-from app.run.runtime_launch import build_runpy_bootstrap_payload
+from app.run.runtime_launch import build_runpy_bootstrap_payload, sanitize_apprun_child_env
 
 DEFAULT_DEV_APPRUN_PATH = Path("/opt/freecad/AppRun")
 DEFAULT_EDITOR_BOOT_FILENAME = "run_editor.py"
@@ -148,6 +148,7 @@ def probe_apprun_soabi(app_run_path: Path, timeout: float = APPRUN_SOABI_PROBE_T
             text=True,
             check=False,
             timeout=timeout,
+            env=sanitize_apprun_child_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -263,6 +264,7 @@ def run_treesitter_probe(app_run_path: Path, repo_root: Path) -> int:
             check=False,
             capture_output=True,
             text=True,
+            env=sanitize_apprun_child_env(),
         )
     except OSError as exc:
         _eprint(f"Failed to run tree-sitter probe: {exc}")
@@ -362,10 +364,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.foreground:
-            completed = subprocess.run(command, cwd=str(repo_root), check=False)
+            completed = subprocess.run(
+                command,
+                cwd=str(repo_root),
+                check=False,
+                env=sanitize_apprun_child_env(),
+            )
             return int(completed.returncode)
 
-        process = subprocess.Popen(command, cwd=str(repo_root), start_new_session=True)
+        process = subprocess.Popen(
+            command,
+            cwd=str(repo_root),
+            env=sanitize_apprun_child_env(),
+            start_new_session=True,
+        )
     except OSError as exc:
         _eprint(f"Failed to launch FreeCAD runtime: {exc}")
         return 1

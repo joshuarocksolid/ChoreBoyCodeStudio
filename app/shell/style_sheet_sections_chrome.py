@@ -122,7 +122,7 @@ QMenu {{
     font-size: 12px;
 }}
 QMenu::item {{
-    padding: 6px 32px 6px 12px;
+    padding: 6px 32px 6px 28px;
     border-radius: 4px;
     margin: 1px 4px;
 }}

@@ -11,6 +11,8 @@ from app.shell.shortcut_preferences import (
     find_shortcut_conflicts,
     keep_preview_open_shortcut_id,
     parse_shortcut_overrides,
+    project_tree_copy_shortcut_id,
+    project_tree_delete_shortcut_id,
 )
 
 pytestmark = pytest.mark.unit
@@ -30,6 +32,8 @@ def test_default_shortcut_map_contains_known_command_ids() -> None:
     assert defaults["shell.action.file.save"] == "Ctrl+S"
     assert defaults[close_tab_shortcut_id()] == "Ctrl+W"
     assert defaults[keep_preview_open_shortcut_id()] == "Ctrl+K, Enter"
+    assert defaults[project_tree_copy_shortcut_id()] == "Ctrl+C"
+    assert defaults[project_tree_delete_shortcut_id()] == "Delete"
 
 
 def test_parse_shortcut_overrides_accepts_known_ids_and_discards_unknowns() -> None:
@@ -75,4 +79,17 @@ def test_no_duplicate_default_shortcuts() -> None:
     conflicts = find_shortcut_conflicts(
         {action_id: shortcut for action_id, shortcut in defaults.items() if shortcut}
     )
-    assert conflicts == {}, f"Duplicate default shortcuts: {conflicts}"
+    allowed_duplicate_sets = {
+        frozenset(
+            {
+                "shell.action.edit.renameSymbol",
+                "shell.shortcut.projectTree.rename",
+            }
+        ),
+    }
+    unexpected = {
+        shortcut: action_ids
+        for shortcut, action_ids in conflicts.items()
+        if frozenset(action_ids) not in allowed_duplicate_sets
+    }
+    assert unexpected == {}, f"Duplicate default shortcuts: {unexpected}"

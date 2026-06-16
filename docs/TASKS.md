@@ -2423,7 +2423,7 @@ story for both Code Studio itself and packaged user projects.
 - Acceptance linkage: `AT-81`, `AT-82`, `AT-83`, `AT-84`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: none
-- Done when: `installable` vs `portable`, `cbcs/package.json`, package manifests, install markers, and ChoreBoy staging/install language are consistent across architecture, backlog, manual, and help sources.
+- Done when: `installable`, `cbcs/package.json`, package manifests, install markers, and ChoreBoy staging/install language are consistent across architecture, backlog, manual, and help sources.
 
 ### O02 — Shared packaging substrate and artifact manifests
 
@@ -2441,7 +2441,7 @@ story for both Code Studio itself and packaged user projects.
   - `app/packaging/packager.py`
 - Automated test layer: `unit`, `integration`
 - Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/test_package_config.py tests/unit/packaging/test_dependency_audit.py tests/unit/packaging/test_packager.py tests/integration/packaging/test_project_packaging_workflow.py`
-- Acceptance linkage: `AT-81`, `AT-82`, `AT-83`
+- Acceptance linkage: `AT-81`, `AT-82`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O01`
 - Done when: project packaging emits shared manifests/reports/docs and product/project packaging stop inventing separate launcher/metadata shapes.
@@ -2458,7 +2458,7 @@ story for both Code Studio itself and packaged user projects.
   - `tests/unit/packaging/test_dependency_audit.py`
 - Automated test layer: `unit`
 - Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/support/test_preflight.py tests/unit/packaging/test_dependency_audit.py`
-- Acceptance linkage: `AT-81`, `AT-83`
+- Acceptance linkage: `AT-81`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O01`, `O02`
 - Done when: package metadata, output overlap, entry-file validity, hidden/excluded paths, native-extension risk, and direct subprocess assumptions are surfaced before confusing export failures.
@@ -2480,22 +2480,22 @@ story for both Code Studio itself and packaged user projects.
 - Acceptance linkage: `AT-81`, `AT-84`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O02`, `O03`
-- Done when: users can choose a profile, review package metadata, export an installable artifact by default, and inspect the generated manifest/report/docs afterward.
+- Done when: users can review package metadata, export an installable artifact, and inspect the generated manifest/report/docs afterward.
 
 ### O05 — Portable profile runtime gate
 
-- Status: `DONE`
-- Objective: keep portable packaging explicit, tested, and separate from the installer-grade contract.
+- Status: `SUPERSEDED`
+- Objective: retired. Real ChoreBoy desktop probes showed the `%k` / shell-wrapper portable launcher contract does not launch reliably.
 - Primary files:
   - `app/packaging/desktop_builder.py`
   - `app/packaging/validator.py`
   - `tests/runtime_parity/packaging/test_launcher_profiles_runtime.py`
 - Automated test layer: `runtime_parity`, `unit`
 - Validation method: `python3 run_tests.py -v --import-mode=importlib tests/runtime_parity/packaging/test_launcher_profiles_runtime.py tests/unit/packaging/test_packager.py`
-- Acceptance linkage: `AT-83`, `AT-84`
+- Acceptance linkage: none; `AT-83` is retired.
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O02`, `O03`
-- Done when: portable launchers use `%k` as a separate desktop-file argument, their bootstrap logic has AppRun runtime-parity coverage, and UX/docs make the profile trade-offs explicit.
+- Done when: superseded by `O08`; Code Studio no longer generates portable package artifacts.
 
 ### O06 — Product packaging convergence on the shared installer contract
 
@@ -2526,10 +2526,33 @@ story for both Code Studio itself and packaged user projects.
   - `tests/runtime_parity/packaging/`
 - Automated test layer: `unit`, `integration`, `runtime_parity`, `manual_acceptance`
 - Validation method: `python3 run_tests.py -v --import-mode=importlib tests/unit/packaging/ tests/integration/packaging/ tests/runtime_parity/packaging/`
-- Acceptance linkage: `AT-81`, `AT-82`, `AT-83`, `AT-84`
+- Acceptance linkage: `AT-81`, `AT-82`, `AT-84`
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `O02`, `O03`, `O04`, `O05`, `O06`
 - Done when: packaging/distribution is a first-class validated phase with explicit unit, integration, runtime-parity, and manual acceptance coverage.
+
+### O08 — Path-keyed installer launcher cutover
+
+- Status: `DONE`
+- Objective: replace `%k` / `/bin/sh` installer launchers with the ChoreBoy-validated `Path=` + direct AppRun + `CBCS_PACKAGE_ROOT` bootstrap contract.
+- Primary files:
+  - `packaging/bootstrap.py`
+  - `packaging/install.py`
+  - `app/packaging/desktop_builder.py`
+  - `app/packaging/launcher_bootstrap.py`
+  - `app/packaging/artifact_builder.py`
+  - `app/packaging/product_builder.py`
+  - `docs/PACKAGING.md`
+  - `docs/DISCOVERY.md`
+  - `tests/unit/packaging/`
+  - `tests/integration/packaging/`
+  - `tests/runtime_parity/packaging/`
+- Automated test layer: `unit`, `integration`, `runtime_parity`
+- Validation method: `python3 run_tests.py tests/unit/packaging/ tests/integration/packaging/test_project_packaging_workflow.py tests/runtime_parity/packaging/test_launcher_profiles_runtime.py`
+- Acceptance linkage: `AT-81`, `AT-82`
+- Release class: `RELEASE-CRITICAL`
+- Depends on: `O06`, `desktop_installer_launch_probe`
+- Done when: installer `.desktop` files emit `Path=<package root>`, launch direct AppRun without `/bin/sh` or `%k`, copy `installer/bootstrap.py`, record diagnostics, keep installed launchers fixed-root, and treat application-menu publish failures as warnings.
 
 ---
 

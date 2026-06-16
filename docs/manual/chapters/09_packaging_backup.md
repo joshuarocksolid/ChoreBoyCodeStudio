@@ -15,17 +15,12 @@ The supported default profile is `installable`.
 An installable export contains:
 
 - an installer `.desktop` launcher
+- `installer/bootstrap.py`
 - `installer/install.py`
 - `installer/launcher_bootstrap.py`
 - `payload/app_files/` with your packaged project source
 - `package_manifest.json` and `package_report.json`
 - generated `README.txt` and `INSTALL.txt`
-
-Portable export is also available, but it has a stricter contract:
-
-- keep the portable `.desktop` file in the same folder as the packaged files
-- use installable packaging when you want the clearest install/upgrade path
-- use installable packaging when you want menu/Desktop launcher publishing
 
 ![Figure 13 — Package Project button in the main window](../screenshots/manual_13_package_project.png)
 
@@ -115,23 +110,18 @@ Common blockers:
 3. Right-click the installer `.desktop` and allow launching if ChoreBoy asks.
 4. Run the installer.
 5. Choose the final install folder.
-6. Let the installer publish the application-menu launcher and optional Desktop shortcut.
+6. Let the installer publish the Desktop shortcut and, when available, the application-menu launcher.
 7. If you later move the installed folder, rerun the installer so the launcher points at the new location.
 
-The installer launcher resolves the package folder from its own `.desktop` path,
-so renaming the exported folder is allowed as long as the folder stays together.
+The installer launcher uses its `.desktop` `Path=` value as the package root.
+If you move or rename the exported folder after packaging, regenerate the package
+or update `Path=` in the installer `.desktop` file before launching it.
 The installer performs a staged copy before switching the final install directory,
 and it can optionally remove older installed versions after a successful upgrade.
 
 For project packages, the installed launcher runs the app from the installed
 `app_files/` folder. This keeps project-relative imports and resource files
 working the same way they did inside Code Studio.
-
-## Portable package workflow on ChoreBoy
-
-1. Keep the portable `.desktop` file in the root of the exported folder.
-2. Keep the whole export folder together when copying it to USB or another machine.
-3. If the target desktop does not launch the portable package reliably, export again using the installable profile.
 
 ## What gets left out
 

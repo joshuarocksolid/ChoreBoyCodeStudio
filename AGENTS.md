@@ -210,7 +210,7 @@ pip3 install pytest-timeout --target=/opt/freecad/usr/lib/python3.11/site-packag
 ### Key caveats
 
 - **No `.venv`**: do not create a virtualenv. Everything runs through `/opt/freecad/AppRun`.
-- `.venv-editor` may exist as legacy editor tooling scaffolding, but it is not a real Python environment and nothing should be run from it.
+- `.venv-editor` may exist as editor tooling scaffolding for pyright; recreate it with `./scripts/setup_venv_editor.sh`, but do not run the app or tests from it.
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
 - **Slow integration tests:** subprocess + debug-session integration tests are tagged `@pytest.mark.slow` and excluded from `python3 testing/run_test_shard.py fast`. They still run under the `integration` shard pre-PR, with per-test `pytest.mark.timeout(180)` overrides instead of the new global 30 s default.

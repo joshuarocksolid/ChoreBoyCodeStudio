@@ -45,29 +45,12 @@ def test_installable_project_packaging_writes_manifest_report_and_payload(tmp_pa
     assert manifest_payload["launcher_filename"] == "integration_project.desktop"
     assert (artifact_root / "payload" / "app_files" / "main.py").is_file()
     assert (artifact_root / "payload" / "app_files" / "cbcs" / "package.json").is_file()
+    assert (artifact_root / "installer" / "bootstrap.py").is_file()
     assert (artifact_root / "installer" / "install.py").is_file()
+    installer_launcher = artifact_root / "install_integration_project.desktop"
+    launcher_content = installer_launcher.read_text(encoding="utf-8")
+    assert f"Path={artifact_root.resolve()}" in launcher_content
+    assert "bootstrap.py" in launcher_content
+    assert "%k" not in launcher_content
     assert report_payload["success"] is True
     assert report_payload["validation"]["preflight"]["summary"] == "Packaging can continue, but there are warnings to review."
-
-
-def test_portable_project_packaging_writes_portable_launcher_artifact(tmp_path: Path) -> None:
-    project = _make_project(tmp_path / "project")
-
-    result = package_project(
-        project_root=str(project),
-        project_name="Portable Integration Project",
-        entry_file="main.py",
-        output_dir=str(tmp_path / "exports"),
-        profile="portable",
-    )
-
-    assert result.success is True
-    artifact_root = Path(result.artifact_root)
-    manifest_payload = json.loads((artifact_root / "package_manifest.json").read_text(encoding="utf-8"))
-    launcher_path = artifact_root / "portable_integration_project.desktop"
-
-    assert manifest_payload["profile"] == "portable"
-    assert manifest_payload["entry_relative_path"] == "app_files/main.py"
-    assert launcher_path.is_file()
-    assert "%k" in launcher_path.read_text(encoding="utf-8")
-    assert (artifact_root / "app_files" / "main.py").is_file()

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
+from typing import Mapping
 
 from app.core import constants
 
+_APPRUN_ENV_KEYS_TO_DROP = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 _FREECAD_EXECUTABLE_NAMES = {"AppRun", "freecad", "FreeCAD"}
 
 
@@ -22,6 +25,14 @@ def resolve_runtime_executable(runtime_executable: str | None) -> str:
     if default_runtime.exists():
         return str(default_runtime.resolve())
     return sys.executable
+
+
+def sanitize_apprun_child_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return an AppRun child environment without parent virtualenv activation."""
+    resolved = dict(os.environ if env is None else env)
+    for key in _APPRUN_ENV_KEYS_TO_DROP:
+        resolved.pop(key, None)
+    return resolved
 
 
 def build_runpy_bootstrap_payload(

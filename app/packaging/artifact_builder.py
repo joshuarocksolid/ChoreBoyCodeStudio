@@ -15,9 +15,6 @@ from app.packaging.desktop_builder import (
     build_installable_install_text,
     build_installable_readme_text,
     build_installer_package_launcher,
-    build_portable_install_text,
-    build_portable_launcher,
-    build_portable_readme_text,
 )
 from app.packaging.installer_manifest import (
     apply_checksums_to_manifest,
@@ -34,12 +31,10 @@ from app.packaging.layout import (
 from app.packaging.models import (
     DistributionManifest,
     LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
-    LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT,
     PACKAGE_APP_FILES_DIRNAME,
     PACKAGE_ARTIFACT_MANIFEST_FILENAME,
     PACKAGE_ARTIFACT_REPORT_FILENAME,
     PACKAGE_KIND_PROJECT,
-    PACKAGE_PROFILE_INSTALLABLE,
     PackageExportResult,
     PackageValidationReport,
     ProjectPackageConfig,
@@ -68,7 +63,7 @@ def build_project_package_artifact(
     profile: str,
     known_runtime_modules: frozenset[str] | None = None,
 ) -> PackageExportResult:
-    """Build an installable or portable project package artifact."""
+    """Build an installable project package artifact."""
     validation = build_package_validation_report(
         project_root=project_root,
         package_config=package_config,
@@ -161,7 +156,7 @@ def write_installable_artifact_tree(
     *,
     artifact_root: Path,
     manifest: DistributionManifest,
-    package_root_name: str,
+    package_root: str | Path,
     copy_payload: Callable[[Path], None],
     report_payload: Mapping[str, Any],
     checksum_skip_relative_paths: tuple[str, ...] = (PACKAGE_ARTIFACT_MANIFEST_FILENAME,),
@@ -178,6 +173,7 @@ def write_installable_artifact_tree(
     ensure_directory(installer_root)
     effective_installer_source = installer_source or resolve_app_root() / "packaging" / "install.py"
     shutil.copy2(effective_installer_source, installer_root / "install.py")
+    shutil.copy2(resolve_app_root() / "packaging" / "bootstrap.py", installer_root / "bootstrap.py")
     shutil.copy2(
         resolve_app_root() / "app" / "packaging" / "launcher_bootstrap.py",
         installer_root / "launcher_bootstrap.py",
@@ -188,7 +184,7 @@ def write_installable_artifact_tree(
     launcher_path.write_text(
         build_installer_package_launcher(
             manifest=manifest,
-            package_root_name=package_root_name,
+            package_root=package_root,
             icon_value=installer_icon_value,
         ),
         encoding="utf-8",
@@ -267,11 +263,7 @@ def _write_project_artifact(
             if icon_relative_path
             else ""
         ),
-        launcher_mode=(
-            LAUNCHER_MODE_PORTABLE_DESKTOP_ARGUMENT
-            if profile != PACKAGE_PROFILE_INSTALLABLE
-            else LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT
-        ),
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
         default_install_base="/home/default",
         default_install_dirname="",
         staging_parent="/home/default",
@@ -280,77 +272,26 @@ def _write_project_artifact(
         write_desktop_shortcut=True,
     )
 
-    if profile == PACKAGE_PROFILE_INSTALLABLE:
-        installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
-        readme_path = artifact_root / manifest.readme_filename
-        install_notes_path = artifact_root / manifest.install_notes_filename
-        report_path = artifact_root / PACKAGE_ARTIFACT_REPORT_FILENAME
-        launcher_path = artifact_root / installer_launcher_filename
-        manifest_path = artifact_root / PACKAGE_ARTIFACT_MANIFEST_FILENAME
-
-        installer_icon_value = ""
-        if manifest.icon_relative_path and icon_relative_path:
-            source_icon = project_root / icon_relative_path
-            if source_icon.is_file():
-                installer_icon_value = str(
-                    Path(manifest.staging_parent)
-                    / artifact_root.name
-                    / manifest.payload_dirname
-                    / manifest.icon_relative_path
-                )
-
-        def _copy_payload(payload_root: Path) -> None:
-            app_files_root = payload_root / PACKAGE_APP_FILES_DIRNAME
-            ensure_directory(app_files_root)
-            _copy_project_tree(project_root, app_files_root)
-
-        report_payload = {
-            **PackageExportResult(
-                profile=profile,
-                success=True,
-                artifact_root=str(artifact_root),
-                manifest_path=str(manifest_path),
-                report_path=str(report_path),
-                readme_path=str(readme_path),
-                install_notes_path=str(install_notes_path),
-                launcher_path=str(launcher_path),
-                validation=validation,
-            ).to_dict(),
-            "package_config": package_config.to_dict(),
-            "project_metadata": project_metadata.to_dict(),
-        }
-        written = write_installable_artifact_tree(
-            artifact_root=artifact_root,
-            manifest=manifest,
-            package_root_name=artifact_root.name,
-            copy_payload=_copy_payload,
-            report_payload=report_payload,
-            installer_icon_value=installer_icon_value,
-        )
-        return PackageExportResult(
-            profile=profile,
-            success=True,
-            artifact_root=str(artifact_root),
-            manifest_path=str(written.manifest_path),
-            report_path=str(written.report_path),
-            readme_path=str(written.readme_path),
-            install_notes_path=str(written.install_notes_path),
-            launcher_path=str(written.launcher_path),
-            validation=validation,
-            error=None,
-        )
-
+    installer_launcher_filename = build_installer_launcher_filename(manifest.display_name)
     readme_path = artifact_root / manifest.readme_filename
     install_notes_path = artifact_root / manifest.install_notes_filename
-    app_files_root = artifact_root / PACKAGE_APP_FILES_DIRNAME
-    ensure_directory(app_files_root)
-    _copy_project_tree(project_root, app_files_root)
-    launcher_path = artifact_root / manifest.launcher_filename
-    launcher_path.write_text(build_portable_launcher(manifest), encoding="utf-8")
-    readme_path.write_text(build_portable_readme_text(manifest), encoding="utf-8")
-    install_notes_path.write_text(build_portable_install_text(manifest), encoding="utf-8")
     report_path = artifact_root / PACKAGE_ARTIFACT_REPORT_FILENAME
+    launcher_path = artifact_root / installer_launcher_filename
     manifest_path = artifact_root / PACKAGE_ARTIFACT_MANIFEST_FILENAME
+
+    installer_icon_value = ""
+    if manifest.icon_relative_path and icon_relative_path:
+        source_icon = project_root / icon_relative_path
+        if source_icon.is_file():
+            installer_icon_value = str(
+                artifact_root.resolve() / manifest.payload_dirname / manifest.icon_relative_path
+            )
+
+    def _copy_payload(payload_root: Path) -> None:
+        app_files_root = payload_root / PACKAGE_APP_FILES_DIRNAME
+        ensure_directory(app_files_root)
+        _copy_project_tree(project_root, app_files_root)
+
     report_payload = {
         **PackageExportResult(
             profile=profile,
@@ -366,24 +307,24 @@ def _write_project_artifact(
         "package_config": package_config.to_dict(),
         "project_metadata": project_metadata.to_dict(),
     }
-    report_path.write_text(json.dumps(report_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    checksums = build_artifact_checksums(
-        artifact_root,
-        skip_relative_paths=(PACKAGE_ARTIFACT_MANIFEST_FILENAME,),
+    written = write_installable_artifact_tree(
+        artifact_root=artifact_root,
+        manifest=manifest,
+        package_root=artifact_root.resolve(),
+        copy_payload=_copy_payload,
+        report_payload=report_payload,
+        installer_icon_value=installer_icon_value,
     )
-    manifest = apply_checksums_to_manifest(manifest, checksums)
-    save_distribution_manifest(manifest_path, manifest)
 
     return PackageExportResult(
         profile=profile,
         success=True,
         artifact_root=str(artifact_root),
-        manifest_path=str(manifest_path),
-        report_path=str(report_path),
-        readme_path=str(readme_path),
-        install_notes_path=str(install_notes_path),
-        launcher_path=None if launcher_path is None else str(launcher_path),
+        manifest_path=str(written.manifest_path),
+        report_path=str(written.report_path),
+        readme_path=str(written.readme_path),
+        install_notes_path=str(written.install_notes_path),
+        launcher_path=str(written.launcher_path),
         validation=validation,
         error=None,
     )
