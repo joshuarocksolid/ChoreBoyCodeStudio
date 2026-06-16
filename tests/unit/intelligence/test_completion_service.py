@@ -116,7 +116,10 @@ def test_completion_service_reports_semantic_degradation_and_keeps_approximate_i
 
     caplog.set_level(logging.WARNING, logger="app.intelligence.completion_service")
 
-    envelope = service.complete(request)
+    envelope = service.merge_for_editor_display(
+        fast=service.complete_fast(request),
+        semantic=service.complete_semantic(request),
+    )
 
     assert envelope.degradation_reason == "semantic_engine_error"
     assert any(item.insert_text == "alpha_local" for item in envelope.items)
@@ -219,7 +222,7 @@ def test_completion_service_uses_static_api_index_for_freecad_members(tmp_path: 
     )
     service = CompletionService(cache_db_path=str(tmp_path / "symbols.sqlite3"))
 
-    items = service.complete(request).items
+    items = service.complete_fast(request).items
 
     assert any(item.label == "newDocument" and item.source == "static_api_index" for item in items)
 
@@ -247,7 +250,7 @@ def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path:
         min_prefix_chars=2,
     )
 
-    completions = [item for item in service.complete(request).items if item.insert_text == "helper"]
+    completions = [item for item in service.complete_fast(request).items if item.insert_text == "helper"]
 
     assert len(completions) == 1
 
@@ -278,12 +281,12 @@ def test_completion_service_boosts_recently_accepted_items(tmp_path: Path) -> No
         min_prefix_chars=2,
     )
 
-    initial = service.complete(request).items
+    initial = service.complete_fast(request).items
     assert initial[0].insert_text == "alpha_one"
     preferred = next(item for item in initial if item.insert_text == "alpha_two")
     service.record_acceptance(preferred)
 
-    boosted = service.complete(request).items
+    boosted = service.complete_fast(request).items
     assert boosted[0].insert_text == "alpha_two"
 
 

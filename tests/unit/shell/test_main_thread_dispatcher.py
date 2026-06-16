@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -14,7 +14,6 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtCore import QThread  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
-from app.shell.intelligence_cache_workflow import IntelligenceCacheWorkflow  # noqa: E402
 from app.shell.main_thread_dispatcher import MainThreadDispatcher  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 
@@ -82,54 +81,3 @@ def test_main_window_dispatch_to_main_thread_noop_when_shutting_down() -> None:
     MainWindow._dispatch_to_main_thread(fake, lambda: None)
 
     assert dispatched == []
-
-
-class _FakeIntelligenceCacheHost:
-    """Minimal IntelligenceCacheHost for exercising the index done/error handlers."""
-
-    def __init__(self, *, generation: int, metrics_logging_enabled: bool, logger: _LoggerStub) -> None:
-        self._generation = generation
-        self._metrics_logging_enabled = metrics_logging_enabled
-        self._logger = logger
-        self.active_worker: object | None = object()
-        self.dispatched: list[object] = []
-
-    def symbol_index_generation(self) -> int:
-        return self._generation
-
-    def intelligence_metrics_logging_enabled(self) -> bool:
-        return self._metrics_logging_enabled
-
-    def logger(self) -> _LoggerStub:
-        return self._logger
-
-    def dispatch_to_main_thread(self, callback) -> None:  # type: ignore[no-untyped-def]
-        self.dispatched.append(callback)
-
-    def set_active_symbol_index_worker(self, worker) -> None:  # type: ignore[no-untyped-def]
-        self.active_worker = worker
-
-
-def test_symbol_index_done_uses_dispatcher_for_state_clear() -> None:
-    logger = _LoggerStub()
-    host = _FakeIntelligenceCacheHost(generation=7, metrics_logging_enabled=False, logger=logger)
-    workflow = IntelligenceCacheWorkflow(cast(Any, host))
-
-    workflow._handle_symbol_index_done("/tmp/project", 13, time.perf_counter() - 0.01, 7)
-    assert len(host.dispatched) == 1
-
-    host.dispatched[0]()
-    assert host.active_worker is None
-
-
-def test_symbol_index_error_uses_dispatcher_for_state_clear() -> None:
-    logger = _LoggerStub()
-    host = _FakeIntelligenceCacheHost(generation=4, metrics_logging_enabled=False, logger=logger)
-    workflow = IntelligenceCacheWorkflow(cast(Any, host))
-
-    workflow._handle_symbol_index_error("/tmp/project", "boom", 4)
-    assert len(logger.warning_calls) == 1
-    assert len(host.dispatched) == 1
-
-    host.dispatched[0]()
-    assert host.active_worker is None

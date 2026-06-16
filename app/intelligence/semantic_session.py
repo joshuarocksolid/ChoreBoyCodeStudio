@@ -1,10 +1,13 @@
 """Serialized semantic session owning semantic engines and completion state."""
 from __future__ import annotations
 
-from typing import Callable, Optional, cast
+from typing import Callable, TypeVar, cast
+
+T = TypeVar("T")
 
 from app.bootstrap.paths import PathInput
 from app.intelligence.completion_models import (
+    CompletionFastResult,
     CompletionEnvelope,
     CompletionItem,
     CompletionRequestResult,
@@ -33,7 +36,7 @@ class SemanticSession:
         *,
         dispatch_to_main_thread: Callable[[Callable[[], None]], None],
         cache_db_path: str,
-        state_root: Optional[PathInput] = None,
+        state_root: PathInput | None = None,
     ) -> None:
         self._semantic_facade = SemanticFacade(
             cache_db_path=cache_db_path,
@@ -46,6 +49,23 @@ class SemanticSession:
         self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
 
+    def _submit(
+        self,
+        *,
+        key: str,
+        priority: int,
+        task: Callable[[], T],
+        on_success: Callable[[T], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._worker.submit(
+            key=key,
+            task=task,
+            on_success=cast(Callable[[object], None], on_success) if on_success is not None else None,
+            on_error=on_error,
+            priority=priority,
+        )
+
     def shutdown(self) -> None:
         """Stop the backing worker thread."""
         self._worker.shutdown()
@@ -54,24 +74,46 @@ class SemanticSession:
         """Invalidate all queued semantic work."""
         self._worker.cancel_all()
 
-    def record_completion_acceptance(self, item: CompletionItem) -> None:
-        """Boost ranking for a user-accepted completion."""
-        self._completion_service.record_acceptance(item)
+    def request_record_completion_acceptance(
+        self,
+        *,
+        item: CompletionItem,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        """Record completion acceptance on the semantic worker."""
 
-    def complete_blocking(self, *, request: CompletionRequest) -> CompletionEnvelope:
-        """Resolve completion candidates on the semantic thread and wait for them."""
-        return cast(
-            CompletionEnvelope,
-            self._worker.call(
-                key=f"completion_sync:{request.current_file_path}",
-                task=lambda: self._completion_service.complete(request),
-            ),
+        def task() -> None:
+            self._completion_service.record_acceptance(item)
+
+        self._submit(key="completion_acceptance", priority=5, task=task, on_error=on_error)
+
+    def request_completion_fast(
+        self,
+        *,
+        request: CompletionRequest,
+        prefix: str,
+        request_generation: int,
+        on_success: Callable[[CompletionFastResult], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        """Resolve fast-tier completion candidates on the semantic worker."""
+
+        def task() -> CompletionFastResult:
+            envelope = self._completion_service.complete_fast(request)
+            return CompletionFastResult(
+                request_generation=request_generation,
+                prefix=prefix,
+                envelope=envelope,
+                buffer_revision=request.buffer_revision,
+            )
+
+        self._submit(
+            key=f"completion_fast:{request.current_file_path}",
+            priority=0,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
-
-    def complete_fast(self, *, request: CompletionRequest) -> CompletionEnvelope:
-        """Resolve cached/indexed completion candidates without waiting for Jedi."""
-
-        return self._completion_service.complete_fast(request)
 
     def request_completion(
         self,
@@ -93,12 +135,28 @@ class SemanticSession:
                 buffer_revision=request.buffer_revision,
             )
 
-        self._worker.submit(
+        self._submit(
             key=f"completion:{request.current_file_path}",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
             priority=10,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def merge_completion_for_display(
+        self,
+        *,
+        fast: CompletionEnvelope | None = None,
+        semantic: CompletionEnvelope | None = None,
+        runtime_items: list[CompletionItem] | None = None,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        """Merge tiered completion envelopes for editor popup display."""
+        return self._completion_service.merge_for_editor_display(
+            fast=fast,
+            semantic=semantic,
+            runtime_items=runtime_items,
+            max_results=max_results,
         )
 
     def request_completion_resolve(
@@ -119,12 +177,12 @@ class SemanticSession:
                 context_fingerprint=request.context_fingerprint,
             )
 
-        self._worker.submit(
+        self._submit(
             key=f"completion_resolve:{request.current_file_path}:{request.item.item_id or request.item.label}",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
             priority=5,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_lookup_definition(
@@ -147,12 +205,12 @@ class SemanticSession:
                 cursor_position=cursor_position,
             )
 
-        self._worker.submit(
-            key="go_to_definition",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
+        self._submit(
+            key=f"definition:{current_file_path}",
             priority=40,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_find_references(
@@ -175,12 +233,12 @@ class SemanticSession:
                 cursor_position=cursor_position,
             )
 
-        self._worker.submit(
-            key="find_references",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
+        self._submit(
+            key=f"references:{current_file_path}",
             priority=70,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_rename_plan(
@@ -205,12 +263,12 @@ class SemanticSession:
                 new_symbol=new_symbol,
             )
 
-        self._worker.submit(
-            key="rename_symbol",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
+        self._submit(
+            key=f"rename:{current_file_path}",
             priority=70,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_apply_rename(
@@ -225,12 +283,12 @@ class SemanticSession:
         def task() -> SemanticRenameApplyResult:
             return self._semantic_facade.apply_rename(plan)
 
-        self._worker.submit(
+        self._submit(
             key="apply_rename",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
             priority=60,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_hover_info(
@@ -255,12 +313,12 @@ class SemanticSession:
             )
             return (request_generation, result)
 
-        self._worker.submit(
+        self._submit(
             key=f"hover:{current_file_path}",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
             priority=30,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_signature_help(
@@ -285,56 +343,12 @@ class SemanticSession:
             )
             return (request_generation, result)
 
-        self._worker.submit(
+        self._submit(
             key=f"signature:{current_file_path}",
-            task=task,
-            on_success=cast(Callable[[object], None], on_success),
-            on_error=on_error,
             priority=25,
-        )
-
-    def resolve_hover_info_blocking(
-        self,
-        *,
-        project_root: str | None,
-        current_file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> SemanticHoverResult | None:
-        """Resolve hover info on the semantic thread and wait for the result."""
-        return cast(
-            Optional[SemanticHoverResult],
-            self._worker.call(
-            key=f"hover_sync:{current_file_path}",
-            task=lambda: self._semantic_facade.resolve_hover_info(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            ),
-            ),
-        )
-
-    def resolve_signature_help_blocking(
-        self,
-        *,
-        project_root: str | None,
-        current_file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> SemanticSignatureResult | None:
-        """Resolve signature help on the semantic thread and wait for the result."""
-        return cast(
-            Optional[SemanticSignatureResult],
-            self._worker.call(
-            key=f"signature_sync:{current_file_path}",
-            task=lambda: self._semantic_facade.resolve_signature_help(
-                project_root=project_root,
-                current_file_path=current_file_path,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            ),
-            ),
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def request_custom(
@@ -346,9 +360,4 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Expose one serialized lane for semantic controller extensions."""
-        self._worker.submit(
-            key=key,
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
+        self._submit(key=key, priority=50, task=task, on_success=on_success, on_error=on_error)

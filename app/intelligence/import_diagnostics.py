@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import Any, Mapping
 
 from app.core.models import ProjectMetadata
+from app.intelligence.diagnostics_models import CodeDiagnostic, DiagnosticSeverity
 from app.intelligence.lint_profile import resolve_lint_rule_settings
 from app.project.dependency_classifier import is_module_resolvable
 from app.project.import_layout import (
@@ -14,9 +15,6 @@ from app.project.import_layout import (
     module_name_for_file,
     resolve_project_import_layout,
 )
-
-if TYPE_CHECKING:
-    from app.intelligence.diagnostics_service import CodeDiagnostic
 
 
 def collect_unresolved_import_diagnostics(
@@ -29,10 +27,8 @@ def collect_unresolved_import_diagnostics(
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     layout: ProjectImportLayout | None = None,
     project_metadata: ProjectMetadata | None = None,
-) -> list["CodeDiagnostic"]:
+) -> list[CodeDiagnostic]:
     """Collect PY200 diagnostics for unresolved imports in one file."""
-    from app.intelligence.diagnostics_service import CodeDiagnostic
-
     is_enabled, severity = resolve_lint_rule_settings("PY200", lint_rule_overrides)
     if not is_enabled:
         return []
@@ -156,8 +152,7 @@ def _end_col_offset(node: ast.AST) -> int | None:
     return int(raw) if isinstance(raw, int) else None
 
 
-def _severity_from_profile_value(value: str):
-    from app.intelligence.diagnostics_service import DiagnosticSeverity
+def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
     from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO
 
     if value == LINT_SEVERITY_ERROR:

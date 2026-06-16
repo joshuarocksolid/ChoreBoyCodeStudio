@@ -70,9 +70,8 @@ class MainWindowLifecycle:
         if hasattr(window, "_semantic_session"):
             window._intelligence_controller.cancel_all()
             window._intelligence_controller.shutdown()
-        if window._active_symbol_index_worker is not None and window._active_symbol_index_worker.is_running():
-            window._active_symbol_index_worker.cancel()
-        window._active_symbol_index_worker = None
+        if hasattr(window, "_intelligence_cache_workflow"):
+            window._intelligence_cache_workflow.cancel_symbol_indexing()
         window._debug_inspector_workflow.clear_debug_execution_indicator()
         if window._debug_panel is not None:
             window._debug_panel.set_command_input_enabled(False)

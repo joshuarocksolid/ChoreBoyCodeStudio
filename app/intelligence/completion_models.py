@@ -25,6 +25,23 @@ class CompletionKind(str, Enum):
     TEXT = "text"
 
 
+class CompletionTierPhase(str, Enum):
+    """Completion tier identity for §17.4.2 merge policy."""
+
+    FAST = "fast"
+    SEMANTIC = "semantic"
+    RUNTIME = "runtime"
+
+
+@dataclass(frozen=True)
+class CompletionTier:
+    """One labeled completion tier in a merged envelope."""
+
+    phase: CompletionTierPhase
+    label: str
+    items: tuple[CompletionItem, ...]
+
+
 @dataclass(frozen=True)
 class CompletionItem:
     """One completion candidate returned to the editor."""
@@ -57,6 +74,7 @@ class CompletionEnvelope:
     """Completion candidates plus request-level degradation metadata."""
 
     items: list[CompletionItem]
+    tiers: tuple[CompletionTier, ...] = field(default_factory=tuple)
     degradation_reason: str = ""
     source: str = ""
     confidence: str = ""
@@ -73,6 +91,16 @@ class CompletionEnvelope:
 @dataclass(frozen=True)
 class CompletionRequestResult:
     """Async completion result paired with the editor request identity."""
+
+    request_generation: int
+    prefix: str
+    envelope: CompletionEnvelope
+    buffer_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class CompletionFastResult:
+    """Async fast-tier completion result paired with editor request identity."""
 
     request_generation: int
     prefix: str

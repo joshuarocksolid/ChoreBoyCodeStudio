@@ -22,9 +22,7 @@ from app.editors.editor_manager import EditorManager
 from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.intelligence.outline_service import OutlineSymbol
-from app.intelligence.semantic_session import SemanticSession
-from app.intelligence.symbol_index import SymbolIndexWorker
-from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
+from app.shell.intelligence_composition import bootstrap_intelligence_runtime
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
@@ -39,13 +37,11 @@ from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
 from app.run.problem_parser import ProblemEntry
 from app.shell.action_registry import ShellActionRegistry
-from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.command_broker import CommandBroker
 from app.shell.console_model import ConsoleModel
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
-from app.shell.editor_intelligence_controller import EditorIntelligenceController
 from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.events import ShellEventBus
@@ -69,7 +65,7 @@ from app.shell.project_load_workflow import ProjectLoadWorkflow
 from app.shell.project_rescan_workflow import MainWindowProjectRescanHost, ProjectRescanWorkflow
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.project_tree_controller import ProjectTreeController
-from app.shell.python_style_workflow import PythonStyleWorkflow
+from app.shell.python_style_workflow import build_python_style_workflow
 from app.shell.python_tooling_status_controller import PythonToolingStatusController
 from app.shell.repl_event_workflow import MainWindowReplEventHost, ReplEvent, ReplEventWorkflow
 from app.shell.repl_session_manager import ReplSessionManager
@@ -273,7 +269,7 @@ def install_main_window_composition(
         history_store=local_history_store,
     )
     window._save_workflow = SaveWorkflow(window)
-    window._python_style_workflow = PythonStyleWorkflow(window)
+    window._python_style_workflow = build_python_style_workflow(window)
     window._auto_save_to_file_timer = QTimer(window)
     window._auto_save_to_file_timer.setSingleShot(True)
     window._auto_save_to_file_timer.setInterval(1000)
@@ -297,9 +293,7 @@ def install_main_window_composition(
     window._active_transient_entry_file_path: str | None = None
     window._debug_session = DebugSession()
     window._debug_execution_editor = None
-    window._active_symbol_index_worker: SymbolIndexWorker | None = None
     window._is_shutting_down = False
-    window._symbol_index_generation = 0
     window._latest_health_report: ProjectHealthReport | None = None
     window._latest_import_issue_report = RuntimeIssueReport(workflow="import", issues=[])
     window._latest_run_issue_report = RuntimeIssueReport(workflow="run", issues=[])
@@ -324,9 +318,7 @@ def install_main_window_composition(
         on_session_started=window._repl_event_workflow.enqueue_started,
         state_root=window._state_root,
     )
-    window._runtime_introspection_coordinator = RuntimeIntrospectionCoordinator(
-        runner_port=window._repl_manager,
-    )
+    bootstrap_intelligence_runtime(window, symbol_cache_db_path=window._symbol_cache_db_path)
     window._template_service = TemplateService()
     register_builtin_workflow_providers(
         window._workflow_broker,
@@ -334,17 +326,6 @@ def install_main_window_composition(
     )
     window._example_project_service = ExampleProjectService()
     window._main_thread_dispatcher = MainThreadDispatcher(window)
-    window._semantic_session = SemanticSession(
-        dispatch_to_main_thread=window._dispatch_to_main_thread,
-        cache_db_path=window._symbol_cache_db_path,
-        state_root=window._state_root,
-    )
-    window._intelligence_controller = EditorIntelligenceController(
-        semantic_session=window._semantic_session,
-    )
-    window._background_tasks = GeneralTaskScheduler(
-        dispatch_to_main_thread=window._dispatch_to_main_thread
-    )
     window._runtime_onboarding_workflow = RuntimeOnboardingWorkflow(MainWindowRuntimeOnboardingHost(window))
     window._latest_runtime_issue_report = window._runtime_onboarding_workflow.build_runtime_issue_report()
     window._runtime_support_workflow = RuntimeSupportWorkflow(

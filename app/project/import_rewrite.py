@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from app.persistence.atomic_write import atomic_write_text
+from app.persistence.atomic_write import atomic_write_batch
 from app.project.file_inventory import iter_python_files
 
 
@@ -55,19 +55,8 @@ def plan_import_rewrites(project_root: str, old_relative_path: str, new_relative
 
 def apply_import_rewrites(previews: list[ImportRewritePreview]) -> list[str]:
     """Apply planned rewrites with rollback on write failures."""
-    original_payloads: dict[str, str] = {}
-    updated_paths: list[str] = []
-    try:
-        for preview in previews:
-            target = Path(preview.file_path).expanduser().resolve()
-            original_payloads[preview.file_path] = target.read_text(encoding="utf-8")
-            atomic_write_text(target, preview.updated_content)
-            updated_paths.append(preview.file_path)
-    except OSError:
-        for file_path, payload in original_payloads.items():
-            atomic_write_text(file_path, payload)
-        raise
-    return updated_paths
+    writes = {preview.file_path: preview.updated_content for preview in previews}
+    return atomic_write_batch(writes)
 
 
 def _module_name_from_relative_path(relative_path: str) -> str | None:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.intelligence.completion_broker import CompletionBroker
+from app.intelligence.completion_merge_policy import merge_completion_display
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
 from app.intelligence.semantic_facade import SemanticFacade
 
@@ -48,6 +49,22 @@ class CompletionService:
     def complete_semantic(self, request: CompletionRequest) -> CompletionEnvelope:
         """Return semantic refinement candidates."""
         return self._broker.complete_semantic(request)
+
+    def merge_for_editor_display(
+        self,
+        *,
+        fast: CompletionEnvelope | None = None,
+        semantic: CompletionEnvelope | None = None,
+        runtime_items: list[CompletionItem] | None = None,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        """Merge tiered completion results for editor popup display."""
+        return merge_completion_display(
+            fast=fast,
+            semantic=semantic,
+            runtime_items=runtime_items,
+            max_results=max_results,
+        )
 
     def record_acceptance(self, item: CompletionItem) -> None:
         """Record a user-accepted completion for future ranking boosts."""

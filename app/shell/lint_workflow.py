@@ -7,8 +7,11 @@ from typing import Any, Callable, Protocol
 
 from PySide2.QtWidgets import QMessageBox
 
-from app.intelligence.diagnostics_service import CodeDiagnostic
+from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, find_unresolved_imports
+from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.plugins.workflow_adapters import analyze_python_with_workflow
+from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.support.runtime_explainer import build_import_issue_report
 
 
 class LintWorkflowHost(Protocol):
@@ -69,6 +72,24 @@ class LintWorkflowHost(Protocol):
     def stored_lint_diagnostics(self) -> dict[str, list[CodeDiagnostic]]:
         ...
 
+    def problems_panel(self) -> Any | None:
+        ...
+
+    def update_problems_tab_title(self, problem_count: int) -> None:
+        ...
+
+    def focus_problems_tab(self) -> None:
+        ...
+
+    def set_latest_import_issue_report(self, report: object) -> None:
+        ...
+
+    def refresh_latest_runtime_issue_report(self) -> None:
+        ...
+
+    def open_runtime_center_dialog(self, *, title: str, report: object) -> None:
+        ...
+
 
 class LintWorkflow:
     """Runs Python diagnostics and applies results through the problems controller."""
@@ -122,32 +143,37 @@ class LintWorkflow:
             return diagnostics
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
-            active_widget = self._host.editor_widgets_by_path().get(file_path)
-            if editor_widget is not None and active_widget is not editor_widget:
+            if editor_widget is None:
+                self._host.apply_lint_diagnostics_result(file_path, diagnostics)
                 return
-            if buffer_revision is not None and self._host.editor_buffer_revision(file_path) != buffer_revision:
-                self._host.logger().info(
-                    "Dropped stale diagnostics result for %s due to buffer revision change.",
-                    file_path,
-                )
-                return
-            if self._host.intelligence_metrics_logging_enabled():
-                elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-                if elapsed_ms > 180.0:
-                    self._host.logger().warning(
-                        "Diagnostics latency warning: file=%s elapsed_ms=%.2f count=%s",
-                        file_path,
-                        elapsed_ms,
-                        len(diagnostics),
-                    )
-                else:
-                    self._host.logger().info(
-                        "Diagnostics telemetry: file=%s elapsed_ms=%.2f count=%s",
-                        file_path,
-                        elapsed_ms,
-                        len(diagnostics),
-                    )
-            self._host.apply_lint_diagnostics_result(file_path, diagnostics)
+
+            def deliver() -> None:
+                if self._host.intelligence_metrics_logging_enabled():
+                    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                    if elapsed_ms > 180.0:
+                        self._host.logger().warning(
+                            "Diagnostics latency warning: file=%s elapsed_ms=%.2f count=%s",
+                            file_path,
+                            elapsed_ms,
+                            len(diagnostics),
+                        )
+                    else:
+                        self._host.logger().info(
+                            "Diagnostics telemetry: file=%s elapsed_ms=%.2f count=%s",
+                            file_path,
+                            elapsed_ms,
+                            len(diagnostics),
+                        )
+                self._host.apply_lint_diagnostics_result(file_path, diagnostics)
+
+            deliver_revision_gated_editor_result(
+                file_path=file_path,
+                editor_widget=editor_widget,
+                requested_revision=buffer_revision,
+                editor_widget_for_path=lambda path: self._host.editor_widgets_by_path().get(path),
+                buffer_revision=self._host.editor_buffer_revision,
+                deliver=deliver,
+            )
 
         def on_error(exc: Exception) -> None:
             self._host.logger().warning("Diagnostics run failed for %s: %s", file_path, exc)
@@ -176,6 +202,70 @@ class LintWorkflow:
             if active_tab is not None:
                 active_diags = self._host.stored_lint_diagnostics().get(active_tab.file_path, [])
                 self._host.update_status_bar_diagnostics(active_diags)
+
+    def run_import_analysis(self) -> None:
+        parent = self._host.dialog_parent()
+        loaded_project = self._host.loaded_project()
+        if loaded_project is None:
+            QMessageBox.warning(parent, "Analyze Imports", "Open a project first.")
+            return
+        project_root = loaded_project.project_root
+        source_overrides: dict[str, str] = {}
+        for path, widget in self._host.editor_widgets_by_path().items():
+            source_overrides[path] = widget.toPlainText()
+
+        known_modules = self._host.known_runtime_modules()
+        lint_rule_overrides = self._host.lint_rule_overrides()
+
+        def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            return find_unresolved_imports(
+                project_root,
+                source_overrides=source_overrides,
+                known_runtime_modules=known_modules,
+                allow_runtime_import_probe=True,
+                lint_rule_overrides=lint_rule_overrides,
+                project_metadata=loaded_project.metadata,
+            )
+
+        def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
+            problems_panel = self._host.problems_panel()
+            if problems_panel is None:
+                return
+            _, unresolved_import_severity = resolve_lint_rule_settings("PY200", lint_rule_overrides)
+            if unresolved_import_severity == LINT_SEVERITY_ERROR:
+                diagnostic_severity = DiagnosticSeverity.ERROR
+            elif unresolved_import_severity == LINT_SEVERITY_INFO:
+                diagnostic_severity = DiagnosticSeverity.INFO
+            else:
+                diagnostic_severity = DiagnosticSeverity.WARNING
+            import_diags = [
+                CodeDiagnostic(
+                    code="PY200",
+                    severity=diagnostic_severity,
+                    file_path=d.file_path,
+                    line_number=d.line_number,
+                    message=d.message,
+                )
+                for d in diagnostics
+            ]
+            problems_panel.set_diagnostics(import_diags)
+            self._host.update_problems_tab_title(problems_panel.problem_count())
+            self._host.focus_problems_tab()
+            import_report = build_import_issue_report(
+                project_root,
+                diagnostics,
+                known_runtime_modules=known_modules,
+                allow_runtime_import_probe=True,
+            )
+            self._host.set_latest_import_issue_report(import_report)
+            self._host.refresh_latest_runtime_issue_report()
+            if import_report.issues:
+                self._host.open_runtime_center_dialog(title="Import Analysis", report=import_report)
+
+        def on_error(exc: Exception) -> None:
+            QMessageBox.warning(parent, "Analyze Imports", f"Import analysis failed: {exc}")
+
+        self._host.background_tasks().run(key="analyze_imports", task=task, on_success=on_success, on_error=on_error)
 
 
 class MainWindowLintHost:
@@ -240,6 +330,27 @@ class MainWindowLintHost:
 
     def stored_lint_diagnostics(self) -> dict[str, list[CodeDiagnostic]]:
         return self._window._stored_lint_diagnostics
+
+    def problems_panel(self) -> Any | None:
+        return self._window._problems_panel
+
+    def update_problems_tab_title(self, problem_count: int) -> None:
+        self._window._problems_controller.update_problems_tab_title(problem_count)
+
+    def focus_problems_tab(self) -> None:
+        self._window._run_event_workflow.focus_problems_tab()
+
+    def set_latest_import_issue_report(self, report: object) -> None:
+        self._window._latest_import_issue_report = report
+
+    def refresh_latest_runtime_issue_report(self) -> None:
+        self._window._runtime_onboarding_workflow.refresh_latest_runtime_issue_report()
+
+    def open_runtime_center_dialog(self, *, title: str, report: object) -> None:
+        self._window._runtime_onboarding_workflow.open_runtime_center_dialog(
+            title=title,
+            report=report,
+        )
 
 
 def build_lint_workflow(window: Any) -> LintWorkflow:

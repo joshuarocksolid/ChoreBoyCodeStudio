@@ -9,8 +9,9 @@ from PySide2.QtGui import QKeyEvent, QTextCursor
 from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
+from app.intelligence.completion_context import build_completion_context
+from app.intelligence.completion_merge_policy import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
-from app.intelligence.completion_providers import extract_completion_prefix
 
 
 if TYPE_CHECKING:
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     from PySide2.QtWidgets import QPlainTextEdit
 
     class _CodeEditorSemanticsBase(QPlainTextEdit):
-        _completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None
         _completion_requester: Callable[[str, str, int, bool, int, str, str], None] | None
         _completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None
         _completion_accepted_callback: Callable[[CompletionItem], None] | None
@@ -49,9 +49,15 @@ else:
 class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     """Semantic UI behavior split out from the main editor widget."""
 
-    def set_completion_provider(self, provider: Callable[[str, str, int, bool], list[CompletionItem]] | None) -> None:
-        """Attach completion provider callback invoked during editor typing."""
-        self._completion_provider = provider
+    def allocate_signature_help_request_generation(self) -> int:
+        """Return a new signature-help request generation token."""
+        self._signature_help_request_generation += 1
+        return self._signature_help_request_generation
+
+    def allocate_hover_request_generation(self) -> int:
+        """Return a new hover request generation token."""
+        self._hover_request_generation += 1
+        return self._hover_request_generation
 
     def set_completion_requester(
         self,
@@ -115,8 +121,21 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
         source_text = self.toPlainText()
         cursor_position = self.textCursor().position()
-        prefix = extract_completion_prefix(source_text, cursor_position)
-        if not force_empty_prefix and not manual and len(prefix) < self._completion_min_chars:
+        effective_trigger_character = trigger_character or self._pending_completion_trigger_character
+        trigger_kind = "trigger_character" if effective_trigger_character else ("manual" if manual else "typing")
+        completion_context = build_completion_context(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=self._active_file_path or "",
+            project_root=None,
+            trigger_is_manual=manual or force_empty_prefix,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+            trigger_kind=trigger_kind,
+            trigger_character=effective_trigger_character,
+        )
+        prefix = completion_context.prefix
+        if not force_empty_prefix and not completion_context.should_offer_automatic_results:
             self._completion_popup.hide()
             return
 
@@ -125,8 +144,6 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             request_generation = self._completion_request_generation
             if self._completion_popup.is_visible():
                 self._completion_popup.reuse_items_for_prefix(prefix)
-            effective_trigger_character = trigger_character or self._pending_completion_trigger_character
-            trigger_kind = "trigger_character" if effective_trigger_character else ("manual" if manual else "typing")
             requester = cast(Any, self._completion_requester)
             try:
                 requester(
@@ -151,13 +168,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
 
         self._pending_completion_trigger_character = ""
-        if self._completion_provider is None:
-            return
-        items = self._completion_provider(prefix, source_text, cursor_position, manual or force_empty_prefix)
-        if not items:
-            self._completion_popup.hide()
-            return
-        self._show_completion_items(items, prefix=prefix)
+        self._completion_popup.hide()
 
     def _request_completion_item_resolution(self, item: object) -> None:
         if not isinstance(item, CompletionItem):
@@ -210,6 +221,10 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             )
         except TypeError:
             requester(prefix, source_text, cursor_position, manual, request_generation)
+
+    def completion_request_generation(self) -> int:
+        """Return the current completion request generation counter."""
+        return self._completion_request_generation
 
     def show_completion_items_for_request(
         self,
@@ -332,6 +347,8 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     def _insert_completion_from_item(self, item: object) -> None:
         if not isinstance(item, CompletionItem):
             return
+        if is_tier_header_item(item):
+            return
 
         cursor = self.textCursor()
         if item.replacement_start is not None and item.replacement_end is not None:
@@ -339,9 +356,19 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             cursor.setPosition(item.replacement_end, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
         else:
-            current_prefix = extract_completion_prefix(self.toPlainText(), cursor.position())
-            if current_prefix:
-                cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(current_prefix))
+            completion_context = build_completion_context(
+                source_text=self.toPlainText(),
+                cursor_position=cursor.position(),
+                current_file_path=self._active_file_path or "",
+                project_root=None,
+                trigger_is_manual=True,
+                min_prefix_chars=self._completion_min_chars,
+                max_results=100,
+            )
+            replacement = completion_context.replacement_range
+            if replacement.end > replacement.start:
+                cursor.setPosition(replacement.start)
+                cursor.setPosition(replacement.end, QTextCursor.KeepAnchor)
                 cursor.removeSelectedText()
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)

@@ -107,16 +107,16 @@ def flatten_symbols(symbols: Iterable[OutlineSymbol]) -> tuple[OutlineSymbol, ..
 # Tree-sitter implementation
 # ---------------------------------------------------------------------------
 
+_TREESITTER_PARSER: Any | None = None
+_TREESITTER_PARSER_KEY: str | None = None
 
-def _build_outline_with_treesitter(source: str) -> Optional[tuple[OutlineSymbol, ...]]:
-    """Parse via tree-sitter; return ``None`` if runtime is unavailable."""
-    initialize_tree_sitter_runtime()
-    if not runtime_status().is_available:
-        return None
-    registry = default_tree_sitter_language_registry()
-    resolved = registry.resolve_for_key("python")
-    if resolved is None:
-        return None
+
+def _treesitter_parser_for_language(resolved: Any) -> Any | None:
+    """Return a reused tree-sitter parser for the resolved language."""
+    global _TREESITTER_PARSER, _TREESITTER_PARSER_KEY
+    cache_key = getattr(resolved, "cache_key", None) or getattr(resolved, "language_id", "python")
+    if _TREESITTER_PARSER is not None and _TREESITTER_PARSER_KEY == cache_key:
+        return _TREESITTER_PARSER
     try:
         import tree_sitter  # type: ignore
     except ImportError:
@@ -127,6 +127,23 @@ def _build_outline_with_treesitter(source: str) -> Optional[tuple[OutlineSymbol,
         parser.set_language(resolved.language)
     else:
         parser.language = resolved.language
+    _TREESITTER_PARSER = parser
+    _TREESITTER_PARSER_KEY = cache_key
+    return parser
+
+
+def _build_outline_with_treesitter(source: str) -> Optional[tuple[OutlineSymbol, ...]]:
+    """Parse via tree-sitter; return ``None`` if runtime is unavailable."""
+    initialize_tree_sitter_runtime()
+    if not runtime_status().is_available:
+        return None
+    registry = default_tree_sitter_language_registry()
+    resolved = registry.resolve_for_key("python")
+    if resolved is None:
+        return None
+    parser = _treesitter_parser_for_language(resolved)
+    if parser is None:
+        return None
     try:
         source_bytes = source.encode("utf-8")
         tree = parser.parse(source_bytes)

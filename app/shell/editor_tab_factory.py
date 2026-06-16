@@ -156,7 +156,10 @@ class EditorTabFactory:
             window._editor_tab_workflow.handle_editor_cursor_position_changed(tab_file_path, editor_widget)
 
         def on_completion_accepted(item: CompletionItem) -> None:
-            window._intelligence_controller.record_completion_acceptance(item)
+            window._semantic_navigation_workflow.record_editor_completion_acceptance(
+                file_path=tab_file_path,
+                item=item,
+            )
 
         editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
         editor_widget.set_completion_requester(completion_requester)

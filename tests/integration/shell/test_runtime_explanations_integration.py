@@ -80,7 +80,7 @@ def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
             on_success(task(None))
 
         monkeypatch.setattr(window._background_tasks, "run", _run_immediately)
-        window._semantic_navigation_workflow.handle_analyze_imports_action()
+        window._lint_workflow.run_import_analysis()
 
         assert len(opened_dialogs) == 1
         assert opened_dialogs[0]["title"] == "Import Analysis"

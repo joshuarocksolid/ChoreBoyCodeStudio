@@ -93,7 +93,6 @@ class CodeEditorWidget(
         self._paste_hint_enable_always_callback: Callable[[], object] | None = None
         self._paste_hint_status_callback: Callable[[FlatPythonIndentRepairResult], object] | None = None
         self._cached_theme_tokens: ShellThemeTokens | None = None
-        self._completion_provider: Callable[[str, str, int, bool], list[CompletionItem]] | None = None
         self._completion_requester: Callable[[str, str, int, bool, int, str, str], None] | None = None
         self._completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None

@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 from typing import Optional
 
-from app.persistence.atomic_write import atomic_write_text
+from app.persistence.atomic_write import atomic_write_batch
 from app.intelligence.refactor_runtime import initialize_refactor_runtime
 from app.intelligence.semantic_models import (
     SemanticOperationMetadata,
@@ -98,18 +98,14 @@ class RopeRefactorEngine:
 
     def apply_rename(self, plan: SemanticRenamePlan) -> SemanticRenameApplyResult:
         """Apply patch contents with rollback on failure."""
-        originals: dict[str, str] = {}
-        updated_files: list[str] = []
-        try:
-            for patch in plan.preview_patches:
-                target = Path(patch.file_path).expanduser().resolve()
-                originals[patch.file_path] = target.read_text(encoding="utf-8")
-                atomic_write_text(target, patch.updated_content)
-                updated_files.append(patch.file_path)
-        except OSError:
-            for file_path, payload in originals.items():
-                atomic_write_text(file_path, payload)
-            raise
+        patch_files = {patch.file_path for patch in plan.preview_patches}
+        for hit in plan.hits:
+            if hit.file_path not in patch_files:
+                raise ValueError(
+                    f"Rename plan references '{hit.file_path}' without a corresponding patch."
+                )
+        writes = {patch.file_path: patch.updated_content for patch in plan.preview_patches}
+        updated_files = atomic_write_batch(writes)
         return SemanticRenameApplyResult(
             changed_files=sorted(updated_files),
             changed_occurrences=len(plan.hits) if plan.hits else len(updated_files),

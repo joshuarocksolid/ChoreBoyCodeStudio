@@ -52,7 +52,7 @@ def test_fast_completion_serves_pyside_import_context_without_semantic_call(tmp_
     assert any(item.label == "QtWidgets" and item.source == "static_api_index" for item in envelope.items)
 
 
-def test_semantic_refinement_merges_exact_items_after_fast_candidates(tmp_path: Path) -> None:
+def test_semantic_refinement_returns_semantic_tier_without_merging_fast(tmp_path: Path) -> None:
     semantic = _SemanticFacadeStub()
     broker = CompletionBroker(cache_db_path=str(tmp_path / "symbols.sqlite3"), semantic_facade=semantic)  # type: ignore[arg-type]
     source = "from PySide2 import QtWi"
@@ -69,8 +69,12 @@ def test_semantic_refinement_merges_exact_items_after_fast_candidates(tmp_path: 
 
     assert semantic.calls == 1
     assert envelope.source_phase == "semantic"
+    assert envelope.confidence == "exact"
+    assert len(envelope.tiers) == 1
+    assert envelope.tiers[0].phase.value == "semantic"
     assert envelope.items[0].source == "semantic"
     assert envelope.items[0].resolve_provider == "jedi"
+    assert all(item.source != "static_api_index" for item in envelope.items)
 
 
 def test_fast_completion_reuses_previous_valid_result_for_longer_prefix(tmp_path: Path) -> None:
@@ -100,3 +104,32 @@ def test_fast_completion_reuses_previous_valid_result_for_longer_prefix(tmp_path
 
     assert envelope.source_phase == "reuse"
     assert [item.label for item in envelope.items] == ["QtWidgets"]
+
+
+def test_fast_completion_reuse_rejects_buffer_revision_change(tmp_path: Path) -> None:
+    semantic = _SemanticFacadeStub()
+    broker = CompletionBroker(cache_db_path=str(tmp_path / "symbols.sqlite3"), semantic_facade=semantic)  # type: ignore[arg-type]
+    source = "from PySide2 import QtW"
+    first = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(tmp_path / "main.py"),
+        project_root=None,
+        trigger_is_manual=False,
+        min_prefix_chars=2,
+        buffer_revision=1,
+    )
+    second = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(tmp_path / "main.py"),
+        project_root=None,
+        trigger_is_manual=False,
+        min_prefix_chars=2,
+        buffer_revision=2,
+    )
+
+    broker.complete_fast(first)
+    envelope = broker.complete_fast(second)
+
+    assert envelope.source_phase != "reuse"

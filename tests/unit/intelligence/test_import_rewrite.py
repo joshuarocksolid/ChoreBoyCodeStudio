@@ -7,7 +7,7 @@ from typing import Union
 
 import pytest
 
-from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
+from app.project.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.persistence.atomic_write import atomic_write_text
 
 pytestmark = pytest.mark.unit
@@ -81,7 +81,7 @@ def test_apply_import_rewrites_rolls_back_on_atomic_write_failure(
             raise OSError("simulated import rewrite failure")
         return atomic_write_text(resolved, data, encoding=encoding)
 
-    monkeypatch.setattr("app.intelligence.import_rewrite.atomic_write_text", flaky_atomic_write)
+    monkeypatch.setattr("app.persistence.atomic_write.atomic_write_text", flaky_atomic_write)
 
     with pytest.raises(OSError, match="simulated import rewrite failure"):
         apply_import_rewrites(previews)

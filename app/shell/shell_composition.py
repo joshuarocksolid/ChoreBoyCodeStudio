@@ -147,9 +147,7 @@ class MainWindowSettingsApplyHost:
         self._window._pending_realtime_lint_file_path = None
 
     def cancel_symbol_index_worker_if_running(self) -> None:
-        worker = self._window._active_symbol_index_worker
-        if worker is not None and worker.is_running():
-            worker.cancel()
+        self._window._intelligence_cache_workflow.cancel_symbol_indexing()
 
     def start_symbol_indexing(self, project_root: str) -> None:
         self._window._intelligence_cache_workflow.start_symbol_indexing(project_root)

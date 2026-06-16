@@ -113,7 +113,7 @@ def build_main_window_menus(
         on_go_to_definition=window._semantic_navigation_workflow.handle_go_to_definition_action,
         on_signature_help=window._semantic_navigation_workflow.handle_signature_help_action,
         on_hover_info=window._semantic_navigation_workflow.handle_hover_info_action,
-        on_analyze_imports=window._semantic_navigation_workflow.handle_analyze_imports_action,
+        on_analyze_imports=window._lint_workflow.run_import_analysis,
         on_goto_symbol_in_file=window._semantic_navigation_workflow.handle_goto_symbol_in_file_action,
         on_set_language_mode=window._handle_set_language_mode_action,
         on_clear_language_override=window._handle_clear_language_override_action,

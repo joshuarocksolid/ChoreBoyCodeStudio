@@ -3,30 +3,36 @@
 from __future__ import annotations
 
 import ast
-import logging
 from dataclasses import replace
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-import sys
 from typing import Any, Mapping
 
 from app.core import constants
 from app.core.models import ProjectMetadata
+from app.intelligence.diagnostics_models import (
+    CodeDiagnostic,
+    DiagnosticSeverity,
+    ImportDiagnostic,
+    ImportExplanation,
+)
+from app.intelligence.import_diagnostics import collect_unresolved_import_diagnostics
 from app.intelligence.lint_profile import (
     LINT_SEVERITY_ERROR,
     LINT_SEVERITY_INFO,
     resolve_lint_rule_settings,
+)
+from app.intelligence.pyflakes_adapter import (
+    _pyflakes_import_warning_emitted,
+    diagnostic_from_pyflakes_message as _diagnostic_from_pyflakes_message,
+    pyflakes_diagnostics as _pyflakes_diagnostics,
 )
 from app.intelligence.runtime_import_probe import (
     probe_runtime_module_importability,
 )
 from app.project.dependency_classifier import (
     has_compiled_extension_candidate,
-    is_module_resolvable,
 )
-from app.intelligence.import_diagnostics import collect_unresolved_import_diagnostics
-from app.project.file_inventory import iter_python_files
+from app.project.file_inventory import ProjectInventorySnapshot, build_project_inventory_snapshot
 from app.project.import_layout import (
     ProjectImportLayout,
     module_path_prefix_exists,
@@ -34,50 +40,15 @@ from app.project.import_layout import (
     suggest_missing_source_root,
 )
 
-_logger = logging.getLogger(__name__)
-_pyflakes_import_warning_emitted = False
-
-
-@dataclass(frozen=True)
-class ImportDiagnostic:
-    """Unresolved import diagnostic record."""
-
-    file_path: str
-    line_number: int
-    message: str
-
-
-@dataclass(frozen=True)
-class ImportExplanation:
-    """Structured explanation for an unresolved import."""
-
-    module_name: str
-    kind: str
-    summary: str
-    why_it_happened: str
-    next_steps: list[str]
-    evidence: dict[str, Any]
-
-
-class DiagnosticSeverity(str, Enum):
-    """Severity levels for editor diagnostics."""
-
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-
-
-@dataclass(frozen=True)
-class CodeDiagnostic:
-    """Structured diagnostic used by file linting workflows."""
-
-    code: str
-    severity: DiagnosticSeverity
-    file_path: str
-    line_number: int
-    message: str
-    col_start: int | None = None
-    col_end: int | None = None
+__all__ = [
+    "CodeDiagnostic",
+    "DiagnosticSeverity",
+    "ImportDiagnostic",
+    "ImportExplanation",
+    "analyze_python_file",
+    "explain_unresolved_import",
+    "find_unresolved_imports",
+]
 
 
 def find_unresolved_imports(
@@ -88,6 +59,7 @@ def find_unresolved_imports(
     allow_runtime_import_probe: bool = False,
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     project_metadata: ProjectMetadata | None = None,
+    inventory_snapshot: ProjectInventorySnapshot | None = None,
 ) -> list[ImportDiagnostic]:
     """Find unresolved project-local imports in Python files.
 
@@ -103,7 +75,12 @@ def find_unresolved_imports(
         for p, src in source_overrides.items():
             resolved_overrides[str(Path(p).expanduser().resolve())] = src
     diagnostics: list[ImportDiagnostic] = []
-    for file_path in iter_python_files(root):
+    if inventory_snapshot is not None:
+        python_paths = [Path(path) for path in inventory_snapshot.python_file_paths]
+    else:
+        snapshot = build_project_inventory_snapshot(root)
+        python_paths = [Path(path) for path in snapshot.python_file_paths]
+    for file_path in python_paths:
         override = resolved_overrides.get(str(file_path.resolve()))
         diagnostics.extend(
             _diagnostics_for_file(
@@ -172,21 +149,23 @@ def analyze_python_file(
         diagnostics.extend(_duplicate_import_diagnostics(syntax_tree, path))
         diagnostics.extend(_unused_import_diagnostics(syntax_tree, path))
         diagnostics.extend(_unreachable_statement_diagnostics(syntax_tree, path))
-        if project_root:
-            resolved_root = Path(project_root).expanduser().resolve()
-            layout = resolve_project_import_layout(resolved_root, project_metadata)
-            diagnostics.extend(
-                collect_unresolved_import_diagnostics(
-                    resolved_root,
-                    path,
-                    syntax_tree,
-                    known_runtime_modules=known_runtime_modules,
-                    allow_runtime_import_probe=allow_runtime_import_probe,
-                    lint_rule_overrides=lint_rule_overrides,
-                    layout=layout,
-                    project_metadata=project_metadata,
-                )
+
+    if project_root:
+        resolved_root = Path(project_root).expanduser().resolve()
+        layout = resolve_project_import_layout(resolved_root, project_metadata)
+        diagnostics.extend(
+            collect_unresolved_import_diagnostics(
+                resolved_root,
+                path,
+                syntax_tree,
+                known_runtime_modules=known_runtime_modules,
+                allow_runtime_import_probe=allow_runtime_import_probe,
+                lint_rule_overrides=lint_rule_overrides,
+                layout=layout,
+                project_metadata=project_metadata,
             )
+        )
+
     diagnostics = _apply_lint_rule_profile(diagnostics, lint_rule_overrides)
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
     return diagnostics
@@ -529,86 +508,3 @@ def _normalize_linter_provider(selected_linter: str) -> str:
     if selected_linter == constants.LINTER_PROVIDER_PYFLAKES:
         return constants.LINTER_PROVIDER_PYFLAKES
     return constants.LINTER_PROVIDER_DEFAULT
-
-
-def _pyflakes_diagnostics(source: str, file_path: Path) -> list[CodeDiagnostic]:
-    checker = _create_pyflakes_checker(source, file_path)
-    if checker is None:
-        return []
-    diagnostics: list[CodeDiagnostic] = []
-    for message in getattr(checker, "messages", []):
-        diagnostic = _diagnostic_from_pyflakes_message(message, file_path)
-        if diagnostic is not None:
-            diagnostics.append(diagnostic)
-    return diagnostics
-
-
-def _create_pyflakes_checker(source: str, file_path: Path) -> Any | None:
-    global _pyflakes_import_warning_emitted
-    _ensure_vendor_path_on_sys_path()
-    try:
-        from pyflakes import checker as pyflakes_checker  # type: ignore[import-not-found]
-    except ImportError:
-        if not _pyflakes_import_warning_emitted:
-            _pyflakes_import_warning_emitted = True
-            _logger.warning(
-                "Pyflakes linter selected but pyflakes is not importable "
-                "(add vendor/pyflakes per docs or install pyflakes)."
-            )
-        return None
-    try:
-        syntax_tree = ast.parse(source, filename=str(file_path))
-    except SyntaxError:
-        return None
-    return pyflakes_checker.Checker(syntax_tree, str(file_path))
-
-
-def _diagnostic_from_pyflakes_message(message: Any, file_path: Path) -> CodeDiagnostic | None:
-    message_type = type(message).__name__
-    code = "PY399"
-    severity = DiagnosticSeverity.WARNING
-    if message_type == "UndefinedName":
-        code = "PY301"
-        severity = DiagnosticSeverity.ERROR
-    elif message_type == "UndefinedLocal":
-        code = "PY302"
-        severity = DiagnosticSeverity.ERROR
-    elif message_type == "RedefinedWhileUnused":
-        code = "PY303"
-    elif message_type == "ImportShadowedByLoopVar":
-        code = "PY304"
-    elif message_type == "ImportStarUsed":
-        code = "PY305"
-    elif message_type == "UnusedImport":
-        code = "PY220"
-
-    line_number = int(getattr(message, "lineno", 1))
-    col_start_value = getattr(message, "col", None)
-    col_start = int(col_start_value) if col_start_value is not None else None
-    col_end = None
-    if col_start is not None:
-        message_args = getattr(message, "message_args", ())
-        if message_args and isinstance(message_args[0], str):
-            col_end = col_start + len(message_args[0])
-        else:
-            col_end = col_start + 1
-    raw_text = str(message)
-    text = raw_text.strip()
-    if not text:
-        return None
-    return CodeDiagnostic(
-        code=code,
-        severity=severity,
-        file_path=str(file_path),
-        line_number=max(1, line_number),
-        message=text,
-        col_start=col_start,
-        col_end=col_end,
-    )
-
-
-def _ensure_vendor_path_on_sys_path() -> None:
-    vendor_dir = Path(__file__).resolve().parents[2] / "vendor"
-    vendor_text = str(vendor_dir)
-    if vendor_text not in sys.path:
-        sys.path.insert(0, vendor_text)

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import threading
-import time
 
 import pytest
 
-from app.intelligence.symbol_index import SymbolIndexWorker, build_python_symbol_index, to_indexed_symbols
+from app.intelligence.symbol_index import build_python_symbol_index, to_indexed_symbols, update_symbol_index_cache
 from app.persistence.sqlite_index import SQLiteSymbolIndex
 
 pytestmark = pytest.mark.unit
@@ -40,28 +38,23 @@ def test_to_indexed_symbols_flattens_deterministically(tmp_path: Path) -> None:
     assert [entry.name for entry in flattened] == ["run"]
 
 
-def test_symbol_index_worker_populates_sqlite_cache(tmp_path: Path) -> None:
+def test_update_symbol_index_cache_populates_sqlite(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     (project_root / "module.py").write_text("def task():\n    return 1\n", encoding="utf-8")
     cache_path = tmp_path / "state" / "symbols.sqlite3"
-    done = threading.Event()
-    counts: list[int] = []
 
-    worker = SymbolIndexWorker(
+    count = update_symbol_index_cache(
         project_root=str(project_root),
         cache_db_path=str(cache_path),
-        on_done=lambda count: (counts.append(count), done.set()),
     )
-    worker.start()
-    assert done.wait(timeout=2.0)
-    assert counts == [1]
 
+    assert count == 1
     cache = SQLiteSymbolIndex(str(cache_path))
     assert cache.lookup(str(project_root), "task")
 
 
-def test_symbol_index_worker_incrementally_updates_changed_files(tmp_path: Path) -> None:
+def test_update_symbol_index_cache_incrementally_updates_changed_files(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     module_a = project_root / "alpha.py"
@@ -70,14 +63,10 @@ def test_symbol_index_worker_incrementally_updates_changed_files(tmp_path: Path)
     module_b.write_text("def beta():\n    return 2\n", encoding="utf-8")
     cache_path = tmp_path / "state" / "symbols.sqlite3"
 
-    done_first = threading.Event()
-    worker_first = SymbolIndexWorker(
+    update_symbol_index_cache(
         project_root=str(project_root),
         cache_db_path=str(cache_path),
-        on_done=lambda _count: done_first.set(),
     )
-    worker_first.start()
-    assert done_first.wait(timeout=2.0)
 
     cache = SQLiteSymbolIndex(str(cache_path))
     assert cache.lookup(str(project_root), "alpha")
@@ -86,51 +75,36 @@ def test_symbol_index_worker_incrementally_updates_changed_files(tmp_path: Path)
     module_a.write_text("def alpha_new():\n    return 3\n", encoding="utf-8")
     module_b.unlink()
 
-    done_second = threading.Event()
-    worker_second = SymbolIndexWorker(
+    update_symbol_index_cache(
         project_root=str(project_root),
         cache_db_path=str(cache_path),
-        on_done=lambda _count: done_second.set(),
     )
-    worker_second.start()
-    assert done_second.wait(timeout=2.0)
 
     assert cache.lookup(str(project_root), "alpha") == []
     assert cache.lookup(str(project_root), "beta") == []
     assert cache.lookup(str(project_root), "alpha_new")
 
 
-def test_symbol_index_worker_skips_commit_when_generation_is_stale(tmp_path: Path) -> None:
+def test_update_symbol_index_cache_skips_commit_when_generation_is_stale(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     module = project_root / "module.py"
     module.write_text("def before():\n    return 1\n", encoding="utf-8")
     cache_path = tmp_path / "state" / "symbols.sqlite3"
 
-    done_first = threading.Event()
-    worker_first = SymbolIndexWorker(
+    update_symbol_index_cache(
         project_root=str(project_root),
         cache_db_path=str(cache_path),
-        on_done=lambda _count: done_first.set(),
     )
-    worker_first.start()
-    assert done_first.wait(timeout=2.0)
 
     module.write_text("def after():\n    return 2\n", encoding="utf-8")
-    stale_done = threading.Event()
-    stale_worker = SymbolIndexWorker(
+    count = update_symbol_index_cache(
         project_root=str(project_root),
         cache_db_path=str(cache_path),
-        on_done=lambda _count: stale_done.set(),
         should_commit=lambda: False,
     )
-    stale_worker.start()
 
-    deadline = time.time() + 2.0
-    while stale_worker.is_running() and time.time() < deadline:
-        time.sleep(0.01)
-
-    assert not stale_done.is_set()
+    assert count == 0
     cache = SQLiteSymbolIndex(str(cache_path))
     assert cache.lookup(str(project_root), "before")
     assert cache.lookup(str(project_root), "after") == []

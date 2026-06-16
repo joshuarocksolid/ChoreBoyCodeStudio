@@ -128,7 +128,16 @@ class SemanticFacade:
         )
         if result is not None:
             return result
-        return None
+        symbol_name = extract_symbol_under_cursor(source_text, cursor_position)
+        if not symbol_name:
+            return None
+        return SemanticSignatureResult(
+            callable_name=symbol_name,
+            signature_text="",
+            argument_index=0,
+            doc_summary="",
+            metadata=unsupported_metadata("jedi", unsupported_reason="dynamic_or_unresolved"),
+        )
 
     def complete(
         self,
@@ -186,6 +195,14 @@ class SemanticFacade:
         if not new_symbol.isidentifier():
             return None
 
+        current_path = Path(current_file_path).expanduser().resolve()
+        try:
+            on_disk_source = current_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"Unable to read rename target from disk: {current_file_path}") from exc
+        if on_disk_source != source_text:
+            raise ValueError("Save file before renaming; editor buffer differs from disk.")
+
         references = self.find_references(
             project_root=project_root,
             current_file_path=current_file_path,
@@ -209,15 +226,11 @@ class SemanticFacade:
             raise ValueError(f"Semantic rename could not prove a safe rename plan: {exc}") from exc
         if plan is None:
             raise ValueError("Semantic rename could not prove a safe rename plan.")
-        if plan.old_symbol == old_symbol:
-            return plan
-        return SemanticRenamePlan(
-            old_symbol=old_symbol,
-            new_symbol=plan.new_symbol,
-            hits=plan.hits,
-            preview_patches=plan.preview_patches,
-            metadata=plan.metadata,
-        )
+        if plan.old_symbol != old_symbol:
+            raise ValueError(
+                "Semantic rename plan symbol mismatch; save the file and retry rename."
+            )
+        return plan
 
     def apply_rename(self, plan: SemanticRenamePlan):
         return self._refactor_engine.apply_rename(plan)

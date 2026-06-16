@@ -34,14 +34,30 @@ class EditorIntelligenceController:
     def shutdown(self) -> None:
         self._semantic_session.shutdown()
 
-    def record_completion_acceptance(self, item: CompletionItem) -> None:
-        self._semantic_session.record_completion_acceptance(item)
+    def request_record_completion_acceptance(
+        self,
+        *,
+        item: CompletionItem,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_record_completion_acceptance(item=item, on_error=on_error)
 
-    def complete_blocking(self, *, request: CompletionRequest) -> CompletionEnvelope:
-        return self._semantic_session.complete_blocking(request=request)
-
-    def complete_fast(self, *, request: CompletionRequest) -> CompletionEnvelope:
-        return self._semantic_session.complete_fast(request=request)
+    def request_completion_fast(
+        self,
+        *,
+        request: CompletionRequest,
+        prefix: str,
+        request_generation: int,
+        on_success: Callable[[object], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._semantic_session.request_completion_fast(
+            request=request,
+            prefix=prefix,
+            request_generation=request_generation,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     def request_completion(
         self,
@@ -58,6 +74,21 @@ class EditorIntelligenceController:
             request_generation=request_generation,
             on_success=on_success,
             on_error=on_error,
+        )
+
+    def merge_completion_for_display(
+        self,
+        *,
+        fast: CompletionEnvelope | None = None,
+        semantic: CompletionEnvelope | None = None,
+        runtime_items: list[CompletionItem] | None = None,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        return self._semantic_session.merge_completion_for_display(
+            fast=fast,
+            semantic=semantic,
+            runtime_items=runtime_items,
+            max_results=max_results,
         )
 
     def request_completion_resolve(
@@ -187,42 +218,18 @@ class EditorIntelligenceController:
             on_error=on_error,
         )
 
-    def build_inline_signature_text(
-        self,
-        *,
-        project_root: str | None,
-        current_file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> str | None:
-        signature = self._semantic_session.resolve_signature_help_blocking(
-            project_root=project_root,
-            current_file_path=current_file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-        )
-        return self.format_inline_signature_text(signature)
-
-    def build_inline_hover_text(
-        self,
-        *,
-        project_root: str | None,
-        current_file_path: str,
-        source_text: str,
-        cursor_position: int,
-    ) -> str | None:
-        hover_info = self._semantic_session.resolve_hover_info_blocking(
-            project_root=project_root,
-            current_file_path=current_file_path,
-            source_text=source_text,
-            cursor_position=cursor_position,
-        )
-        return self.format_inline_hover_text(hover_info)
-
     @staticmethod
     def format_inline_signature_text(signature: SemanticSignatureResult | None) -> str | None:
         if signature is None:
             return None
+        if signature.metadata.confidence == "unsupported":
+            details = [
+                f"Callable: {signature.callable_name or 'unknown'}",
+                f"Confidence: {signature.metadata.confidence}",
+            ]
+            if signature.metadata.unsupported_reason:
+                details.append(f"Reason: {signature.metadata.unsupported_reason}")
+            return "\n".join(details)
         details = [
             signature.signature_text,
             f"Active parameter index: {signature.argument_index}",

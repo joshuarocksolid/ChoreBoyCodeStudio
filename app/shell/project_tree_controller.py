@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Generic, Optional, Protocol, TypeVar
 
-from app.intelligence.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
+from app.project.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.shell.breakpoint_store import BreakpointStore
 

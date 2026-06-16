@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.intelligence.import_rewrite import apply_import_rewrites, plan_import_rewrites
+from app.project.import_rewrite import apply_import_rewrites, plan_import_rewrites
 from app.project.file_operations import create_directory, create_file, move_path, rename_path
 
 pytestmark = pytest.mark.integration

@@ -210,7 +210,7 @@ def test_handle_find_references_action_surfaces_semantic_runtime_unavailable(
     workflow, host = _build_workflow()
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QMessageBox.warning",
+        "app.shell.symbol_navigation_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -237,7 +237,7 @@ def test_handle_rename_symbol_action_dispatches_background_task(monkeypatch: pyt
     workflow, host = _build_workflow()
 
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QInputDialog.getText",
+        "app.shell.semantic_rename_workflow.QInputDialog.getText",
         lambda *_args, **_kwargs: ("renamed_task", True),
     )
 
@@ -261,15 +261,15 @@ def test_handle_rename_symbol_action_on_success_applies_plan(monkeypatch: pytest
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QInputDialog.getText",
+        "app.shell.semantic_rename_workflow.QInputDialog.getText",
         lambda *_args, **_kwargs: ("renamed_task", True),
     )
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QMessageBox.question",
+        "app.shell.semantic_rename_workflow.QMessageBox.question",
         lambda *_args, **_kwargs: 16384,  # QMessageBox.Yes
     )
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QMessageBox.information",
+        "app.shell.semantic_rename_workflow.QMessageBox.information",
         lambda _parent, title, text: infos.append((title, text)),
     )
 

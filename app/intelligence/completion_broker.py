@@ -16,11 +16,14 @@ from app.intelligence.completion_context import (
     context_matches_prefix,
 )
 from app.intelligence.completion_metrics import CompletionTelemetry
+from app.intelligence.completion_merge_policy import envelope_confidence
 from app.intelligence.completion_models import (
     COMPLETION_DEGRADATION_SEMANTIC_ENGINE_ERROR,
     CompletionEnvelope,
     CompletionItem,
     CompletionKind,
+    CompletionTier,
+    CompletionTierPhase,
     RankedCompletionItem,
 )
 from app.intelligence.completion_providers import (
@@ -98,6 +101,13 @@ class CompletionBroker:
         envelope = self._envelope(
             context,
             items=[entry.item for entry in ranked[: context.max_results]],
+            tiers=(
+                CompletionTier(
+                    phase=CompletionTierPhase.FAST,
+                    label="Indexed suggestions",
+                    items=tuple(entry.item for entry in ranked[: context.max_results]),
+                ),
+            ),
             source_phase="fast",
             latency_breakdown=breakdown,
         )
@@ -105,7 +115,7 @@ class CompletionBroker:
         return envelope
 
     def complete_semantic(self, request: Any) -> CompletionEnvelope:
-        """Return semantic refinement merged with current fast providers."""
+        """Return semantic refinement without merging approximate fast-tier items."""
 
         context = self._context_from_request(request)
         if not context.should_offer_automatic_results:
@@ -113,8 +123,6 @@ class CompletionBroker:
 
         breakdown: dict[str, float] = {}
         degradation_reason = ""
-        with self._telemetry.span("fast_providers_for_merge", breakdown):
-            candidates = self._fast_candidates(context)
         try:
             with self._telemetry.span("semantic_complete", breakdown):
                 semantic_candidates = self._semantic_facade.complete(
@@ -130,13 +138,23 @@ class CompletionBroker:
             _logger.warning("semantic completion failed: %s", exc)
             semantic_candidates = []
             degradation_reason = COMPLETION_DEGRADATION_SEMANTIC_ENGINE_ERROR
-        candidates.extend(semantic_candidates)
-        candidates = self._attach_context_metadata(candidates, context=context)
+        semantic_candidates = self._attach_context_metadata(semantic_candidates, context=context)
         with self._telemetry.span("rank_semantic", breakdown):
-            ranked = self._rank_candidates(candidates, prefix=context.prefix, current_file_path=context.file_path)
+            ranked = self._rank_candidates(
+                semantic_candidates,
+                prefix=context.prefix,
+                current_file_path=context.file_path,
+            )
+        items = [entry.item for entry in ranked[: context.max_results]]
+        tier = CompletionTier(
+            phase=CompletionTierPhase.SEMANTIC,
+            label="Python analysis",
+            items=tuple(items),
+        )
         envelope = self._envelope(
             context,
-            items=[entry.item for entry in ranked[: context.max_results]],
+            items=items,
+            tiers=(tier,),
             source_phase="semantic",
             degradation_reason=degradation_reason,
             latency_breakdown=breakdown,
@@ -227,6 +245,8 @@ class CompletionBroker:
             return None
         if not context.prefix.startswith(cached.context.prefix):
             return None
+        if context.buffer_revision != cached.context.buffer_revision:
+            return None
         filtered = [
             _with_context_metadata(item, context=context)
             for item in cached.envelope.items
@@ -234,9 +254,15 @@ class CompletionBroker:
         ]
         if not filtered:
             return None
+        ranked = self._rank_candidates(
+            filtered,
+            prefix=context.prefix,
+            current_file_path=context.file_path,
+        )
         return self._envelope(
             context,
-            items=filtered[: context.max_results],
+            items=[entry.item for entry in ranked[: context.max_results]],
+            tiers=cached.envelope.tiers,
             source_phase="reuse",
             latency_breakdown={"reuse_filter": 0.0},
         )
@@ -287,15 +313,31 @@ class CompletionBroker:
         context: CompletionContext,
         *,
         items: list[CompletionItem],
+        tiers: tuple[CompletionTier, ...] | None = None,
         source_phase: str,
         degradation_reason: str = "",
         latency_breakdown: dict[str, float] | None = None,
     ) -> CompletionEnvelope:
+        tier_tuple = tiers
+        if tier_tuple is None:
+            phase = {
+                "fast": CompletionTierPhase.FAST,
+                "semantic": CompletionTierPhase.SEMANTIC,
+                "reuse": CompletionTierPhase.FAST,
+            }.get(source_phase, CompletionTierPhase.FAST)
+            tier_tuple = (
+                CompletionTier(
+                    phase=phase,
+                    label=source_phase,
+                    items=tuple(items),
+                ),
+            )
         return CompletionEnvelope(
             items=items,
+            tiers=tier_tuple,
             degradation_reason=degradation_reason,
             source=source_phase,
-            confidence="exact" if source_phase == "semantic" else "approximate",
+            confidence=envelope_confidence(tier_tuple),
             source_phase=source_phase,
             request_id=context.fingerprint,
             buffer_revision=context.buffer_revision,

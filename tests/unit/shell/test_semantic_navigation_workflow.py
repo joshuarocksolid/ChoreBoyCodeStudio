@@ -17,9 +17,29 @@ pytestmark = pytest.mark.unit
 class _FakeIntelligenceController:
     def __init__(self) -> None:
         self.lookup_definition_calls: list[dict[str, Any]] = []
+        self.signature_help_calls: list[dict[str, Any]] = []
+        self.hover_info_calls: list[dict[str, Any]] = []
 
     def request_lookup_definition(self, **kwargs: Any) -> None:
         self.lookup_definition_calls.append(kwargs)
+
+    def request_signature_help(self, **kwargs: Any) -> None:
+        self.signature_help_calls.append(kwargs)
+
+    def request_hover_info(self, **kwargs: Any) -> None:
+        self.hover_info_calls.append(kwargs)
+
+    @staticmethod
+    def format_inline_signature_text(signature: object | None) -> str | None:
+        if signature is None:
+            return None
+        return getattr(signature, "signature_text", None)
+
+    @staticmethod
+    def format_inline_hover_text(hover_info: object | None) -> str | None:
+        if hover_info is None:
+            return None
+        return f"Symbol: {getattr(hover_info, 'symbol_name', 'unknown')}"
 
 
 class _FakeHost:
@@ -33,6 +53,8 @@ class _FakeHost:
             textCursor=lambda: SimpleNamespace(position=lambda: 40),
             word_under_cursor=lambda: "helper_task",
             show_calltip=lambda _text: None,
+            allocate_signature_help_request_generation=lambda: 1,
+            allocate_hover_request_generation=lambda: 1,
         )
         self._intelligence_controller = _FakeIntelligenceController()
         self.opened_at_line: list[tuple[str, int]] = []
@@ -50,16 +72,16 @@ class _FakeHost:
         return self._editor_widget
 
     def editor_widget_for_path(self, file_path: str) -> object | None:
-        return None
+        return self._editor_widget
 
     def editor_widgets_by_path(self) -> dict[str, object]:
-        return {}
+        return {"/tmp/project/main.py": self._editor_widget}
 
     def intelligence_controller(self) -> _FakeIntelligenceController:
         return self._intelligence_controller
 
     def editor_buffer_revision(self, file_path: str) -> int | None:
-        return None
+        return 1
 
     def open_file_at_line(self, file_path: str, line_number: int) -> None:
         self.opened_at_line.append((file_path, line_number))
@@ -139,7 +161,7 @@ def test_handle_go_to_definition_action_dispatches_semantic_task() -> None:
 def test_handle_go_to_definition_action_uses_target_chooser(monkeypatch: pytest.MonkeyPatch) -> None:
     workflow, host = _build_workflow()
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QInputDialog.getItem",
+        "app.shell.symbol_navigation_workflow.QInputDialog.getItem",
         lambda *_args, **_kwargs: ("b.py:8 (function)", True),
     )
 
@@ -166,7 +188,7 @@ def test_handle_go_to_definition_action_surfaces_semantic_runtime_unavailable(
     workflow, host = _build_workflow()
     warnings: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "app.shell.semantic_navigation_workflow.QMessageBox.warning",
+        "app.shell.symbol_navigation_workflow.QMessageBox.warning",
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
@@ -190,23 +212,57 @@ def test_handle_go_to_definition_action_surfaces_semantic_runtime_unavailable(
     assert "Semantic definitions are currently unavailable." in warnings[-1][1]
 
 
-def test_signature_help_action_shows_inline_calltip(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_signature_help_action_uses_async_request_not_blocking() -> None:
+    workflow, host = _build_workflow()
+
+    workflow.handle_signature_help_action()
+
+    assert len(host.intelligence_controller().signature_help_calls) == 1
+    call = host.intelligence_controller().signature_help_calls[0]
+    assert call["current_file_path"] == "/tmp/project/main.py"
+    assert callable(call["on_success"])
+
+
+def test_hover_info_action_uses_async_request_not_blocking() -> None:
+    workflow, host = _build_workflow()
+
+    workflow.handle_hover_info_action()
+
+    assert len(host.intelligence_controller().hover_info_calls) == 1
+    call = host.intelligence_controller().hover_info_calls[0]
+    assert call["current_file_path"] == "/tmp/project/main.py"
+    assert callable(call["on_success"])
+
+
+def test_signature_help_action_shows_calltip_after_async_success() -> None:
     workflow, host = _build_workflow()
     shown: list[str] = []
     host._editor_widget.show_calltip = lambda text: shown.append(text)
-    monkeypatch.setattr(workflow, "_build_inline_signature_text", lambda **_kwargs: "helper_task(value)")
 
     workflow.handle_signature_help_action()
+    call = host.intelligence_controller().signature_help_calls[0]
+    call["on_success"](
+        (
+            1,
+            SimpleNamespace(signature_text="helper_task(value)"),
+        )
+    )
 
     assert shown == ["helper_task(value)"]
 
 
-def test_hover_info_action_shows_inline_calltip(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hover_info_action_shows_calltip_after_async_success() -> None:
     workflow, host = _build_workflow()
     shown: list[str] = []
     host._editor_widget.show_calltip = lambda text: shown.append(text)
-    monkeypatch.setattr(workflow, "_build_inline_hover_text", lambda **_kwargs: "Symbol: helper_task")
 
     workflow.handle_hover_info_action()
+    call = host.intelligence_controller().hover_info_calls[0]
+    call["on_success"](
+        (
+            1,
+            SimpleNamespace(symbol_name="helper_task"),
+        )
+    )
 
     assert shown == ["Symbol: helper_task"]

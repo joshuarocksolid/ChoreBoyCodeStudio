@@ -27,6 +27,7 @@ from app.editors.completion_popup.completion_item_model import CompletionItemMod
 from app.editors.completion_popup.completion_popup_container import (
     CompletionPopupContainer,
 )
+from app.intelligence.completion_merge_policy import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -221,7 +222,7 @@ class CompletionController(QObject):
         """Emit :pyattr:`activated` for the highlighted item, then hide."""
         item = self.current_item()
         self._popup.hide()
-        if item is not None:
+        if item is not None and not is_tier_header_item(item):
             self.activated.emit(item)
 
     # ------------------------------------------------------------------

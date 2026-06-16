@@ -20,7 +20,7 @@ from app.python_tools.models import (
     PythonToolingSettings,
 )
 from app.shell.main_window import MainWindow
-from app.shell.python_style_workflow import PythonStyleWorkflow
+from app.shell.python_style_workflow import build_python_style_workflow
 from app.shell.save_workflow import SaveWorkflow
 
 pytestmark = pytest.mark.unit
@@ -106,7 +106,7 @@ def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWid
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
     window_any._workflow_broker = object()
     window_any._save_workflow = SaveWorkflow(window)
-    window_any._python_style_workflow = PythonStyleWorkflow(window)
+    window_any._python_style_workflow = build_python_style_workflow(window)
     return window, editor_widget
 
 

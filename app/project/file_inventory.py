@@ -23,6 +23,8 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence, Union
 
+from dataclasses import dataclass
+
 from app.core import constants
 from app.core.errors import ProjectEnumerationError
 from app.core.models import ProjectFileEntry
@@ -227,3 +229,66 @@ def _build_entry(
         absolute_path=absolute_path,
         is_directory=is_directory,
     )
+
+
+@dataclass(frozen=True)
+class ProjectInventorySnapshot:
+    """One deterministic walk of importable Python modules under a project root."""
+
+    project_root: str
+    python_file_paths: tuple[str, ...]
+    module_names: tuple[str, ...]
+
+
+def build_project_inventory_snapshot(
+    project_root: PathInput,
+    *,
+    exclude_patterns: Sequence[str] = (),
+) -> ProjectInventorySnapshot:
+    """Build a snapshot from a single project walk."""
+    root = _resolve_root(project_root)
+    python_paths = tuple(
+        str(path.resolve())
+        for path in iter_python_files(root, exclude_patterns=exclude_patterns)
+    )
+    module_names = tuple(
+        sorted(
+            {
+                name
+                for name in (_module_name_from_python_path(root, Path(path)) for path in python_paths)
+                if name
+            }
+        )
+    )
+    return ProjectInventorySnapshot(
+        project_root=str(root),
+        python_file_paths=python_paths,
+        module_names=module_names,
+    )
+
+
+def module_names_from_snapshot(snapshot: ProjectInventorySnapshot) -> list[str]:
+    """Return module names captured by a snapshot."""
+    return list(snapshot.module_names)
+
+
+def _module_name_from_python_path(project_root: Path, file_path: Path) -> str | None:
+    from app.project.import_layout import module_name_for_file, resolve_project_import_layout
+
+    layout = resolve_project_import_layout(project_root)
+    canonical = module_name_for_file(layout, file_path)
+    if canonical is not None:
+        return canonical
+    try:
+        relative_path = file_path.relative_to(project_root).as_posix()
+    except ValueError:
+        return None
+    if not relative_path.endswith(".py"):
+        return None
+    module_path = relative_path[:-3]
+    if module_path.endswith("/__init__"):
+        module_path = module_path[: -len("/__init__")]
+    module_path = module_path.strip("/")
+    if not module_path:
+        return None
+    return module_path.replace("/", ".")

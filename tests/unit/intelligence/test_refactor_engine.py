@@ -52,7 +52,7 @@ def test_apply_rename_rolls_back_on_write_failure(tmp_path: Path, monkeypatch: p
             raise OSError("simulated write failure")
         return atomic_write_text(path, data, encoding=encoding)
 
-    monkeypatch.setattr("app.intelligence.refactor_engine.atomic_write_text", flaky_atomic_write)
+    monkeypatch.setattr("app.persistence.atomic_write.atomic_write_text", flaky_atomic_write)
 
     with pytest.raises(OSError):
         RopeRefactorEngine().apply_rename(plan)

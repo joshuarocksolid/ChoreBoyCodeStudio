@@ -19,6 +19,7 @@ from app.editors.completion_popup.completion_item_model import (
     CompletionItemModel,
     ItemRole,
 )
+from app.intelligence.completion_merge_policy import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -111,6 +112,14 @@ class CompletionListView(QListView):
         model = self.model()
         if model is None or model.rowCount() == 0:
             return
+        if isinstance(model, CompletionItemModel):
+            for row in range(model.rowCount()):
+                item = model.item_at(row)
+                if item is not None and not is_tier_header_item(item):
+                    index = model.index(row, 0)
+                    self.setCurrentIndex(index)
+                    self._on_current_row_changed(index, QModelIndex())
+                    return
         index = model.index(0, 0)
         self.setCurrentIndex(index)
         self._on_current_row_changed(index, QModelIndex())

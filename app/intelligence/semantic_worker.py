@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 import queue
 import threading
 import time
 from typing import Callable, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(order=True)
@@ -139,6 +143,7 @@ class SemanticWorker:
             try:
                 result = queued.task()
             except Exception as exc:
+                logger.exception("Semantic worker task failed for key=%s", queued.key)
                 if queued.on_error is not None and self._is_current(queued.key, queued.generation):
                     if queued.dispatch_on_main_thread:
                         self._dispatch_to_main_thread(lambda exc=exc, callback=queued.on_error: callback(exc))

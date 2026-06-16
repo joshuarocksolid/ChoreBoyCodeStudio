@@ -14,10 +14,11 @@ from app.editors.editor_manager import EditorManager
 from app.editors.editorconfig import resolve_editorconfig_indentation
 from app.editors.indentation import detect_indentation_style_and_size
 from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
-from app.intelligence.outline_service import OutlineSymbol, build_outline_from_source
+from app.intelligence.outline_service import OutlineSymbol, build_outline_from_source, flatten_symbols
 from app.project.file_excludes import compute_effective_excludes
 from app.project.project_service import enumerate_project_entries
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
+from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
 from app.shell.project_tree_utils import filter_tree_signature_entries
@@ -105,6 +106,9 @@ class EditorTabWorkflowHost(Protocol):
         ...
 
     def outline_follow_cursor(self) -> bool:
+        ...
+
+    def background_tasks(self) -> Any:
         ...
 
     def status_controller(self) -> Any | None:
@@ -250,12 +254,51 @@ class EditorTabWorkflow:
             str(Path(file_path).expanduser().resolve())
         )
         source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
-        symbols = build_outline_from_source(source or "")
-        self._host.outline_symbols_by_path()[file_path] = symbols
-        outline_panel.set_outline(symbols, file_path)
-        if editor_widget is not None and self._host.outline_follow_cursor():
-            line_number = editor_widget.textCursor().blockNumber() + 1
-            outline_panel.highlight_symbol_at_line(line_number)
+        requested_revision = None if editor_widget is None else self.buffer_revision(file_path)
+        key = f"outline::{file_path}"
+
+        def task(_cancel_event: object) -> tuple[OutlineSymbol, ...]:
+            return build_outline_from_source(source or "")
+
+        def on_success(symbols: tuple[OutlineSymbol, ...]) -> None:
+            def deliver() -> None:
+                self._host.outline_symbols_by_path()[file_path] = symbols
+                outline_panel.set_outline(symbols, file_path)
+                if editor_widget is not None and self._host.outline_follow_cursor():
+                    line_number = editor_widget.textCursor().blockNumber() + 1
+                    outline_panel.highlight_symbol_at_line(line_number)
+
+            if editor_widget is None:
+                deliver()
+                return
+
+            deliver_revision_gated_editor_result(
+                file_path=file_path,
+                editor_widget=editor_widget,
+                requested_revision=requested_revision,
+                editor_widget_for_path=lambda path: self._host.editor_widgets_by_path().get(
+                    str(Path(path).expanduser().resolve())
+                ),
+                buffer_revision=self.buffer_revision,
+                deliver=deliver,
+            )
+
+        def on_error(exc: Exception) -> None:
+            _ = exc
+
+        self._host.background_tasks().run(
+            key=key,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
+        )
+
+    def flat_outline_symbols_for_path(self, file_path: str, *, fallback_source: str) -> tuple[OutlineSymbol, ...]:
+        symbols = self._host.outline_symbols_by_path().get(file_path)
+        if symbols is None:
+            symbols = build_outline_from_source(fallback_source or "")
+            self._host.outline_symbols_by_path()[file_path] = symbols
+        return flatten_symbols(symbols)
 
     def handle_outline_symbol_activated(self, file_path: str, line_number: int) -> None:
         self.open_file_at_line(file_path, line_number)
@@ -833,6 +876,9 @@ class MainWindowEditorTabHost:
 
     def outline_follow_cursor(self) -> bool:
         return self._window._outline_follow_cursor
+
+    def background_tasks(self) -> Any:
+        return self._window._background_tasks
 
     def status_controller(self) -> Any | None:
         return self._window._status_controller

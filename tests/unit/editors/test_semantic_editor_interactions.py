@@ -64,7 +64,6 @@ def editor() -> CodeEditorWidget:
 def test_trigger_completion_uses_async_requester_when_available(editor: CodeEditorWidget) -> None:
     calls: list[tuple[str, str, int, bool, int]] = []
     editor.set_completion_requester(lambda prefix, source, position, manual, generation: calls.append((prefix, source, position, manual, generation)))
-    editor.set_completion_provider(lambda *_args: pytest.fail("sync provider should not be used"))
 
     editor.trigger_completion(manual=True)
 

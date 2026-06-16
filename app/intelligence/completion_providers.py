@@ -12,13 +12,17 @@ import re
 from app.intelligence.api_index import provide_api_index_member_items
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
+from app.intelligence.python_structure import extract_symbol_locations
 from app.persistence.sqlite_index import SQLiteSymbolIndex
-from app.project.file_inventory import iter_python_files
+from app.project.file_inventory import (
+    ProjectInventorySnapshot,
+    build_project_inventory_snapshot,
+    module_names_from_snapshot,
+)
 
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _DOTTED_NAME = r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
 _MODULE_MEMBER_CONTEXT_PATTERN = re.compile(r"(" + _DOTTED_NAME + r")\.([A-Za-z_][A-Za-z0-9_]*)?$")
-_PROJECT_MODULE_CACHE: dict[tuple[str, str], tuple[int, list[str]]] = {}
 
 
 @dataclass(frozen=True)
@@ -138,25 +142,54 @@ def provide_project_symbol_items(
     cache_db_path: str,
     prefix: str,
     limit: int,
+    inventory_snapshot: ProjectInventorySnapshot | None = None,
 ) -> list[CompletionItem]:
     """Return completion candidates from persisted project symbol cache."""
     if not project_root:
         return []
 
+    project_root_text = str(Path(project_root).expanduser().resolve())
     cache = SQLiteSymbolIndex(cache_db_path)
-    symbols = cache.search_by_prefix(project_root, prefix, limit=limit)
-    items: list[CompletionItem] = []
-    for symbol in symbols:
-        items.append(
+    symbols = cache.search_by_prefix(project_root_text, prefix, limit=limit)
+    if symbols:
+        return [
             CompletionItem(
                 label=symbol.name,
                 insert_text=symbol.name,
                 kind=CompletionKind.SYMBOL,
                 detail=f"{Path(symbol.file_path).name}:{symbol.line_number}",
                 source_file_path=symbol.file_path,
+                source="cache",
+                confidence="exact",
             )
-        )
-    return items
+            for symbol in symbols
+        ]
+
+    if cache.count_symbols(project_root_text) > 0:
+        return []
+
+    snapshot = inventory_snapshot or build_project_inventory_snapshot(project_root_text)
+    approximate_items: list[CompletionItem] = []
+    for file_path in snapshot.python_file_paths:
+        for symbol in extract_symbol_locations(Path(file_path)):
+            if not _matches_prefix(symbol.name, prefix):
+                continue
+            approximate_items.append(
+                CompletionItem(
+                    label=symbol.name,
+                    insert_text=symbol.name,
+                    kind=CompletionKind.SYMBOL,
+                    detail=f"{Path(symbol.file_path).name}:{symbol.line_number} • approximate",
+                    source_file_path=symbol.file_path,
+                    source="approximate",
+                    confidence="approximate",
+                )
+            )
+            if len(approximate_items) >= limit:
+                break
+        if len(approximate_items) >= limit:
+            break
+    return sorted(approximate_items, key=lambda item: item.label)[:limit]
 
 
 def provide_project_module_items(
@@ -165,6 +198,7 @@ def provide_project_module_items(
     prefix: str,
     limit: int,
     cache_db_path: str | None = None,
+    inventory_snapshot: ProjectInventorySnapshot | None = None,
 ) -> list[CompletionItem]:
     """Return completion candidates for project-local importable modules."""
     if project_root is None:
@@ -173,38 +207,26 @@ def provide_project_module_items(
     if not root.exists():
         return []
 
-    candidates: list[str] = []
     if cache_db_path:
         cache_path = Path(cache_db_path).expanduser().resolve()
-        cache_stamp = int(cache_path.stat().st_mtime_ns) if cache_path.exists() else -1
-        cache_key = (str(root), str(cache_path))
-        cached_entry = _PROJECT_MODULE_CACHE.get(cache_key)
-        if cached_entry is not None and cached_entry[0] == cache_stamp:
-            return _module_completion_items(
-                _filter_module_names(cached_entry[1], prefix=prefix, limit=limit)
-            )
+        if cache_path.exists():
+            indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
+            if indexed_files:
+                candidates = _module_names_from_indexed_paths(
+                    project_root=root,
+                    indexed_file_paths=indexed_files,
+                )
+                return _module_completion_items(
+                    _filter_module_names(candidates, prefix=prefix, limit=limit)
+                )
 
-        indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
-        if indexed_files:
-            candidates = _module_names_from_indexed_paths(
-                project_root=root,
-                indexed_file_paths=indexed_files,
-            )
-            _PROJECT_MODULE_CACHE[cache_key] = (cache_stamp, candidates)
-            return _module_completion_items(_filter_module_names(candidates, prefix=prefix, limit=limit))
-
-    for file_path in iter_python_files(root):
-        module_name = _module_name_from_path(root, file_path)
-        if module_name is None:
-            continue
-        if not _matches_prefix(module_name, prefix):
-            continue
-        candidates.append(module_name)
-        if len(candidates) >= limit:
-            break
-
-    deduped = sorted(set(candidates))
-    return _module_completion_items(deduped)
+    snapshot = inventory_snapshot or build_project_inventory_snapshot(root)
+    filtered = _filter_module_names(
+        module_names_from_snapshot(snapshot),
+        prefix=prefix,
+        limit=limit,
+    )
+    return _module_completion_items(filtered)
 
 
 def provide_module_member_items(

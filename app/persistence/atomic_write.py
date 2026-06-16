@@ -48,3 +48,20 @@ def _fsync_directory(directory: Path) -> None:
         return
     finally:
         os.close(fd)
+
+
+def atomic_write_batch(writes: dict[str, str], *, encoding: str = "utf-8") -> list[str]:
+    """Apply multiple atomic writes with rollback on the first failure."""
+    originals: dict[str, str] = {}
+    updated_paths: list[str] = []
+    try:
+        for path, content in writes.items():
+            target = Path(path).expanduser().resolve()
+            originals[path] = target.read_text(encoding=encoding)
+            atomic_write_text(target, content, encoding=encoding)
+            updated_paths.append(str(target))
+    except OSError:
+        for path, payload in originals.items():
+            atomic_write_text(path, payload, encoding=encoding)
+        raise
+    return updated_paths
