@@ -31,3 +31,28 @@ def test_enhance_preview_document_marks_external_links(qapp) -> None:  # type: i
     enhance_preview_document(browser.document(), tokens=_tokens())
 
     assert "\u2197" in browser.toPlainText()
+
+
+def test_enhance_preview_document_styles_table_header_row(qapp) -> None:  # type: ignore[no-untyped-def]
+    from PySide2.QtGui import QFont, QTextTable
+    from PySide2.QtWidgets import QTextBrowser
+
+    browser = QTextBrowser()
+    browser.setMarkdown("| Name | Value |\n| --- | --- |\n| a | 1 |")
+    tokens = _tokens()
+
+    enhance_preview_document(browser.document(), tokens=tokens)
+
+    root = browser.document().rootFrame()
+    header_char_format = None
+    for frame in root.childFrames():
+        if not isinstance(frame, QTextTable):
+            continue
+        cell = frame.cellAt(0, 0)
+        if cell.isValid():
+            header_char_format = cell.firstCursorPosition().charFormat()
+        break
+
+    assert header_char_format is not None
+    assert header_char_format.fontWeight() == QFont.Bold
+    assert header_char_format.background().color().name().upper() == tokens.row_alt_bg.upper()

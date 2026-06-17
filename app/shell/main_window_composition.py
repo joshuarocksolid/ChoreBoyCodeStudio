@@ -21,6 +21,7 @@ from app.debug.debug_models import DebugExceptionPolicy
 from app.debug.debug_session import DebugSession
 from app.editors.editor_manager import EditorManager
 from app.editors.markdown_editor_pane import MarkdownEditorPane
+from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.intelligence.outline_service import OutlineSymbol
 from app.shell.intelligence_composition import bootstrap_intelligence_runtime
@@ -207,6 +208,7 @@ def install_main_window_composition(
     window._editor_manager = EditorManager()
     window._editor_widgets_by_path = window._workspace_controller.editor_widgets_by_path
     window._markdown_panes_by_path: dict[str, MarkdownEditorPane] = {}
+    window._tab_content_registry = EditorTabContentRegistry(window._markdown_panes_by_path)
     window._editor_tab_factory = EditorTabFactory(window)
     window._indent_source_by_path: dict[str, tuple[str, int, str]] = {}
     window._debug_exception_policy = DebugExceptionPolicy()

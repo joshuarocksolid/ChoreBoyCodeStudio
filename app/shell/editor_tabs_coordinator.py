@@ -45,6 +45,24 @@ class EditorTabsCoordinator:
             )
             tab_bar.update()
 
+    def replace_tab_content_widget(self, file_path: str, new_widget: object) -> None:
+        window = self._window
+        if window._editor_tabs_widget is None:
+            return
+        tab_index = self.tab_index_for_path(file_path)
+        if tab_index < 0:
+            return
+        tabs = window._editor_tabs_widget
+        label = tabs.tabText(tab_index)
+        tooltip = tabs.tabToolTip(tab_index)
+        tabs.removeTab(tab_index)
+        tabs.insertTab(tab_index, new_widget, label)
+        tabs.setTabToolTip(tab_index, tooltip)
+        tabs.setCurrentIndex(tab_index)
+        tab_bar = tabs.tabBar()
+        if isinstance(tab_bar, QTabBar):
+            tab_bar.update()
+
     def promote_preview_tab(self, file_path: str) -> bool:
         window = self._window
         promoted_tab = window._editor_manager.promote_tab(file_path)

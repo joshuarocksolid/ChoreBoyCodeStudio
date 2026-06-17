@@ -96,11 +96,11 @@ class CompletionDocsPanel(QFrame):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Refresh palette derived from theme tokens."""
         self._tokens = tokens
-        bg = tokens.popup_bg or tokens.panel_bg or "#FFFFFF"
-        text = tokens.text_primary or "#212529"
-        muted = tokens.text_muted or "#6C757D"
-        border = tokens.popup_border or tokens.border or "#DEE2E6"
-        accent = tokens.accent or text
+        bg = tokens.popup_bg or tokens.panel_bg
+        text = tokens.text_primary
+        muted = tokens.text_muted
+        border = tokens.popup_border or tokens.border
+        accent = tokens.accent
         self.setStyleSheet(
             f"""
             QFrame#CompletionDocsPanel {{
@@ -213,10 +213,10 @@ class CompletionDocsPanel(QFrame):
         if not active_risk:
             return
         if active_risk.lower() == "inspection_only":
-            bg = tokens.diag_warning_color or "#D97706"
+            bg = tokens.diag_warning_color
         else:
-            bg = tokens.diag_error_color or "#E03131"
-        text_color = "#FFFFFF" if tokens.is_dark else "#FFFFFF"
+            bg = tokens.diag_error_color
+        text_color = tokens.text_primary if tokens.is_high_contrast else "#FFFFFF"
         self._risk_pill.setStyleSheet(
             f"""
             QLabel#CompletionDocsRiskPill {{

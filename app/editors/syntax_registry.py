@@ -9,7 +9,7 @@ from typing import Any
 from PySide2.QtGui import QTextDocument
 
 from app.editors.ini_highlighter import IniSyntaxHighlighter
-from app.editors.syntax_engine import SyntaxPalette, syntax_palette_from_tokens
+from app.syntax.palette import SyntaxPalette, syntax_palette_from_tokens
 from app.treesitter.highlighter_core import TreeSitterHighlighter
 from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
 

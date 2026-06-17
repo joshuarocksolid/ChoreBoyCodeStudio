@@ -29,7 +29,10 @@ class MainWindowEditorTabHost:
         return self._window._editor_widgets_by_path
 
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
-        return self._window._markdown_panes_by_path
+        return self._window._tab_content_registry.markdown_panes_by_path
+
+    def tab_content_registry(self) -> Any:
+        return self._window._tab_content_registry
 
     def indent_source_by_path(self) -> dict[str, tuple[str, int, str]]:
         return self._window._indent_source_by_path

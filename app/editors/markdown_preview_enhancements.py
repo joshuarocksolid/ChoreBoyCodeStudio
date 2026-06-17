@@ -98,7 +98,7 @@ def _apply_table_header_fallback(document: QTextDocument, tokens: ShellThemeToke
             cell = table.cellAt(0, column)
             if cell.isValid():
                 cursor = cell.firstCursorPosition()
-                cursor.movePosition(QTextCursor.EndOfCell, QTextCursor.KeepAnchor)
+                cursor.setPosition(cell.lastCursorPosition().position(), QTextCursor.KeepAnchor)
                 _merge_char_format(cursor, header_format)
 
 

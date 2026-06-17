@@ -352,3 +352,29 @@ def _trusted_runtime_module(module_name: str) -> str:
 def _fingerprint(*parts: object) -> str:
     raw = "\0".join("" if part is None else str(part) for part in parts)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def resolve_completion_prefix(
+    *,
+    source_text: str,
+    cursor_position: int,
+    current_file_path: str,
+    project_root: str | None,
+    trigger_is_manual: bool,
+    min_prefix_chars: int,
+    max_results: int,
+    trigger_kind: str = "invoked",
+    trigger_character: str = "",
+) -> str:
+    """Return the typed completion prefix for a buffer position (shared SSOT)."""
+    return build_completion_context(
+        source_text=source_text,
+        cursor_position=cursor_position,
+        current_file_path=current_file_path,
+        project_root=project_root,
+        trigger_is_manual=trigger_is_manual,
+        min_prefix_chars=min_prefix_chars,
+        max_results=max_results,
+        trigger_kind=trigger_kind,
+        trigger_character=trigger_character,
+    ).prefix

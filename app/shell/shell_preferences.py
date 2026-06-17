@@ -41,15 +41,11 @@ class ShellPreferencesBundle:
     intelligence_runtime_settings: IntelligenceRuntimeSettings
 
 
-def load_shell_preferences_bundle(
-    settings_service: SettingsReader,
-    *,
-    project_root: str | None,
+def build_shell_preferences_bundle(
+    global_settings_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any] | None,
 ) -> ShellPreferencesBundle:
-    global_settings_payload = settings_service.load_global()
-    project_settings_payload: Mapping[str, Any] | None = None
-    if project_root is not None:
-        project_settings_payload = settings_service.load_project(project_root)
+    """Build an effective preferences bundle from already-loaded settings payloads."""
 
     global_editor = parse_editor_settings_snapshot(global_settings_payload)
     effective_editor = parse_effective_editor_settings_snapshot(
@@ -76,3 +72,15 @@ def load_shell_preferences_bundle(
         local_history_retention_policy=main_window.local_history_retention_policy,
         intelligence_runtime_settings=main_window.intelligence_runtime_settings,
     )
+
+
+def load_shell_preferences_bundle(
+    settings_service: SettingsReader,
+    *,
+    project_root: str | None,
+) -> ShellPreferencesBundle:
+    global_settings_payload = settings_service.load_global()
+    project_settings_payload: Mapping[str, Any] | None = None
+    if project_root is not None:
+        project_settings_payload = settings_service.load_project(project_root)
+    return build_shell_preferences_bundle(global_settings_payload, project_settings_payload)

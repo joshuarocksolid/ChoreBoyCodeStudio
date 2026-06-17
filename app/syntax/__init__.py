@@ -1,7 +1,6 @@
-"""Backward-compatible re-exports from ``app.syntax``."""
+"""Neutral syntax highlighting contracts shared by editors and tree-sitter."""
 
-from __future__ import annotations
-
+from app.syntax.contracts import TokenStyle, ThemedSyntaxHighlighter
 from app.syntax.palette import (
     DEFAULT_DARK_PALETTE,
     DEFAULT_HC_DARK_PALETTE,
@@ -12,7 +11,6 @@ from app.syntax.palette import (
     build_syntax_palette,
     syntax_palette_from_tokens,
 )
-from app.syntax.contracts import TokenStyle, ThemedSyntaxHighlighter
 
 __all__ = [
     "DEFAULT_DARK_PALETTE",

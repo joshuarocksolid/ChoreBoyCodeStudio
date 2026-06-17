@@ -22,7 +22,6 @@ if TYPE_CHECKING:
         _completion_requester: CompletionRequester | None
         _completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None
         _completion_accepted_callback: Callable[[CompletionItem], None] | None
-        _hover_provider: Callable[[str, int], str | None] | None
         _hover_requester: Callable[[str, int, int], None] | None
         _signature_help_provider: Callable[[str, int], str | None] | None
         _signature_help_requester: Callable[[str, int, int], None] | None
@@ -77,10 +76,6 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     def set_completion_accepted_callback(self, callback: Callable[[CompletionItem], None] | None) -> None:
         """Attach callback invoked when completion item is accepted."""
         self._completion_accepted_callback = callback
-
-    def set_hover_provider(self, provider: Callable[[str, int], str | None] | None) -> None:
-        """Attach hover provider used by tooltip interactions."""
-        self._hover_provider = provider
 
     def set_hover_requester(self, requester: Callable[[str, int, int], None] | None) -> None:
         """Attach asynchronous hover requester used by tooltip interactions."""

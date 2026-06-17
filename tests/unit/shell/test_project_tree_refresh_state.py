@@ -14,6 +14,7 @@ from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
 from app.shell.editor_tab_workflow import EditorTabWorkflow
+from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.shell.main_window_editor_tab_host import MainWindowEditorTabHost
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.project_tree_utils import filter_tree_signature_entries  # noqa: E402
@@ -148,6 +149,7 @@ def test_poll_external_file_changes_reloads_project_tree_on_structure_change(tmp
         set_tree_structure_signature=lambda _sig: None,
     )
     window_any._markdown_panes_by_path = {}
+    window_any._tab_content_registry = EditorTabContentRegistry(window_any._markdown_panes_by_path)
     window_any._editor_tab_factory = SimpleNamespace()
     window_any._file_project_commands_workflow = SimpleNamespace(
         load_effective_exclude_patterns=lambda _root: [],
@@ -209,6 +211,7 @@ def test_poll_external_file_changes_ignores_run_artifact_writes(tmp_path: Path) 
     )
     window_any._loaded_project = loaded_project
     window_any._markdown_panes_by_path = {}
+    window_any._tab_content_registry = EditorTabContentRegistry(window_any._markdown_panes_by_path)
     window_any._editor_tab_factory = SimpleNamespace()
     window_any._file_project_commands_workflow = SimpleNamespace(
         load_effective_exclude_patterns=lambda _root: [],

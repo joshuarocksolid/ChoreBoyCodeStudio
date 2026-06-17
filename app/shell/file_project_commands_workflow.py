@@ -32,7 +32,8 @@ from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.menus import MenuStubRegistry
 from app.shell.project_controller import ProjectController
 from app.shell.project_load_workflow import ProjectLoadWorkflow
-from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_settings_apply_baseline
+from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_settings_apply_baseline_from_snapshot
+from app.shell.shell_preferences import build_shell_preferences_bundle
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
     merge_editor_settings_snapshot_for_scope,
@@ -462,12 +463,11 @@ class FileProjectCommandsWorkflow:
                 project_settings_payload,
             )
 
-        previous_theme_mode = global_snapshot.theme_mode
-        previous_lint_rule_overrides = dict(self._host.lint_rule_overrides())
-        previous_diagnostics_enabled = self._host.diagnostics_enabled()
-        previous_selected_linter = self._host.selected_linter()
-        previous_enable_preview = self._host.editor_enable_preview()
         previous_effective_excludes = self.load_effective_exclude_patterns(project_root)
+        baseline = capture_settings_apply_baseline_from_snapshot(
+            effective_snapshot=effective_snapshot,
+            effective_excludes=previous_effective_excludes,
+        )
         (
             python_tooling_runtime_text,
             python_tooling_runtime_details,
@@ -504,18 +504,15 @@ class FileProjectCommandsWorkflow:
         if project_root is not None and merged_project_settings != project_settings_payload:
             settings_service.save_project(project_root, merged_project_settings)
 
-        baseline = capture_settings_apply_baseline(
-            theme_mode=previous_theme_mode,
-            lint_rule_overrides=previous_lint_rule_overrides,
-            diagnostics_enabled=previous_diagnostics_enabled,
-            selected_linter=previous_selected_linter,
-            enable_preview=previous_enable_preview,
-            effective_excludes=previous_effective_excludes,
+        preferences_bundle = build_shell_preferences_bundle(
+            merged_global_settings,
+            merged_project_settings if project_root is not None else None,
         )
         self._host.settings_apply_workflow().apply_after_settings_saved(
             updated_snapshot=updated_snapshot,
             baseline=baseline,
             project_root=project_root,
+            preferences_bundle=preferences_bundle,
         )
 
     def handle_quick_open_action(self) -> None:

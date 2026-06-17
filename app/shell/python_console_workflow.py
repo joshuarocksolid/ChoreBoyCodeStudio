@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Callable, Protocol
 
-from app.intelligence.completion_context import build_completion_context
+from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
 
 _PYTHON_CONSOLE_FILE_PATH = "<python_console>"
@@ -97,7 +97,7 @@ class PythonConsoleWorkflow:
                 trigger_character=trigger_character,
                 max_results=100,
             )
-            completion_context = build_completion_context(
+            completion_prefix = resolve_completion_prefix(
                 source_text=line_buffer,
                 cursor_position=cursor_offset,
                 current_file_path=_PYTHON_CONSOLE_FILE_PATH,
@@ -115,7 +115,7 @@ class PythonConsoleWorkflow:
                     return
                 console_widget.show_completion_items_for_request(
                     request_generation=request_generation,
-                    prefix=completion_context.prefix,
+                    prefix=completion_prefix,
                     items=envelope.items,
                 )
                 if envelope.degradation_reason:

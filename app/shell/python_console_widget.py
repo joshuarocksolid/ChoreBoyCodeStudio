@@ -71,6 +71,7 @@ class PythonConsoleWidget(QTextEdit):
         self._pending_block_lines: list[str] = []
         self._auto_trigger_period: bool = True
         self._completion_request_generation: int = 0
+        self._active_completion_prefix = ""
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
@@ -334,7 +335,9 @@ class PythonConsoleWidget(QTextEdit):
             self.setTextCursor(cursor)
 
         super().keyPressEvent(event)
-        if event.text() == "." and self._auto_trigger_period:
+        if event.text() and self._completion_popup.is_visible() and self._active_completion_prefix:
+            self._trigger_completion(trigger_kind="typing", trigger_character="")
+        elif event.text() == "." and self._auto_trigger_period:
             self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
 
     def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:
@@ -343,6 +346,8 @@ class PythonConsoleWidget(QTextEdit):
         cursor = self.textCursor()
         if cursor.position() < self._prompt_anchor:
             return
+        if self._completion_popup.is_visible() and self._active_completion_prefix:
+            self._completion_popup.reuse_items_for_prefix(self._active_completion_prefix)
         self._completion_request_generation += 1
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
         self._completion_requester(
@@ -359,7 +364,9 @@ class PythonConsoleWidget(QTextEdit):
     def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
         if not items:
             self._completion_popup.hide()
+            self._active_completion_prefix = ""
             return
+        self._active_completion_prefix = prefix
         self._completion_popup.set_items(items, prefix)
         rect = self.cursorRect()
         rect.setWidth(max(260, rect.width()))

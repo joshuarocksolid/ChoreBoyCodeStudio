@@ -39,6 +39,7 @@ class MarkdownTabRegistry:
         new_path: str,
         *,
         is_markdown_path: Callable[[str], bool],
+        on_unwrap: Callable[[MarkdownEditorPane, CodeEditorWidget], None] | None = None,
     ) -> None:
         for old_path, markdown_pane in list(self._panes_by_path.items()):
             if markdown_pane.source_editor() is widget:
@@ -46,6 +47,11 @@ class MarkdownTabRegistry:
                 if is_markdown_path(new_path):
                     markdown_pane.set_file_path(new_path)
                     self._panes_by_path[new_path] = markdown_pane
+                elif on_unwrap is not None:
+                    on_unwrap(markdown_pane, widget)
+                    markdown_pane.deleteLater()
+                else:
+                    markdown_pane.deleteLater()
                 break
 
     def apply_all_themes(self, tokens: ShellThemeTokens) -> None:

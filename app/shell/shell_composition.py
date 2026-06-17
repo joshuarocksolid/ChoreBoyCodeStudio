@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from PySide2.QtGui import QColor
+from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
@@ -14,7 +15,7 @@ from app.shell.file_project_commands_workflow import (
     FileProjectCommandsWorkflow,
     MainWindowFileProjectCommandsHost,
 )
-from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_settings_apply_baseline
+from app.shell.settings_apply_workflow import SettingsApplyWorkflow
 from app.shell.python_console_workflow import PythonConsoleWorkflow
 from app.shell.project_tree_action_workflow import ProjectTreeActionWorkflow
 from app.shell.run_launch_workflow import RunLaunchWorkflow
@@ -129,8 +130,11 @@ class MainWindowSettingsApplyHost:
 
         self._window._dark_chrome_palette = resolve_dark_chrome_palette(dark_chrome_palette)
 
-    def apply_theme_mode(self, theme_mode: str) -> None:
-        self._window._shell_preferences_runtime.handle_set_theme(theme_mode)
+    def apply_theme_mode(self, theme_mode: str, *, skip_theme_styles: bool = False) -> None:
+        self._window._shell_preferences_runtime.handle_set_theme(
+            theme_mode,
+            skip_theme_styles=skip_theme_styles,
+        )
 
     def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
         self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
@@ -469,12 +473,29 @@ class MainWindowShellThemeHost:
         window = self._window
 
         def apply_editor_themes(tokens: ShellThemeTokens) -> None:
-            for editor_widget in window._editor_widgets_by_path.values():
-                editor_widget.apply_theme(tokens)
+            active_tab = window._editor_manager.active_tab()
+            active_path = None if active_tab is None else active_tab.file_path
+            deferred_widgets = []
+            for file_path, editor_widget in window._editor_widgets_by_path.items():
+                defer_rehighlight = file_path != active_path
+                editor_widget.apply_theme(tokens, defer_syntax_rehighlight=defer_rehighlight)
+                if defer_rehighlight:
+                    deferred_widgets.append(editor_widget)
+
+            if not deferred_widgets:
+                return
+
+            def flush_next_deferred_editor() -> None:
+                if not deferred_widgets:
+                    return
+                deferred_widgets.pop(0).flush_pending_syntax_theme_refresh()
+                if deferred_widgets:
+                    QTimer.singleShot(0, flush_next_deferred_editor)
+
+            QTimer.singleShot(0, flush_next_deferred_editor)
 
         def apply_markdown_themes(tokens: ShellThemeTokens) -> None:
-            for markdown_pane in window._markdown_panes_by_path.values():
-                markdown_pane.apply_theme(tokens)
+            window._tab_content_registry.apply_all_markdown_themes(tokens)
 
         def apply_python_console_theme(tokens: ShellThemeTokens) -> None:
             if window._python_console_widget is not None:

@@ -6,7 +6,7 @@ from typing import Any, cast
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
 from app.core.highlighting_policy import effective_highlighting_mode
-from app.editors.syntax_engine import TokenStyle, ThemedSyntaxHighlighter
+from app.syntax.contracts import TokenStyle, ThemedSyntaxHighlighter
 from app.treesitter.capture_pipeline import (
     _CAPTURE_TOKEN_MAP,
     _CaptureSpan,

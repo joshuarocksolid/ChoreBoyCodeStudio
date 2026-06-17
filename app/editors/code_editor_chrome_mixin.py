@@ -74,7 +74,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
     def _apply_chrome_theme(self, tokens: ShellThemeTokens) -> None:
         self._gutter_bg = QColor(tokens.gutter_bg)
         self._gutter_text = QColor(tokens.gutter_text)
-        self._breakpoint_color = QColor("#FF6B6B") if tokens.is_dark else QColor("#E03131")
+        self._breakpoint_color = QColor(tokens.diag_error_color)
         if tokens.debug_paused_color:
             self._debug_execution_color = QColor(tokens.debug_paused_color)
         if tokens.debug_current_frame_bg:

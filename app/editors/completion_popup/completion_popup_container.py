@@ -82,8 +82,8 @@ class CompletionPopupContainer(QFrame):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Restyle container chrome and propagate to children."""
         self._tokens = tokens
-        bg = tokens.popup_bg or tokens.panel_bg or "#FFFFFF"
-        border = tokens.popup_border or tokens.border or "#DEE2E6"
+        bg = tokens.popup_bg or tokens.panel_bg
+        border = tokens.popup_border or tokens.border
         shadow_hex = tokens.popup_shadow or ""
         shadow_color = (
             QColor(shadow_hex)

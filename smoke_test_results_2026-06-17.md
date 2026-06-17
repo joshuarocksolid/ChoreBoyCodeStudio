@@ -16,7 +16,7 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 | 32 | Tab/Shift+Tab preserves multi-line selection | PASS | Repeated Tab kept the block selected and added indent levels; Shift+Tab outdented and kept selection. |
 | 33 | Multi-line paste lands selected (single-line does not) | PASS | Multi-line paste landed highlighted; single-line paste landed unselected. |
 | 30 | Flat-Python paste re-indent | WARN | Hint overlay + Re-indent, auto-mode ON silent path, **Always** (persisted `auto_reindent_flat_python_paste=true`), Edit menu, and Ctrl+Alt+V all work. **BUG:** right-click context-menu entries (Paste and Re-indent / Re-indent Selection) never appear — `_show_context_menu` in `app/editors/code_editor_widget.py` is defined but never wired to a `contextMenuEvent` override/signal, so Qt's default menu shows. Unit tests call `_augment_context_menu_with_flat_python_actions` directly and miss the gap. |
-| 31 | Auto-save does not trim trailing whitespace | PASS | With Auto Save + trim-on-save ON, the auto-save timer left the fresh auto-indented line intact; caret held its indented column. |
+| 31 | Auto-save does not trim trailing whitespace | PASS | Re-validated with auto-save *effective* (had to enable at Project scope — project file pinned `auto_save:false`). With trim-on-save ON, auto-save fired (status -> saved), the fresh auto-indented line was not trimmed, and typed chars landed at the indented column (no jump to col 0). |
 
 ## Group B — Syntax coloring & diagnostics
 
@@ -24,13 +24,13 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 |---|---------|--------|-------|
 | 24 | `.fcmacro` syntax coloring (no identifier flood) | PASS | `.fcmacro` attaches Python highlighting; generic identifiers render default text color (no cyan flood), keywords/strings/numbers/comments/defs/`self`/calls still colored. Verified on `smoke_macro.fcmacro`. |
 | 27 | Undefined identifier PY301 squiggle | PASS | Full-width squiggle + Problems "PY301 undefined name 'nothing'" + gutter error marker. NOTE: only fires under the **Pyflakes** linter provider; the default built-in provider does no name resolution. Project `cbcs/settings.json` pinned `selected_linter: default`, so the provider had to be set at **Project** scope (incidentally confirms request #5 project-override layering). |
-| 25 | Settings syntax token names not clipped | | |
+| 25 | Settings syntax token names not clipped | PASS | Syntax Colors token column shows full labels (e.g. "Lexical / Keyword Operator", "Lexical / Escape Sequence", "Lexical / String Prefix"); no truncation/elision. Light theme verified. |
 
 ## Group C — Completion
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 34 | Dot-attribute completion (editor + console) | | |
+| 34 | Dot-attribute completion (editor + console) | PASS | Editor: `os.` popped member completions with detail. Console: `data.` listed the live dict's methods (keys/values/items/get/...) with provenance `jedi_interpreter · runtime · semantic` and a side-effect-risk pill, reflecting the actual runtime object. |
 
 ## Group D — Navigation
 

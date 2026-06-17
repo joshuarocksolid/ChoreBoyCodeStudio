@@ -111,6 +111,9 @@ class ShellPreferencesRuntimeHost(Protocol):
     def set_local_history_retention_policy(self, policy: LocalHistoryRetentionPolicy) -> None:
         ...
 
+    def local_history_retention_policy(self) -> LocalHistoryRetentionPolicy:
+        ...
+
     def local_history_workflow(self) -> Any:
         ...
 
@@ -195,7 +198,7 @@ class ShellPreferencesRuntime:
             lambda settings_payload: merge_theme_mode(settings_payload, mode)
         )
 
-    def handle_set_theme(self, mode: str) -> None:
+    def handle_set_theme(self, mode: str, *, skip_theme_styles: bool = False) -> None:
         if mode == self._host.theme_mode():
             return
         self._host.set_theme_mode(mode)
@@ -205,7 +208,8 @@ class ShellPreferencesRuntime:
         if quick_open_dialog is not None:
             quick_open_dialog.deleteLater()
             self._host.set_quick_open_dialog(None)
-        self._host.shell_theme_workflow().apply_theme_styles()
+        if not skip_theme_styles:
+            self._host.shell_theme_workflow().apply_theme_styles()
         self.sync_theme_menu_check_state()
         self._host.logger().info("Theme mode changed to %s.", mode)
 
@@ -259,11 +263,14 @@ class ShellPreferencesRuntime:
         self._host.apply_completion_preferences_tuple(main.completion_preferences)
         self._host.apply_diagnostics_preferences_tuple(main.diagnostics_preferences)
         self._host.apply_output_preferences_tuple(main.output_preferences)
-        self._host.set_local_history_retention_policy(bundle.local_history_retention_policy)
-        self._host.local_history_workflow().set_retention_policy(
-            bundle.local_history_retention_policy,
-            apply_now=True,
-        )
+        previous_retention_policy = self._host.local_history_retention_policy()
+        new_retention_policy = bundle.local_history_retention_policy
+        self._host.set_local_history_retention_policy(new_retention_policy)
+        if new_retention_policy != previous_retention_policy:
+            self._host.local_history_workflow().set_retention_policy(
+                new_retention_policy,
+                apply_now=True,
+            )
         self._host.set_shortcut_overrides(dict(bundle.shortcut_overrides))
         self._host.set_syntax_color_overrides(
             {theme: dict(overrides) for theme, overrides in bundle.syntax_color_overrides.items()}
@@ -408,6 +415,9 @@ class MainWindowShellPreferencesRuntimeHost:
 
     def set_local_history_retention_policy(self, policy: LocalHistoryRetentionPolicy) -> None:
         self._window._local_history_retention_policy = policy
+
+    def local_history_retention_policy(self) -> LocalHistoryRetentionPolicy:
+        return self._window._local_history_retention_policy
 
     def local_history_workflow(self) -> Any:
         return self._window._local_history_workflow

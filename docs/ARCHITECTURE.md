@@ -751,6 +751,14 @@ and diagnostics overlays
 - quick open support
 - code-navigation affordances (go-to-definition, breadcrumbs)
 
+Syntax highlighting ownership (shell → highlighter pipeline):
+
+- `ShellThemeTokens` (including HC syntax fields from `tokens_from_palette`) is the sole runtime color SSOT for editor chrome and syntax.
+- `app/syntax/palette.py` owns default palettes, `SYNTAX_PALETTE_FIELD_MAP`, and `syntax_palette_from_tokens`.
+- `app/syntax/contracts.py` owns `ThemedSyntaxHighlighter` shared by INI fallback and tree-sitter highlighters.
+- `app/editors/syntax_registry.py` orchestrates highlighter creation for editor documents.
+- `app/treesitter/highlighter_core.py` consumes neutral `app.syntax` contracts only (no `app.editors` imports).
+
 ## 12.5 `project`
 
 Filesystem/project abstraction:

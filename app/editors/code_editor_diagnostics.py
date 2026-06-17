@@ -21,7 +21,6 @@ if TYPE_CHECKING:
         _diag_warning_color: QColor
         _diag_info_color: QColor
         _line_number_area: Any
-        _hover_provider: Any
         _hover_requester: Any
         _hover_request_generation: int
         _hover_request_global_pos: QPoint | None
@@ -127,11 +126,6 @@ class CodeEditorDiagnosticsMixin(_CodeEditorDiagnosticsBase):
                     self._hover_request_generation,
                 )
                 return True
-            if self._hover_provider is not None:
-                hover_text = self._hover_provider(self.toPlainText(), cursor_pos)
-                if hover_text:
-                    QToolTip.showText(e.globalPos(), hover_text, self)  # type: ignore[union-attr]
-                    return True
             QToolTip.hideText()
             return True
         return super().event(e)

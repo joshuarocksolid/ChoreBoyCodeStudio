@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from PySide2.QtGui import QColor, QPalette
 
 from app.core import constants
-from app.editors.syntax_engine import (
+from app.syntax.palette import (
     DEFAULT_DARK_PALETTE,
     DEFAULT_HC_DARK_PALETTE,
     DEFAULT_HC_LIGHT_PALETTE,

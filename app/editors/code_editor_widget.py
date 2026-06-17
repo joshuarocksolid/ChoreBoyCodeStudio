@@ -74,7 +74,6 @@ class CodeEditorWidget(
         self._completion_requester: Callable[[str, int, bool, int, str, str], None] | None = None
         self._completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None = None
         self._completion_accepted_callback: Callable[[CompletionItem], None] | None = None
-        self._hover_provider: Callable[[str, int], str | None] | None = None
         self._hover_requester: Callable[[str, int, int], None] | None = None
         self._hover_tooltip_enabled = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
         self._signature_help_provider: Callable[[str, int], str | None] | None = None
@@ -116,7 +115,7 @@ class CodeEditorWidget(
             indent_size=DEFAULT_TAB_WIDTH,
         )
 
-    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+    def apply_theme(self, tokens: ShellThemeTokens, *, defer_syntax_rehighlight: bool = False) -> None:
         started_at = time.perf_counter()
         self._is_dark = tokens.is_dark
         self._cached_theme_tokens = tokens
@@ -135,7 +134,7 @@ class CodeEditorWidget(
         self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
-        rehighlight_syntax = self.isVisible()
+        rehighlight_syntax = self.isVisible() and not defer_syntax_rehighlight
         self._syntax_registry.apply_theme(
             self._highlighter,
             is_dark=tokens.is_dark,
@@ -147,6 +146,14 @@ class CodeEditorWidget(
         self._notify_highlighter_viewport_lines()
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         self._emit_operation_latency("editor_theme_apply_ms", elapsed_ms)
+
+    def flush_pending_syntax_theme_refresh(self) -> None:
+        if not self._syntax_theme_refresh_pending or self._highlighter is None:
+            return
+        if hasattr(self._highlighter, "rehighlight"):
+            self._highlighter.rehighlight()  # type: ignore[union-attr]
+        self._syntax_theme_refresh_pending = False
+        self._notify_highlighter_viewport_lines()
 
     def set_operation_latency_sink(
         self,
@@ -315,12 +322,7 @@ class CodeEditorWidget(
 
     def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         super().showEvent(event)
-        if not self._syntax_theme_refresh_pending or self._highlighter is None:
-            return
-        if hasattr(self._highlighter, "rehighlight"):
-            self._highlighter.rehighlight()  # type: ignore[union-attr]
-        self._syntax_theme_refresh_pending = False
-        self._notify_highlighter_viewport_lines()
+        self.flush_pending_syntax_theme_refresh()
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         self._destroy_paste_hint_overlay_on_close()

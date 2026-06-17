@@ -13,6 +13,7 @@ from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidg
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.editors.markdown_rendering import is_markdown_path
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.shell.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
@@ -96,6 +97,12 @@ class ProjectTreeUiWorkflowHost(Protocol):
         ...
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
+        ...
+
+    def tab_content_registry(self) -> Any:
+        ...
+
+    def editor_tabs_coordinator(self) -> Any:
         ...
 
     def debug_execution_editor(self) -> CodeEditorWidget | None:
@@ -377,10 +384,16 @@ class ProjectTreeUiWorkflow:
 
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
-        MarkdownTabRegistry(self._host.markdown_panes_by_path()).rekey_for_widget(
+        normalized_path = str(Path(new_path).expanduser().resolve())
+
+        def on_unwrap(_markdown_pane: MarkdownEditorPane, source_editor: CodeEditorWidget) -> None:
+            self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)
+
+        self._host.tab_content_registry().markdown_registry().rekey_for_widget(
             widget,
-            new_path,
+            normalized_path,
             is_markdown_path=is_markdown_path,
+            on_unwrap=on_unwrap,
         )
 
     def update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
@@ -595,7 +608,13 @@ class MainWindowProjectTreeUiHost:
         return self._window._editor_widgets_by_path
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
-        return self._window._markdown_panes_by_path
+        return self._window._tab_content_registry.markdown_panes_by_path
+
+    def tab_content_registry(self) -> Any:
+        return self._window._tab_content_registry
+
+    def editor_tabs_coordinator(self) -> Any:
+        return self._window._editor_tabs_coordinator
 
     def debug_execution_editor(self) -> CodeEditorWidget | None:
         return self._window._debug_execution_editor

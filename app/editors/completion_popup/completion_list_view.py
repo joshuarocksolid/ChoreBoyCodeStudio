@@ -62,10 +62,10 @@ class CompletionListView(QListView):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Forward theme tokens to the delegate and restyle scrollbars."""
         self._delegate.apply_theme(tokens)
-        bg = tokens.popup_bg or tokens.panel_bg or "#FFFFFF"
-        text = tokens.text_primary or "#212529"
-        scrollbar_handle = tokens.border or "#DEE2E6"
-        scrollbar_hover = tokens.text_muted or "#6C757D"
+        bg = tokens.popup_bg or tokens.panel_bg
+        text = tokens.text_primary
+        scrollbar_handle = tokens.border
+        scrollbar_hover = tokens.text_muted
         self.setStyleSheet(
             f"""
             QListView {{

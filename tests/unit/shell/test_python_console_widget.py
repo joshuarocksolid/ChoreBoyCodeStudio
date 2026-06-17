@@ -574,3 +574,36 @@ class TestRunnerMetadataStyling:
         fmt = active_widget._fmt_for("stdout", "[system] Python console session ended.")
         assert fmt.fontItalic()
         assert fmt.foreground().color() == QColor(active_widget._col_muted)
+
+
+class TestConsoleCompletionPrefixReuse:
+    def test_tier_headers_survive_prefix_lengthen_via_reuse(self, active_widget: PythonConsoleWidget) -> None:
+        from app.core.completion_tier import is_tier_header_item  # noqa: PLC0415
+        from app.intelligence.completion_merge_policy import merge_completion_display  # noqa: PLC0415
+        from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind  # noqa: PLC0415
+
+        def _item(label: str, *, source: str = "semantic") -> CompletionItem:
+            return CompletionItem(
+                label=label,
+                insert_text=label,
+                kind=CompletionKind.SYMBOL,
+                source=source,
+            )
+
+        fast = CompletionEnvelope(
+            items=[_item("alpha", source="static_api_index")],
+            source_phase="fast",
+            confidence="approximate",
+        )
+        semantic = CompletionEnvelope(
+            items=[_item("alpha"), _item("alpaca")],
+            source_phase="semantic",
+            confidence="exact",
+        )
+        items = merge_completion_display(fast=fast, semantic=semantic).items
+
+        active_widget._completion_popup.set_items(items, "")
+        assert active_widget._completion_popup.reuse_items_for_prefix("a") is True
+        row_kinds = active_widget._completion_popup.model().row_kinds()
+        assert row_kinds.count("header") >= 2
+        assert is_tier_header_item(active_widget._completion_popup.model().items()[0])
