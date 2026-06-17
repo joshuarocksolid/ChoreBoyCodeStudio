@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Protocol, Sequence
 
 from PySide2.QtWidgets import QDialog, QMessageBox, QWidget
 
@@ -46,73 +46,181 @@ from app.shell.recovery_center_dialog import (
 )
 
 
+class LocalHistoryEditorHost(Protocol):
+    """Typed host surface for local-history editor integration (not ``window: Any``)."""
+
+    def parent_widget(self) -> QWidget | None:
+        ...
+
+    def loaded_project(self) -> LoadedProject | None:
+        ...
+
+    def editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
+        ...
+
+    def open_file_in_editor(self, file_path: str) -> bool:
+        ...
+
+    def open_file_for_session_restore(self, file_path: str) -> bool:
+        ...
+
+    def open_restored_history_buffer(self, file_path: str, content: str) -> bool:
+        ...
+
+    def apply_text_to_open_tab(self, file_path: str, content: str) -> None:
+        ...
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        ...
+
+    def refresh_tab_presentation(self, file_path: str) -> None:
+        ...
+
+    def set_current_tab_index(self, tab_index: int) -> None:
+        ...
+
+    def show_status_message(self, message: str, timeout_ms: int) -> None:
+        ...
+
+    def current_theme_tokens(self) -> ShellThemeTokens | None:
+        ...
+
+    def breakpoint_store(self) -> BreakpointStore | None:
+        ...
+
+    def refresh_breakpoints_list(self) -> None:
+        ...
+
+    def capture_tree_state(self) -> SessionTreeState | None:
+        ...
+
+    def restore_tree_state(self, tree_state: SessionTreeState) -> None:
+        ...
+
+    def reveal_tree_path(self, file_path: str) -> None:
+        ...
+
+    def set_tree_reveal_suppressed(self, suppressed: bool) -> None:
+        ...
+
+
+class MainWindowLocalHistoryEditorHost:
+    """Adapts :class:`MainWindow` to :class:`LocalHistoryEditorHost`."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def parent_widget(self) -> QWidget | None:
+        return self._window
+
+    def loaded_project(self) -> LoadedProject | None:
+        return self._window._loaded_project
+
+    def editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
+        return self._window._workspace_controller.widget_for_path(file_path)
+
+    def open_file_in_editor(self, file_path: str) -> bool:
+        return self._window._editor_tab_factory.open_file_in_editor(file_path, preview=False)
+
+    def open_file_for_session_restore(self, file_path: str) -> bool:
+        return self._window._editor_tab_factory.open_file_in_editor(
+            file_path,
+            preview=False,
+            restore_draft=False,
+        )
+
+    def open_restored_history_buffer(self, file_path: str, content: str) -> bool:
+        return self._window._editor_tab_factory.open_restored_history_buffer(file_path, content)
+
+    def apply_text_to_open_tab(self, file_path: str, content: str) -> None:
+        self._window._apply_text_to_open_tab(file_path, content)
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
+
+    def refresh_tab_presentation(self, file_path: str) -> None:
+        self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
+
+    def set_current_tab_index(self, tab_index: int) -> None:
+        if self._window._editor_tabs_widget is not None:
+            self._window._editor_tabs_widget.setCurrentIndex(tab_index)
+
+    def show_status_message(self, message: str, timeout_ms: int) -> None:
+        self._window.statusBar().showMessage(message, timeout_ms)
+
+    def current_theme_tokens(self) -> ShellThemeTokens | None:
+        accessor = getattr(self._window, "current_theme_tokens", None)
+        if not callable(accessor):
+            return None
+        try:
+            resolved = accessor()
+        except Exception:  # pragma: no cover - defensive: parent in shutdown
+            return None
+        if isinstance(resolved, ShellThemeTokens):
+            return resolved
+        return None
+
+    def breakpoint_store(self) -> BreakpointStore | None:
+        return self._window._debug_control_workflow.breakpoint_store
+
+    def refresh_breakpoints_list(self) -> None:
+        self._window._debug_control_workflow.refresh_breakpoints_list()
+
+    def capture_tree_state(self) -> SessionTreeState | None:
+        return self._window._project_tree_presenter.capture_view_state()
+
+    def restore_tree_state(self, tree_state: SessionTreeState) -> None:
+        self._window._project_tree_presenter.restore_view_state(tree_state)
+
+    def reveal_tree_path(self, file_path: str) -> None:
+        self._window._project_tree_presenter.reveal_path(file_path)
+
+    def set_tree_reveal_suppressed(self, suppressed: bool) -> None:
+        self._window._project_tree_presenter.set_reveal_suppressed(suppressed)
+
+
 class LocalHistoryWorkflow:
     """Owns editor local-history, draft autosave, and project session state."""
 
     def __init__(
         self,
         *,
-        parent: QWidget | None,
+        host: LocalHistoryEditorHost,
         local_history_store: LocalHistoryStore,
         autosave_store: AutosaveStore,
-        loaded_project: Callable[[], LoadedProject | None],
         editor_manager: EditorManager,
-        editor_widget_for_path: Callable[[str], CodeEditorWidget | None],
-        open_file_in_editor: Callable[[str], bool],
-        open_file_for_session_restore: Callable[[str], bool] | None = None,
-        open_restored_history_buffer: Callable[[str, str], bool],
-        apply_text_to_open_tab: Callable[[str, str], None],
-        tab_index_for_path: Callable[[str], int],
-        refresh_tab_presentation: Callable[[str], None],
-        set_current_tab_index: Callable[[int], None],
-        show_status_message: Callable[[str, int], None],
         logger: logging.Logger,
         background_tasks: GeneralTaskScheduler | None = None,
         autosave_timer: _AutosaveTimer | None = None,
         retention_policy: LocalHistoryRetentionPolicy | None = None,
-        ensure_breakpoint_spec: Callable[[str, int], object] | None = None,
-        breakpoint_store: BreakpointStore | None = None,
-        refresh_breakpoints_list: Callable[[], None] | None = None,
-        capture_tree_state: Callable[[], SessionTreeState | None] | None = None,
-        restore_tree_state: Callable[[SessionTreeState], None] | None = None,
-        reveal_tree_path: Callable[[str], None] | None = None,
-        set_tree_reveal_suppressed: Callable[[bool], None] | None = None,
     ) -> None:
-        self._parent = parent
+        self._host = host
         self._local_history_store = local_history_store
         self._autosave_store = autosave_store
-        self._loaded_project = loaded_project
         self._editor_manager = editor_manager
-        self._editor_widget_for_path = editor_widget_for_path
-        self._open_file_in_editor = open_file_in_editor
-        self._open_restored_history_buffer = open_restored_history_buffer
-        self._apply_text_to_open_tab = apply_text_to_open_tab
-        self._tab_index_for_path = tab_index_for_path
-        self._refresh_tab_presentation = refresh_tab_presentation
-        self._show_status_message = show_status_message
         self._logger = logger
         self._background_tasks = background_tasks
         self._retention_policy = retention_policy
         self._history_restore_picker_dialog: HistoryRestorePickerDialog | None = None
         self._recovery_center_dialog: RecoveryCenterDialog | None = None
         self._session_workflow = EditorSessionWorkflow(
-            loaded_project=loaded_project,
+            loaded_project=host.loaded_project,
             editor_manager=editor_manager,
-            editor_widget_for_path=editor_widget_for_path,
-            open_file_in_editor=open_file_in_editor,
-            open_file_for_session_restore=open_file_for_session_restore,
-            tab_index_for_path=tab_index_for_path,
-            set_current_tab_index=set_current_tab_index,
+            editor_widget_for_path=host.editor_widget_for_path,
+            open_file_in_editor=host.open_file_in_editor,
+            open_file_for_session_restore=host.open_file_for_session_restore,
+            tab_index_for_path=host.tab_index_for_path,
+            set_current_tab_index=host.set_current_tab_index,
             logger=logger,
-            breakpoint_store=breakpoint_store,
-            refresh_breakpoints_list=refresh_breakpoints_list,
-            capture_tree_state=capture_tree_state,
-            restore_tree_state=restore_tree_state,
-            reveal_tree_path=reveal_tree_path,
-            set_tree_reveal_suppressed=set_tree_reveal_suppressed,
+            breakpoint_store=host.breakpoint_store(),
+            refresh_breakpoints_list=host.refresh_breakpoints_list,
+            capture_tree_state=host.capture_tree_state,
+            restore_tree_state=host.restore_tree_state,
+            reveal_tree_path=host.reveal_tree_path,
+            set_tree_reveal_suppressed=host.set_tree_reveal_suppressed,
         )
         self._draft_autosave = DraftAutosaveWorkflow(
-            parent=parent,
+            parent=host.parent_widget(),
             autosave_store=autosave_store,
             editor_manager=editor_manager,
             context_for_path=self.local_history_context_for_path,
@@ -148,7 +256,7 @@ class LocalHistoryWorkflow:
         self._session_workflow.restore_session_state(project_root)
 
     def local_history_context_for_path(self, file_path: str) -> tuple[Optional[str], Optional[str]]:
-        loaded_project = self._loaded_project()
+        loaded_project = self._host.loaded_project()
         if loaded_project is None:
             return (None, None)
         metadata = getattr(loaded_project, "metadata", None)
@@ -193,13 +301,13 @@ class LocalHistoryWorkflow:
             project_root=project_root,
         )
         if skip_reason == "excluded":
-            self._show_status_message(
+            self._host.show_status_message(
                 f"Local history skipped for {Path(file_path).name}: file matches a local-history exclude pattern.",
                 5000,
             )
         elif skip_reason == "too_large":
             max_bytes = self._retention_policy.max_tracked_file_bytes if self._retention_policy is not None else 0
-            self._show_status_message(
+            self._host.show_status_message(
                 (
                     f"Local history skipped for {Path(file_path).name}: "
                     f"file exceeds the {max_bytes} byte tracking limit."
@@ -217,7 +325,7 @@ class LocalHistoryWorkflow:
     ) -> None:
         if not any(payload is not None for payload in payloads_by_path.values()):
             return
-        loaded_project = self._loaded_project()
+        loaded_project = self._host.loaded_project()
         project_id = (
             getattr(loaded_project.metadata, "project_id", None)
             if loaded_project is not None
@@ -319,12 +427,12 @@ class LocalHistoryWorkflow:
         if tab_state is None:
             target_path = Path(file_path).expanduser().resolve()
             if target_path.exists():
-                self._open_file_in_editor(file_path)
+                self._host.open_file_in_editor(file_path)
             else:
-                self._open_restored_history_buffer(file_path, content)
+                self._host.open_restored_history_buffer(file_path, content)
             tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
-            QMessageBox.warning(self._parent, "Local History", f"Could not open {Path(file_path).name} for restore.")
+            QMessageBox.warning(self._host.parent_widget(), "Local History", f"Could not open {Path(file_path).name} for restore.")
             return
         self._apply_content_to_open_tab(file_path, content)
 
@@ -354,7 +462,7 @@ class LocalHistoryWorkflow:
         )
         if not checkpoints:
             QMessageBox.information(
-                self._parent,
+                self._host.parent_widget(),
                 "Local History",
                 "No local-history entries are available for this file yet.",
             )
@@ -366,7 +474,7 @@ class LocalHistoryWorkflow:
             checkpoint_content_loader=self._local_history_store.load_checkpoint_content,
             restore_to_buffer=lambda content: self.restore_local_history_content_to_buffer(file_path, content),
             tokens=self._resolve_parent_tokens(),
-            parent=self._parent,
+            parent=self._host.parent_widget(),
         )
         dialog.exec_()
 
@@ -389,7 +497,7 @@ class LocalHistoryWorkflow:
 
         def on_error(exc: Exception) -> None:
             self._logger.warning("Failed to load global history entries: %s", exc)
-            QMessageBox.warning(self._parent, "Global History", f"Could not load global history:\n{exc}")
+            QMessageBox.warning(self._host.parent_widget(), "Global History", f"Could not load global history:\n{exc}")
 
         self._background_tasks.run(
             key="global_history_list",
@@ -411,7 +519,7 @@ class LocalHistoryWorkflow:
             if draft_entry.content == tab_state.current_content:
                 return
             self._apply_content_to_open_tab(tab_state.file_path, draft_entry.content, editor_widget=editor_widget)
-            self._show_status_message(
+            self._host.show_status_message(
                 f"Restored unsaved changes for {tab_state.display_name}. Save to update the file on disk.",
                 6000,
             )
@@ -462,16 +570,7 @@ class LocalHistoryWorkflow:
         self._draft_autosave.stop_autosave_timer()
 
     def _resolve_parent_tokens(self) -> ShellThemeTokens | None:
-        accessor = getattr(self._parent, "current_theme_tokens", None)
-        if not callable(accessor):
-            return None
-        try:
-            resolved = accessor()
-        except Exception:  # pragma: no cover - defensive: parent in shutdown
-            return None
-        if isinstance(resolved, ShellThemeTokens):
-            return resolved
-        return None
+        return self._host.current_theme_tokens()
 
     def _apply_content_to_open_tab(
         self,
@@ -483,24 +582,24 @@ class LocalHistoryWorkflow:
         if editor_widget is not None:
             editor_widget.replace_document_text(content)
         else:
-            self._apply_text_to_open_tab(file_path, content)
+            self._host.apply_text_to_open_tab(file_path, content)
         updated_tab = self._editor_manager.update_tab_content(file_path, content)
-        tab_index = self._tab_index_for_path(file_path)
+        tab_index = self._host.tab_index_for_path(file_path)
         if tab_index >= 0:
-            self._refresh_tab_presentation(updated_tab.file_path)
+            self._host.refresh_tab_presentation(updated_tab.file_path)
         self.schedule_autosave(updated_tab.file_path, updated_tab.current_content)
 
     def _open_global_history_picker(self, summaries: Sequence[object]) -> None:
         if not summaries:
             QMessageBox.information(
-                self._parent,
+                self._host.parent_widget(),
                 "Global History",
                 "No saved local-history entries are available yet.",
             )
             return
 
         if self._history_restore_picker_dialog is None:
-            self._history_restore_picker_dialog = HistoryRestorePickerDialog(self._parent)
+            self._history_restore_picker_dialog = HistoryRestorePickerDialog(self._host.parent_widget())
 
         entries = [entry for entry in summaries if isinstance(entry, LocalHistoryFileSummary)]
         self._history_restore_picker_dialog.set_entries(entries)
@@ -515,7 +614,7 @@ class LocalHistoryWorkflow:
         if self._history_restore_picker_dialog.requested_action == HISTORY_RESTORE_ACTION_RESTORE_LATEST:
             latest_content = self._local_history_store.load_checkpoint_content(selected_entry.latest_revision_id)
             if latest_content is None:
-                QMessageBox.warning(self._parent, "Global History", "Could not load the latest saved revision.")
+                QMessageBox.warning(self._host.parent_widget(), "Global History", "Could not load the latest saved revision.")
                 return
             self.restore_local_history_content_to_buffer(selected_entry.file_path, latest_content)
             return
@@ -529,13 +628,13 @@ class LocalHistoryWorkflow:
         entries = self._recovery_center_entries(history_summaries, draft_entries)
         if not entries:
             QMessageBox.information(
-                self._parent,
+                self._host.parent_widget(),
                 "Recovery Center",
                 "No recovery drafts or saved local-history entries are available yet.",
             )
             return
         if self._recovery_center_dialog is None:
-            self._recovery_center_dialog = RecoveryCenterDialog(self._parent)
+            self._recovery_center_dialog = RecoveryCenterDialog(self._host.parent_widget())
         self._recovery_center_dialog.set_entries(entries)
         result = self._recovery_center_dialog.open_dialog()
         if result != QDialog.Accepted:
@@ -560,7 +659,7 @@ class LocalHistoryWorkflow:
         if self._recovery_center_dialog.requested_action == RECOVERY_ACTION_RESTORE_LATEST:
             latest_content = self._local_history_store.load_checkpoint_content(selected_summary.latest_revision_id)
             if latest_content is None:
-                QMessageBox.warning(self._parent, "Recovery Center", "Could not load the latest saved revision.")
+                QMessageBox.warning(self._host.parent_widget(), "Recovery Center", "Could not load the latest saved revision.")
                 return
             self.restore_local_history_content_to_buffer(selected_summary.file_path, latest_content)
         elif self._recovery_center_dialog.requested_action == RECOVERY_ACTION_OPEN_TIMELINE:
@@ -573,7 +672,7 @@ class LocalHistoryWorkflow:
             file_name = tab_state.display_name
             disk_text = tab_state.original_content or tab_state.current_content
             buffer_text = tab_state.current_content
-            editor_widget = self._editor_widget_for_path(draft_entry.file_path)
+            editor_widget = self._host.editor_widget_for_path(draft_entry.file_path)
         else:
             file_name = Path(draft_entry.file_path).name
             try:
@@ -614,7 +713,7 @@ class LocalHistoryWorkflow:
             tokens=self._resolve_parent_tokens(),
             disk_saved_at=_resolve_disk_saved_at_iso(draft_entry.file_path),
             draft_saved_at=draft_entry.saved_at,
-            parent=self._parent,
+            parent=self._host.parent_widget(),
         )
         response = dialog.exec_()
         if response == QDialog.Accepted:

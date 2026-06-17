@@ -7,11 +7,9 @@ from pathlib import Path
 
 from app.core.models import LoadedProject
 from app.editors.editor_manager import EditorManager
-from app.project.file_inventory import iter_project_entries
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.editor_tab_host_protocols import EditorTabPollHost
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
-from app.shell.project_tree_utils import effective_excludes_for, filter_tree_signature_entries
 
 
 class EditorTabPollWorkflow:
@@ -108,18 +106,7 @@ class EditorTabPollWorkflow:
         orchestrator_signature = self._host.project_inventory_tree_signature()
         if orchestrator_signature is not None:
             return orchestrator_signature
-        effective_excludes = effective_excludes_for(
-            loaded_project,
-            load_effective_exclude_patterns=self._host.load_effective_exclude_patterns,
-        )
-        entries = list(
-            iter_project_entries(
-                loaded_project.project_root,
-                exclude_patterns=effective_excludes.as_list(),
-                pattern_mode=effective_excludes.pattern_mode(),
-            )
-        )
-        return filter_tree_signature_entries(tuple(entry.relative_path for entry in entries))
+        return ()
 
 
 __all__ = ["EditorTabPollWorkflow"]

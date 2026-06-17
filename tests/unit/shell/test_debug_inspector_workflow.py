@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState  # noqa: E402
-from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow  # noqa: E402
-from app.shell.main_window import MainWindow  # noqa: E402
+from tests.support.shell_host_stubs import StubDebugShellHost, debug_control_workflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -49,14 +48,9 @@ class _FakeDebugInspectorHost:
         self.debug_execution_editor: _FakeEditorWidget | None = None
         self.editor_widgets_by_path: dict[str, _FakeEditorWidget] = {}
         self.open_calls: list[tuple[str, int | None]] = []
-        window = MainWindow.__new__(MainWindow)
-        cast(Any, window)._loaded_project = self.loaded_project
-        cast(Any, window)._editor_tab_workflow = SimpleNamespace(
-            open_file_at_line=lambda file_path, line_number, preview=False: self.open_calls.append(
-                (file_path, line_number)
-            )
+        self.debug_control_workflow = debug_control_workflow(
+            StubDebugShellHost(_loaded_project=self.loaded_project)
         )
-        self.debug_control_workflow = DebugControlWorkflow(window)
         self.debug_session = SimpleNamespace(
             state=DebugSessionState(
                 execution_state=DebugExecutionState.PAUSED,
@@ -69,6 +63,9 @@ class _FakeDebugInspectorHost:
                 ],
             )
         )
+
+    def open_file_at_line(self, file_path: str, line_number: int, *, preview: bool = False) -> None:
+        self.open_calls.append((file_path, line_number))
 
 
 def test_apply_debug_inspector_event_ignores_non_project_paused_frame_navigation() -> None:

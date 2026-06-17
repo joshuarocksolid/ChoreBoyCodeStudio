@@ -164,6 +164,7 @@ def test_keep_drafts_for_paths_persists_restore_policy_and_clears_pending(tmp_pa
 def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Path) -> None:
     from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
     from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
+    from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
 
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -174,23 +175,18 @@ def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Pat
     autosave_store = _FakeAutosaveStore()
     timer = _FakeTimer()
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: SimpleNamespace(
+                project_root=str(project_root.resolve()),
+                metadata=SimpleNamespace(project_id="proj_demo"),
+            ),
+            open_file_in_editor=lambda _path: True,
+            open_restored_history_buffer=lambda _path, _content: True,
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=autosave_store,  # type: ignore[arg-type]
         autosave_timer=timer,  # type: ignore[arg-type]
-        loaded_project=lambda: SimpleNamespace(
-            project_root=str(project_root.resolve()),
-            metadata=SimpleNamespace(project_id="proj_demo"),
-        ),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: None,
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: True,
-        apply_text_to_open_tab=lambda _path, _content: None,
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.draft_autosave_workflow"),
     )
 

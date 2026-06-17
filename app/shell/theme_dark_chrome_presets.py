@@ -11,6 +11,8 @@ DARK_CHROME_SHARED: dict[str, str | bool] = {
     "text_primary": "#E9ECEF",
     "text_muted": "#C2C9D1",
     "accent": "#5B8CFF",
+    "accent_hover": "#4D7AFF",
+    "accent_pressed": "#3D6AEE",
     "gutter_text": "#8B949E",
     "icon_primary": "#CED4DA",
     "icon_muted": "#5B8CFF",

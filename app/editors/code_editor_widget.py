@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint, Qt
+from PySide2.QtCore import QPoint, Qt, QTimer
 from PySide2.QtGui import QColor, QTextCursor
 from PySide2.QtWidgets import QPlainTextEdit, QWidget
 
@@ -92,6 +92,11 @@ class CodeEditorWidget(
         self._completion_popup.set_widget(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
+        self._completion_debounce_timer = QTimer(self)
+        self._completion_debounce_timer.setSingleShot(True)
+        self._completion_debounce_timer.setInterval(50)
+        self._completion_debounce_timer.timeout.connect(self._flush_debounced_completion_request)
+        self._debounced_completion_request: tuple[str, int, bool, str, str] | None = None
 
         self._is_dark = False
         self._diag_error_color = QColor()

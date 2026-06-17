@@ -107,6 +107,12 @@ issues still surface without ~1700 Qt noise diagnostics. Use
 Expect JSON output with `"is_available": true` and a cp39 SOABI when using
 `~/opt/freecad/AppRun`.
 
+Regenerate the shipped stdlib completion index after Python/runtime changes:
+
+```bash
+~/opt/freecad/AppRun -c "import os, runpy, sys; root='.'; os.chdir(root); sys.path.insert(0, root); runpy.run_path('scripts/generate_stdlib_api_index.py', run_name='__main__')"
+```
+
 Force Cloud runtime:
 
 ```bash

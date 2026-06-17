@@ -104,6 +104,7 @@ def test_local_history_workflow_delegates_session_to_editor_session_module(
 ) -> None:
     from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
     from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
+    from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
 
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -116,7 +117,11 @@ def test_local_history_workflow_delegates_session_to_editor_session_module(
     widget.setPlainText("hello\n")
 
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            editor_widget_for_path=lambda path: widget if path == file_path_str else None,
+            open_file_in_editor=lambda _path: True,
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=SimpleNamespace(
             delete_draft=lambda *_args, **_kwargs: None,
@@ -124,16 +129,7 @@ def test_local_history_workflow_delegates_session_to_editor_session_module(
             save_draft=lambda *_args, **_kwargs: None,
             list_drafts=lambda: [],
         ),
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda path: widget if path == file_path_str else None,
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: False,
-        apply_text_to_open_tab=lambda _path, _content: None,
-        tab_index_for_path=lambda path: 0 if path == file_path_str else -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.editor_session_workflow"),
     )
 

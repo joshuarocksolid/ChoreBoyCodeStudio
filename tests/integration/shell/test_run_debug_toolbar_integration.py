@@ -79,3 +79,24 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
         assert rerun_last_debug_action.isEnabled() is True
     finally:
         shutdown_main_window_for_test(window)
+
+
+def test_restart_action_routes_through_presenter(monkeypatch: pytest.MonkeyPatch) -> None:
+    _ = _ensure_qapplication(monkeypatch)
+    window = MainWindow(state_root=str(Path("/tmp").resolve()))
+    try:
+        presenter = window._run_debug_presenter
+        assert hasattr(presenter, "restart_session")
+        assert hasattr(presenter, "stop_session")
+        assert not hasattr(window, "_handle_restart_action")
+
+        triggered: list[str] = []
+        monkeypatch.setattr(
+            presenter,
+            "_execute_restart",
+            lambda restart_kind=None: triggered.append("restart"),
+        )
+        presenter.restart_session()
+        assert triggered == ["restart"]
+    finally:
+        shutdown_main_window_for_test(window)

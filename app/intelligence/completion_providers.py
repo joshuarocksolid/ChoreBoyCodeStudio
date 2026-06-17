@@ -14,6 +14,7 @@ from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.intelligence.python_structure import collect_completion_symbol_names, extract_symbol_locations
 from app.persistence.sqlite_index import SQLiteSymbolIndex
+from app.project.dependency_classifier import STDLIB_TOP_LEVELS
 from app.project.file_inventory import (
     ProjectInventorySnapshot,
     iter_python_files,
@@ -261,6 +262,14 @@ def provide_module_member_items(
     if api_module_name:
         indexed_items = provide_api_index_member_items(
             module_name=api_module_name,
+            member_prefix=context.member_prefix,
+            limit=limit,
+        )
+        if indexed_items:
+            return indexed_items
+    if context.base_identifier in STDLIB_TOP_LEVELS:
+        indexed_items = provide_api_index_member_items(
+            module_name=context.base_identifier,
             member_prefix=context.member_prefix,
             limit=limit,
         )

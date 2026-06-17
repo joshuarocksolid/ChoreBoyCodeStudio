@@ -26,6 +26,7 @@ from app.shell.style_sheet_sections import (
     shell_section_package_wizard,
     shell_section_problems_panel,
     shell_section_quick_open,
+    shell_section_quick_symbol_dialog,
     shell_section_run_log_panel,
     shell_section_run_dialog,
     shell_section_runtime_center_dialog,
@@ -62,6 +63,7 @@ def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
         + shell_section_welcome(tokens)
         + shell_section_find_bar(tokens)
         + shell_section_quick_open(tokens)
+        + shell_section_quick_symbol_dialog(tokens)
         + shell_section_activity_bar(tokens)
         + shell_section_search_sidebar(tokens)
         + shell_section_test_explorer(tokens)

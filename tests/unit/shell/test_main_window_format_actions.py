@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from app.core import constants
 from app.plugins.workflow_broker import WorkflowProviderDescriptor
 from app.python_tools.models import (
     PYTHON_TOOLING_CONFIG_SOURCE_DEFAULTS,
@@ -19,8 +20,7 @@ from app.python_tools.models import (
     PythonTextTransformResult,
     PythonToolingSettings,
 )
-from app.shell.main_window import MainWindow
-from app.shell.python_style_workflow import build_python_style_workflow
+from app.shell.python_style_workflow import PythonStyleWorkflow
 from app.shell.save_workflow import SaveWorkflow
 
 pytestmark = pytest.mark.unit
@@ -99,64 +99,270 @@ def _wf_descriptor(*, title: str = "Test provider") -> WorkflowProviderDescripto
     )
 
 
-def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWidget]:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    editor_widget = _FakeEditorWidget(text)
+class _FormatSaveDocumentHost:
+    def __init__(
+        self,
+        *,
+        file_path: str,
+        editor_manager: _FakeEditorManager,
+        editor_widget: _FakeEditorWidget | None,
+        editor_tab_workflow: Any,
+    ) -> None:
+        self._file_path = file_path
+        self._editor_manager = editor_manager
+        self._editor_widget = editor_widget
+        self._editor_tab_workflow = editor_tab_workflow
+        self._editor_exit_behavior = constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT
+        self._editor_auto_save = False
+        self._editor_trim_trailing_whitespace_on_save = True
+        self._editor_insert_final_newline_on_save = True
+        self._editor_organize_imports_on_save = False
+        self._editor_format_on_save = False
+        self._editor_tabs_widget = None
+        self._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
+        self._intelligence_runtime_settings = SimpleNamespace()
+        self._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
+        self._workflow_broker = object()
+        self._lint_workflow = SimpleNamespace(render_diagnostics_for_file=lambda *_args, **_kwargs: None)
+
+    def dialog_parent(self) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    def editor_manager(self) -> _FakeEditorManager:
+        return self._editor_manager
+
+    def editor_exit_behavior(self) -> str:
+        return self._editor_exit_behavior
+
+    def refresh_save_action_states(self) -> None:
+        return None
+
+    def editor_auto_save(self) -> bool:
+        return self._editor_auto_save
+
+    def set_editor_auto_save(self, enabled: bool) -> None:
+        self._editor_auto_save = enabled
+
+    def stop_auto_save_timer(self) -> None:
+        return None
+
+    def logger(self) -> object:
+        return self._logger
+
+    def has_editor_tabs_widget(self) -> bool:
+        return self._editor_tabs_widget is not None
+
+    def editor_trim_trailing_whitespace_on_save(self) -> bool:
+        return self._editor_trim_trailing_whitespace_on_save
+
+    def editor_insert_final_newline_on_save(self) -> bool:
+        return self._editor_insert_final_newline_on_save
+
+    def editor_organize_imports_on_save(self) -> bool:
+        return self._editor_organize_imports_on_save
+
+    def editor_format_on_save(self) -> bool:
+        return self._editor_format_on_save
+
+    def resolve_python_tooling_project_root(self, file_path: str) -> str:
+        return str(Path(file_path).parent)
+
+    def apply_text_to_open_tab(self, file_path: str, transformed_text: str) -> None:
+        self._editor_manager.update_tab_content(file_path, transformed_text)
+        if self._editor_widget is not None:
+            self._editor_widget.replace_document_text(transformed_text)
+
+    def intelligence_runtime_settings(self) -> object:
+        return self._intelligence_runtime_settings
+
+    def loaded_project(self) -> object | None:
+        return self._loaded_project
+
+    def project_inventory_snapshot(self) -> object:
+        return None
+
+    def workflow_broker(self) -> object:
+        return self._workflow_broker
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        return -1
+
+    def refresh_tab_presentation(self, file_path: str) -> None:
+        return None
+
+    def update_editor_status_for_path(self, file_path: str) -> None:
+        self._editor_tab_workflow.update_editor_status_for_path(file_path)
+
+    def rescan_project_from_disk(self, *, reload_plugins: bool, reindex: bool) -> None:
+        return None
+
+    def render_lint_for_file(self, file_path: str, *, trigger: str) -> None:
+        self._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
+
+    def refresh_test_discovery(self) -> None:
+        return None
+
+
+class _PythonStyleHost:
+    def __init__(
+        self,
+        *,
+        file_path: str,
+        editor_manager: _FakeEditorManager,
+        editor_widget: _FakeEditorWidget,
+        editor_tab_workflow: Any,
+        save_workflow: SaveWorkflow,
+    ) -> None:
+        self._file_path = file_path
+        self._editor_manager = editor_manager
+        self._editor_widget = editor_widget
+        self._editor_tab_workflow = editor_tab_workflow
+        self._save_workflow = save_workflow
+        self._workflow_broker = object()
+        self._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
+        self._known_runtime_modules = None
+        self._selected_linter = constants.LINTER_PROVIDER_DEFAULT
+        self._lint_rule_overrides: dict[str, dict[str, object]] = {}
+        self._quick_fixes_enabled = False
+        self._quick_fix_require_preview_for_multifile = False
+        self._local_history_workflow = SimpleNamespace()
+        self._lint_workflow = SimpleNamespace(render_diagnostics_for_file=lambda *_a, **_kw: None)
+        self._project_tree_ui_workflow = SimpleNamespace()
+
+    def dialog_parent(self) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    def editor_manager(self) -> _FakeEditorManager:
+        return self._editor_manager
+
+    def editor_tab_workflow(self) -> Any:
+        return self._editor_tab_workflow
+
+    def workflow_broker(self) -> object:
+        return self._workflow_broker
+
+    def resolve_python_tooling_project_root(self, file_path: str) -> str | None:
+        return str(Path(file_path).parent)
+
+    def save_workflow(self) -> SaveWorkflow:
+        return self._save_workflow
+
+    def lint_workflow(self) -> Any:
+        return self._lint_workflow
+
+    def loaded_project(self) -> object | None:
+        return self._loaded_project
+
+    def set_loaded_project(self, project: object) -> None:
+        self._loaded_project = project
+
+    def known_runtime_modules(self) -> frozenset[str] | None:
+        return self._known_runtime_modules
+
+    def selected_linter(self) -> str:
+        return self._selected_linter
+
+    def lint_rule_overrides(self) -> dict[str, dict[str, object]]:
+        return self._lint_rule_overrides
+
+    def quick_fixes_enabled(self) -> bool:
+        return self._quick_fixes_enabled
+
+    def quick_fix_require_preview_for_multifile(self) -> bool:
+        return self._quick_fix_require_preview_for_multifile
+
+    def local_history_workflow(self) -> Any:
+        return self._local_history_workflow
+
+    def apply_text_to_open_tab(self, file_path: str, replacement_text: str) -> None:
+        self._editor_manager.update_tab_content(file_path, replacement_text)
+        self._editor_widget.replace_document_text(replacement_text)
+
+    def refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
+        return None
+
+    def project_tree_ui_workflow(self) -> Any:
+        return self._project_tree_ui_workflow
+
+
+def _build_format_workflows(
+    file_path: str,
+    text: str,
+    *,
+    include_editor_widget: bool = True,
+) -> tuple[PythonStyleWorkflow, SaveWorkflow, _FormatSaveDocumentHost, _FakeEditorManager, _FakeEditorWidget | None]:
     editor_manager = _FakeEditorManager(file_path, text)
-    window_any._editor_manager = editor_manager
-    window_any._editor_widgets_by_path = {file_path: editor_widget}
-    window_any._editor_tab_workflow = SimpleNamespace(active_editor_widget=lambda: editor_widget)
-    window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
-    window_any._workflow_broker = object()
-    window_any._apply_text_to_open_tab = lambda path, content: (
-        editor_manager.update_tab_content(path, content),
-        editor_widget.replace_document_text(content),
+    editor_widget = _FakeEditorWidget(text) if include_editor_widget else None
+    editor_tab_workflow = SimpleNamespace(
+        active_editor_widget=lambda: editor_widget,
+        update_editor_status_for_path=lambda *_args, **_kwargs: None,
+        refresh_tab_presentation=lambda *_args, **_kwargs: None,
     )
-    window_any._save_workflow = SaveWorkflow(window)
-    window_any._python_style_workflow = build_python_style_workflow(window)
-    return window, editor_widget
-
-
-def _build_save_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorManager]:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    editor_manager = _FakeEditorManager(file_path, text)
-    window_any._editor_manager = editor_manager
-    window_any._editor_widgets_by_path = {}
-    window_any._editor_trim_trailing_whitespace_on_save = True
-    window_any._editor_insert_final_newline_on_save = True
-    window_any._editor_organize_imports_on_save = False
-    window_any._editor_format_on_save = False
-    window_any._editor_tabs_widget = None
-    window_any._local_history_workflow = SimpleNamespace(
+    save_host = _FormatSaveDocumentHost(
+        file_path=file_path,
+        editor_manager=editor_manager,
+        editor_widget=editor_widget,
+        editor_tab_workflow=editor_tab_workflow,
+    )
+    local_history = SimpleNamespace(
+        discard_drafts_for_paths=lambda *_args, **_kwargs: None,
+        keep_drafts_for_paths=lambda *_args, **_kwargs: None,
         discard_pending_autosave=lambda *_args, **_kwargs: None,
         record_checkpoint=lambda *_args, **_kwargs: None,
         delete_draft=lambda *_args, **_kwargs: None,
         local_history_context_for_path=lambda *_args, **_kwargs: (None, None),
     )
-    window_any._refresh_save_action_states = lambda: None
-    window_any._editor_tab_workflow = SimpleNamespace(
-        update_editor_status_for_path=lambda *_args, **_kwargs: None,
-        refresh_tab_presentation=lambda *_args, **_kwargs: None,
+    save_workflow = SaveWorkflow(
+        local_history=local_history,
+        intelligence_cache=SimpleNamespace(start_symbol_indexing=lambda *_a, **_kw: None),
+        host=save_host,
+        settings_service=SimpleNamespace(update_global=lambda updater: updater({})),
     )
-    window_any._intelligence_runtime_settings = SimpleNamespace()
-    window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
-    window_any._workflow_broker = object()
-    window_any._background_tasks = SimpleNamespace(run=lambda **_kwargs: None)
-    window_any._test_explorer_panel = None
-    window_any._test_outcomes_by_node_id = {}
-    window_any._lint_workflow = SimpleNamespace(render_diagnostics_for_file=lambda *_args, **_kwargs: None)
-    window_any._intelligence_cache_workflow = SimpleNamespace(start_symbol_indexing=lambda *_args, **_kwargs: None)
-    window_any._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
-    window_any._save_workflow = SaveWorkflow(window)
-    return window, editor_manager
+    if editor_widget is None:
+        python_style_workflow = PythonStyleWorkflow(
+            _PythonStyleHost(
+                file_path=file_path,
+                editor_manager=editor_manager,
+                editor_widget=_FakeEditorWidget(""),
+                editor_tab_workflow=editor_tab_workflow,
+                save_workflow=save_workflow,
+            )
+        )
+        return python_style_workflow, save_workflow, save_host, editor_manager, None
+
+    python_style_host = _PythonStyleHost(
+        file_path=file_path,
+        editor_manager=editor_manager,
+        editor_widget=editor_widget,
+        editor_tab_workflow=editor_tab_workflow,
+        save_workflow=save_workflow,
+    )
+    return PythonStyleWorkflow(python_style_host), save_workflow, save_host, editor_manager, editor_widget
+
+
+def _build_window(file_path: str, text: str) -> tuple[PythonStyleWorkflow, _FakeEditorWidget]:
+    python_style_workflow, _save_workflow, _save_host, _editor_manager, editor_widget = _build_format_workflows(
+        file_path,
+        text,
+    )
+    assert editor_widget is not None
+    return python_style_workflow, editor_widget
+
+
+def _build_save_window(file_path: str, text: str) -> tuple[SaveWorkflow, _FormatSaveDocumentHost, _FakeEditorManager]:
+    _python_style_workflow, save_workflow, save_host, editor_manager, _editor_widget = _build_format_workflows(
+        file_path,
+        text,
+        include_editor_widget=False,
+    )
+    save_host._background_tasks = SimpleNamespace(run=lambda **_kwargs: None)
+    return save_workflow, save_host, editor_manager
 
 
 def test_handle_format_current_file_action_uses_black_for_python_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_widget = _build_window("/tmp/project/main.py", "value={'alpha':1}\n")
+    python_style_workflow, editor_widget = _build_window("/tmp/project/main.py", "value={'alpha':1}\n")
     calls: list[dict[str, str]] = []
     infos: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []
@@ -200,7 +406,7 @@ def test_handle_format_current_file_action_uses_black_for_python_files(
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
+    python_style_workflow.handle_format_current_file_action()
 
     assert calls == [
         {
@@ -217,7 +423,7 @@ def test_handle_format_current_file_action_uses_black_for_python_files(
 def test_handle_format_current_file_action_uses_basic_formatter_for_non_python_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_widget = _build_window("/tmp/project/notes.txt", "alpha   \n")
+    python_style_workflow, editor_widget = _build_window("/tmp/project/notes.txt", "alpha   \n")
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
@@ -233,7 +439,7 @@ def test_handle_format_current_file_action_uses_basic_formatter_for_non_python_f
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
+    python_style_workflow.handle_format_current_file_action()
 
     assert editor_widget.replacements == ["alpha\n"]
     assert infos == [("Format Current File", "Formatting applied.")]
@@ -242,7 +448,7 @@ def test_handle_format_current_file_action_uses_basic_formatter_for_non_python_f
 def test_handle_format_current_file_action_surfaces_python_syntax_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_widget = _build_window("/tmp/project/main.py", "def broken(:\n    pass\n")
+    python_style_workflow, editor_widget = _build_window("/tmp/project/main.py", "def broken(:\n    pass\n")
     warnings: list[tuple[str, str]] = []
 
     def _fake_format(
@@ -270,7 +476,7 @@ def test_handle_format_current_file_action_surfaces_python_syntax_errors(
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    cast(Any, window)._python_style_workflow.handle_format_current_file_action()
+    python_style_workflow.handle_format_current_file_action()
 
     assert editor_widget.replacements == []
     assert warnings == [
@@ -284,7 +490,7 @@ def test_handle_format_current_file_action_surfaces_python_syntax_errors(
 def test_handle_organize_imports_action_uses_isort_for_python_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_widget = _build_window("/tmp/project/main.py", "import b\nimport a\n")
+    python_style_workflow, editor_widget = _build_window("/tmp/project/main.py", "import b\nimport a\n")
     calls: list[dict[str, str]] = []
     infos: list[tuple[str, str]] = []
 
@@ -319,7 +525,7 @@ def test_handle_organize_imports_action_uses_isort_for_python_files(
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    cast(Any, window)._python_style_workflow.handle_organize_imports_action()
+    python_style_workflow.handle_organize_imports_action()
 
     assert calls == [
         {
@@ -335,7 +541,7 @@ def test_handle_organize_imports_action_uses_isort_for_python_files(
 def test_handle_organize_imports_action_rejects_non_python_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_widget = _build_window("/tmp/project/notes.txt", "alpha\n")
+    python_style_workflow, editor_widget = _build_window("/tmp/project/notes.txt", "alpha\n")
     infos: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
@@ -347,7 +553,7 @@ def test_handle_organize_imports_action_rejects_non_python_files(
         lambda _parent, title, text: infos.append((title, text)),
     )
 
-    cast(Any, window)._python_style_workflow.handle_organize_imports_action()
+    python_style_workflow.handle_organize_imports_action()
 
     assert editor_widget.replacements == []
     assert infos == [
@@ -361,10 +567,9 @@ def test_handle_organize_imports_action_rejects_non_python_files(
 def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_manager = _build_save_window("/tmp/project/main.py", "import b  \nimport a")
-    window_any = cast(Any, window)
-    window_any._editor_organize_imports_on_save = True
-    window_any._editor_format_on_save = True
+    save_workflow, save_host, editor_manager = _build_save_window("/tmp/project/main.py", "import b  \nimport a")
+    save_host._editor_organize_imports_on_save = True
+    save_host._editor_format_on_save = True
     organize_calls: list[str] = []
     format_calls: list[str] = []
 
@@ -413,7 +618,7 @@ def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
         lambda *_args, **_kwargs: False,
     )
 
-    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
+    assert save_workflow.save_tab("/tmp/project/main.py") is True
     assert organize_calls == ["import b\nimport a\n"]
     assert format_calls == ["import a\nimport b\n"]
     assert editor_manager.saved_contents == ["import a\n\nimport b\n"]
@@ -422,9 +627,8 @@ def test_save_tab_runs_hygiene_then_organize_then_format_for_python_files(
 def test_save_tab_still_saves_when_python_style_automation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_manager = _build_save_window("/tmp/project/main.py", "import b\nimport a")
-    window_any = cast(Any, window)
-    window_any._editor_organize_imports_on_save = True
+    save_workflow, save_host, editor_manager = _build_save_window("/tmp/project/main.py", "import b\nimport a")
+    save_host._editor_organize_imports_on_save = True
     warnings: list[tuple[str, str]] = []
 
     def _fake_organize_err(
@@ -456,7 +660,7 @@ def test_save_tab_still_saves_when_python_style_automation_fails(
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
+    assert save_workflow.save_tab("/tmp/project/main.py") is True
     assert editor_manager.saved_contents == ["import b\nimport a\n"]
     assert warnings == [
         (
@@ -469,10 +673,9 @@ def test_save_tab_still_saves_when_python_style_automation_fails(
 def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_manager = _build_save_window("/tmp/project/main.py", "import b\nimport a\n")
-    window_any = cast(Any, window)
-    window_any._editor_organize_imports_on_save = True
-    window_any._editor_format_on_save = True
+    save_workflow, save_host, editor_manager = _build_save_window("/tmp/project/main.py", "import b\nimport a\n")
+    save_host._editor_organize_imports_on_save = True
+    save_host._editor_format_on_save = True
     warnings: list[tuple[str, str]] = []
 
     monkeypatch.setattr("app.shell.save_workflow.PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT", 5)
@@ -493,7 +696,7 @@ def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
         lambda _parent, title, text: warnings.append((title, text)),
     )
 
-    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/main.py") is True
+    assert save_workflow.save_tab("/tmp/project/main.py") is True
     assert editor_manager.saved_contents == ["import b\nimport a\n"]
     assert warnings == [
         (
@@ -506,14 +709,14 @@ def test_save_tab_skips_python_style_automation_when_file_exceeds_guardrail(
 def test_save_tab_applies_generic_hygiene_without_python_format_on_save(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window, editor_manager = _build_save_window("/tmp/project/notes.txt", "note   ")
+    save_workflow, _save_host, editor_manager = _build_save_window("/tmp/project/notes.txt", "note   ")
 
     monkeypatch.setattr(
         "app.shell.save_workflow.should_refresh_index_after_save",
         lambda *_args, **_kwargs: False,
     )
 
-    assert cast(Any, window)._save_workflow.save_tab("/tmp/project/notes.txt") is True
+    assert save_workflow.save_tab("/tmp/project/notes.txt") is True
     assert editor_manager.saved_contents == ["note\n"]
 
 
@@ -525,11 +728,10 @@ def test_flush_auto_save_to_file_does_not_apply_save_transforms(
     # spaces vanish and the cursor jumps to column 0 (the bug Clair reported).
     file_path = "/tmp/project/main.py"
     buffer_with_trailing_indent = "def foo():\n    "
-    window, editor_manager = _build_save_window(file_path, buffer_with_trailing_indent)
-    window_any = cast(Any, window)
-    window_any._editor_auto_save = True
-    window_any._editor_organize_imports_on_save = True
-    window_any._editor_format_on_save = True
+    save_workflow, save_host, editor_manager = _build_save_window(file_path, buffer_with_trailing_indent)
+    save_host._editor_auto_save = True
+    save_host._editor_organize_imports_on_save = True
+    save_host._editor_format_on_save = True
 
     monkeypatch.setattr(
         "app.shell.save_workflow.should_refresh_index_after_save",
@@ -548,6 +750,6 @@ def test_flush_auto_save_to_file_does_not_apply_save_transforms(
         lambda *_a, **_kw: pytest.fail("Auto-save must not invoke the basic formatter"),
     )
 
-    cast(Any, window)._save_workflow.flush_auto_save_to_file()
+    save_workflow.flush_auto_save_to_file()
 
     assert editor_manager.saved_contents == [buffer_with_trailing_indent]

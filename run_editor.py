@@ -42,10 +42,14 @@ def _start_editor() -> int:
 def _clear_qt_module_caches() -> None:
     """Release module-level QIcon caches before QApplication is destroyed."""
     from app.shell.file_type_icons import clear_icon_caches as _clear_file_type
+    from app.shell.icon_provider import clear_icon_caches as _clear_context
+    from app.shell.outline.outline_icons import clear_icon_caches as _clear_outline
     from app.shell.problems_panel import clear_icon_caches as _clear_problems
     from app.shell.test_explorer_icons import clear_icon_caches as _clear_test_explorer
 
+    _clear_context()
     _clear_file_type()
+    _clear_outline()
     _clear_problems()
     _clear_test_explorer()
 

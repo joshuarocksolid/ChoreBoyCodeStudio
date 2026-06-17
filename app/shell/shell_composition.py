@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide2.QtGui import QColor
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide2.QtWidgets import QMessageBox, QStatusBar, QTabWidget, QWidget
 
+from app.core.models import LoadedProject, RuntimeIssue
+from app.debug.debug_models import DebugExceptionPolicy
 from app.editors.editor_manager import EditorManager
-from app.shell.editor_sync_workflow import EditorSyncWorkflow
+from app.persistence.settings_service import SettingsService
+from app.shell.clear_console_policy import MainWindowClearConsoleHost
+from app.shell.debug_control_workflow import DebugControlWorkflow
+from app.shell.editor_tab_factory import EditorTabFactory
+from app.shell.run_config_controller import RunConfigController
+from app.shell.run_debug_presenter import RunDebugPresenterPort
+from app.shell.editor_sync_factory import build_editor_sync_workflow
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
 from app.shell.file_project_commands_workflow import (
     FileProjectCommandsWorkflow,
@@ -19,46 +25,99 @@ from app.shell.settings_apply_workflow import SettingsApplyWorkflow
 from app.shell.python_console_workflow import PythonConsoleWorkflow
 from app.shell.project_tree_action_workflow import ProjectTreeActionWorkflow
 from app.shell.run_launch_workflow import RunLaunchWorkflow
+from app.shell.save_workflow import SaveWorkflow
 from app.shell.shell_preferences import ShellPreferencesBundle
-from app.shell.shell_theme_workflow import (
-    ExplorerThemeHost,
-    ShellThemeChildCallbacks,
-    ShellThemeWorkflow,
-)
-from app.shell.icons import explorer_icon, search_icon, test_icon
-from app.shell.menu_icons import apply_menu_icons
+from app.shell.shell_theme_surface_appliers import build_main_window_shell_theme_callbacks
+from app.shell.shell_theme_workflow import ExplorerThemeHost, ShellThemeWorkflow
+from app.shell.test_runner_workflow import TestRunnerWorkflow
 from app.shell.theme_tokens import ShellThemeTokens
 
 
-class MainWindowEditorSyncHost:
-    """Host ports for ``EditorSyncWorkflow`` backed by a MainWindow instance."""
+class MainWindowSaveDocumentHost:
+    """Host ports for ``SaveWorkflow`` backed by a MainWindow instance."""
 
     def __init__(self, window: Any) -> None:
         self._window = window
 
-    def advance_buffer_revision(self, file_path: str) -> None:
-        self._window._editor_tab_workflow.advance_buffer_revision(file_path)
+    def dialog_parent(self) -> QWidget:
+        return self._window
 
-    def apply_detected_indentation(
-        self,
-        file_path: str,
-        editor_widget: object,
-        content: str,
-    ) -> None:
-        self._window._editor_tab_workflow.apply_detected_indentation_for_widget(
-            file_path,
-            editor_widget,
-            content,
-        )
+    def editor_manager(self) -> EditorManager:
+        return self._window._editor_manager
 
-    def tab_index_for_path(self, file_path: str) -> int:
-        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
+    def editor_exit_behavior(self) -> str:
+        return self._window._editor_exit_behavior
+
+    def refresh_save_action_states(self) -> None:
+        self._window._refresh_save_action_states()
+
+    def editor_auto_save(self) -> bool:
+        return self._window._editor_auto_save
+
+    def set_editor_auto_save(self, enabled: bool) -> None:
+        self._window._editor_auto_save = enabled
+
+    def stop_auto_save_timer(self) -> None:
+        self._window._auto_save_to_file_timer.stop()
+
+    def logger(self) -> Any:
+        return self._window._logger
 
     def has_editor_tabs_widget(self) -> bool:
         return self._window._editor_tabs_widget is not None
 
+    def editor_trim_trailing_whitespace_on_save(self) -> bool:
+        return self._window._editor_trim_trailing_whitespace_on_save
+
+    def editor_insert_final_newline_on_save(self) -> bool:
+        return self._window._editor_insert_final_newline_on_save
+
+    def editor_organize_imports_on_save(self) -> bool:
+        return self._window._editor_organize_imports_on_save
+
+    def editor_format_on_save(self) -> bool:
+        return self._window._editor_format_on_save
+
+    def resolve_python_tooling_project_root(self, file_path: str) -> str:
+        return self._window._resolve_python_tooling_project_root(file_path)
+
+    def apply_text_to_open_tab(self, file_path: str, transformed_text: str) -> None:
+        self._window._apply_text_to_open_tab(file_path, transformed_text)
+
+    def intelligence_runtime_settings(self) -> Any:
+        return self._window._intelligence_runtime_settings
+
+    def loaded_project(self) -> Any | None:
+        return self._window._loaded_project
+
+    def project_inventory_snapshot(self) -> Any:
+        return self._window._project_inventory_orchestrator.snapshot
+
+    def workflow_broker(self) -> Any:
+        return self._window._workflow_broker
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
+
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
+
+    def update_editor_status_for_path(self, file_path: str) -> None:
+        self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
+
+    def rescan_project_from_disk(self, *, reload_plugins: bool, reindex: bool) -> None:
+        self._window._project_rescan_workflow.rescan_from_disk(
+            reload_plugins=reload_plugins,
+            reindex=reindex,
+        )
+
+    def render_lint_for_file(self, file_path: str, *, trigger: str) -> None:
+        self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
+
+    def refresh_test_discovery(self) -> None:
+        test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)
+        if test_runner_workflow is not None:
+            test_runner_workflow.refresh_discovery()
 
 
 class MainWindowExternalFileChangeHost:
@@ -231,11 +290,27 @@ class MainWindowPythonConsoleHost:
     def show_status_message(self, message: str, timeout_ms: int) -> None:
         self._window.statusBar().showMessage(message, timeout_ms)
 
+    def focus_python_console_tab(self) -> None:
+        bottom_tabs = self._window._bottom_tabs_widget
+        container = self._window._python_console_container
+        if bottom_tabs is not None and container is not None:
+            index = bottom_tabs.indexOf(container)
+            if index >= 0:
+                bottom_tabs.setCurrentIndex(index)
 
-def build_editor_sync_workflow(window: Any) -> EditorSyncWorkflow:
-    return EditorSyncWorkflow(
-        editor_manager=window._editor_manager,
-        host=MainWindowEditorSyncHost(window),
+    def log_repl_warning(self, message: str, exc: Exception) -> None:
+        self._window._logger.warning(message, exc)
+
+    def clear_console_host(self) -> MainWindowClearConsoleHost:
+        return MainWindowClearConsoleHost(self._window)
+
+
+def build_save_workflow(window: Any) -> SaveWorkflow:
+    return SaveWorkflow(
+        local_history=window._local_history_workflow,
+        intelligence_cache=window._intelligence_cache_workflow,
+        host=MainWindowSaveDocumentHost(window),
+        settings_service=window._settings_service,
     )
 
 
@@ -304,10 +379,10 @@ class MainWindowRunLaunchHost:
     def dialog_parent(self) -> QWidget:
         return self._window
 
-    def loaded_project(self) -> Any:
+    def loaded_project(self) -> LoadedProject | None:
         return self._window._loaded_project
 
-    def set_loaded_project(self, project: Any) -> None:
+    def set_loaded_project(self, project: LoadedProject) -> None:
         self._window._loaded_project = project
 
     def active_named_run_config_name(self) -> str | None:
@@ -316,43 +391,43 @@ class MainWindowRunLaunchHost:
     def set_active_named_run_config_name(self, name: str | None) -> None:
         self._window._active_named_run_config_name = name
 
-    def editor_manager(self) -> Any:
+    def editor_manager(self) -> EditorManager:
         return self._window._editor_manager
 
-    def debug_control_workflow(self) -> Any:
+    def debug_control_workflow(self) -> DebugControlWorkflow:
         return self._window._debug_control_workflow
 
-    def debug_exception_policy(self) -> Any:
+    def debug_exception_policy(self) -> DebugExceptionPolicy:
         return self._window._debug_exception_policy
 
-    def run_config_controller(self) -> Any:
+    def run_config_controller(self) -> RunConfigController:
         return self._window._run_config_controller
 
-    def run_debug_presenter(self) -> Any:
+    def run_debug_presenter(self) -> RunDebugPresenterPort:
         return self._window._run_debug_presenter
 
-    def settings_service(self) -> Any:
+    def settings_service(self) -> SettingsService:
         return self._window._settings_service
 
-    def resolve_theme_tokens(self) -> Any:
+    def resolve_theme_tokens(self) -> ShellThemeTokens:
         return self._window._shell_theme_workflow.resolve_theme_tokens()
 
-    def show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
+    def show_run_preflight_result(self, title: str, summary: str, issues: list[RuntimeIssue]) -> None:
         self._window._run_event_workflow.show_run_preflight_result(title, summary, issues)
 
     def refresh_run_action_states(self) -> None:
         self._window._run_event_workflow.refresh_run_action_states()
 
-    def editor_tab_factory(self) -> Any:
+    def editor_tab_factory(self) -> EditorTabFactory:
         return self._window._editor_tab_factory
 
-    def editor_tabs_widget(self) -> Any | None:
+    def editor_tabs_widget(self) -> QTabWidget | None:
         return self._window._editor_tabs_widget
 
     def tab_index_for_path(self, file_path: str) -> int:
         return self._window._editor_tab_workflow.tab_index_for_path(file_path)
 
-    def test_runner_workflow(self) -> Any:
+    def test_runner_workflow(self) -> TestRunnerWorkflow:
         return self._window._test_runner_workflow
 
     def active_transient_entry_file_path(self) -> str | None:
@@ -361,7 +436,7 @@ class MainWindowRunLaunchHost:
     def set_active_transient_entry_file_path(self, path: str | None) -> None:
         self._window._active_transient_entry_file_path = path
 
-    def status_bar(self) -> Any:
+    def status_bar(self) -> QStatusBar:
         return self._window.statusBar()
 
     def show_warning(self, title: str, message: str) -> None:
@@ -440,7 +515,7 @@ class MainWindowShellThemeHost:
         self._window = window
         self.is_applying_theme_styles = False
         self.system_dark_theme_preference: bool | None = None
-        self.child_callbacks = self._build_child_callbacks()
+        self.child_callbacks = build_main_window_shell_theme_callbacks(window)
         self.explorer = ExplorerThemeHost(
             sink=_WindowBackedExplorerThemeSink(window),
             explorer_new_file_btn=window._explorer_new_file_btn,
@@ -468,99 +543,6 @@ class MainWindowShellThemeHost:
     @property
     def syntax_color_overrides(self) -> dict[str, dict[str, str]]:
         return self._window._syntax_color_overrides
-
-    def _build_child_callbacks(self) -> ShellThemeChildCallbacks:
-        window = self._window
-
-        def apply_editor_themes(tokens: ShellThemeTokens) -> None:
-            active_tab = window._editor_manager.active_tab()
-            active_path = None if active_tab is None else active_tab.file_path
-            deferred_widgets = []
-            for file_path, editor_widget in window._editor_widgets_by_path.items():
-                defer_rehighlight = file_path != active_path
-                editor_widget.apply_theme(tokens, defer_syntax_rehighlight=defer_rehighlight)
-                if defer_rehighlight:
-                    deferred_widgets.append(editor_widget)
-
-            if not deferred_widgets:
-                return
-
-            def flush_next_deferred_editor() -> None:
-                if not deferred_widgets:
-                    return
-                deferred_widgets.pop(0).flush_pending_syntax_theme_refresh()
-                if deferred_widgets:
-                    QTimer.singleShot(0, flush_next_deferred_editor)
-
-            QTimer.singleShot(0, flush_next_deferred_editor)
-
-        def apply_markdown_themes(tokens: ShellThemeTokens) -> None:
-            window._tab_content_registry.apply_all_markdown_themes(tokens)
-
-        def apply_python_console_theme(tokens: ShellThemeTokens) -> None:
-            if window._python_console_widget is not None:
-                window._python_console_widget.apply_theme(tokens)
-
-        def apply_run_log_theme(tokens: ShellThemeTokens) -> None:
-            if window._run_log_panel is not None:
-                window._run_log_panel.apply_theme(tokens)
-
-        def apply_search_sidebar_theme(tokens: ShellThemeTokens) -> None:
-            if window._search_sidebar is not None:
-                window._search_sidebar.apply_theme_tokens(
-                    match_bg=tokens.search_match_bg,
-                    text_primary=tokens.text_primary,
-                    text_muted=tokens.text_muted,
-                    badge_bg=tokens.badge_bg,
-                )
-
-        def apply_activity_bar_view_icons(tokens: ShellThemeTokens) -> None:
-            if window._activity_bar is None:
-                return
-            normal = QColor(tokens.text_muted)
-            active = QColor(tokens.text_primary)
-            window._activity_bar.set_view_icon(
-                "explorer",
-                explorer_icon(color_normal=normal, color_active=active),
-            )
-            window._activity_bar.set_view_icon(
-                "search",
-                search_icon(color_normal=normal, color_active=active),
-            )
-            window._activity_bar.set_view_icon(
-                "test_explorer",
-                test_icon(color_normal=normal, color_active=active),
-            )
-
-        def apply_menu_bar_icons(tokens: ShellThemeTokens) -> None:
-            apply_menu_icons(window._menu_registry, tokens)
-
-        def apply_test_explorer_theme(tokens: ShellThemeTokens) -> None:
-            if window._test_explorer_panel is not None:
-                window._test_explorer_panel.apply_theme(tokens)
-
-        def apply_outline_theme(tokens: ShellThemeTokens) -> None:
-            if window._outline_panel is not None:
-                window._outline_panel.apply_theme_tokens(tokens)
-
-        def set_app_tooltip_style_sheet(style_sheet: str) -> None:
-            app = QApplication.instance()
-            if app is not None:
-                app.setStyleSheet(style_sheet)
-
-        return ShellThemeChildCallbacks(
-            set_shell_style_sheet=window.setStyleSheet,
-            set_app_tooltip_style_sheet=set_app_tooltip_style_sheet,
-            apply_editor_themes=apply_editor_themes,
-            apply_markdown_themes=apply_markdown_themes,
-            apply_python_console_theme=apply_python_console_theme,
-            apply_run_log_theme=apply_run_log_theme,
-            apply_search_sidebar_theme=apply_search_sidebar_theme,
-            apply_activity_bar_view_icons=apply_activity_bar_view_icons,
-            apply_menu_bar_icons=apply_menu_bar_icons,
-            apply_test_explorer_theme=apply_test_explorer_theme,
-            apply_outline_theme=apply_outline_theme,
-        )
 
 
 def build_shell_theme_workflow(window: Any) -> ShellThemeWorkflow:

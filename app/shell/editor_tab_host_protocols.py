@@ -121,6 +121,9 @@ class EditorTabMarkdownHost(Protocol):
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
         ...
 
+    def tab_content_registry(self) -> Any:
+        ...
+
     def menu_registry(self) -> Any | None:
         ...
 

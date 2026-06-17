@@ -28,6 +28,87 @@ def normalize_entry_path_for_project(
         return text
 
 
+_SUMMARY_PLACEHOLDER = "Complete the fields below to preview the run."
+_SUMMARY_SEPARATOR = " \u00b7 "
+
+
+def format_command_summary_strip(
+    *,
+    entry_file: str,
+    argv_tokens: Sequence[str] | None,
+    working_directory: str | None,
+    project_root: str | None,
+    env_overrides: Mapping[str, str],
+    argv_error: str | None = None,
+) -> tuple[str, str, str]:
+    """Build a one-line run summary, multiline detail tooltip, and preview state.
+
+    Returns ``(summary_text, detail_tooltip, state)`` where ``state`` is one of
+    ``ready``, ``incomplete``, or ``error``.
+    """
+
+    entry = (entry_file or "").strip()
+    if not entry or argv_error is not None:
+        state = "error" if argv_error is not None else "incomplete"
+        return _SUMMARY_PLACEHOLDER, "", state
+
+    argv_display = join_argv_for_display(argv_tokens or [])
+    parts = [entry]
+    if argv_display:
+        parts.append(argv_display)
+
+    cwd_text = (working_directory or "").strip()
+    if cwd_text:
+        parts.append(f"cwd: {cwd_text}")
+    else:
+        parts.append("cwd: project root")
+
+    env_count = len(env_overrides)
+    if env_count == 1:
+        parts.append("env: 1 var")
+    elif env_count > 1:
+        parts.append(f"env: {env_count} vars")
+
+    summary = _SUMMARY_SEPARATOR.join(parts)
+    detail = "\n".join(
+        format_command_preview_lines(
+            entry_file=entry,
+            argv_tokens=argv_tokens or [],
+            working_directory=working_directory,
+            project_root=project_root,
+            env_overrides=env_overrides,
+        )
+    )
+    return summary, detail, "ready"
+
+
+def format_overrides_collapsed_summary(
+    *,
+    working_directory: str | None,
+    project_root: str | None,
+    env_overrides: Mapping[str, str],
+) -> str:
+    """One-line summary for the collapsed overrides disclosure row."""
+
+    cwd_text = (working_directory or "").strip()
+    if cwd_text:
+        cwd_part = cwd_text
+    elif project_root:
+        cwd_part = "project root"
+    else:
+        cwd_part = "project root"
+
+    env_count = len(env_overrides)
+    if env_count == 0:
+        env_part = "no env overrides"
+    elif env_count == 1:
+        env_part = "1 env var"
+    else:
+        env_part = f"{env_count} env vars"
+
+    return f"{cwd_part}{_SUMMARY_SEPARATOR}{env_part}"
+
+
 def format_command_preview_lines(
     *,
     entry_file: str,

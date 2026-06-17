@@ -24,6 +24,8 @@ class MainWindowLifecycle:
             event.ignore()
             return
         window._is_shutting_down = True
+        if hasattr(window, "_run_debug_presenter"):
+            window._run_debug_presenter.clear_pending_restart()
         MainWindowLifecycle.begin_shutdown_teardown(window)
         MainWindowLifecycle.stop_active_run_before_close(window)
         if window._status_controller is not None:
@@ -44,25 +46,15 @@ class MainWindowLifecycle:
     @staticmethod
     def begin_shutdown_teardown(window: Any) -> None:
         window._local_history_workflow.stop_autosave_timer()
-        window._auto_save_to_file_timer.stop()
-        window._realtime_lint_timer.stop()
-        window._project_tree_preview_click_timer.stop()
         window._pending_project_tree_preview_path = None
         window._pending_realtime_lint_file_path = None
-        if hasattr(window, "_run_event_timer"):
-            window._run_event_timer.stop()
-        if hasattr(window, "_repl_event_timer"):
-            window._repl_event_timer.stop()
-        if hasattr(window, "_external_change_poll_timer"):
-            window._external_change_poll_timer.stop()
-        if hasattr(window, "_restore_project_timer"):
-            window._restore_project_timer.stop()
-        if hasattr(window, "_auto_start_repl_timer"):
-            window._auto_start_repl_timer.stop()
-        if hasattr(window, "_runtime_probe_timer"):
-            window._runtime_probe_timer.stop()
-        if hasattr(window, "_startup_probe_refresh_timer"):
-            window._startup_probe_refresh_timer.stop()
+        composition_timers = getattr(window, "_composition_timers", None)
+        if composition_timers is not None:
+            composition_timers.stop_all()
+        else:
+            window._auto_save_to_file_timer.stop()
+            window._realtime_lint_timer.stop()
+            window._project_tree_preview_click_timer.stop()
         window._startup_capability_facade.set_refresh_callback(None)
         MainWindowLifecycle.drain_run_event_queue(window)
         window._background_tasks.cancel_all()

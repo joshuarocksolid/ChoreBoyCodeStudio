@@ -72,7 +72,7 @@ QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton:hover {{
     color: {tokens.text_primary};
 }}
 QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton[segmentActive="true"]:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    background: {tokens.accent_hover};
     color: #FFFFFF;
 }}
 QWidget#shell\\.settingsDialog\\.scopeSegmented QPushButton:disabled {{

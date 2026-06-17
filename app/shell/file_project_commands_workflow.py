@@ -32,6 +32,7 @@ from app.shell.file_dialogs import choose_existing_directory, choose_open_files
 from app.shell.menus import MenuStubRegistry
 from app.shell.project_controller import ProjectController
 from app.shell.project_load_workflow import ProjectLoadWorkflow
+from app.shell.python_tooling_status_copy import PythonToolingSettingsCopy
 from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_settings_apply_baseline_from_snapshot
 from app.shell.shell_preferences import build_shell_preferences_bundle
 from app.shell.settings_dialog import SettingsDialog
@@ -144,7 +145,7 @@ class FileProjectCommandsHost(Protocol):
     def editor_enable_preview(self) -> bool:
         ...
 
-    def settings_dialog_python_tooling_copy(self) -> tuple[str, str, str, str]:
+    def settings_dialog_python_tooling_copy(self) -> PythonToolingSettingsCopy:
         ...
 
 
@@ -249,7 +250,7 @@ class MainWindowFileProjectCommandsHost:
     def editor_enable_preview(self) -> bool:
         return self._window._editor_enable_preview
 
-    def settings_dialog_python_tooling_copy(self) -> tuple[str, str, str, str]:
+    def settings_dialog_python_tooling_copy(self) -> PythonToolingSettingsCopy:
         return self._window._settings_dialog_python_tooling_copy()
 
 
@@ -468,12 +469,7 @@ class FileProjectCommandsWorkflow:
             effective_snapshot=effective_snapshot,
             effective_excludes=previous_effective_excludes,
         )
-        (
-            python_tooling_runtime_text,
-            python_tooling_runtime_details,
-            python_tooling_config_text,
-            python_tooling_config_details,
-        ) = self._host.settings_dialog_python_tooling_copy()
+        python_tooling_copy = self._host.settings_dialog_python_tooling_copy()
         parent = self._host.dialog_parent()
         dialog = SettingsDialog(
             global_snapshot,
@@ -481,10 +477,10 @@ class FileProjectCommandsWorkflow:
             tokens=self._host.shell_theme_workflow().resolve_theme_tokens(),
             project_snapshot=effective_snapshot if project_root is not None else None,
             project_scope_available=project_root is not None,
-            python_tooling_runtime_text=python_tooling_runtime_text,
-            python_tooling_runtime_details=python_tooling_runtime_details,
-            python_tooling_config_text=python_tooling_config_text,
-            python_tooling_config_details=python_tooling_config_details,
+            python_tooling_runtime_text=python_tooling_copy.runtime_text,
+            python_tooling_runtime_details=python_tooling_copy.runtime_details,
+            python_tooling_config_text=python_tooling_copy.config_text,
+            python_tooling_config_details=python_tooling_copy.config_details,
         )
         if dialog.exec_() != QDialog.Accepted:
             return

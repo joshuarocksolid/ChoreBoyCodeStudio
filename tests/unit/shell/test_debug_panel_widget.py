@@ -263,22 +263,22 @@ def test_breakpoint_edit_and_remove_actions_emit_signals(panel: DebugPanelWidget
     assert remove_signals == [("/home/user/project/main.py", 5)]
 
 
-def test_clear_all_breakpoints_emits_remove_for_each_breakpoint(panel: DebugPanelWidget) -> None:
+def test_clear_all_breakpoints_emits_single_workflow_signal(panel: DebugPanelWidget) -> None:
     panel.set_breakpoints(
         [
             build_breakpoint("/home/user/project/main.py", 5),
             build_breakpoint("/home/user/project/util.py", 3),
         ]
     )
-    signals: list[tuple[str, int]] = []
-    panel.breakpoint_remove_requested.connect(lambda file_path, line_number: signals.append((file_path, line_number)))
+    clear_signals: list[None] = []
+    remove_signals: list[tuple[str, int]] = []
+    panel.clear_all_breakpoints_requested.connect(lambda: clear_signals.append(None))
+    panel.breakpoint_remove_requested.connect(lambda file_path, line_number: remove_signals.append((file_path, line_number)))
 
     panel._handle_clear_all_breakpoints()
 
-    assert signals == [
-        ("/home/user/project/main.py", 5),
-        ("/home/user/project/util.py", 3),
-    ]
+    assert clear_signals == [None]
+    assert remove_signals == []
 
 
 def test_command_submission_and_output_helpers(panel: DebugPanelWidget) -> None:

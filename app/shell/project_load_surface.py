@@ -11,6 +11,34 @@ from app.shell.project_open_telemetry import ProjectOpenTelemetry
 from app.shell.project_tree_utils import effective_excludes_for, filter_tree_signature_entries
 
 
+def apply_tree_entries_surface(
+    window: Any,
+    loaded_project: LoadedProject,
+    *,
+    load_effective_exclude_patterns: Callable[[str], list[str]],
+    preserve_tree_state: bool = True,
+) -> None:
+    """Refresh tree, inventory, and search sidebar without open-project orchestration."""
+    window._loaded_project = loaded_project
+    signature = filter_tree_signature_entries(
+        tuple(entry.relative_path for entry in loaded_project.entries)
+    )
+    window._project_tree_structure_signature = signature
+    window._project_inventory_orchestrator.set_tree_structure_signature(signature)
+    window._project_tree_ui_workflow.populate_project_tree(
+        loaded_project,
+        preserve_state=preserve_tree_state,
+    )
+    effective = effective_excludes_for(
+        loaded_project,
+        load_effective_exclude_patterns=load_effective_exclude_patterns,
+    )
+    window._project_inventory_orchestrator.rebuild_from_loaded(loaded_project, effective)
+    if window._search_sidebar is not None:
+        window._search_sidebar.set_project_root(loaded_project.project_root)
+        window._search_sidebar.set_exclude_patterns(effective.as_list())
+
+
 def apply_project_surface(
     window: Any,
     loaded_project: LoadedProject,
@@ -39,17 +67,14 @@ def apply_project_surface(
     )
     window._editor_tab_workflow.reset_editor_tabs()
     window._stored_lint_diagnostics.clear()
+    effective = effective_excludes_for(
+        loaded_project,
+        load_effective_exclude_patterns=load_effective_exclude_patterns,
+    )
+    window._project_inventory_orchestrator.rebuild_from_loaded(loaded_project, effective)
     if window._search_sidebar is not None:
         window._search_sidebar.set_project_root(loaded_project.project_root)
-        effective = effective_excludes_for(
-            loaded_project,
-            load_effective_exclude_patterns=load_effective_exclude_patterns,
-        )
         window._search_sidebar.set_exclude_patterns(effective.as_list())
-        window._project_inventory_orchestrator.rebuild(
-            loaded_project.project_root,
-            effective,
-        )
 
 
 def finalize_project_open(

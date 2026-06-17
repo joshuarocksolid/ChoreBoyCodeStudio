@@ -15,6 +15,8 @@ from PySide2.QtCore import QByteArray, QRect, QSize, Qt
 from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide2.QtSvg import QSvgRenderer
 
+from app.shell.icons.render import icon_from_svg, render_painted_icon
+
 _SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
 _SVG_CLOSE = "</svg>"
 
@@ -24,34 +26,24 @@ _SVG_CLOSE = "</svg>"
 # ---------------------------------------------------------------------------
 
 def _svg_icon(body: str) -> QIcon:
-    svg = f"{_SVG_OPEN}{body}{_SVG_CLOSE}"
-    data = QByteArray(svg.encode("utf-8"))
-    renderer = QSvgRenderer(data)
-    pixmap = QPixmap(QSize(16, 16))
-    pixmap.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
-    return QIcon(pixmap)
+    return icon_from_svg(f"{_SVG_OPEN}{body}{_SVG_CLOSE}")
 
 
 def _badge_icon(bg: str, label: str, fg: str = "#FFFFFF") -> QIcon:
-    pixmap = QPixmap(QSize(16, 16))
-    pixmap.fill(QColor(0, 0, 0, 0))
-    p = QPainter(pixmap)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(bg))
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(1, 1, 14, 14, 2.5, 2.5)
-    p.setPen(QColor(fg))
-    font = QFont("sans-serif")
-    n = len(label)
-    font.setPixelSize(11 if n == 1 else 9 if n == 2 else 7)
-    font.setBold(True)
-    p.setFont(font)
-    p.drawText(QRect(0, 0, 16, 16), Qt.AlignCenter, label)
-    p.end()
-    return QIcon(pixmap)
+    def paint(p: QPainter) -> None:
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor(bg))
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(1, 1, 14, 14, 2.5, 2.5)
+        p.setPen(QColor(fg))
+        font = QFont("sans-serif")
+        n = len(label)
+        font.setPixelSize(11 if n == 1 else 9 if n == 2 else 7)
+        font.setBold(True)
+        p.setFont(font)
+        p.drawText(QRect(0, 0, 16, 16), Qt.AlignCenter, label)
+
+    return render_painted_icon(16, 16, paint)
 
 
 # ---------------------------------------------------------------------------

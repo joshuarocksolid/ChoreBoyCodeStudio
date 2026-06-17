@@ -18,6 +18,7 @@ from app.persistence.autosave_store import DraftEntry  # noqa: E402
 from app.persistence.history_models import LocalHistoryCheckpoint  # noqa: E402
 from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
 from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
+from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -131,20 +132,17 @@ def test_maybe_restore_draft_restores_into_buffer_and_reschedules_autosave(
     monkeypatch.setattr("app.shell.local_history_workflow.DraftRecoveryDialog", _AcceptDialog)
 
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
+            open_file_in_editor=lambda _path: True,
+            open_restored_history_buffer=lambda _path, _content: True,
+            apply_text_to_open_tab=lambda path, content: editor_widget.replace_document_text(content),
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=autosave_store,  # type: ignore[arg-type]
         autosave_timer=timer,  # type: ignore[arg-type]
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: True,
-        apply_text_to_open_tab=lambda path, content: editor_widget.replace_document_text(content),
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.local_history_workflow"),
     )
 
@@ -195,20 +193,16 @@ def test_review_draft_entry_shows_dialog_when_draft_matches_disk_but_not_buffer(
     monkeypatch.setattr("app.shell.local_history_workflow.DraftRecoveryDialog", _RecordingDialog)
 
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
+            open_file_in_editor=lambda _path: True,
+            open_restored_history_buffer=lambda _path, _content: True,
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=autosave_store,  # type: ignore[arg-type]
         autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: True,
-        apply_text_to_open_tab=lambda _path, _content: None,
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.local_history_workflow"),
     )
 
@@ -257,20 +251,16 @@ def test_maybe_restore_draft_keep_disk_version_discards_saved_draft(
     monkeypatch.setattr("app.shell.local_history_workflow.DraftRecoveryDialog", _RejectDialog)
 
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
+            open_file_in_editor=lambda _path: True,
+            open_restored_history_buffer=lambda _path, _content: True,
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=autosave_store,  # type: ignore[arg-type]
         autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: True,
-        apply_text_to_open_tab=lambda _path, _content: None,
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.local_history_workflow"),
     )
 
@@ -319,20 +309,17 @@ def test_show_local_history_for_path_opens_dialog_and_restores_live_buffer(
     monkeypatch.setattr("app.shell.local_history_workflow.LocalHistoryDialog", _FakeDialog)
     timer = _FakeTimer()
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
+            open_file_in_editor=lambda _path: True,
+            open_restored_history_buffer=lambda _path, _content: True,
+            apply_text_to_open_tab=lambda path, content: editor_widget.replace_document_text(content),
+        ),
         local_history_store=local_history_store,
         autosave_store=_FakeAutosaveStore(),  # type: ignore[arg-type]
         autosave_timer=timer,  # type: ignore[arg-type]
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
-        open_file_in_editor=lambda _path: True,
-        open_restored_history_buffer=lambda _path, _content: True,
-        apply_text_to_open_tab=lambda path, content: editor_widget.replace_document_text(content),
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.local_history_workflow"),
     )
 
@@ -360,20 +347,16 @@ def test_restore_deleted_history_path_opens_dirty_buffer_without_disk_write(tmp_
         return True
 
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: _loaded_project(project_root),
+            open_file_in_editor=lambda _path: False,
+            open_restored_history_buffer=open_restored,
+            apply_text_to_open_tab=lambda path, content: applied.append((path, content)),
+        ),
         local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
         autosave_store=_FakeAutosaveStore(),  # type: ignore[arg-type]
         autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
-        loaded_project=lambda: _loaded_project(project_root),
         editor_manager=manager,
-        editor_widget_for_path=lambda _path: None,
-        open_file_in_editor=lambda _path: False,
-        open_restored_history_buffer=open_restored,
-        apply_text_to_open_tab=lambda path, content: applied.append((path, content)),
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda _message, _timeout: None,
         logger=logging.getLogger("test.local_history_workflow"),
     )
 
@@ -398,20 +381,14 @@ def test_checkpoint_skip_uses_current_retention_policy_for_status(tmp_path: Path
 
     messages: list[str] = []
     workflow = LocalHistoryWorkflow(
-        parent=None,
+        host=LocalHistoryEditorHostStub(
+            loaded_project=lambda: None,
+            show_status_message=lambda message, _timeout: messages.append(message),
+        ),
         local_history_store=_SkippingStore(),  # type: ignore[arg-type]
         autosave_store=_FakeAutosaveStore(),  # type: ignore[arg-type]
         autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
-        loaded_project=lambda: None,
         editor_manager=EditorManager(),
-        editor_widget_for_path=lambda _path: None,
-        open_file_in_editor=lambda _path: False,
-        open_restored_history_buffer=lambda _path, _content: False,
-        apply_text_to_open_tab=lambda _path, _content: None,
-        tab_index_for_path=lambda _path: -1,
-        refresh_tab_presentation=lambda _path: None,
-        set_current_tab_index=lambda _index: None,
-        show_status_message=lambda message, _timeout: messages.append(message),
         logger=logging.getLogger("test.local_history_workflow"),
     )
 

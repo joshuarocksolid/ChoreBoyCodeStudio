@@ -6,11 +6,11 @@ from app.shell.theme_tokens import ShellThemeTokens
 
 
 def _accent_hover(tokens: ShellThemeTokens) -> str:
-    return "#4D7AFF" if tokens.is_dark else "#2952CC"
+    return tokens.accent_hover or tokens.accent
 
 
 def _accent_pressed(tokens: ShellThemeTokens) -> str:
-    return "#3D6AEE" if tokens.is_dark else "#1F3FA6"
+    return tokens.accent_pressed or tokens.accent
 
 
 def _destructive_color(tokens: ShellThemeTokens) -> str:
@@ -315,10 +315,10 @@ QPushButton#shell\\.helpDialog\\.closeBtn {{
     font-weight: 600;
 }}
 QPushButton#shell\\.helpDialog\\.closeBtn:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    background: {tokens.accent_hover};
 }}
 QPushButton#shell\\.helpDialog\\.closeBtn:pressed {{
-    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+    background: {tokens.accent_pressed};
 }}
 """
 def shell_section_runtime_center_dialog(tokens: ShellThemeTokens) -> str:
@@ -404,10 +404,10 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton {{
     border: none;
 }}
 QPushButton#shell\\.runtimeCenterDialog\\.closeButton:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    background: {tokens.accent_hover};
 }}
 QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
-    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+    background: {tokens.accent_pressed};
 }}
 """
 

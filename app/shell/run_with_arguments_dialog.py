@@ -13,12 +13,14 @@ from PySide2.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QShortcut,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -34,28 +36,30 @@ from app.shell.dialog_chrome import (
     add_meta_chip,
     build_dialog_chrome,
 )
+from app.shell.field_action_button import make_field_action_button
 from app.shell.run_arguments_editor import RunArgumentsEditorRow
 from app.shell.run_arguments_helpers import (
     collect_run_invocation_fields,
-    format_command_preview_lines,
+    format_command_summary_strip,
+    format_overrides_collapsed_summary,
     join_argv_for_display,
     normalize_entry_path_for_project,
     try_parse_argv_text,
 )
 from app.shell.run_config_controller import tokenize_argv_text
 from app.shell.run_env_overrides_row import RunEnvOverridesRow
+from app.shell.run_form_section import build_run_form_section
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.shell.toolbar_icons import icon_run
 
 _DIALOG_OBJECT_NAME = "shell.runWithArgumentsDialog"
-_SUBTITLE = (
-    "Run once with custom arguments. Nothing is saved to the project "
-    "unless you choose Save as Configuration."
-)
+_SUBTITLE = "Run once with custom arguments."
 _ARGV_FIELD_TOOLTIP = (
     "Shell-style quoting is supported. ChoreBoy has no terminal; "
     "this is how you set sys.argv for the runner."
 )
+_WD_HELPER_TEXT = "Defaults to project root when empty."
 
 
 @dataclass(frozen=True)
@@ -115,8 +119,8 @@ class RunWithArgumentsDialog(QDialog):
         self.setWindowTitle("Run With Arguments")
         self.setModal(True)
         self.setObjectName(_DIALOG_OBJECT_NAME)
-        self.setMinimumSize(640, 520)
-        self.resize(720, 620)
+        self.setMinimumSize(600, 480)
+        self.resize(680, 540)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
@@ -126,12 +130,14 @@ class RunWithArgumentsDialog(QDialog):
         self._initial = initial
         self._result: RunInvocation | None = None
         self._outcome = RunWithArgumentsOutcomeKind.CANCELLED
+        self._overrides_expanded = False
 
         chrome = build_dialog_chrome(
             self,
             title="Run With Arguments",
             subtitle=_SUBTITLE,
             object_name=_DIALOG_OBJECT_NAME,
+            icon=icon_run(tokens.accent),
             body_margins=True,
         )
         self._chrome = chrome
@@ -144,91 +150,131 @@ class RunWithArgumentsDialog(QDialog):
         self._command_preview.setObjectName("shell.runWithArgumentsDialog.commandPreview")
         self._command_preview.setWordWrap(True)
         self._command_preview.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._command_preview.setProperty("commandPreviewState", "incomplete")
         body_layout.addWidget(self._command_preview)
 
         form_host = QWidget(chrome.body)
-        form_layout = QFormLayout(form_host)
-        form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
-        form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(10)
-        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        form_host_layout = QVBoxLayout(form_host)
+        form_host_layout.setContentsMargins(0, 0, 0, 0)
+        form_host_layout.setSpacing(12)
+
+        run_target_section, run_target_layout = build_run_form_section(form_host, "Run target")
+        run_target_form = QWidget(run_target_section)
+        run_target_form_layout = QFormLayout(run_target_form)
+        run_target_form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        run_target_form_layout.setHorizontalSpacing(12)
+        run_target_form_layout.setVerticalSpacing(10)
+        run_target_form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        run_target_layout.addWidget(run_target_form)
 
         self._prefill_combo: QComboBox | None = None
         if initial.named_configurations:
-            self._prefill_combo = QComboBox(form_host)
+            self._prefill_combo = QComboBox(run_target_form)
             self._prefill_combo.setObjectName("shell.runWithArgumentsDialog.prefill")
             self._prefill_combo.addItem("Prefill from configuration\u2026", None)
             for config in initial.named_configurations:
                 self._prefill_combo.addItem(config.name, config)
             self._prefill_combo.currentIndexChanged.connect(self._on_prefill_selected)
-            form_layout.addRow("Prefill:", self._prefill_combo)
+            run_target_form_layout.addRow("Prefill:", self._prefill_combo)
 
-        self._entry_combo = QComboBox(form_host)
+        self._entry_combo = QComboBox(run_target_form)
         self._entry_combo.setObjectName("shell.runWithArgumentsDialog.entry")
         self._entry_combo.setEditable(True)
         self._entry_combo.setInsertPolicy(QComboBox.NoInsert)
         for choice in initial.entry_file_choices:
             self._entry_combo.addItem(choice)
-        entry_row = QWidget(form_host)
+        entry_row = QWidget(run_target_form)
         entry_row_layout = QHBoxLayout(entry_row)
         entry_row_layout.setContentsMargins(0, 0, 0, 0)
         entry_row_layout.setSpacing(8)
         entry_row_layout.addWidget(self._entry_combo, 1)
-        browse_entry_button = QPushButton("Browse\u2026", entry_row)
+        browse_entry_button = make_field_action_button("Browse\u2026", entry_row)
         browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
         entry_row_layout.addWidget(browse_entry_button, 0)
-        form_layout.addRow("Entry file:", entry_row)
+        entry_label = QLabel("Entry file (required):", run_target_form)
+        run_target_form_layout.addRow(entry_label, entry_row)
         self._entry_combo.currentTextChanged.connect(self._refresh_validation_state)
 
-        argv_label = QLabel("Arguments:", form_host)
+        argv_label = QLabel("Arguments:", run_target_form)
         argv_label.setToolTip(_ARGV_FIELD_TOOLTIP)
         self._argv_editor = RunArgumentsEditorRow(
-            form_host,
+            run_target_form,
             tokens=tokens,
             recent_argv_history=initial.recent_argv_history,
             object_name_prefix="shell.runWithArgumentsDialog",
             show_recent=True,
+            argv_tooltip=_ARGV_FIELD_TOOLTIP,
         )
-        form_layout.addRow(argv_label, self._argv_editor)
+        run_target_form_layout.addRow(argv_label, self._argv_editor)
         self._argv_editor.validation_changed.connect(self._refresh_validation_state)
 
-        self._advanced_group = QGroupBox("Advanced", form_host)
-        self._advanced_group.setObjectName("shell.runWithArgumentsDialog.advancedGroup")
-        self._advanced_group.setCheckable(True)
-        advanced_layout = QFormLayout(self._advanced_group)
-        advanced_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
-        advanced_layout.setHorizontalSpacing(12)
-        advanced_layout.setVerticalSpacing(10)
-        advanced_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form_host_layout.addWidget(run_target_section)
 
-        self._working_dir_edit = QLineEdit(self._advanced_group)
+        overrides_section, overrides_layout = build_run_form_section(form_host, "Overrides")
+        self._overrides_disclosure = QWidget(overrides_section)
+        disclosure_layout = QHBoxLayout(self._overrides_disclosure)
+        disclosure_layout.setContentsMargins(0, 0, 0, 0)
+        disclosure_layout.setSpacing(8)
+
+        self._overrides_toggle = QToolButton(self._overrides_disclosure)
+        self._overrides_toggle.setObjectName("shell.runWithArgumentsDialog.overridesToggle")
+        self._overrides_toggle.setProperty("overridesToggle", True)
+        self._overrides_toggle.setAutoRaise(True)
+        self._overrides_toggle.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self._overrides_toggle.clicked.connect(self._on_overrides_toggle_clicked)
+        disclosure_layout.addWidget(self._overrides_toggle, 0)
+
+        disclosure_title = QLabel("Working directory and environment", self._overrides_disclosure)
+        disclosure_title.setObjectName("shell.runWithArgumentsDialog.overridesTitle")
+        disclosure_layout.addWidget(disclosure_title, 0)
+
+        self._overrides_summary_label = QLabel(self._overrides_disclosure)
+        self._overrides_summary_label.setObjectName("shell.runWithArgumentsDialog.overridesSummary")
+        self._overrides_summary_label.setProperty("overridesSummary", True)
+        self._overrides_summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        disclosure_layout.addWidget(self._overrides_summary_label, 1)
+
+        overrides_layout.addWidget(self._overrides_disclosure)
+
+        self._overrides_panel = QWidget(overrides_section)
+        self._overrides_panel.setObjectName("shell.runWithArgumentsDialog.advancedGroup")
+        overrides_panel_layout = QFormLayout(self._overrides_panel)
+        overrides_panel_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        overrides_panel_layout.setHorizontalSpacing(12)
+        overrides_panel_layout.setVerticalSpacing(10)
+        overrides_panel_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        self._working_dir_edit = QLineEdit(self._overrides_panel)
         self._working_dir_edit.setObjectName("shell.runWithArgumentsDialog.workingDir")
         self._working_dir_edit.setPlaceholderText("Leave empty to use project root")
-        wd_row = QWidget(self._advanced_group)
+        wd_row = QWidget(self._overrides_panel)
         wd_row_layout = QHBoxLayout(wd_row)
         wd_row_layout.setContentsMargins(0, 0, 0, 0)
         wd_row_layout.setSpacing(8)
         wd_row_layout.addWidget(self._working_dir_edit, 1)
-        browse_wd_button = QPushButton("Browse\u2026", wd_row)
+        browse_wd_button = make_field_action_button("Browse\u2026", wd_row)
         browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
         wd_row_layout.addWidget(browse_wd_button, 0)
-        advanced_layout.addRow("Working directory:", wd_row)
+        overrides_panel_layout.addRow("Working directory:", wd_row)
+
+        self._wd_helper_label = QLabel(_WD_HELPER_TEXT, self._overrides_panel)
+        self._wd_helper_label.setObjectName("shell.runWithArgumentsDialog.wdHelper")
+        self._wd_helper_label.setProperty("previewLabel", True)
+        overrides_panel_layout.addRow("", self._wd_helper_label)
+
         self._working_dir_edit.textChanged.connect(self._refresh_validation_state)
 
         self._env_row = RunEnvOverridesRow(
-            self._advanced_group,
+            self._overrides_panel,
             tokens=tokens,
             object_name_prefix="shell.runWithArgumentsDialog.env",
         )
-        advanced_layout.addRow("Environment:", self._env_row)
+        overrides_panel_layout.addRow("Environment:", self._env_row)
         self._env_row.value_changed.connect(self._refresh_validation_state)
 
-        has_advanced_values = bool(
-            (initial.working_directory or "").strip() or initial.env_overrides
-        )
-        self._advanced_group.setChecked(has_advanced_values)
-        self._advanced_group.toggled.connect(self._on_advanced_toggled)
-        form_layout.addRow(self._advanced_group)
+        overrides_layout.addWidget(self._overrides_panel)
+        form_host_layout.addWidget(overrides_section)
 
         body_layout.addWidget(form_host, 1)
 
@@ -244,16 +290,26 @@ class RunWithArgumentsDialog(QDialog):
         manage_button.clicked.connect(self._on_manage_configurations_clicked)
 
         add_footer_stretch(chrome)
+        cancel_button = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
+
+        footer_separator = QFrame(chrome.footer)
+        footer_separator.setObjectName("shell.runWithArgumentsDialog.footerSeparator")
+        footer_separator.setFrameShape(QFrame.VLine)
+        footer_separator.setFrameShadow(QFrame.Sunken)
+        chrome.footer_layout.addWidget(footer_separator)
+
         self._save_button = add_footer_button(
             chrome,
             "Save as Configuration\u2026",
-            role=FOOTER_ROLE_SECONDARY,
+            role=FOOTER_ROLE_LINK,
         )
         self._save_button.setToolTip(
-            "Run now and remember these values as a named run configuration in cbcs/project.json."
+            "Run now and remember these values as a named run configuration in cbcs/project.json. "
+            "Nothing is saved unless you choose this action."
         )
-        cancel_button = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
         self._run_button = add_footer_button(chrome, "Run", role=FOOTER_ROLE_PRIMARY, default=True)
+        self._run_button.setIcon(icon_run("#FFFFFF"))
+        self._run_button.setToolTip("Run once without saving (Ctrl+Enter)")
 
         self._run_button.clicked.connect(self._on_run_clicked)
         self._save_button.clicked.connect(self._on_save_clicked)
@@ -262,9 +318,13 @@ class RunWithArgumentsDialog(QDialog):
         run_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         run_shortcut.activated.connect(self._on_run_clicked)
 
+        has_advanced_values = bool(
+            (initial.working_directory or "").strip() or initial.env_overrides
+        )
+        self._set_overrides_expanded(has_advanced_values)
         self._seed_initial_values()
-        self._on_advanced_toggled(self._advanced_group.isChecked())
         self._refresh_validation_state()
+        self._configure_tab_order()
         if (initial.entry_file or "").strip():
             self._argv_editor.focus_argv_field()
 
@@ -309,11 +369,61 @@ class RunWithArgumentsDialog(QDialog):
     def _entry_file_text(self) -> str:
         return self._entry_combo.currentText().strip()
 
-    def _on_advanced_toggled(self, expanded: bool) -> None:
+    def _set_overrides_expanded(self, expanded: bool) -> None:
+        self._overrides_expanded = expanded
+        self._overrides_panel.setVisible(expanded)
+        self._overrides_toggle.setArrowType(
+            Qt.DownArrow if expanded else Qt.RightArrow
+        )
         self._working_dir_edit.setEnabled(expanded)
         self._env_row.setEnabled(expanded)
-        for child in self._advanced_group.findChildren(QPushButton):
+        for child in self._overrides_panel.findChildren(QPushButton):
             child.setEnabled(expanded)
+        self._wd_helper_label.setVisible(expanded)
+        self._refresh_overrides_summary()
+        self._configure_tab_order()
+
+    def _on_overrides_toggle_clicked(self) -> None:
+        self._set_overrides_expanded(not self._overrides_expanded)
+
+    def _refresh_overrides_summary(self) -> None:
+        working_dir = self._working_dir_edit.text().strip() or None
+        self._overrides_summary_label.setText(
+            format_overrides_collapsed_summary(
+                working_directory=working_dir,
+                project_root=self._initial.project_root,
+                env_overrides=self._env_row.env_overrides(),
+            )
+        )
+
+    def _set_entry_validation_error(self, *, error: bool) -> None:
+        state = "error" if error else "ok"
+        if self._entry_combo.property("validationState") != state:
+            self._entry_combo.setProperty("validationState", state)
+            self._entry_combo.style().unpolish(self._entry_combo)
+            self._entry_combo.style().polish(self._entry_combo)
+
+    def _set_command_preview_state(self, state: str) -> None:
+        if self._command_preview.property("commandPreviewState") != state:
+            self._command_preview.setProperty("commandPreviewState", state)
+            self._command_preview.style().unpolish(self._command_preview)
+            self._command_preview.style().polish(self._command_preview)
+
+    def _configure_tab_order(self) -> None:
+        previous: QWidget = self
+        if self._prefill_combo is not None:
+            self.setTabOrder(previous, self._prefill_combo)
+            previous = self._prefill_combo
+        self.setTabOrder(previous, self._entry_combo)
+        self.setTabOrder(self._entry_combo, self._argv_editor)
+        self.setTabOrder(self._argv_editor, self._argv_editor.recent_combo_widget())
+        self.setTabOrder(self._argv_editor.recent_combo_widget(), self._overrides_toggle)
+        if self._overrides_expanded:
+            self.setTabOrder(self._overrides_toggle, self._working_dir_edit)
+            self.setTabOrder(self._working_dir_edit, self._env_row)
+            self.setTabOrder(self._env_row, self._run_button)
+        else:
+            self.setTabOrder(self._overrides_toggle, self._run_button)
 
     def _on_prefill_selected(self, index: int) -> None:
         if self._prefill_combo is None or index <= 0:
@@ -335,9 +445,13 @@ class RunWithArgumentsDialog(QDialog):
         self._working_dir_edit.setText(config.working_directory or "")
         self._env_row.set_env_overrides(config.env_overrides)
         if config.working_directory or config.env_overrides:
-            self._advanced_group.setChecked(True)
+            self._set_overrides_expanded(True)
         self._prefill_combo.setCurrentIndex(0)
         self._refresh_validation_state()
+        if config.argv:
+            self._argv_editor.focus_argv_field()
+        elif entry:
+            self._entry_combo.setFocus()
 
     def _on_browse_entry_clicked(self) -> None:
         start_dir = self._initial.project_root or ""
@@ -378,14 +492,21 @@ class RunWithArgumentsDialog(QDialog):
             argv_tokens = []
 
         working_dir = self._working_dir_edit.text().strip() or None
-        preview_lines = format_command_preview_lines(
+        summary_text, detail_tooltip, preview_state = format_command_summary_strip(
             entry_file=entry,
-            argv_tokens=argv_tokens or [],
+            argv_tokens=argv_tokens,
             working_directory=working_dir,
             project_root=self._initial.project_root,
             env_overrides=env_overrides,
+            argv_error=argv_error,
         )
-        self._command_preview.setText("\n".join(preview_lines))
+        self._command_preview.setText(summary_text)
+        self._command_preview.setToolTip(detail_tooltip)
+        self._set_command_preview_state(preview_state)
+
+        entry_missing = not entry
+        self._set_entry_validation_error(error=entry_missing)
+        self._argv_editor.set_argv_validation_error(error=argv_error is not None)
 
         _fields, error_message = collect_run_invocation_fields(
             entry_file=entry,
@@ -396,10 +517,13 @@ class RunWithArgumentsDialog(QDialog):
         can_submit = _fields is not None
         self._run_button.setEnabled(can_submit)
         self._save_button.setEnabled(can_submit)
-        if error_message and not can_submit:
+
+        if error_message and not can_submit and not entry_missing and argv_error is None:
             self._show_error(error_message)
         else:
             self._clear_error()
+
+        self._refresh_overrides_summary()
 
     def _show_error(self, message: str) -> None:
         self._error_label.setText(message)

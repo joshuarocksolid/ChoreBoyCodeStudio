@@ -117,6 +117,7 @@ def build_explorer_page(window: Any) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(0)
     workflow = window._project_tree_ui_workflow
+    tokens = window._shell_theme_workflow.resolve_theme_tokens()
 
     header = QWidget(page)
     header.setObjectName("shell.explorerHeader")
@@ -130,19 +131,25 @@ def build_explorer_page(window: Any) -> QWidget:
     header_layout.addWidget(title_label)
 
     window._explorer_new_file_btn = _make_explorer_button(
-        header, "New File", new_file_icon("#495057", "#3366FF"),
+        header,
+        "New File",
+        new_file_icon(tokens.icon_primary, tokens.icon_muted),
     )
     window._explorer_new_file_btn.clicked.connect(workflow.handle_explorer_new_file)
     header_layout.addWidget(window._explorer_new_file_btn)
 
     window._explorer_new_folder_btn = _make_explorer_button(
-        header, "New Folder", new_folder_icon("#495057", "#3366FF"),
+        header,
+        "New Folder",
+        new_folder_icon(tokens.icon_primary, tokens.icon_muted),
     )
     window._explorer_new_folder_btn.clicked.connect(workflow.handle_explorer_new_folder)
     header_layout.addWidget(window._explorer_new_folder_btn)
 
     window._explorer_refresh_btn = _make_explorer_button(
-        header, "Refresh Explorer", refresh_icon("#495057"),
+        header,
+        "Refresh Explorer",
+        refresh_icon(tokens.icon_primary),
     )
     window._explorer_refresh_btn.clicked.connect(workflow.refresh_project_tree_from_disk)
     header_layout.addWidget(window._explorer_refresh_btn)
@@ -276,10 +283,7 @@ def build_bottom_panel(window: Any) -> QWidget:
 
     window._python_console_widget = PythonConsoleWidget(window._python_console_container)
     window._python_console_widget.setObjectName("shell.bottom.pythonConsole")
-    window._python_console_widget.input_submitted.connect(window._handle_python_console_submit)
-    window._python_console_widget.interrupt_requested.connect(window._handle_python_console_interrupt)
-    window._python_console_widget.restart_requested.connect(window._handle_start_python_console_action)
-    window._python_console_widget.set_completion_requester(window._python_console_workflow.request_completion_async)
+    window._python_console_workflow.bind_widget(window._python_console_widget)
     _restore_python_console_history(window)
     clear_btn.clicked.connect(window._python_console_widget.clear_console)
     container_layout.addWidget(window._python_console_widget)
@@ -296,6 +300,9 @@ def build_bottom_panel(window: Any) -> QWidget:
     window._debug_panel.breakpoint_remove_requested.connect(window._debug_control_workflow.handle_debug_breakpoint_remove)
     window._debug_panel.breakpoint_toggle_requested.connect(window._debug_control_workflow.handle_debug_breakpoint_toggle)
     window._debug_panel.breakpoint_edit_requested.connect(window._debug_control_workflow.handle_debug_breakpoint_edit)
+    window._debug_panel.clear_all_breakpoints_requested.connect(
+        window._debug_control_workflow.clear_all_breakpoints
+    )
     window._debug_panel.refresh_stack_requested.connect(window._debug_control_workflow.handle_debug_refresh_stack)
     window._debug_panel.refresh_locals_requested.connect(window._debug_control_workflow.handle_debug_refresh_locals)
     window._debug_panel.command_submitted.connect(window._debug_control_workflow.handle_debug_command_submit)

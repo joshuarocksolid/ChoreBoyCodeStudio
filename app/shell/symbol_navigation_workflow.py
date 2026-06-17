@@ -11,6 +11,7 @@ from PySide2.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
 from app.shell.semantic_navigation_host import SemanticNavigationHost
+from app.shell.theme_tokens import ShellThemeTokens
 
 
 class SymbolNavigationWorkflow:
@@ -98,7 +99,14 @@ class SymbolNavigationWorkflow:
             if not flat:
                 QMessageBox.information(parent, "Go to Symbol", "No symbols in this file.")
                 return
-            dialog = QuickSymbolDialog(flat, parent=parent)
+            tokens: ShellThemeTokens = parent.current_theme_tokens()
+            dialog = QuickSymbolDialog(
+                flat,
+                tokens=tokens,
+                initial_line=original_line,
+                parent=parent,
+            )
+            dialog.open_dialog()
 
             def _on_preview(line: int) -> None:
                 if editor_widget is not None:

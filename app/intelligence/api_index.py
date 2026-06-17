@@ -10,6 +10,14 @@ from typing import Any
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 
 DEFAULT_RUNTIME_API_INDEX_PATH = Path(__file__).with_name("runtime_api_index.json")
+DEFAULT_STDLIB_API_INDEX_PATH = Path(__file__).with_name("stdlib_api_index.json")
+
+# Lazy-loaded JSON index caches keyed by resolved path string.
+_JSON_INDEX_CACHE: dict[str, dict[str, tuple[ApiMember, ...]]] = {}
+_SHIPPED_JSON_INDEX_PATHS: tuple[Path, ...] = (
+    DEFAULT_RUNTIME_API_INDEX_PATH,
+    DEFAULT_STDLIB_API_INDEX_PATH,
+)
 
 
 @dataclass(frozen=True)
@@ -143,9 +151,12 @@ def provide_api_index_member_items(
     """Return trusted runtime API completion items for a module/member context."""
 
     members = list(_CURATED_API_INDEX.get(module_name, ()))
-    members.extend(_load_index_members(str(DEFAULT_RUNTIME_API_INDEX_PATH), module_name))
-    if index_path and Path(index_path).expanduser() != DEFAULT_RUNTIME_API_INDEX_PATH:
-        members.extend(_load_index_members(index_path, module_name))
+    for shipped_path in _SHIPPED_JSON_INDEX_PATHS:
+        members.extend(_cached_index_members(shipped_path, module_name))
+    if index_path:
+        custom_path = Path(index_path).expanduser().resolve()
+        if custom_path not in {path.resolve() for path in _SHIPPED_JSON_INDEX_PATHS}:
+            members.extend(_cached_index_members(custom_path, module_name))
     deduped_members = {member.name: member for member in members}
     filtered = [
         member
@@ -168,31 +179,53 @@ def provide_api_index_member_items(
     ]
 
 
-def _load_index_members(index_path: str, module_name: str) -> list[ApiMember]:
-    path = Path(index_path).expanduser()
-    if not path.exists():
+def _cached_index_members(index_path: Path, module_name: str) -> list[ApiMember]:
+    """Return members for one module from a lazily loaded JSON index file."""
+
+    resolved_path = index_path.expanduser().resolve()
+    cache_key = str(resolved_path)
+    if cache_key not in _JSON_INDEX_CACHE:
+        _JSON_INDEX_CACHE[cache_key] = _parse_index_file(resolved_path)
+    module_members = _JSON_INDEX_CACHE[cache_key].get(module_name)
+    if module_members is None:
         return []
+    return list(module_members)
+
+
+def clear_api_index_cache() -> None:
+    """Drop lazily loaded JSON index caches (used by tests)."""
+
+    _JSON_INDEX_CACHE.clear()
+
+
+def _parse_index_file(path: Path) -> dict[str, tuple[ApiMember, ...]]:
+    if not path.exists():
+        return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    module_payload: object | None = None
+        return {}
+    modules_payload: object | None = None
     if isinstance(payload, dict):
-        modules_payload = payload.get("modules")
-        if isinstance(modules_payload, dict):
-            module_payload = modules_payload.get(module_name)
-        else:
-            module_payload = payload.get(module_name)
-    if not isinstance(module_payload, list):
-        return []
-    members: list[ApiMember] = []
-    for entry in module_payload:
-        if not isinstance(entry, dict):
+        modules_payload = payload.get("modules", payload)
+    if not isinstance(modules_payload, dict):
+        return {}
+    parsed: dict[str, tuple[ApiMember, ...]] = {}
+    for module_name, module_payload in modules_payload.items():
+        if module_name == "metadata" or not isinstance(module_name, str):
             continue
-        member = _member_from_payload(entry)
-        if member is not None:
-            members.append(member)
-    return members
+        if not isinstance(module_payload, list):
+            continue
+        members: list[ApiMember] = []
+        for entry in module_payload:
+            if not isinstance(entry, dict):
+                continue
+            member = _member_from_payload(entry)
+            if member is not None:
+                members.append(member)
+        if members:
+            parsed[module_name] = tuple(members)
+    return parsed
 
 
 def _member_from_payload(payload: dict[str, Any]) -> ApiMember | None:

@@ -432,3 +432,40 @@ def test_hide_requested_emitted_from_more_menu(_ensure_qapp) -> None:  # type: i
     panel.header_bar().hide_clicked.emit()
 
     assert received == [True]
+
+
+def test_apply_theme_tokens_refreshes_icons_without_rebuilding_tree(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    from PySide2.QtGui import QPalette  # noqa: WPS433
+
+    from app.shell.theme_tokens import tokens_from_palette  # noqa: WPS433
+
+    panel = OutlinePanel()
+    panel.set_outline(_class_with_two_methods(), "/project/thing.py")
+    panel.tree_widget().topLevelItem(0).setExpanded(True)
+    top_item = panel.tree_widget().topLevelItem(0)
+    assert top_item is not None
+
+    clear_count = 0
+    original_clear = panel.tree_widget().clear
+
+    def counting_clear() -> None:
+        nonlocal clear_count
+        clear_count += 1
+        original_clear()
+
+    panel.tree_widget().clear = counting_clear  # type: ignore[method-assign]
+
+    light_tokens = tokens_from_palette(QPalette(), force_mode="light")
+    dark_tokens = tokens_from_palette(QPalette(), force_mode="dark")
+    panel.apply_theme_tokens(light_tokens)
+    assert clear_count == 0
+    assert panel.tree_widget().topLevelItemCount() == 1
+    assert panel.tree_widget().topLevelItem(0).isExpanded()
+
+    first_icon = top_item.icon(0)
+    panel.apply_theme_tokens(dark_tokens)
+    assert clear_count == 0
+    assert panel.tree_widget().topLevelItemCount() == 1
+    assert panel.tree_widget().topLevelItem(0).isExpanded()
+    assert not top_item.icon(0).isNull()
+    assert top_item.icon(0).cacheKey() != first_icon.cacheKey() or first_icon.isNull()

@@ -8,6 +8,7 @@ from typing import Callable, Generic, Optional, TypeVar
 
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.shell.breakpoint_store import BreakpointStore
+from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
 
 
@@ -41,7 +42,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         apply_breakpoints_to_widget: Callable[[W, set[int]], None],
         update_widget_language: Callable[[W, str], None],
         maybe_rewrite_imports: Callable[[str, str], None],
-        reload_project: Callable[[], None],
+        refresh_project: Callable[[RefreshTier], None],
         record_deleted_path: Optional[Callable[[str], None]] = None,
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
     ) -> None:
@@ -58,7 +59,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._apply_breakpoints_to_widget = apply_breakpoints_to_widget
         self._update_widget_language = update_widget_language
         self._maybe_rewrite_imports = maybe_rewrite_imports
-        self._reload_project = reload_project
+        self._refresh_project = refresh_project
         self._record_deleted_path = record_deleted_path
         self._remap_file_lineage = remap_file_lineage
 
@@ -69,7 +70,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         result = create_file(str(Path(destination_directory) / validated_name))
         if not result.success:
             return NewFileResult(error_message=result.message, created_path=None)
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         created = result.destination_path
         return NewFileResult(error_message=None, created_path=created)
 
@@ -80,7 +81,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         result = create_directory(str(Path(destination_directory) / validated_name))
         if not result.success:
             return result.message
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
     def handle_rename(self, source_path: str, new_name: str) -> Optional[str]:
@@ -96,7 +97,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         if not result.success:
             return result.message
         self.apply_path_move_updates(str(source), str(destination))
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
     def handle_delete(self, target_path: str) -> Optional[str]:
@@ -104,14 +105,14 @@ class ProjectTreeActionCoordinator(Generic[W]):
         if not result.success:
             return result.message
         self.close_deleted_editor_paths(target_path)
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
     def handle_duplicate(self, source_path: str) -> Optional[str]:
         result = duplicate_path(source_path)
         if not result.success:
             return result.message
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
     def handle_bulk_delete(self, paths: list[str]) -> tuple[list[str], list[str]]:
@@ -124,7 +125,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
                 deleted_paths.append(target_path)
             else:
                 failed.append(f"{Path(target_path).name}: {result.message}")
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return failed, deleted_paths
 
     def handle_bulk_duplicate(self, paths: list[str]) -> list[str]:
@@ -133,7 +134,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             result = duplicate_path(source_path)
             if not result.success:
                 failed.append(f"{Path(source_path).name}: {result.message}")
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return failed
 
     def handle_paste(
@@ -170,7 +171,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
                     failed.append(f"{source.name}: {result.message}")
         next_clipboard_paths = [] if clipboard_cut else list(clipboard_paths)
         next_clipboard_cut = False if clipboard_cut else clipboard_cut
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return (failed, next_clipboard_paths, next_clipboard_cut)
 
     def handle_drop_move(self, source_path: str, target_path: str) -> Optional[str]:
@@ -194,7 +195,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         if not result.success:
             return result.message
         self.apply_path_move_updates(str(source), str(destination))
-        self._reload_project()
+        self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
@@ -225,6 +226,9 @@ class ProjectTreeActionCoordinator(Generic[W]):
             maybe_rewrite_imports=self._maybe_rewrite_imports,
             remap_file_lineage=self._remap_file_lineage,
         )
+
+    def _refresh(self, tier: RefreshTier) -> None:
+        self._refresh_project(tier)
 
     @staticmethod
     def _validate_child_name(name: str) -> Optional[str]:

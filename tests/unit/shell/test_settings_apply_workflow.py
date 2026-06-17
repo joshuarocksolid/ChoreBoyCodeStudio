@@ -250,7 +250,9 @@ def test_apply_after_settings_saved_relints_when_lint_profile_changes() -> None:
     )
 
     workflow.apply_after_settings_saved(
-        updated_snapshot=_updated_snapshot(),
+        updated_snapshot=_updated_snapshot(
+            lint_rule_overrides={"E501": {"enabled": False}},
+        ),
         baseline=baseline,
         project_root=None,
     )

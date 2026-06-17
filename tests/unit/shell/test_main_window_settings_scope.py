@@ -41,22 +41,22 @@ class _FakeSettingsService:
 
 
 def test_set_project_placeholder_appends_override_indicator() -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._project_placeholder_label = SimpleNamespace(setText=lambda _text: None)
-    status_controller = _FakeStatusController()
-    window_any._status_controller = status_controller
-    window_any._loaded_project = SimpleNamespace(project_root="/tmp/project")
-    window_any._settings_service = _FakeSettingsService(
-        global_payload={},
-        project_payload={
-            constants.UI_OUTPUT_SETTINGS_KEY: {
-                constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: False,
-            }
-        },
+    host = SimpleNamespace(
+        _project_placeholder_label=SimpleNamespace(setText=lambda _text: None),
+        _status_controller=_FakeStatusController(),
+        _loaded_project=SimpleNamespace(project_root="/tmp/project"),
+        _settings_service=_FakeSettingsService(
+            global_payload={},
+            project_payload={
+                constants.UI_OUTPUT_SETTINGS_KEY: {
+                    constants.UI_OUTPUT_AUTO_OPEN_CONSOLE_ON_RUN_OUTPUT_KEY: False,
+                }
+            },
+        ),
+        _logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
     )
-    window_any._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
+    status_controller = host._status_controller
 
-    MainWindow.set_project_placeholder(window, "Demo")
+    MainWindow.set_project_placeholder(host, "Demo")  # type: ignore[arg-type]
 
     assert status_controller.project_text == "Project: Demo (project overrides)"

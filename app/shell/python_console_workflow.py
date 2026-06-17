@@ -1,14 +1,43 @@
-"""Python console REPL completion and async UI orchestration."""
+"""Python console REPL completion, session control, and async UI orchestration."""
 
 from __future__ import annotations
 
 import threading
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
+from app.shell.clear_console_policy import ClearConsoleHost, clear_run_output_sinks, prepare_new_run
 
 _PYTHON_CONSOLE_FILE_PATH = "<python_console>"
+
+
+class ReplSessionPort(Protocol):
+    """Minimal REPL session surface for submit, interrupt, and restart."""
+
+    @property
+    def is_running(self) -> bool:
+        ...
+
+    def start(self) -> None:
+        ...
+
+    def restart(self) -> None:
+        ...
+
+    def send_input(self, text: str) -> None:
+        ...
+
+
+class PythonConsoleBindingPort(Protocol):
+    """Minimal Python console widget surface for workflow signal binding."""
+
+    input_submitted: Any
+    interrupt_requested: Any
+    restart_requested: Any
+
+    def set_completion_requester(self, requester: Callable[..., None]) -> None:
+        ...
 
 
 class ReplCompletionPort(Protocol):
@@ -24,6 +53,10 @@ class ReplCompletionPort(Protocol):
         max_results: int = 100,
     ) -> CompletionEnvelope:
         ...
+
+
+class ReplManagerPort(ReplSessionPort, ReplCompletionPort, Protocol):
+    """Combined REPL session and completion surface for the Python console workflow."""
 
 
 class PythonConsoleWidgetPort(Protocol):
@@ -51,6 +84,15 @@ class PythonConsoleWorkflowHost(Protocol):
     def show_status_message(self, message: str, timeout_ms: int) -> None:
         ...
 
+    def focus_python_console_tab(self) -> None:
+        ...
+
+    def log_repl_warning(self, message: str, exc: Exception) -> None:
+        ...
+
+    def clear_console_host(self) -> ClearConsoleHost:
+        ...
+
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 
@@ -66,18 +108,59 @@ def _completion_degradation_message(reason: str) -> str:
 
 
 class PythonConsoleWorkflow:
-    """Owns off-thread Python console completion requests and UI apply."""
+    """Owns Python console REPL session control, completion, and widget binding."""
 
     def __init__(
         self,
         *,
-        repl_manager: ReplCompletionPort,
+        repl_manager: ReplManagerPort,
         host: PythonConsoleWorkflowHost,
         start_background_work: BackgroundWorkStarter | None = None,
     ) -> None:
         self._repl_manager = repl_manager
         self._host = host
         self._start_background_work = start_background_work or self._default_start_background_work
+
+    def bind_widget(self, widget: PythonConsoleBindingPort) -> None:
+        """Wire console widget signals to workflow-owned handlers."""
+        widget.input_submitted.connect(self.handle_submit)
+        widget.interrupt_requested.connect(self.handle_interrupt)
+        widget.restart_requested.connect(self.handle_start_python_console_action)
+        widget.set_completion_requester(self.request_completion_async)
+
+    def handle_start_python_console_action(self) -> bool:
+        """Restart the REPL session and focus the Python Console tab."""
+        self._repl_manager.restart()
+        self._host.focus_python_console_tab()
+        return True
+
+    def handle_submit(self, command_text: str) -> None:
+        """Send user input to the active REPL session, auto-starting if needed."""
+        if not command_text.strip():
+            return
+        if not self._repl_manager.is_running:
+            self._repl_manager.start()
+        try:
+            self._repl_manager.send_input(command_text)
+        except Exception as exc:
+            self._host.log_repl_warning("REPL send_input failed: %s", exc)
+
+    def handle_interrupt(self) -> None:
+        """Send Ctrl+C to the active REPL session."""
+        if not self._repl_manager.is_running:
+            return
+        try:
+            self._repl_manager.send_input("\x03")
+        except Exception as exc:
+            self._host.log_repl_warning("REPL interrupt failed: %s", exc)
+
+    def handle_clear_console_action(self) -> None:
+        """Clear all run-related output sinks (Run menu → Clear Console)."""
+        clear_run_output_sinks(self._host.clear_console_host())
+
+    def prepare_for_session_start(self) -> None:
+        """Reset output and debug state before starting a new run session."""
+        prepare_new_run(self._host.clear_console_host())
 
     def request_completion_async(
         self,

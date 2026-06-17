@@ -78,6 +78,9 @@ class DebugControlWorkflow:
         editor_widget.toggle_breakpoint(line_number)
 
     def handle_remove_all_breakpoints_action(self) -> None:
+        self.clear_all_breakpoints()
+
+    def clear_all_breakpoints(self) -> None:
         window = self._window
         self._store.clear_all()
         for editor_widget in window._editor_widgets_by_path.values():

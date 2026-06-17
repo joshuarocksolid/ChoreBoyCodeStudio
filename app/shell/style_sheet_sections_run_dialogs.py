@@ -60,9 +60,19 @@ QLabel#shell\\.runConfigurationsDialog\\.commandPreview {{
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
     border-radius: 6px;
-    padding: 10px 12px;
-    font-family: monospace;
+    padding: 8px 12px;
     font-size: 12px;
+}}
+QLabel#shell\\.runWithArgumentsDialog\\.commandPreview[commandPreviewState="incomplete"],
+QLabel#shell\\.runWithArgumentsDialog\\.commandPreview[commandPreviewState="error"] {{
+    color: {muted};
+}}
+QLabel#shell\\.runWithArgumentsDialog\\.commandPreview[commandPreviewState="error"] {{
+    border-left: 3px solid {error_color};
+    padding-left: 10px;
+}}
+QLabel#shell\\.runWithArgumentsDialog\\.commandPreview[commandPreviewState="ready"] {{
+    font-family: monospace;
 }}
 QLabel#shell\\.runWithArgumentsDialog\\.error,
 QLabel#shell\\.runConfigurationsDialog\\.error {{
@@ -73,9 +83,88 @@ QLabel[previewLabel="true"] {{
     color: {muted};
     font-size: 11px;
 }}
-QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup,
-QGroupBox#shell\\.runConfigurationsDialog\\.defaultArgvGroup,
-QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup {{
+QLabel[previewLabel="true"][previewState="error"] {{
+    color: {error_color};
+}}
+QLabel[quotingHint="true"] {{
+    color: {tokens.accent};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel[formSectionTitle="true"] {{
+    color: {muted};
+    font-size: 12px;
+    font-weight: 600;
+}}
+QLabel[overridesSummary="true"] {{
+    color: {muted};
+    font-size: 11px;
+}}
+QLabel[envCountChip="true"] {{
+    background: {tokens.badge_bg};
+    color: {muted};
+    padding: 3px 8px;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 600;
+}}
+QToolButton[overridesToggle="true"] {{
+    background: transparent;
+    border: none;
+    color: {tokens.text_primary};
+    padding: 2px;
+}}
+QToolButton[overridesToggle="true"]:hover {{
+    color: {tokens.accent};
+}}
+QWidget#shell\\.runWithArgumentsDialog\\.advancedGroup {{
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+    padding: 12px 10px 10px 10px;
+    background: {tokens.panel_bg};
+}}
+QFrame#shell\\.runWithArgumentsDialog\\.footerSeparator {{
+    color: {tokens.border};
+    max-width: 1px;
+}}
+QPushButton[fieldAction="true"] {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton[fieldAction="true"]:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+    color: {tokens.accent};
+}}
+QPushButton[fieldAction="true"]:pressed {{
+    background: {tokens.tree_selected_bg};
+}}
+QPushButton[fieldAction="true"]:disabled {{
+    background: {tokens.panel_bg};
+    color: {muted};
+    border-color: {tokens.border};
+}}
+QDialog#{run_args} QFormLayout QLabel,
+QDialog#{run_configs} QFormLayout QLabel {{
+    color: {muted};
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+}}
+QDialog#{run_args} QLineEdit[validationState="error"],
+QDialog#{run_args} QComboBox[validationState="error"],
+QDialog#{run_args} QPlainTextEdit[validationState="error"],
+QDialog#{run_configs} QLineEdit[validationState="error"],
+QDialog#{run_configs} QComboBox[validationState="error"],
+QDialog#{run_configs} QPlainTextEdit[validationState="error"] {{
+    border-color: {error_color};
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup {{
     border: 1px solid {tokens.border};
     border-radius: 6px;
     margin-top: 12px;
@@ -83,13 +172,29 @@ QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};
 }}
-QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::title,
+QGroupBox#shell\\.runConfigurationsDialog\\.defaultArgvGroup,
+QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup {{
+    border: 1px solid {tokens.border};
+    border-left: 3px solid {tokens.accent};
+    border-radius: 6px;
+    margin-top: 12px;
+    padding: 12px 10px 10px 10px;
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+}}
+QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::title {{
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: {muted};
+}}
 QGroupBox#shell\\.runConfigurationsDialog\\.defaultArgvGroup::title,
 QGroupBox#shell\\.runConfigurationsDialog\\.configsGroup::title {{
     subcontrol-origin: margin;
     left: 10px;
     padding: 0 4px;
-    color: {muted};
+    color: {tokens.text_primary};
+    font-weight: 600;
 }}
 QGroupBox#shell\\.runWithArgumentsDialog\\.advancedGroup::indicator {{
     width: 14px;
@@ -189,6 +294,19 @@ QLabel#shell\\.runConfigurationsDialog\\.defaultEntryLabel,
 QLabel#shell\\.runConfigurationsDialog\\.emptyState {{
     color: {muted};
 }}
+QDialog#{run_configs} QWidget#shell\\.dialogChrome\\.metaRow QLabel[metaChip="true"] {{
+    background: {tokens.badge_bg};
+    color: {tokens.accent};
+    padding: 3px 9px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QWidget#shell\\.runConfigurationsDialog\\.configsDetailPanel {{
+    background: {tokens.line_highlight};
+    border: 1px solid {tokens.border};
+    border-radius: 6px;
+}}
 QListWidget#shell\\.runConfigurationsDialog\\.list {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
@@ -210,8 +328,23 @@ QListWidget#shell\\.runConfigurationsDialog\\.list::item:hover {{
 QListWidget#shell\\.runConfigurationsDialog\\.list::item:selected {{
     background: {tokens.tree_selected_bg};
     color: {tokens.text_primary};
+    border-left: 3px solid {tokens.accent};
+    padding-left: 5px;
 }}
-QPushButton#shell\\.runConfigurationsDialog\\.addButton,
+QPushButton#shell\\.runConfigurationsDialog\\.addButton {{
+    background: {tokens.input_bg};
+    color: {tokens.accent};
+    border: 1px solid {tokens.accent};
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.runConfigurationsDialog\\.addButton:hover {{
+    background: {tokens.tree_selected_bg};
+    border-color: {tokens.accent};
+    color: {tokens.accent};
+}}
 QPushButton#shell\\.runConfigurationsDialog\\.duplicateButton,
 QPushButton#shell\\.runConfigurationsDialog\\.deleteButton {{
     background: {tokens.input_bg};
@@ -221,7 +354,6 @@ QPushButton#shell\\.runConfigurationsDialog\\.deleteButton {{
     padding: 5px 10px;
     font-size: 12px;
 }}
-QPushButton#shell\\.runConfigurationsDialog\\.addButton:hover,
 QPushButton#shell\\.runConfigurationsDialog\\.duplicateButton:hover,
 QPushButton#shell\\.runConfigurationsDialog\\.deleteButton:hover {{
     background: {tokens.tree_hover_bg};

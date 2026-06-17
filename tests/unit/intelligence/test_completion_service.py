@@ -227,6 +227,25 @@ def test_completion_service_uses_static_api_index_for_freecad_members(tmp_path: 
     assert any(item.label == "newDocument" and item.source == "static_api_index" for item in items)
 
 
+def test_completion_service_uses_static_api_index_for_os_members(tmp_path: Path) -> None:
+    source = "import os\nos."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str((tmp_path / "main.py").resolve()),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+    )
+    service = CompletionService(cache_db_path=str(tmp_path / "symbols.sqlite3"))
+
+    items = service.complete_fast(request).items
+
+    assert any(item.label == "getcwd" and item.source == "static_api_index" for item in items)
+
+
 def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

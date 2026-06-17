@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import queue
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from app.core import constants
 from app.core.models import RuntimeIssueReport
@@ -124,6 +124,10 @@ class RunEventWorkflowHost(Protocol):
         ...
 
     @property
+    def run_debug_presenter(self) -> object:
+        ...
+
+    @property
     def test_runner_workflow(self) -> object | None:
         ...
 
@@ -231,6 +235,7 @@ class RunEventWorkflow:
             if transient_entry_file:
                 self._host.run_launch_workflow.delete_transient_entry_file(transient_entry_file)
                 self._host.active_transient_entry_file_path = None
+            self._host.run_debug_presenter.execute_pending_restart_if_any()
 
     def drain_run_event_queue(self) -> None:
         while True:
@@ -250,7 +255,7 @@ class RunEventWorkflow:
             set_active_session_mode=self._host.run_session_controller.set_active_session_mode,
             get_debug_session=lambda: self._host.debug_session,
             append_output_tail=append_output_tail,
-            append_console_line=lambda text, stream: self.append_console_line(text, stream=stream),
+            append_console_line=self.bind_append_console_line(),
             append_debug_output_line=self._host.append_debug_output_line,
             apply_debug_inspector_event=self._host.apply_debug_inspector_event,
             refresh_run_action_states=self.refresh_run_action_states,
@@ -269,6 +274,9 @@ class RunEventWorkflow:
         )
         self._run_output_coordinator = coordinator
         return coordinator
+
+    def bind_append_console_line(self) -> Callable[[str, str], None]:
+        return lambda text, stream: self.append_console_line(text, stream=stream)
 
     def append_console_line(self, text: str, *, stream: str = "stdout") -> None:
         self._host.console_model.append(stream, text)  # type: ignore[attr-defined]
@@ -481,6 +489,10 @@ class MainWindowRunEventHost:
     @property
     def run_service(self) -> object:
         return self._window._run_service
+
+    @property
+    def run_debug_presenter(self) -> object:
+        return self._window._run_debug_presenter
 
     @property
     def test_runner_workflow(self) -> object | None:

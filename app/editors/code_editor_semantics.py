@@ -4,14 +4,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import Qt
+from PySide2.QtCore import Qt, QTimer
 from PySide2.QtGui import QKeyEvent, QTextCursor
 from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.core.completion_tier import is_tier_header_item
+from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import CompletionItem
 from app.shell.editor_completion_contracts import CompletionRequester
+
+_COMPLETION_TYPING_DEBOUNCE_MS = 50
 
 
 if TYPE_CHECKING:
@@ -36,6 +39,9 @@ if TYPE_CHECKING:
         _hover_tooltip_enabled: bool
         _signature_help_request_generation: int
         _completion_popup: CompletionController
+        _completion_debounce_timer: QTimer
+        _debounced_completion_request: tuple[str, int, bool, str, str] | None
+        _active_file_path: str | None
 
         def indent_selection(self) -> None: ...
         def outdent_selection(self) -> None: ...
@@ -120,24 +126,87 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         effective_trigger_character = trigger_character or self._pending_completion_trigger_character
         trigger_kind = "trigger_character" if effective_trigger_character else ("manual" if manual else "typing")
 
-        if self._completion_requester is not None:
-            self._completion_request_generation += 1
-            request_generation = self._completion_request_generation
-            if self._completion_popup.is_visible() and self._active_completion_prefix:
-                self._completion_popup.reuse_items_for_prefix(self._active_completion_prefix)
-            self._completion_requester(
+        if self._completion_requester is None:
+            self._pending_completion_trigger_character = ""
+            self._completion_popup.hide()
+            return
+
+        current_prefix = resolve_completion_prefix(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=self._active_file_path or "",
+            project_root=None,
+            trigger_is_manual=manual or force_empty_prefix,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+            trigger_kind=trigger_kind,
+            trigger_character=effective_trigger_character,
+        )
+        if (
+            not manual
+            and not force_empty_prefix
+            and not effective_trigger_character
+            and self._completion_popup.is_visible()
+            and self._completion_popup.reuse_items_for_prefix(current_prefix)
+        ):
+            self._active_completion_prefix = current_prefix
+            self._debounced_completion_request = (
                 source_text,
                 cursor_position,
                 manual or force_empty_prefix,
-                request_generation,
                 trigger_kind,
                 effective_trigger_character,
             )
+            self._completion_debounce_timer.start()
             self._pending_completion_trigger_character = ""
             return
 
+        self._completion_debounce_timer.stop()
+        self._debounced_completion_request = None
+        self._dispatch_completion_request(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            manual_trigger=manual or force_empty_prefix,
+            trigger_kind=trigger_kind,
+            trigger_character=effective_trigger_character,
+        )
         self._pending_completion_trigger_character = ""
-        self._completion_popup.hide()
+
+    def _flush_debounced_completion_request(self) -> None:
+        pending = self._debounced_completion_request
+        self._debounced_completion_request = None
+        if pending is None or self._completion_requester is None:
+            return
+        source_text, cursor_position, manual_trigger, trigger_kind, trigger_character = pending
+        self._dispatch_completion_request(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            manual_trigger=manual_trigger,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+        )
+
+    def _dispatch_completion_request(
+        self,
+        *,
+        source_text: str,
+        cursor_position: int,
+        manual_trigger: bool,
+        trigger_kind: str,
+        trigger_character: str,
+    ) -> None:
+        if self._completion_requester is None:
+            return
+        self._completion_request_generation += 1
+        request_generation = self._completion_request_generation
+        self._completion_requester(
+            source_text,
+            cursor_position,
+            manual_trigger,
+            request_generation,
+            trigger_kind,
+            trigger_character,
+        )
 
     def _request_completion_item_resolution(self, item: object) -> None:
         if not isinstance(item, CompletionItem):

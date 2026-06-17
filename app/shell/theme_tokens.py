@@ -64,6 +64,8 @@ class ShellThemeTokens:
     gutter_text: str
     line_highlight: str
     is_dark: bool = False
+    accent_hover: str = ""
+    accent_pressed: str = ""
     tree_hover_bg: str = ""
     tree_selected_bg: str = ""
     icon_primary: str = ""
@@ -203,6 +205,8 @@ def tokens_from_palette(
             text_muted="#E0E0E0",
             border="#FFFFFF",
             accent="#7CB7FF",
+            accent_hover="#5A9AE6",
+            accent_pressed="#3D7ACC",
             gutter_bg="#000000",
             gutter_text="#D0D0D0",
             line_highlight="#1F1F1F",
@@ -243,6 +247,8 @@ def tokens_from_palette(
             text_muted="#1F1F1F",
             border="#000000",
             accent="#0000C0",
+            accent_hover="#000099",
+            accent_pressed="#000066",
             gutter_bg="#FFFFFF",
             gutter_text="#2A2A2A",
             line_highlight="#E6F0FF",
@@ -288,6 +294,8 @@ def tokens_from_palette(
         text_muted="#5A6168",
         border="#DEE2E6",
         accent="#3366FF",
+        accent_hover="#2952CC",
+        accent_pressed="#1F3FA6",
         gutter_bg="#F1F3F5",
         gutter_text="#666F76",
         line_highlight="#EEF7FF",

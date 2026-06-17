@@ -7,15 +7,7 @@ from typing import Callable, Mapping, Optional, Protocol
 
 from PySide2.QtWidgets import QMessageBox, QWidget
 
-
-class SaveWorkflowPort(Protocol):
-    def confirm_proceed_before_tree_delete(
-        self,
-        target_paths: list[str],
-        *,
-        action_description: str = "moving items to trash",
-    ) -> bool:
-        ...
+from app.shell.save_workflow import SaveWorkflowTreeDeletePort
 
 
 class LocalHistoryWorkflowPort(Protocol):
@@ -55,7 +47,7 @@ class ProjectTreeActionWorkflow:
     def __init__(
         self,
         *,
-        save_workflow: SaveWorkflowPort,
+        save_workflow: SaveWorkflowTreeDeletePort,
         local_history_workflow: LocalHistoryWorkflowPort,
         project_tree_action_coordinator: ProjectTreeActionCoordinatorPort,
         dialog_parent: QWidget,

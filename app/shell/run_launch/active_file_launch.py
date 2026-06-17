@@ -2,25 +2,29 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Callable, Protocol
 
 from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
+from app.editors.editor_manager import EditorManager
+from app.shell.debug_control_workflow import DebugControlWorkflow
+from app.shell.run_debug_presenter import RunDebugPresenterPort
 
 
 class ActiveFileLaunchHost(Protocol):
-    def editor_manager(self) -> Any:
+    def editor_manager(self) -> EditorManager:
         ...
 
-    def debug_control_workflow(self) -> Any:
+    def debug_control_workflow(self) -> DebugControlWorkflow:
         ...
 
     def debug_exception_policy(self) -> DebugExceptionPolicy:
         ...
 
-    def run_debug_presenter(self) -> Any:
+    def run_debug_presenter(self) -> RunDebugPresenterPort:
         ...
 
     def show_warning(self, title: str, message: str) -> None:
@@ -29,7 +33,7 @@ class ActiveFileLaunchHost(Protocol):
     def set_active_transient_entry_file_path(self, path: str | None) -> None:
         ...
 
-    def logger(self) -> Any:
+    def logger(self) -> logging.Logger:
         ...
 
 

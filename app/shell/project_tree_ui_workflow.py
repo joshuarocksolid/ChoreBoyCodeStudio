@@ -16,8 +16,9 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.editors.markdown_rendering import is_markdown_path
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.shell.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
+from app.shell.markdown_tab_registry import release_editor_widget
 from app.project.project_manifest import set_project_default_entry
+from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
 
 
@@ -368,7 +369,7 @@ class ProjectTreeUiWorkflow:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        registry = MarkdownTabRegistry(self._host.markdown_panes_by_path())
+        registry = self._host.tab_content_registry().markdown_registry()
         release_editor_widget(
             widget,
             registry=registry,
@@ -471,8 +472,11 @@ class ProjectTreeUiWorkflow:
                 self._host.save_import_update_policy(selected_policy)
         return selected_policy
 
+    def refresh_project_tree(self, tier: RefreshTier) -> None:
+        self._host.project_rescan_workflow().refresh(tier)
+
     def refresh_project_tree_from_disk(self) -> None:
-        self._host.project_rescan_workflow().rescan_from_disk()
+        self.refresh_project_tree(RefreshTier.TREE_ENTRIES)
 
     def reload_current_project(self) -> None:
         self._host.project_rescan_workflow().rescan_from_disk(reload_plugins=True, reindex=True)

@@ -15,11 +15,6 @@ from app.editors.text_editing import FlatPythonIndentRepairResult
 from app.packaging.layout import resolve_entry_path
 from app.persistence.settings_store import project_settings_has_overrides
 from app.project.file_inventory import iter_python_files
-from app.shell.clear_console_policy import (
-    MainWindowClearConsoleHost,
-    clear_run_output_sinks,
-    prepare_new_run,
-)
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.icon_provider import (
     file_icon,
@@ -33,6 +28,7 @@ from app.shell.main_window_lifecycle import MainWindowLifecycle
 from app.shell.menus import MenuStubRegistry
 from app.shell.problems_controller import ProblemsController
 from app.shell.project_tree_presenter import ProjectTreePresenter as ShellProjectTreePresenter
+from app.shell.python_tooling_status_copy import PythonToolingRuntimeContext, PythonToolingSettingsCopy
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_icons import icon_run
 
@@ -160,21 +156,21 @@ class MainWindow(QMainWindow):
             return None
         return self._loaded_project.project_root
 
-    def _current_python_tooling_status_context(self) -> tuple[bool, str, str | None, str | None]:
+    def _current_python_tooling_status_context(self) -> PythonToolingRuntimeContext:
         return self._python_tooling_status_controller.current_status_context()
 
-    def _settings_dialog_python_tooling_copy(self) -> tuple[str, str, str, str]:
+    def _settings_dialog_python_tooling_copy(self) -> PythonToolingSettingsCopy:
         return self._python_tooling_status_controller.settings_dialog_copy()
 
     def _refresh_python_tooling_status(self) -> None:
         if self._status_controller is None:
             return
-        runtime_available, config_state, config_path, config_error = self._current_python_tooling_status_context()
+        context = self._current_python_tooling_status_context()
         self._status_controller.set_python_tooling_status(
-            runtime_available=runtime_available,
-            config_state=config_state,
-            config_path=config_path,
-            config_error=config_error,
+            runtime_available=context.runtime_available,
+            config_state=context.config_state,
+            config_path=context.config_path,
+            config_error=context.config_error,
         )
 
     def _dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
@@ -452,51 +448,6 @@ class MainWindow(QMainWindow):
         if not accepted or not selected:
             return None
         return str(selected)
-
-    def _handle_start_python_console_action(self) -> bool:
-        self._repl_manager.restart()
-        bottom_tabs = self._bottom_tabs_widget
-        if bottom_tabs is not None and self._python_console_container is not None:
-            index = bottom_tabs.indexOf(self._python_console_container)
-            if index >= 0:
-                bottom_tabs.setCurrentIndex(index)
-        return True
-
-    def _prepare_for_session_start(self) -> None:
-        prepare_new_run(MainWindowClearConsoleHost(self))
-
-    def _handle_stop_action(self) -> None:
-        self._run_session_controller.stop_session(self._run_event_workflow.append_console_line)
-        self._run_event_workflow.set_run_status("stopping")
-        self._run_event_workflow.refresh_run_action_states()
-
-    def _handle_restart_action(self) -> None:
-        if self._run_service.supervisor.is_running():
-            self._run_service.stop_run()
-        if self._run_session_controller.active_session_mode == constants.RUN_MODE_PYTHON_DEBUG:
-            self._run_launch_workflow.handle_rerun_last_debug_target_action()
-        else:
-            self._run_launch_workflow.handle_run_action()
-
-    def _handle_clear_console_action(self) -> None:
-        clear_run_output_sinks(MainWindowClearConsoleHost(self))
-
-    def _handle_python_console_submit(self, command_text: str) -> None:
-        if not command_text.strip():
-            return
-        if not self._repl_manager.is_running:
-            self._repl_manager.start()
-        try:
-            self._repl_manager.send_input(command_text)
-        except Exception as exc:
-            self._logger.warning("REPL send_input failed: %s", exc)
-
-    def _handle_python_console_interrupt(self) -> None:
-        if self._repl_manager.is_running:
-            try:
-                self._repl_manager.send_input("\x03")
-            except Exception as exc:
-                self._logger.warning("REPL interrupt failed: %s", exc)
 
     def _clear_problems(self) -> None:
         self._stored_lint_diagnostics.clear()

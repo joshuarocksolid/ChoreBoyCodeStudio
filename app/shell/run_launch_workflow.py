@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
-from PySide2.QtWidgets import QWidget
+from PySide2.QtWidgets import QStatusBar, QTabWidget, QWidget
 
 from app.core import constants
-from app.core.models import LoadedProject
+from app.core.models import LoadedProject, RuntimeIssue
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
+from app.editors.editor_manager import EditorManager
+from app.persistence.settings_service import SettingsService
 from app.project.file_inventory import iter_python_files
 from app.project.run_configs import RunConfiguration
+from app.shell.debug_control_workflow import DebugControlWorkflow
+from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.run_config_controller import RunConfigController
+from app.shell.run_debug_presenter import RunDebugPresenterPort
 from app.shell.run_configurations_dialog import RunConfigurationsDialog, RunConfigurationsInitial, RunConfigurationsResult
 from app.shell.run_launch.active_file_launch import ActiveFileLaunchWorkflow
 from app.shell.run_launch.debug_targets import (
@@ -33,6 +39,8 @@ from app.shell.run_with_arguments_dialog import (
     RunWithArgumentsResult,
 )
 from app.shell.run_arguments_helpers import normalize_entry_path_for_project
+from app.shell.test_runner_workflow import TestRunnerWorkflow
+from app.shell.theme_tokens import ShellThemeTokens
 from app.support.preflight import build_run_preflight
 
 
@@ -89,6 +97,7 @@ __all__ = [
     "CurrentTestTarget",
     "DebugTarget",
     "ProjectTarget",
+    "RunDebugPresenterPort",
     "RunLaunchWorkflow",
     "RunLaunchWorkflowHost",
     "TestNodeTarget",
@@ -114,10 +123,10 @@ class RunLaunchWorkflowHost(Protocol):
     def set_active_named_run_config_name(self, name: str | None) -> None:
         ...
 
-    def editor_manager(self) -> Any:
+    def editor_manager(self) -> EditorManager:
         ...
 
-    def debug_control_workflow(self) -> Any:
+    def debug_control_workflow(self) -> DebugControlWorkflow:
         ...
 
     def debug_exception_policy(self) -> DebugExceptionPolicy:
@@ -126,31 +135,36 @@ class RunLaunchWorkflowHost(Protocol):
     def run_config_controller(self) -> RunConfigController:
         ...
 
-    def run_debug_presenter(self) -> Any:
+    def run_debug_presenter(self) -> RunDebugPresenterPort:
         ...
 
-    def settings_service(self) -> Any:
+    def settings_service(self) -> SettingsService:
         ...
 
-    def resolve_theme_tokens(self) -> Any:
+    def resolve_theme_tokens(self) -> ShellThemeTokens:
         ...
 
-    def show_run_preflight_result(self, title: str, summary: str, issues: list[Any]) -> None:
+    def show_run_preflight_result(
+        self,
+        title: str,
+        summary: str,
+        issues: list[RuntimeIssue],
+    ) -> None:
         ...
 
     def refresh_run_action_states(self) -> None:
         ...
 
-    def editor_tab_factory(self) -> Any:
+    def editor_tab_factory(self) -> EditorTabFactory:
         ...
 
-    def editor_tabs_widget(self) -> Any | None:
+    def editor_tabs_widget(self) -> QTabWidget | None:
         ...
 
     def tab_index_for_path(self, file_path: str) -> int:
         ...
 
-    def test_runner_workflow(self) -> Any:
+    def test_runner_workflow(self) -> TestRunnerWorkflow:
         ...
 
     def active_transient_entry_file_path(self) -> str | None:
@@ -159,7 +173,7 @@ class RunLaunchWorkflowHost(Protocol):
     def set_active_transient_entry_file_path(self, path: str | None) -> None:
         ...
 
-    def status_bar(self) -> Any:
+    def status_bar(self) -> QStatusBar:
         ...
 
     def show_warning(self, title: str, message: str) -> None:
@@ -168,7 +182,7 @@ class RunLaunchWorkflowHost(Protocol):
     def show_information(self, title: str, message: str) -> None:
         ...
 
-    def logger(self) -> Any:
+    def logger(self) -> logging.Logger:
         ...
 
 
@@ -548,7 +562,7 @@ class _RunConfigurationHostAdapter:
     def dialog_parent(self) -> QWidget:
         return self._workflow._host.dialog_parent()
 
-    def status_bar(self) -> Any:
+    def status_bar(self) -> QStatusBar:
         return self._workflow._host.status_bar()
 
     def loaded_project(self) -> LoadedProject | None:
@@ -566,7 +580,7 @@ class _RunConfigurationHostAdapter:
     def run_config_controller(self) -> RunConfigController:
         return self._workflow._host.run_config_controller()
 
-    def resolve_theme_tokens(self) -> Any:
+    def resolve_theme_tokens(self) -> ShellThemeTokens:
         return self._workflow._host.resolve_theme_tokens()
 
     def refresh_run_action_states(self) -> None:

@@ -7,7 +7,9 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping, Protocol, cast
 
 from app.core import constants
+from app.shell.file_type_icons import clear_icon_caches as clear_file_type_icon_caches
 from app.shell.icon_provider import (
+    clear_icon_caches as clear_context_icon_caches,
     file_icon,
     file_type_icon_map,
     filename_icon_map,
@@ -17,6 +19,9 @@ from app.shell.icon_provider import (
     new_folder_icon,
     refresh_icon,
 )
+from app.shell.outline.outline_icons import clear_icon_caches as clear_outline_icon_caches
+from app.shell.problems_panel import clear_icon_caches as clear_problems_icon_caches
+from app.shell.test_explorer_icons import clear_icon_caches as clear_test_explorer_icon_caches
 from app.shell.settings_models import parse_editor_settings_snapshot
 from app.shell.style_sheet import build_app_tooltip_style_sheet, build_shell_style_sheet
 from app.shell.syntax_color_preferences import parse_syntax_color_overrides
@@ -173,12 +178,21 @@ class ShellThemeWorkflow:
         syntax_overrides = host.syntax_color_overrides.get(theme_key, {})
         return apply_syntax_token_overrides(base_tokens, syntax_overrides)
 
+    @staticmethod
+    def _clear_theme_icon_caches() -> None:
+        clear_context_icon_caches()
+        clear_file_type_icon_caches()
+        clear_outline_icon_caches()
+        clear_problems_icon_caches()
+        clear_test_explorer_icon_caches()
+
     def apply_theme_styles(self) -> None:
         host = self._host
         if host.is_applying_theme_styles:
             return
         host.is_applying_theme_styles = True
         try:
+            self._clear_theme_icon_caches()
             tokens = self.resolve_theme_tokens()
             close_normal, close_hover = ensure_tab_close_icons(
                 tokens.text_muted,

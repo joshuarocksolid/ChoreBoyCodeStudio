@@ -1,19 +1,20 @@
-"""Read-only env summary row with Browse button opening the table editor."""
+"""Read-only env summary row with Edit button opening the table editor."""
 
 from __future__ import annotations
 
 from typing import Mapping
 
 from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QWidget
+from PySide2.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget
 
 from app.project.run_configs import env_overrides_to_text
+from app.shell.field_action_button import make_field_action_button
 from app.shell.run_env_overrides_dialog import RunEnvOverridesDialog, summarize_env_overrides
 from app.shell.theme_tokens import ShellThemeTokens
 
 
 class RunEnvOverridesRow(QWidget):
-    """Environment overrides summary with table editor launched via Browse."""
+    """Environment overrides summary with table editor launched via Edit."""
 
     value_changed = Signal()
 
@@ -40,9 +41,14 @@ class RunEnvOverridesRow(QWidget):
         self._summary_edit.setPlaceholderText("(none)")
         layout.addWidget(self._summary_edit, 1)
 
-        browse_button = QPushButton("Browse\u2026", self)
-        browse_button.clicked.connect(self._on_browse_clicked)
-        layout.addWidget(browse_button, 0)
+        self._count_chip = QLabel(self)
+        self._count_chip.setObjectName(f"{object_name_prefix}.countChip")
+        self._count_chip.setProperty("envCountChip", True)
+        layout.addWidget(self._count_chip, 0)
+
+        edit_button = make_field_action_button("Edit\u2026", self)
+        edit_button.clicked.connect(self._on_edit_clicked)
+        layout.addWidget(edit_button, 0)
 
         self._update_summary_display()
 
@@ -59,7 +65,14 @@ class RunEnvOverridesRow(QWidget):
         full_text = env_overrides_to_text(self._env_overrides)
         self._summary_edit.setToolTip(full_text if full_text else "No environment overrides")
 
-    def _on_browse_clicked(self) -> None:
+        count = len(self._env_overrides)
+        if count == 1:
+            chip_text = "1 variable"
+        else:
+            chip_text = f"{count} variables"
+        self._count_chip.setText(chip_text)
+
+    def _on_edit_clicked(self) -> None:
         updated = RunEnvOverridesDialog.run_dialog(
             self.window(),
             initial=self._env_overrides,

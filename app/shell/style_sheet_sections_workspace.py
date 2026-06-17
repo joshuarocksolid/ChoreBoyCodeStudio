@@ -238,11 +238,11 @@ QPushButton#shell\\.welcome\\.openProjectBtn {{
 }}
 QPushButton#shell\\.welcome\\.newProjectBtn:hover,
 QPushButton#shell\\.welcome\\.openProjectBtn:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    background: {tokens.accent_hover};
 }}
 QPushButton#shell\\.welcome\\.newProjectBtn:pressed,
 QPushButton#shell\\.welcome\\.openProjectBtn:pressed {{
-    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+    background: {tokens.accent_pressed};
 }}
 QPushButton#shell\\.welcome\\.onboardingPrimaryBtn {{
     background: {tokens.accent};
@@ -254,7 +254,7 @@ QPushButton#shell\\.welcome\\.onboardingPrimaryBtn {{
     font-weight: 600;
 }}
 QPushButton#shell\\.welcome\\.onboardingPrimaryBtn:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+    background: {tokens.accent_hover};
 }}
 QPushButton#shell\\.welcome\\.onboardingActionBtn,
 QPushButton#shell\\.welcome\\.onboardingSecondaryBtn {{
@@ -507,6 +507,76 @@ QListView#shell\\.quickOpen\\.results QScrollBar::sub-page:vertical {{
     background: transparent;
 }}
 """
+
+
+def shell_section_quick_symbol_dialog(tokens: ShellThemeTokens) -> str:
+    focus_width = tokens.focus_border_width or 2
+    return f"""/* -- Go to Symbol in File dialog --------------------------------------- */
+QDialog#shell\\.quickSymbolDialog {{
+    background: {tokens.panel_bg};
+    border: 1px solid {tokens.border};
+    border-radius: 8px;
+}}
+QLineEdit#shell\\.quickSymbolDialog\\.input {{
+    background: {tokens.editor_bg};
+    color: {tokens.text_primary};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+    padding: 10px 14px 10px 6px;
+    font-size: 14px;
+}}
+QLineEdit#shell\\.quickSymbolDialog\\.input:focus {{
+    border-bottom: {focus_width}px solid {tokens.accent};
+}}
+QListView#shell\\.quickSymbolDialog\\.list {{
+    background: {tokens.panel_bg};
+    color: {tokens.text_primary};
+    border: none;
+    outline: none;
+}}
+QListView#shell\\.quickSymbolDialog\\.list::item {{
+    padding: 0px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QListView#shell\\.quickSymbolDialog\\.list::item:last {{
+    border-bottom: none;
+}}
+QListView#shell\\.quickSymbolDialog\\.list::item:hover {{
+    background: {tokens.tree_hover_bg};
+}}
+QListView#shell\\.quickSymbolDialog\\.list::item:selected {{
+    background: {tokens.tree_selected_bg};
+}}
+QLabel#shell\\.quickSymbolDialog\\.empty {{
+    color: {tokens.text_muted};
+    font-size: 13px;
+    padding: 24px;
+}}
+QLabel#shell\\.quickSymbolDialog\\.count {{
+    color: {tokens.text_muted};
+    font-size: 11px;
+}}
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar:vertical {{
+    width: 6px;
+    background: transparent;
+    margin: 2px 1px;
+}}
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar::handle:vertical {{
+    background: {tokens.text_muted};
+    border-radius: 3px;
+    min-height: 20px;
+}}
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar::add-line:vertical,
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar::add-page:vertical,
+QListView#shell\\.quickSymbolDialog\\.list QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+"""
+
+
 def shell_section_search_sidebar(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Search sidebar ------------------------------------------------------ */
 QWidget#shell\\.searchSidebar {{

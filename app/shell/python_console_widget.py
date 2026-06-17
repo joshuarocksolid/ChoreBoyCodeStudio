@@ -112,8 +112,8 @@ class PythonConsoleWidget(QTextEdit):
         self._col_muted = tokens.text_muted
         self._col_accent = tokens.accent
         self._col_bg = tokens.editor_bg
-        self._col_error = "#FF6B6B" if tokens.is_dark else "#CC0000"
-        self._col_error_dim = "#CC8080" if tokens.is_dark else "#994444"
+        self._col_error = tokens.diag_error_color or tokens.accent
+        self._col_error_dim = tokens.text_muted or tokens.diag_error_color or tokens.accent
 
         palette = self.palette()
         palette.setColor(QPalette.Base, QColor(tokens.editor_bg))

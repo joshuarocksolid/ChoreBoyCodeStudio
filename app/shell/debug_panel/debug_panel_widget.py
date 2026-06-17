@@ -55,6 +55,7 @@ class DebugPanelWidget(QWidget):
     breakpoint_remove_requested: Any = Signal(str, int)
     breakpoint_toggle_requested: Any = Signal(str, int, bool)
     breakpoint_edit_requested: Any = Signal(str, int)
+    clear_all_breakpoints_requested: Any = Signal()
     refresh_stack_requested: Any = Signal()
     refresh_locals_requested: Any = Signal()
     command_submitted: Any = Signal(str)
@@ -401,8 +402,7 @@ class DebugPanelWidget(QWidget):
             self.breakpoint_toggle_requested.emit(file_path, int(line_number), enabled)
 
     def _handle_clear_all_breakpoints(self) -> None:
-        for breakpoint in list(self._breakpoints):
-            self.breakpoint_remove_requested.emit(breakpoint.file_path, breakpoint.line_number)
+        self.clear_all_breakpoints_requested.emit()
 
     def _handle_add_watch(self) -> None:
         expression = self._watch_input.text().strip()

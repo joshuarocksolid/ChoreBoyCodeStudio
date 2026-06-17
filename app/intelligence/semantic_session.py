@@ -169,6 +169,10 @@ class SemanticSession:
             max_results=max_results,
         )
 
+    def complete_fast_sync(self, request: CompletionRequest) -> CompletionEnvelope:
+        """Resolve fast-tier completion candidates synchronously on the caller thread."""
+        return self._completion_service.complete_fast(request)
+
     def request_editor_completions(
         self,
         *,

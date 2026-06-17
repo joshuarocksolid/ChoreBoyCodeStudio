@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -14,9 +14,38 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from app.core.models import LoadedProject, ProjectMetadata
 from app.project.project_manifest import build_synthetic_project_metadata, load_project_manifest
 from app.shell.main_window import MainWindow
-from app.shell.project_tree_ui_workflow import build_project_tree_ui_workflow
+from app.shell.project_tree_ui_workflow import ProjectTreeUiWorkflow
 
 pytestmark = pytest.mark.unit
+
+
+class _EntryPointTreeHost:
+    """Minimal :class:`ProjectTreeUiWorkflowHost`` for entry-point persistence tests."""
+
+    def __init__(
+        self,
+        loaded_project: LoadedProject,
+        *,
+        refresh_calls: list[LoadedProject] | None = None,
+    ) -> None:
+        self._loaded_project = loaded_project
+        self._refresh_calls = refresh_calls if refresh_calls is not None else []
+
+    def parent_widget(self) -> object:
+        return SimpleNamespace()
+
+    def loaded_project(self) -> LoadedProject | None:
+        return self._loaded_project
+
+    def set_loaded_project(self, project: LoadedProject) -> None:
+        self._loaded_project = project
+
+    def project_tree_presenter(self) -> Any:
+        host = self
+
+        return SimpleNamespace(
+            populate=lambda project, **_kwargs: host._refresh_calls.append(project),
+        )
 
 
 def _loaded_project(tmp_path: Path, *, default_entry: str) -> LoadedProject:
@@ -59,16 +88,13 @@ def test_set_project_entry_point_materializes_lazy_manifest(tmp_path: Path) -> N
         manifest_materialized=False,
     )
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded_project
-    window_any._project_tree_presenter = SimpleNamespace(populate=lambda *_a, **_k: None)
-    window_any._project_tree_ui_workflow = build_project_tree_ui_workflow(window_any)
+    host = _EntryPointTreeHost(loaded_project)
+    workflow = ProjectTreeUiWorkflow(host)
 
-    assert window_any._project_tree_ui_workflow.set_project_entry_point("scripts/entry.py") is True
+    assert workflow.set_project_entry_point("scripts/entry.py") is True
     assert manifest_path.is_file()
     assert load_project_manifest(manifest_path).default_entry == "scripts/entry.py"
-    assert window_any._loaded_project.manifest_materialized is True
+    assert host.loaded_project().manifest_materialized is True
 
 
 def test_set_project_entry_point_persists_manifest_and_refreshes_tree(tmp_path: Path) -> None:
@@ -77,19 +103,14 @@ def test_set_project_entry_point_persists_manifest_and_refreshes_tree(tmp_path: 
     script_path.parent.mkdir(parents=True)
     script_path.write_text("print('entry')\n", encoding="utf-8")
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded_project
     refresh_calls: list[LoadedProject] = []
-    window_any._project_tree_presenter = SimpleNamespace(
-        populate=lambda project, **_kwargs: refresh_calls.append(project)
-    )
-    window_any._project_tree_ui_workflow = build_project_tree_ui_workflow(window_any)
+    host = _EntryPointTreeHost(loaded_project, refresh_calls=refresh_calls)
+    workflow = ProjectTreeUiWorkflow(host)
 
-    updated = window_any._project_tree_ui_workflow.set_project_entry_point("scripts/entry.py")
+    updated = workflow.set_project_entry_point("scripts/entry.py")
 
     assert updated is True
-    assert window_any._loaded_project.metadata.default_entry == "scripts/entry.py"
+    assert host.loaded_project().metadata.default_entry == "scripts/entry.py"
     assert refresh_calls and refresh_calls[-1].metadata.default_entry == "scripts/entry.py"
     assert load_project_manifest(loaded_project.manifest_path).default_entry == "scripts/entry.py"
 
@@ -99,16 +120,16 @@ def test_resolve_project_entry_for_project_run_prompts_when_default_entry_missin
     replacement_path = Path(loaded_project.project_root) / "app.py"
     replacement_path.write_text("print('ok')\n", encoding="utf-8")
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded_project
-    window_any._prompt_for_project_entry_replacement = lambda _missing: "app.py"
     set_calls: list[str] = []
-    window_any._project_tree_ui_workflow = SimpleNamespace(
-        set_project_entry_point=lambda relative_path: set_calls.append(relative_path) or True
+    window = SimpleNamespace(
+        _loaded_project=loaded_project,
+        _prompt_for_project_entry_replacement=lambda _missing: "app.py",
+        _project_tree_ui_workflow=SimpleNamespace(
+            set_project_entry_point=lambda relative_path: set_calls.append(relative_path) or True
+        ),
     )
 
-    resolved = MainWindow._resolve_project_entry_for_project_run(window)
+    resolved = MainWindow._resolve_project_entry_for_project_run(window)  # type: ignore[arg-type]
 
     assert resolved == "app.py"
     assert set_calls == ["app.py"]
@@ -119,10 +140,8 @@ def test_resolve_project_entry_for_project_run_returns_default_when_entry_exists
     entry_path = Path(loaded_project.project_root) / "main.py"
     entry_path.write_text("print('ok')\n", encoding="utf-8")
 
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._loaded_project = loaded_project
+    window = SimpleNamespace(_loaded_project=loaded_project)
 
-    resolved = MainWindow._resolve_project_entry_for_project_run(window)
+    resolved = MainWindow._resolve_project_entry_for_project_run(window)  # type: ignore[arg-type]
 
     assert resolved == "main.py"

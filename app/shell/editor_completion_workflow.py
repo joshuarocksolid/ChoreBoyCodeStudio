@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.intelligence.completion_context import build_completion_context
+from app.intelligence.completion_context import CompletionSyntacticContext, build_completion_context
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
@@ -16,6 +16,15 @@ from app.intelligence.completion_models import (
 from app.intelligence.completion_service import CompletionRequest
 from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
 from app.shell.semantic_navigation_host import SemanticNavigationHost
+
+
+_SYNC_FAST_CONTEXTS = frozenset(
+    {
+        CompletionSyntacticContext.DOTTED_MEMBER,
+        CompletionSyntacticContext.IMPORT_MODULE,
+        CompletionSyntacticContext.IMPORT_FROM_MEMBER,
+    }
+)
 
 
 class EditorCompletionWorkflow:
@@ -139,6 +148,15 @@ class EditorCompletionWorkflow:
 
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Async completion request failed for %s: %s", file_path, exc)
+
+        if (
+            completion_context.syntactic_context in _SYNC_FAST_CONTEXTS
+            or trigger_character == "."
+        ):
+            fast_envelope = intelligence_controller.complete_fast_sync(request)
+            if fast_envelope.items:
+                merged = intelligence_controller.merge_completion_for_display(fast=fast_envelope)
+                on_paint(completion_context.prefix, merged.items, merged)
 
         intelligence_controller.request_editor_completions(
             request=request,

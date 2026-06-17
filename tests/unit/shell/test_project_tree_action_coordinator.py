@@ -8,6 +8,7 @@ import pytest
 
 from app.project.file_operation_models import FileOperationResult
 from app.shell.breakpoint_store import BreakpointStore
+from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.project_tree_action_coordinator import NewFileResult, ProjectTreeActionCoordinator
 
 pytestmark = pytest.mark.unit
@@ -51,8 +52,8 @@ class _FakeProjectTreeController:
 
 def _coordinator(
     fake_tree_controller: _FakeProjectTreeController,
-) -> tuple[ProjectTreeActionCoordinator[_FakeWidget], list[bool]]:
-    reloaded = []
+) -> tuple[ProjectTreeActionCoordinator[_FakeWidget], list[RefreshTier]]:
+    refreshed: list[RefreshTier] = []
 
     coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=fake_tree_controller,  # type: ignore[arg-type]
@@ -68,11 +69,11 @@ def _coordinator(
         apply_breakpoints_to_widget=lambda _widget, _bps: None,
         update_widget_language=lambda _widget, _path: None,
         maybe_rewrite_imports=lambda _src, _dst: None,
-        reload_project=lambda: reloaded.append(True),
+        refresh_project=refreshed.append,
         record_deleted_path=fake_tree_controller.deleted_records.append,
         remap_file_lineage=fake_tree_controller.lineage_remaps.append,
     )
-    return coordinator, reloaded
+    return coordinator, refreshed
 
 
 def test_handle_rename_applies_path_move_updates_and_reloads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,7 +89,7 @@ def test_handle_rename_applies_path_move_updates_and_reloads(monkeypatch: pytest
     assert error is None
     assert tree_controller.move_calls == [("/tmp/project/old.py", "/tmp/project/new.py")]
     assert tree_controller.lineage_remaps == [{"/tmp/project/old.py": "/tmp/project/new.py"}]
-    assert reloaded == [True]
+    assert reloaded == [RefreshTier.TREE_ENTRIES]
 
 
 def test_handle_bulk_delete_collects_failures_and_still_reloads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,7 +109,7 @@ def test_handle_bulk_delete_collects_failures_and_still_reloads(monkeypatch: pyt
     assert tree_controller.deleted_records == ["/tmp/project/good.py"]
     assert deleted_paths == ["/tmp/project/good.py"]
     assert failures == ["bad.py: permission denied"]
-    assert reloaded == [True]
+    assert reloaded == [RefreshTier.TREE_ENTRIES]
 
 
 def test_handle_paste_cut_applies_moves_and_clears_clipboard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,7 +164,7 @@ def test_handle_new_file_success_returns_path_and_reloads(monkeypatch: pytest.Mo
     outcome = coordinator.handle_new_file("/tmp/project", "new.py")
 
     assert outcome == NewFileResult(error_message=None, created_path="/resolved/new.py")
-    assert reloaded == [True]
+    assert reloaded == [RefreshTier.TREE_ENTRIES]
 
 
 def test_handle_rename_rejects_path_separators() -> None:

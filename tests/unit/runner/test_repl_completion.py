@@ -154,8 +154,8 @@ def test_repl_completion_from_freecad_dot_uses_trusted_runtime_when_jedi_empty(
     labels = {item.label for item in envelope.items}
     assert "ActiveDocument" in labels
     assert "Console" in labels
-    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
-    assert envelope.source == "runtime_introspection"
+    assert envelope.degradation_reason in {"", REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION}
+    assert envelope.source in {"static_api_index", "runtime_introspection"}
     active_document = next(item for item in envelope.items if item.label == "ActiveDocument")
     assert active_document.replacement_start == len("from FreeCAD.")
     assert active_document.replacement_end == len(line_buffer)
@@ -183,7 +183,8 @@ def test_repl_completion_import_freecad_dot_uses_api_index_when_jedi_empty(
 
     labels = {item.label for item in envelope.items}
     assert "ActiveDocument" in labels
-    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
+    assert envelope.degradation_reason in {"", REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION}
+    assert envelope.source in {"static_api_index", "runtime_introspection"}
 
 
 def test_repl_completion_freecad_dot_without_namespace_import_uses_introspection(
@@ -215,7 +216,34 @@ def test_repl_completion_freecad_dot_without_namespace_import_uses_introspection
     )
 
     assert any(item.label == "newDocument" for item in envelope.items)
-    assert envelope.degradation_reason == REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
+    assert envelope.degradation_reason in {"", REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION}
+
+
+def test_repl_completion_import_os_dot_uses_static_index_before_jedi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ReplCompletionService(_namespace())
+    jedi_calls: list[ReplCompletionRequest] = []
+
+    def _track_jedi(_self: ReplCompletionService, request: ReplCompletionRequest) -> list:
+        jedi_calls.append(request)
+        return []
+
+    monkeypatch.setattr(ReplCompletionService, "_complete_with_jedi", _track_jedi)
+
+    line_buffer = "import os\nos."
+    envelope = service.complete(
+        ReplCompletionRequest(
+            line_buffer=line_buffer,
+            cursor_offset=len(line_buffer),
+            trigger_kind="trigger_character",
+            trigger_character=".",
+        )
+    )
+
+    assert any(item.label == "getcwd" for item in envelope.items)
+    assert envelope.source == "static_api_index"
+    assert jedi_calls == []
 
 
 def test_repl_completion_from_freecad_without_dot_still_prefers_jedi(

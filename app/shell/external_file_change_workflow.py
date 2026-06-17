@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from app.editors.editor_manager import EditorManager
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
+from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
 
 
 class ExternalFileChangeOutcome(str, Enum):
@@ -20,40 +21,6 @@ class ExternalFileChangeOutcome(str, Enum):
     DECLINED = "declined"
     CANCELLED = "cancelled"
     RELOADED = "reloaded"
-
-
-class SaveWorkflowPort(Protocol):
-    """Minimal save-workflow surface for external reload prompts."""
-
-    def request_unsaved_changes_decision(
-        self,
-        action_description: str,
-        *,
-        scope: DocumentScope,
-        allow_keep_for_next_launch: bool,
-        dirty_buffers: tuple[object, ...] | None = None,
-    ) -> DocumentSafetyDecision:
-        ...
-
-    def apply_unsaved_changes_decision(self, decision: DocumentSafetyDecision) -> bool:
-        ...
-
-
-class LocalHistoryPort(Protocol):
-    """Minimal local-history surface for external reload checkpoints."""
-
-    def record_checkpoint(
-        self,
-        file_path: str,
-        content: str,
-        *,
-        source: str,
-        label: str = "",
-    ) -> None:
-        ...
-
-    def discard_drafts_for_paths(self, file_paths: Sequence[str]) -> None:
-        ...
 
 
 class ExternalFileChangeHostPorts(Protocol):

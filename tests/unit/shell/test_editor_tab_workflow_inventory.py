@@ -5,13 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
 from app.editors.editor_manager import EditorManager
+from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.shell.editor_tab_workflow import EditorTabWorkflow
+from app.shell.markdown_tab_registry import MarkdownTabRegistry
 
 pytestmark = pytest.mark.unit
 
@@ -27,6 +29,9 @@ def _loaded_project(tmp_path: Path) -> LoadedProject:
 
 
 def _workflow(host: MagicMock) -> EditorTabWorkflow:
+    markdown_panes: dict[str, object] = {}
+    tab_content_registry = EditorTabContentRegistry(markdown_panes)  # type: ignore[arg-type]
+    host.tab_content_registry.return_value = tab_content_registry
     editor_manager = cast(EditorManager, SimpleNamespace(stale_open_paths=lambda: []))
     return EditorTabWorkflow(
         host=host,
@@ -159,29 +164,41 @@ def test_poll_reindexes_when_python_fingerprint_changes(tmp_path: Path) -> None:
     host.start_symbol_indexing_for_loaded_project.assert_called_once()
 
 
-def test_scan_project_tree_signature_uses_inventory_walk(tmp_path: Path) -> None:
+def test_scan_project_tree_signature_uses_orchestrator_only(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     (project_root / "main.py").write_text("print('hi')\n", encoding="utf-8")
     loaded = _loaded_project(project_root)
 
     host = MagicMock()
-    host.load_effective_exclude_patterns.return_value = ["vendor"]
+    host.project_inventory_tree_signature.return_value = ("main.py",)
+
+    workflow = _workflow(host)
+    signature = workflow.scan_project_tree_signature(loaded)
+
+    assert signature == ("main.py",)
+
+
+def test_scan_project_tree_signature_without_orchestrator_returns_empty(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    loaded = _loaded_project(project_root)
+
+    host = MagicMock()
     host.project_inventory_tree_signature.return_value = None
 
     workflow = _workflow(host)
-    with patch("app.shell.editor_tab_poll_workflow.iter_project_entries") as iter_mock:
-        from app.core.models import ProjectFileEntry
+    signature = workflow.scan_project_tree_signature(loaded)
 
-        iter_mock.return_value = [
-            ProjectFileEntry(
-                relative_path="main.py",
-                absolute_path=str(project_root / "main.py"),
-                is_directory=False,
-            )
-        ]
-        signature = workflow.scan_project_tree_signature(loaded)
+    assert signature == ()
 
-    assert "main.py" in signature
-    iter_mock.assert_called_once()
-    host.load_effective_exclude_patterns.assert_called_once_with(str(project_root))
+
+def test_markdown_registry_identity_is_stable() -> None:
+    markdown_panes: dict[str, object] = {}
+    registry = EditorTabContentRegistry(markdown_panes)  # type: ignore[arg-type]
+
+    first = registry.markdown_registry()
+    second = registry.markdown_registry()
+
+    assert isinstance(first, MarkdownTabRegistry)
+    assert first is second

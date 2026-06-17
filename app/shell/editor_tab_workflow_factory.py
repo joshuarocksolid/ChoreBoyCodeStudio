@@ -17,8 +17,8 @@ from app.shell.editor_tab_preferences_workflow import EditorTabPreferencesWorkfl
 from app.shell.editor_latency_recorder import EditorLatencyRecorder
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
-from app.shell.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.editor_sync_workflow import EditorSyncWorkflow
+from app.shell.markdown_tab_registry import MarkdownTabRegistry
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ def create_editor_tab_subworkflows(
     tab_workflow: Any,
     refresh_markdown_action_states: Any,
 ) -> EditorTabSubworkflows:
-    markdown_registry = MarkdownTabRegistry(host.markdown_panes_by_path())
+    markdown_registry = host.tab_content_registry().markdown_registry()
     preferences_workflow = EditorTabPreferencesWorkflow(
         host=host,
         editor_manager=editor_manager,

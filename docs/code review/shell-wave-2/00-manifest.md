@@ -63,27 +63,58 @@ rg 'debug-0b96d3|#region agent log' app/
 
 ## Prep findings (merged from P1–P5)
 
-*Coordinator merges prep agent output below after Step 1.*
+### P1 — Dependency graph (summary)
 
-### P1 — Dependency graph
+- **189** shell modules; layers: L0 composition (`main_window_composition.py` 53 shell imports + 6 external domains) → L1 workflows (~46 `*_workflow*.py`) → L2 panels/widgets.
+- External importers: **editors 40**, **project 33**, **intelligence 26**, **persistence 12**, **plugins 10**, **run 10**.
+- Top fan-in: `theme_tokens.py` (35), `settings_models.py` (12), `menus.py` (10).
+- **`window: Any`:** 25 files; sole untyped `*Workflow` class: `SaveWorkflow`. `shell_composition.py` has 7 `MainWindow*Host` adapters.
+- Top risks: SaveWorkflow coupling; composition host explosion; panels importing domain directly; mega-compositor; workflow→composition upward import (`editor_tab_workflow` → `shell_composition`).
 
-*(pending)*
+### P2 — Metric sweep detail (summary)
 
-### P2 — Metric sweep detail
+| Metric | Value |
+|--------|------:|
+| HEAD | `fccb6113577752eed330fd8910f72de598c97ec2` |
+| Shell LOC | 42,446 |
+| MainWindow methods | 45 |
+| bare `except Exception:` | 13 |
+| `# type: ignore` | 80 |
+| `window: Any` | 79 |
+| `: Any` total | 234 |
+| app/ files 700–999 LOC | 5 (all shell) |
+| Agent debug markers | 0 |
 
-*(pending)*
+**≥700 LOC:** `icon_provider` 1106 (1k violation), `diff_view` 830, `python_console_widget` 782, `settings_dialog_handlers` 778, `settings_models` 736, `search_sidebar_widget` 687, `local_history_workflow` 674.
 
-### P3 — Shell Wave 1 CC reconciliation (CC-01…CC-25)
+### P3 — Shell Wave 1 CC reconciliation (summary)
 
-*(pending)*
+| Status | CC themes |
+|--------|-----------|
+| **CLOSED** | CC-01, CC-02, CC-03, CC-04, CC-05, CC-17 |
+| **PARTIAL** | CC-06, CC-08, CC-09, CC-10, CC-11, CC-12, CC-13, CC-14, CC-15, CC-16, CC-18, CC-19, CC-20, CC-21, CC-22, CC-23 |
+| **OPEN** | CC-07, CC-24, CC-25 |
+| **REGRESSION** | none detected for P0 |
 
-### P4 — Cross-wave closure cross-read
+Key deltas: MainWindow 542/45; `ShellThemeWorkflow` **wired**; ghost search **deleted**; `BreakpointStore` + `RunLaunchWorkflow` + `SemanticNavigationWorkflow` extracted; `window: Any` still widespread.
 
-*(pending)*
+### P4 — Cross-wave closure (summary)
 
-### P5 — Test coverage map
+| Wave | Status |
+|------|--------|
+| Editors Wave 2 | ACCEPT thermo-clean |
+| Project SSOT P0 | CC-PROJ-01…09 closed |
+| Intelligence Wave 1 | Not thermo-clean (shell seam partially remediated) |
+| Run Wave 1 | Not thermo-clean (shell residuals) |
 
-*(pending)*
+LOC gates: `semantic_navigation_workflow` 130, `editor_tab_workflow` 101, `run_launch_workflow` 582, `editor_tab_poll_workflow` 125, `project_inventory_orchestrator` 72.
+
+### P5 — Test coverage map (summary)
+
+- **106** unit + **12** integration shell test files.
+- **High gaps:** `icon_provider`, `main_window_composition`/`shell_composition`, `shell_theme_workflow` wiring, `diff_view` widget layer.
+- **Low gaps:** `search_sidebar_widget`, `python_console_widget`, `local_history_workflow`.
+- **CC-24:** 9 unit files use `MainWindow.__new__`; widespread private attr probing in settings/console/history tests.
 
 ---
 

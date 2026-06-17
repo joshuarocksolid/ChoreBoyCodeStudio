@@ -124,11 +124,11 @@ def _attach_poll_editor_tab_workflow(window_any: Any) -> EditorTabWorkflow:
 
 
 def test_poll_external_file_changes_reloads_project_tree_on_structure_change(tmp_path: Path) -> None:
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        stale_open_paths=lambda: [],
-        active_tab=lambda: None,
+    window_any = SimpleNamespace(
+        _editor_manager=SimpleNamespace(
+            stale_open_paths=lambda: [],
+            active_tab=lambda: None,
+        ),
     )
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -195,11 +195,11 @@ def test_poll_external_file_changes_ignores_run_artifact_writes(tmp_path: Path) 
     file tree, restarts the symbol indexer, etc.) — otherwise the file
     explorer's scroll position is reset every time the user runs a file.
     """
-    window = MainWindow.__new__(MainWindow)
-    window_any = cast(Any, window)
-    window_any._editor_manager = SimpleNamespace(
-        stale_open_paths=lambda: [],
-        active_tab=lambda: None,
+    window_any = SimpleNamespace(
+        _editor_manager=SimpleNamespace(
+            stale_open_paths=lambda: [],
+            active_tab=lambda: None,
+        ),
     )
     project_root = tmp_path / "project"
     project_root.mkdir()

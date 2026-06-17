@@ -25,6 +25,14 @@ class PythonToolingSettingsCopy:
     config_details: str
 
 
+@dataclass(frozen=True)
+class PythonToolingRuntimeContext:
+    runtime_available: bool
+    config_state: str
+    config_path: str | None
+    config_error: str | None
+
+
 UNKNOWN_SETTINGS_COPY = PythonToolingSettingsCopy(
     runtime_text="Black/isort/tomli: unknown",
     runtime_details="",

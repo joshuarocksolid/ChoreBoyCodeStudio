@@ -140,3 +140,39 @@ def test_refresh_breakpoints_list_updates_debug_panel() -> None:
     assert len(panel.breakpoint_updates) == 1
     assert panel.breakpoint_updates[0][0].file_path == "/tmp/project/main.py"
     assert panel.breakpoint_updates[0][0].line_number == 10
+
+
+def test_clear_all_breakpoints_clears_store_editors_and_panel_once() -> None:
+    host = StubDebugShellHost()
+    panel = host._debug_panel
+    assert panel is not None
+    workflow = _workflow(host)
+    workflow._store.ensure_spec("/tmp/project/main.py", 10)
+    workflow._store.ensure_spec("/tmp/project/util.py", 3)
+    editor_state = {"breakpoints": set()}
+
+    def set_breakpoints(lines: set[int]) -> None:
+        editor_state["breakpoints"] = set(lines)
+
+    editor = SimpleNamespace(set_breakpoints=set_breakpoints)
+    host._editor_widgets_by_path["/tmp/project/main.py"] = editor
+    workflow.refresh_breakpoints_list()
+    panel.breakpoint_updates.clear()
+
+    workflow.clear_all_breakpoints()
+
+    assert workflow.all_breakpoints() == []
+    assert editor_state["breakpoints"] == set()
+    assert len(panel.breakpoint_updates) == 1
+    assert panel.breakpoint_updates[0] == []
+    assert host.refresh_run_action_calls == 1
+
+
+def test_handle_remove_all_breakpoints_action_delegates_to_clear_all_breakpoints() -> None:
+    host = StubDebugShellHost()
+    workflow = _workflow(host)
+    workflow._store.ensure_spec("/tmp/project/main.py", 10)
+
+    workflow.handle_remove_all_breakpoints_action()
+
+    assert workflow.all_breakpoints() == []

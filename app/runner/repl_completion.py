@@ -66,6 +66,26 @@ class ReplCompletionService:
         """Return completion candidates for a live REPL line buffer."""
 
         started_at = time.perf_counter()
+
+        static_items = self._complete_with_static_index(request)
+        if static_items:
+            return self._envelope_for_items(
+                items=static_items,
+                source="static_api_index",
+                confidence="static",
+                started_at=started_at,
+            )
+
+        live_items = self._complete_with_fallback(request)
+        if live_items:
+            return self._envelope_for_items(
+                items=live_items,
+                source="runtime",
+                confidence="runtime_inspection",
+                degradation_reason=REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION,
+                started_at=started_at,
+            )
+
         jedi_unavailable = False
         try:
             jedi_items = self._complete_with_jedi(request)
@@ -76,39 +96,98 @@ class ReplCompletionService:
         if jedi_items:
             return CompletionEnvelope(items=jedi_items, source="runtime", confidence="semantic")
 
-        trusted_items = self._complete_with_trusted_runtime(request)
-        if trusted_items:
-            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-            if elapsed_ms > 200.0:
-                _logger.warning(
-                    "Slow REPL completion: elapsed_ms=%.2f count=%s",
-                    elapsed_ms,
-                    len(trusted_items),
-                )
-            return CompletionEnvelope(
-                items=trusted_items,
-                source="runtime_introspection",
-                confidence="runtime_inspection",
-                degradation_reason=REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION,
-            )
-
-        fallback_items = self._complete_with_fallback(request)
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         if elapsed_ms > 200.0:
-            _logger.warning("Slow REPL completion: elapsed_ms=%.2f count=%s", elapsed_ms, len(fallback_items))
-        degradation_reason = ""
-        if fallback_items:
-            degradation_reason = REPL_COMPLETION_DEGRADATION_RUNTIME_INSPECTION
-        elif jedi_unavailable:
-            degradation_reason = REPL_COMPLETION_DEGRADATION_JEDI_UNAVAILABLE
-        elif request.line_buffer.strip():
+            _logger.warning("Slow REPL completion: elapsed_ms=%.2f count=0", elapsed_ms)
+        degradation_reason = REPL_COMPLETION_DEGRADATION_JEDI_UNAVAILABLE if jedi_unavailable else ""
+        if request.line_buffer.strip() and not degradation_reason:
             degradation_reason = REPL_COMPLETION_DEGRADATION_NO_COMPLETIONS
         return CompletionEnvelope(
-            items=fallback_items,
+            items=[],
             source="runtime",
-            confidence="runtime_inspection" if fallback_items else "",
+            confidence="",
             degradation_reason=degradation_reason,
         )
+
+    def _envelope_for_items(
+        self,
+        *,
+        items: list[CompletionItem],
+        source: str,
+        confidence: str,
+        degradation_reason: str = "",
+        started_at: float,
+    ) -> CompletionEnvelope:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        if elapsed_ms > 200.0:
+            _logger.warning(
+                "Slow REPL completion: elapsed_ms=%.2f count=%s",
+                elapsed_ms,
+                len(items),
+            )
+        return CompletionEnvelope(
+            items=items,
+            source=source,
+            confidence=confidence,
+            degradation_reason=degradation_reason,
+        )
+
+    def _complete_with_static_index(self, request: ReplCompletionRequest) -> list[CompletionItem]:
+        cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
+        limit = max(1, int(request.max_results))
+        context = build_completion_context(
+            source_text=request.line_buffer,
+            cursor_position=cursor,
+            current_file_path=_PYTHON_CONSOLE_FILE_PATH,
+            project_root=None,
+            trigger_is_manual=request.trigger_kind in {"manual", "trigger_character"},
+            min_prefix_chars=1,
+            max_results=limit,
+            trigger_kind=request.trigger_kind,
+            trigger_character=request.trigger_character,
+        )
+
+        if context.syntactic_context in {
+            CompletionSyntacticContext.IMPORT_FROM_MEMBER,
+            CompletionSyntacticContext.IMPORT_MODULE,
+        }:
+            indexed_items = provide_api_index_member_items(
+                module_name=context.module_name,
+                member_prefix=context.prefix,
+                limit=limit,
+            )
+            if indexed_items:
+                return attach_replacement_metadata(indexed_items[:limit], context=context)
+            target_path = context.trusted_runtime_module or context.module_name
+            if is_whitelisted_target_path(target_path):
+                return self._introspect_for_context(context, target_path=target_path, limit=limit)
+
+        if context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER:
+            module_candidates = [
+                context.base_expression,
+                context.module_name,
+                context.base_expression.split(".")[0] if context.base_expression else "",
+            ]
+            for module_name in module_candidates:
+                if not module_name:
+                    continue
+                indexed_items = provide_api_index_member_items(
+                    module_name=module_name,
+                    member_prefix=context.prefix,
+                    limit=limit,
+                )
+                if indexed_items:
+                    return attach_replacement_metadata(indexed_items[:limit], context=context)
+            query = resolve_runtime_introspection_query(context)
+            if query is not None:
+                return self._introspect_for_context(
+                    context,
+                    target_path=query.target_path,
+                    limit=limit,
+                    member_prefix=query.member_prefix,
+                )
+
+        return []
 
     def _complete_with_jedi(self, request: ReplCompletionRequest) -> list[CompletionItem]:
         from app.intelligence.jedi_runtime import initialize_jedi_runtime
@@ -154,48 +233,9 @@ class ReplCompletionService:
         return items
 
     def _complete_with_trusted_runtime(self, request: ReplCompletionRequest) -> list[CompletionItem]:
-        cursor = _clamp_cursor(request.line_buffer, request.cursor_offset)
-        limit = max(1, int(request.max_results))
-        context = build_completion_context(
-            source_text=request.line_buffer,
-            cursor_position=cursor,
-            current_file_path=_PYTHON_CONSOLE_FILE_PATH,
-            project_root=None,
-            trigger_is_manual=request.trigger_kind == "manual",
-            min_prefix_chars=1,
-            max_results=limit,
-            trigger_kind=request.trigger_kind,
-            trigger_character=request.trigger_character,
-        )
+        """Compatibility alias for tests that patch trusted-runtime completion."""
 
-        if context.syntactic_context in {
-            CompletionSyntacticContext.IMPORT_FROM_MEMBER,
-            CompletionSyntacticContext.IMPORT_MODULE,
-        }:
-            indexed_items = provide_api_index_member_items(
-                module_name=context.module_name,
-                member_prefix=context.prefix,
-                limit=limit,
-            )
-            if indexed_items:
-                return attach_replacement_metadata(indexed_items[:limit], context=context)
-            target_path = context.trusted_runtime_module or context.module_name
-            if not is_whitelisted_target_path(target_path):
-                return []
-            return self._introspect_for_context(context, target_path=target_path, limit=limit)
-
-        if context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER:
-            query = resolve_runtime_introspection_query(context)
-            if query is None:
-                return []
-            return self._introspect_for_context(
-                context,
-                target_path=query.target_path,
-                limit=limit,
-                member_prefix=query.member_prefix,
-            )
-
-        return []
+        return self._complete_with_static_index(request)
 
     def _introspect_for_context(
         self,

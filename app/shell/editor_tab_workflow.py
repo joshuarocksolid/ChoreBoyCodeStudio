@@ -20,7 +20,7 @@ from app.shell.editor_tab_workflow_mixins import (
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
 from app.shell.main_window_editor_tab_host import MainWindowEditorTabHost
-from app.shell.shell_composition import build_editor_sync_workflow
+from app.shell.editor_sync_factory import build_editor_sync_workflow
 
 
 class EditorTabWorkflow(

@@ -287,6 +287,17 @@ def test_start_session_returns_start_exception_reason_when_run_service_raises() 
     assert lines[-1] == ("Run failed to start: boom\n", "stderr")
 
 
+def test_stop_session_appends_system_line_via_positional_callback() -> None:
+    run_service = _FakeRunService()
+    controller = RunSessionController(run_service)  # type: ignore[arg-type]
+    lines: list[tuple[str, str]] = []
+
+    controller.stop_session(lambda text, stream: lines.append((text, stream)))
+
+    assert run_service.stopped is True
+    assert lines == [("Stop requested.\n", "system")]
+
+
 def test_refresh_action_states_updates_run_action_enablement() -> None:
     run_service = _FakeRunService()
     controller = RunSessionController(run_service)  # type: ignore[arg-type]

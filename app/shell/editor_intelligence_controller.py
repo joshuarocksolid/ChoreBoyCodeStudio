@@ -101,6 +101,10 @@ class EditorIntelligenceController:
             max_results=max_results,
         )
 
+    def complete_fast_sync(self, request: CompletionRequest) -> CompletionEnvelope:
+        """Return fast-tier completion candidates on the calling thread."""
+        return self._semantic_session.complete_fast_sync(request)
+
     def request_editor_completions(
         self,
         *,

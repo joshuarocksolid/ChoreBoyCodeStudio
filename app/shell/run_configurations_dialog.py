@@ -19,12 +19,14 @@ from PySide2.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from app.core.errors import AppValidationError
 from app.project.run_configs import RunConfiguration
+from app.shell import icon_provider
 from app.shell.dialog_chrome import (
     FOOTER_ROLE_PRIMARY,
     FOOTER_ROLE_SECONDARY,
@@ -33,12 +35,14 @@ from app.shell.dialog_chrome import (
     add_meta_chip,
     build_dialog_chrome,
 )
+from app.shell.field_action_button import make_field_action_button
 from app.shell.run_arguments_editor import RunArgumentsEditorRow
 from app.shell.run_config_controller import tokenize_argv_text
 from app.shell.run_env_overrides_row import RunEnvOverridesRow
 from app.shell.run_arguments_helpers import join_argv_for_display
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.shell.toolbar_icons import icon_run
 
 
 @dataclass(frozen=True)
@@ -76,8 +80,8 @@ class RunConfigurationsDialog(QDialog):
         self.setWindowTitle("Run Configurations")
         self.setModal(True)
         self.setObjectName("shell.runConfigurationsDialog")
-        self.setMinimumSize(820, 560)
-        self.resize(920, 640)
+        self.setMinimumSize(820, 620)
+        self.resize(960, 700)
 
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
@@ -123,6 +127,7 @@ class RunConfigurationsDialog(QDialog):
             title="Run Configurations",
             subtitle=subtitle,
             object_name="shell.runConfigurationsDialog",
+            icon=icon_provider.run_config_icon(self._tokens.accent),
             body_margins=True,
         )
         self._chrome = chrome
@@ -197,9 +202,18 @@ class RunConfigurationsDialog(QDialog):
         body_layout_inner.addWidget(left_panel, 0)
 
         right_panel = QWidget(body_widget)
+        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
+
+        self._detail_panel = QWidget(right_panel)
+        self._detail_panel.setObjectName("shell.runConfigurationsDialog.configsDetailPanel")
+        self._detail_panel.setMinimumHeight(320)
+        self._detail_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        detail_layout = QVBoxLayout(self._detail_panel)
+        detail_layout.setContentsMargins(12, 12, 12, 12)
+        detail_layout.setSpacing(0)
 
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -207,56 +221,60 @@ class RunConfigurationsDialog(QDialog):
         form_layout.setVerticalSpacing(10)
         form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-        self._name_edit = QLineEdit(right_panel)
+        self._name_edit = QLineEdit(self._detail_panel)
         self._name_edit.setObjectName("shell.runConfigurationsDialog.nameField")
         self._name_edit.textEdited.connect(self._on_name_changed)
-        form_layout.addRow("Name:", self._name_edit)
+        name_label = QLabel("Name:", self._detail_panel)
+        form_layout.addRow(name_label, self._name_edit)
 
-        self._entry_edit = QLineEdit(right_panel)
+        self._entry_edit = QLineEdit(self._detail_panel)
         self._entry_edit.setObjectName("shell.runConfigurationsDialog.entryField")
         self._entry_edit.textEdited.connect(self._on_entry_changed)
-        entry_row = QWidget(right_panel)
+        entry_row = QWidget(self._detail_panel)
         entry_row_layout = QHBoxLayout(entry_row)
         entry_row_layout.setContentsMargins(0, 0, 0, 0)
         entry_row_layout.setSpacing(8)
         entry_row_layout.addWidget(self._entry_edit, 1)
-        self._browse_entry_button = QPushButton("Browse\u2026", entry_row)
+        self._browse_entry_button = make_field_action_button("Browse\u2026", entry_row)
         self._browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
         entry_row_layout.addWidget(self._browse_entry_button, 0)
-        form_layout.addRow("Entry file:", entry_row)
+        entry_label = QLabel("Entry file:", self._detail_panel)
+        form_layout.addRow(entry_label, entry_row)
 
+        argv_label = QLabel("Arguments:", self._detail_panel)
         self._argv_editor = RunArgumentsEditorRow(
-            right_panel,
+            self._detail_panel,
             tokens=self._tokens,
             object_name_prefix="shell.runConfigurationsDialog.argv",
             show_recent=False,
         )
         self._argv_editor.validation_changed.connect(self._on_argv_changed)
-        form_layout.addRow("Arguments:", self._argv_editor)
+        form_layout.addRow(argv_label, self._argv_editor)
 
-        self._working_dir_edit = QLineEdit(right_panel)
+        self._working_dir_edit = QLineEdit(self._detail_panel)
         self._working_dir_edit.setObjectName("shell.runConfigurationsDialog.workingDirField")
         self._working_dir_edit.textEdited.connect(self._on_working_dir_changed)
-        wd_row = QWidget(right_panel)
+        wd_row = QWidget(self._detail_panel)
         wd_row_layout = QHBoxLayout(wd_row)
         wd_row_layout.setContentsMargins(0, 0, 0, 0)
         wd_row_layout.setSpacing(8)
         wd_row_layout.addWidget(self._working_dir_edit, 1)
-        self._browse_wd_button = QPushButton("Browse\u2026", wd_row)
+        self._browse_wd_button = make_field_action_button("Browse\u2026", wd_row)
         self._browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
         wd_row_layout.addWidget(self._browse_wd_button, 0)
-        form_layout.addRow("Working directory:", wd_row)
+        wd_label = QLabel("Working directory:", self._detail_panel)
+        form_layout.addRow(wd_label, wd_row)
 
+        env_label = QLabel("Environment:", self._detail_panel)
         self._env_row = RunEnvOverridesRow(
-            right_panel,
+            self._detail_panel,
             tokens=self._tokens,
             object_name_prefix="shell.runConfigurationsDialog.env",
         )
         self._env_row.value_changed.connect(self._on_env_changed)
-        form_layout.addRow("Environment:", self._env_row)
-        right_layout.addLayout(form_layout)
-
-        right_layout.addStretch(1)
+        form_layout.addRow(env_label, self._env_row)
+        detail_layout.addLayout(form_layout)
+        right_layout.addWidget(self._detail_panel, 1)
 
         self._error_label = QLabel(right_panel)
         self._error_label.setObjectName("shell.runConfigurationsDialog.error")
@@ -264,14 +282,20 @@ class RunConfigurationsDialog(QDialog):
         self._error_label.hide()
         right_layout.addWidget(self._error_label)
 
+        self._empty_state_container = QWidget(right_panel)
+        empty_state_layout = QVBoxLayout(self._empty_state_container)
+        empty_state_layout.setContentsMargins(12, 12, 12, 12)
+        empty_state_layout.addStretch(1)
         self._empty_state_label = QLabel(
             "No run configurations yet. Click + Add to create one.",
-            right_panel,
+            self._empty_state_container,
         )
         self._empty_state_label.setObjectName("shell.runConfigurationsDialog.emptyState")
         self._empty_state_label.setAlignment(Qt.AlignCenter)
-        self._empty_state_label.hide()
-        right_layout.addWidget(self._empty_state_label)
+        empty_state_layout.addWidget(self._empty_state_label)
+        empty_state_layout.addStretch(1)
+        self._empty_state_container.hide()
+        right_layout.addWidget(self._empty_state_container, 1)
 
         body_layout_inner.addWidget(right_panel, 1)
         configs_group_layout.addWidget(body_widget, 1)
@@ -281,14 +305,16 @@ class RunConfigurationsDialog(QDialog):
         self._save_run_button = add_footer_button(
             chrome,
             "Save and Run Selected",
-            role=FOOTER_ROLE_SECONDARY,
+            role=FOOTER_ROLE_PRIMARY,
+            default=True,
         )
+        self._save_run_button.setIcon(icon_run("#FFFFFF"))
         self._save_run_button.setToolTip(
             "Commit edits to cbcs/project.json and immediately launch the selected configuration."
         )
         self._save_run_button.clicked.connect(self._on_save_and_run_clicked)
         cancel_button = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
-        self._save_button = add_footer_button(chrome, "Save", role=FOOTER_ROLE_PRIMARY, default=True)
+        self._save_button = add_footer_button(chrome, "Save", role=FOOTER_ROLE_SECONDARY)
         self._save_button.clicked.connect(self._on_save_clicked)
         cancel_button.clicked.connect(self.reject)
 
@@ -318,9 +344,11 @@ class RunConfigurationsDialog(QDialog):
             self._current_index = -1
             self._update_form_enabled(False)
             self._clear_form()
-            self._empty_state_label.show()
+            self._detail_panel.hide()
+            self._empty_state_container.show()
             return
-        self._empty_state_label.hide()
+        self._empty_state_container.hide()
+        self._detail_panel.show()
         target_index = 0
         if select_name:
             for index, config in enumerate(self._configurations):
@@ -443,7 +471,8 @@ class RunConfigurationsDialog(QDialog):
             self._configs_list.addItem(QListWidgetItem(name))
         finally:
             self._configs_list.blockSignals(False)
-        self._empty_state_label.hide()
+        self._empty_state_container.hide()
+        self._detail_panel.show()
         self._refresh_config_count_chip()
         self._configs_list.setCurrentRow(len(self._configurations) - 1)
         self._name_edit.setFocus()
@@ -490,7 +519,8 @@ class RunConfigurationsDialog(QDialog):
             self._current_index = -1
             self._update_form_enabled(False)
             self._clear_form()
-            self._empty_state_label.show()
+            self._detail_panel.hide()
+            self._empty_state_container.show()
             return
         new_index = min(removed_index, len(self._configurations) - 1)
         self._configs_list.setCurrentRow(new_index)

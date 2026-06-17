@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,34 +13,6 @@ from app.intelligence.completion_models import CompletionEnvelope, CompletionIte
 from app.shell.python_console_workflow import PythonConsoleWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
-
-
-@dataclass
-class FakeReplManager:
-    envelope: CompletionEnvelope = field(
-        default_factory=lambda: CompletionEnvelope(items=[], degradation_reason="")
-    )
-    calls: list[dict[str, object]] = field(default_factory=list)
-
-    def complete(
-        self,
-        *,
-        line_buffer: str,
-        cursor_offset: int,
-        trigger_kind: str,
-        trigger_character: str,
-        max_results: int = 100,
-    ) -> CompletionEnvelope:
-        self.calls.append(
-            {
-                "line_buffer": line_buffer,
-                "cursor_offset": cursor_offset,
-                "trigger_kind": trigger_kind,
-                "trigger_character": trigger_character,
-                "max_results": max_results,
-            }
-        )
-        return self.envelope
 
 
 @dataclass
@@ -63,6 +36,9 @@ class FakePythonConsoleHost:
     console_widget: FakeConsoleWidget | None = field(default_factory=FakeConsoleWidget)
     dispatched: list[object] = field(default_factory=list)
     status_messages: list[tuple[str, int]] = field(default_factory=list)
+    focused_tab: bool = False
+    repl_warnings: list[tuple[str, Exception]] = field(default_factory=list)
+    clear_console_calls: int = 0
 
     def python_console_widget(self) -> FakeConsoleWidget | None:
         return self.console_widget
@@ -74,9 +50,98 @@ class FakePythonConsoleHost:
     def show_status_message(self, message: str, timeout_ms: int) -> None:
         self.status_messages.append((message, timeout_ms))
 
+    def focus_python_console_tab(self) -> None:
+        self.focused_tab = True
+
+    def log_repl_warning(self, message: str, exc: Exception) -> None:
+        self.repl_warnings.append((message, exc))
+
+    def clear_console_host(self) -> FakeClearConsoleHost:
+        self.clear_console_calls += 1
+        return FakeClearConsoleHost()
+
+
+@dataclass
+class FakeClearConsoleHost:
+    cleared: bool = False
+
+    def console_model(self) -> object:
+        return SimpleNamespace(clear=lambda: setattr(self, "cleared", True))
+
+    def run_log_panel(self) -> None:
+        return None
+
+    def python_console_widget(self) -> None:
+        return None
+
+    def debug_panel(self) -> None:
+        return None
+
+    def active_run_output_tail(self) -> object:
+        return SimpleNamespace(clear=lambda: None)
+
+    def clear_problems(self) -> None:
+        return None
+
+    def reset_debug_session(self) -> None:
+        return None
+
+    def clear_debug_execution_indicator(self) -> None:
+        return None
+
+    def run_log_begin_run(self) -> None:
+        return None
+
+
+@dataclass
+class FakeReplSession:
+    running: bool = False
+    sent_inputs: list[str] = field(default_factory=list)
+    restart_count: int = 0
+    start_count: int = 0
+    envelope: CompletionEnvelope = field(
+        default_factory=lambda: CompletionEnvelope(items=[], degradation_reason="")
+    )
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    @property
+    def is_running(self) -> bool:
+        return self.running
+
+    def start(self) -> None:
+        self.start_count += 1
+        self.running = True
+
+    def restart(self) -> None:
+        self.restart_count += 1
+        self.running = True
+
+    def send_input(self, text: str) -> None:
+        self.sent_inputs.append(text)
+
+    def complete(
+        self,
+        *,
+        line_buffer: str,
+        cursor_offset: int,
+        trigger_kind: str,
+        trigger_character: str,
+        max_results: int = 100,
+    ) -> CompletionEnvelope:
+        self.calls.append(
+            {
+                "line_buffer": line_buffer,
+                "cursor_offset": cursor_offset,
+                "trigger_kind": trigger_kind,
+                "trigger_character": trigger_character,
+                "max_results": max_results,
+            }
+        )
+        return self.envelope
+
 
 def test_request_completion_async_applies_items_on_main_thread() -> None:
-    repl = FakeReplManager(
+    repl = FakeReplSession(
         envelope=CompletionEnvelope(
             items=[
                 CompletionItem(
@@ -118,7 +183,7 @@ def test_request_completion_async_applies_items_on_main_thread() -> None:
 
 
 def test_request_completion_async_shows_degradation_status() -> None:
-    repl = FakeReplManager(
+    repl = FakeReplSession(
         envelope=CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
     )
     host = FakePythonConsoleHost()
@@ -142,7 +207,7 @@ def test_request_completion_async_shows_degradation_status() -> None:
 
 
 def test_request_completion_async_shows_jedi_unavailable_status() -> None:
-    repl = FakeReplManager(
+    repl = FakeReplSession(
         envelope=CompletionEnvelope(items=[], degradation_reason="repl_jedi_unavailable")
     )
     host = FakePythonConsoleHost()
@@ -169,7 +234,7 @@ def test_request_completion_async_shows_jedi_unavailable_status() -> None:
 
 
 def test_request_completion_async_shows_no_completions_status() -> None:
-    repl = FakeReplManager(
+    repl = FakeReplSession(
         envelope=CompletionEnvelope(items=[], degradation_reason="repl_no_completions")
     )
     host = FakePythonConsoleHost()
@@ -193,7 +258,7 @@ def test_request_completion_async_shows_no_completions_status() -> None:
 
 
 def test_request_completion_async_skips_apply_when_widget_missing() -> None:
-    repl = FakeReplManager(
+    repl = FakeReplSession(
         envelope=CompletionEnvelope(
             items=[
                 CompletionItem(
@@ -221,3 +286,83 @@ def test_request_completion_async_skips_apply_when_widget_missing() -> None:
     )
 
     assert host.status_messages == []
+
+
+def test_handle_submit_auto_starts_repl_and_sends_input() -> None:
+    repl = FakeReplSession(running=False)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_submit("print(1)")
+
+    assert repl.start_count == 1
+    assert repl.sent_inputs == ["print(1)"]
+
+
+def test_handle_submit_ignores_blank_input() -> None:
+    repl = FakeReplSession(running=False)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_submit("   ")
+
+    assert repl.start_count == 0
+    assert repl.sent_inputs == []
+
+
+def test_handle_interrupt_sends_ctrl_c_when_running() -> None:
+    repl = FakeReplSession(running=True)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_interrupt()
+
+    assert repl.sent_inputs == ["\x03"]
+
+
+def test_handle_interrupt_noop_when_not_running() -> None:
+    repl = FakeReplSession(running=False)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_interrupt()
+
+    assert repl.sent_inputs == []
+
+
+def test_handle_start_python_console_action_restarts_and_focuses_tab() -> None:
+    repl = FakeReplSession(running=True)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    result = workflow.handle_start_python_console_action()
+
+    assert result is True
+    assert repl.restart_count == 1
+    assert host.focused_tab is True
+
+
+def test_handle_submit_logs_warning_on_send_failure() -> None:
+    repl = FakeReplSession(running=True)
+
+    def _fail_send(_text: str) -> None:
+        raise RuntimeError("broken pipe")
+
+    repl.send_input = _fail_send  # type: ignore[method-assign]
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_submit("x = 1")
+
+    assert len(host.repl_warnings) == 1
+    assert "REPL send_input failed" in host.repl_warnings[0][0]
+
+
+def test_handle_clear_console_action_uses_clear_policy_host() -> None:
+    repl = FakeReplSession(running=True)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_clear_console_action()
+
+    assert host.clear_console_calls == 1

@@ -4,49 +4,59 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.shell.settings_models import EditorSettingsSnapshot
 from app.shell.shell_preferences import SettingsReader, ShellPreferencesBundle, build_shell_preferences_bundle
 
+_EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
+    "tab_width",
+    "font_size",
+    "font_family",
+    "indent_style",
+    "indent_size",
+    "detect_indentation_from_file",
+    "hover_tooltip_enabled",
+    "auto_reindent_flat_python_paste",
+    "completion_enabled",
+    "completion_auto_trigger",
+    "completion_min_chars",
+)
+
+_INTELLIGENCE_HIGHLIGHTING_FIELDS: tuple[str, ...] = (
+    "highlighting_adaptive_mode",
+    "highlighting_reduced_threshold_chars",
+    "highlighting_lexical_only_threshold_chars",
+)
+
+_LINT_PROFILE_FIELDS: tuple[str, ...] = (
+    "lint_rule_overrides",
+    "diagnostics_enabled",
+    "selected_linter",
+)
+
+_SYNTAX_OVERRIDE_FIELDS: tuple[str, ...] = (
+    "syntax_color_overrides_light",
+    "syntax_color_overrides_dark",
+    "syntax_color_overrides_high_contrast_light",
+    "syntax_color_overrides_high_contrast_dark",
+)
+
+_THEME_AFFECTING_FIELDS: tuple[str, ...] = (
+    "theme_mode",
+    "ui_font_weight",
+    "dark_chrome_palette",
+    *_SYNTAX_OVERRIDE_FIELDS,
+)
+
 
 @dataclass(frozen=True)
 class SettingsApplyBaseline:
     """Runtime values captured before applying an accepted settings dialog."""
 
-    theme_mode: str
-    ui_font_weight: str
-    dark_chrome_palette: str
-    syntax_color_overrides_light: dict[str, str]
-    syntax_color_overrides_dark: dict[str, str]
-    syntax_color_overrides_high_contrast_light: dict[str, str]
-    syntax_color_overrides_high_contrast_dark: dict[str, str]
-    tab_width: int
-    font_size: int
-    font_family: str
-    indent_style: str
-    indent_size: int
-    detect_indentation_from_file: bool
-    hover_tooltip_enabled: bool
-    auto_reindent_flat_python_paste: bool
-    completion_enabled: bool
-    completion_auto_trigger: bool
-    completion_min_chars: int
-    cache_enabled: bool
-    highlighting_adaptive_mode: str
-    highlighting_reduced_threshold_chars: int
-    highlighting_lexical_only_threshold_chars: int
-    local_history_max_checkpoints_per_file: int
-    local_history_retention_days: int
-    local_history_max_tracked_file_bytes: int
-    local_history_exclude_patterns: tuple[str, ...]
-    shortcut_overrides: dict[str, str]
-    lint_rule_overrides: dict[str, dict[str, object]]
-    diagnostics_enabled: bool
-    selected_linter: str
-    enable_preview: bool
+    snapshot: EditorSettingsSnapshot
     effective_excludes: list[str]
 
 
@@ -59,9 +69,35 @@ class SettingsApplyDiff:
     editor_preferences_changed: bool
     intelligence_highlighting_changed: bool
     shortcut_overrides_changed: bool
-    retention_policy_changed: bool
+    lint_profile_changed: bool
     cache_enabled_changed: bool
     cache_newly_enabled: bool
+
+
+def _snapshot_field_value(snapshot: EditorSettingsSnapshot, field_name: str) -> object:
+    return getattr(snapshot, field_name)
+
+
+def _snapshot_field_changed(
+    baseline: EditorSettingsSnapshot,
+    updated: EditorSettingsSnapshot,
+    field_name: str,
+) -> bool:
+    baseline_value = _snapshot_field_value(baseline, field_name)
+    updated_value = _snapshot_field_value(updated, field_name)
+    if isinstance(baseline_value, dict):
+        return dict(updated_value) != dict(baseline_value)  # type: ignore[arg-type]
+    if isinstance(baseline_value, tuple):
+        return tuple(updated_value) != baseline_value  # type: ignore[arg-type]
+    return updated_value != baseline_value
+
+
+def _any_snapshot_field_changed(
+    baseline: EditorSettingsSnapshot,
+    updated: EditorSettingsSnapshot,
+    field_names: tuple[str, ...],
+) -> bool:
+    return any(_snapshot_field_changed(baseline, updated, field_name) for field_name in field_names)
 
 
 def build_settings_apply_diff(
@@ -70,57 +106,42 @@ def build_settings_apply_diff(
 ) -> SettingsApplyDiff:
     """Compare pre-dialog baseline to the accepted dialog snapshot."""
 
-    theme_mode_changed = updated_snapshot.theme_mode != baseline.theme_mode
-    syntax_changed = (
-        dict(updated_snapshot.syntax_color_overrides_light) != baseline.syntax_color_overrides_light
-        or dict(updated_snapshot.syntax_color_overrides_dark) != baseline.syntax_color_overrides_dark
-        or dict(updated_snapshot.syntax_color_overrides_high_contrast_light)
-        != baseline.syntax_color_overrides_high_contrast_light
-        or dict(updated_snapshot.syntax_color_overrides_high_contrast_dark)
-        != baseline.syntax_color_overrides_high_contrast_dark
+    baseline_snapshot = baseline.snapshot
+    theme_mode_changed = _snapshot_field_changed(baseline_snapshot, updated_snapshot, "theme_mode")
+    theme_affecting_changed = _any_snapshot_field_changed(
+        baseline_snapshot,
+        updated_snapshot,
+        _THEME_AFFECTING_FIELDS,
     )
-    theme_affecting_changed = (
-        theme_mode_changed
-        or updated_snapshot.ui_font_weight != baseline.ui_font_weight
-        or updated_snapshot.dark_chrome_palette != baseline.dark_chrome_palette
-        or syntax_changed
+    editor_preferences_changed = _any_snapshot_field_changed(
+        baseline_snapshot,
+        updated_snapshot,
+        _EDITOR_PREFERENCE_FIELDS,
     )
-    editor_preferences_changed = (
-        updated_snapshot.tab_width != baseline.tab_width
-        or updated_snapshot.font_size != baseline.font_size
-        or updated_snapshot.font_family != baseline.font_family
-        or updated_snapshot.indent_style != baseline.indent_style
-        or updated_snapshot.indent_size != baseline.indent_size
-        or updated_snapshot.detect_indentation_from_file != baseline.detect_indentation_from_file
-        or updated_snapshot.hover_tooltip_enabled != baseline.hover_tooltip_enabled
-        or updated_snapshot.auto_reindent_flat_python_paste != baseline.auto_reindent_flat_python_paste
-        or updated_snapshot.completion_enabled != baseline.completion_enabled
-        or updated_snapshot.completion_auto_trigger != baseline.completion_auto_trigger
-        or updated_snapshot.completion_min_chars != baseline.completion_min_chars
+    intelligence_highlighting_changed = _any_snapshot_field_changed(
+        baseline_snapshot,
+        updated_snapshot,
+        _INTELLIGENCE_HIGHLIGHTING_FIELDS,
     )
-    intelligence_highlighting_changed = (
-        updated_snapshot.highlighting_adaptive_mode != baseline.highlighting_adaptive_mode
-        or updated_snapshot.highlighting_reduced_threshold_chars
-        != baseline.highlighting_reduced_threshold_chars
-        or updated_snapshot.highlighting_lexical_only_threshold_chars
-        != baseline.highlighting_lexical_only_threshold_chars
+    shortcut_overrides_changed = _snapshot_field_changed(
+        baseline_snapshot,
+        updated_snapshot,
+        "shortcut_overrides",
     )
-    shortcut_overrides_changed = dict(updated_snapshot.shortcut_overrides) != dict(baseline.shortcut_overrides)
-    retention_policy_changed = (
-        updated_snapshot.local_history_max_checkpoints_per_file != baseline.local_history_max_checkpoints_per_file
-        or updated_snapshot.local_history_retention_days != baseline.local_history_retention_days
-        or updated_snapshot.local_history_max_tracked_file_bytes != baseline.local_history_max_tracked_file_bytes
-        or tuple(updated_snapshot.local_history_exclude_patterns) != baseline.local_history_exclude_patterns
+    lint_profile_changed = _any_snapshot_field_changed(
+        baseline_snapshot,
+        updated_snapshot,
+        _LINT_PROFILE_FIELDS,
     )
-    cache_enabled_changed = updated_snapshot.cache_enabled != baseline.cache_enabled
-    cache_newly_enabled = not baseline.cache_enabled and updated_snapshot.cache_enabled
+    cache_enabled_changed = _snapshot_field_changed(baseline_snapshot, updated_snapshot, "cache_enabled")
+    cache_newly_enabled = not baseline_snapshot.cache_enabled and updated_snapshot.cache_enabled
     return SettingsApplyDiff(
         theme_mode_changed=theme_mode_changed,
         theme_affecting_changed=theme_affecting_changed,
         editor_preferences_changed=editor_preferences_changed,
         intelligence_highlighting_changed=intelligence_highlighting_changed,
         shortcut_overrides_changed=shortcut_overrides_changed,
-        retention_policy_changed=retention_policy_changed,
+        lint_profile_changed=lint_profile_changed,
         cache_enabled_changed=cache_enabled_changed,
         cache_newly_enabled=cache_newly_enabled,
     )
@@ -297,16 +318,11 @@ class SettingsApplyWorkflow:
             self._host.apply_theme_styles()
         self._profile_phase(profile_enabled, started_at, "runtime_apply")
 
-        if baseline.enable_preview and not self._host.editor_enable_preview():
+        if baseline.snapshot.enable_preview and not self._host.editor_enable_preview():
             self._host.cancel_pending_project_tree_preview()
             self._host.promote_existing_preview_tab()
 
-        lint_profile_changed = self._host.lint_rule_overrides() != baseline.lint_rule_overrides
-        diagnostics_enabled_changed = self._host.diagnostics_enabled() != baseline.diagnostics_enabled
-        selected_linter_changed = self._host.selected_linter() != baseline.selected_linter
-        if self._host.diagnostics_enabled() and (
-            lint_profile_changed or diagnostics_enabled_changed or selected_linter_changed
-        ):
+        if self._host.diagnostics_enabled() and diff.lint_profile_changed:
             self._host.relint_open_python_files()
 
         if not self._host.diagnostics_enabled():
@@ -338,6 +354,21 @@ class SettingsApplyWorkflow:
         self._logger.info("Settings apply profile: phase=%s elapsed_ms=%.2f", phase, elapsed_ms)
 
 
+def _clone_snapshot(snapshot: EditorSettingsSnapshot) -> EditorSettingsSnapshot:
+    return replace(
+        snapshot,
+        syntax_color_overrides_light=dict(snapshot.syntax_color_overrides_light),
+        syntax_color_overrides_dark=dict(snapshot.syntax_color_overrides_dark),
+        syntax_color_overrides_high_contrast_light=dict(snapshot.syntax_color_overrides_high_contrast_light),
+        syntax_color_overrides_high_contrast_dark=dict(snapshot.syntax_color_overrides_high_contrast_dark),
+        shortcut_overrides=dict(snapshot.shortcut_overrides),
+        lint_rule_overrides={
+            code: dict(value) for code, value in snapshot.lint_rule_overrides.items()
+        },
+        local_history_exclude_patterns=tuple(snapshot.local_history_exclude_patterns),
+    )
+
+
 def capture_settings_apply_baseline_from_snapshot(
     *,
     effective_snapshot: EditorSettingsSnapshot,
@@ -346,43 +377,7 @@ def capture_settings_apply_baseline_from_snapshot(
     """Build a baseline snapshot for settings apply diffing from effective editor state."""
 
     return SettingsApplyBaseline(
-        theme_mode=effective_snapshot.theme_mode,
-        ui_font_weight=effective_snapshot.ui_font_weight,
-        dark_chrome_palette=effective_snapshot.dark_chrome_palette,
-        syntax_color_overrides_light=dict(effective_snapshot.syntax_color_overrides_light),
-        syntax_color_overrides_dark=dict(effective_snapshot.syntax_color_overrides_dark),
-        syntax_color_overrides_high_contrast_light=dict(
-            effective_snapshot.syntax_color_overrides_high_contrast_light
-        ),
-        syntax_color_overrides_high_contrast_dark=dict(
-            effective_snapshot.syntax_color_overrides_high_contrast_dark
-        ),
-        tab_width=effective_snapshot.tab_width,
-        font_size=effective_snapshot.font_size,
-        font_family=effective_snapshot.font_family,
-        indent_style=effective_snapshot.indent_style,
-        indent_size=effective_snapshot.indent_size,
-        detect_indentation_from_file=effective_snapshot.detect_indentation_from_file,
-        hover_tooltip_enabled=effective_snapshot.hover_tooltip_enabled,
-        auto_reindent_flat_python_paste=effective_snapshot.auto_reindent_flat_python_paste,
-        completion_enabled=effective_snapshot.completion_enabled,
-        completion_auto_trigger=effective_snapshot.completion_auto_trigger,
-        completion_min_chars=effective_snapshot.completion_min_chars,
-        cache_enabled=effective_snapshot.cache_enabled,
-        highlighting_adaptive_mode=effective_snapshot.highlighting_adaptive_mode,
-        highlighting_reduced_threshold_chars=effective_snapshot.highlighting_reduced_threshold_chars,
-        highlighting_lexical_only_threshold_chars=effective_snapshot.highlighting_lexical_only_threshold_chars,
-        local_history_max_checkpoints_per_file=effective_snapshot.local_history_max_checkpoints_per_file,
-        local_history_retention_days=effective_snapshot.local_history_retention_days,
-        local_history_max_tracked_file_bytes=effective_snapshot.local_history_max_tracked_file_bytes,
-        local_history_exclude_patterns=tuple(effective_snapshot.local_history_exclude_patterns),
-        shortcut_overrides=dict(effective_snapshot.shortcut_overrides),
-        lint_rule_overrides={
-            code: dict(value) for code, value in effective_snapshot.lint_rule_overrides.items()
-        },
-        diagnostics_enabled=effective_snapshot.diagnostics_enabled,
-        selected_linter=effective_snapshot.selected_linter,
-        enable_preview=effective_snapshot.enable_preview,
+        snapshot=_clone_snapshot(effective_snapshot),
         effective_excludes=list(effective_excludes),
     )
 

@@ -36,19 +36,19 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 29 | Outline panel + Ctrl+R Go to Symbol | | |
+| 29 | Outline panel + Ctrl+R Go to Symbol | PASS (.py) / WARN (.fcmacro) | On `.py`: hierarchical outline (class>methods), click-to-navigate, cursor-follow highlight, and Ctrl+R "Go to Symbol in File" all work. GAP: `.fcmacro` files show "No outline available" — outline/symbol-nav gate on `{.py,.pyw,.pyi}` and exclude `.fcmacro` even though #24 gives it highlighting. |
 
 ## Group E — File open
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 28 | Open File starts in active file's directory | | |
+| 28 | Open File starts in active file's directory | PASS | With `cbcs/project.json` as the active tab, File > Open File opened with "Look in:" = `…/RunArgsSmokeTest/cbcs` (active file's dir, tier 1), distinct from project root. |
 
 ## Group F — Run arguments
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 36 | Run With Arguments / Run Configurations / quoting / status-bar indicator | | |
+| 36 | Run With Arguments / Run Configurations / quoting / status-bar indicator | FAIL (blocked) | Dialog + parsed-argv preview render correctly, but clicking **Run** crashed: `TypeError: append_console_line() takes 2 positional arguments but 3 were given` ("Unhandled exception in editor process", 13:26:07). Root cause at HEAD: `run_session_controller.start_session`/`stop_session` call `append_console_line(text, "system")` positionally, but HEAD `run_debug_presenter.py:48` wires it to `run_event_workflow.append_console_line(self, text, *, stream=...)` (stream keyword-only). Breaks ALL Run/Debug, not just Run With Arguments. Could not verify argv round-trip, persistence, quoting, or status-bar indicator because no run completes. NOTE: working tree has a large UNCOMMITTED refactor introducing `bind_append_console_line()` (partial fix; Stop path still broken). |
 
 ## Group G — Themes
 
@@ -72,3 +72,5 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 ## Issues found
 
 - **#30 — Flat-Python paste right-click context menu not wired.** `CodeEditorWidget._show_context_menu` (which augments the menu with "Paste and Re-indent (Flat Python)" / "Re-indent Selection (Flat Python)") is never invoked: there is no `contextMenuEvent` override and no `customContextMenuRequested` connection in `app/editors/code_editor_widget.py` or its mixin bases, so the default `QPlainTextEdit` context menu is shown. The Edit-menu action and `Ctrl+Alt+V` shortcut work, so the feature is reachable; only the documented context-menu surface (AT-EDIT-FLAT-PYTHON-PASTE steps 3-4) is missing. Existing unit tests only call `_augment_context_menu_with_flat_python_actions` directly and therefore do not catch the wiring gap.
+- **#29 — `.fcmacro` files have no outline / Go to Symbol.** `app/shell/editor_tab_outline_workflow.py` (`refresh_for_active_tab`, line ~57), `app/intelligence/outline_service.py` (`build_file_outline`), and the symbol-navigation workflows all gate on `{.py,.pyw,.pyi}` and call `set_unsupported_language("fcmacro")` for `.fcmacro`. Request #24 added `.fcmacro` to the Python language spec (highlighting) and the python_tools/diagnostics plugins include it, so this is an inconsistency that hurts the FreeCAD-macro audience #24/#26 target. Suggest adding `.fcmacro` to the outline/symbol suffix set.
+- **#36 / ALL RUN+DEBUG — hard crash on run start (HEAD).** `app/shell/run_session_controller.py` calls `append_console_line(text, "system")` (positional stream) at lines 96, 97, 112, 120, 128 (and `stop_session` line 128), but the wired callback `app/shell/run_event_workflow.py:281 append_console_line(self, text, *, stream="stdout")` makes `stream` keyword-only. HEAD `run_debug_presenter.py:48` passes that method directly, so every run raises `TypeError: append_console_line() takes 2 positional arguments but 3 were given`. Tests miss it because they inject permissive fakes for `append_console_line`. **Workspace caveat:** `run_debug_presenter.py` and `run_event_workflow.py` have a large uncommitted WIP refactor (adds `bind_append_console_line()` wrapper) that partially fixes the run path but not the Stop path — the tree is mid-edit, so run-path smoke results are not against a clean committed state.

@@ -20,6 +20,7 @@ from app.shell.style_sheet_sections_workspace import (
     shell_section_welcome,
     shell_section_find_bar,
     shell_section_quick_open,
+    shell_section_quick_symbol_dialog,
     shell_section_search_sidebar,
 )
 
@@ -75,6 +76,7 @@ __all__ = [
     "shell_section_package_wizard",
     "shell_section_problems_panel",
     "shell_section_quick_open",
+    "shell_section_quick_symbol_dialog",
     "shell_section_run_log_panel",
     "shell_section_run_dialog",
     "shell_section_runtime_center_dialog",

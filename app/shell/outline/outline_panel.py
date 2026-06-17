@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from PySide2.QtCore import QEvent, QSize, Qt, Signal
-from PySide2.QtGui import QKeyEvent, QPalette
+from PySide2.QtGui import QKeyEvent
 from PySide2.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -21,7 +21,8 @@ from PySide2.QtWidgets import (
 from app.intelligence.outline_service import OutlineSymbol, find_innermost_symbol
 from app.shell.outline.outline_filter import _OutlineFilterRow
 from app.shell.outline.outline_header import _OutlineHeaderBar
-from app.shell.outline.outline_icons import kind_color_for, kind_icon
+from app.shell.outline.outline_icons import clear_icon_caches, kind_color_for, kind_icon
+from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.shell.outline.outline_tree import (
     ROLE_END_LINE_NUMBER,
     ROLE_KIND,
@@ -125,6 +126,7 @@ class OutlinePanel(QWidget):
         self._filter_visible = False
         self._pre_filter_expansion: Optional[set[str]] = None
         self._max_height_expanded = self.maximumHeight()
+        self._theme_tokens: ShellThemeTokens | None = None
 
     def tree_widget(self) -> QTreeWidget:
         return self._tree
@@ -305,24 +307,33 @@ class OutlinePanel(QWidget):
         self._tree.scrollToItem(item)
         self._highlighted_qualified_name = match.qualified_name
 
-    def apply_theme_tokens(self, tokens) -> None:  # type: ignore[no-untyped-def]
-        try:
-            icon_color = tokens.icon_primary or tokens.text_primary
-            accent_color = tokens.accent or tokens.text_primary
-            self._is_dark = bool(getattr(tokens, "is_dark", False))
-        except AttributeError:
-            return
+    def apply_theme_tokens(self, tokens: ShellThemeTokens) -> None:
+        icon_color = tokens.icon_primary or tokens.text_primary
+        accent_color = tokens.accent or tokens.text_primary
+        self._theme_tokens = tokens
         self._header.apply_theme_colors(icon_color=icon_color, accent_color=accent_color)
         self._tree.set_chevron_color(icon_color)
         if self._symbols:
-            self._render_tree(preserve_expansion=True)
-            if self._filter_text:
-                self._apply_filter()
+            self._refresh_symbol_icons()
 
-    def _is_dark_theme(self) -> bool:
-        if hasattr(self, "_is_dark"):
-            return bool(self._is_dark)
-        return self.palette().color(QPalette.Window).lightness() < 128
+    def _refresh_symbol_icons(self) -> None:
+        """Repaint kind icons in place without rebuilding the symbol tree."""
+        clear_icon_caches()
+        tokens = self._resolve_theme_tokens()
+        for item in self._iter_items(self._tree.invisibleRootItem()):
+            kind = item.data(0, ROLE_KIND)
+            if not isinstance(kind, str):
+                continue
+            color = kind_color_for(kind, tokens)
+            item.setIcon(0, kind_icon(kind, color))
+        viewport = self._tree.viewport()
+        if viewport is not None:
+            viewport.update()
+
+    def _resolve_theme_tokens(self) -> ShellThemeTokens:
+        if self._theme_tokens is not None:
+            return self._theme_tokens
+        return tokens_from_palette(self.palette())
 
     def _sort_symbols(
         self, symbols: tuple[OutlineSymbol, ...]
@@ -390,7 +401,7 @@ class OutlinePanel(QWidget):
         if symbol.detail:
             text = f"{symbol.name}  {symbol.detail}"
         item.setText(0, text)
-        color = kind_color_for(symbol.kind, is_dark=self._is_dark_theme())
+        color = kind_color_for(symbol.kind, self._resolve_theme_tokens())
         item.setIcon(0, kind_icon(symbol.kind, color))
         item.setData(0, ROLE_LINE_NUMBER, symbol.line_number)
         item.setData(0, ROLE_END_LINE_NUMBER, symbol.end_line_number)
