@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.intelligence.latency_tracker import RollingLatencyTracker
+from app.core.metrics import RollingLatencyTracker
 
 pytestmark = pytest.mark.unit
 

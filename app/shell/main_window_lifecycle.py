@@ -72,6 +72,8 @@ class MainWindowLifecycle:
             window._intelligence_controller.shutdown()
         if hasattr(window, "_intelligence_cache_workflow"):
             window._intelligence_cache_workflow.cancel_symbol_indexing()
+        if window._search_sidebar is not None:
+            window._search_sidebar.cancel_active_search()
         window._debug_inspector_workflow.clear_debug_execution_indicator()
         if window._debug_panel is not None:
             window._debug_panel.set_command_input_enabled(False)

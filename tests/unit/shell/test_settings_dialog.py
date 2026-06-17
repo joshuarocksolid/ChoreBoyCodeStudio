@@ -8,7 +8,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QFont, QKeySequence
-from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView
+from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QPushButton
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -32,14 +32,16 @@ def test_settings_dialog_snapshot_includes_shortcut_overrides() -> None:
 
 def test_settings_dialog_detects_conflicting_shortcuts_and_disables_ok() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
-    run_editor = dialog._shortcut_editors["shell.action.run.run"]
     save_editor = dialog._shortcut_editors["shell.action.file.save"]
-    run_editor.setKeySequence(QKeySequence("Ctrl+R"))
+    open_editor = dialog._shortcut_editors["shell.action.file.openProject"]
     save_editor.setKeySequence(QKeySequence("Ctrl+R"))
+    open_editor.setKeySequence(QKeySequence("Ctrl+R"))
     dialog._refresh_shortcut_conflicts()
 
     assert dialog._ok_button is not None
     assert dialog._ok_button.isEnabled() is False
+    assert dialog._validation_banner_label is not None
+    assert "Keybindings tab" in dialog._validation_banner_label.text()
 
 
 def test_settings_dialog_snapshot_includes_syntax_color_overrides() -> None:
@@ -60,6 +62,17 @@ def test_settings_dialog_invalid_syntax_color_disables_ok() -> None:
 
     assert dialog._ok_button is not None
     assert dialog._ok_button.isEnabled() is False
+    assert dialog._validation_banner_label is not None
+    assert "Syntax Colors tab" in dialog._validation_banner_label.text()
+
+
+def test_settings_dialog_save_enabled_on_fresh_open() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    assert dialog._ok_button is not None
+    assert dialog._ok_button.text() == "Save"
+    assert dialog._ok_button.isEnabled() is True
+    assert dialog._validation_banner_label is not None
+    assert dialog._validation_banner_label.isVisible() is False
 
 
 def test_settings_dialog_snapshot_includes_lint_rule_overrides() -> None:
@@ -262,9 +275,27 @@ def test_settings_dialog_linter_severity_combo_has_minimum_width_for_longest_lab
     assert dialog._linter_table.columnWidth(3) >= combo.sizeHint().width()
 
 
+def test_settings_dialog_linter_table_row_height_accommodates_controls() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    table = dialog._linter_table
+    assert table.verticalHeader().minimumSectionSize() >= 28
+
+    combo = dialog._lint_severity_inputs[next(iter(dialog._lint_severity_inputs))]
+    reset_cell = table.cellWidget(0, 4)
+    assert reset_cell is not None
+    reset_btn = reset_cell.findChild(QPushButton)
+    assert reset_btn is not None
+    tallest = max(combo.sizeHint().height(), reset_btn.sizeHint().height())
+
+    for row in range(table.rowCount()):
+        assert table.rowHeight(row) >= tallest
+
+
 def test_settings_dialog_linter_reset_button_respects_size_hint_width() -> None:
     dialog = SettingsDialog(EditorSettingsSnapshot())
-    reset_btn = dialog._linter_table.cellWidget(0, 4)
+    reset_cell = dialog._linter_table.cellWidget(0, 4)
+    assert reset_cell is not None
+    reset_btn = reset_cell.findChild(QPushButton)
     assert reset_btn is not None
     assert reset_btn.minimumWidth() >= reset_btn.sizeHint().width()
 

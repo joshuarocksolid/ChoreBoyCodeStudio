@@ -7,6 +7,9 @@ from PySide2.QtGui import QColor, QTextCursor
 from PySide2.QtWidgets import QTextEdit
 
 
+from app.shell.theme_tokens import ShellThemeTokens
+
+
 BRACKET_MATCH_SCAN_LIMIT_CHARS = 2_000
 
 
@@ -25,10 +28,13 @@ class CodeEditorBracketOverlayMixin(_CodeEditorBracketOverlayBase):
     """Bracket-match overlay behavior split from the main editor widget."""
 
     def _init_bracket_overlay_state(self) -> None:
-        self._bracket_match_color = QColor("#FFD8A8")
+        self._bracket_match_color = QColor()
 
-    def _apply_bracket_overlay_theme(self, *, is_dark: bool) -> None:
-        self._bracket_match_color = QColor("#5C3D1A") if is_dark else QColor("#FFD8A8")
+    def _apply_bracket_overlay_theme(self, tokens: ShellThemeTokens) -> None:
+        color_hex = tokens.bracket_match_bg or tokens.search_match_bg
+        if not color_hex:
+            return
+        self._bracket_match_color = QColor(color_hex)
 
     def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]:
         cursor = self.textCursor()

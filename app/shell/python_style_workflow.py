@@ -65,6 +65,9 @@ class PythonStyleWorkflowHost(Protocol):
     def local_history_workflow(self) -> Any:
         ...
 
+    def apply_text_to_open_tab(self, file_path: str, replacement_text: str) -> None:
+        ...
+
     def refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
         ...
 
@@ -81,12 +84,11 @@ class PythonStyleWorkflow:
     def handle_format_current_file_action(self) -> None:
         parent = self._host.dialog_parent()
         active_tab = self._host.editor_manager().active_tab()
-        editor_widget = self._host.editor_tab_workflow().active_editor_widget()
-        if active_tab is None or editor_widget is None:
+        if active_tab is None:
             QMessageBox.warning(parent, "Format Current File", "Open a file tab first.")
             return
 
-        source_text = editor_widget.toPlainText()
+        source_text = active_tab.current_content
         if active_tab.file_path.lower().endswith(".py"):
             try:
                 provider, result = format_python_with_workflow(
@@ -112,7 +114,7 @@ class PythonStyleWorkflow:
                     self._host.save_workflow().python_tooling_failure_message("Formatting", result),
                 )
                 return
-            editor_widget.replace_document_text(result.formatted_text)
+            self._host.apply_text_to_open_tab(active_tab.file_path, result.formatted_text)
             QMessageBox.information(
                 parent,
                 "Format Current File",
@@ -125,14 +127,13 @@ class PythonStyleWorkflow:
             QMessageBox.information(parent, "Format Current File", "File is already formatted.")
             return
 
-        editor_widget.replace_document_text(result.formatted_text)
+        self._host.apply_text_to_open_tab(active_tab.file_path, result.formatted_text)
         QMessageBox.information(parent, "Format Current File", "Formatting applied.")
 
     def handle_organize_imports_action(self) -> None:
         parent = self._host.dialog_parent()
         active_tab = self._host.editor_manager().active_tab()
-        editor_widget = self._host.editor_tab_workflow().active_editor_widget()
-        if active_tab is None or editor_widget is None:
+        if active_tab is None:
             QMessageBox.warning(parent, "Organize Imports", "Open a file tab first.")
             return
         if not active_tab.file_path.lower().endswith(".py"):
@@ -146,7 +147,7 @@ class PythonStyleWorkflow:
         try:
             provider, result = organize_imports_with_workflow(
                 self._host.workflow_broker(),
-                source_text=editor_widget.toPlainText(),
+                source_text=active_tab.current_content,
                 file_path=active_tab.file_path,
                 project_root=self._host.resolve_python_tooling_project_root(active_tab.file_path),
             )
@@ -164,7 +165,7 @@ class PythonStyleWorkflow:
             )
             return
 
-        editor_widget.replace_document_text(result.formatted_text)
+        self._host.apply_text_to_open_tab(active_tab.file_path, result.formatted_text)
         QMessageBox.information(parent, "Organize Imports", f"Imports organized via {provider.title}.")
 
     def handle_lint_current_file_action(self) -> None:
@@ -234,10 +235,15 @@ class PythonStyleWorkflow:
                 return
 
         try:
-            source_root_fixes = [fix for fix in fixes if fix.action_kind == "add_source_root"]
-            other_fixes = [fix for fix in fixes if fix.action_kind != "add_source_root"]
-            changed_lines = apply_quick_fixes(other_fixes)
-            changed_lines += self._apply_source_root_fixes(source_root_fixes, project_metadata=project_metadata)
+            apply_result = apply_quick_fixes(fixes, project_metadata=project_metadata)
+            changed_lines = apply_result.changed_lines
+            if apply_result.updated_metadata is not None and loaded_project is not None:
+                loaded_project = replace(
+                    loaded_project,
+                    metadata=apply_result.updated_metadata,
+                    manifest_materialized=True,
+                )
+                self._host.set_loaded_project(loaded_project)
         except OSError as exc:
             QMessageBox.warning(parent, "Apply Safe Fixes", f"Failed to apply fixes: {exc}")
             return
@@ -258,35 +264,6 @@ class PythonStyleWorkflow:
             self._host.project_tree_ui_workflow().reload_current_project()
         self._host.lint_workflow().render_diagnostics_for_file(file_path, trigger="manual")
         QMessageBox.information(parent, "Apply Safe Fixes", f"Applied {changed_lines} safe fix(es).")
-
-    def _apply_source_root_fixes(self, fixes, *, project_metadata) -> int:  # type: ignore[no-untyped-def]
-        from app.bootstrap.paths import project_manifest_path
-        from app.project.project_manifest import append_project_source_root
-
-        loaded_project = self._host.loaded_project()
-        if loaded_project is None:
-            return 0
-        manifest_path = project_manifest_path(loaded_project.project_root)
-        applied = 0
-        seen_roots: set[str] = set()
-        for fix in fixes:
-            source_root = str(fix.replacement_text or "").strip()
-            if not source_root or source_root in seen_roots:
-                continue
-            seen_roots.add(source_root)
-            updated_metadata = append_project_source_root(
-                manifest_path,
-                source_root,
-                metadata_if_absent=loaded_project.metadata,
-            )
-            loaded_project = replace(
-                loaded_project,
-                metadata=updated_metadata,
-                manifest_materialized=True,
-            )
-            self._host.set_loaded_project(loaded_project)
-            applied += 1
-        return applied
 
 
 class MainWindowPythonStyleHost:
@@ -339,6 +316,9 @@ class MainWindowPythonStyleHost:
 
     def local_history_workflow(self) -> Any:
         return self._window._local_history_workflow
+
+    def apply_text_to_open_tab(self, file_path: str, replacement_text: str) -> None:
+        self._window._apply_text_to_open_tab(file_path, replacement_text)
 
     def refresh_open_tabs_from_disk(self, file_paths: list[str]) -> None:
         self._window._refresh_open_tabs_from_disk(file_paths)

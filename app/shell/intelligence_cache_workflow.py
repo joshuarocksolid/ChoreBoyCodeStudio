@@ -9,7 +9,8 @@ from PySide2.QtWidgets import QMessageBox
 
 from app.intelligence.cache_controls import rebuild_symbol_cache
 from app.intelligence.symbol_index import update_symbol_index_cache
-from app.project.file_excludes import compute_effective_excludes
+from app.project.file_excludes import EffectiveExcludes
+from app.project.file_inventory import ProjectInventorySnapshot
 
 SYMBOL_INDEX_TASK_PREFIX = "symbol_index:"
 
@@ -36,6 +37,9 @@ class IntelligenceCacheHost(Protocol):
     def load_effective_exclude_patterns(self, project_root: str | None) -> list[str]:
         ...
 
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
+        ...
+
     def background_tasks(self) -> Any:
         ...
 
@@ -55,7 +59,13 @@ class IntelligenceCacheWorkflow:
     def __init__(self, host: IntelligenceCacheHost) -> None:
         self._host = host
 
-    def start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str] | None = None) -> None:
+    def start_symbol_indexing(
+        self,
+        project_root: str,
+        *,
+        exclude_patterns: list[str] | None = None,
+        inventory_snapshot: ProjectInventorySnapshot | None = None,
+    ) -> None:
         if not self._host.intelligence_cache_enabled():
             return
         generation = self._host.bump_symbol_index_generation()
@@ -63,10 +73,13 @@ class IntelligenceCacheWorkflow:
         effective_excludes = exclude_patterns
         loaded_project = self._host.loaded_project()
         if effective_excludes is None and loaded_project is not None:
-            effective_excludes = compute_effective_excludes(
+            effective_excludes = EffectiveExcludes.merge(
                 self._host.load_effective_exclude_patterns(loaded_project.project_root),
                 loaded_project.metadata.exclude_patterns,
-            )
+            ).as_list()
+        resolved_snapshot = inventory_snapshot
+        if resolved_snapshot is None:
+            resolved_snapshot = self._host.project_inventory_snapshot()
         task_key = f"{SYMBOL_INDEX_TASK_PREFIX}{project_root}"
 
         def task(cancel_event) -> int | None:  # type: ignore[no-untyped-def]
@@ -74,6 +87,7 @@ class IntelligenceCacheWorkflow:
                 project_root=project_root,
                 cache_db_path=self._host.symbol_cache_db_path(),
                 exclude_patterns=effective_excludes or (),
+                inventory_snapshot=resolved_snapshot,
                 cancel_event=cancel_event,
                 should_commit=lambda: generation == self._host.symbol_index_generation(),
             )
@@ -137,7 +151,10 @@ class IntelligenceCacheWorkflow:
             return
         loaded_project = self._host.loaded_project()
         if loaded_project is not None and self._host.intelligence_cache_enabled():
-            self.start_symbol_indexing(loaded_project.project_root)
+            self.start_symbol_indexing(
+                loaded_project.project_root,
+                inventory_snapshot=self._host.project_inventory_snapshot(),
+            )
         if deleted:
             QMessageBox.information(
                 self._host.dialog_parent(),
@@ -178,6 +195,9 @@ class MainWindowIntelligenceCacheHost:
 
     def load_effective_exclude_patterns(self, project_root: str | None) -> list[str]:
         return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
+
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
+        return self._window._project_inventory_orchestrator.snapshot
 
     def background_tasks(self) -> Any:
         return self._window._background_tasks

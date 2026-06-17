@@ -115,6 +115,7 @@ def main() -> int:
     env = sanitize_apprun_child_env()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env.setdefault("CBCS_SYNC_PROJECT_OPEN", "1")
+    env.setdefault("CBCS_DISABLE_BACKGROUND_RUNTIME", "1")
 
     result = subprocess.run([str(app_run_path), "-c", payload], cwd=str(repo_root), env=env)
     return result.returncode

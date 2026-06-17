@@ -94,6 +94,12 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
 )
 
 _KNOWN_SHORTCUT_IDS: frozenset[str] = frozenset(command.action_id for command in SHORTCUT_COMMANDS)
+_CATEGORY_BY_ACTION_ID: dict[str, str] = {
+    command.action_id: command.category for command in SHORTCUT_COMMANDS
+}
+_SHORTCUT_KEY_ALIASES = {
+    "Del": "Delete",
+}
 
 
 def close_tab_shortcut_id() -> str:
@@ -153,7 +159,12 @@ def parse_shortcut_overrides(settings_payload: Mapping[str, Any]) -> dict[str, s
 
 def normalize_shortcut(shortcut: str) -> str:
     """Normalize shortcut text for deterministic persistence."""
-    return " ".join(shortcut.strip().split())
+    normalized = " ".join(shortcut.strip().split())
+    chords: list[str] = []
+    for chord in normalized.split(", "):
+        keys = [_SHORTCUT_KEY_ALIASES.get(key, key) for key in chord.split("+")]
+        chords.append("+".join(keys))
+    return ", ".join(chords)
 
 
 def build_effective_shortcut_map(overrides: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -173,15 +184,16 @@ def build_effective_shortcut_map(overrides: Mapping[str, str] | None = None) -> 
 
 
 def find_shortcut_conflicts(shortcuts_by_action: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Return shortcut -> action-id conflicts for duplicate assignments."""
-    grouped: dict[str, list[str]] = {}
+    """Return shortcut -> action-id conflicts for duplicate assignments within one category."""
+    grouped: dict[tuple[str, str], list[str]] = {}
     for action_id, shortcut in shortcuts_by_action.items():
         normalized = normalize_shortcut(shortcut)
         if not normalized:
             continue
-        grouped.setdefault(normalized, []).append(action_id)
+        category = _CATEGORY_BY_ACTION_ID.get(action_id, "")
+        grouped.setdefault((normalized, category), []).append(action_id)
     conflicts: dict[str, tuple[str, ...]] = {}
-    for shortcut, action_ids in grouped.items():
+    for (shortcut, _category), action_ids in grouped.items():
         if len(action_ids) > 1:
             conflicts[shortcut] = tuple(sorted(action_ids))
     return conflicts

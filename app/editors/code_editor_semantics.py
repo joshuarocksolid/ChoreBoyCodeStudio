@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QKeyEvent, QTextCursor
 from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
-from app.intelligence.completion_context import build_completion_context
-from app.intelligence.completion_merge_policy import is_tier_header_item
+from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
+from app.shell.editor_completion_contracts import CompletionRequester
 
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from PySide2.QtWidgets import QPlainTextEdit
 
     class _CodeEditorSemanticsBase(QPlainTextEdit):
-        _completion_requester: Callable[[str, str, int, bool, int, str, str], None] | None
+        _completion_requester: CompletionRequester | None
         _completion_resolve_requester: Callable[[CompletionItem, str, int, int], None] | None
         _completion_accepted_callback: Callable[[CompletionItem], None] | None
         _hover_provider: Callable[[str, int], str | None] | None
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         _completion_min_chars: int
         _completion_request_generation: int
         _pending_completion_trigger_character: str
+        _active_completion_prefix: str
         _hover_request_generation: int
         _hover_request_global_pos: QPoint | None
         _hover_tooltip_enabled: bool
@@ -61,7 +62,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
 
     def set_completion_requester(
         self,
-        requester: Callable[[str, str, int, bool, int, str, str], None] | None,
+        requester: CompletionRequester | None,
     ) -> None:
         """Attach asynchronous completion requester callback."""
         self._completion_requester = requester
@@ -123,48 +124,21 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         cursor_position = self.textCursor().position()
         effective_trigger_character = trigger_character or self._pending_completion_trigger_character
         trigger_kind = "trigger_character" if effective_trigger_character else ("manual" if manual else "typing")
-        completion_context = build_completion_context(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            current_file_path=self._active_file_path or "",
-            project_root=None,
-            trigger_is_manual=manual or force_empty_prefix,
-            min_prefix_chars=self._completion_min_chars,
-            max_results=100,
-            trigger_kind=trigger_kind,
-            trigger_character=effective_trigger_character,
-        )
-        prefix = completion_context.prefix
-        if not force_empty_prefix and not completion_context.should_offer_automatic_results:
-            self._completion_popup.hide()
-            return
 
         if self._completion_requester is not None:
             self._completion_request_generation += 1
             request_generation = self._completion_request_generation
-            if self._completion_popup.is_visible():
-                self._completion_popup.reuse_items_for_prefix(prefix)
-            requester = cast(Any, self._completion_requester)
-            try:
-                requester(
-                    prefix,
-                    source_text,
-                    cursor_position,
-                    manual or force_empty_prefix,
-                    request_generation,
-                    trigger_kind,
-                    effective_trigger_character,
-                )
-            except TypeError:
-                requester(
-                    prefix,
-                    source_text,
-                    cursor_position,
-                    manual or force_empty_prefix,
-                    request_generation,
-                )
-            finally:
-                self._pending_completion_trigger_character = ""
+            if self._completion_popup.is_visible() and self._active_completion_prefix:
+                self._completion_popup.reuse_items_for_prefix(self._active_completion_prefix)
+            self._completion_requester(
+                source_text,
+                cursor_position,
+                manual or force_empty_prefix,
+                request_generation,
+                trigger_kind,
+                effective_trigger_character,
+            )
+            self._pending_completion_trigger_character = ""
             return
 
         self._pending_completion_trigger_character = ""
@@ -195,36 +169,17 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
         self._completion_popup.replace_item(item)
 
-    def _request_completion_with_metadata(
-        self,
-        *,
-        prefix: str,
-        source_text: str,
-        cursor_position: int,
-        manual: bool,
-        request_generation: int,
-        trigger_kind: str,
-        trigger_character: str,
-    ) -> None:
-        if self._completion_requester is None:
-            return
-        requester = cast(Any, self._completion_requester)
-        try:
-            requester(
-                prefix,
-                source_text,
-                cursor_position,
-                manual,
-                request_generation,
-                trigger_kind,
-                trigger_character,
-            )
-        except TypeError:
-            requester(prefix, source_text, cursor_position, manual, request_generation)
-
     def completion_request_generation(self) -> int:
         """Return the current completion request generation counter."""
         return self._completion_request_generation
+
+    def hover_request_generation(self) -> int:
+        """Return the current inline hover request generation counter."""
+        return self._hover_request_generation
+
+    def signature_help_request_generation(self) -> int:
+        """Return the current inline signature-help request generation counter."""
+        return self._signature_help_request_generation
 
     def show_completion_items_for_request(
         self,
@@ -239,6 +194,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         if not items:
             self._completion_popup.hide()
             return
+        self._active_completion_prefix = prefix
         self._show_completion_items(items, prefix=prefix)
 
     def show_calltip(self, text: str | None) -> None:
@@ -356,19 +312,16 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             cursor.setPosition(item.replacement_end, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
         else:
-            completion_context = build_completion_context(
-                source_text=self.toPlainText(),
-                cursor_position=cursor.position(),
-                current_file_path=self._active_file_path or "",
-                project_root=None,
-                trigger_is_manual=True,
-                min_prefix_chars=self._completion_min_chars,
-                max_results=100,
-            )
-            replacement = completion_context.replacement_range
-            if replacement.end > replacement.start:
-                cursor.setPosition(replacement.start)
-                cursor.setPosition(replacement.end, QTextCursor.KeepAnchor)
+            source_text = self.toPlainText()
+            cursor_position = cursor.position()
+            replacement_start = cursor_position
+            while replacement_start > 0 and (
+                source_text[replacement_start - 1].isalnum() or source_text[replacement_start - 1] == "_"
+            ):
+                replacement_start -= 1
+            if replacement_start < cursor_position:
+                cursor.setPosition(replacement_start)
+                cursor.setPosition(cursor_position, QTextCursor.KeepAnchor)
                 cursor.removeSelectedText()
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)

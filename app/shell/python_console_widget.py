@@ -130,6 +130,7 @@ class PythonConsoleWidget(QTextEdit):
         self,
         *,
         request_generation: int,
+        prefix: str,
         items: list[CompletionItem],
     ) -> None:
         """Apply live-completion results if the prompt request is still current."""
@@ -139,7 +140,7 @@ class PythonConsoleWidget(QTextEdit):
         if not items:
             self._completion_popup.hide()
             return
-        self._show_completion_items(items)
+        self._show_completion_items(items, prefix=prefix)
 
     # ------------------------------------------------------------------
     # Session lifecycle
@@ -355,12 +356,10 @@ class PythonConsoleWidget(QTextEdit):
     def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
         return self._completion_popup.handle_navigation_event(event)
 
-    def _show_completion_items(self, items: list[CompletionItem]) -> None:
+    def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
         if not items:
             self._completion_popup.hide()
             return
-        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
-        prefix = _completion_prefix(line_buffer, cursor_offset)
         self._completion_popup.set_items(items, prefix)
         rect = self.cursorRect()
         rect.setWidth(max(260, rect.width()))
@@ -374,9 +373,12 @@ class PythonConsoleWidget(QTextEdit):
         replacement_start = item.replacement_start
         replacement_end = item.replacement_end
         if replacement_start is None or replacement_end is None:
-            prefix_len = len(_completion_prefix(line_buffer, cursor_offset))
-            replacement_start = max(0, cursor_offset - prefix_len)
             replacement_end = cursor_offset
+            replacement_start = cursor_offset
+            while replacement_start > 0 and (
+                line_buffer[replacement_start - 1].isalnum() or line_buffer[replacement_start - 1] == "_"
+            ):
+                replacement_start -= 1
         start = self._prompt_anchor + max(0, min(replacement_start, len(line_buffer)))
         end = self._prompt_anchor + max(0, min(replacement_end, len(line_buffer)))
         cursor.setPosition(start)
@@ -764,14 +766,6 @@ def _is_traceback_context(text: str) -> bool:
         or stripped.startswith("During handling of the above exception")
         or (text.startswith(" ") and not stripped.startswith("^"))
     )
-
-
-def _completion_prefix(text: str, cursor_offset: int) -> str:
-    safe_offset = max(0, min(cursor_offset, len(text)))
-    index = safe_offset
-    while index > 0 and (text[index - 1].isalnum() or text[index - 1] == "_"):
-        index -= 1
-    return text[index:safe_offset]
 
 
 def _enum_int(value: object) -> int:

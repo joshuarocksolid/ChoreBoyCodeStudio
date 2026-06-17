@@ -5,18 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_EXCLUDED_RELATIVE_PREFIXES = (
-    "cbcs/runs",
-    "cbcs/logs",
-    "cbcs/cache",
-)
-_EXCLUDED_DIR_NAMES = {
-    "__pycache__",
-}
-_EXCLUDED_SUFFIXES = {
-    ".pyc",
-    ".pyo",
-}
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
+
 _UNSAFE_ENTRY_CHARS = {'"', "'", "\n", "\r", "\t", "\x00"}
 
 
@@ -122,22 +112,12 @@ def validate_packaged_entry_relative_path(entry_relative_path: str) -> str:
 def is_packaging_excluded_path(rel_path: Path) -> bool:
     """Return True if *rel_path* should be excluded from a package export.
 
-    This is the packaging-specific exclusion policy (hidden directories,
-    ``__pycache__``, ``cbcs/``, build artefacts, ``*.pyc`` etc.). Distinct from
-    :func:`app.project.file_excludes.should_exclude_relative_path`, which is
-    the user-pattern based exclusion used by editor search and project
-    enumeration. The two used to share the same name and were a real
-    name-collision footgun until Phase 2 of the maintainability audit.
+    Delegates to :data:`DEFAULT_PACKAGING_PAYLOAD_POLICY`. See
+    :class:`app.packaging.payload_policy.PackagingPayloadPolicy` for the
+    canonical copy/audit rules.
+
+    Distinct from :func:`app.project.file_excludes.should_exclude_relative_path`,
+    which is the user-pattern based exclusion used by editor search and project
+    enumeration.
     """
-    parts = rel_path.parts
-    if any(part in _EXCLUDED_DIR_NAMES for part in parts):
-        return True
-    if any(part.startswith(".") for part in parts if part not in {".", ".."}):
-        return True
-    posix_path = rel_path.as_posix()
-    for excluded in _EXCLUDED_RELATIVE_PREFIXES:
-        if posix_path == excluded or posix_path.startswith(excluded + "/"):
-            return True
-    if rel_path.suffix in _EXCLUDED_SUFFIXES:
-        return True
-    return False
+    return DEFAULT_PACKAGING_PAYLOAD_POLICY.is_payload_excluded(rel_path)

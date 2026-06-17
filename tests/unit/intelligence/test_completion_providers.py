@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.project.file_inventory import build_project_inventory_snapshot
 from app.intelligence.completion_providers import provide_project_symbol_items
 
 pytestmark = pytest.mark.unit
@@ -29,6 +30,7 @@ def test_provide_project_symbol_items_returns_approximate_when_sqlite_cache_empt
         cache_db_path=str(cache_path),
         prefix="alp",
         limit=10,
+        inventory_snapshot=build_project_inventory_snapshot(str(project_root.resolve())),
     )
 
     assert items

@@ -152,6 +152,16 @@ class EditorManager:
 
     def update_tab_content(self, file_path: str, content: str) -> EditorTabState:
         """Update tab content and return resulting state."""
+        return self.replace_tab_content(file_path, content, mark_dirty=True)
+
+    def replace_tab_content(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        mark_dirty: bool = True,
+    ) -> EditorTabState:
+        """Replace tab buffer content authoritatively."""
         normalized_path = str(Path(file_path).expanduser().resolve())
         tab = self._require_tab(normalized_path)
         tab.update_content(content)
@@ -159,6 +169,8 @@ class EditorManager:
             tab.promote()
             if self._preview_file_path == normalized_path:
                 self._preview_file_path = None
+        if not mark_dirty:
+            tab.mark_saved(last_known_mtime=tab.last_known_mtime)
         return tab
 
     def save_tab(self, file_path: str) -> EditorTabState:

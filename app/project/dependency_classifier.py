@@ -1,44 +1,32 @@
 """Single source of truth for Python module classification.
 
-This module unifies the two slightly different classifier implementations that
-used to live side by side in :mod:`app.intelligence.diagnostics_service` and
-:mod:`app.packaging.dependency_audit`:
-
-- The diagnostics linter only needs a yes/no answer for "is this import
-  resolvable" (used to flag unresolved imports in the editor).
-- The packaging audit needs a labeled classification (``stdlib``,
-  ``first_party``, ``vendored``, ``vendored_native``, ``runtime``,
-  ``missing``) so it can produce per-import audit records and runtime issues.
-
-Both flavors share the same primitives:
-
-- :data:`STDLIB_TOP_LEVELS` — defensive fallback list of Python 3.9 stdlib
-  top-level module names. Used when no runtime probe inventory is available.
-- :data:`COMPILED_EXTENSION_SUFFIXES` — file extensions that imply a compiled
-  Python extension module (``.so``, ``.pyd``, ``.dll``, ``.dylib``).
-- :func:`has_compiled_extension_candidate` — looks for an extension file
-  matching ``top_level`` directly under ``base`` or inside a ``base/top_level``
-  package directory.
-- :func:`resolve_project_import` — low-level filesystem probe used for the
-  ``project`` / ``vendor`` file lookup (re-exported from
-  :mod:`app.intelligence.import_resolver`).
+This module unifies classification for packaging audit, editor diagnostics,
+and dependency ingestion. Both :func:`classify_module` and
+:func:`is_module_resolvable` delegate to the same :func:`_classify_import`
+pipeline; diagnostics uses inventory-authoritative stdlib policy when a loaded
+runtime inventory is supplied.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from app.core.models import ProjectMetadata
-from app.intelligence.import_resolver import resolve_project_import
-from app.intelligence.runtime_import_probe import is_runtime_module_importable
-from app.project.import_layout import ProjectImportLayout
+from app.project.import_layout import (
+    ProjectImportLayout,
+    resolve_import_from_module,
+    resolve_project_import_layout,
+)
+from app.project.import_resolution import resolve_project_import
+from app.project.native_extension_scan import (
+    COMPILED_EXTENSION_SUFFIXES,
+    import_resolves_to_native,
+)
+from app.project.runtime_import_probe import is_runtime_module_importable
 
 # Defensive fallback: well-known Python 3.9 stdlib top-level module names.
-# Used when the runtime probe has not yet completed or failed, so common
-# imports like ``os``, ``sys``, ``json`` are never flagged as unresolved.
-# This is intentionally a broad but not exhaustive set; the runtime probe
-# provides the authoritative list once available.
 STDLIB_TOP_LEVELS: frozenset[str] = frozenset({
     "abc", "argparse", "array", "ast", "asyncio", "atexit",
     "base64", "binascii", "bisect", "builtins", "bz2",
@@ -82,15 +70,37 @@ STDLIB_TOP_LEVELS: frozenset[str] = frozenset({
     "zipfile", "zipimport", "zlib", "zoneinfo",
 })
 
-COMPILED_EXTENSION_SUFFIXES: tuple[str, ...] = (".so", ".pyd", ".dll", ".dylib")
-
 # Module categories produced by :func:`classify_module`.
 CATEGORY_STDLIB = "stdlib"
 CATEGORY_FIRST_PARTY = "first_party"
+CATEGORY_FIRST_PARTY_RELATIVE = "first_party_relative"
 CATEGORY_VENDORED = "vendored"
 CATEGORY_VENDORED_NATIVE = "vendored_native"
 CATEGORY_RUNTIME = "runtime"
 CATEGORY_MISSING = "missing"
+CATEGORY_MISSING_RELATIVE = "missing_relative"
+
+RuntimeInventoryState = Literal["unknown", "empty", "loaded"]
+
+
+@dataclass(frozen=True)
+class RuntimeModuleInventory:
+    """Tri-state runtime module inventory for classification policy."""
+
+    state: RuntimeInventoryState
+    modules: frozenset[str]
+
+    @classmethod
+    def unknown(cls) -> RuntimeModuleInventory:
+        return cls(state="unknown", modules=frozenset())
+
+    @classmethod
+    def from_optional_frozenset(cls, modules: frozenset[str] | None) -> RuntimeModuleInventory:
+        if modules is None:
+            return cls.unknown()
+        if len(modules) == 0:
+            return cls(state="empty", modules=frozenset())
+        return cls(state="loaded", modules=modules)
 
 
 @dataclass(frozen=True)
@@ -104,52 +114,22 @@ class ClassifiedModule:
 
 
 def has_compiled_extension_candidate(base: Path, top_level: str) -> bool:
-    """Return True if *base* looks like it ships a compiled extension for *top_level*.
-
-    Checks for ``top_level*.{so,pyd,dll,dylib}`` directly under ``base`` and
-    for ``*.{so,pyd,dll,dylib}`` inside a ``base/top_level`` package directory.
-    """
-    if not top_level or not base.exists():
-        return False
-    for suffix in COMPILED_EXTENSION_SUFFIXES:
-        if any(base.glob(f"{top_level}*{suffix}")):
-            return True
-        package_dir = base / top_level
-        if package_dir.exists() and any(package_dir.glob(f"*{suffix}")):
-            return True
-    return False
+    """Return True if *base* ships a compiled extension for *top_level*."""
+    return import_resolves_to_native(base, top_level)
 
 
-def classify_module(
+def _classify_import(
     *,
-    project_root: Path | str,
+    project_root: Path,
     module_name: str,
-    known_runtime_modules: frozenset[str] | None = None,
-    allow_runtime_import_probe: bool = False,
-    metadata: ProjectMetadata | None = None,
-    layout: ProjectImportLayout | None = None,
+    inventory: RuntimeModuleInventory,
+    allow_runtime_import_probe: bool,
+    metadata: ProjectMetadata | None,
+    layout: ProjectImportLayout,
 ) -> ClassifiedModule:
-    """Classify an absolute Python import name against project + runtime layers.
-
-    Resolution order:
-
-    1. ``STDLIB_TOP_LEVELS`` -> ``stdlib``.
-    2. Filesystem probe under ``project_root`` and ``project_root/vendor``
-       via :func:`resolve_project_import`. ``vendor/`` hits with compiled
-       extension artifacts upgrade to ``vendored_native``.
-    3. ``known_runtime_modules`` membership -> ``runtime``.
-    4. Optional :func:`is_runtime_module_importable` probe -> ``runtime``.
-    5. ``vendor/`` compiled extension artifacts even when no Python file
-       resolves -> ``vendored_native``.
-    6. Otherwise ``missing``.
-
-    Mirrors the existing packaging audit semantics so the audit adapter is a
-    direct one-to-one mapping onto :class:`DependencyAuditRecord` strings.
-    """
-    root = Path(project_root).expanduser().resolve()
     top_level = module_name.split(".")[0].strip()
 
-    if top_level in STDLIB_TOP_LEVELS:
+    if inventory.state != "loaded" and top_level in STDLIB_TOP_LEVELS:
         return ClassifiedModule(
             module_name=module_name,
             top_level=top_level,
@@ -157,9 +137,9 @@ def classify_module(
         )
 
     resolution = resolve_project_import(
-        str(root),
+        str(project_root),
         module_name,
-        known_runtime_modules=frozenset(),
+        known_runtime_modules=inventory.modules if inventory.state == "loaded" else frozenset(),
         allow_runtime_import_probe=False,
         metadata=metadata,
         layout=layout,
@@ -167,7 +147,7 @@ def classify_module(
     if resolution.is_resolved and resolution.resolved_path:
         resolved_path = Path(resolution.resolved_path).resolve()
         is_vendored = "vendor" in resolved_path.parts
-        if is_vendored and has_compiled_extension_candidate(root / "vendor", top_level):
+        if is_vendored and has_compiled_extension_candidate(project_root / "vendor", top_level):
             return ClassifiedModule(
                 module_name=module_name,
                 top_level=top_level,
@@ -181,11 +161,18 @@ def classify_module(
             resolved_path=str(resolved_path),
         )
 
-    if known_runtime_modules and top_level in known_runtime_modules:
+    if inventory.state == "loaded" and top_level in inventory.modules:
         return ClassifiedModule(
             module_name=module_name,
             top_level=top_level,
             category=CATEGORY_RUNTIME,
+        )
+
+    if inventory.state != "loaded" and top_level in STDLIB_TOP_LEVELS:
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_STDLIB,
         )
 
     if allow_runtime_import_probe and top_level and is_runtime_module_importable(top_level):
@@ -195,7 +182,7 @@ def classify_module(
             category=CATEGORY_RUNTIME,
         )
 
-    if has_compiled_extension_candidate(root / "vendor", top_level):
+    if has_compiled_extension_candidate(project_root / "vendor", top_level):
         return ClassifiedModule(
             module_name=module_name,
             top_level=top_level,
@@ -209,38 +196,98 @@ def classify_module(
     )
 
 
+def classify_module(
+    *,
+    project_root: Path | str,
+    module_name: str,
+    known_runtime_modules: frozenset[str] | None = None,
+    runtime_inventory: RuntimeModuleInventory | None = None,
+    allow_runtime_import_probe: bool = False,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
+) -> ClassifiedModule:
+    """Classify an absolute Python import name against project + runtime layers."""
+    root = Path(project_root).expanduser().resolve()
+    inventory = runtime_inventory or RuntimeModuleInventory.from_optional_frozenset(
+        known_runtime_modules
+    )
+    resolved_layout = layout or resolve_project_import_layout(root, metadata)
+    return _classify_import(
+        project_root=root,
+        module_name=module_name,
+        inventory=inventory,
+        allow_runtime_import_probe=allow_runtime_import_probe,
+        metadata=metadata,
+        layout=resolved_layout,
+    )
+
+
+def classify_relative_import(
+    *,
+    project_root: Path | str,
+    file_path: Path,
+    module_name: str,
+    level: int,
+    metadata: ProjectMetadata | None = None,
+    layout: ProjectImportLayout | None = None,
+) -> ClassifiedModule:
+    """Classify a relative import from *file_path* using canonical layout resolution."""
+    root = Path(project_root).expanduser().resolve()
+    resolved_layout = layout or resolve_project_import_layout(root, metadata)
+    display_name = f".{module_name}" if module_name else "." * level
+    top_level = module_name.split(".")[0].strip() if module_name else ""
+
+    resolved_module = resolve_import_from_module(
+        file_path,
+        module_name or None,
+        level,
+        layout=resolved_layout,
+    )
+    if resolved_module is None:
+        return ClassifiedModule(
+            module_name=display_name,
+            top_level=top_level,
+            category=CATEGORY_MISSING_RELATIVE,
+        )
+
+    absolute = classify_module(
+        project_root=root,
+        module_name=resolved_module,
+        metadata=metadata,
+        layout=resolved_layout,
+    )
+    if absolute.category == CATEGORY_MISSING:
+        return ClassifiedModule(
+            module_name=display_name,
+            top_level=top_level,
+            category=CATEGORY_MISSING_RELATIVE,
+        )
+    return ClassifiedModule(
+        module_name=display_name,
+        top_level=top_level,
+        category=CATEGORY_FIRST_PARTY_RELATIVE,
+        resolved_path=absolute.resolved_path,
+    )
+
+
 def is_module_resolvable(
     project_root: Path | str,
     module_name: str,
     *,
     known_runtime_modules: frozenset[str] | None = None,
+    runtime_inventory: RuntimeModuleInventory | None = None,
     allow_runtime_import_probe: bool = False,
     metadata: ProjectMetadata | None = None,
     layout: ProjectImportLayout | None = None,
 ) -> bool:
-    """Return True if the import looks resolvable for the editor diagnostics linter.
-
-    Diagnostics has a deliberately stricter semantic than the packaging audit:
-    when ``known_runtime_modules`` is provided, it is treated as the
-    authoritative runtime inventory and ``STDLIB_TOP_LEVELS`` is bypassed.
-    This avoids masking runtime-specific stdlib reductions (e.g. when AppRun
-    advertises a slimmer subset than CPython 3.9).
-    """
-    top_level = module_name.split(".")[0]
-    effective_modules = known_runtime_modules if known_runtime_modules else STDLIB_TOP_LEVELS
-    if top_level in effective_modules:
-        return True
-    root = Path(project_root).expanduser().resolve()
-    resolution = resolve_project_import(
-        str(root),
-        module_name,
-        known_runtime_modules=frozenset(),
-        allow_runtime_import_probe=False,
+    """Return True if the import looks resolvable for editor diagnostics."""
+    classification = classify_module(
+        project_root=project_root,
+        module_name=module_name,
+        known_runtime_modules=known_runtime_modules,
+        runtime_inventory=runtime_inventory,
+        allow_runtime_import_probe=allow_runtime_import_probe,
         metadata=metadata,
         layout=layout,
     )
-    if resolution.is_resolved:
-        return True
-    if allow_runtime_import_probe and is_runtime_module_importable(top_level):
-        return True
-    return False
+    return classification.category not in {CATEGORY_MISSING, CATEGORY_MISSING_RELATIVE}

@@ -15,6 +15,7 @@ from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.markdown_rendering import is_markdown_path
 from app.project.file_operation_models import ImportUpdatePolicy
+from app.shell.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.project.project_manifest import set_project_default_entry
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
 
@@ -360,15 +361,13 @@ class ProjectTreeUiWorkflow:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        if self._host.debug_execution_editor() is widget:
-            self._host.clear_debug_execution_indicator()
-        markdown_panes = self._host.markdown_panes_by_path()
-        for file_path, markdown_pane in list(markdown_panes.items()):
-            if markdown_pane.source_editor() is widget:
-                markdown_panes.pop(file_path, None)
-                markdown_pane.deleteLater()
-                return
-        widget.deleteLater()
+        registry = MarkdownTabRegistry(self._host.markdown_panes_by_path())
+        release_editor_widget(
+            widget,
+            registry=registry,
+            is_debug_execution_editor=lambda candidate: self._host.debug_execution_editor() is candidate,
+            clear_debug_execution_indicator=self._host.clear_debug_execution_indicator,
+        )
 
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._host.project_tree_action_coordinator().close_deleted_editor_paths(deleted_path)
@@ -378,14 +377,11 @@ class ProjectTreeUiWorkflow:
 
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
-        markdown_panes = self._host.markdown_panes_by_path()
-        for old_path, markdown_pane in list(markdown_panes.items()):
-            if markdown_pane.source_editor() is widget:
-                markdown_panes.pop(old_path, None)
-                if is_markdown_path(new_path):
-                    markdown_pane.set_file_path(new_path)
-                    markdown_panes[new_path] = markdown_pane
-                break
+        MarkdownTabRegistry(self._host.markdown_panes_by_path()).rekey_for_widget(
+            widget,
+            new_path,
+            is_markdown_path=is_markdown_path,
+        )
 
     def update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()

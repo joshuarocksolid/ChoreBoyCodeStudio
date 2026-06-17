@@ -25,9 +25,9 @@ from app.packaging.installer_manifest import (
 from app.packaging.layout import (
     build_artifact_root_name,
     build_installer_launcher_filename,
-    is_packaging_excluded_path,
     paths_overlap,
 )
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 from app.packaging.models import (
     DistributionManifest,
     LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
@@ -331,10 +331,8 @@ def _write_project_artifact(
 
 
 def _copy_project_tree(source_root: Path, destination_root: Path) -> None:
-    for path in sorted(source_root.rglob("*")):
+    for path in DEFAULT_PACKAGING_PAYLOAD_POLICY.iter_payload_entries(source_root):
         rel_path = path.relative_to(source_root)
-        if is_packaging_excluded_path(rel_path):
-            continue
         target_path = destination_root / rel_path
         if path.is_dir():
             target_path.mkdir(parents=True, exist_ok=True)

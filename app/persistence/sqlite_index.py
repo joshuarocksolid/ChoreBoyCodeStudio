@@ -297,6 +297,80 @@ class SQLiteSymbolIndex:
                 )
             connection.commit()
 
+    def apply_index_delta(
+        self,
+        project_root: str,
+        *,
+        deleted_files: list[str],
+        symbols_by_file: dict[str, list[IndexedSymbol]],
+        fingerprints: dict[str, tuple[int, int]],
+    ) -> None:
+        """Apply delete/upsert index changes in one SQLite transaction."""
+        project = str(Path(project_root).expanduser().resolve())
+        with sqlite3.connect(self._db_path) as connection:
+            if deleted_files:
+                placeholders = ",".join(["?"] * len(deleted_files))
+                connection.execute(
+                    f"DELETE FROM symbols WHERE project_root = ? AND file_path IN ({placeholders})",
+                    [project, *deleted_files],
+                )
+                connection.execute(
+                    f"DELETE FROM indexed_files WHERE project_root = ? AND file_path IN ({placeholders})",
+                    [project, *deleted_files],
+                )
+            for file_path, file_symbols in symbols_by_file.items():
+                connection.execute(
+                    "DELETE FROM symbols WHERE project_root = ? AND file_path = ?",
+                    (project, file_path),
+                )
+                if not file_symbols:
+                    continue
+                connection.executemany(
+                    """
+                    INSERT INTO symbols(
+                        project_root,
+                        name,
+                        file_path,
+                        line_number,
+                        symbol_kind,
+                        container_name,
+                        signature_text,
+                        doc_excerpt,
+                        column_number,
+                        fingerprint_version
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            project,
+                            symbol.name,
+                            symbol.file_path,
+                            symbol.line_number,
+                            symbol.symbol_kind,
+                            symbol.container_name,
+                            symbol.signature_text,
+                            symbol.doc_excerpt,
+                            symbol.column_number,
+                            symbol.fingerprint_version,
+                        )
+                        for symbol in file_symbols
+                    ],
+                )
+            if fingerprints:
+                connection.executemany(
+                    """
+                    INSERT INTO indexed_files(project_root, file_path, mtime_ns, size_bytes)
+                    VALUES(?, ?, ?, ?)
+                    ON CONFLICT(project_root, file_path)
+                    DO UPDATE SET mtime_ns=excluded.mtime_ns, size_bytes=excluded.size_bytes
+                    """,
+                    [
+                        (project, file_path, int(values[0]), int(values[1]))
+                        for file_path, values in fingerprints.items()
+                    ],
+                )
+            connection.commit()
+
     def _initialize_schema(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self._db_path) as connection:

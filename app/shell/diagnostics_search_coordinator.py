@@ -1,4 +1,4 @@
-"""Diagnostics and search-result orchestration helpers for MainWindow."""
+"""Diagnostics orchestration helpers for MainWindow."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Callable
 
 from app.bootstrap.paths import PathInput
 from app.bootstrap.runtime_module_probe import probe_and_cache_runtime_modules
-from app.editors.search_panel import SearchMatch
 
 
 class DiagnosticsOrchestrator:
@@ -112,19 +111,3 @@ class DiagnosticsOrchestrator:
             on_success=on_success,
             on_error=on_error,
         )
-
-
-class SearchResultsCoordinator:
-    """Coordinates async dispatch of search panel result updates."""
-
-    def __init__(
-        self,
-        *,
-        set_search_results: Callable[[list[SearchMatch], str], None],
-        dispatch_to_main_thread: Callable[[Callable[[], None]], None],
-    ) -> None:
-        self._set_search_results = set_search_results
-        self._dispatch_to_main_thread = dispatch_to_main_thread
-
-    def schedule_results_update(self, matches: list[SearchMatch], query: str) -> None:
-        self._dispatch_to_main_thread(lambda: self._set_search_results(matches, query))

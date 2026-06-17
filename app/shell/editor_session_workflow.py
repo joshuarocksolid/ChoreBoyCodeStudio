@@ -33,6 +33,7 @@ class EditorSessionWorkflow:
         editor_manager: EditorManager,
         editor_widget_for_path: Callable[[str], CodeEditorWidget | None],
         open_file_in_editor: Callable[[str], bool],
+        open_file_for_session_restore: Callable[[str], bool] | None = None,
         tab_index_for_path: Callable[[str], int],
         set_current_tab_index: Callable[[int], None],
         logger: logging.Logger,
@@ -47,6 +48,11 @@ class EditorSessionWorkflow:
         self._editor_manager = editor_manager
         self._editor_widget_for_path = editor_widget_for_path
         self._open_file_in_editor = open_file_in_editor
+        self._open_file_for_session_restore = (
+            open_file_for_session_restore
+            if open_file_for_session_restore is not None
+            else open_file_in_editor
+        )
         self._tab_index_for_path = tab_index_for_path
         self._set_current_tab_index = set_current_tab_index
         self._logger = logger
@@ -181,7 +187,7 @@ class EditorSessionWorkflow:
             raise
 
     def _restore_file_state(self, file_state: SessionFileState) -> None:
-        if not self._open_file_in_editor(file_state.file_path):
+        if not self._open_file_for_session_restore(file_state.file_path):
             if self._breakpoint_store is not None:
                 self._breakpoint_store.clear_file(file_state.file_path)
             return

@@ -11,6 +11,7 @@ from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
+from app.bootstrap.test_runtime_flags import background_runtime_disabled
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.bootstrap.startup_facade import StartupCapabilityFacade
@@ -63,6 +64,7 @@ from app.shell.project_controller import ProjectController
 from app.shell.project_load_host import MainWindowProjectLoadHost
 from app.shell.project_load_workflow import ProjectLoadWorkflow
 from app.shell.project_rescan_workflow import MainWindowProjectRescanHost, ProjectRescanWorkflow
+from app.shell.project_inventory_orchestrator import ProjectInventoryOrchestrator
 from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 from app.shell.project_tree_controller import ProjectTreeController
 from app.shell.python_style_workflow import build_python_style_workflow
@@ -361,6 +363,11 @@ def install_main_window_composition(
         editor_manager=window._editor_manager,
         editor_widget_for_path=window._workspace_controller.widget_for_path,
         open_file_in_editor=lambda file_path: window._editor_tab_factory.open_file_in_editor(file_path, preview=False),
+        open_file_for_session_restore=lambda file_path: window._editor_tab_factory.open_file_in_editor(
+            file_path,
+            preview=False,
+            restore_draft=False,
+        ),
         open_restored_history_buffer=window._editor_tab_factory.open_restored_history_buffer,
         apply_text_to_open_tab=window._apply_text_to_open_tab,
         tab_index_for_path=lambda file_path: window._editor_tab_workflow.tab_index_for_path(file_path),
@@ -396,6 +403,10 @@ def install_main_window_composition(
     window._editor_tab_workflow = build_editor_tab_workflow(window)
     window._outline_refresh_timer.timeout.connect(window._editor_tab_workflow.refresh_outline_for_active_tab)
     window._intelligence_cache_workflow = build_intelligence_cache_workflow(window)
+    window._project_inventory_orchestrator = ProjectInventoryOrchestrator()
+    window._semantic_session.set_inventory_snapshot_provider(
+        lambda: window._project_inventory_orchestrator.snapshot
+    )
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_preview_click_timer.timeout.connect(
         window._project_tree_ui_workflow.open_pending_project_tree_preview
@@ -558,7 +569,8 @@ def install_main_window_composition(
     window._auto_start_repl_timer = QTimer(window)
     window._auto_start_repl_timer.setSingleShot(True)
     window._auto_start_repl_timer.timeout.connect(window._repl_manager.start)
-    window._auto_start_repl_timer.start(100)
+    if not background_runtime_disabled():
+        window._auto_start_repl_timer.start(100)
     window._runtime_probe_timer = QTimer(window)
     window._runtime_probe_timer.setSingleShot(True)
     window._runtime_probe_timer.timeout.connect(

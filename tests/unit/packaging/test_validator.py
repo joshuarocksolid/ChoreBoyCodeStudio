@@ -137,3 +137,45 @@ def test_build_package_validation_report_short_circuits_dependency_audit_for_blo
     assert report.dependency_audit.records == []
     assert report.dependency_audit.summary.startswith("Dependency audit skipped")
     assert report.issue_report.issues == report.preflight.issues
+
+
+def test_validate_package_config_flags_orphan_vendor_native(tmp_path: Path) -> None:
+    from app.packaging.validator import validate_package_config
+
+    project_root = tmp_path / "project"
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    (vendor_dir / "orphan.so").write_bytes(b"\x7fELF")
+
+    issues = validate_package_config(
+        project_root=str(project_root),
+        package_config=_valid_package_config(),
+        project_default_entry="main.py",
+        profile="installable",
+    )
+
+    assert any(issue.issue_id == "package.dependency.orphan_native.orphan" for issue in issues)
+
+
+def test_validate_package_config_discovers_hidden_paths_via_inventory_walk(tmp_path: Path) -> None:
+    from app.packaging.validator import validate_package_config
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    (project_root / ".secret").mkdir()
+    (project_root / ".secret" / "data.txt").write_text("hidden\n", encoding="utf-8")
+
+    issues = validate_package_config(
+        project_root=str(project_root),
+        package_config=_valid_package_config(),
+        project_default_entry="main.py",
+        profile="installable",
+    )
+
+    hidden_issue = next(
+        issue for issue in issues if issue.issue_id == "package.project.hidden_paths_present"
+    )
+    assert ".secret" in hidden_issue.evidence["hidden_paths"]
+    assert ".secret/data.txt" in hidden_issue.evidence["hidden_paths"]

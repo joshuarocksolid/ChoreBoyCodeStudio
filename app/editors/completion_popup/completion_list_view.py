@@ -19,7 +19,7 @@ from app.editors.completion_popup.completion_item_model import (
     CompletionItemModel,
     ItemRole,
 )
-from app.intelligence.completion_merge_policy import is_tier_header_item
+from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 

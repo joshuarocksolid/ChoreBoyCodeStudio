@@ -106,7 +106,7 @@ def test_resolve_project_import_runtime_probe_fallback(
     project_root.mkdir()
 
     monkeypatch.setattr(
-        "app.intelligence.import_resolver.is_runtime_module_importable",
+        "app.project.import_resolution.is_runtime_module_importable",
         lambda module_name: module_name == "FreeCAD",
     )
     resolved = resolve_project_import(

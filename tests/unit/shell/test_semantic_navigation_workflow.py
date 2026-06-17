@@ -55,6 +55,8 @@ class _FakeHost:
             show_calltip=lambda _text: None,
             allocate_signature_help_request_generation=lambda: 1,
             allocate_hover_request_generation=lambda: 1,
+            signature_help_request_generation=lambda: 1,
+            hover_request_generation=lambda: 1,
         )
         self._intelligence_controller = _FakeIntelligenceController()
         self.opened_at_line: list[tuple[str, int]] = []

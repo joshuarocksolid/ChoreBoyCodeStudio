@@ -49,10 +49,10 @@ class SearchResultDelegate(QStyledItemDelegate):
         self,
         parent: QWidget | None = None,
         *,
-        match_bg: str = "#FFE066",
-        text_primary: str = "#212529",
-        text_muted: str = "#6C757D",
-        badge_bg: str = "#E9ECEF",
+        match_bg: str = "",
+        text_primary: str = "",
+        text_muted: str = "",
+        badge_bg: str = "",
     ) -> None:
         super().__init__(parent)
         self._match_bg = match_bg
@@ -267,6 +267,7 @@ class SearchSidebarWidget(QWidget):
         self._project_root: str | None = None
         self._exclude_patterns: list[str] = []
         self._active_worker: SearchWorker | None = None
+        self._search_generation = 0
         self._last_matches: list[SearchMatch] = []
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
@@ -472,6 +473,13 @@ class SearchSidebarWidget(QWidget):
     def set_exclude_patterns(self, patterns: list[str]) -> None:
         self._exclude_patterns = list(patterns)
 
+    def cancel_active_search(self) -> None:
+        """Cancel any in-flight search worker (e.g. during shutdown)."""
+        self._debounce_timer.stop()
+        if self._active_worker is not None and self._active_worker.is_running():
+            self._active_worker.cancel()
+        self._searching = False
+
     def set_project_root(self, project_root: str | None) -> None:
         self._project_root = project_root
         if project_root is None:
@@ -547,27 +555,37 @@ class SearchSidebarWidget(QWidget):
         self._summary_label.setText("Searching\u2026")
         self._no_results_label.setVisible(False)
         options = self._search_options()
+        self._search_generation += 1
+        generation = self._search_generation
 
         self._active_worker = SearchWorker(
             project_root=self._project_root,
             query=query,
             max_results=500,
             options=options,
+            search_generation=generation,
             on_results=self._on_search_results,
             on_done=self._on_search_done,
             exclude_patterns=self._exclude_patterns or None,
         )
         self._active_worker.start()
 
-    def _on_search_results(self, matches: list[SearchMatch], query: str) -> None:
+    def _on_search_results(self, matches: list[SearchMatch], query: str, generation: int) -> None:
         self._pending_results = matches
         self._pending_query = query
+        self._pending_generation = generation
         self._apply_results_requested.emit()
 
     def _on_search_done(self) -> None:
         self._searching = False
 
     def _apply_search_results(self) -> None:
+        pending_generation = getattr(self, "_pending_generation", None)
+        if pending_generation is not None and pending_generation != self._search_generation:
+            return
+        pending_query = getattr(self, "_pending_query", None)
+        if pending_query is not None and pending_query != self._search_input.text().strip():
+            return
         matches = getattr(self, "_pending_results", [])
         self._last_matches = matches
         self._results_tree.clear()

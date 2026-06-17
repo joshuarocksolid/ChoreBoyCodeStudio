@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from typing import Any
+
+from app.editors.search_service import FindOptions
 
 from PySide2.QtCore import Qt, Signal, QTimer
 from PySide2.QtGui import QKeyEvent
@@ -17,15 +17,6 @@ from PySide2.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-
-@dataclass(frozen=True)
-class FindOptions:
-    """Encapsulates the current find option toggles."""
-
-    case_sensitive: bool = False
-    whole_word: bool = False
-    regex: bool = False
 
 
 class FindReplaceBar(QWidget):

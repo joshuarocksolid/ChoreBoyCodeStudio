@@ -13,7 +13,8 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
-from app.shell.editor_tab_workflow import EditorTabWorkflow, MainWindowEditorTabHost
+from app.shell.editor_tab_workflow import EditorTabWorkflow
+from app.shell.main_window_editor_tab_host import MainWindowEditorTabHost
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.project_tree_utils import filter_tree_signature_entries  # noqa: E402
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY, TREE_ROLE_RELATIVE_PATH  # noqa: E402
@@ -103,46 +104,90 @@ def _attach_poll_editor_tab_workflow(window_any: Any) -> EditorTabWorkflow:
     workflow = EditorTabWorkflow(
         host=MainWindowEditorTabHost(window_any),
         editor_manager=window_any._editor_manager,
-        editor_tabs_coordinator=cast(Any, SimpleNamespace()),
+        editor_tabs_coordinator=cast(
+            Any,
+            SimpleNamespace(
+                buffer_revision=lambda _path: None,
+                advance_buffer_revision=lambda _path: 0,
+                tab_index_for_path=lambda _path: -1,
+                refresh_tab_presentation=lambda _path: None,
+            ),
+        ),
         save_workflow=SimpleNamespace(),
-        local_history_workflow=SimpleNamespace(),
         debug_control_workflow=SimpleNamespace(breakpoint_store=SimpleNamespace()),
         external_file_change_workflow=SimpleNamespace(check_and_handle=lambda *_args, **_kwargs: None),
+        editor_sync_workflow=SimpleNamespace(apply_disk_content=lambda *_args, **_kwargs: None),
     )
     window_any._editor_tab_workflow = workflow
     return workflow
 
 
-def test_poll_external_file_changes_reloads_project_tree_on_structure_change() -> None:
+def test_poll_external_file_changes_reloads_project_tree_on_structure_change(tmp_path: Path) -> None:
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     window_any._editor_manager = SimpleNamespace(
         stale_open_paths=lambda: [],
         active_tab=lambda: None,
     )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
     loaded_project = LoadedProject(
-        project_root="/tmp/project",
-        manifest_path="/tmp/project/cbcs/project.json",
+        project_root=str(project_root),
+        manifest_path=str(project_root / "cbcs" / "project.json"),
         metadata=ProjectMetadata(schema_version=1, name="Tree"),
         entries=[],
     )
     window_any._loaded_project = loaded_project
     window_any._project_tree_structure_signature = ("src", "src/main.py")
-    reload_calls: list[bool] = []
-    window_any._project_tree_ui_workflow = SimpleNamespace(
-        reload_current_project=lambda: reload_calls.append(True)
+    rescan_calls: list[tuple[bool, bool]] = []
+    reindex_calls: list[bool] = []
+    window_any._project_inventory_orchestrator = SimpleNamespace(
+        python_paths_fingerprint=lambda: ("src/main.py",),
+        generation=1,
+        tree_structure_signature=lambda: ("src", "src/main.py", "docs"),
+        set_tree_structure_signature=lambda _sig: None,
     )
-    workflow = _attach_poll_editor_tab_workflow(window_any)
-    workflow.scan_project_tree_signature = (  # type: ignore[method-assign]
-        lambda _project: ("src", "src/main.py", "docs")
+    window_any._markdown_panes_by_path = {}
+    window_any._editor_tab_factory = SimpleNamespace()
+    window_any._file_project_commands_workflow = SimpleNamespace(
+        load_effective_exclude_patterns=lambda _root: [],
     )
+    window_any._intelligence_cache_workflow = SimpleNamespace(
+        start_symbol_indexing=lambda *_args, **_kwargs: reindex_calls.append(True),
+    )
+    host = MainWindowEditorTabHost(window_any)
+    host.rescan_project_from_disk = (  # type: ignore[method-assign]
+        lambda *, reload_plugins, reindex: rescan_calls.append((reload_plugins, reindex))
+    )
+    host.start_symbol_indexing_for_loaded_project = (  # type: ignore[method-assign]
+        lambda: reindex_calls.append(True)
+    )
+    workflow = EditorTabWorkflow(
+        host=host,
+        editor_manager=window_any._editor_manager,
+        editor_tabs_coordinator=cast(
+            Any,
+            SimpleNamespace(
+                buffer_revision=lambda _path: None,
+                advance_buffer_revision=lambda _path: 0,
+                tab_index_for_path=lambda _path: -1,
+                refresh_tab_presentation=lambda _path: None,
+            ),
+        ),
+        save_workflow=SimpleNamespace(),
+        debug_control_workflow=SimpleNamespace(breakpoint_store=SimpleNamespace()),
+        external_file_change_workflow=SimpleNamespace(check_and_handle=lambda *_args, **_kwargs: None),
+        editor_sync_workflow=SimpleNamespace(apply_disk_content=lambda *_args, **_kwargs: None),
+    )
+    window_any._editor_tab_workflow = workflow
 
     workflow.poll_external_file_changes()
 
-    assert reload_calls == [True]
+    assert rescan_calls == [(False, False)]
+    assert reindex_calls == []
 
 
-def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
+def test_poll_external_file_changes_ignores_run_artifact_writes(tmp_path: Path) -> None:
     """Run/debug sessions write under cbcs/runs/ and cbcs/logs/ on every start.
     Those writes must not trigger the project reload cascade (which clears the
     file tree, restarts the symbol indexer, etc.) — otherwise the file
@@ -154,31 +199,33 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
         stale_open_paths=lambda: [],
         active_tab=lambda: None,
     )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
     loaded_project = LoadedProject(
-        project_root="/tmp/project",
-        manifest_path="/tmp/project/cbcs/project.json",
+        project_root=str(project_root),
+        manifest_path=str(project_root / "cbcs" / "project.json"),
         metadata=ProjectMetadata(schema_version=1, name="Tree"),
         entries=[],
     )
     window_any._loaded_project = loaded_project
+    window_any._markdown_panes_by_path = {}
+    window_any._editor_tab_factory = SimpleNamespace()
+    window_any._file_project_commands_workflow = SimpleNamespace(
+        load_effective_exclude_patterns=lambda _root: [],
+    )
     baseline = ("cbcs/project.json", "src", "src/main.py")
     window_any._project_tree_structure_signature = baseline
+    window_any._project_inventory_orchestrator = SimpleNamespace(
+        generation=1,
+        tree_structure_signature=lambda: baseline,
+        set_tree_structure_signature=lambda _sig: None,
+    )
     reload_calls: list[bool] = []
     window_any._project_tree_ui_workflow = SimpleNamespace(
         reload_current_project=lambda: reload_calls.append(True)
     )
 
-    raw_entries = (
-        "cbcs/project.json",
-        "cbcs/logs/run_abc123.log",
-        "cbcs/runs/run_abc123.json",
-        "src",
-        "src/main.py",
-    )
     workflow = _attach_poll_editor_tab_workflow(window_any)
-    workflow.scan_project_tree_signature = (  # type: ignore[method-assign]
-        lambda _project: filter_tree_signature_entries(raw_entries)
-    )
 
     workflow.poll_external_file_changes()
 
@@ -186,7 +233,7 @@ def test_poll_external_file_changes_ignores_run_artifact_writes() -> None:
     assert window_any._project_tree_structure_signature == baseline
 
 
-def testfilter_tree_signature_entries_strips_run_artifacts_only() -> None:
+def testfilter_tree_signature_entries_strips_run_and_cache_artifacts() -> None:
     raw = (
         "cbcs/project.json",
         "cbcs/runs/run_1.json",
@@ -201,7 +248,6 @@ def testfilter_tree_signature_entries_strips_run_artifacts_only() -> None:
 
     assert filtered == (
         "cbcs/project.json",
-        "cbcs/cache/index.bin",
         "src/main.py",
         "logs/keepme.txt",
     )

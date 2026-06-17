@@ -113,4 +113,4 @@ class ProjectLoadWorkflow:
         return effective_excludes_for(
             loaded_project,
             load_effective_exclude_patterns=self._host.load_effective_exclude_patterns,
-        )
+        ).as_list()

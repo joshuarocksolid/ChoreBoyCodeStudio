@@ -11,6 +11,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 from app.editors.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -65,4 +66,4 @@ def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
     assert window._save_workflow.save_tab(readme_path, apply_transforms=False)
     assert readme.read_text(encoding="utf-8") == "# Changed\n"
     assert not window._editor_manager.get_tab(readme_path).is_dirty  # type: ignore[union-attr]
-    window.close()
+    shutdown_main_window_for_test(window, app)

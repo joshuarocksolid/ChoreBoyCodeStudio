@@ -55,7 +55,7 @@ def _build_window_stub() -> MainWindow:
     return window
 
 
-def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_lint_manual_trigger_uses_static_import_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     window = _build_window_stub()
     window_any = cast(Any, window)
     captured: list[bool] = []
@@ -70,7 +70,7 @@ def test_render_lint_manual_trigger_allows_runtime_probe(monkeypatch: pytest.Mon
     background_call = window_any._background_tasks.calls[0]
     background_call["task"](threading.Event())
 
-    assert captured == [True]
+    assert captured == [False]
 
 
 def test_render_lint_save_trigger_disables_runtime_probe(monkeypatch: pytest.MonkeyPatch) -> None:

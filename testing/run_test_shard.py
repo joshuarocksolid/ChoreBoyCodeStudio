@@ -12,7 +12,9 @@ import sys
 PYTEST_WORKERS_ENV_VAR = "CBCS_PYTEST_WORKERS"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_TESTS_PATH = REPO_ROOT / "run_tests.py"
+PREFLIGHT_PATH = REPO_ROOT / "testing" / "preflight_test_env.py"
 DEFAULT_PYTEST_ARGS = ["-q", "--import-mode=importlib"]
+FAST_SHARD_TIMEOUT_SECONDS = 180
 TEST_SHARDS = {
     "fast": [
         "tests/unit",
@@ -62,12 +64,33 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     if parsed.workers:
         env[PYTEST_WORKERS_ENV_VAR] = parsed.workers
-    completed = subprocess.run(
-        command,
+
+    preflight = subprocess.run(
+        [sys.executable, str(PREFLIGHT_PATH)],
         cwd=str(REPO_ROOT),
         env=env,
         check=False,
     )
+    if preflight.returncode != 0:
+        return preflight.returncode
+
+    shard_timeout = FAST_SHARD_TIMEOUT_SECONDS if parsed.shard == "fast" else None
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(REPO_ROOT),
+            env=env,
+            check=False,
+            timeout=shard_timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"ERROR: {parsed.shard} shard exceeded the {FAST_SHARD_TIMEOUT_SECONDS}s watchdog. "
+            "Check for hung tests or orphaned AppRun children with "
+            "`python3 testing/preflight_test_env.py`.",
+            file=sys.stderr,
+        )
+        return 1
     return completed.returncode
 
 

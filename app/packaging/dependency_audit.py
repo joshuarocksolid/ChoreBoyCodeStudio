@@ -11,14 +11,19 @@ from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import DependencyAuditRecord, DependencyAuditReport
 from app.project.dependency_classifier import (
     CATEGORY_FIRST_PARTY,
+    CATEGORY_FIRST_PARTY_RELATIVE,
     CATEGORY_MISSING,
+    CATEGORY_MISSING_RELATIVE,
     CATEGORY_RUNTIME,
     CATEGORY_STDLIB,
     CATEGORY_VENDORED,
     CATEGORY_VENDORED_NATIVE,
     classify_module,
+    classify_relative_import,
 )
 from app.project.file_inventory import iter_python_files
+from app.project.import_layout import ProjectImportLayout, resolve_project_import_layout
+from app.project.native_extension_scan import iter_native_artifacts_in_tree
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
 
 _SUBPROCESS_CALL_NAMES = {"Popen", "call", "check_call", "check_output", "run"}
@@ -26,19 +31,23 @@ _SUBPROCESS_CALL_NAMES = {"Popen", "call", "check_call", "check_output", "run"}
 _CATEGORY_DETAILS: dict[str, str] = {
     CATEGORY_STDLIB: "Python standard library import.",
     CATEGORY_FIRST_PARTY: "Project-local module resolved from source tree.",
+    CATEGORY_FIRST_PARTY_RELATIVE: "Relative import resolved inside the project source tree.",
     CATEGORY_VENDORED: "Vendored dependency included under project vendor/.",
     CATEGORY_VENDORED_NATIVE: "Vendored dependency appears to ship a compiled extension.",
     CATEGORY_RUNTIME: "Resolved from AppRun runtime module inventory.",
     CATEGORY_MISSING: "Import is not resolved from project files, vendor/, or the AppRun runtime.",
+    CATEGORY_MISSING_RELATIVE: "Relative import target could not be resolved from the current package path.",
 }
 
 _CATEGORY_TO_CLASSIFICATION: dict[str, str] = {
     CATEGORY_STDLIB: "stdlib",
     CATEGORY_FIRST_PARTY: "first_party",
+    CATEGORY_FIRST_PARTY_RELATIVE: "first_party_relative",
     CATEGORY_VENDORED: "vendored",
     CATEGORY_VENDORED_NATIVE: "vendored_native",
     CATEGORY_RUNTIME: "runtime",
     CATEGORY_MISSING: "missing",
+    CATEGORY_MISSING_RELATIVE: "missing_relative",
 }
 
 
@@ -47,9 +56,11 @@ def run_dependency_audit(
     project_root: str,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
+    layout: ProjectImportLayout | None = None,
 ) -> DependencyAuditReport:
     """Audit first-party project imports against project, vendor, and runtime availability."""
     root = Path(project_root).expanduser().resolve()
+    resolved_layout = layout or resolve_project_import_layout(root)
     records: list[DependencyAuditRecord] = []
     issues: list[RuntimeIssue] = []
     issue_keys: set[tuple[str, str, str]] = set()
@@ -91,6 +102,7 @@ def run_dependency_audit(
             tree=tree,
             file_path=file_path,
             project_root=root,
+            layout=resolved_layout,
             known_runtime_modules=known_runtime_modules,
             allow_runtime_import_probe=allow_runtime_import_probe,
         ):
@@ -102,6 +114,13 @@ def run_dependency_audit(
 
         for issue in _subprocess_issues(tree=tree, file_path=file_path, project_root=root):
             _append_issue(issues, issue_keys, issue)
+
+    imported_top_levels = _collect_imported_top_levels(root)
+    for orphan_issue in _orphan_vendor_native_issues(
+        project_root=root,
+        imported_top_levels=imported_top_levels,
+    ):
+        _append_issue(issues, issue_keys, orphan_issue)
 
     summary = _build_summary(classification_counts, issues)
     records.sort(key=lambda item: (item.source_file, item.line_number, item.module_name))
@@ -118,6 +137,7 @@ def _collect_import_records(
     tree: ast.AST,
     file_path: Path,
     project_root: Path,
+    layout: ProjectImportLayout,
     known_runtime_modules: frozenset[str] | None,
     allow_runtime_import_probe: bool,
 ) -> list[DependencyAuditRecord]:
@@ -131,6 +151,7 @@ def _collect_import_records(
                         file_path=file_path,
                         line_number=int(getattr(node, "lineno", 1) or 1),
                         project_root=project_root,
+                        layout=layout,
                         known_runtime_modules=known_runtime_modules,
                         allow_runtime_import_probe=allow_runtime_import_probe,
                     )
@@ -141,23 +162,25 @@ def _collect_import_records(
                 relative_module = node.module or ""
                 if relative_module:
                     records.append(
-                        _classify_relative_import(
+                        _classify_relative_import_record(
                             module_name=relative_module,
                             level=node.level,
                             file_path=file_path,
                             line_number=line_number,
                             project_root=project_root,
+                            layout=layout,
                         )
                     )
                 else:
                     for alias in node.names:
                         records.append(
-                            _classify_relative_import(
+                            _classify_relative_import_record(
                                 module_name=alias.name,
                                 level=node.level,
                                 file_path=file_path,
                                 line_number=line_number,
                                 project_root=project_root,
+                                layout=layout,
                             )
                         )
             elif node.module:
@@ -167,6 +190,7 @@ def _collect_import_records(
                         file_path=file_path,
                         line_number=line_number,
                         project_root=project_root,
+                        layout=layout,
                         known_runtime_modules=known_runtime_modules,
                         allow_runtime_import_probe=allow_runtime_import_probe,
                     )
@@ -180,6 +204,7 @@ def _classify_import(
     file_path: Path,
     line_number: int,
     project_root: Path,
+    layout: ProjectImportLayout,
     known_runtime_modules: frozenset[str] | None,
     allow_runtime_import_probe: bool,
 ) -> DependencyAuditRecord:
@@ -189,6 +214,7 @@ def _classify_import(
         module_name=module_name,
         known_runtime_modules=known_runtime_modules,
         allow_runtime_import_probe=allow_runtime_import_probe,
+        layout=layout,
     )
     return DependencyAuditRecord(
         source_file=rel_file,
@@ -200,57 +226,39 @@ def _classify_import(
     )
 
 
-def _audit_detail_for(category: str, resolved_path: str | None) -> str:
-    if category == CATEGORY_VENDORED_NATIVE and resolved_path is None:
-        return (
-            "Vendored native extension detected without an approved in-process loader declaration."
-        )
-    return _CATEGORY_DETAILS[category]
-
-
-def _classify_relative_import(
+def _classify_relative_import_record(
     *,
     module_name: str,
     level: int,
     file_path: Path,
     line_number: int,
     project_root: Path,
+    layout: ProjectImportLayout,
 ) -> DependencyAuditRecord:
     rel_file = file_path.relative_to(project_root).as_posix()
-    base_dir = file_path.parent
-    for _index in range(max(level - 1, 0)):
-        base_dir = base_dir.parent
-    resolved_path = _resolve_module_candidates(base_dir, module_name)
-    if resolved_path is not None:
-        return DependencyAuditRecord(
-            source_file=rel_file,
-            line_number=line_number,
-            module_name=f".{module_name}",
-            classification="first_party_relative",
-            resolved_path=str(resolved_path),
-            detail="Relative import resolved inside the project source tree.",
-        )
+    classification = classify_relative_import(
+        project_root=project_root,
+        file_path=file_path,
+        module_name=module_name,
+        level=level,
+        layout=layout,
+    )
     return DependencyAuditRecord(
         source_file=rel_file,
         line_number=line_number,
-        module_name=f".{module_name}",
-        classification="missing_relative",
-        detail="Relative import target could not be resolved from the current package path.",
+        module_name=classification.module_name,
+        classification=_CATEGORY_TO_CLASSIFICATION[classification.category],
+        resolved_path=classification.resolved_path,
+        detail=_CATEGORY_DETAILS[classification.category],
     )
 
 
-def _resolve_module_candidates(base_dir: Path, module_name: str) -> Path | None:
-    module_parts = [part for part in module_name.split(".") if part.strip()]
-    candidate = base_dir.joinpath(*module_parts) if module_parts else base_dir
-    module_file = candidate.with_suffix(".py")
-    package_init = candidate / "__init__.py"
-    if module_file.exists():
-        return module_file.resolve()
-    if package_init.exists():
-        return package_init.resolve()
-    if candidate.is_dir():
-        return candidate.resolve()
-    return None
+def _audit_detail_for(category: str, resolved_path: str | None) -> str:
+    if category == CATEGORY_VENDORED_NATIVE and resolved_path is None:
+        return (
+            "Vendored native extension detected without an approved in-process loader declaration."
+        )
+    return _CATEGORY_DETAILS[category]
 
 
 def _issue_for_record(record: DependencyAuditRecord) -> RuntimeIssue | None:
@@ -455,9 +463,91 @@ def _append_issue(
     issues.append(issue)
 
 
+def _collect_imported_top_levels(project_root: Path) -> frozenset[str]:
+    top_levels: set[str] = set()
+    for file_path in iter_python_files(project_root, extra_top_level_skips=("vendor",)):
+        rel_path = file_path.relative_to(project_root)
+        if is_packaging_excluded_path(rel_path):
+            continue
+        try:
+            source = file_path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(file_path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    top_levels.add(alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                top_levels.add(node.module.split(".")[0])
+    return frozenset(top_levels)
+
+
+def _native_artifact_top_level(vendor_root: Path, artifact: Path) -> str:
+    try:
+        relative = artifact.relative_to(vendor_root)
+    except ValueError:
+        return ""
+    if not relative.parts:
+        return ""
+    if len(relative.parts) == 1:
+        stem = artifact.stem
+        if ".cpython-" in stem:
+            stem = stem.split(".cpython-", 1)[0]
+        return stem
+    return relative.parts[0]
+
+
+def _orphan_vendor_native_issues(
+    *,
+    project_root: Path,
+    imported_top_levels: frozenset[str],
+) -> list[RuntimeIssue]:
+    vendor_root = project_root / "vendor"
+    if not vendor_root.is_dir():
+        return []
+    issues: list[RuntimeIssue] = []
+    seen_top_levels: set[str] = set()
+    for artifact in iter_native_artifacts_in_tree(vendor_root):
+        top_level = _native_artifact_top_level(vendor_root, artifact)
+        if not top_level or top_level in imported_top_levels or top_level in seen_top_levels:
+            continue
+        seen_top_levels.add(top_level)
+        issues.append(
+            RuntimeIssue(
+                issue_id=f"package.dependency.orphan_native.{top_level}",
+                workflow="package",
+                severity="blocking",
+                title="Vendored native extension is not referenced by project imports",
+                summary=(
+                    f"A compiled extension for `{top_level}` exists under `vendor/`, "
+                    "but no project import references that top-level module."
+                ),
+                why_it_happened=(
+                    "Packaging blocks orphan native payloads that are not tied to an import graph entry."
+                ),
+                next_steps=[
+                    "Remove the unused native artifact from vendor/.",
+                    "Or add an explicit import that references the vendored module before exporting.",
+                ],
+                help_topic=HELP_TOPIC_PACKAGING,
+                evidence={
+                    "top_level": top_level,
+                    "artifact_path": artifact.relative_to(project_root).as_posix(),
+                },
+            )
+        )
+    return issues
+
+
 def check_manifest_consistency(*, project_root: str) -> list[RuntimeIssue]:
     """Check that cbcs/dependencies.json entries are consistent with vendor/ state."""
-    from app.project.dependency_manifest import STATUS_ACTIVE, load_dependency_manifest
+    from app.project.dependency_manifest import (
+        CLASSIFICATION_NATIVE_EXTENSION,
+        CLASSIFICATION_PURE_PYTHON,
+        load_dependency_manifest,
+    )
+    from app.project.native_extension_scan import tree_contains_native_artifacts
 
     root = Path(project_root).expanduser().resolve()
     manifest = load_dependency_manifest(project_root)
@@ -486,6 +576,53 @@ def check_manifest_consistency(*, project_root: str) -> list[RuntimeIssue]:
                         f"Re-add '{entry.name}' through the Add Dependency wizard.",
                         "Or remove the entry from the dependency manifest.",
                     ],
+                )
+            )
+            continue
+
+        has_native = tree_contains_native_artifacts(vendor_path)
+        if entry.classification == CLASSIFICATION_PURE_PYTHON and has_native:
+            issues.append(
+                RuntimeIssue(
+                    issue_id=f"package.dependency.manifest_native_mismatch.{entry.name}",
+                    workflow="package",
+                    severity="blocking",
+                    title=f"Dependency '{entry.name}' manifest says pure Python but vendor/ has native files",
+                    summary=(
+                        f"The manifest classifies '{entry.name}' as pure Python, "
+                        f"but compiled extension files were found under '{entry.vendor_path}'."
+                    ),
+                    why_it_happened=(
+                        "The dependency manifest classification no longer matches the vendored payload."
+                    ),
+                    next_steps=[
+                        "Re-ingest the dependency so the manifest classification is updated.",
+                        "Or remove the native artifacts if they were added accidentally.",
+                    ],
+                    help_topic=HELP_TOPIC_PACKAGING,
+                    evidence={"vendor_path": entry.vendor_path},
+                )
+            )
+        elif entry.classification == CLASSIFICATION_NATIVE_EXTENSION and not has_native:
+            issues.append(
+                RuntimeIssue(
+                    issue_id=f"package.dependency.manifest_pure_mismatch.{entry.name}",
+                    workflow="package",
+                    severity="degraded",
+                    title=f"Dependency '{entry.name}' manifest says native but vendor/ is pure Python",
+                    summary=(
+                        f"The manifest classifies '{entry.name}' as a native extension, "
+                        f"but no compiled extension files were found under '{entry.vendor_path}'."
+                    ),
+                    why_it_happened=(
+                        "The dependency manifest classification may be stale relative to the vendored files."
+                    ),
+                    next_steps=[
+                        "Re-ingest the dependency to refresh manifest classification.",
+                        "Or update the manifest entry if the dependency is now pure Python.",
+                    ],
+                    help_topic=HELP_TOPIC_PACKAGING,
+                    evidence={"vendor_path": entry.vendor_path},
                 )
             )
     return issues

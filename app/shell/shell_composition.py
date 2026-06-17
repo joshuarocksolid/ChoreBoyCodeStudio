@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QMessageBox, QWidget
+from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.shell.editor_sync_workflow import EditorSyncWorkflow
@@ -25,6 +25,7 @@ from app.shell.shell_theme_workflow import (
     ShellThemeWorkflow,
 )
 from app.shell.icons import explorer_icon, search_icon, test_icon
+from app.shell.menu_icons import apply_menu_icons
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -150,7 +151,10 @@ class MainWindowSettingsApplyHost:
         self._window._intelligence_cache_workflow.cancel_symbol_indexing()
 
     def start_symbol_indexing(self, project_root: str) -> None:
-        self._window._intelligence_cache_workflow.start_symbol_indexing(project_root)
+        self._window._intelligence_cache_workflow.start_symbol_indexing(
+            project_root,
+            inventory_snapshot=self._window._project_inventory_orchestrator.snapshot,
+        )
 
     def apply_editor_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
@@ -190,15 +194,15 @@ class MainWindowSettingsApplyHost:
         loaded = self._window._loaded_project
         if sidebar is None or loaded is None:
             return
-        from app.project.file_excludes import compute_effective_excludes
+        from app.project.file_excludes import EffectiveExcludes
 
         sidebar.set_exclude_patterns(
-            compute_effective_excludes(
+            EffectiveExcludes.merge(
                 self._window._file_project_commands_workflow.load_effective_exclude_patterns(
                     loaded.project_root
                 ),
                 loaded.metadata.exclude_patterns,
-            )
+            ).as_list()
         )
 
     def set_project_placeholder(self, project_name: str) -> None:
@@ -507,6 +511,9 @@ class MainWindowShellThemeHost:
                 test_icon(color_normal=normal, color_active=active),
             )
 
+        def apply_menu_bar_icons(tokens: ShellThemeTokens) -> None:
+            apply_menu_icons(window._menu_registry, tokens)
+
         def apply_test_explorer_theme(tokens: ShellThemeTokens) -> None:
             if window._test_explorer_panel is not None:
                 window._test_explorer_panel.apply_theme(tokens)
@@ -515,14 +522,21 @@ class MainWindowShellThemeHost:
             if window._outline_panel is not None:
                 window._outline_panel.apply_theme_tokens(tokens)
 
+        def set_app_tooltip_style_sheet(style_sheet: str) -> None:
+            app = QApplication.instance()
+            if app is not None:
+                app.setStyleSheet(style_sheet)
+
         return ShellThemeChildCallbacks(
             set_shell_style_sheet=window.setStyleSheet,
+            set_app_tooltip_style_sheet=set_app_tooltip_style_sheet,
             apply_editor_themes=apply_editor_themes,
             apply_markdown_themes=apply_markdown_themes,
             apply_python_console_theme=apply_python_console_theme,
             apply_run_log_theme=apply_run_log_theme,
             apply_search_sidebar_theme=apply_search_sidebar_theme,
             apply_activity_bar_view_icons=apply_activity_bar_view_icons,
+            apply_menu_bar_icons=apply_menu_bar_icons,
             apply_test_explorer_theme=apply_test_explorer_theme,
             apply_outline_theme=apply_outline_theme,
         )

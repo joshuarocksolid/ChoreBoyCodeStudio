@@ -33,6 +33,10 @@ from app.intelligence.lint_profile import (
 )
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
 from app.shell.settings_dialog_state import GeneralTabState
+from app.shell.settings_dialog_tables import (
+    finalize_settings_table_rows,
+    settings_table_control_cell,
+)
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
     SETTINGS_SCOPE_GLOBAL,
@@ -388,8 +392,7 @@ class SettingsDialogHandlersMixin:
             )
             self._syntax_color_table.setCellWidget(row_index, 3, reset_button)
 
-        self._syntax_color_table.verticalHeader().setMinimumSectionSize(28)
-        self._syntax_color_table.resizeRowsToContents()
+        finalize_settings_table_rows(self._syntax_color_table)
         self._finalize_syntax_columns()
         self._refresh_syntax_validation()
 
@@ -509,8 +512,10 @@ class SettingsDialogHandlersMixin:
         severity_values = [LINT_SEVERITY_ERROR, LINT_SEVERITY_WARNING, LINT_SEVERITY_INFO]
         for row_index, definition in enumerate(LINT_RULE_DEFINITIONS):
             code_item = QTableWidgetItem(definition.code)
+            code_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             self._linter_table.setItem(row_index, 0, code_item)
             rule_item = QTableWidgetItem(definition.title)
+            rule_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             self._linter_table.setItem(row_index, 1, rule_item)
 
             override_payload = self._lint_rule_overrides.get(definition.code, {})
@@ -521,7 +526,9 @@ class SettingsDialogHandlersMixin:
             enabled_input.stateChanged.connect(
                 lambda _state, code=definition.code: self._handle_lint_enabled_changed(code)
             )
-            self._linter_table.setCellWidget(row_index, 2, enabled_input)
+            self._linter_table.setCellWidget(
+                row_index, 2, settings_table_control_cell(self._linter_table, enabled_input)
+            )
             self._lint_enabled_inputs[definition.code] = enabled_input
 
             severity_input = QComboBox(self._linter_table)
@@ -536,7 +543,9 @@ class SettingsDialogHandlersMixin:
             )
             severity_input.setMinimumContentsLength(len("WARNING"))
             severity_input.setMinimumWidth(severity_input.sizeHint().width())
-            self._linter_table.setCellWidget(row_index, 3, severity_input)
+            self._linter_table.setCellWidget(
+                row_index, 3, settings_table_control_cell(self._linter_table, severity_input)
+            )
             self._lint_severity_inputs[definition.code] = severity_input
 
             reset_button = QPushButton("Reset", self._linter_table)
@@ -544,8 +553,11 @@ class SettingsDialogHandlersMixin:
                 lambda _checked=False, code=definition.code: self._handle_reset_lint_rule(code)
             )
             reset_button.setMinimumWidth(reset_button.sizeHint().width())
-            self._linter_table.setCellWidget(row_index, 4, reset_button)
+            self._linter_table.setCellWidget(
+                row_index, 4, settings_table_control_cell(self._linter_table, reset_button)
+            )
 
+        finalize_settings_table_rows(self._linter_table)
         self._finalize_linter_columns()
 
     def _handle_lint_enabled_changed(self, code: str) -> None:
@@ -739,5 +751,28 @@ class SettingsDialogHandlersMixin:
             return
         if self._active_scope == SETTINGS_SCOPE_PROJECT:
             self._ok_button.setEnabled(True)
+            self._ok_button.setToolTip("")
+            if self._validation_banner_label is not None:
+                self._validation_banner_label.clear()
+                self._validation_banner_label.setVisible(False)
             return
-        self._ok_button.setEnabled(not (self._has_shortcut_conflicts or self._has_invalid_syntax_colors))
+
+        has_conflicts = self._has_shortcut_conflicts
+        has_invalid_colors = self._has_invalid_syntax_colors
+        can_save = not (has_conflicts or has_invalid_colors)
+        self._ok_button.setEnabled(can_save)
+
+        messages: list[str] = []
+        if has_conflicts:
+            messages.append("Fix conflicting keybindings on the Keybindings tab before saving.")
+        if has_invalid_colors:
+            messages.append("Fix invalid syntax colors on the Syntax Colors tab before saving.")
+        banner_text = " ".join(messages)
+        if self._validation_banner_label is not None:
+            if banner_text:
+                self._validation_banner_label.setText(banner_text)
+                self._validation_banner_label.setVisible(True)
+            else:
+                self._validation_banner_label.clear()
+                self._validation_banner_label.setVisible(False)
+        self._ok_button.setToolTip(banner_text if not can_save else "")

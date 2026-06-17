@@ -13,6 +13,30 @@ from app.persistence.atomic_write import atomic_write_text
 pytestmark = pytest.mark.unit
 
 
+def test_plan_import_rewrites_strips_src_layout_prefix(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "src" / "my_pkg"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "util.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (project_root / "main.py").write_text(
+        "from my_pkg.util import VALUE\nimport my_pkg.util\n",
+        encoding="utf-8",
+    )
+
+    previews = plan_import_rewrites(
+        str(project_root),
+        old_relative_path="src/my_pkg/util.py",
+        new_relative_path="src/my_pkg/helper.py",
+    )
+
+    assert len(previews) == 1
+    preview = previews[0]
+    assert "my_pkg.helper" in preview.updated_content
+    assert "my_pkg.util" not in preview.updated_content
+    assert preview.changed_line_numbers == [1, 2]
+
+
 def test_plan_import_rewrites_updates_import_lines(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

@@ -6,12 +6,16 @@ import os
 from logging import Logger
 from typing import Callable
 
+from PySide2.QtCore import QSize
+
 from app.core.errors import AppValidationError
 from app.core.models import LoadedProject
 from app.project.project_open_worker import ProjectOpenWorker
 from app.project.project_service import open_project_and_track_recent
 from app.project.recent_projects import OPEN_RECENT_MENU_LIMIT, load_recent_projects
+from app.shell.menu_icons import MENU_ICON_SIZE, build_recent_project_icon
 from app.shell.menus import MenuStubRegistry, build_recent_project_menu_items
+from app.shell.theme_tokens import ShellThemeTokens
 
 DispatchToMainThread = Callable[[Callable[[], None]], None]
 
@@ -165,6 +169,7 @@ class ProjectController:
         menu_registry: MenuStubRegistry | None,
         *,
         open_project_by_path: Callable[[str], bool],
+        theme_tokens: ShellThemeTokens | None = None,
     ) -> None:
         if menu_registry is None:
             return
@@ -173,6 +178,9 @@ class ProjectController:
         if open_recent_menu is None:
             return
 
+        set_icon_size = getattr(open_recent_menu, "setIconSize", None)
+        if callable(set_icon_size):
+            set_icon_size(QSize(MENU_ICON_SIZE, MENU_ICON_SIZE))
         open_recent_menu.clear()
         recent_paths = load_recent_projects(
             state_root=self._state_root, max_entries=OPEN_RECENT_MENU_LIMIT,
@@ -184,8 +192,11 @@ class ProjectController:
             placeholder_action.setEnabled(False)
             return
 
+        recent_icon = build_recent_project_icon(theme_tokens) if theme_tokens is not None else None
         for recent_item in recent_items:
             action = open_recent_menu.addAction(recent_item.display_text)
+            if recent_icon is not None:
+                action.setIcon(recent_icon)
             action.setToolTip(recent_item.project_path)
             action.triggered.connect(
                 lambda _checked=False, project_path=recent_item.project_path: open_project_by_path(project_path)

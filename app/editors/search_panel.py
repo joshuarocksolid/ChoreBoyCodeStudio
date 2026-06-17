@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 import threading
 from typing import Callable
 
+from app.editors.search_service import SearchOptions, compile_search_pattern
+from app.project.file_excludes import EffectiveExcludes, merge_search_exclude_globs
 from app.project.file_inventory import iter_text_file_paths
 
 
@@ -25,35 +26,8 @@ class SearchMatch:
     match_length: int = 0
 
 
-@dataclass(frozen=True)
-class SearchOptions:
-    """Options for project-wide search."""
-
-    case_sensitive: bool = False
-    whole_word: bool = False
-    regex: bool = False
-    include_globs: list[str] | None = None
-    exclude_globs: list[str] | None = None
-
-
 _LOGGER = logging.getLogger(__name__)
-MAX_REGEX_QUERY_CHARS = 512
 MAX_SEARCH_LINE_CHARS = 20_000
-
-
-def _compile_pattern(query: str, options: SearchOptions) -> re.Pattern[str] | None:
-    flags = 0 if options.case_sensitive else re.IGNORECASE
-    if options.regex and len(query) > MAX_REGEX_QUERY_CHARS:
-        return None
-    if options.regex:
-        try:
-            return re.compile(query, flags)
-        except re.error:
-            return None
-    escaped = re.escape(query)
-    if options.whole_word:
-        escaped = rf"\b{escaped}\b"
-    return re.compile(escaped, flags)
 
 
 def _matches_glob_list(relative_path: str, globs: list[str]) -> bool:
@@ -73,9 +47,6 @@ def _should_include_file(relative_path: str, options: SearchOptions) -> bool:
     if options.include_globs:
         if not _matches_glob_list(relative_path, options.include_globs):
             return False
-    if options.exclude_globs:
-        if _matches_glob_list(relative_path, options.exclude_globs):
-            return False
     return True
 
 
@@ -93,15 +64,19 @@ def find_in_files(
         return []
 
     opts = options or SearchOptions()
-    pattern = _compile_pattern(query, opts)
+    pattern = compile_search_pattern(query, opts)
     if pattern is None:
         return []
 
     root = Path(project_root).expanduser().resolve()
     results: list[SearchMatch] = []
-    active_excludes = exclude_patterns or []
+    effective = EffectiveExcludes.merge(exclude_patterns or ())
+    effective = merge_search_exclude_globs(effective, opts.exclude_globs)
 
-    for file_path, rel_path in iter_text_file_paths(root, exclude_patterns=active_excludes):
+    for file_path, rel_path in iter_text_file_paths(
+        root,
+        exclude_patterns=effective.as_list(),
+    ):
         if cancel_event is not None and cancel_event.is_set():
             return results
         if len(results) >= max_results:
@@ -134,6 +109,38 @@ def find_in_files(
     return results
 
 
+def _apply_match_replacements(
+    lines: list[str],
+    line_matches: list[SearchMatch],
+    replacement: str,
+) -> int:
+    """Replace explicit match spans on one file's line list. Returns replacement count."""
+    by_line: dict[int, list[SearchMatch]] = {}
+    for match in line_matches:
+        by_line.setdefault(match.line_number, []).append(match)
+
+    replaced = 0
+    for line_number, matches_on_line in by_line.items():
+        line_index = line_number - 1
+        if line_index < 0 or line_index >= len(lines):
+            continue
+
+        line = lines[line_index]
+        line_body = line.rstrip("\n\r")
+        newline_suffix = line[len(line_body) :]
+
+        for match in sorted(matches_on_line, key=lambda item: item.column, reverse=True):
+            column = match.column
+            length = match.match_length
+            if length <= 0 or column < 0 or column + length > len(line_body):
+                continue
+            line_body = line_body[:column] + replacement + line_body[column + length :]
+            replaced += 1
+
+        lines[line_index] = line_body + newline_suffix
+    return replaced
+
+
 def replace_in_files(
     matches: list[SearchMatch],
     replacement: str,
@@ -141,10 +148,12 @@ def replace_in_files(
     *,
     options: SearchOptions | None = None,
 ) -> int:
-    """Replace matched text in files. Returns total replacements made."""
+    """Replace matched text at ``SearchMatch`` spans only. Returns replacements made."""
+    if not matches:
+        return 0
+
     opts = options or SearchOptions()
-    pattern = _compile_pattern(query, opts)
-    if pattern is None:
+    if compile_search_pattern(query, opts) is None:
         return 0
 
     files_to_process: dict[str, list[SearchMatch]] = {}
@@ -156,10 +165,14 @@ def replace_in_files(
         try:
             path = Path(file_path)
             content = path.read_text(encoding="utf-8")
-            new_content = pattern.sub(replacement, content)
+            lines = content.splitlines(keepends=True)
+            replaced = _apply_match_replacements(lines, file_matches, replacement)
+            if replaced == 0:
+                continue
+            new_content = "".join(lines)
             if new_content != content:
                 path.write_text(new_content, encoding="utf-8")
-                total_replaced += sum(1 for _ in pattern.finditer(content))
+                total_replaced += replaced
         except (OSError, UnicodeDecodeError):
             continue
     return total_replaced
@@ -175,7 +188,8 @@ class SearchWorker:
         query: str,
         max_results: int = 200,
         options: SearchOptions | None = None,
-        on_results: Callable[[list[SearchMatch], str], None] | None = None,
+        search_generation: int = 0,
+        on_results: Callable[[list[SearchMatch], str, int], None] | None = None,
         on_done: Callable[[], None] | None = None,
         exclude_patterns: list[str] | None = None,
     ) -> None:
@@ -183,6 +197,7 @@ class SearchWorker:
         self._query = query
         self._max_results = max_results
         self._options = options
+        self._search_generation = search_generation
         self._on_results = on_results
         self._on_done = on_done
         self._exclude_patterns = exclude_patterns
@@ -215,7 +230,7 @@ class SearchWorker:
             )
             if not self._cancel_event.is_set() and self._on_results is not None:
                 try:
-                    self._on_results(matches, self._query)
+                    self._on_results(matches, self._query, self._search_generation)
                 except Exception:
                     _LOGGER.exception("Search worker on_results callback failed.")
         except Exception:

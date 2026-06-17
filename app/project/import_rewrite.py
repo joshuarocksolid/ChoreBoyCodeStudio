@@ -18,6 +18,11 @@ import re
 
 from app.persistence.atomic_write import atomic_write_batch
 from app.project.file_inventory import iter_python_files
+from app.project.import_layout import (
+    ProjectImportLayout,
+    load_project_import_layout,
+    module_name_from_relative_path,
+)
 
 
 @dataclass(frozen=True)
@@ -29,14 +34,20 @@ class ImportRewritePreview:
     updated_content: str
 
 
-def plan_import_rewrites(project_root: str, old_relative_path: str, new_relative_path: str) -> list[ImportRewritePreview]:
+def plan_import_rewrites(
+    project_root: str,
+    old_relative_path: str,
+    new_relative_path: str,
+    *,
+    import_layout: ProjectImportLayout | None = None,
+) -> list[ImportRewritePreview]:
     """Plan deterministic import rewrites for Python files impacted by a move/rename."""
-    old_module = _module_name_from_relative_path(old_relative_path)
-    new_module = _module_name_from_relative_path(new_relative_path)
+    root = Path(project_root).expanduser().resolve()
+    layout = import_layout or load_project_import_layout(root)
+    old_module = module_name_from_relative_path(layout, old_relative_path)
+    new_module = module_name_from_relative_path(layout, new_relative_path)
     if old_module is None or new_module is None or old_module == new_module:
         return []
-
-    root = Path(project_root).expanduser().resolve()
     previews: list[ImportRewritePreview] = []
     for file_path in iter_python_files(root):
         original_text = file_path.read_text(encoding="utf-8")
@@ -57,19 +68,6 @@ def apply_import_rewrites(previews: list[ImportRewritePreview]) -> list[str]:
     """Apply planned rewrites with rollback on write failures."""
     writes = {preview.file_path: preview.updated_content for preview in previews}
     return atomic_write_batch(writes)
-
-
-def _module_name_from_relative_path(relative_path: str) -> str | None:
-    normalized = relative_path.replace("\\", "/")
-    if not normalized.endswith(".py"):
-        return None
-    no_suffix = normalized[:-3]
-    if no_suffix.endswith("/__init__"):
-        no_suffix = no_suffix[: -len("/__init__")]
-    parts = [part for part in no_suffix.split("/") if part]
-    if not parts:
-        return None
-    return ".".join(parts)
 
 
 def _rewrite_import_lines(content: str, old_module: str, new_module: str) -> tuple[str, list[int]]:

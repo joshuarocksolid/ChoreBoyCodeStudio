@@ -154,6 +154,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         self._has_invalid_syntax_colors = False
         self._is_updating_shortcut_editors = False
         self._ok_button = None
+        self._validation_banner_label: QLabel | None = None
         self._scope_input: SegmentedControl | None = None
         self._scope_banner_label: QLabel | None = None
         self._tabs_widget: QTabWidget | None = None
@@ -226,6 +227,13 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         build_syntax_tab(self, tabs)
         build_linter_tab(self, tabs, snapshot, project_snapshot)
         build_files_tab(self, tabs, snapshot)
+
+        self._validation_banner_label = QLabel(self)
+        self._validation_banner_label.setObjectName("shell.settingsDialog.validationBanner")
+        self._validation_banner_label.setWordWrap(True)
+        self._validation_banner_label.setVisible(False)
+        layout.addWidget(self._validation_banner_label)
+
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
 

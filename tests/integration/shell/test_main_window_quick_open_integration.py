@@ -15,6 +15,7 @@ import PySide2.QtWidgets as qt_widgets
 from app.core import constants
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -73,7 +74,7 @@ def test_quick_open_opens_selected_file(monkeypatch: pytest.MonkeyPatch, tmp_pat
     active_tab = window._editor_manager.active_tab()
     assert active_tab is not None
     assert active_tab.file_path == str(beta_file.resolve())
-    window.close()
+    shutdown_main_window_for_test(window, app)
 
 
 def test_quick_open_preview_then_enter_promotes_to_permanent(
@@ -115,7 +116,7 @@ def test_quick_open_preview_then_enter_promotes_to_permanent(
     assert promoted_tab is not None
     assert promoted_tab.file_path == str(target_file.resolve())
     assert promoted_tab.is_preview is False
-    window.close()
+    shutdown_main_window_for_test(window, app)
 
 
 def test_preview_tab_promotes_on_first_edit(
@@ -166,7 +167,7 @@ def test_preview_tab_promotes_on_first_edit(
     assert window._editor_tabs_widget is not None
     assert window._editor_tabs_widget.count() == 2
     assert window._save_workflow.handle_save_all_action() is True
-    window.close()
+    shutdown_main_window_for_test(window, app)
 
 
 def test_quick_open_can_open_under_light_and_dark_themes(
@@ -196,4 +197,4 @@ def test_quick_open_can_open_under_light_and_dark_themes(
         assert dialog._total_count >= 1
         dialog.hide()
 
-    window.close()
+    shutdown_main_window_for_test(window, app)

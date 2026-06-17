@@ -18,7 +18,7 @@ from app.shell.icon_provider import (
     refresh_icon,
 )
 from app.shell.settings_models import parse_editor_settings_snapshot
-from app.shell.style_sheet import build_shell_style_sheet
+from app.shell.style_sheet import build_app_tooltip_style_sheet, build_shell_style_sheet
 from app.shell.syntax_color_preferences import parse_syntax_color_overrides
 from app.shell.theme_tokens import ShellThemeTokens, apply_syntax_token_overrides, tokens_from_palette
 from app.shell.toolbar_icons import ensure_tab_close_icons, icon_run
@@ -48,12 +48,14 @@ class ShellThemeChildCallbacks:
     """Callbacks that apply resolved tokens to shell child widgets."""
 
     set_shell_style_sheet: Callable[[str], None]
+    set_app_tooltip_style_sheet: Callable[[str], None]
     apply_editor_themes: Callable[[ShellThemeTokens], None]
     apply_markdown_themes: Callable[[ShellThemeTokens], None]
     apply_python_console_theme: Callable[[ShellThemeTokens], None] | None = None
     apply_run_log_theme: Callable[[ShellThemeTokens], None] | None = None
     apply_search_sidebar_theme: Callable[[ShellThemeTokens], None] | None = None
     apply_activity_bar_view_icons: Callable[[ShellThemeTokens], None] | None = None
+    apply_menu_bar_icons: Callable[[ShellThemeTokens], None] | None = None
     apply_test_explorer_theme: Callable[[ShellThemeTokens], None] | None = None
     apply_outline_theme: Callable[[ShellThemeTokens], None] | None = None
 
@@ -189,6 +191,7 @@ class ShellThemeWorkflow:
             )
             callbacks = host.child_callbacks
             callbacks.set_shell_style_sheet(build_shell_style_sheet(tokens))
+            callbacks.set_app_tooltip_style_sheet(build_app_tooltip_style_sheet(tokens))
             callbacks.apply_editor_themes(tokens)
             callbacks.apply_markdown_themes(tokens)
             if callbacks.apply_python_console_theme is not None:
@@ -200,6 +203,8 @@ class ShellThemeWorkflow:
                 callbacks.apply_search_sidebar_theme(tokens)
             if callbacks.apply_activity_bar_view_icons is not None:
                 callbacks.apply_activity_bar_view_icons(tokens)
+            if callbacks.apply_menu_bar_icons is not None:
+                callbacks.apply_menu_bar_icons(tokens)
             if callbacks.apply_test_explorer_theme is not None:
                 callbacks.apply_test_explorer_theme(tokens)
             if callbacks.apply_outline_theme is not None:

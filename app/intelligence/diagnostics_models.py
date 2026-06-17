@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -47,3 +47,4 @@ class CodeDiagnostic:
     message: str
     col_start: int | None = None
     col_end: int | None = None
+    detail: Mapping[str, str] | None = None

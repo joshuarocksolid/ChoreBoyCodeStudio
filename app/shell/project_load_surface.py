@@ -34,15 +34,21 @@ def apply_project_surface(
     window._project_tree_structure_signature = filter_tree_signature_entries(
         tuple(entry.relative_path for entry in loaded_project.entries)
     )
+    window._project_inventory_orchestrator.set_tree_structure_signature(
+        window._project_tree_structure_signature
+    )
     window._editor_tab_workflow.reset_editor_tabs()
     window._stored_lint_diagnostics.clear()
     if window._search_sidebar is not None:
         window._search_sidebar.set_project_root(loaded_project.project_root)
-        window._search_sidebar.set_exclude_patterns(
-            effective_excludes_for(
-                loaded_project,
-                load_effective_exclude_patterns=load_effective_exclude_patterns,
-            )
+        effective = effective_excludes_for(
+            loaded_project,
+            load_effective_exclude_patterns=load_effective_exclude_patterns,
+        )
+        window._search_sidebar.set_exclude_patterns(effective.as_list())
+        window._project_inventory_orchestrator.rebuild(
+            loaded_project.project_root,
+            effective,
         )
 
 
@@ -53,6 +59,7 @@ def finalize_project_open(
     *,
     exclude_patterns: list[str],
 ) -> None:
+    snapshot = window._project_inventory_orchestrator.snapshot
     window._lint_workflow.lint_all_open_files()
     window._debug_control_workflow.refresh_breakpoints_list()
     window._file_project_commands_workflow.refresh_open_recent_menu()
@@ -63,6 +70,7 @@ def finalize_project_open(
     window._intelligence_cache_workflow.start_symbol_indexing(
         loaded_project.project_root,
         exclude_patterns=exclude_patterns,
+        inventory_snapshot=snapshot,
     )
     telemetry.log(window._logger)
     window._event_bus.publish(

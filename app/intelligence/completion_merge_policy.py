@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.core.completion_tier import TIER_HEADER_SIDE_EFFECT, is_tier_header_item
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
@@ -10,8 +11,6 @@ from app.intelligence.completion_models import (
     CompletionTierPhase,
 )
 
-
-TIER_HEADER_SIDE_EFFECT = "tier_header"
 
 _TIER_LABELS = {
     CompletionTierPhase.FAST: "Indexed suggestions",
@@ -110,10 +109,6 @@ def envelope_confidence(tiers: tuple[CompletionTier, ...]) -> str:
     return "approximate"
 
 
-def is_tier_header_item(item: CompletionItem) -> bool:
-    return item.side_effect_risk == TIER_HEADER_SIDE_EFFECT
-
-
 def _tier_header_item(label: str) -> CompletionItem:
     return CompletionItem(
         label=label,
@@ -124,3 +119,12 @@ def _tier_header_item(label: str) -> CompletionItem:
         confidence="unsupported",
         side_effect_risk=TIER_HEADER_SIDE_EFFECT,
     )
+
+
+__all__ = [
+    "TIER_HEADER_SIDE_EFFECT",
+    "envelope_confidence",
+    "flatten_tiered_items",
+    "is_tier_header_item",
+    "merge_completion_display",
+]

@@ -258,3 +258,17 @@ def test_cancel_workflow_job_round_trip(monkeypatch: pytest.MonkeyPatch) -> None
     result = manager.cancel_workflow_job("job-1")
 
     assert result == {"job_id": "job-1", "cancel_requested": True}
+
+
+def test_start_and_reload_plugins_skip_when_background_runtime_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CBCS_DISABLE_BACKGROUND_RUNTIME", "1")
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    manager.start()
+    manager.reload_plugins()
+
+    assert manager.is_running() is False
+    assert manager._host_supervisor.sent_input == []

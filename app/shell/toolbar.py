@@ -14,7 +14,6 @@ from PySide2.QtWidgets import (
 )
 
 from app.shell.menus import MenuStubRegistry
-from app.shell.toolbar_icons import build_toolbar_icon
 
 _GROUP_1_IDS = (
     "shell.action.run.run",
@@ -106,10 +105,6 @@ class RunToolbarWidget(QWidget):
         action = registry.action(action_id)
         if action is None:
             return None
-
-        icon = build_toolbar_icon(action_id, accent_color="#5B8CFF")
-        if icon is not None:
-            action.setIcon(icon)
 
         suffix = _ACTION_ID_TO_OBJ_SUFFIX.get(action_id, "btn")
         obj_name = f"shell.toolbar.btn.{suffix}"

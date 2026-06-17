@@ -30,7 +30,7 @@ def test_collect_unresolved_import_diagnostics_default_path_never_probes_runtime
     def fail_runtime_probe(_module_name: str) -> bool:
         raise AssertionError("runtime import probe must not run on default import diagnostics path")
 
-    monkeypatch.setattr("app.intelligence.runtime_import_probe.subprocess.run", fail_subprocess)
+    monkeypatch.setattr("app.project.runtime_import_probe.subprocess.run", fail_subprocess)
     monkeypatch.setattr(
         "app.project.dependency_classifier.is_runtime_module_importable",
         fail_runtime_probe,
@@ -62,7 +62,7 @@ def test_analyze_python_file_default_path_never_probes_runtime(
     def fail_runtime_probe(_module_name: str) -> bool:
         raise AssertionError("runtime import probe must not run on default analyze_python_file path")
 
-    monkeypatch.setattr("app.intelligence.runtime_import_probe.subprocess.run", fail_subprocess)
+    monkeypatch.setattr("app.project.runtime_import_probe.subprocess.run", fail_subprocess)
     monkeypatch.setattr(
         "app.project.dependency_classifier.is_runtime_module_importable",
         fail_runtime_probe,

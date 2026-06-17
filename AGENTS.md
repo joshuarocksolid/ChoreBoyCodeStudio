@@ -33,11 +33,19 @@ All application code must target **Python 3.9** syntax (see `.cursor/rules/pytho
 
 ### Running tests
 
-Default agent loop — fast lane (~30 s, all unit + non-slow integration through AppRun):
+Default agent loop — fast lane (~30–60 s, all unit + non-slow integration through AppRun):
 
 ```bash
 python3 testing/run_test_shard.py fast
 ```
+
+`run_test_shard.py` runs [`testing/preflight_test_env.py`](testing/preflight_test_env.py) first (stale AppRun child detection + `pytest-timeout` availability). The fast shard also has a 180 s outer watchdog. `run_tests.py` sets `CBCS_DISABLE_BACKGROUND_RUNTIME=1` so MainWindow tests do not auto-spawn plugin-host/REPL subprocesses.
+
+**Agent anti-patterns that look like hangs:**
+
+- Piping shard output through `rg "passed|failed"` hides pytest progress dots.
+- Wrapping the fast shard in `timeout 170` before confirming the current checkpoint wall time.
+- Leaving aborted `run_tests.py` sessions running — check `python3 testing/preflight_test_env.py` or `ps aux | rg 'run_plugin_host|run_runner'` before blaming pytest.
 
 Pre-PR / CI lanes when you need the heavier coverage:
 
@@ -58,7 +66,7 @@ python3 run_tests.py -k test_project_service
 
 Latest checkpoint (2026-06-01, `main` branch):
 
-- `python3 testing/run_test_shard.py fast` -> ~40–68s, **1949 passed, 17 deselected, 0 failures**. (Suite grew from 1445 to 1949 collected; per-test cost is unchanged, the wall time reflects the larger suite. Sub-60s on a quiet machine.)
+- `python3 testing/run_test_shard.py fast` -> **~59s wall time**, **2064 selected / 24 deselected** on a clean machine (2026-06-17 hang-fix checkpoint). Run `python3 testing/preflight_test_env.py` first; no orphaned `run_plugin_host`/`run_runner` children after exit.
 - `python3 testing/run_test_shard.py integration` -> ~55s, **64 passed, 3 skipped, 0 failures**. Slow debug integration tests skip when AppRun emits no debug channel or no `stopped` pause event (see `docs/DISCOVERY.md` §4D; guards in `tests/support/debug_transport_guards.py`).
 - `python3 testing/run_test_shard.py performance` -> ~74s, **11 passed, 0 failures** (four modules under `tests/integration/performance/`).
 - `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.
@@ -187,7 +195,7 @@ pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
  --platform=manylinux_2_17_x86_64
 ```
 
-**Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable. The `pytest` (+ `pluggy`, `iniconfig`, `exceptiongroup`) packages are bundled so the in-app Test Explorer works on real ChoreBoy without needing pytest installed in the AppRun runtime.
+**Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable. The `pytest` (+ `pluggy`, `iniconfig`, `exceptiongroup`, `pytest-timeout`) packages are bundled so the in-app Test Explorer and the global 30 s per-test timeout in `pyproject.toml` work on real ChoreBoy without extra installs.
 
 The `--python-version=3.11` and `--platform` flags above are for Cloud dev
 only. See `vendor/README.md` for the shipped ChoreBoy bundle contract and the
@@ -195,13 +203,12 @@ Python 3.9 production guidance.
 
 ### Installing dev tools into FreeCAD's Python
 
-`pytest` is bundled in `vendor/` (see "Vendored dependencies" above). Both
+`pytest` and `pytest-timeout` are bundled in `vendor/` (see "Vendored dependencies" above). Both
 `run_tests.py` and the in-app Test Explorer inject `vendor/` onto the AppRun
 subprocess `sys.path` before importing pytest, so no separate pytest install
 into `/opt/freecad/usr/lib/python3.11/site-packages/` is required.
 
-If you need other dev-only packages (e.g. `pytest-timeout`) that are not
-shipped with the product, install them into FreeCAD's site-packages:
+If `pytest-timeout` is missing from vendor (legacy tree), install it into AppRun site-packages:
 
 ```bash
 pip3 install pytest-timeout --target=/opt/freecad/usr/lib/python3.11/site-packages/
@@ -213,7 +220,8 @@ pip3 install pytest-timeout --target=/opt/freecad/usr/lib/python3.11/site-packag
 - `.venv-editor` may exist as editor tooling scaffolding for pyright; recreate it with `./scripts/setup_venv_editor.sh`, but do not run the app or tests from it.
 - The FreeCAD AppImage is extracted (not run as an AppImage) at `/opt/freecad/`. The `AppRun` script sets `PYTHONHOME`, SSL paths, and other environment variables automatically.
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
-- **Slow integration tests:** subprocess + debug-session integration tests are tagged `@pytest.mark.slow` and excluded from `python3 testing/run_test_shard.py fast`. They still run under the `integration` shard pre-PR, with per-test `pytest.mark.timeout(180)` overrides instead of the new global 30 s default.
+- **Slow integration tests:** subprocess + debug-session + RunService project/template execution tests are tagged `@pytest.mark.slow` and excluded from `python3 testing/run_test_shard.py fast`. They still run under the `integration` shard pre-PR, with per-test `pytest.mark.timeout(180)` overrides instead of the global 30 s default.
+- **Test subprocess hygiene:** `run_tests.py` sets `CBCS_DISABLE_BACKGROUND_RUNTIME=1`; `tests/conftest.py` reaps leaked `run_plugin_host`/`run_runner` children after every test and at session end.
 - `**vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).
 

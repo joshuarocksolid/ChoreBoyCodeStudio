@@ -65,31 +65,28 @@ def test_build_effective_shortcut_map_applies_override_and_unbinds_empty() -> No
 def test_find_shortcut_conflicts_groups_action_ids_by_shortcut() -> None:
     conflicts = find_shortcut_conflicts(
         {
-            "shell.action.run.run": "Ctrl+R",
             "shell.action.file.save": "Ctrl+R",
-            "shell.action.file.openProject": "Ctrl+O",
+            "shell.action.file.openProject": "Ctrl+R",
+            "shell.action.run.run": "Ctrl+R",
         }
     )
-    assert conflicts == {"Ctrl+R": ("shell.action.file.save", "shell.action.run.run")}
+    assert conflicts == {"Ctrl+R": ("shell.action.file.openProject", "shell.action.file.save")}
+
+
+def test_find_shortcut_conflicts_ignores_cross_category_duplicates() -> None:
+    conflicts = find_shortcut_conflicts(
+        {
+            "shell.action.edit.renameSymbol": "F2",
+            "shell.shortcut.projectTree.rename": "F2",
+        }
+    )
+    assert conflicts == {}
 
 
 def test_no_duplicate_default_shortcuts() -> None:
-    """Every non-empty default shortcut must be unique across SHORTCUT_COMMANDS."""
+    """Every non-empty default shortcut must be unique within each command category."""
     defaults = default_shortcut_map()
     conflicts = find_shortcut_conflicts(
         {action_id: shortcut for action_id, shortcut in defaults.items() if shortcut}
     )
-    allowed_duplicate_sets = {
-        frozenset(
-            {
-                "shell.action.edit.renameSymbol",
-                "shell.shortcut.projectTree.rename",
-            }
-        ),
-    }
-    unexpected = {
-        shortcut: action_ids
-        for shortcut, action_ids in conflicts.items()
-        if frozenset(action_ids) not in allowed_duplicate_sets
-    }
-    assert unexpected == {}, f"Duplicate default shortcuts: {unexpected}"
+    assert conflicts == {}, f"Duplicate default shortcuts: {conflicts}"

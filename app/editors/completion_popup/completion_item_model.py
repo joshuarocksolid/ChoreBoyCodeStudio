@@ -7,20 +7,34 @@ re-parsing the underlying data on every paint.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from PySide2.QtCore import QAbstractListModel, QModelIndex, Qt
 
 from app.editors.completion_popup.completion_kind_style import (
     KindGlyphStyle,
     kind_style_for,
 )
+from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
+
+RowKind = Literal["header", "item"]
 
 # Custom item roles, namespaced into the user-role band.
 ItemRole = Qt.UserRole + 1
 MatchRangesRole = Qt.UserRole + 2
 KindStyleRole = Qt.UserRole + 3
+RowKindRole = Qt.UserRole + 4
+
+
+def row_kind_for_item(item: CompletionItem) -> RowKind:
+    """Return whether a popup row is a tier section header or a selectable item."""
+
+    if is_tier_header_item(item):
+        return "header"
+    return "item"
 
 
 def compute_match_ranges(label: str, prefix: str) -> list[tuple[int, int]]:
@@ -91,6 +105,8 @@ class CompletionItemModel(QAbstractListModel):
             return self._match_ranges[row]
         if role == KindStyleRole:
             return self._resolve_kind_style(item)
+        if role == RowKindRole:
+            return row_kind_for_item(item)
         return None
 
     def set_items(self, items: list[CompletionItem], prefix: str) -> None:
@@ -143,6 +159,15 @@ class CompletionItemModel(QAbstractListModel):
 
     def prefix(self) -> str:
         return self._prefix
+
+    def row_kind_at(self, row: int) -> RowKind | None:
+        item = self.item_at(row)
+        if item is None:
+            return None
+        return row_kind_for_item(item)
+
+    def row_kinds(self) -> list[RowKind]:
+        return [row_kind_for_item(item) for item in self._items]
 
     def _resolve_kind_style(self, item: CompletionItem) -> KindGlyphStyle | None:
         if self._tokens is None:

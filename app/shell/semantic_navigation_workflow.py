@@ -86,7 +86,6 @@ class SemanticNavigationWorkflow:
         *,
         file_path: str,
         editor_widget: CodeEditorWidget,
-        prefix: str,
         source_text: str,
         cursor_position: int,
         manual_trigger: bool,
@@ -97,7 +96,6 @@ class SemanticNavigationWorkflow:
         self._completions.request_editor_completions_async(
             file_path=file_path,
             editor_widget=editor_widget,
-            prefix=prefix,
             source_text=source_text,
             cursor_position=cursor_position,
             manual_trigger=manual_trigger,

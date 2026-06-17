@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.shell.style_sheet_sections_dialogs import _accent_hover, _accent_pressed
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -215,6 +216,8 @@ QDialog#shell\\.settingsDialog QLineEdit:focus {{
 }}
 """
 def settings_section_push_buttons(tokens: ShellThemeTokens) -> str:
+    accent_hover = _accent_hover(tokens)
+    accent_pressed = _accent_pressed(tokens)
     return f"""/* -- Push buttons (default) ---------------------------------------------- */
 QDialog#shell\\.settingsDialog QPushButton {{
     background: {tokens.panel_bg};
@@ -233,8 +236,8 @@ QDialog#shell\\.settingsDialog QPushButton:hover {{
 QDialog#shell\\.settingsDialog QPushButton:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-/* -- Ok button (primary) ------------------------------------------------- */
-QPushButton#shell\\.settingsDialog\\.okBtn {{
+/* -- Save button (primary) ----------------------------------------------- */
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.okBtn {{
     background: {tokens.accent};
     color: #FFFFFF;
     border: none;
@@ -243,26 +246,35 @@ QPushButton#shell\\.settingsDialog\\.okBtn {{
     font-size: 13px;
     font-weight: 600;
 }}
-QPushButton#shell\\.settingsDialog\\.okBtn:hover {{
-    background: {"#4D7AFF" if tokens.is_dark else "#2952CC"};
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.okBtn:hover {{
+    background: {accent_hover};
+    color: #FFFFFF;
 }}
-QPushButton#shell\\.settingsDialog\\.okBtn:pressed {{
-    background: {"#3D6AEE" if tokens.is_dark else "#1F3FA6"};
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.okBtn:pressed {{
+    background: {accent_pressed};
+    color: #FFFFFF;
 }}
-QPushButton#shell\\.settingsDialog\\.okBtn:disabled {{
-    background: {tokens.text_muted};
-    color: {tokens.panel_bg};
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.okBtn:disabled {{
+    background: {tokens.badge_bg};
+    color: {tokens.text_muted};
 }}
 /* -- Cancel button (secondary) ------------------------------------------- */
-QPushButton#shell\\.settingsDialog\\.cancelBtn {{
-    background: transparent;
-    color: {tokens.text_muted};
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.cancelBtn {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
     border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 20px;
+    font-size: 13px;
+    font-weight: 600;
 }}
-QPushButton#shell\\.settingsDialog\\.cancelBtn:hover {{
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.cancelBtn:hover {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
-    border-color: {tokens.text_muted};
+    border-color: {tokens.accent};
+}}
+QDialog#shell\\.settingsDialog QPushButton#shell\\.settingsDialog\\.cancelBtn:pressed {{
+    background: {tokens.tree_selected_bg};
 }}
 """
 def settings_section_tables_lists_scroll_area(tokens: ShellThemeTokens) -> str:
@@ -365,7 +377,8 @@ QDialog#shell\\.settingsDialog QKeySequenceEdit:focus {{
 }}
 /* -- Validation labels --------------------------------------------------- */
 QLabel#shell\\.settingsDialog\\.shortcutConflict,
-QLabel#shell\\.settingsDialog\\.syntaxValidation {{
+QLabel#shell\\.settingsDialog\\.syntaxValidation,
+QLabel#shell\\.settingsDialog\\.validationBanner {{
     color: {tokens.diag_error_color};
     background: {"#3D1B1B" if tokens.is_dark else "#FEE2E2"};
     border-radius: 4px;

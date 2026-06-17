@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtWidgets import QDialog, QInputDialog, QMessageBox
+from PySide2.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
@@ -92,28 +92,36 @@ class SymbolNavigationWorkflow:
             return
         editor_widget = self._host.editor_widget_for_path(str(Path(file_path).expanduser().resolve()))
         source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
-        flat = self._host.flat_outline_symbols_for_path(file_path, fallback_source=source or "")
-        if not flat:
-            QMessageBox.information(parent, "Go to Symbol", "No symbols in this file.")
-            return
-        if editor_widget is None:
-            editor_widget = self._host.editor_widget_for_path(str(Path(file_path).expanduser().resolve()))
         original_line = editor_widget.textCursor().blockNumber() + 1 if editor_widget is not None else 1
 
-        dialog = QuickSymbolDialog(flat, parent=parent)
+        def _show_symbol_dialog(flat: tuple[object, ...]) -> None:
+            if not flat:
+                QMessageBox.information(parent, "Go to Symbol", "No symbols in this file.")
+                return
+            dialog = QuickSymbolDialog(flat, parent=parent)
 
-        def _on_preview(line: int) -> None:
-            if editor_widget is not None:
-                editor_widget.go_to_line(line)
+            def _on_preview(line: int) -> None:
+                if editor_widget is not None:
+                    editor_widget.go_to_line(line)
 
-        def _on_chosen(line: int) -> None:
-            self._host.open_file_at_line(file_path, line)
+            def _on_chosen(line: int) -> None:
+                self._host.open_file_at_line(file_path, line)
 
-        dialog.symbol_preview.connect(_on_preview)
-        dialog.symbol_chosen.connect(_on_chosen)
-        result = dialog.exec_()
-        if result != QDialog.Accepted and editor_widget is not None:
-            editor_widget.go_to_line(original_line)
+            dialog.symbol_preview.connect(_on_preview)
+            dialog.symbol_chosen.connect(_on_chosen)
+            result = dialog.exec_()
+            if result != QDialog.Accepted and editor_widget is not None:
+                editor_widget.go_to_line(original_line)
+
+        def _on_outline_error(exc: Exception) -> None:
+            QMessageBox.warning(parent, "Go to Symbol", f"Outline failed: {exc}")
+
+        self._host.request_flat_outline_symbols_async(
+            file_path,
+            fallback_source=source or "",
+            on_success=_show_symbol_dialog,
+            on_error=_on_outline_error,
+        )
 
     def _choose_definition_location(self, locations: list[object]):  # type: ignore[no-untyped-def]
         if not locations:

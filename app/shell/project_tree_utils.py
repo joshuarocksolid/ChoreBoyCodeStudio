@@ -6,7 +6,7 @@ from typing import Callable
 
 from app.core import constants
 from app.core.models import LoadedProject
-from app.project.file_excludes import compute_effective_excludes
+from app.project.file_excludes import EffectiveExcludes
 
 # Run/debug sessions write log and manifest files under cbcs/runs/ and cbcs/logs/
 # every time the user starts a session. Those churn must NOT trigger the project
@@ -14,6 +14,7 @@ from app.project.file_excludes import compute_effective_excludes
 PROJECT_TREE_SIGNATURE_IGNORED_PREFIXES: tuple[str, ...] = (
     f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_RUNS_DIRNAME}/",
     f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_LOGS_DIRNAME}/",
+    f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_CACHE_DIRNAME}/",
 )
 
 
@@ -29,8 +30,8 @@ def effective_excludes_for(
     loaded_project: LoadedProject,
     *,
     load_effective_exclude_patterns: Callable[[str], list[str]],
-) -> list[str]:
-    return compute_effective_excludes(
+) -> EffectiveExcludes:
+    return EffectiveExcludes.merge(
         load_effective_exclude_patterns(loaded_project.project_root),
         loaded_project.metadata.exclude_patterns,
     )

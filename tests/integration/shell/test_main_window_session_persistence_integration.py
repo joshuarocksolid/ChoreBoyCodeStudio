@@ -13,6 +13,7 @@ from PySide2.QtGui import QTextCursor
 
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -103,7 +104,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     assert restored_first_widget.textCursor().positionInBlock() + 1 == 3
     assert restored_second_widget.textCursor().blockNumber() + 1 == 2
     assert restored_second_widget.textCursor().positionInBlock() + 1 == 2
-    window.close()
+    shutdown_main_window_for_test(window, app)
 
 
 def test_opening_second_project_persists_and_restores_first_project_session(
@@ -148,4 +149,4 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     assert restored_widget.textCursor().blockNumber() + 1 == 3
     assert restored_widget.textCursor().positionInBlock() + 1 == 2
     assert breakpoint_store.lines_for_file(project_one_path) == {2}
-    window.close()
+    shutdown_main_window_for_test(window, app)

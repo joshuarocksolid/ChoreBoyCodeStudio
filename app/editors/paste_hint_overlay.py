@@ -91,16 +91,15 @@ class PasteHintOverlay(QFrame):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Restyle for the current theme (light / dark)."""
-        is_dark = tokens.is_dark
         bg = tokens.popup_bg or tokens.panel_bg
         border = tokens.popup_border or tokens.border
         text_primary = tokens.text_primary
         text_muted = tokens.text_muted
-        accent = tokens.accent or ("#3B82F6" if is_dark else "#1D4ED8")
-        accent_hover = "#60A5FA" if is_dark else "#1E40AF"
-        accent_text = "#FFFFFF"
-        always_hover_bg = "#2A3340" if is_dark else "#E5E7EB"
-        dismiss_hover_bg = "#2A3340" if is_dark else "#E5E7EB"
+        accent = tokens.accent
+        accent_hover = tokens.tree_selected_bg or tokens.tree_hover_bg
+        accent_text = tokens.panel_bg or tokens.editor_bg
+        always_hover_bg = tokens.tree_hover_bg
+        dismiss_hover_bg = tokens.tree_hover_bg
 
         self._chrome.setStyleSheet(
             f"""

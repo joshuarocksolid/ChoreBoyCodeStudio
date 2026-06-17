@@ -5,7 +5,10 @@ from __future__ import annotations
 import threading
 from typing import Callable, Protocol
 
+from app.intelligence.completion_context import build_completion_context
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
+
+_PYTHON_CONSOLE_FILE_PATH = "<python_console>"
 
 
 class ReplCompletionPort(Protocol):
@@ -30,6 +33,7 @@ class PythonConsoleWidgetPort(Protocol):
         self,
         *,
         request_generation: int,
+        prefix: str,
         items: list[CompletionItem],
     ) -> None:
         ...
@@ -93,6 +97,17 @@ class PythonConsoleWorkflow:
                 trigger_character=trigger_character,
                 max_results=100,
             )
+            completion_context = build_completion_context(
+                source_text=line_buffer,
+                cursor_position=cursor_offset,
+                current_file_path=_PYTHON_CONSOLE_FILE_PATH,
+                project_root=None,
+                trigger_is_manual=trigger_kind == "manual",
+                min_prefix_chars=1,
+                max_results=100,
+                trigger_kind=trigger_kind,
+                trigger_character=trigger_character,
+            )
 
             def apply() -> None:
                 console_widget = self._host.python_console_widget()
@@ -100,6 +115,7 @@ class PythonConsoleWorkflow:
                     return
                 console_widget.show_completion_items_for_request(
                     request_generation=request_generation,
+                    prefix=completion_context.prefix,
                     items=envelope.items,
                 )
                 if envelope.degradation_reason:

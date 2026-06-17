@@ -17,6 +17,7 @@ from PySide2.QtWidgets import (
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.markdown_preview_widget import ExternalLinkCallback, LocalLinkCallback, MarkdownPreviewWidget
 from app.editors.markdown_rendering import MAX_LIVE_MARKDOWN_PREVIEW_CHARS
+from app.shell import icon_provider
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -52,6 +53,7 @@ class MarkdownEditorPane(QWidget):
         self._mode = MarkdownPreviewMode.SOURCE
         self._live_preview_threshold_chars = live_preview_threshold_chars
         self._syncing_scroll = False
+        self._tokens: ShellThemeTokens | None = None
 
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
@@ -73,16 +75,39 @@ class MarkdownEditorPane(QWidget):
         toolbar_layout.addWidget(title)
         toolbar_layout.addStretch()
 
-        self._source_button = self._make_mode_button("Markdown", MarkdownPreviewMode.SOURCE, toolbar)
-        self._preview_button = self._make_mode_button("Preview", MarkdownPreviewMode.PREVIEW, toolbar)
-        self._split_button = self._make_mode_button("Split", MarkdownPreviewMode.SPLIT, toolbar)
-        toolbar_layout.addWidget(self._source_button)
-        toolbar_layout.addWidget(self._preview_button)
-        toolbar_layout.addWidget(self._split_button)
+        mode_group = QWidget(toolbar)
+        mode_group.setObjectName("shell.markdownEditorPane.modeGroup")
+        mode_group_layout = QHBoxLayout(mode_group)
+        mode_group_layout.setContentsMargins(0, 0, 0, 0)
+        mode_group_layout.setSpacing(0)
+
+        self._source_button = self._make_mode_button(
+            "Markdown",
+            MarkdownPreviewMode.SOURCE,
+            mode_group,
+            button_id="source",
+        )
+        self._preview_button = self._make_mode_button(
+            "Preview",
+            MarkdownPreviewMode.PREVIEW,
+            mode_group,
+            button_id="preview",
+        )
+        self._split_button = self._make_mode_button(
+            "Split",
+            MarkdownPreviewMode.SPLIT,
+            mode_group,
+            button_id="split",
+        )
+        mode_group_layout.addWidget(self._source_button)
+        mode_group_layout.addWidget(self._preview_button)
+        mode_group_layout.addWidget(self._split_button)
+        toolbar_layout.addWidget(mode_group)
 
         self._refresh_button = QToolButton(toolbar)
         self._refresh_button.setObjectName("shell.markdownEditorPane.refreshButton")
         self._refresh_button.setText("Refresh")
+        self._refresh_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._refresh_button.setToolTip("Refresh Markdown preview")
         self._refresh_button.setAutoRaise(True)
         self._refresh_button.clicked.connect(lambda: self.render_preview(force=True))
@@ -135,8 +160,13 @@ class MarkdownEditorPane(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Apply theme tokens to both source and preview widgets."""
+        self._tokens = tokens
         self._source_editor.apply_theme(tokens)
         self._preview.apply_theme(tokens)
+        self._apply_toolbar_icons(tokens)
+        self._apply_toolbar_theme(tokens)
+        if self._mode in {MarkdownPreviewMode.PREVIEW, MarkdownPreviewMode.SPLIT}:
+            self.schedule_preview_render()
 
     def set_mode(self, mode: str) -> None:
         """Switch between source, preview, and split modes."""
@@ -170,15 +200,74 @@ class MarkdownEditorPane(QWidget):
         text = self._source_editor.toPlainText()
         if not force and len(text) > self._live_preview_threshold_chars:
             self._preview.show_preview_paused_message(len(text), self._live_preview_threshold_chars)
-            self._status_label.setText("Preview paused")
+            self._status_label.setText("Paused (large file)")
             return
         self._preview.render_markdown(text)
-        self._status_label.setText("Preview current")
+        self._status_label.setText("Live")
 
-    def _make_mode_button(self, label: str, mode: str, parent: QWidget) -> QToolButton:
+    def _apply_toolbar_icons(self, tokens: ShellThemeTokens) -> None:
+        icon_color = tokens.icon_primary
+        self._source_button.setIcon(icon_provider.markdown_source_icon(icon_color))
+        self._preview_button.setIcon(icon_provider.markdown_preview_icon(icon_color))
+        self._split_button.setIcon(icon_provider.markdown_split_icon(icon_color))
+        self._refresh_button.setIcon(icon_provider.refresh_icon(icon_color))
+
+    def _apply_toolbar_theme(self, tokens: ShellThemeTokens) -> None:
+        toolbar_bg = tokens.panel_bg
+        border = tokens.border
+        text_primary = tokens.text_primary
+        text_muted = tokens.text_muted
+        hover_bg = tokens.tree_hover_bg
+        selected_bg = tokens.tree_selected_bg
+        toolbar = self.findChild(QWidget, "shell.markdownEditorPane.toolbar")
+        if toolbar is not None:
+            toolbar.setStyleSheet(
+                f"""
+                QWidget#shell.markdownEditorPane.toolbar {{
+                    background-color: {toolbar_bg};
+                    border-bottom: 1px solid {border};
+                }}
+                QLabel#shell.markdownEditorPane.title {{
+                    color: {text_primary};
+                }}
+                QLabel#shell.markdownEditorPane.status {{
+                    color: {text_muted};
+                }}
+                QToolButton#shell.markdownEditorPane.modeButton.source,
+                QToolButton#shell.markdownEditorPane.modeButton.preview,
+                QToolButton#shell.markdownEditorPane.modeButton.split,
+                QToolButton#shell.markdownEditorPane.refreshButton {{
+                    color: {text_primary};
+                    border: 1px solid transparent;
+                    padding: 2px 8px;
+                }}
+                QToolButton#shell.markdownEditorPane.modeButton.source:checked,
+                QToolButton#shell.markdownEditorPane.modeButton.preview:checked,
+                QToolButton#shell.markdownEditorPane.modeButton.split:checked {{
+                    background-color: {selected_bg};
+                    border-color: {border};
+                }}
+                QToolButton#shell.markdownEditorPane.modeButton.source:hover,
+                QToolButton#shell.markdownEditorPane.modeButton.preview:hover,
+                QToolButton#shell.markdownEditorPane.modeButton.split:hover,
+                QToolButton#shell.markdownEditorPane.refreshButton:hover {{
+                    background-color: {hover_bg};
+                }}
+                """
+            )
+
+    def _make_mode_button(
+        self,
+        label: str,
+        mode: str,
+        parent: QWidget,
+        *,
+        button_id: str,
+    ) -> QToolButton:
         button = QToolButton(parent)
-        button.setObjectName("shell.markdownEditorPane.modeButton")
+        button.setObjectName(f"shell.markdownEditorPane.modeButton.{button_id}")
         button.setText(label)
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         button.setCheckable(True)
         button.setAutoRaise(True)
         button.clicked.connect(lambda _checked=False, selected_mode=mode: self.set_mode(selected_mode))

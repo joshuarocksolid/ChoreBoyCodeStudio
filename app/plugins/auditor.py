@@ -6,9 +6,7 @@ from pathlib import Path
 import re
 
 from app.plugins.models import PluginManifest
-from app.project.dependency_classifier import COMPILED_EXTENSION_SUFFIXES
-
-_NATIVE_EXTENSION_SUFFIXES = COMPILED_EXTENSION_SUFFIXES
+from app.project.native_extension_scan import is_native_artifact_path
 _FORBIDDEN_HIDDEN_PATH_TOKENS = (
     ".cbcs",
     ".choreboy_code_studio",
@@ -56,7 +54,7 @@ def audit_plugin_package(plugin_root: Path, manifest: PluginManifest) -> list[Pl
                 )
             )
             continue
-        if path.is_file() and path.suffix.lower() in _NATIVE_EXTENSION_SUFFIXES:
+        if path.is_file() and is_native_artifact_path(path):
             findings.append(
                 PluginAuditFinding(
                     code="plugin.native_extension",

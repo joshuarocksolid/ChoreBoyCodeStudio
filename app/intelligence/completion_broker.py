@@ -35,6 +35,7 @@ from app.intelligence.completion_providers import (
     provide_project_symbol_items,
 )
 from app.intelligence.semantic_facade import SemanticFacade
+from app.project.file_inventory import ProjectInventorySnapshot
 
 _logger = logging.getLogger(__name__)
 
@@ -75,12 +76,24 @@ class _CachedCompletionEnvelope:
 class CompletionBroker:
     """Owns tier selection, result reuse, ranking, and merge policy."""
 
-    def __init__(self, *, cache_db_path: str, semantic_facade: SemanticFacade | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache_db_path: str,
+        semantic_facade: SemanticFacade | None = None,
+        inventory_snapshot_provider: Callable[[], ProjectInventorySnapshot | None] | None = None,
+    ) -> None:
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())
         self._semantic_facade = semantic_facade or SemanticFacade(cache_db_path=self._cache_db_path)
+        self._inventory_snapshot_provider = inventory_snapshot_provider
         self._acceptance_scores: dict[str, int] = {}
         self._result_cache: dict[str, _CachedCompletionEnvelope] = {}
         self._telemetry = CompletionTelemetry()
+
+    def _current_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
+        if self._inventory_snapshot_provider is None:
+            return None
+        return self._inventory_snapshot_provider()
 
     def complete_fast(self, request: Any) -> CompletionEnvelope:
         """Return cached/indexed completion items without invoking Jedi."""
@@ -224,12 +237,14 @@ class CompletionBroker:
                     cache_db_path=self._cache_db_path,
                     prefix=context.prefix,
                     limit=project_limit,
+                    inventory_snapshot=self._current_inventory_snapshot(),
                 ),
                 *provide_project_module_items(
                     project_root=context.project_root,
                     prefix=context.prefix,
                     limit=project_limit,
                     cache_db_path=self._cache_db_path,
+                    inventory_snapshot=self._current_inventory_snapshot(),
                 ),
                 *provide_builtin_items(context.prefix),
                 *provide_keyword_items(context.prefix),
@@ -413,10 +428,13 @@ def _item_id(item: CompletionItem, context: CompletionContext) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
+_PRESERVE_COMPLETION_SOURCES = frozenset({"static_api_index", "cache", "semantic"})
+
+
 def _tag_approximate_items(candidates: list[CompletionItem]) -> list[CompletionItem]:
     marked: list[CompletionItem] = []
     for candidate in candidates:
-        if candidate.source == "static_api_index":
+        if candidate.source in _PRESERVE_COMPLETION_SOURCES:
             marked.append(candidate)
             continue
         detail = candidate.detail

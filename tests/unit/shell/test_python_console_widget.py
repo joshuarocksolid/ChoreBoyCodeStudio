@@ -175,6 +175,7 @@ class TestCompletion:
         )
         active_widget.show_completion_items_for_request(
             request_generation=active_widget._completion_request_generation,  # noqa: SLF001
+            prefix="new",
             items=[item],
         )
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.core.models import ProjectMetadata
+from app.project.file_inventory import build_project_inventory_snapshot
 from app.intelligence.diagnostics_service import analyze_python_file, find_unresolved_imports
 from app.intelligence.import_resolver import resolve_project_import
 from app.project.import_layout import (
@@ -101,6 +102,7 @@ def test_find_unresolved_imports_respects_manifest_source_roots(tmp_path: Path) 
         str(project_root),
         known_runtime_modules=frozenset(),
         project_metadata=metadata,
+        inventory_snapshot=build_project_inventory_snapshot(str(project_root)),
     )
 
     assert diagnostics == []

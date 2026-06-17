@@ -36,6 +36,7 @@ def _make_palette(lightness: int = 240) -> MagicMock:
 @dataclass
 class RecordingChildCallbacks:
     style_sheets: list[str] = field(default_factory=list)
+    tooltip_style_sheets: list[str] = field(default_factory=list)
     editor_tokens: list[ShellThemeTokens] = field(default_factory=list)
     markdown_tokens: list[ShellThemeTokens] = field(default_factory=list)
     console_tokens: list[ShellThemeTokens] = field(default_factory=list)
@@ -48,6 +49,7 @@ class RecordingChildCallbacks:
     def as_shell_callbacks(self) -> ShellThemeChildCallbacks:
         return ShellThemeChildCallbacks(
             set_shell_style_sheet=self.style_sheets.append,
+            set_app_tooltip_style_sheet=self.tooltip_style_sheets.append,
             apply_editor_themes=self.editor_tokens.append,
             apply_markdown_themes=self.markdown_tokens.append,
             apply_python_console_theme=self.console_tokens.append,
@@ -196,6 +198,8 @@ class TestApplyThemeStyles:
 
         assert len(recording.style_sheets) == 1
         assert recording.style_sheets[0]
+        assert len(recording.tooltip_style_sheets) == 1
+        assert recording.tooltip_style_sheets[0]
         assert len(recording.editor_tokens) == 1
         assert len(recording.markdown_tokens) == 1
         assert len(recording.console_tokens) == 1
@@ -215,6 +219,7 @@ class TestApplyThemeStyles:
         workflow.apply_theme_styles()
 
         assert recording.style_sheets == []
+        assert recording.tooltip_style_sheets == []
 
     def test_tab_close_icon_paths_are_set_on_tokens(self) -> None:
         recording = RecordingChildCallbacks()
@@ -226,6 +231,23 @@ class TestApplyThemeStyles:
         tokens = recording.editor_tokens[0]
         assert tokens.tab_close_icon_path
         assert tokens.tab_close_icon_hover_path
+
+    def test_emits_theme_aware_tooltip_stylesheet_for_dark_mode(self) -> None:
+        recording = RecordingChildCallbacks()
+        host = _build_host(
+            recording=recording,
+            theme_mode=constants.UI_THEME_MODE_DARK,
+        )
+        workflow = ShellThemeWorkflow(host)
+
+        workflow.apply_theme_styles()
+
+        tooltip_qss = recording.tooltip_style_sheets[0]
+        tokens = recording.editor_tokens[0]
+        assert "QToolTip" in tooltip_qss
+        assert tokens.popup_bg in tooltip_qss
+        assert tokens.text_primary in tooltip_qss
+        assert tokens.popup_border in tooltip_qss or tokens.border in tooltip_qss
 
 
 @pytest.mark.usefixtures("qapp")

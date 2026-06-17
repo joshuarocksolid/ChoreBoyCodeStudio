@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Mapping
 
 from PySide2.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 
@@ -27,6 +27,7 @@ DEFAULT_LIGHT_PALETTE: SyntaxPalette = {
     "builtin": "#267F99",
     "escape": "#EE0000",
     "string": "#A31515",
+    "string_prefix": "#AF00DB",
     "comment": "#008000",
     "number": "#098658",
     "function": "#795E26",
@@ -58,6 +59,7 @@ DEFAULT_DARK_PALETTE: SyntaxPalette = {
     "builtin": "#4EC9B0",
     "escape": "#D7BA7D",
     "string": "#CE9178",
+    "string_prefix": "#C586C0",
     "comment": "#6A9955",
     "number": "#B5CEA8",
     "function": "#DCDCAA",
@@ -92,6 +94,7 @@ DEFAULT_HC_LIGHT_PALETTE: SyntaxPalette = {
     "builtin": "#005A5A",
     "escape": "#A03000",
     "string": "#9C0000",
+    "string_prefix": "#7B1FA2",
     "comment": "#005000",
     "number": "#005000",
     "function": "#5A3500",
@@ -123,6 +126,7 @@ DEFAULT_HC_DARK_PALETTE: SyntaxPalette = {
     "builtin": "#5FE3C2",
     "escape": "#FFD787",
     "string": "#FFB088",
+    "string_prefix": "#FF9CFF",
     "comment": "#7FCB66",
     "number": "#D5F0AE",
     "function": "#FFFF87",
@@ -168,6 +172,48 @@ def build_syntax_palette(
             if value:
                 palette[key] = value
     return palette
+
+
+SYNTAX_PALETTE_FIELD_MAP: dict[str, str] = {
+    "keyword": "syntax_keyword",
+    "keyword_control": "syntax_keyword_control",
+    "keyword_import": "syntax_keyword_import",
+    "keyword_operator": "syntax_keyword_operator",
+    "builtin": "syntax_builtin",
+    "escape": "syntax_escape",
+    "string": "syntax_string",
+    "string_prefix": "syntax_string_prefix",
+    "comment": "syntax_comment",
+    "number": "syntax_number",
+    "function": "syntax_function",
+    "class": "syntax_class",
+    "decorator": "syntax_decorator",
+    "operator": "syntax_operator",
+    "punctuation": "syntax_punctuation",
+    "parameter": "syntax_parameter",
+    "json_key": "syntax_json_key",
+    "json_literal": "syntax_json_literal",
+    "markdown_heading": "syntax_markdown_heading",
+    "markdown_emphasis": "syntax_markdown_emphasis",
+    "markdown_strong": "syntax_markdown_strong",
+    "markdown_code": "syntax_markdown_code",
+    "semantic_function": "syntax_semantic_function",
+    "semantic_method": "syntax_semantic_method",
+    "semantic_class": "syntax_semantic_class",
+    "semantic_parameter": "syntax_semantic_parameter",
+    "semantic_import": "syntax_semantic_import",
+    "semantic_variable": "syntax_semantic_variable",
+    "semantic_property": "syntax_semantic_property",
+    "semantic_constant": "syntax_semantic_constant",
+}
+
+
+def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
+    """Build a syntax palette dict from shell theme token fields."""
+    return {
+        token_key: getattr(tokens, field_name)
+        for token_key, field_name in SYNTAX_PALETTE_FIELD_MAP.items()
+    }
 
 
 class ThemedSyntaxHighlighter(QSyntaxHighlighter):

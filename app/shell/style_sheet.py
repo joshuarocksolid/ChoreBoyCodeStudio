@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from app.shell.style_sheet_sections import (
+    shell_section_tooltips,
+    shell_section_checkbox_indicators,
     settings_section_checkbox_and_line_edit,
     settings_section_combo_spin_font,
     settings_section_dialog_and_tabs,
@@ -38,10 +40,16 @@ from app.shell.style_sheet_sections import (
 from app.shell.theme_tokens import ShellThemeTokens
 
 
+def build_app_tooltip_style_sheet(tokens: ShellThemeTokens) -> str:
+    """Return stylesheet string for application-level QToolTip styling."""
+    return shell_section_tooltips(tokens)
+
+
 def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
     """Return stylesheet string for shell components."""
     return "\n" + (
         shell_section_chrome_font_weight(tokens)
+        + shell_section_checkbox_indicators(tokens)
         + shell_section_main_window_menus(tokens)
         + shell_section_workspace_tree_editors(tokens)
         + shell_section_run_log_panel(tokens)
@@ -70,6 +78,7 @@ def build_settings_style_sheet(tokens: ShellThemeTokens) -> str:
     """Return stylesheet string for the settings dialog."""
     return "\n" + (
         shell_section_chrome_font_weight(tokens)
+        + shell_section_checkbox_indicators(tokens)
         + settings_section_dialog_and_tabs(tokens)
         + settings_section_scope_controls(tokens)
         + settings_section_group_boxes_and_labels(tokens)
@@ -85,6 +94,7 @@ def build_run_dialog_style_sheet(tokens: ShellThemeTokens) -> str:
     """Return stylesheet string for run/configuration modal dialogs."""
     return "\n" + (
         shell_section_chrome_font_weight(tokens)
+        + shell_section_checkbox_indicators(tokens)
         + shell_section_dialog_chrome(tokens)
         + shell_section_run_dialog(tokens)
     )

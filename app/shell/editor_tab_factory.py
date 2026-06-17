@@ -9,18 +9,32 @@ from PySide2.QtWidgets import QMessageBox, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
-from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
-from app.editors.markdown_rendering import is_markdown_path, qt_markdown_supported
-from app.intelligence.completion_models import CompletionItem
+from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 
 
-class EditorTabFactory:
-    """Creates editor widgets and wires their shell callbacks."""
+class MainWindowEditorBindingsHost:
+    """Binding ports for :class:`EditorTabFactory` backed by a MainWindow instance."""
 
     def __init__(self, window: Any) -> None:
         self._window = window
 
-    def open_file_in_editor(self, file_path: str, *, preview: bool = False) -> bool:
+    def semantic_navigation_workflow(self) -> Any:
+        return self._window._semantic_navigation_workflow
+
+    def enable_auto_reindent_flat_python_paste_from_hint(self) -> Any:
+        return self._window._enable_auto_reindent_flat_python_paste_from_hint
+
+    def handle_paste_hint_repair_result(self) -> Any:
+        return self._window._handle_paste_hint_repair_result
+
+
+class EditorTabFactory:
+    """Creates editor widgets and registers them with the shell workspace."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def open_file_in_editor(self, file_path: str, *, preview: bool = False, restore_draft: bool = True) -> bool:
         window = self._window
         if window._editor_tabs_widget is None:
             return False
@@ -32,7 +46,11 @@ class EditorTabFactory:
         except ValueError as exc:
             QMessageBox.warning(window, "Unable to open file", str(exc))
             return False
-        return self._materialize_opened_editor_tab(opened_result, started_at=started_at, restore_draft=True)
+        return self._materialize_opened_editor_tab(
+            opened_result,
+            started_at=started_at,
+            restore_draft=restore_draft,
+        )
 
     def open_restored_history_buffer(self, file_path: str, content: str) -> bool:
         window = self._window
@@ -92,107 +110,17 @@ class EditorTabFactory:
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
 
-        def completion_requester(
-            prefix: str,
-            source_text: str,
-            cursor_position: int,
-            manual_trigger: bool,
-            request_generation: int,
-            trigger_kind: str,
-            trigger_character: str,
-        ) -> None:
-            window._semantic_navigation_workflow.request_editor_completions_async(
-                file_path=tab_file_path,
-                editor_widget=editor_widget,
-                prefix=prefix,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                manual_trigger=manual_trigger,
-                request_generation=request_generation,
-                trigger_kind=trigger_kind,
-                trigger_character=trigger_character,
-            )
-
-        def hover_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
-            window._semantic_navigation_workflow.request_inline_hover_text_async(
-                file_path=tab_file_path,
-                editor_widget=editor_widget,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                request_generation=request_generation,
-            )
-
-        def signature_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
-            window._semantic_navigation_workflow.request_inline_signature_text_async(
-                file_path=tab_file_path,
-                editor_widget=editor_widget,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                request_generation=request_generation,
-            )
-
-        def completion_resolve_requester(
-            item: CompletionItem,
-            source_text: str,
-            cursor_position: int,
-            request_generation: int,
-        ) -> None:
-            window._semantic_navigation_workflow.request_completion_item_resolve_async(
-                file_path=tab_file_path,
-                editor_widget=editor_widget,
-                item=item,
-                source_text=source_text,
-                cursor_position=cursor_position,
-                request_generation=request_generation,
-            )
-
-        def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
-            window._debug_control_workflow.handle_editor_breakpoint_toggled(tab_file_path, line_number, enabled)
-
-        def on_text_changed() -> None:
-            window._editor_tab_workflow.handle_editor_text_changed(tab_file_path, editor_widget)
-
-        def on_cursor_position_changed() -> None:
-            window._editor_tab_workflow.handle_editor_cursor_position_changed(tab_file_path, editor_widget)
-
-        def on_completion_accepted(item: CompletionItem) -> None:
-            window._semantic_navigation_workflow.record_editor_completion_acceptance(
-                file_path=tab_file_path,
-                item=item,
-            )
-
-        editor_widget.set_breakpoint_toggled_callback(on_breakpoint_toggled)
-        editor_widget.set_completion_requester(completion_requester)
-        editor_widget.set_completion_resolve_requester(completion_resolve_requester)
-        editor_widget.set_completion_accepted_callback(on_completion_accepted)
-        editor_widget.set_hover_requester(hover_requester)
-        editor_widget.set_signature_help_requester(signature_requester)
-        editor_widget.set_paste_hint_enable_always_callback(
-            window._enable_auto_reindent_flat_python_paste_from_hint
-        )
-        editor_widget.set_paste_hint_status_callback(window._handle_paste_hint_repair_result)
-        editor_widget.set_breakpoints(
-            window._debug_control_workflow.breakpoint_store.lines_for_file(opened_result.tab.file_path)
-        )
-        editor_widget.textChanged.connect(on_text_changed)
-        editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)
+        bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
+        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, tab_file_path)
         window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
 
-        tab_content: QWidget = editor_widget
-        if is_markdown_path(tab_file_path) and qt_markdown_supported():
-            markdown_pane = MarkdownEditorPane(
-                editor_widget,
-                tab_file_path,
-                window._editor_tabs_widget,
-                local_link_callback=lambda linked_path: window._editor_tab_factory.open_file_in_editor(
-                    linked_path,
-                    preview=False,
-                ),
-                initial_mode=MarkdownPreviewMode.PREVIEW,
-            )
-            markdown_pane.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
-            window._markdown_panes_by_path[tab_file_path] = markdown_pane
-            tab_content = markdown_pane
+        tab_content: QWidget = window._editor_tab_workflow.wrap_tab_content_if_markdown(
+            editor_widget=editor_widget,
+            file_path=tab_file_path,
+            parent=window._editor_tabs_widget,
+            theme_tokens=window._shell_theme_workflow.resolve_theme_tokens(),
+            open_linked_file=lambda linked_path: self.open_file_in_editor(linked_path, preview=False),
+        )
 
         tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
         window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
@@ -215,3 +143,6 @@ class EditorTabFactory:
                 (time.perf_counter() - started_at) * 1000.0,
             )
         return True
+
+
+__all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]

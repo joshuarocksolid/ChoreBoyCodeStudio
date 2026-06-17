@@ -23,11 +23,11 @@ from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
 from PySide2.QtGui import QKeyEvent
 from PySide2.QtWidgets import QApplication, QWidget
 
-from app.editors.completion_popup.completion_item_model import CompletionItemModel
+from app.editors.completion_popup.completion_item_model import CompletionItemModel, compute_match_ranges
 from app.editors.completion_popup.completion_popup_container import (
     CompletionPopupContainer,
 )
-from app.intelligence.completion_merge_policy import is_tier_header_item
+from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -120,14 +120,10 @@ class CompletionController(QObject):
         previous_prefix = self._model.prefix()
         if previous_prefix and not prefix.startswith(previous_prefix):
             return False
-        items = [
-            item
-            for item in self._model.items()
-            if not prefix or item.label.lower().startswith(prefix.lower())
-        ]
-        if not items:
+        filtered = _filter_items_preserving_tier_headers(self._model.items(), prefix)
+        if not filtered or not any(not is_tier_header_item(item) for item in filtered):
             return False
-        self.set_items(items, prefix)
+        self.set_items(filtered, prefix)
         return True
 
     def clear(self) -> None:
@@ -298,6 +294,28 @@ class CompletionController(QObject):
             if candidate.geometry().contains(point):
                 return candidate.availableGeometry()
         return screen.availableGeometry()
+
+
+def _filter_items_preserving_tier_headers(
+    items: list[CompletionItem],
+    prefix: str,
+) -> list[CompletionItem]:
+    """Keep tier section headers when their section still has matching items."""
+
+    filtered: list[CompletionItem] = []
+    pending_header: CompletionItem | None = None
+    for item in items:
+        if is_tier_header_item(item):
+            pending_header = item
+            continue
+        matches = not prefix or bool(compute_match_ranges(item.label, prefix))
+        if not matches:
+            continue
+        if pending_header is not None:
+            filtered.append(pending_header)
+            pending_header = None
+        filtered.append(item)
+    return filtered
 
 
 def _selection_identity(item: object) -> str:

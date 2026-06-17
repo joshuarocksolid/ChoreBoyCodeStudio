@@ -4,11 +4,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide2.QtCore import Qt
-from PySide2.QtGui import QKeySequence
+from PySide2.QtGui import QIcon, QKeySequence
 from PySide2.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialogButtonBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -290,9 +291,6 @@ def build_files_tab(dialog: "SettingsDialog", tabs: QTabWidget, snapshot: Editor
 
 
 def build_buttons_row(dialog: "SettingsDialog", layout: QVBoxLayout) -> None:
-    from PySide2.QtGui import QIcon
-    from PySide2.QtWidgets import QDialogButtonBox
-
     buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
     buttons.setObjectName("shell.settingsDialog.buttonBox")
     buttons.accepted.connect(dialog.accept)
@@ -301,6 +299,7 @@ def build_buttons_row(dialog: "SettingsDialog", layout: QVBoxLayout) -> None:
     dialog._ok_button = buttons.button(QDialogButtonBox.Ok)
     if dialog._ok_button is not None:
         dialog._ok_button.setObjectName("shell.settingsDialog.okBtn")
+        dialog._ok_button.setText("Save")
         dialog._ok_button.setIcon(QIcon())
     cancel_button = buttons.button(QDialogButtonBox.Cancel)
     if cancel_button is not None:

@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from app.intelligence import diagnostics_service as diagnostics_service_module
+from app.intelligence import import_explanations as import_explanations_module
 from app.intelligence.diagnostics_service import (
     DiagnosticSeverity,
     analyze_python_file,
@@ -17,8 +18,13 @@ from app.intelligence.diagnostics_service import (
     find_unresolved_imports,
 )
 from app.intelligence.runtime_import_probe import RuntimeImportProbeResult
+from app.project.file_inventory import build_project_inventory_snapshot
 
 pytestmark = pytest.mark.unit
+
+
+def _project_inventory(project_root: Path):
+    return build_project_inventory_snapshot(str(project_root))
 
 
 def test_find_unresolved_imports_flags_missing_project_modules(tmp_path: Path) -> None:
@@ -26,7 +32,10 @@ def test_find_unresolved_imports_flags_missing_project_modules(tmp_path: Path) -
     project_root.mkdir()
     (project_root / "module.py").write_text("import missing.module\n", encoding="utf-8")
 
-    diagnostics = find_unresolved_imports(str(project_root))
+    diagnostics = find_unresolved_imports(
+        str(project_root),
+        inventory_snapshot=_project_inventory(project_root),
+    )
 
     assert len(diagnostics) == 1
     assert "missing.module" in diagnostics[0].message
@@ -184,11 +193,19 @@ def test_find_unresolved_imports_uses_source_overrides(tmp_path: Path) -> None:
     file_path = project_root / "module.py"
     file_path.write_text("x = 1\n", encoding="utf-8")
 
-    diagnostics_disk = find_unresolved_imports(str(project_root))
+    inventory = _project_inventory(project_root)
+    diagnostics_disk = find_unresolved_imports(
+        str(project_root),
+        inventory_snapshot=inventory,
+    )
     assert len(diagnostics_disk) == 0
 
     overrides = {str(file_path): "import nonexistent_module\n"}
-    diagnostics_buffer = find_unresolved_imports(str(project_root), source_overrides=overrides)
+    diagnostics_buffer = find_unresolved_imports(
+        str(project_root),
+        source_overrides=overrides,
+        inventory_snapshot=inventory,
+    )
     assert len(diagnostics_buffer) == 1
     assert "nonexistent_module" in diagnostics_buffer[0].message
 
@@ -238,7 +255,7 @@ def test_explain_unresolved_import_classifies_runtime_module_unavailable(
     project_root = tmp_path / "project"
     project_root.mkdir()
     monkeypatch.setattr(
-        diagnostics_service_module,
+        import_explanations_module,
         "probe_runtime_module_importability",
         lambda module_name: RuntimeImportProbeResult(
             module_name=module_name,
@@ -334,16 +351,20 @@ def test_find_unresolved_imports_respects_known_runtime_modules(tmp_path: Path) 
     )
     known = frozenset(["FreeCAD"])
 
-    diagnostics = find_unresolved_imports(str(project_root), known_runtime_modules=known)
+    diagnostics = find_unresolved_imports(
+        str(project_root),
+        known_runtime_modules=known,
+        inventory_snapshot=_project_inventory(project_root),
+    )
 
     assert len(diagnostics) == 1
     assert "nonexistent" in diagnostics[0].message
 
 
-def test_analyze_python_file_runtime_probe_can_resolve_imports(
+def test_analyze_python_file_runtime_probe_does_not_resolve_hot_lint_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Optional runtime probe fallback should resolve modules importable in runtime."""
+    """Hot lint paths remain static-only even when runtime probe would resolve imports."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     file_path = project_root / "run.py"
@@ -361,7 +382,8 @@ def test_analyze_python_file_runtime_probe_can_resolve_imports(
     )
     py200 = [d for d in diagnostics if d.code == "PY200"]
 
-    assert py200 == []
+    assert len(py200) == 1
+    assert "FreeCAD" in py200[0].message
 
 
 def test_analyze_python_file_runtime_probe_disabled_keeps_unresolved(tmp_path: Path) -> None:
@@ -433,7 +455,11 @@ def test_find_unresolved_imports_resolves_vendor_module(tmp_path: Path) -> None:
     (vendor_dir / "vendored_lib.py").write_text("x = 1\n", encoding="utf-8")
     (project_root / "main.py").write_text("import vendored_lib\nvendored_lib.x\n", encoding="utf-8")
 
-    diagnostics = find_unresolved_imports(str(project_root), known_runtime_modules=frozenset())
+    diagnostics = find_unresolved_imports(
+        str(project_root),
+        known_runtime_modules=frozenset(),
+        inventory_snapshot=_project_inventory(project_root),
+    )
 
     assert len(diagnostics) == 0
 

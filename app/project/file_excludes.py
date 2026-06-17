@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from dataclasses import dataclass
 from typing import Any, Mapping, Protocol, Sequence
 
 from app.core import constants
@@ -24,6 +25,61 @@ DEFAULT_EXCLUDE_PATTERNS: list[str] = [
     "venv",
     "vendor",
 ]
+
+
+@dataclass(frozen=True)
+class EffectiveExcludes:
+    """Merged exclude patterns for one project generation."""
+
+    patterns: tuple[str, ...]
+
+    @classmethod
+    def merge(cls, *layers: Sequence[str]) -> EffectiveExcludes:
+        merged: list[str] = []
+        for layer in layers:
+            merged = compute_effective_excludes(merged, layer)
+        return cls(patterns=tuple(merged))
+
+    def pattern_mode(self) -> str:
+        from app.project.file_inventory import PATTERN_MODE_NAME, PATTERN_MODE_RELATIVE_PATH
+
+        if any("/" in pattern for pattern in self.patterns):
+            return PATTERN_MODE_RELATIVE_PATH
+        return PATTERN_MODE_NAME
+
+    def as_list(self) -> list[str]:
+        return list(self.patterns)
+
+
+def effective_excludes_for_project(
+    settings_service: SettingsServiceLike,
+    project_root: str,
+    *,
+    manifest_patterns: Sequence[str] = (),
+) -> EffectiveExcludes:
+    """Resolve settings + manifest excludes for shell and intelligence callers."""
+    settings_patterns = load_effective_exclude_patterns(settings_service, project_root)
+    return EffectiveExcludes.merge(settings_patterns, manifest_patterns)
+
+
+def merge_search_exclude_globs(
+    effective: EffectiveExcludes,
+    exclude_globs: Sequence[str] | None,
+) -> EffectiveExcludes:
+    """Overlay UI search ``exclude_globs`` onto effective project excludes."""
+    if not exclude_globs:
+        return effective
+    converted = [_normalize_search_exclude_glob(glob) for glob in exclude_globs if glob.strip()]
+    if not converted:
+        return effective
+    return EffectiveExcludes.merge(effective.patterns, converted)
+
+
+def _normalize_search_exclude_glob(glob_pattern: str) -> str:
+    pattern = glob_pattern.strip()
+    if pattern.endswith("/**"):
+        return pattern[:-3]
+    return pattern
 
 
 def parse_global_exclude_patterns(settings_payload: Mapping[str, Any]) -> list[str]:

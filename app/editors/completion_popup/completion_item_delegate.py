@@ -34,6 +34,7 @@ from app.editors.completion_popup.completion_item_model import (
     ItemRole,
     KindStyleRole,
     MatchRangesRole,
+    RowKindRole,
 )
 from app.editors.completion_popup.completion_kind_style import KindGlyphStyle
 from app.intelligence.completion_models import CompletionItem
@@ -41,6 +42,7 @@ from app.shell.theme_tokens import ShellThemeTokens
 
 
 _ROW_HEIGHT = 24
+_HEADER_ROW_HEIGHT = 22
 _ICON_SIZE = 18
 _ICON_PADDING_LEFT = 6
 _ICON_PADDING_RIGHT = 8
@@ -55,27 +57,32 @@ class CompletionItemDelegate(QStyledItemDelegate):
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
         self._tokens: ShellThemeTokens | None = None
-        self._color_text: QColor = QColor("#212529")
-        self._color_muted: QColor = QColor("#6C757D")
-        self._color_selected_bg: QColor = QColor("#D0E2FF")
-        self._color_hover_bg: QColor = QColor("#E9ECEF")
+        self._color_text: QColor = QColor()
+        self._color_muted: QColor = QColor()
+        self._color_selected_bg: QColor = QColor()
+        self._color_hover_bg: QColor = QColor()
         self._color_alt_bg: QColor = QColor(0, 0, 0, 0)
-        self._color_badge_bg: QColor = QColor("#E9ECEF")
-        self._color_badge_text: QColor = QColor("#6C757D")
+        self._color_badge_bg: QColor = QColor()
+        self._color_badge_text: QColor = QColor()
+        self._color_header_bg: QColor = QColor(0, 0, 0, 0)
+        self._color_header_border: QColor = QColor()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Refresh cached painter colors from the supplied theme tokens."""
         self._tokens = tokens
-        self._color_text = QColor(tokens.text_primary or "#212529")
-        self._color_muted = QColor(tokens.text_muted or "#6C757D")
-        self._color_selected_bg = QColor(tokens.tree_selected_bg or "#D0E2FF")
-        self._color_hover_bg = QColor(tokens.tree_hover_bg or "#E9ECEF")
+        self._color_text = QColor(tokens.text_primary)
+        self._color_muted = QColor(tokens.text_muted)
+        self._color_selected_bg = QColor(tokens.tree_selected_bg)
+        self._color_hover_bg = QColor(tokens.tree_hover_bg)
         self._color_alt_bg = QColor(tokens.row_alt_bg) if tokens.row_alt_bg else QColor(0, 0, 0, 0)
-        self._color_badge_bg = QColor(tokens.badge_bg or "#E9ECEF")
-        self._color_badge_text = QColor(tokens.text_muted or "#6C757D")
+        self._color_badge_bg = QColor(tokens.badge_bg)
+        self._color_badge_text = QColor(tokens.text_muted)
+        self._color_header_bg = QColor(tokens.row_alt_bg) if tokens.row_alt_bg else QColor(0, 0, 0, 0)
+        self._color_header_border = QColor(tokens.border)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:  # noqa: N802
-        return QSize(option.rect.width() if option.rect.width() > 0 else 320, _ROW_HEIGHT)
+        row_height = _HEADER_ROW_HEIGHT if index.data(RowKindRole) == "header" else _ROW_HEIGHT
+        return QSize(option.rect.width() if option.rect.width() > 0 else 320, row_height)
 
     def paint(  # noqa: C901 - render path with multiple regions
         self,
@@ -86,6 +93,10 @@ class CompletionItemDelegate(QStyledItemDelegate):
         item = index.data(ItemRole)
         if not isinstance(item, CompletionItem):
             super().paint(painter, option, index)
+            return
+
+        if index.data(RowKindRole) == "header":
+            self._paint_tier_header(painter, option, item)
             return
 
         painter.save()
@@ -159,6 +170,37 @@ class CompletionItemDelegate(QStyledItemDelegate):
             base_color=self._color_text,
         )
 
+        painter.restore()
+
+    def _paint_tier_header(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        item: CompletionItem,
+    ) -> None:
+        """Paint a non-selectable tier section label."""
+
+        painter.save()
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        rect = QRect(option.rect)
+        if self._color_header_bg.alpha() > 0:
+            painter.fillRect(rect, self._color_header_bg)
+        border_y = rect.bottom()
+        painter.setPen(QPen(self._color_header_border))
+        painter.drawLine(rect.left() + _ICON_PADDING_LEFT, border_y, rect.right() - _RIGHT_PADDING, border_y)
+
+        header_font = QFont(option.font)
+        header_font.setBold(True)
+        header_font.setPointSizeF(max(7.5, header_font.pointSizeF() - 1.0))
+        label_rect = QRect(
+            rect.x() + _ICON_PADDING_LEFT,
+            rect.y(),
+            rect.width() - _ICON_PADDING_LEFT - _RIGHT_PADDING,
+            rect.height(),
+        )
+        painter.setFont(header_font)
+        painter.setPen(QPen(self._color_muted))
+        painter.drawText(label_rect, Qt.AlignVCenter | Qt.AlignLeft, item.label)
         painter.restore()
 
     def _paint_kind_chip(

@@ -14,15 +14,20 @@ from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, dumps_message, envel
 pytestmark = pytest.mark.integration
 
 
-def _read_json_line(sock: socket.socket) -> dict[str, Any]:
+def _read_json_line(sock: socket.socket, *, timeout_seconds: float = 2.0) -> dict[str, Any]:
+    previous_timeout = sock.gettimeout()
+    sock.settimeout(timeout_seconds)
     chunks: list[bytes] = []
-    while True:
-        chunk = sock.recv(4096)
-        if not chunk:
-            break
-        chunks.append(chunk)
-        if b"\n" in chunk:
-            break
+    try:
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    finally:
+        sock.settimeout(previous_timeout)
     raw = b"".join(chunks).split(b"\n", 1)[0] + b"\n"
     return loads_message(raw)
 

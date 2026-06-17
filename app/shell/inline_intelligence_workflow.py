@@ -53,6 +53,8 @@ class InlineIntelligenceWorkflow:
                 editor_widget_for_path=self._host.editor_widget_for_path,
                 buffer_revision=self._host.editor_buffer_revision,
                 deliver=deliver,
+                requested_generation=request_generation,
+                current_generation=editor_widget.signature_help_request_generation(),
             )
 
         def on_error(exc: Exception) -> None:
@@ -102,6 +104,8 @@ class InlineIntelligenceWorkflow:
                 editor_widget_for_path=self._host.editor_widget_for_path,
                 buffer_revision=self._host.editor_buffer_revision,
                 deliver=deliver,
+                requested_generation=request_generation,
+                current_generation=editor_widget.hover_request_generation(),
             )
 
         def on_error(exc: Exception) -> None:
@@ -146,6 +150,8 @@ class InlineIntelligenceWorkflow:
                 editor_widget_for_path=self._host.editor_widget_for_path,
                 buffer_revision=self._host.editor_buffer_revision,
                 deliver=deliver,
+                requested_generation=request_generation,
+                current_generation=editor_widget.signature_help_request_generation(),
             )
 
         def on_error(exc: Exception) -> None:
@@ -190,6 +196,8 @@ class InlineIntelligenceWorkflow:
                 editor_widget_for_path=self._host.editor_widget_for_path,
                 buffer_revision=self._host.editor_buffer_revision,
                 deliver=deliver,
+                requested_generation=request_generation,
+                current_generation=editor_widget.hover_request_generation(),
             )
 
         def on_error(exc: Exception) -> None:

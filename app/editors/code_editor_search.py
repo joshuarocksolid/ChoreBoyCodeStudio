@@ -1,13 +1,12 @@
 """Search and replace highlighting behavior for CodeEditorWidget."""
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any, cast
 
 from PySide2.QtGui import QTextCursor
 from PySide2.QtWidgets import QTextEdit
 
-from app.editors.find_replace_bar import FindOptions
+from app.editors.search_service import FindOptions, compile_search_pattern
 
 MAX_EDITOR_REGEX_QUERY_CHARS = 512
 MAX_EDITOR_SEARCH_TEXT_CHARS = 1_000_000
@@ -42,7 +41,11 @@ class CodeEditorSearchMixin(_CodeEditorSearchBase):
             self._refresh_extra_selections()
             return 0
 
-        pattern = self._compile_search_pattern(query, options)
+        pattern = compile_search_pattern(
+            query,
+            options,
+            max_regex_chars=MAX_EDITOR_REGEX_QUERY_CHARS,
+        )
         if pattern is None:
             self._refresh_extra_selections()
             return 0
@@ -176,17 +179,3 @@ class CodeEditorSearchMixin(_CodeEditorSearchBase):
         selection.cursor = cursor
         return selection
 
-    @staticmethod
-    def _compile_search_pattern(query: str, options: FindOptions) -> re.Pattern[str] | None:
-        flags = 0 if options.case_sensitive else re.IGNORECASE
-        if options.regex and len(query) > MAX_EDITOR_REGEX_QUERY_CHARS:
-            return None
-        if options.regex:
-            try:
-                return re.compile(query, flags)
-            except re.error:
-                return None
-        escaped = re.escape(query)
-        if options.whole_word:
-            escaped = rf"\b{escaped}\b"
-        return re.compile(escaped, flags)

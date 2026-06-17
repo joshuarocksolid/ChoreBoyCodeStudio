@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from PySide2.QtCore import Qt
 from PySide2.QtGui import QFontMetrics
-from PySide2.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
+from PySide2.QtWidgets import QHBoxLayout, QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
 if TYPE_CHECKING:
     from app.shell.settings_dialog import SettingsDialog
 
 SETTINGS_TABLE_COLUMN_PAD = 16
+SETTINGS_TABLE_MIN_ROW_HEIGHT = 28
+SETTINGS_TABLE_ROW_VERTICAL_PAD = 4
 
 
 def settings_table_widget_preferred_width(widget: QWidget) -> int:
@@ -27,6 +30,30 @@ def settings_table_item_text_width(table: QTableWidget, item: QTableWidgetItem) 
         font = table.font()
     fm = QFontMetrics(font)
     return fm.boundingRect(item.text()).width()
+
+
+def settings_table_control_cell(parent: QTableWidget, control: QWidget) -> QWidget:
+    """Wrap a table cell control with margins and vertical centering."""
+    container = QWidget(parent)
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(8, 4, 8, 4)
+    layout.setSpacing(0)
+    layout.addWidget(control, 0, Qt.AlignVCenter)
+    return container
+
+
+def finalize_settings_table_rows(table: QTableWidget) -> None:
+    vheader = table.verticalHeader()
+    vheader.setMinimumSectionSize(SETTINGS_TABLE_MIN_ROW_HEIGHT)
+    table.resizeRowsToContents()
+    for row in range(table.rowCount()):
+        needed = SETTINGS_TABLE_MIN_ROW_HEIGHT
+        for col in range(table.columnCount()):
+            cell = table.cellWidget(row, col)
+            if cell is not None:
+                needed = max(needed, cell.sizeHint().height() + SETTINGS_TABLE_ROW_VERTICAL_PAD)
+        if table.rowHeight(row) < needed:
+            table.setRowHeight(row, needed)
 
 
 def settings_table_column_width(dialog: "SettingsDialog", table: QTableWidget, col: int) -> int:

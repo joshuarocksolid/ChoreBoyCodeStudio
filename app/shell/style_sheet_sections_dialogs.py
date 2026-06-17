@@ -465,7 +465,4 @@ QWizard#shell\\.packageWizard QPushButton:hover {{
 QWizard#shell\\.packageWizard QPushButton:pressed {{
     background: {tokens.tree_selected_bg};
 }}
-QWizard#shell\\.packageWizard QCheckBox {{
-    color: {tokens.text_primary};
-}}
 """

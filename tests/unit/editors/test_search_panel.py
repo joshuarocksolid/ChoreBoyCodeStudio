@@ -48,7 +48,7 @@ def test_search_worker_emits_results_and_done_callbacks(tmp_path: Path) -> None:
     worker = SearchWorker(
         project_root=project_root,
         query="needle",
-        on_results=lambda matches, _query: seen.append(matches[0].relative_path if matches else "none"),
+        on_results=lambda matches, _query, _gen: seen.append(matches[0].relative_path if matches else "none"),
         on_done=done.set,
     )
     worker.start()
@@ -69,7 +69,7 @@ def test_search_worker_cancel_prevents_results_callback(tmp_path: Path) -> None:
     worker = SearchWorker(
         project_root=project_root,
         query="needle",
-        on_results=lambda matches, _query: seen.append(str(len(matches))),
+        on_results=lambda matches, _query, _gen: seen.append(str(len(matches))),
         on_done=done.set,
     )
     worker.cancel()
@@ -225,7 +225,7 @@ def test_search_worker_with_options(tmp_path: Path) -> None:
         project_root=project_root,
         query="Hello",
         options=opts,
-        on_results=lambda matches, _q: seen.append(len(matches)),
+        on_results=lambda matches, _q, _gen: seen.append(len(matches)),
         on_done=done.set,
     )
     worker.start()
@@ -241,7 +241,7 @@ def test_search_worker_on_results_exception_still_calls_done(tmp_path: Path) -> 
 
     done = threading.Event()
 
-    def _raise_on_results(_matches: list[SearchMatch], _query: str) -> None:
+    def _raise_on_results(_matches: list[SearchMatch], _query: str, _gen: int) -> None:
         raise RuntimeError("boom")
 
     worker = SearchWorker(
@@ -268,7 +268,7 @@ def test_search_worker_on_done_exception_does_not_leave_thread_running(tmp_path:
     worker = SearchWorker(
         project_root=project_root,
         query="needle",
-        on_results=lambda matches, _query: seen.append(len(matches)),
+        on_results=lambda matches, _query, _gen: seen.append(len(matches)),
         on_done=_raise_on_done,
     )
     worker.start()

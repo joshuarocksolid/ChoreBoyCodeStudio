@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from app.shell.style_sheet_sections_controls import shell_section_checkbox_indicators
+from app.shell.style_sheet_sections_tooltips import shell_section_tooltips
+
 from app.shell.style_sheet_sections_chrome import (
     shell_section_chrome_font_weight,
     shell_section_main_window_menus,
@@ -58,6 +61,7 @@ __all__ = [
     "settings_section_scope_controls",
     "settings_section_scrollbars_shortcuts_validation",
     "settings_section_tables_lists_scroll_area",
+    "shell_section_checkbox_indicators",
     "shell_section_activity_bar",
     "shell_section_chrome_font_weight",
     "shell_section_debug_panel",
@@ -77,6 +81,7 @@ __all__ = [
     "shell_section_search_sidebar",
     "shell_section_tab_bar",
     "shell_section_test_explorer",
+    "shell_section_tooltips",
     "shell_section_toolbar_buttons",
     "shell_section_unsaved_changes_dialog",
     "shell_section_welcome",

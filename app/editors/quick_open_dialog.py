@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from PySide2.QtCore import QModelIndex, QRect, QSize, QStringListModel, Qt, QTimer, Signal
+from PySide2.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, QTimer, Signal
 from PySide2.QtGui import (
     QColor,
     QFont,
@@ -48,14 +48,34 @@ _OPEN_DOT_RADIUS = 3
 _REFRESH_DEBOUNCE_MS = 80
 
 
-class _QuickOpenItemModel:
-    """Thin wrapper around a plain list to serve as a virtual model for the delegate."""
+class QuickOpenListModel(QAbstractListModel):
+    """Single Qt model backing quick-open rows and delegate paint data."""
 
-    def __init__(self) -> None:
-        self.items: List[RankedCandidate] = []
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items: list[RankedCandidate] = []
 
-    def set_items(self, items: List[RankedCandidate]) -> None:
-        self.items = list(items)
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+        if parent.isValid():
+            return 0
+        return len(self._items)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> object | None:  # noqa: N802
+        if not index.isValid() or role != Qt.DisplayRole:
+            return None
+        row = index.row()
+        if row < 0 or row >= len(self._items):
+            return None
+        return self._items[row].candidate.relative_path
+
+    def set_items(self, items: list[RankedCandidate]) -> None:
+        self._items = list(items)
+        self.modelReset.emit()
+
+    def ranked_at(self, row: int) -> RankedCandidate | None:
+        if 0 <= row < len(self._items):
+            return self._items[row]
+        return None
 
 
 class QuickOpenDelegate(QStyledItemDelegate):
@@ -73,9 +93,9 @@ class QuickOpenDelegate(QStyledItemDelegate):
         self._icon_map = icon_map
         self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = fallback_icon
-        self._item_model: Optional[_QuickOpenItemModel] = None
+        self._item_model: Optional[QuickOpenListModel] = None
 
-    def set_item_model(self, model: _QuickOpenItemModel) -> None:
+    def set_item_model(self, model: QuickOpenListModel) -> None:
         self._item_model = model
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:  # noqa: N802
@@ -95,8 +115,8 @@ class QuickOpenDelegate(QStyledItemDelegate):
 
         row = index.row()
         ranked: Optional[RankedCandidate] = None
-        if self._item_model and 0 <= row < len(self._item_model.items):
-            ranked = self._item_model.items[row]
+        if self._item_model and 0 <= row < self._item_model.rowCount():
+            ranked = self._item_model.ranked_at(row)
 
         if ranked is None:
             painter.restore()
@@ -252,7 +272,7 @@ class QuickOpenDialog(QDialog):
         self._icon_map = icon_map or {}
         self._filename_icon_map = filename_icon_map or {}
         self._fallback_icon = file_icon(icon_color)
-        self._item_data = _QuickOpenItemModel()
+        self._list_model = QuickOpenListModel(self)
         self._build_ui()
         self._apply_shadow()
 
@@ -260,7 +280,7 @@ class QuickOpenDialog(QDialog):
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(24)
         shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 80 if self._tokens.is_dark else 40))
+        shadow.setColor(QColor(self._tokens.popup_shadow or "#000000"))
         self.setGraphicsEffect(shadow)
 
     def _build_ui(self) -> None:
@@ -289,14 +309,14 @@ class QuickOpenDialog(QDialog):
         self._results_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._results_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        self._list_model = QStringListModel(self)
+        self._list_model = QuickOpenListModel(self)
         self._results_list.setModel(self._list_model)
 
         self._delegate = QuickOpenDelegate(
             self._tokens, self._icon_map, self._fallback_icon, self._results_list,
             filename_icon_map=self._filename_icon_map,
         )
-        self._delegate.set_item_model(self._item_data)
+        self._delegate.set_item_model(self._list_model)
         self._results_list.setItemDelegate(self._delegate)
         self._results_list.clicked.connect(self._on_item_preview)
         self._results_list.doubleClicked.connect(self._on_item_activated)
@@ -405,10 +425,7 @@ class QuickOpenDialog(QDialog):
         self._refresh_timer.stop()
         query, _line = self._parse_query_and_line()
         ranked = self._rank_current_query(query)
-        self._item_data.set_items(ranked)
-
-        labels = [r.candidate.relative_path for r in ranked]
-        self._list_model.setStringList(labels)
+        self._list_model.set_items(ranked)
 
         stack: QStackedLayout = self._results_stack.layout()  # type: ignore[assignment]
 
@@ -430,25 +447,29 @@ class QuickOpenDialog(QDialog):
     def _on_item_activated(self, index: QModelIndex) -> None:
         self._flush_pending_refresh()
         row = index.row()
-        if 0 <= row < len(self._item_data.items):
-            path = self._item_data.items[row].candidate.absolute_path
-            _, line = self._parse_query_and_line()
-            if line is not None:
-                self.file_selected_at_line.emit(path, line)
-            else:
-                self.file_selected.emit(path)
-            self.hide()
+        if 0 <= row < self._list_model.rowCount():
+            ranked = self._list_model.ranked_at(row)
+            if ranked is not None:
+                path = ranked.candidate.absolute_path
+                _, line = self._parse_query_and_line()
+                if line is not None:
+                    self.file_selected_at_line.emit(path, line)
+                else:
+                    self.file_selected.emit(path)
+                self.hide()
 
     def _on_item_preview(self, index: QModelIndex) -> None:
         self._flush_pending_refresh()
         row = index.row()
-        if 0 <= row < len(self._item_data.items):
-            path = self._item_data.items[row].candidate.absolute_path
-            _, line = self._parse_query_and_line()
-            if line is not None:
-                self.file_preview_at_line_requested.emit(path, line)
-            else:
-                self.file_preview_requested.emit(path)
+        if 0 <= row < self._list_model.rowCount():
+            ranked = self._list_model.ranked_at(row)
+            if ranked is not None:
+                path = ranked.candidate.absolute_path
+                _, line = self._parse_query_and_line()
+                if line is not None:
+                    self.file_preview_at_line_requested.emit(path, line)
+                else:
+                    self.file_preview_requested.emit(path)
 
     def _accept_current(self) -> None:
         self._flush_pending_refresh()

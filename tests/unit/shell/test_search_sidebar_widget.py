@@ -120,13 +120,27 @@ class TestSearchSidebarWidget:
             SearchMatch("src/main.py", "/proj/src/main.py", 10, "hello world", 0, 5),
         ]
 
-        widget._on_search_results(matches, "hello")
+        widget._search_input.setText("hello")
+        widget._search_generation = 1
+        widget._on_search_results(matches, "hello", 1)
 
         assert widget._pending_results == matches
         assert widget._pending_query == "hello"
         widget._apply_search_results()
         assert widget._results_tree.topLevelItemCount() == 1
         assert "1 result in 1 file" == widget._summary_label.text()
+
+    def test_apply_search_results_drops_stale_generation(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+        widget = SearchSidebarWidget()
+        widget._search_input.setText("new")
+        widget._search_generation = 2
+        widget._pending_results = [
+            SearchMatch("stale.py", "/proj/stale.py", 1, "stale", 0, 5),
+        ]
+        widget._pending_query = "old"
+        widget._pending_generation = 1
+        widget._apply_search_results()
+        assert widget._results_tree.topLevelItemCount() == 0
 
     def test_focus_search(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
         widget = SearchSidebarWidget()

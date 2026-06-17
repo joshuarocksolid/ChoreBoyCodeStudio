@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from app.intelligence.completion_context import CompletionContext
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
@@ -11,6 +12,7 @@ from app.intelligence.completion_models import (
     CompletionResolveResult,
 )
 from app.intelligence.completion_service import CompletionRequest
+from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
 from app.intelligence.semantic_models import (
     SemanticDefinitionResult,
     SemanticHoverResult,
@@ -25,8 +27,16 @@ from app.intelligence.semantic_session import SemanticSession
 class EditorIntelligenceController:
     """Owns semantic request routing and inline result formatting."""
 
-    def __init__(self, *, semantic_session: SemanticSession) -> None:
+    def __init__(
+        self,
+        *,
+        semantic_session: SemanticSession,
+        runtime_coordinator: RuntimeIntrospectionCoordinator | None = None,
+        background_tasks: object | None = None,
+    ) -> None:
         self._semantic_session = semantic_session
+        self._runtime_coordinator = runtime_coordinator
+        self._background_tasks = background_tasks
 
     def cancel_all(self) -> None:
         self._semantic_session.cancel_all()
@@ -89,6 +99,42 @@ class EditorIntelligenceController:
             semantic=semantic,
             runtime_items=runtime_items,
             max_results=max_results,
+        )
+
+    def request_editor_completions(
+        self,
+        *,
+        request: CompletionRequest,
+        request_generation: int,
+        completion_context: CompletionContext,
+        on_paint: Callable[[str, list[CompletionItem], CompletionEnvelope], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        schedule_background_task = None
+        if self._background_tasks is not None:
+            background_tasks = self._background_tasks
+
+            def schedule_background_task(
+                key: str,
+                task: Callable[[object], list[CompletionItem]],
+                on_success: Callable[[list[CompletionItem]], None],
+                on_error_callback: Callable[[Exception], None],
+            ) -> None:
+                background_tasks.run(
+                    key=key,
+                    task=task,
+                    on_success=on_success,
+                    on_error=on_error_callback,
+                )
+
+        self._semantic_session.request_editor_completions(
+            request=request,
+            request_generation=request_generation,
+            completion_context=completion_context,
+            runtime_coordinator=self._runtime_coordinator,
+            schedule_background_task=schedule_background_task,
+            on_paint=on_paint,
+            on_error=on_error,
         )
 
     def request_completion_resolve(

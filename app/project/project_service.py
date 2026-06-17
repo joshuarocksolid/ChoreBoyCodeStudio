@@ -15,6 +15,7 @@ from app.core.errors import AppValidationError, ProjectEnumerationError, Project
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
 from app.project.file_inventory import iter_project_entries, iter_python_files
+from app.project.import_layout import resolve_project_import_layout
 from app.project.project_manifest import (
     build_default_project_manifest_payload,
     build_synthetic_project_metadata,
@@ -298,12 +299,18 @@ def validate_project_structure(project_root: PathInput) -> Path:
 def enumerate_project_entries(
     project_root: PathInput,
     exclude_patterns: list[str] | None = None,
+    *,
+    pattern_mode: str | None = None,
 ) -> list[ProjectFileEntry]:
     """Recursively enumerate project entries in deterministic sorted order.
 
     Policy for T07:
     - include both files and directories
     - keep stable lexical ordering by relative path
+
+    When *pattern_mode* is omitted, :func:`iter_project_entries` auto-selects
+    name vs relative-path matching from the shape of *exclude_patterns* (same
+    rule as :meth:`EffectiveExcludes.pattern_mode`).
     """
     try:
         resolved_root = _resolve_project_root(project_root)
@@ -326,6 +333,7 @@ def enumerate_project_entries(
             iter_project_entries(
                 resolved_root,
                 exclude_patterns=exclude_patterns or (),
+                pattern_mode=pattern_mode,
             )
         )
     except ProjectEnumerationError:
@@ -444,8 +452,8 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
     if not module_parts:
         return None
     module_path = Path(*module_parts)
-    candidate_roots = [project_root, project_root / "src"]
-    for root in candidate_roots:
+    layout = resolve_project_import_layout(project_root)
+    for root in layout.import_search_bases:
         file_candidate = root / module_path
         py_candidate = file_candidate.with_suffix(".py")
         if py_candidate.exists() and py_candidate.is_file():

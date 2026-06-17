@@ -13,6 +13,7 @@ from app.editors.syntax_engine import (
     DEFAULT_HC_DARK_PALETTE,
     DEFAULT_HC_LIGHT_PALETTE,
     DEFAULT_LIGHT_PALETTE,
+    SYNTAX_PALETTE_FIELD_MAP,
 )
 from app.shell.settings_models import resolve_dark_chrome_palette
 from app.shell.theme_dark_chrome_presets import DARK_CHROME_SHARED, DARK_CHROME_SURFACES
@@ -73,6 +74,7 @@ class ShellThemeTokens:
     row_alt_bg: str = ""
     search_match_bg: str = ""
     search_current_match_bg: str = ""
+    bracket_match_bg: str = ""
     activity_bar_bg: str = ""
     input_bg: str = ""
     badge_bg: str = ""
@@ -104,6 +106,7 @@ class ShellThemeTokens:
     syntax_builtin: str = ""
     syntax_escape: str = ""
     syntax_string: str = ""
+    syntax_string_prefix: str = ""
     syntax_comment: str = ""
     syntax_number: str = ""
     syntax_function: str = ""
@@ -214,6 +217,7 @@ def tokens_from_palette(
             row_alt_bg="#0A0A0A",
             search_match_bg="#5A5A00",
             search_current_match_bg="#A06000",
+            bracket_match_bg="#A06000",
             activity_bar_bg="#000000",
             input_bg="#000000",
             badge_bg="#1F1F1F",
@@ -253,6 +257,7 @@ def tokens_from_palette(
             row_alt_bg="#F2F2F2",
             search_match_bg="#FFE066",
             search_current_match_bg="#D17500",
+            bracket_match_bg="#FFE066",
             activity_bar_bg="#FFFFFF",
             input_bg="#FFFFFF",
             badge_bg="#E6E6E6",
@@ -297,6 +302,7 @@ def tokens_from_palette(
         row_alt_bg="#F6F8FA",
         search_match_bg="#FFE066",
         search_current_match_bg="#FF922B",
+        bracket_match_bg="#FFD8A8",
         activity_bar_bg="#E9ECEF",
         input_bg="#FFFFFF",
         badge_bg="#E9ECEF",
@@ -317,37 +323,8 @@ def to_qcolor(hex_color: str) -> QColor:
     return QColor(hex_color)
 
 
-_SYNTAX_OVERRIDE_FIELD_MAP: dict[str, str] = {
-    "keyword": "syntax_keyword",
-    "keyword_control": "syntax_keyword_control",
-    "keyword_import": "syntax_keyword_import",
-    "keyword_operator": "syntax_keyword_operator",
-    "builtin": "syntax_builtin",
-    "escape": "syntax_escape",
-    "string": "syntax_string",
-    "comment": "syntax_comment",
-    "number": "syntax_number",
-    "function": "syntax_function",
-    "class": "syntax_class",
-    "decorator": "syntax_decorator",
-    "operator": "syntax_operator",
-    "punctuation": "syntax_punctuation",
-    "parameter": "syntax_parameter",
-    "json_key": "syntax_json_key",
-    "json_literal": "syntax_json_literal",
-    "markdown_heading": "syntax_markdown_heading",
-    "markdown_emphasis": "syntax_markdown_emphasis",
-    "markdown_strong": "syntax_markdown_strong",
-    "markdown_code": "syntax_markdown_code",
-    "semantic_function": "syntax_semantic_function",
-    "semantic_method": "syntax_semantic_method",
-    "semantic_class": "syntax_semantic_class",
-    "semantic_parameter": "syntax_semantic_parameter",
-    "semantic_import": "syntax_semantic_import",
-    "semantic_variable": "syntax_semantic_variable",
-    "semantic_property": "syntax_semantic_property",
-    "semantic_constant": "syntax_semantic_constant",
-}
+_SYNTAX_OVERRIDE_FIELD_MAP = SYNTAX_PALETTE_FIELD_MAP
+
 
 def apply_syntax_token_overrides(tokens: ShellThemeTokens, overrides: Mapping[str, str]) -> ShellThemeTokens:
     """Return tokens with syntax color overrides applied."""

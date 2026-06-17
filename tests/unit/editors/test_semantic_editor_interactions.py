@@ -62,12 +62,16 @@ def editor() -> CodeEditorWidget:
 
 
 def test_trigger_completion_uses_async_requester_when_available(editor: CodeEditorWidget) -> None:
-    calls: list[tuple[str, str, int, bool, int]] = []
-    editor.set_completion_requester(lambda prefix, source, position, manual, generation: calls.append((prefix, source, position, manual, generation)))
+    calls: list[tuple[str, int, bool, int, str, str]] = []
+    editor.set_completion_requester(
+        lambda source, position, manual, generation, trigger_kind, trigger_character: calls.append(
+            (source, position, manual, generation, trigger_kind, trigger_character)
+        )
+    )
 
     editor.trigger_completion(manual=True)
 
-    assert calls == [("alpha", "alpha", 5, True, 1)]
+    assert calls == [("alpha", 5, True, 1, "manual", "")]
 
 
 def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEditorWidget) -> None:

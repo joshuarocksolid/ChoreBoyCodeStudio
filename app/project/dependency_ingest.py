@@ -7,7 +7,10 @@ import shutil
 import zipfile
 
 from app.packaging.zip_safety import UnsafeArchiveError, safe_extract_zip
-from app.project.dependency_classifier import COMPILED_EXTENSION_SUFFIXES
+from app.project.native_extension_scan import (
+    scan_archive_namelist,
+    tree_contains_native_artifacts,
+)
 from app.project.dependency_manifest import (
     CLASSIFICATION_NATIVE_EXTENSION,
     CLASSIFICATION_PURE_PYTHON,
@@ -19,8 +22,6 @@ from app.project.dependency_manifest import (
     load_dependency_manifest,
     save_dependency_manifest,
 )
-
-_COMPILED_EXTENSION_SUFFIXES = frozenset(COMPILED_EXTENSION_SUFFIXES)
 
 
 @dataclass(frozen=True)
@@ -175,9 +176,8 @@ def _parse_wheel_filename(filename: str) -> tuple[str, str]:
 def _classify_wheel(wheel_path: Path) -> str:
     try:
         with zipfile.ZipFile(str(wheel_path), "r") as zf:
-            for name in zf.namelist():
-                if any(name.endswith(suffix) for suffix in _COMPILED_EXTENSION_SUFFIXES):
-                    return CLASSIFICATION_NATIVE_EXTENSION
+            if scan_archive_namelist(zf.namelist()):
+                return CLASSIFICATION_NATIVE_EXTENSION
     except (zipfile.BadZipFile, OSError):
         pass
     return CLASSIFICATION_PURE_PYTHON
@@ -186,18 +186,16 @@ def _classify_wheel(wheel_path: Path) -> str:
 def _classify_zip(zip_path: Path) -> str:
     try:
         with zipfile.ZipFile(str(zip_path), "r") as zf:
-            for name in zf.namelist():
-                if any(name.endswith(suffix) for suffix in _COMPILED_EXTENSION_SUFFIXES):
-                    return CLASSIFICATION_NATIVE_EXTENSION
+            if scan_archive_namelist(zf.namelist()):
+                return CLASSIFICATION_NATIVE_EXTENSION
     except (zipfile.BadZipFile, OSError):
         pass
     return CLASSIFICATION_PURE_PYTHON
 
 
 def _classify_directory(dir_path: Path) -> str:
-    for child in dir_path.rglob("*"):
-        if child.suffix in _COMPILED_EXTENSION_SUFFIXES:
-            return CLASSIFICATION_NATIVE_EXTENSION
+    if tree_contains_native_artifacts(dir_path):
+        return CLASSIFICATION_NATIVE_EXTENSION
     return CLASSIFICATION_PURE_PYTHON
 
 

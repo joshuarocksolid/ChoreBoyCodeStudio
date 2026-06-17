@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator, SearchResultsCoordinator
+from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
 
 pytestmark = pytest.mark.unit
 
@@ -101,18 +101,3 @@ def test_start_runtime_module_probe_success_sets_modules_and_relints(monkeypatch
     assert set_modules == [frozenset({"FreeCAD", "Path"})]
     assert lint_calls == [("/tmp/project/a.py", "tab_change")]
     assert render_calls["count"] == 1
-
-
-def test_search_results_coordinator_dispatches_update() -> None:
-    updates: list[tuple[list[str], str]] = []
-    dispatched: list[bool] = []
-
-    coordinator = SearchResultsCoordinator(
-        set_search_results=lambda matches, query: updates.append((matches, query)),  # type: ignore[arg-type]
-        dispatch_to_main_thread=lambda callback: (dispatched.append(True), callback()),
-    )
-
-    coordinator.schedule_results_update(["result"], "needle")  # type: ignore[arg-type]
-
-    assert dispatched == [True]
-    assert updates == [(["result"], "needle")]

@@ -1,4 +1,4 @@
-"""Rolling latency metric tracker helpers."""
+"""Neutral rolling latency metric helpers."""
 
 from __future__ import annotations
 

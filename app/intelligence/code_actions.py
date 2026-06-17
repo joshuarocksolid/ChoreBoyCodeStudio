@@ -14,6 +14,7 @@ import re
 
 from app.core.models import ProjectMetadata
 from app.intelligence.diagnostics_service import CodeDiagnostic
+from app.intelligence.import_diagnostics import PY200_DETAIL_UNRESOLVED_MODULE
 from app.persistence.atomic_write import atomic_write_text
 from app.project.import_layout import (
     ProjectImportLayout,
@@ -37,6 +38,14 @@ class QuickFix:
     match_text: str | None = None
     replacement_text: str | None = None
     expected_line_text: str | None = None
+
+
+@dataclass(frozen=True)
+class QuickFixApplyResult:
+    """Outcome from applying one or more quick fixes."""
+
+    changed_lines: int
+    updated_metadata: ProjectMetadata | None = None
 
 
 def plan_safe_fixes_for_file(
@@ -98,12 +107,17 @@ def plan_safe_fixes_for_file(
     return sorted(fixes, key=lambda fix: fix.line_number)
 
 
-def apply_quick_fixes(fixes: list[QuickFix]) -> int:
-    """Apply quick fixes and return number of affected lines."""
+def apply_quick_fixes(
+    fixes: list[QuickFix],
+    *,
+    project_metadata: ProjectMetadata | None = None,
+) -> QuickFixApplyResult:
+    """Apply quick fixes and return affected line count plus optional metadata updates."""
     if not fixes:
-        return 0
+        return QuickFixApplyResult(changed_lines=0)
     remove_line_fixes_by_file: dict[str, list[QuickFix]] = {}
     create_module_fixes: list[QuickFix] = []
+    source_root_fixes: list[QuickFix] = []
     for fix in fixes:
         if fix.action_kind == "remove_line":
             remove_line_fixes_by_file.setdefault(fix.file_path, []).append(fix)
@@ -111,10 +125,13 @@ def apply_quick_fixes(fixes: list[QuickFix]) -> int:
             remove_line_fixes_by_file.setdefault(fix.file_path, []).append(fix)
         elif fix.action_kind == "create_module_file":
             create_module_fixes.append(fix)
+        elif fix.action_kind == "add_source_root":
+            source_root_fixes.append(fix)
 
     snapshots: dict[Path, str | None] = {}
     snapshot_order: list[Path] = []
     created_directories: list[Path] = []
+    updated_metadata: ProjectMetadata | None = None
     try:
         changed_operations = 0
         for file_path, file_fixes in remove_line_fixes_by_file.items():
@@ -137,7 +154,23 @@ def apply_quick_fixes(fixes: list[QuickFix]) -> int:
                 snapshot_order=snapshot_order,
                 created_directories=created_directories,
             )
-        return changed_operations
+
+        seen_roots: set[str] = set()
+        for fix in source_root_fixes:
+            applied, metadata = _apply_source_root_fix(
+                fix,
+                metadata_if_absent=project_metadata,
+            )
+            if applied <= 0:
+                continue
+            changed_operations += applied
+            if metadata is not None:
+                updated_metadata = metadata
+            source_root = str(fix.replacement_text or "").strip()
+            if source_root:
+                seen_roots.add(source_root)
+
+        return QuickFixApplyResult(changed_lines=changed_operations, updated_metadata=updated_metadata)
     except OSError:
         _rollback_quick_fix_changes(snapshots, snapshot_order, created_directories)
         raise
@@ -240,7 +273,7 @@ def _plan_py200_quick_fix(
     normalized_project_root: str,
     expected_line: str | None,
 ) -> QuickFix | None:
-    unresolved_module = _extract_unresolved_module_name(diagnostic.message)
+    unresolved_module = _unresolved_module_from_diagnostic(diagnostic)
     if unresolved_module is None:
         return None
     missing_root = suggest_missing_source_root(layout, unresolved_module)
@@ -277,14 +310,35 @@ def _plan_py200_quick_fix(
     )
 
 
-def _extract_unresolved_module_name(message: str) -> str | None:
-    prefix = "Unresolved import:"
-    if not message.startswith(prefix):
+def _unresolved_module_from_diagnostic(diagnostic: CodeDiagnostic) -> str | None:
+    if diagnostic.detail is None:
         return None
-    module_name = message[len(prefix) :].strip()
+    module_name = diagnostic.detail.get(PY200_DETAIL_UNRESOLVED_MODULE, "").strip()
     if not module_name:
         return None
     return module_name
+
+
+def _apply_source_root_fix(
+    fix: QuickFix,
+    *,
+    metadata_if_absent: ProjectMetadata | None,
+) -> tuple[int, ProjectMetadata | None]:
+    from app.bootstrap.paths import project_manifest_path
+    from app.project.project_manifest import append_project_source_root
+
+    if fix.project_root is None:
+        return 0, None
+    source_root = str(fix.replacement_text or "").strip()
+    if not source_root:
+        return 0, None
+    manifest_path = project_manifest_path(fix.project_root)
+    updated_metadata = append_project_source_root(
+        manifest_path,
+        source_root,
+        metadata_if_absent=metadata_if_absent,
+    )
+    return 1, updated_metadata
 
 
 def _module_target_path(layout: ProjectImportLayout, module_name: str) -> str:

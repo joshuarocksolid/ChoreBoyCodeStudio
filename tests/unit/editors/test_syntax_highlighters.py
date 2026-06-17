@@ -227,6 +227,46 @@ def test_python_fstring_interpolation_contents_are_styled() -> None:
     assert name_in_interp_color == DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
     type_conversion_color = _color_at(document, 1, line1.index("!r"))
     assert type_conversion_color == DEFAULT_LIGHT_PALETTE["decorator"].lower()
+    brace_color = _color_at(document, 1, line1.index("{"))
+    assert brace_color == DEFAULT_LIGHT_PALETTE["punctuation"].lower()
+
+
+def test_python_fstring_complex_interpolation_breaks_out_of_string_color() -> None:
+    line0 = "import os"
+    line1 = "import sys"
+    line2 = 'msg = f"cwd: {os.getcwd()}"'
+    line3 = 'msg2 = f"argv ({len(sys.argv)} items)"'
+    source = "\n".join((line0, line1, line2, line3)) + "\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=True)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    palette = DEFAULT_DARK_PALETTE
+    assert _color_at(document, 2, line2.index("cwd")) == palette["string"].lower()
+    assert _color_at(document, 2, line2.index("{")) == palette["punctuation"].lower()
+    assert _color_at(document, 2, line2.index("os")) == palette["semantic_import"].lower()
+    assert _color_at(document, 2, line2.index("getcwd")) == palette["semantic_method"].lower()
+    assert _color_at(document, 3, line3.index("len")) == palette["builtin"].lower()
+    assert _color_at(document, 3, line3.index("sys")) == palette["semantic_import"].lower()
+    argv_in_interp = line3.index("sys.argv") + len("sys.")
+    assert _color_at(document, 3, argv_in_interp) == palette["semantic_property"].lower()
+
+
+def test_python_fstring_prefix_uses_string_prefix_token() -> None:
+    line = 'value = f"hello"'
+    source = f"{line}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    assert _color_at(document, 0, line.index("f")) == DEFAULT_LIGHT_PALETTE["string_prefix"].lower()
+    assert _color_at(document, 0, line.index("hello")) == DEFAULT_LIGHT_PALETTE["string"].lower()
+
+
+def test_python_plain_string_quotes_and_content_remain_string_colored() -> None:
+    line = 'value = "hello"'
+    source = f"{line}\n"
+    document, highlighter = _render("/tmp/main.py", source, is_dark=False)
+    assert highlighter.__class__.__name__ == "TreeSitterHighlighter"
+    expected = DEFAULT_LIGHT_PALETTE["string"].lower()
+    assert _color_at(document, 0, line.index('"')) == expected
+    assert _color_at(document, 0, line.index("hello")) == expected
 
 
 def test_python_tree_sitter_highlighter_formats_builtin_exceptions_and_dunders() -> None:

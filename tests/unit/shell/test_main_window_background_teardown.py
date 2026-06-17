@@ -14,6 +14,7 @@ from PySide2.QtWidgets import QApplication
 from app.shell.main_window import MainWindow
 from app.shell.main_window_lifecycle import MainWindowLifecycle
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.runtime_child_reaper import leaked_runtime_child_pids
 
 pytestmark = pytest.mark.unit
 
@@ -78,3 +79,18 @@ def test_shutdown_main_window_for_test_invokes_full_close_teardown_sequence(monk
 
     assert window_any._is_shutting_down is True  # type: ignore[attr-defined]
     assert calls == ["begin", "stop"]
+
+
+def test_shutdown_main_window_for_test_leaves_no_runtime_child_descendants(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    _qapp: QApplication,
+) -> None:
+    monkeypatch.setenv("CBCS_DISABLE_BACKGROUND_RUNTIME", "1")
+    window = MainWindow(state_root=str(tmp_path.resolve()))
+    try:
+        _qapp.processEvents()
+    finally:
+        shutdown_main_window_for_test(window, _qapp)
+
+    assert leaked_runtime_child_pids() == []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -92,6 +93,16 @@ class SemanticNavigationHost(Protocol):
         ...
 
     def flat_outline_symbols_for_path(self, file_path: str, *, fallback_source: str) -> tuple[object, ...]:
+        ...
+
+    def request_flat_outline_symbols_async(
+        self,
+        file_path: str,
+        *,
+        fallback_source: str,
+        on_success: Callable[[tuple[object, ...]], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
         ...
 
     def save_all_files(self) -> bool:
@@ -207,6 +218,21 @@ class MainWindowSemanticNavigationHost:
         return self._window._editor_tab_workflow.flat_outline_symbols_for_path(
             file_path,
             fallback_source=fallback_source,
+        )
+
+    def request_flat_outline_symbols_async(
+        self,
+        file_path: str,
+        *,
+        fallback_source: str,
+        on_success: Callable[[tuple[object, ...]], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self._window._editor_tab_workflow.request_flat_outline_symbols_async(
+            file_path,
+            fallback_source=fallback_source,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def save_all_files(self) -> bool:

@@ -1,7 +1,13 @@
 (comment) @comment
 
-(string) @string
+; Paint literal string segments only — not f-string interpolation regions.
+(string_content) @string
+(string_end) @string
+(string_start) @string.prefix
 (escape_sequence) @escape
+
+; Generic identifiers stay uncolored unless locals resolves a reference
+; (USER_REQUESTS #24/#27). F-string interiors use expression captures below.
 
 (integer) @number
 (float) @number
@@ -44,6 +50,7 @@
 (typed_default_parameter name: (identifier) @parameter)
 (keyword_argument name: (identifier) @parameter)
 
+(attribute object: (identifier) @variable)
 (attribute attribute: (identifier) @property)
 (type (identifier) @type)
 (type (attribute attribute: (identifier) @type))

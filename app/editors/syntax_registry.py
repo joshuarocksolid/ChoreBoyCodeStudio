@@ -9,7 +9,7 @@ from typing import Any
 from PySide2.QtGui import QTextDocument
 
 from app.editors.ini_highlighter import IniSyntaxHighlighter
-from app.editors.syntax_engine import SyntaxPalette
+from app.editors.syntax_engine import SyntaxPalette, syntax_palette_from_tokens
 from app.treesitter.highlighter_core import TreeSitterHighlighter
 from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
 
@@ -123,35 +123,8 @@ def default_syntax_highlighter_registry() -> SyntaxHighlighterRegistry:
     return _DEFAULT_REGISTRY
 
 
-def syntax_palette_from_tokens(tokens: Any) -> SyntaxPalette:
-    return {
-        "keyword": tokens.syntax_keyword,
-        "keyword_control": tokens.syntax_keyword_control,
-        "keyword_import": tokens.syntax_keyword_import,
-        "keyword_operator": tokens.syntax_keyword_operator,
-        "builtin": tokens.syntax_builtin,
-        "escape": tokens.syntax_escape,
-        "string": tokens.syntax_string,
-        "comment": tokens.syntax_comment,
-        "number": tokens.syntax_number,
-        "function": tokens.syntax_function,
-        "class": tokens.syntax_class,
-        "decorator": tokens.syntax_decorator,
-        "operator": tokens.syntax_operator,
-        "punctuation": tokens.syntax_punctuation,
-        "parameter": tokens.syntax_parameter,
-        "json_key": tokens.syntax_json_key,
-        "json_literal": tokens.syntax_json_literal,
-        "markdown_heading": tokens.syntax_markdown_heading,
-        "markdown_emphasis": tokens.syntax_markdown_emphasis,
-        "markdown_strong": tokens.syntax_markdown_strong,
-        "markdown_code": tokens.syntax_markdown_code,
-        "semantic_function": tokens.syntax_semantic_function,
-        "semantic_method": tokens.syntax_semantic_method,
-        "semantic_class": tokens.syntax_semantic_class,
-        "semantic_parameter": tokens.syntax_semantic_parameter,
-        "semantic_import": tokens.syntax_semantic_import,
-        "semantic_variable": tokens.syntax_semantic_variable,
-        "semantic_property": tokens.syntax_semantic_property,
-        "semantic_constant": tokens.syntax_semantic_constant,
-    }
+__all__ = [
+    "default_syntax_highlighter_registry",
+    "syntax_palette_from_tokens",
+    "SyntaxHighlighterRegistry",
+]

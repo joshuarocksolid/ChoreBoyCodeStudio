@@ -1329,6 +1329,36 @@ That means:
 state
 - stale results are dropped instead of overwriting newer editor state
 
+#### AD-018 async delivery gate matrix
+
+All async editor-intelligence surfaces must validate results before mutating UI.
+The canonical helper is `app/shell/editor_stale_result_policy.py`
+(`is_stale_revision_gated_editor_request` /
+`deliver_revision_gated_editor_result`). See also **AD-018**.
+
+| Surface | Buffer revision | Request generation | Enforcement status | Owner module |
+| --- | --- | --- | --- | --- |
+| Completion popup | required | required | applied — both gates in policy module | `editor_completion_workflow.py` |
+| Inline hover / signature (editor-triggered) | required | required | partial — revision in policy; generation only in editor paint methods (`show_hover_text_for_request`, `show_calltip_for_request`) | `inline_intelligence_workflow.py` |
+| Menu hover / signature | required | required | gap — revision-only policy; menu deliver uses ungated `show_calltip` | `inline_intelligence_workflow.py` |
+| Outline panel refresh | required | — | applied — revision-only (no per-request generation counter) | `editor_tab_workflow.py` |
+| Project search results apply | — | required | gap — no generation gate at `_apply_search_results` | `search_sidebar_widget.py` |
+
+Gate semantics:
+
+- **Buffer revision** — monotonic counter from `EditorWorkspaceController`; must match
+  the revision captured when the async request started.
+- **Request generation** — per-surface monotonic counter (completion, hover,
+  signature-help, search) incremented when a new request supersedes in-flight work
+  for the same surface.
+- **Required gates** — every surface row marks which checks must pass before UI
+  mutation. Surfaces that require both gates must route `requested_generation` and
+  `current_generation` through the canonical policy module (Wave 3c for inline/menu;
+  Wave 5 for search).
+
+Stale results are dropped; they must not reach editor paint APIs or search result
+trees.
+
 ### 17.4.8 Next-level completion split
 
 Editor-file completion and Python Console completion are related UX surfaces but
@@ -1361,6 +1391,27 @@ static inference is not enough for the target user experience. The editor-side
 semantic stack should support a visible, shipped or generated API index/stub set
 for trusted runtime modules. Such indexes are acceleration/trust assets, not a
 replacement for the semantic facade contract.
+
+### 17.4.9 Completion context ownership
+
+Editor completion must have a single owner for broker context classification
+(AD-016):
+
+- **`EditorCompletionWorkflow`** in the shell is the sole caller of
+  `build_completion_context` for each editor-file completion request. That call
+  supplies project-aware fields such as `project_root` and `buffer_revision` that
+  the editor layer cannot reconstruct in isolation.
+- The editor trigger path passes buffer snapshot metadata to a shell-wired
+  `CompletionRequester` callback (`prefix`, `source_text`, `cursor_position`,
+  `manual_trigger`, `request_generation`, `trigger_kind`, `trigger_character`).
+  Shell adapters bind `file_path` and `editor_widget` before the workflow runs.
+- The editor paints completion UI from **prefix and replacement-range metadata
+  only** — either broker-issued values on delivered completion items or prefix
+  strings returned with async results. It must not import broker context engines
+  or duplicate `build_completion_context` once the Wave 2 cutover completes.
+- The workflow `prefix` parameter on `request_editor_completions_async` is
+  transitional; context classification recomputes prefix from the same snapshot
+  and that parameter will be removed when the editor stops pre-classifying.
 
 ## 17.5 Real Python formatting and import management
 

@@ -7,7 +7,8 @@ from typing import Union
 
 import pytest
 
-from app.intelligence.code_actions import QuickFix, apply_quick_fixes, plan_safe_fixes_for_file
+from app.intelligence.code_actions import QuickFix, QuickFixApplyResult, apply_quick_fixes, plan_safe_fixes_for_file
+from app.intelligence.import_diagnostics import PY200_DETAIL_UNRESOLVED_MODULE
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.persistence.atomic_write import atomic_write_text
 
@@ -63,7 +64,7 @@ def test_apply_quick_fixes_removes_import_lines(tmp_path: Path) -> None:
     ]
     fixes = plan_safe_fixes_for_file(str(file_path), diagnostics)
 
-    changed_lines = apply_quick_fixes(fixes)
+    changed_lines = apply_quick_fixes(fixes).changed_lines
 
     assert changed_lines == 2
     updated = file_path.read_text(encoding="utf-8")
@@ -84,6 +85,7 @@ def test_plan_safe_fixes_for_file_includes_create_module_fix_for_unresolved_impo
             file_path=str(file_path.resolve()),
             line_number=1,
             message="Unresolved import: missing.module",
+            detail={PY200_DETAIL_UNRESOLVED_MODULE: "missing.module"},
         )
     ]
 
@@ -107,11 +109,12 @@ def test_apply_quick_fixes_creates_missing_module_and_package_init(tmp_path: Pat
             file_path=str(file_path.resolve()),
             line_number=1,
             message="Unresolved import: missing.module",
+            detail={PY200_DETAIL_UNRESOLVED_MODULE: "missing.module"},
         )
     ]
     fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))
 
-    changed = apply_quick_fixes(fixes)
+    changed = apply_quick_fixes(fixes).changed_lines
 
     assert changed == 1
     assert (project_root / "missing" / "module.py").exists()
@@ -131,6 +134,7 @@ def test_plan_safe_fixes_for_file_prefers_typo_import_replacement_when_available
             file_path=str(file_path.resolve()),
             line_number=1,
             message="Unresolved import: trasnformer",
+            detail={PY200_DETAIL_UNRESOLVED_MODULE: "trasnformer"},
         )
     ]
 
@@ -155,11 +159,12 @@ def test_apply_quick_fixes_replaces_typo_import_module_name(tmp_path: Path) -> N
             file_path=str(file_path.resolve()),
             line_number=1,
             message="Unresolved import: trasnformer",
+            detail={PY200_DETAIL_UNRESOLVED_MODULE: "trasnformer"},
         )
     ]
 
     fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))
-    changed = apply_quick_fixes(fixes)
+    changed = apply_quick_fixes(fixes).changed_lines
 
     assert changed == 1
     assert file_path.read_text(encoding="utf-8") == "import transformer as runtime\n"
@@ -201,7 +206,7 @@ def test_apply_quick_fixes_skips_when_target_line_changed_since_planning(tmp_pat
     fixes = plan_safe_fixes_for_file(str(file_path), diagnostics)
 
     file_path.write_text("import pathlib\nvalue = 1\n", encoding="utf-8")
-    changed = apply_quick_fixes(fixes)
+    changed = apply_quick_fixes(fixes).changed_lines
 
     assert changed == 0
     assert file_path.read_text(encoding="utf-8") == "import pathlib\nvalue = 1\n"
@@ -265,6 +270,7 @@ def test_apply_quick_fixes_rolls_back_created_module_files_on_failure(
             file_path=str(file_path.resolve()),
             line_number=1,
             message="Unresolved import: missing.module",
+            detail={PY200_DETAIL_UNRESOLVED_MODULE: "missing.module"},
         )
     ]
     fixes = plan_safe_fixes_for_file(str(file_path), diagnostics, project_root=str(project_root))

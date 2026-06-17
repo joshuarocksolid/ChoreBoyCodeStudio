@@ -5,6 +5,18 @@ diagnostics, project enumeration, packaging audit, intelligence helpers, the
 shell entry-replacement dialog) routes through this module so that exclude
 policy and ``cbcs/`` skipping cannot drift between callers.
 
+**Vendor triple role (policy vocabulary):**
+
+- User dependency: ``vendor/`` may appear in default exclude patterns for
+  editor workflows.
+- Project walk default: ``iter_python_files()`` does not skip ``vendor/`` unless
+  callers pass excludes or ``extra_top_level_skips``.
+- Packaging: payload copy may ship ``vendor/``; dependency audit skips
+  top-level ``vendor/`` via ``extra_top_level_skips=('vendor',)``.
+
+See :class:`InventoryScope` and :class:`MetaDirPolicy` for per-surface policy
+names used by parity tests and upcoming scope-aware iterators.
+
 Two pattern modes are supported:
 
 - ``"name"``: each path segment is checked against patterns without ``/``.
@@ -20,6 +32,7 @@ should use :func:`iter_python_files` with no patterns.
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence, Union
 
@@ -29,11 +42,44 @@ from app.core import constants
 from app.core.errors import ProjectEnumerationError
 from app.core.models import ProjectFileEntry
 from app.project.file_excludes import should_exclude_name, should_exclude_relative_path
+from app.project.import_layout import module_name_for_file, resolve_project_import_layout
 
 PathInput = Union[str, Path]
 
 PATTERN_MODE_NAME = "name"
 PATTERN_MODE_RELATIVE_PATH = "relative_path"
+
+
+class InventoryScope(str, Enum):
+    """Named inventory surfaces that share one traversal kernel."""
+
+    tree_entries = "tree_entries"
+    python_analysis = "python_analysis"
+    text_search = "text_search"
+    packaging_payload = "packaging_payload"
+    packaging_audit = "packaging_audit"
+
+
+@dataclass(frozen=True)
+class MetaDirPolicy:
+    """How ``cbcs/`` (project metadata) is treated per inventory scope.
+
+    - *tree_entries*: include metadata directory in project tree enumeration.
+    - *python_analysis*: prune entire metadata directory from Python walks.
+    - *text_search*: prune metadata from text search (matches python default).
+    - *packaging_payload*: ship selected metadata files; prune runs/logs/cache.
+    - *packaging_audit*: skip metadata for static Python dependency audit.
+    """
+
+    include_in_tree: bool = True
+    prune_from_python_walk: bool = True
+    prune_from_text_search: bool = True
+    ship_metadata_in_payload: bool = True
+    prune_payload_subdirs: tuple[str, ...] = ("runs", "logs", "cache")
+    skip_in_dependency_audit: bool = True
+
+
+DEFAULT_META_DIR_POLICY = MetaDirPolicy()
 
 
 def _resolve_root(project_root: PathInput) -> Path:
@@ -57,6 +103,17 @@ def _matches_excludes(
             is_directory=is_directory,
         )
     return should_exclude_name(name, patterns)
+
+
+def _resolve_pattern_mode(
+    exclude_patterns: Sequence[str],
+    pattern_mode: str | None,
+) -> str:
+    if pattern_mode is not None:
+        return pattern_mode
+    if any("/" in pattern for pattern in exclude_patterns):
+        return PATTERN_MODE_RELATIVE_PATH
+    return PATTERN_MODE_NAME
 
 
 def walk_project(
@@ -135,7 +192,7 @@ def iter_python_files(
     project_root: PathInput,
     *,
     exclude_patterns: Sequence[str] = (),
-    pattern_mode: str = PATTERN_MODE_NAME,
+    pattern_mode: str | None = None,
     extra_top_level_skips: Iterable[str] = (),
     follow_symlinks: bool = False,
 ) -> Iterator[Path]:
@@ -146,11 +203,16 @@ def iter_python_files(
     pruned. Pass ``extra_top_level_skips=('vendor',)`` for the packaging
     dependency audit, and ``exclude_patterns`` for callers that want effective
     project excludes (e.g. search-driven flows).
+
+    When *pattern_mode* is omitted, slash-containing patterns automatically use
+    :data:`PATTERN_MODE_RELATIVE_PATH` so tree and search agree on globs like
+    ``src/generated/*``.
     """
+    resolved_mode = _resolve_pattern_mode(exclude_patterns, pattern_mode)
     for current_path, _relative_dir, _dir_names, file_names in walk_project(
         project_root,
         exclude_patterns=exclude_patterns,
-        pattern_mode=pattern_mode,
+        pattern_mode=resolved_mode,
         extra_top_level_skips=extra_top_level_skips,
         follow_symlinks=follow_symlinks,
     ):
@@ -186,15 +248,18 @@ def iter_project_entries(
     project_root: PathInput,
     *,
     exclude_patterns: Sequence[str] = (),
+    pattern_mode: str | None = None,
     follow_symlinks: bool = False,
 ) -> Iterator[ProjectFileEntry]:
     """Yield :class:`ProjectFileEntry` for every directory and file in the project.
 
     Includes the ``cbcs/`` metadata directory (project enumeration is the one
     consumer that needs the full on-disk tree, including project metadata).
-    Walk-time exclusion uses ``"name"`` mode to match the historical behaviour
-    of :func:`app.project.project_service.enumerate_project_entries`.
+    Walk-time exclusion uses name mode for segment-only patterns and relative
+    path mode when any pattern contains ``/``.
     """
+    resolved_mode = _resolve_pattern_mode(exclude_patterns, pattern_mode)
+
     def _on_walk_error(error: OSError) -> None:
         raise ProjectEnumerationError(
             f"Failed to enumerate project files: {error}",
@@ -204,7 +269,7 @@ def iter_project_entries(
     for current_path, relative_dir, dir_names, file_names in walk_project(
         project_root,
         exclude_patterns=exclude_patterns,
-        pattern_mode=PATTERN_MODE_NAME,
+        pattern_mode=resolved_mode,
         follow_symlinks=follow_symlinks,
         include_meta_dir=True,
         on_error=_on_walk_error,
@@ -247,9 +312,14 @@ def build_project_inventory_snapshot(
 ) -> ProjectInventorySnapshot:
     """Build a snapshot from a single project walk."""
     root = _resolve_root(project_root)
+    resolved_mode = _resolve_pattern_mode(exclude_patterns, None)
     python_paths = tuple(
         str(path.resolve())
-        for path in iter_python_files(root, exclude_patterns=exclude_patterns)
+        for path in iter_python_files(
+            root,
+            exclude_patterns=exclude_patterns,
+            pattern_mode=resolved_mode,
+        )
     )
     module_names = tuple(
         sorted(
@@ -273,22 +343,5 @@ def module_names_from_snapshot(snapshot: ProjectInventorySnapshot) -> list[str]:
 
 
 def _module_name_from_python_path(project_root: Path, file_path: Path) -> str | None:
-    from app.project.import_layout import module_name_for_file, resolve_project_import_layout
-
     layout = resolve_project_import_layout(project_root)
-    canonical = module_name_for_file(layout, file_path)
-    if canonical is not None:
-        return canonical
-    try:
-        relative_path = file_path.relative_to(project_root).as_posix()
-    except ValueError:
-        return None
-    if not relative_path.endswith(".py"):
-        return None
-    module_path = relative_path[:-3]
-    if module_path.endswith("/__init__"):
-        module_path = module_path[: -len("/__init__")]
-    module_path = module_path.strip("/")
-    if not module_path:
-        return None
-    return module_path.replace("/", ".")
+    return module_name_for_file(layout, file_path)

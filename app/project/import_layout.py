@@ -8,9 +8,10 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 
 from app.bootstrap.paths import PathInput, project_manifest_path
 from app.bootstrap.toml_io import read_toml_mapping
+from app.core import constants
 from app.core.models import ProjectMetadata
 
-_RESERVED_ROOT_NAMES = frozenset({"vendor", "cbcs"})
+_RESERVED_ROOT_NAMES = constants.RESERVED_PROJECT_TOP_LEVEL_NAMES
 
 _T = TypeVar("_T")
 
@@ -277,6 +278,38 @@ def module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
 
 def _module_path_prefix_exists_at_base(base: Path, module_name: str) -> bool:
     return module_path_prefix_exists_at_base(base, module_name)
+
+
+def package_name_for_file(file_path: Path, *, layout: ProjectImportLayout) -> str | None:
+    module_name = module_name_for_file(layout, file_path)
+    if module_name is None:
+        return None
+    if file_path.name == "__init__.py":
+        return module_name
+    if "." not in module_name:
+        return None
+    return module_name.rsplit(".", 1)[0]
+
+
+def resolve_import_from_module(
+    file_path: Path,
+    module: str | None,
+    level: int,
+    *,
+    layout: ProjectImportLayout,
+) -> str | None:
+    if level <= 0:
+        return module
+    package_name = package_name_for_file(file_path, layout=layout)
+    if package_name is None:
+        return None
+    try:
+        from importlib.util import resolve_name
+
+        relative_spec = module if module is not None else ""
+        return resolve_name(relative_spec, package_name, level)
+    except (ImportError, ValueError):
+        return None
 
 
 def resolve_import_at_base(base: Path, module_name: str) -> str | None:

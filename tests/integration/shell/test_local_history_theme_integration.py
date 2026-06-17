@@ -15,7 +15,7 @@ from PySide2.QtWidgets import QDialog
 from app.core import constants
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
-from app.shell.main_window_lifecycle import MainWindowLifecycle
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -28,15 +28,6 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     if app is None:
         app = qt_widgets.QApplication([])
     return app
-
-
-def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
-    window._is_shutting_down = True
-    MainWindowLifecycle.begin_shutdown_teardown(window)
-    MainWindowLifecycle.stop_active_run_before_close(window)
-    window.deleteLater()
-    app.processEvents()
-
 
 def _wait_for(predicate, app, *, timeout_seconds: float = 2.0) -> bool:  # type: ignore[no-untyped-def]
     import time
@@ -101,4 +92,4 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
         assert picker_dialog._search_input is not None
 
     assert len(opened_history_dialogs) == 2
-    _dispose_window(window, app)
+    shutdown_main_window_for_test(window, app)

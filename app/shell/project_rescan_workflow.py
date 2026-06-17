@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Protocol
 
 from app.core.models import LoadedProject
+from app.project.file_inventory import ProjectInventorySnapshot
 from app.project.project_service import open_project
 from app.shell.project_tree_utils import effective_excludes_for, filter_tree_signature_entries
 
@@ -26,7 +27,15 @@ class ProjectRescanHost(Protocol):
 
     def refresh_python_tooling_status(self) -> None: ...
 
-    def start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str]) -> None: ...
+    def start_symbol_indexing(
+        self,
+        project_root: str,
+        *,
+        exclude_patterns: list[str],
+        inventory_snapshot: ProjectInventorySnapshot | None = None,
+    ) -> None: ...
+
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None: ...
 
     def refresh_test_discovery(self) -> None: ...
 
@@ -65,7 +74,11 @@ class ProjectRescanWorkflow:
                 refreshed,
                 load_effective_exclude_patterns=self._host.load_effective_exclude_patterns,
             )
-            self._host.start_symbol_indexing(refreshed.project_root, exclude_patterns=excludes)
+            self._host.start_symbol_indexing(
+                refreshed.project_root,
+                exclude_patterns=excludes.as_list(),
+                inventory_snapshot=self._host.project_inventory_snapshot(),
+            )
             self._host.refresh_test_discovery()
 
 
@@ -93,15 +106,16 @@ class MainWindowProjectRescanHost:
         from app.shell.project_tree_utils import effective_excludes_for
 
         self._window._search_sidebar.set_project_root(project.project_root)
-        self._window._search_sidebar.set_exclude_patterns(
-            effective_excludes_for(
-                project,
-                load_effective_exclude_patterns=self._window._file_project_commands_workflow.load_effective_exclude_patterns,
-            )
+        effective = effective_excludes_for(
+            project,
+            load_effective_exclude_patterns=self._window._file_project_commands_workflow.load_effective_exclude_patterns,
         )
+        self._window._project_inventory_orchestrator.rebuild(project.project_root, effective)
+        self._window._search_sidebar.set_exclude_patterns(effective.as_list())
 
     def set_project_tree_structure_signature(self, signature: tuple[str, ...]) -> None:
         self._window._project_tree_structure_signature = signature
+        self._window._project_inventory_orchestrator.set_tree_structure_signature(signature)
 
     def reload_plugin_activation(self) -> None:
         self._window._plugin_activation_workflow.reload()
@@ -109,8 +123,21 @@ class MainWindowProjectRescanHost:
     def refresh_python_tooling_status(self) -> None:
         self._window._refresh_python_tooling_status()
 
-    def start_symbol_indexing(self, project_root: str, *, exclude_patterns: list[str]) -> None:
-        self._window._intelligence_cache_workflow.start_symbol_indexing(project_root, exclude_patterns=exclude_patterns)
+    def start_symbol_indexing(
+        self,
+        project_root: str,
+        *,
+        exclude_patterns: list[str],
+        inventory_snapshot: ProjectInventorySnapshot | None = None,
+    ) -> None:
+        self._window._intelligence_cache_workflow.start_symbol_indexing(
+            project_root,
+            exclude_patterns=exclude_patterns,
+            inventory_snapshot=inventory_snapshot,
+        )
+
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
+        return self._window._project_inventory_orchestrator.snapshot
 
     def refresh_test_discovery(self) -> None:
         test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)

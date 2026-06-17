@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from app.bootstrap.paths import PathInput, ensure_directory, global_plugins_logs_dir
+from app.bootstrap.test_runtime_flags import background_runtime_disabled
 from app.core.errors import RunLifecycleError
 from app.plugins.host_supervisor import PluginHostSupervisor
 from app.plugins.rpc_protocol import (
@@ -64,6 +65,8 @@ class PluginRuntimeManager:
         return str(self._log_path)
 
     def start(self) -> None:
+        if background_runtime_disabled():
+            return
         if self._host_supervisor.is_running():
             return
         self._append_runtime_log("starting plugin host")
@@ -81,6 +84,8 @@ class PluginRuntimeManager:
         return self._host_supervisor.is_running()
 
     def reload_plugins(self) -> None:
+        if background_runtime_disabled():
+            return
         self.start()
         self._append_runtime_log("reloading plugin host commands")
         self._host_supervisor.send_input(encode_message({"type": "reload"}))

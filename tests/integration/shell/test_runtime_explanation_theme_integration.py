@@ -15,7 +15,7 @@ from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
-from app.shell.main_window_lifecycle import MainWindowLifecycle
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -28,15 +28,6 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     if app is None:
         app = qt_widgets.QApplication([])
     return app
-
-
-def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
-    window._is_shutting_down = True
-    MainWindowLifecycle.begin_shutdown_teardown(window)
-    MainWindowLifecycle.stop_active_run_before_close(window)
-    window.deleteLater()
-    app.processEvents()
-
 
 def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
@@ -96,4 +87,4 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         assert onboarding_dialog.findChild(qt_widgets.QWidget, "shell.welcome") is not None
         assert onboarding_dialog.findChild(qt_widgets.QWidget, "shell.welcome.onboardingCard") is not None
 
-    _dispose_window(window, app)
+    shutdown_main_window_for_test(window, app)

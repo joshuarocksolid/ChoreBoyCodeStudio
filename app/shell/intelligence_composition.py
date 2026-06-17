@@ -22,9 +22,11 @@ def bootstrap_intelligence_runtime(window: Any, *, symbol_cache_db_path: str) ->
         cache_db_path=window._symbol_cache_db_path,
         state_root=window._state_root,
     )
-    window._intelligence_controller = EditorIntelligenceController(
-        semantic_session=window._semantic_session,
-    )
     window._background_tasks = GeneralTaskScheduler(
         dispatch_to_main_thread=window._dispatch_to_main_thread,
+    )
+    window._intelligence_controller = EditorIntelligenceController(
+        semantic_session=window._semantic_session,
+        runtime_coordinator=window._runtime_introspection_coordinator,
+        background_tasks=window._background_tasks,
     )

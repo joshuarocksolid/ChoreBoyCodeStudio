@@ -33,6 +33,7 @@ SYNTAX_COLOR_TOKENS: tuple[SyntaxColorToken, ...] = (
     SyntaxColorToken("builtin", "Builtin", "Lexical"),
     SyntaxColorToken("escape", "Escape Sequence", "Lexical"),
     SyntaxColorToken("string", "String", "Lexical"),
+    SyntaxColorToken("string_prefix", "String Prefix", "Lexical"),
     SyntaxColorToken("comment", "Comment", "Lexical"),
     SyntaxColorToken("number", "Number", "Lexical"),
     SyntaxColorToken("function", "Function", "Lexical"),

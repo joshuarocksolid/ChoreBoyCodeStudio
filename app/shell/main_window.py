@@ -384,12 +384,12 @@ class MainWindow(QMainWindow):
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
             return
-        editor_widget = self._editor_widgets_by_path.get(file_path)
-        if editor_widget is not None:
-            if editor_widget.toPlainText() != replacement_text:
-                editor_widget.replace_document_text(replacement_text)
+        if tab_state.current_content == replacement_text:
             return
-        self._editor_manager.update_tab_content(file_path, replacement_text)
+        self._editor_manager.replace_tab_content(file_path, replacement_text)
+        editor_widget = self._editor_widgets_by_path.get(file_path)
+        if editor_widget is not None and editor_widget.toPlainText() != replacement_text:
+            editor_widget.replace_document_text(replacement_text)
 
     def _refresh_save_action_states(self) -> None:
         if self._menu_registry is None:

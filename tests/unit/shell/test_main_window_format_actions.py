@@ -65,6 +65,9 @@ class _FakeEditorManager:
         self._tab.is_dirty = True
         return self._tab
 
+    def replace_tab_content(self, file_path: str, content: str, *, mark_dirty: bool = True) -> object:
+        return self.update_tab_content(file_path, content)
+
     def save_tab(self, file_path: str) -> object:
         assert self._tab.file_path == file_path
         self.saved_contents.append(self._tab.current_content)
@@ -100,11 +103,16 @@ def _build_window(file_path: str, text: str) -> tuple[MainWindow, _FakeEditorWid
     window = MainWindow.__new__(MainWindow)
     window_any = cast(Any, window)
     editor_widget = _FakeEditorWidget(text)
-    window_any._editor_manager = SimpleNamespace(active_tab=lambda: SimpleNamespace(file_path=file_path))
+    editor_manager = _FakeEditorManager(file_path, text)
+    window_any._editor_manager = editor_manager
     window_any._editor_widgets_by_path = {file_path: editor_widget}
     window_any._editor_tab_workflow = SimpleNamespace(active_editor_widget=lambda: editor_widget)
     window_any._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
     window_any._workflow_broker = object()
+    window_any._apply_text_to_open_tab = lambda path, content: (
+        editor_manager.update_tab_content(path, content),
+        editor_widget.replace_document_text(content),
+    )
     window_any._save_workflow = SaveWorkflow(window)
     window_any._python_style_workflow = build_python_style_workflow(window)
     return window, editor_widget

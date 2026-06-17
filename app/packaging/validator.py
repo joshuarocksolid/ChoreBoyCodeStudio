@@ -7,7 +7,12 @@ from pathlib import Path
 
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core.models import RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
-from app.packaging.dependency_audit import run_dependency_audit
+from app.packaging.dependency_audit import (
+    _collect_imported_top_levels,
+    _orphan_vendor_native_issues,
+    check_manifest_consistency,
+    run_dependency_audit,
+)
 from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import (
     DependencyAuditReport,
@@ -15,6 +20,7 @@ from app.packaging.models import (
     PackageValidationReport,
     ProjectPackageConfig,
 )
+from app.project.file_inventory import walk_project
 from app.support.preflight import build_package_preflight
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
 
@@ -82,9 +88,12 @@ def build_package_validation_report(
         known_runtime_modules=effective_runtime_modules,
         allow_runtime_import_probe=False,
     )
+    manifest_issues = check_manifest_consistency(project_root=project_root)
     issue_report = RuntimeIssueReport(
         workflow="package",
-        issues=_sort_issues(list(preflight.issues) + list(dependency_audit.issues)),
+        issues=_sort_issues(
+            list(preflight.issues) + list(dependency_audit.issues) + manifest_issues
+        ),
     )
     return PackageValidationReport(
         profile=profile,
@@ -249,6 +258,12 @@ def validate_package_config(
             )
         )
 
+    for orphan_issue in _orphan_vendor_native_issues(
+        project_root=root,
+        imported_top_levels=_collect_imported_top_levels(root),
+    ):
+        issues.append(orphan_issue)
+
     return issues
 
 
@@ -322,16 +337,15 @@ def _validate_icon_path(*, root: Path, icon_path: str) -> RuntimeIssue | None:
 
 def _discover_hidden_paths(root: Path) -> list[str]:
     hidden_paths: list[str] = []
-    for path in sorted(root.rglob("*")):
-        try:
-            rel_path = path.relative_to(root)
-        except ValueError:
-            continue
-        if not rel_path.parts:
-            continue
-        if any(part.startswith(".") for part in rel_path.parts if part not in {".", ".."}):
-            hidden_paths.append(rel_path.as_posix())
-    return hidden_paths
+    for _current_path, relative_dir, dir_names, file_names in walk_project(
+        root,
+        include_meta_dir=True,
+    ):
+        for name in dir_names + file_names:
+            rel_path = Path(name) if not relative_dir else Path(relative_dir) / name
+            if any(part.startswith(".") for part in rel_path.parts if part not in {".", ".."}):
+                hidden_paths.append(rel_path.as_posix())
+    return sorted(hidden_paths)
 
 
 def _sort_issues(issues: list[RuntimeIssue]) -> list[RuntimeIssue]:

@@ -619,6 +619,7 @@ class FileProjectCommandsWorkflow:
         self._host.project_controller().refresh_open_recent_menu(
             self._host.menu_registry(),
             open_project_by_path=self.open_project_by_path,
+            theme_tokens=self._host.shell_theme_workflow().resolve_theme_tokens(),
         )
 
     def show_open_project_error(self, project_root: str, details: str) -> None:

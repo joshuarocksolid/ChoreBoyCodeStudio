@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import time
 from typing import Iterator
 
-from app.intelligence.latency_tracker import LatencySnapshot, RollingLatencyTracker
+from app.core.metrics import LatencySnapshot, RollingLatencyTracker
 
 
 @dataclass(frozen=True)

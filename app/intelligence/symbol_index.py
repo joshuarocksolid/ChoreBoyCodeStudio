@@ -8,7 +8,7 @@ from typing import Callable, Sequence
 
 from app.intelligence.python_structure import SymbolLocation, extract_symbol_locations
 from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
-from app.project.file_inventory import build_project_inventory_snapshot
+from app.project.file_inventory import ProjectInventorySnapshot, iter_python_files
 
 
 def to_indexed_symbols(index: dict[str, list[SymbolLocation]]) -> list[SymbolLocation]:
@@ -40,6 +40,7 @@ def update_symbol_index_cache(
     project_root: str,
     cache_db_path: str,
     exclude_patterns: Sequence[str] = (),
+    inventory_snapshot: ProjectInventorySnapshot | None = None,
     cancel_event: threading.Event | None = None,
     should_commit: Callable[[], bool] | None = None,
 ) -> int:
@@ -57,7 +58,10 @@ def update_symbol_index_cache(
 
     project_root_text = str(Path(project_root).expanduser().resolve())
     cache_path = str(Path(cache_db_path).expanduser().resolve())
-    python_files = _list_python_source_files(project_root_text, exclude_patterns)
+    if inventory_snapshot is not None:
+        python_files = [Path(path) for path in inventory_snapshot.python_file_paths]
+    else:
+        python_files = _list_python_source_files(project_root_text, exclude_patterns)
     current_fingerprints = {str(path): _file_fingerprint(path) for path in python_files}
     cache = SQLiteSymbolIndex(cache_path)
     cached_fingerprints = cache.lookup_file_fingerprints(project_root_text)
@@ -70,12 +74,6 @@ def update_symbol_index_cache(
         for path, fingerprint in current_fingerprints.items()
         if cached_fingerprints.get(path) != fingerprint
     )
-
-    if deleted_files:
-        if not _can_commit():
-            return 0
-        cache.remove_symbols_for_files(project_root_text, deleted_files)
-        cache.remove_file_fingerprints(project_root_text, deleted_files)
 
     symbols_by_file: dict[str, list[IndexedSymbol]] = {}
     for file_path in changed_files:
@@ -97,16 +95,14 @@ def update_symbol_index_cache(
             for symbol in extracted
         ]
 
-    if symbols_by_file:
-        if not _can_commit():
-            return 0
-        cache.upsert_symbols_for_files(project_root_text, symbols_by_file)
-    if changed_files:
-        if not _can_commit():
-            return 0
-        cache.upsert_file_fingerprints(
+    if not _can_commit():
+        return 0
+    if deleted_files or symbols_by_file or changed_files:
+        cache.apply_index_delta(
             project_root_text,
-            {file_path: current_fingerprints[file_path] for file_path in changed_files},
+            deleted_files=deleted_files,
+            symbols_by_file=symbols_by_file,
+            fingerprints={file_path: current_fingerprints[file_path] for file_path in changed_files},
         )
     if not _can_commit():
         return 0
@@ -117,8 +113,13 @@ def _list_python_source_files(
     project_root: str | Path,
     exclude_patterns: Sequence[str] = (),
 ) -> list[Path]:
-    snapshot = build_project_inventory_snapshot(project_root, exclude_patterns=exclude_patterns)
-    return [Path(path) for path in snapshot.python_file_paths]
+    root = Path(project_root).expanduser().resolve()
+    return list(
+        iter_python_files(
+            root,
+            exclude_patterns=exclude_patterns,
+        )
+    )
 
 
 def _file_fingerprint(file_path: Path) -> tuple[int, int]:

@@ -91,7 +91,31 @@ QLabel#shell\\.markdownEditorPane\\.status {{
     font-size: 11px;
     padding-left: 6px;
 }}
-QToolButton#shell\\.markdownEditorPane\\.modeButton,
+QWidget#shell\\.markdownEditorPane\\.modeGroup {{
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    background: {tokens.editor_bg};
+}}
+QWidget#shell\\.markdownEditorPane\\.modeGroup QToolButton {{
+    background: transparent;
+    color: {tokens.text_muted};
+    border: none;
+    border-right: 1px solid {tokens.border};
+    border-radius: 0;
+    padding: 3px 8px;
+    font-size: 11px;
+}}
+QWidget#shell\\.markdownEditorPane\\.modeGroup QToolButton#shell\\.markdownEditorPane\\.modeButton\\.split {{
+    border-right: none;
+}}
+QWidget#shell\\.markdownEditorPane\\.modeGroup QToolButton:hover {{
+    background: {tokens.tree_hover_bg};
+    color: {tokens.text_primary};
+}}
+QWidget#shell\\.markdownEditorPane\\.modeGroup QToolButton:checked {{
+    background: {tokens.tree_selected_bg};
+    color: {tokens.text_primary};
+}}
 QToolButton#shell\\.markdownEditorPane\\.refreshButton {{
     background: transparent;
     color: {tokens.text_muted};
@@ -99,17 +123,12 @@ QToolButton#shell\\.markdownEditorPane\\.refreshButton {{
     border-radius: 4px;
     padding: 3px 8px;
     font-size: 11px;
+    margin-left: 4px;
 }}
-QToolButton#shell\\.markdownEditorPane\\.modeButton:hover,
 QToolButton#shell\\.markdownEditorPane\\.refreshButton:hover {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
     border-color: {tokens.border};
-}}
-QToolButton#shell\\.markdownEditorPane\\.modeButton:checked {{
-    background: {tokens.tree_selected_bg};
-    color: {tokens.text_primary};
-    border-color: {tokens.accent};
 }}
 QSplitter#shell\\.markdownEditorPane\\.splitter::handle {{
     background: {tokens.border};

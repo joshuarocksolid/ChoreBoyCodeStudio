@@ -12,13 +12,14 @@ import re
 from app.intelligence.api_index import provide_api_index_member_items
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
-from app.intelligence.python_structure import extract_symbol_locations
+from app.intelligence.python_structure import collect_completion_symbol_names, extract_symbol_locations
 from app.persistence.sqlite_index import SQLiteSymbolIndex
 from app.project.file_inventory import (
     ProjectInventorySnapshot,
-    build_project_inventory_snapshot,
+    iter_python_files,
     module_names_from_snapshot,
 )
+from app.project.import_layout import load_project_import_layout, module_name_for_file
 
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _DOTTED_NAME = r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
@@ -122,7 +123,7 @@ def provide_current_file_symbol_items(
     except SyntaxError:
         return []
 
-    symbol_names = sorted(_collect_symbols_from_ast(syntax_tree))
+    symbol_names = collect_completion_symbol_names(syntax_tree)
     return [
         CompletionItem(
             label=name,
@@ -168,9 +169,11 @@ def provide_project_symbol_items(
     if cache.count_symbols(project_root_text) > 0:
         return []
 
-    snapshot = inventory_snapshot or build_project_inventory_snapshot(project_root_text)
+    if inventory_snapshot is None:
+        return []
+
     approximate_items: list[CompletionItem] = []
-    for file_path in snapshot.python_file_paths:
+    for file_path in inventory_snapshot.python_file_paths:
         for symbol in extract_symbol_locations(Path(file_path)):
             if not _matches_prefix(symbol.name, prefix):
                 continue
@@ -211,18 +214,30 @@ def provide_project_module_items(
         cache_path = Path(cache_db_path).expanduser().resolve()
         if cache_path.exists():
             indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
-            if indexed_files:
-                candidates = _module_names_from_indexed_paths(
-                    project_root=root,
-                    indexed_file_paths=indexed_files,
+            if indexed_files and _indexed_files_match_snapshot(indexed_files, inventory_snapshot):
+                if inventory_snapshot is not None:
+                    module_names = module_names_from_snapshot(inventory_snapshot)
+                else:
+                    layout = load_project_import_layout(root)
+                    module_names = sorted(
+                        {
+                            name
+                            for path in indexed_files
+                            if (name := module_name_for_file(layout, Path(path))) is not None
+                        }
+                    )
+                filtered = _filter_module_names(
+                    module_names,
+                    prefix=prefix,
+                    limit=limit,
                 )
-                return _module_completion_items(
-                    _filter_module_names(candidates, prefix=prefix, limit=limit)
-                )
+                return _module_completion_items(filtered, source="cache")
 
-    snapshot = inventory_snapshot or build_project_inventory_snapshot(root)
+    if inventory_snapshot is None:
+        return []
+
     filtered = _filter_module_names(
-        module_names_from_snapshot(snapshot),
+        module_names_from_snapshot(inventory_snapshot),
         prefix=prefix,
         limit=limit,
     )
@@ -287,29 +302,6 @@ def _resolve_api_index_name(context: ModuleMemberCompletionContext, bindings: di
     return ".".join([bound, *expression_parts[1:]])
 
 
-def _collect_symbols_from_ast(syntax_tree: ast.AST) -> set[str]:
-    symbols: set[str] = set()
-    for node in ast.walk(syntax_tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            symbols.add(node.name)
-            continue
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                symbols.update(_extract_target_names(target))
-            continue
-        if isinstance(node, ast.AnnAssign):
-            symbols.update(_extract_target_names(node.target))
-            continue
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                symbols.add(alias.asname or alias.name.split(".")[0])
-            continue
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                symbols.add(alias.asname or alias.name)
-    return {symbol for symbol in symbols if symbol and symbol.isidentifier()}
-
-
 def _collect_module_symbols_from_file(*, file_path: Path, member_prefix: str) -> set[str]:
     try:
         source_text = file_path.read_text(encoding="utf-8")
@@ -320,30 +312,10 @@ def _collect_module_symbols_from_file(*, file_path: Path, member_prefix: str) ->
     if syntax_tree is None:
         return set()
 
-    symbols = _collect_top_level_symbols_from_ast(syntax_tree)
+    symbols = set(collect_completion_symbol_names(syntax_tree))
     if not member_prefix.startswith("_"):
         symbols = {name for name in symbols if not name.startswith("_")}
     return {name for name in symbols if _matches_prefix(name, member_prefix)}
-
-
-def _module_names_from_indexed_paths(
-    *,
-    project_root: Path,
-    indexed_file_paths: list[str],
-) -> list[str]:
-    normalized_root = project_root.as_posix().rstrip("/")
-    root_prefix = f"{normalized_root}/"
-    module_names: set[str] = set()
-    for file_path in indexed_file_paths:
-        normalized_path = file_path.replace("\\", "/")
-        if not normalized_path.startswith(root_prefix):
-            continue
-        relative_path = normalized_path[len(root_prefix) :]
-        module_name = _module_name_from_relative_path(relative_path)
-        if module_name is None:
-            continue
-        module_names.add(module_name)
-    return sorted(module_names)
 
 
 def _filter_module_names(module_names: list[str], *, prefix: str, limit: int) -> list[str]:
@@ -357,75 +329,28 @@ def _filter_module_names(module_names: list[str], *, prefix: str, limit: int) ->
     return filtered
 
 
-def _module_completion_items(module_names: list[str]) -> list[CompletionItem]:
+def _module_completion_items(module_names: list[str], *, source: str = "approximate") -> list[CompletionItem]:
+    confidence = "exact" if source == "cache" else "approximate"
     return [
         CompletionItem(
             label=module_name,
             insert_text=module_name,
             kind=CompletionKind.MODULE,
             detail="project module",
+            source=source,
+            confidence=confidence,
         )
         for module_name in module_names
     ]
 
 
-def _collect_top_level_symbols_from_ast(syntax_tree: ast.AST) -> set[str]:
-    symbols: set[str] = set()
-    for node in getattr(syntax_tree, "body", []):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            symbols.add(node.name)
-            continue
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                symbols.update(_extract_target_names(target))
-            continue
-        if isinstance(node, ast.AnnAssign):
-            symbols.update(_extract_target_names(node.target))
-            continue
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                symbols.add(alias.asname or alias.name.split(".")[0])
-            continue
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                symbols.add(alias.asname or alias.name)
-    return {symbol for symbol in symbols if symbol and symbol.isidentifier()}
-
-
-def _extract_target_names(target: ast.AST) -> set[str]:
-    if isinstance(target, ast.Name):
-        return {target.id}
-    if isinstance(target, (ast.Tuple, ast.List)):
-        names: set[str] = set()
-        for element in target.elts:
-            names.update(_extract_target_names(element))
-        return names
-    return set()
-
-
-def _module_name_from_path(project_root: Path, file_path: Path) -> str | None:
-    from app.project.import_layout import module_name_for_file, resolve_project_import_layout
-
-    layout = resolve_project_import_layout(project_root)
-    canonical = module_name_for_file(layout, file_path)
-    if canonical is not None:
-        return canonical
-    relative_path = file_path.relative_to(project_root).as_posix()
-    return _module_name_from_relative_path(relative_path)
-
-
-def _module_name_from_relative_path(relative_path: str) -> str | None:
-    if not relative_path.endswith(".py"):
-        return None
-    module_path = relative_path[:-3]
-    if module_path.endswith("/__init__"):
-        module_path = module_path[: -len("/__init__")]
-    module_path = module_path.strip("/")
-    if not module_path:
-        return None
-    return module_path.replace("/", ".")
+def _indexed_files_match_snapshot(
+    indexed_files: list[str],
+    inventory_snapshot: ProjectInventorySnapshot | None,
+) -> bool:
+    if inventory_snapshot is None:
+        return True
+    return set(indexed_files) == set(inventory_snapshot.python_file_paths)
 
 
 def _matches_prefix(candidate: str, prefix: str) -> bool:

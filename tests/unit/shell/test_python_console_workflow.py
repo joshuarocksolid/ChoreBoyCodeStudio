@@ -51,6 +51,7 @@ class FakeConsoleWidget:
         self,
         *,
         request_generation: int,
+        prefix: str,
         items: list[CompletionItem],
     ) -> None:
         self.shown_generations.append(request_generation)

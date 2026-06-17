@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
-from app.editors.editor_overlay_policy import effective_highlighting_mode
+from app.core.highlighting_policy import effective_highlighting_mode
 from app.editors.syntax_engine import TokenStyle, ThemedSyntaxHighlighter
 from app.treesitter.capture_pipeline import (
     _CAPTURE_TOKEN_MAP,
@@ -46,6 +46,7 @@ class TreeSitterHighlighter(
         "builtin": TokenStyle("builtin"),
         "escape": TokenStyle("escape"),
         "string": TokenStyle("string"),
+        "string_prefix": TokenStyle("string_prefix"),
         "comment": TokenStyle("comment", italic=True),
         "number": TokenStyle("number"),
         "function": TokenStyle("function", bold=True),

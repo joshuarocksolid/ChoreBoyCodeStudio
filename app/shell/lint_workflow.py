@@ -10,6 +10,7 @@ from PySide2.QtWidgets import QMessageBox
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.plugins.workflow_adapters import analyze_python_with_workflow
+from app.project.file_inventory import ProjectInventorySnapshot
 from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
 from app.support.runtime_explainer import build_import_issue_report
 
@@ -46,6 +47,9 @@ class LintWorkflowHost(Protocol):
         ...
 
     def background_tasks(self) -> Any:
+        ...
+
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
         ...
 
     def intelligence_metrics_logging_enabled(self) -> bool:
@@ -124,7 +128,7 @@ class LintWorkflow:
         editor_widget = editor_widgets.get(file_path)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
         buffer_revision = None if editor_widget is None else self._host.editor_buffer_revision(file_path)
-        allow_runtime_import_probe = trigger == "manual"
+        allow_runtime_import_probe = False
         key = f"lint::{file_path}"
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
@@ -218,13 +222,15 @@ class LintWorkflow:
         lint_rule_overrides = self._host.lint_rule_overrides()
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
+            inventory_snapshot = self._host.project_inventory_snapshot()
             return find_unresolved_imports(
                 project_root,
                 source_overrides=source_overrides,
                 known_runtime_modules=known_modules,
-                allow_runtime_import_probe=True,
+                allow_runtime_import_probe=False,
                 lint_rule_overrides=lint_rule_overrides,
                 project_metadata=loaded_project.metadata,
+                inventory_snapshot=inventory_snapshot,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
@@ -306,6 +312,9 @@ class MainWindowLintHost:
 
     def background_tasks(self) -> Any:
         return self._window._background_tasks
+
+    def project_inventory_snapshot(self) -> ProjectInventorySnapshot | None:
+        return self._window._project_inventory_orchestrator.snapshot
 
     def intelligence_metrics_logging_enabled(self) -> bool:
         return self._window._intelligence_runtime_settings.metrics_logging_enabled

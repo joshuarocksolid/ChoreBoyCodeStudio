@@ -16,7 +16,7 @@ from PySide2.QtWidgets import QDialog
 from app.project.project_service import create_blank_project
 from app.shell.history_restore_picker import HISTORY_RESTORE_ACTION_RESTORE_LATEST
 from app.shell.main_window import MainWindow
-from app.shell.main_window_lifecycle import MainWindowLifecycle
+from testing.main_window_shutdown import shutdown_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
@@ -29,15 +29,6 @@ def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-un
     if app is None:
         app = qt_widgets.QApplication([])
     return app
-
-
-def _dispose_window(window: MainWindow, app) -> None:  # type: ignore[no-untyped-def]
-    window._is_shutting_down = True
-    MainWindowLifecycle.begin_shutdown_teardown(window)
-    MainWindowLifecycle.stop_active_run_before_close(window)
-    window.deleteLater()
-    app.processEvents()
-
 
 def _wait_for(predicate, app, *, timeout_seconds: float = 1.5) -> bool:  # type: ignore[no-untyped-def]
     deadline = time.time() + timeout_seconds
@@ -121,4 +112,4 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     assert restored_tab.current_content == "print('recovered')\n"
     assert restored_tab.is_dirty is True
     assert file_path.exists() is False
-    _dispose_window(window, app)
+    shutdown_main_window_for_test(window, app)

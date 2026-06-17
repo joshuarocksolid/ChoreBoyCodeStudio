@@ -35,6 +35,31 @@ def test_dependency_audit_flags_vendored_native_extension_without_loader_strateg
     assert any("native_extension" in issue.issue_id for issue in report.issues)
 
 
+def test_dependency_audit_flags_orphan_vendor_native_without_import(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
+    (vendor_dir / "orphan.so").write_bytes(b"\x7fELF")
+
+    report = run_dependency_audit(project_root=str(project_root), known_runtime_modules=frozenset())
+
+    assert any(issue.issue_id == "package.dependency.orphan_native.orphan" for issue in report.issues)
+    assert report.is_ready is False
+
+
+def test_dependency_audit_does_not_flag_referenced_vendor_native_as_orphan(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (project_root / "main.py").write_text("import fastmath\n", encoding="utf-8")
+    (vendor_dir / "fastmath.so").write_bytes(b"\x7fELF")
+
+    report = run_dependency_audit(project_root=str(project_root), known_runtime_modules=frozenset())
+
+    assert not any(issue.issue_id.startswith("package.dependency.orphan_native") for issue in report.issues)
+
+
 def test_dependency_audit_flags_direct_subprocess_binary(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

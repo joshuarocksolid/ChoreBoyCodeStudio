@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Generic, Optional, Protocol, TypeVar
 
+from app.project.import_layout import load_project_import_layout
 from app.project.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
 from app.project.file_operation_models import ImportUpdatePolicy
 from app.shell.breakpoint_store import BreakpointStore
@@ -108,7 +109,13 @@ class ProjectTreeController(Generic[W]):
         except ValueError:
             return
 
-        previews = plan_import_rewrites(project_root, old_relative, new_relative)
+        layout = load_project_import_layout(project_root_path)
+        previews = plan_import_rewrites(
+            project_root,
+            old_relative,
+            new_relative,
+            import_layout=layout,
+        )
         if not previews:
             return
 

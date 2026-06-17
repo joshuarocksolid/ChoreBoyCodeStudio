@@ -64,6 +64,8 @@ def _host(instance: object) -> _HighlighterHost:
     return cast(_HighlighterHost, instance)
 
 _CAPTURE_TOKEN_MAP: dict[str, str] = {
+    # Python identifier coloring is locals-driven only (no catch-all @variable).
+    # Undefined names stay default text; see USER_REQUESTS #24/#27.
     "keyword": "keyword",
     "keyword.control": "keyword_control",
     "keyword.import": "keyword_import",
@@ -71,6 +73,7 @@ _CAPTURE_TOKEN_MAP: dict[str, str] = {
     "escape": "escape",
     "comment": "comment",
     "string": "string",
+    "string.prefix": "string_prefix",
     "number": "number",
     "boolean": "number",
     "constant": "semantic_constant",
@@ -373,6 +376,10 @@ class TreeSitterCapturePipelineMixin:
             return 95
         if span.token_name == "builtin":
             return 88
+        if span.capture_name == "type":
+            return 87
+        if span.origin == "locals":
+            return 86
         if span.token_name.startswith("semantic_"):
             return 85
         if span.token_name in {"markdown_code", "string", "comment"}:
@@ -521,6 +528,10 @@ class TreeSitterCapturePipelineMixin:
         node_text = self._node_text(node=node, lines=lines)
         if not node_text:
             return token_name
+        if capture_name == "string.prefix":
+            if not any(character in "furbFURB" for character in node_text):
+                return "string"
+            return "string_prefix"
         if capture_name in {"variable", "variable.def", "parameter"} and node_text in PYTHON_SPECIAL_VARIABLES:
             return "builtin"
         if capture_name == "function.call" and node_text in PYTHON_BUILTIN_FUNCTIONS:

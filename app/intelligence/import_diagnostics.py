@@ -12,9 +12,11 @@ from app.intelligence.lint_profile import resolve_lint_rule_settings
 from app.project.dependency_classifier import is_module_resolvable
 from app.project.import_layout import (
     ProjectImportLayout,
-    module_name_for_file,
+    resolve_import_from_module,
     resolve_project_import_layout,
 )
+
+PY200_DETAIL_UNRESOLVED_MODULE = "unresolved_module"
 
 
 def collect_unresolved_import_diagnostics(
@@ -29,6 +31,8 @@ def collect_unresolved_import_diagnostics(
     project_metadata: ProjectMetadata | None = None,
 ) -> list[CodeDiagnostic]:
     """Collect PY200 diagnostics for unresolved imports in one file."""
+    # Hot lint paths are static-only; runtime probe is reserved for explain/import analysis APIs.
+    _ = allow_runtime_import_probe
     is_enabled, severity = resolve_lint_rule_settings("PY200", lint_rule_overrides)
     if not is_enabled:
         return []
@@ -42,7 +46,7 @@ def collect_unresolved_import_diagnostics(
                     project_root,
                     alias.name,
                     known_runtime_modules=known_runtime_modules,
-                    allow_runtime_import_probe=allow_runtime_import_probe,
+                    allow_runtime_import_probe=False,
                     metadata=project_metadata,
                     layout=resolved_layout,
                 ):
@@ -56,6 +60,7 @@ def collect_unresolved_import_diagnostics(
                         message=f"Unresolved import: {alias.name}",
                         col_start=_col_offset(node),
                         col_end=_end_col_offset(node),
+                        detail={PY200_DETAIL_UNRESOLVED_MODULE: alias.name},
                     )
                 )
         elif isinstance(node, ast.ImportFrom):
@@ -76,6 +81,7 @@ def collect_unresolved_import_diagnostics(
                         message=f"Unresolved import: {display_module}",
                         col_start=_col_offset(node),
                         col_end=_end_col_offset(node),
+                        detail={PY200_DETAIL_UNRESOLVED_MODULE: display_module},
                     )
                 )
                 continue
@@ -83,7 +89,7 @@ def collect_unresolved_import_diagnostics(
                 project_root,
                 resolved_module,
                 known_runtime_modules=known_runtime_modules,
-                allow_runtime_import_probe=allow_runtime_import_probe,
+                allow_runtime_import_probe=False,
                 metadata=project_metadata,
                 layout=resolved_layout,
             ):
@@ -97,41 +103,10 @@ def collect_unresolved_import_diagnostics(
                     message=f"Unresolved import: {resolved_module}",
                     col_start=_col_offset(node),
                     col_end=_end_col_offset(node),
+                    detail={PY200_DETAIL_UNRESOLVED_MODULE: resolved_module},
                 )
             )
     return diagnostics
-
-
-def resolve_import_from_module(
-    file_path: Path,
-    module: str | None,
-    level: int,
-    *,
-    layout: ProjectImportLayout,
-) -> str | None:
-    if level <= 0:
-        return module
-    package_name = package_name_for_file(file_path, layout=layout)
-    if package_name is None:
-        return None
-    try:
-        from importlib.util import resolve_name
-
-        relative_spec = module if module is not None else ""
-        return resolve_name(relative_spec, package_name, level)
-    except (ImportError, ValueError):
-        return None
-
-
-def package_name_for_file(file_path: Path, *, layout: ProjectImportLayout) -> str | None:
-    module_name = module_name_for_file(layout, file_path)
-    if module_name is None:
-        return None
-    if file_path.name == "__init__.py":
-        return module_name
-    if "." not in module_name:
-        return None
-    return module_name.rsplit(".", 1)[0]
 
 
 def _relative_import_display(node: ast.ImportFrom) -> str:

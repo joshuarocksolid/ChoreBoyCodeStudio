@@ -22,7 +22,7 @@ It aligns with:
   - `slow` — wall-time exceeds the agent fast-lane budget (subprocess polling, debug-session waits). Carries a `pytest.mark.timeout(180)` override; excluded from the `fast` shard.
   - `performance` — wall-clock benchmarks under `tests/integration/performance/`; excluded from default `run_tests.py` and the `fast`/`integration` shards unless explicitly targeted.
 
-Global `timeout = 30` in `pyproject.toml` requires `pytest-timeout` (optional install into AppRun site-packages per `AGENTS.md`; not bundled in vendor setup scripts).
+Global `timeout = 30` in `pyproject.toml` requires `pytest-timeout`, bundled in `vendor/` (see `scripts/setup_vendor_py39.sh` / `setup_vendor_py311.sh` and `AGENTS.md`).
 
 ## 3) Test layout
 
@@ -139,7 +139,7 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 Latest validation checkpoint (2026-06-01, `main` branch). Pass counts are maintained in [`AGENTS.md`](../AGENTS.md); this section records wall times and shard outcomes.
 
-- `python3 testing/run_test_shard.py fast` -> **~54–68s wall time**, **1949 passed, 17 deselected, 0 failures**.
+- `python3 testing/run_test_shard.py fast` -> **~59s wall time**, **2064 selected / 24 deselected** (2026-06-17 hang-fix checkpoint on a clean machine). Seven additional tests moved to the `slow` shard (`test_project_import_open`, `test_template_generation`). Subprocess hygiene: `CBCS_DISABLE_BACKGROUND_RUNTIME=1`, per-test child reaper in `tests/conftest.py`, preflight via `testing/preflight_test_env.py`.
 - `python3 testing/run_test_shard.py integration` -> **~55s wall time**, **64 passed, 3 skipped, 0 failures** (slow debug tests skip when no debug channel or no `stopped` pause on this AppRun build; see `docs/DISCOVERY.md` §4D).
 - `python3 testing/run_test_shard.py runtime_parity` -> **~4s wall time**, **17 passed**.
 - `python3 testing/run_test_shard.py performance` -> **~74s wall time**, **11 passed, 0 failures** (all modules under `tests/integration/performance/`).

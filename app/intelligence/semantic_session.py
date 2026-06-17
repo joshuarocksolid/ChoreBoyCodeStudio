@@ -1,11 +1,13 @@
 """Serialized semantic session owning semantic engines and completion state."""
 from __future__ import annotations
 
-from typing import Callable, TypeVar, cast
+from collections.abc import Callable
+from typing import TypeVar, cast
 
 T = TypeVar("T")
 
 from app.bootstrap.paths import PathInput
+from app.intelligence.completion_context import CompletionContext
 from app.intelligence.completion_models import (
     CompletionFastResult,
     CompletionEnvelope,
@@ -16,6 +18,7 @@ from app.intelligence.completion_models import (
 )
 from app.intelligence.completion_resolver import CompletionResolver
 from app.intelligence.completion_service import CompletionRequest, CompletionService
+from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
 from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.semantic_models import (
     SemanticDefinitionResult,
@@ -26,6 +29,7 @@ from app.intelligence.semantic_models import (
     SemanticSignatureResult,
 )
 from app.intelligence.semantic_worker import SemanticWorker
+from app.project.file_inventory import ProjectInventorySnapshot
 
 
 class SemanticSession:
@@ -48,6 +52,12 @@ class SemanticSession:
         )
         self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
+
+    def set_inventory_snapshot_provider(
+        self,
+        provider: Callable[[], ProjectInventorySnapshot | None],
+    ) -> None:
+        self._completion_service.set_inventory_snapshot_provider(provider)
 
     def _submit(
         self,
@@ -157,6 +167,108 @@ class SemanticSession:
             semantic=semantic,
             runtime_items=runtime_items,
             max_results=max_results,
+        )
+
+    def request_editor_completions(
+        self,
+        *,
+        request: CompletionRequest,
+        request_generation: int,
+        completion_context: CompletionContext,
+        runtime_coordinator: RuntimeIntrospectionCoordinator | None,
+        schedule_background_task: Callable[
+            [
+                str,
+                Callable[[object], list[CompletionItem]],
+                Callable[[list[CompletionItem]], None],
+                Callable[[Exception], None],
+            ],
+            None,
+        ]
+        | None,
+        on_paint: Callable[[str, list[CompletionItem], CompletionEnvelope], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        """Orchestrate fast, semantic, and runtime completion tiers for one editor request."""
+
+        popup_prefix = completion_context.prefix
+        runtime_query, runtime_items = self._completion_service.runtime_completion_items(
+            completion_context,
+            coordinator=runtime_coordinator,
+        )
+        fast_envelope: list[CompletionEnvelope | None] = [None]
+
+        def paint_merged(*, fast: CompletionEnvelope | None, semantic: CompletionEnvelope | None) -> None:
+            merged = self.merge_completion_for_display(
+                fast=fast,
+                semantic=semantic,
+                runtime_items=runtime_items,
+            )
+            if not merged.items:
+                return
+            on_paint(popup_prefix, merged.items, merged)
+
+        def on_fast_success(result: CompletionFastResult) -> None:
+            fast_envelope[0] = result.envelope
+            paint_merged(fast=result.envelope, semantic=None)
+
+        def on_fast_error(exc: Exception) -> None:
+            if on_error is not None:
+                on_error(exc)
+
+        self.request_completion_fast(
+            request=request,
+            prefix=popup_prefix,
+            request_generation=request_generation,
+            on_success=on_fast_success,
+            on_error=on_fast_error,
+        )
+
+        if (
+            runtime_coordinator is not None
+            and runtime_query is not None
+            and schedule_background_task is not None
+            and runtime_coordinator.cached_items(runtime_query) is None
+        ):
+            introspection_key = f"runtime_introspect:{runtime_query.target_path}"
+
+            def introspection_task(_cancellation: object) -> list[CompletionItem]:
+                return runtime_coordinator.fetch_and_cache_from_runner(runtime_query)
+
+            def introspection_success(items: list[CompletionItem]) -> None:
+                attached = self._completion_service.attach_runtime_replacement_metadata(
+                    items,
+                    context=completion_context,
+                )
+                if not attached:
+                    return
+                runtime_items.extend(attached)
+                paint_merged(fast=fast_envelope[0], semantic=None)
+
+            def introspection_error(exc: Exception) -> None:
+                if on_error is not None:
+                    on_error(exc)
+
+            schedule_background_task(
+                introspection_key,
+                introspection_task,
+                introspection_success,
+                introspection_error,
+            )
+
+        def on_semantic_success(result: CompletionRequestResult) -> None:
+            paint_merged(fast=fast_envelope[0], semantic=result.envelope)
+
+        def on_semantic_error(exc: Exception) -> None:
+            if on_error is not None:
+                on_error(exc)
+
+        self.request_completion(
+            request=request,
+            prefix=popup_prefix,
+            request_generation=request_generation,
+            on_success=on_semantic_success,
+            on_error=on_semantic_error,
         )
 
     def request_completion_resolve(

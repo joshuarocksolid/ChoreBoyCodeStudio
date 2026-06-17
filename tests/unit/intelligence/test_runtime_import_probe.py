@@ -5,8 +5,8 @@ import subprocess
 
 import pytest
 
-from app.intelligence import runtime_import_probe as runtime_import_probe_module
-from app.intelligence.runtime_import_probe import probe_runtime_module_importability
+from app.project import runtime_import_probe as runtime_import_probe_module
+from app.project.runtime_import_probe import probe_runtime_module_importability
 
 pytestmark = pytest.mark.unit
 

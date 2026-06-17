@@ -9,6 +9,12 @@ from PySide2.QtCore import QUrl
 from PySide2.QtGui import QDesktopServices
 from PySide2.QtWidgets import QTextBrowser, QWidget
 
+from app.editors.markdown_preview_enhancements import enhance_preview_document
+from app.editors.markdown_preview_styles import (
+    build_preview_document_stylesheet,
+    build_preview_paused_html,
+    build_preview_widget_stylesheet,
+)
 from app.editors.markdown_rendering import (
     LINK_KIND_ANCHOR,
     LINK_KIND_EXTERNAL,
@@ -44,6 +50,9 @@ class MarkdownPreviewWidget(QTextBrowser):
         self._local_link_callback = local_link_callback
         self._external_link_callback = external_link_callback
         self._tokens: ShellThemeTokens | None = None
+        self._last_markdown_text: str | None = None
+        self._paused_character_count: int | None = None
+        self._paused_threshold: int | None = None
 
     def set_file_path(self, file_path: str) -> None:
         """Set the Markdown source path used for relative resources."""
@@ -55,89 +64,48 @@ class MarkdownPreviewWidget(QTextBrowser):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Apply shell theme colors to the preview document."""
         self._tokens = tokens
-        self.setStyleSheet(
-            f"""
-            QTextBrowser#shell\\.markdownPreview\\.browser {{
-                background: {tokens.editor_bg};
-                color: {tokens.text_primary};
-                border: none;
-                padding: 18px 24px;
-                selection-background-color: {tokens.tree_selected_bg};
-            }}
-            """
-        )
-        self.document().setDefaultStyleSheet(
-            f"""
-            body {{
-                color: {tokens.text_primary};
-                background-color: {tokens.editor_bg};
-                font-family: sans-serif;
-                font-size: 13px;
-                line-height: 1.55;
-            }}
-            h1, h2, h3, h4, h5, h6 {{
-                color: {tokens.text_primary};
-                font-weight: 700;
-            }}
-            h1 {{
-                border-bottom: 1px solid {tokens.border};
-                padding-bottom: 6px;
-            }}
-            a {{
-                color: {tokens.accent};
-            }}
-            code, pre {{
-                background-color: {tokens.badge_bg};
-                color: {tokens.text_primary};
-            }}
-            blockquote {{
-                color: {tokens.text_muted};
-                border-left: 3px solid {tokens.border};
-                margin-left: 0;
-                padding-left: 12px;
-            }}
-            table, th, td {{
-                border: 1px solid {tokens.border};
-                border-collapse: collapse;
-                padding: 4px 8px;
-            }}
-            """
-        )
+        self.setStyleSheet(build_preview_widget_stylesheet(tokens))
+        self.document().setDefaultStyleSheet(build_preview_document_stylesheet(tokens))
+        if self._paused_character_count is not None and self._paused_threshold is not None:
+            self.show_preview_paused_message(self._paused_character_count, self._paused_threshold)
+        elif self._last_markdown_text is not None:
+            self.render_markdown(self._last_markdown_text)
 
     def render_markdown(self, markdown_text: str) -> None:
         """Render Markdown text, preferring raw-HTML-disabled features."""
+        self._paused_character_count = None
+        self._paused_threshold = None
+        self._last_markdown_text = markdown_text
         features = safe_markdown_features()
         if features is not None:
             try:
                 self.setMarkdown(markdown_text, features)
-                return
             except TypeError:
-                pass
-        self.setMarkdown(markdown_text)
+                self.setMarkdown(markdown_text)
+        else:
+            self.setMarkdown(markdown_text)
+        if self._tokens is not None:
+            enhance_preview_document(
+                self.document(),
+                tokens=self._tokens,
+                base_file_path=self._file_path,
+            )
 
     def show_preview_paused_message(self, character_count: int, threshold: int) -> None:
         """Show a friendly large-document guardrail message."""
+        self._last_markdown_text = None
+        self._paused_character_count = character_count
+        self._paused_threshold = threshold
         tokens = self._tokens
         if tokens is None:
             self.setPlainText(
                 "Markdown preview paused for this large file.\n\n"
                 f"Characters: {character_count:,}\n"
                 f"Live preview limit: {threshold:,}\n\n"
-                "Use Refresh Preview to render it manually."
+                "Use Refresh to render it manually."
             )
             return
-        self.setHtml(
-            f"""
-            <div style="font-family:sans-serif;color:{tokens.text_primary};
-                        background:{tokens.editor_bg};padding:20px;">
-              <h2>Markdown preview paused</h2>
-              <p>This file is large, so live preview is paused to keep the editor responsive.</p>
-              <p><b>Characters:</b> {character_count:,}<br/>
-                 <b>Live preview limit:</b> {threshold:,}</p>
-              <p>Use <b>Refresh Preview</b> to render it manually.</p>
-            </div>
-            """
-        )
+        self.setHtml(build_preview_paused_html(tokens, character_count=character_count, threshold=threshold))
 
     def _handle_anchor_clicked(self, url: QUrl) -> None:
         href = url.toString()
@@ -161,8 +129,4 @@ class MarkdownPreviewWidget(QTextBrowser):
             self._show_missing_link_message(resolved.target_path)
 
     def _show_missing_link_message(self, target_path: str) -> None:
-        tokens = self._tokens
-        if tokens is None:
-            self.setToolTip(f"Linked file was not found: {target_path}")
-            return
         self.setToolTip(f"Linked file was not found: {target_path}")

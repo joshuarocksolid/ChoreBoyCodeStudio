@@ -206,14 +206,17 @@ class SaveWorkflow:
         window._local_history_workflow.delete_draft(saved_tab.file_path)
         project_id, _project_root = window._local_history_workflow.local_history_context_for_path(saved_tab.file_path)
         if not path_existed_before_save and project_id is not None:
-            window._project_tree_ui_workflow.reload_current_project()
-        window._refresh_save_action_states()
-        window._editor_tab_workflow.update_editor_status_for_path(saved_tab.file_path)
-        if should_refresh_index_after_save(
+            window._project_rescan_workflow.rescan_from_disk(reload_plugins=False, reindex=True)
+        elif should_refresh_index_after_save(
             window._intelligence_runtime_settings,
             has_loaded_project=window._loaded_project is not None,
         ) and window._loaded_project is not None:
-            window._intelligence_cache_workflow.start_symbol_indexing(window._loaded_project.project_root)
+            window._intelligence_cache_workflow.start_symbol_indexing(
+                window._loaded_project.project_root,
+                inventory_snapshot=window._project_inventory_orchestrator.snapshot,
+            )
+        window._refresh_save_action_states()
+        window._editor_tab_workflow.update_editor_status_for_path(saved_tab.file_path)
         if saved_tab.file_path.lower().endswith(".py"):
             window._lint_workflow.render_diagnostics_for_file(saved_tab.file_path, trigger="save")
             test_runner_workflow = getattr(window, "_test_runner_workflow", None)

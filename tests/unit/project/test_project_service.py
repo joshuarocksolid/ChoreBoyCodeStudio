@@ -478,6 +478,25 @@ def test_enumerate_project_entries_avoids_per_entry_resolve_calls(
     assert resolve_calls["count"] <= 2
 
 
+def test_enumerate_project_entries_forwards_relative_path_pattern_mode(tmp_path: Path) -> None:
+    project_root = tmp_path / "project_tree_excludes"
+    _write_valid_manifest(project_root, name="Project Tree Excludes")
+    (project_root / "src").mkdir()
+    (project_root / "src" / "app.py").write_text("print('app')\n", encoding="utf-8")
+    (project_root / "src" / "generated").mkdir()
+    (project_root / "src" / "generated" / "foo.py").write_text("print('gen')\n", encoding="utf-8")
+
+    entries = enumerate_project_entries(
+        project_root,
+        exclude_patterns=["src/generated/*"],
+        pattern_mode="relative_path",
+    )
+    relative_paths = [entry.relative_path for entry in entries]
+
+    assert "src/app.py" in relative_paths
+    assert "src/generated/foo.py" not in relative_paths
+
+
 def test_open_project_and_track_recent_updates_recents_on_success(tmp_path: Path) -> None:
     """Successful open should persist project path into recent projects."""
     project_root = tmp_path / "tracked_project"
