@@ -360,6 +360,7 @@ def install_intelligence(ctx: ShellCompositionContext) -> None:
         open_runtime_center_dialog=window._runtime_onboarding_workflow.open_runtime_center_dialog,
         active_run_session_log_path=lambda: window._run_session_controller.session_store.log_path,
         known_runtime_modules=lambda: window._known_runtime_modules,
+        resolve_theme_tokens=lambda: window._shell_theme_workflow.resolve_theme_tokens(),
     )
     window._intelligence_cache_workflow = build_intelligence_cache_workflow(window)
     window._project_inventory_orchestrator = ProjectInventoryOrchestrator()

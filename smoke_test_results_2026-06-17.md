@@ -48,14 +48,14 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 36 | Run With Arguments / Run Configurations / quoting / status-bar indicator | FAIL (blocked) | Dialog + parsed-argv preview render correctly, but clicking **Run** crashed: `TypeError: append_console_line() takes 2 positional arguments but 3 were given` ("Unhandled exception in editor process", 13:26:07). Root cause at HEAD: `run_session_controller.start_session`/`stop_session` call `append_console_line(text, "system")` positionally, but HEAD `run_debug_presenter.py:48` wires it to `run_event_workflow.append_console_line(self, text, *, stream=...)` (stream keyword-only). Breaks ALL Run/Debug, not just Run With Arguments. Could not verify argv round-trip, persistence, quoting, or status-bar indicator because no run completes. NOTE: working tree has a large UNCOMMITTED refactor introducing `bind_append_console_line()` (partial fix; Stop path still broken). |
+| 36 | Run With Arguments / Run Configurations / quoting / status-bar indicator | WARN | **Committed HEAD crashes on every run** (`TypeError: append_console_line() takes 2 positional arguments but 3 were given`; see Issues). After restarting the editor against the **working tree** (which has the uncommitted `bind_append_console_line()` fix), all #36 behavior works: ad-hoc `--foo bar baz` -> `sys.argv[1:]==['--foo','bar','baz']` and did NOT persist (run_configs stayed `[]`); `Dev` config (argv `--profile dev`, `DEBUG=1`) persisted to `cbcs/project.json` and ran with `sys.argv[1:]==['--profile','dev']` + `DEBUG=1`; quoting preview showed 3 tokens with embedded space preserved; unbalanced quote showed "No closing quotation" and blocked Run; status-bar active-config indicator + popup present. **Action required: commit the run-path fix (and finish the Stop-path wiring) before release.** |
 
 ## Group G — Themes
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 37 | High Contrast Light/Dark themes | | |
-| 38 | Neutral dark-gray chrome palette | | |
+| 37 | High Contrast Light/Dark themes | PASS | View > Theme lists 5 entries; HC Dark = pure black, HC Light = pure white, focus rings visibly thicker; panels stayed HC (no fallback); Settings > Syntax Colors shows 4 scopes. `settings.json` persists `theme.mode` and all four `syntax_colors` scopes (`light`/`dark`/`high_contrast_light`/`high_contrast_dark`). (User did a quick visual check.) |
+| 38 | Neutral dark-gray chrome palette | PASS | Settings > General > Appearance offers Standard vs Neutral gray dark; Neutral renders chrome neutral gray (~#303030) while blue accent survives; switching to Standard shows the blue tint; distinct. Persists as `theme.dark_chrome_palette: "neutral_gray"` in settings.json. |
 
 ## Group H — Packaging
 

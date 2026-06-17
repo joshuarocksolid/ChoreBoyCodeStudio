@@ -105,3 +105,13 @@ def build_run_dialog_style_sheet(tokens: ShellThemeTokens) -> str:
 def build_run_with_arguments_style_sheet(tokens: ShellThemeTokens) -> str:
     """Backward-compatible alias for :func:`build_run_dialog_style_sheet`."""
     return build_run_dialog_style_sheet(tokens)
+
+
+def build_package_wizard_style_sheet(tokens: ShellThemeTokens) -> str:
+    """Return stylesheet string for the Package Project wizard dialog."""
+    return "\n" + (
+        shell_section_chrome_font_weight(tokens)
+        + shell_section_checkbox_indicators(tokens)
+        + shell_section_dialog_chrome(tokens)
+        + shell_section_package_wizard(tokens)
+    )

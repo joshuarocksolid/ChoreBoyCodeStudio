@@ -21,6 +21,7 @@ from app.support.runtime_explainer import (
 from app.support.support_bundle import build_support_bundle
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.package_wizard_dialog import PackageProjectWizard
+from app.shell.theme_tokens import ShellThemeTokens
 
 
 class RuntimeSupportWorkflow:
@@ -49,6 +50,7 @@ class RuntimeSupportWorkflow:
         open_runtime_center_dialog: Callable[..., None],
         active_run_session_log_path: Callable[[], str | None],
         known_runtime_modules: Callable[[], frozenset[str] | None],
+        resolve_theme_tokens: Callable[[], ShellThemeTokens],
     ) -> None:
         self._parent = parent
         self._state_root = state_root
@@ -70,6 +72,7 @@ class RuntimeSupportWorkflow:
         self._open_runtime_center_dialog = open_runtime_center_dialog
         self._active_run_session_log_path = active_run_session_log_path
         self._known_runtime_modules = known_runtime_modules
+        self._resolve_theme_tokens = resolve_theme_tokens
 
     def clear_issue_state_for_project_change(self) -> None:
         """Reset runtime/import/run/package issue reports when switching projects."""
@@ -182,6 +185,7 @@ class RuntimeSupportWorkflow:
             project_metadata=project_metadata,
             package_config=package_config,
             parent=self._parent,
+            tokens=self._resolve_theme_tokens(),
         )
         if wizard.exec_() != QDialog.Accepted:
             return

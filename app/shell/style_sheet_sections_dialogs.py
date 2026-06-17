@@ -413,56 +413,62 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
 
 
 def shell_section_package_wizard(tokens: ShellThemeTokens) -> str:
+    muted = tokens.text_muted or tokens.text_primary
+    dialog = "QDialog#shell\\.packageWizardDialog"
     return f"""/* -- Package wizard ------------------------------------------------------ */
-QWizard#shell\\.packageWizard {{
-    background: {tokens.panel_bg};
+{dialog} {{
+    background: {tokens.window_bg};
     color: {tokens.text_primary};
 }}
-QWizard#shell\\.packageWizard QLabel {{
+{dialog} QLabel {{
     color: {tokens.text_primary};
+    font-size: 12px;
+    background: transparent;
 }}
-QWizard#shell\\.packageWizard QGroupBox {{
-    border: 1px solid {tokens.border};
-    border-radius: 6px;
-    margin-top: 12px;
-    padding: 12px 10px 10px 10px;
-    background: {tokens.panel_bg};
+{dialog} QLabel[previewLabel="true"] {{
+    color: {muted};
+    font-size: 12px;
 }}
-QWizard#shell\\.packageWizard QGroupBox::title {{
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 4px;
-    color: {tokens.text_muted};
+{dialog} QLabel[formSectionTitle="true"] {{
+    color: {muted};
+    font-size: 12px;
+    font-weight: 600;
 }}
-QWizard#shell\\.packageWizard QLineEdit,
-QWizard#shell\\.packageWizard QTextEdit,
-QWizard#shell\\.packageWizard QComboBox {{
+{dialog} QFormLayout QLabel {{
+    color: {muted};
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+}}
+{dialog} QLineEdit,
+{dialog} QTextEdit {{
     background: {tokens.editor_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
     border-radius: 5px;
     padding: 6px 8px;
+    font-size: 12px;
 }}
-QWizard#shell\\.packageWizard QLineEdit:focus,
-QWizard#shell\\.packageWizard QTextEdit:focus,
-QWizard#shell\\.packageWizard QComboBox:focus {{
+{dialog} QLineEdit:focus,
+{dialog} QTextEdit:focus {{
     border-color: {tokens.accent};
     border-width: {tokens.focus_border_width}px;
 }}
-QWizard#shell\\.packageWizard QPushButton {{
+QPushButton[fieldAction="true"] {{
     background: {tokens.input_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
-    border-radius: 5px;
-    padding: 7px 14px;
-    font-size: 12px;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
     font-weight: 600;
 }}
-QWizard#shell\\.packageWizard QPushButton:hover {{
+QPushButton[fieldAction="true"]:hover {{
     background: {tokens.tree_hover_bg};
     border-color: {tokens.accent};
+    color: {tokens.accent};
 }}
-QWizard#shell\\.packageWizard QPushButton:pressed {{
+QPushButton[fieldAction="true"]:pressed {{
     background: {tokens.tree_selected_bg};
 }}
 """
