@@ -268,8 +268,7 @@ QDialog#{run_args} QComboBox,
 QDialog#{run_args} QPlainTextEdit,
 QDialog#{run_configs} QLineEdit,
 QDialog#{run_configs} QComboBox,
-QDialog#{run_configs} QPlainTextEdit,
-QDialog#{run_env} QLineEdit {{
+QDialog#{run_configs} QPlainTextEdit {{
     background: {tokens.input_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
@@ -281,10 +280,64 @@ QDialog#{run_args} QComboBox:focus,
 QDialog#{run_args} QPlainTextEdit:focus,
 QDialog#{run_configs} QLineEdit:focus,
 QDialog#{run_configs} QComboBox:focus,
-QDialog#{run_configs} QPlainTextEdit:focus,
-QDialog#{run_env} QLineEdit:focus {{
+QDialog#{run_configs} QPlainTextEdit:focus {{
     border-color: {tokens.accent};
     border-width: {tokens.focus_border_width}px;
+}}
+QScrollArea#shell\\.runWithArgumentsDialog\\.formScroll {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea#shell\\.runWithArgumentsDialog\\.formScroll > QWidget {{
+    background: transparent;
+}}
+QWidget#shell\\.runWithArgumentsDialog\\.formScrollContent {{
+    background: transparent;
+}}
+QScrollArea#shell\\.runConfigurationsDialog\\.configsDetailScroll {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea#shell\\.runConfigurationsDialog\\.configsDetailScroll > QWidget {{
+    background: transparent;
+}}
+QWidget#shell\\.runConfigurationsDialog\\.configsDetailForm {{
+    background: transparent;
+}}
+QDialog#{run_args} QScrollBar:vertical,
+QDialog#{run_configs} QScrollBar:vertical {{
+    width: 6px;
+    background: transparent;
+    margin: 2px 1px;
+}}
+QDialog#{run_args} QScrollBar::handle:vertical,
+QDialog#{run_configs} QScrollBar::handle:vertical {{
+    background: {muted};
+    border-radius: 3px;
+    min-height: 20px;
+}}
+QDialog#{run_args} QScrollBar::add-line:vertical,
+QDialog#{run_args} QScrollBar::sub-line:vertical,
+QDialog#{run_configs} QScrollBar::add-line:vertical,
+QDialog#{run_configs} QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QDialog#{run_args} QScrollBar::add-page:vertical,
+QDialog#{run_args} QScrollBar::sub-page:vertical,
+QDialog#{run_configs} QScrollBar::add-page:vertical,
+QDialog#{run_configs} QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+QDialog#{run_env} QTableWidget QLineEdit {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    padding: 0 4px;
+    border: none;
+    border-radius: 0;
+}}
+QDialog#{run_env} QTableWidget QLineEdit:focus {{
+    border: none;
+    outline: none;
 }}
 QLineEdit[envSummary="true"][readOnly="true"] {{
     background: {tokens.input_bg};

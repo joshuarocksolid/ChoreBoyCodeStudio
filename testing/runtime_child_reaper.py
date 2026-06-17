@@ -7,6 +7,10 @@ import signal
 import time
 
 _RUNTIME_CHILD_MARKERS = ("run_plugin_host.py", "run_runner.py")
+_PROC_CACHE_TTL_SECONDS = 0.5
+
+_children_map_cache: dict[int, list[int]] | None = None
+_children_map_cached_at: float = 0.0
 
 
 def read_proc_cmdline(pid: int) -> str:
@@ -40,20 +44,46 @@ def iter_pids() -> list[int]:
     return pids
 
 
-def descendant_pids(root_pid: int) -> set[int]:
+def _build_children_map() -> dict[int, list[int]]:
     children: dict[int, list[int]] = {}
     for pid in iter_pids():
         ppid = read_proc_ppid(pid)
         if ppid is not None:
             children.setdefault(ppid, []).append(pid)
+    return children
+
+
+def _children_map(*, force_refresh: bool = False) -> dict[int, list[int]]:
+    global _children_map_cache, _children_map_cached_at
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _children_map_cache is not None
+        and (now - _children_map_cached_at) < _PROC_CACHE_TTL_SECONDS
+    ):
+        return _children_map_cache
+    _children_map_cache = _build_children_map()
+    _children_map_cached_at = now
+    return _children_map_cache
+
+
+def invalidate_proc_cache() -> None:
+    """Drop cached /proc parent map after reaping or when process state may have changed."""
+    global _children_map_cache, _children_map_cached_at
+    _children_map_cache = None
+    _children_map_cached_at = 0.0
+
+
+def descendant_pids(root_pid: int, *, children_map: dict[int, list[int]] | None = None) -> set[int]:
+    resolved_children = children_map if children_map is not None else _children_map()
     descendants: set[int] = set()
-    stack = list(children.get(root_pid, []))
+    stack = list(resolved_children.get(root_pid, []))
     while stack:
         pid = stack.pop()
         if pid in descendants:
             continue
         descendants.add(pid)
-        stack.extend(children.get(pid, []))
+        stack.extend(resolved_children.get(pid, []))
     return descendants
 
 
@@ -70,9 +100,10 @@ def leaked_runtime_child_pids(root_pid: int | None = None) -> list[int]:
     if not os.path.isdir("/proc"):
         return []
     resolved_root = os.getpid() if root_pid is None else root_pid
+    children_map = _children_map()
     return [
         pid
-        for pid in descendant_pids(resolved_root)
+        for pid in descendant_pids(resolved_root, children_map=children_map)
         if any(marker in read_proc_cmdline(pid) for marker in _RUNTIME_CHILD_MARKERS)
     ]
 
@@ -87,6 +118,7 @@ def reap_leaked_runtime_children(*, root_pid: int | None = None) -> None:
             os.kill(pid, signal.SIGTERM)
         except OSError:
             pass
+    invalidate_proc_cache()
     deadline = time.time() + 2.0
     while time.time() < deadline:
         if not any(pid_alive(pid) for pid in targets):
@@ -97,3 +129,4 @@ def reap_leaked_runtime_children(*, root_pid: int | None = None) -> None:
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
+    invalidate_proc_cache()

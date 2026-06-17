@@ -139,7 +139,7 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 Latest validation checkpoint (2026-06-01, `main` branch). Pass counts are maintained in [`AGENTS.md`](../AGENTS.md); this section records wall times and shard outcomes.
 
-- `python3 testing/run_test_shard.py fast` -> **~59s wall time**, **2064 selected / 24 deselected** (2026-06-17 hang-fix checkpoint on a clean machine). Seven additional tests moved to the `slow` shard (`test_project_import_open`, `test_template_generation`). Subprocess hygiene: `CBCS_DISABLE_BACKGROUND_RUNTIME=1`, per-test child reaper in `tests/conftest.py`, preflight via `testing/preflight_test_env.py`.
+- `python3 testing/run_test_shard.py fast` -> **~170s wall time**, **2064 selected / 24 deselected**, **0 failures** (2026-06-17 reaper/split-shard checkpoint on a clean machine). Fast shard runs unit then integration as two sequential AppRun sessions under the shared 180s watchdog. Subprocess hygiene: cached `/proc` reaper in [`testing/runtime_child_reaper.py`](../testing/runtime_child_reaper.py), targeted per-test reaping in [`tests/conftest.py`](../tests/conftest.py), preflight via [`testing/preflight_test_env.py`](../testing/preflight_test_env.py).
 - `python3 testing/run_test_shard.py integration` -> **~55s wall time**, **64 passed, 3 skipped, 0 failures** (slow debug tests skip when no debug channel or no `stopped` pause on this AppRun build; see `docs/DISCOVERY.md` §4D).
 - `python3 testing/run_test_shard.py runtime_parity` -> **~4s wall time**, **17 passed**.
 - `python3 testing/run_test_shard.py performance` -> **~74s wall time**, **11 passed, 0 failures** (all modules under `tests/integration/performance/`).
@@ -168,5 +168,5 @@ Recommendations:
 - Treat `--workers <count>` as a per-shard experiment knob, not a steady-state speed-up.
 - Keep `tests/integration/performance` in its own serial lane (still excluded from the `integration` shard).
 - The global `timeout = 30` in `pyproject.toml` is the safety net; tests legitimately needing longer carry `pytest.mark.timeout(...)` overrides instead of inflating the default. `timeout_method = "thread"` is set so a test blocked in a C-level call (Qt modal `exec_`, blocking subprocess/IO, native joins) is force-terminated at the timeout — the default `signal` method cannot interrupt those frames and would hang the whole shard.
-- `tests/conftest.py` reaps any leaked `run_plugin_host`/`run_runner` AppRun children (descendants of the pytest process) at `pytest_sessionfinish`, so an aborted or failing run that spawned editor-side supervisors does not leave orphaned subprocesses behind.
+- `tests/conftest.py` reaps leaked `run_plugin_host`/`run_runner` children after integration/runtime_parity/plugin tests and at `pytest_sessionfinish`. The `/proc` scan is cached (500ms TTL) so the fast shard no longer pays ~23s of per-test scan overhead.
 

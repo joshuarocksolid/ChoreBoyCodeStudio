@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Mapping, Optional, Sequence
 
-from PySide2.QtCore import Qt
+from PySide2.QtCore import Qt, QTimer
 from PySide2.QtGui import QKeySequence
 from PySide2.QtWidgets import (
     QComboBox,
@@ -18,6 +18,7 @@ from PySide2.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QShortcut,
     QSizePolicy,
     QToolButton,
@@ -154,7 +155,8 @@ class RunWithArgumentsDialog(QDialog):
         body_layout.addWidget(self._command_preview)
 
         form_host = QWidget(chrome.body)
-        form_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        form_host.setObjectName("shell.runWithArgumentsDialog.formScrollContent")
+        form_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         form_host_layout = QVBoxLayout(form_host)
         form_host_layout.setContentsMargins(0, 0, 0, 0)
         form_host_layout.setSpacing(12)
@@ -165,7 +167,7 @@ class RunWithArgumentsDialog(QDialog):
         run_target_form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         run_target_form_layout.setHorizontalSpacing(12)
         run_target_form_layout.setVerticalSpacing(10)
-        run_target_form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        run_target_form_layout.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         run_target_layout.addWidget(run_target_form)
 
         self._prefill_combo: QComboBox | None = None
@@ -243,7 +245,7 @@ class RunWithArgumentsDialog(QDialog):
         overrides_panel_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         overrides_panel_layout.setHorizontalSpacing(12)
         overrides_panel_layout.setVerticalSpacing(10)
-        overrides_panel_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        overrides_panel_layout.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
 
         self._working_dir_edit = QLineEdit(self._overrides_panel)
         self._working_dir_edit.setObjectName("shell.runWithArgumentsDialog.workingDir")
@@ -276,7 +278,13 @@ class RunWithArgumentsDialog(QDialog):
         overrides_layout.addWidget(self._overrides_panel)
         form_host_layout.addWidget(overrides_section)
 
-        body_layout.addWidget(form_host, 1)
+        self._form_scroll = QScrollArea(chrome.body)
+        self._form_scroll.setObjectName("shell.runWithArgumentsDialog.formScroll")
+        self._form_scroll.setWidgetResizable(True)
+        self._form_scroll.setFrameShape(QFrame.NoFrame)
+        self._form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._form_scroll.setWidget(form_host)
+        body_layout.addWidget(self._form_scroll, 1)
 
         self._error_label = QLabel(chrome.body)
         self._error_label.setObjectName("shell.runWithArgumentsDialog.error")
@@ -382,6 +390,11 @@ class RunWithArgumentsDialog(QDialog):
         self._wd_helper_label.setVisible(expanded)
         self._refresh_overrides_summary()
         self._configure_tab_order()
+        if expanded:
+            QTimer.singleShot(0, self._scroll_overrides_into_view)
+
+    def _scroll_overrides_into_view(self) -> None:
+        self._form_scroll.ensureWidgetVisible(self._overrides_panel, 0, 24)
 
     def _on_overrides_toggle_clicked(self) -> None:
         self._set_overrides_expanded(not self._overrides_expanded)

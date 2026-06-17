@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import time
 
 import pytest
 
@@ -14,31 +13,17 @@ from PySide2.QtGui import QTextCursor
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test, wait_for
 
 pytestmark = pytest.mark.integration
 
 
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide2.QtWidgets import QApplication
-    import PySide2.QtGui as qt_gui
-    import PySide2.QtWidgets as qt_widgets
-
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
-
-
-def _wait_for_open_paths(app, window, expected_paths: list[str], *, timeout_seconds: float = 2.0) -> None:
-    deadline = time.perf_counter() + timeout_seconds
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if window._editor_manager.open_paths() == expected_paths:
-            return
+def _wait_for_open_paths(app, window, expected_paths: list[str], *, timeout_seconds: float = 0.5) -> None:
+    assert wait_for(
+        lambda: window._editor_manager.open_paths() == expected_paths,
+        app,
+        timeout_seconds=timeout_seconds,
+    )
     assert window._editor_manager.open_paths() == expected_paths
 
 
@@ -50,8 +35,12 @@ def _set_cursor_position(editor_widget, *, line: int, column: int) -> None:  # t
     editor_widget.setTextCursor(cursor)
 
 
-def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    app = _ensure_qapplication(monkeypatch)
+def test_main_window_restores_saved_project_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    shell_qapp,
+) -> None:
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -62,7 +51,7 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
     file_two.write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
     assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     file_one_path = str(file_one.resolve())
@@ -110,9 +99,10 @@ def test_main_window_restores_saved_project_session(monkeypatch: pytest.MonkeyPa
 def test_opening_second_project_persists_and_restores_first_project_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
     """Switching projects should persist first-session state and restore it when reopened."""
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
 
@@ -127,7 +117,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     project_two_file.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
 
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     project_one_path = str(project_one_file.resolve())
@@ -137,12 +127,10 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     breakpoint_store = window._debug_control_workflow.breakpoint_store
     breakpoint_store.set_line_enabled(project_one_path, 2, enabled=True)
 
-    # Opening another project should persist current project-one session state.
     assert window._file_project_commands_workflow.open_project_by_path(str(project_two.resolve())) is True
     project_two_path = str(project_two_file.resolve())
     assert window._editor_tab_factory.open_file_in_editor(project_two_path) is True
 
-    # Reopen project one and verify its previous editor state is restored.
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     _wait_for_open_paths(app, window, [project_one_path])
     restored_widget = window._editor_widgets_by_path[project_one_path]

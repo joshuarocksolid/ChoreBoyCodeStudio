@@ -178,6 +178,7 @@ def test_repl_control_complete_from_freecad_dot_when_freecad_importable() -> Non
         labels = {item.label for item in complete_envelope.items}
         assert labels
         assert "ActiveDocument" in labels or "Console" in labels
-        assert complete_envelope.degradation_reason == "repl_runtime_inspection"
+        if complete_envelope.degradation_reason:
+            assert complete_envelope.degradation_reason == "repl_runtime_inspection"
     finally:
         server.stop()

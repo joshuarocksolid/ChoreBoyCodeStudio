@@ -28,6 +28,7 @@ from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 _DIALOG_OBJECT_NAME = "shell.runEnvOverridesDialog"
+_TABLE_MIN_ROW_HEIGHT = 28
 
 
 def collect_env_overrides_from_rows(rows: Sequence[tuple[str, str]]) -> dict[str, str]:
@@ -83,6 +84,7 @@ class RunEnvOverridesDialog(QDialog):
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setMinimumSectionSize(_TABLE_MIN_ROW_HEIGHT)
         self._table.setAlternatingRowColors(True)
         body_layout.addWidget(self._table, 1)
 
@@ -130,6 +132,7 @@ class RunEnvOverridesDialog(QDialog):
         self._table.setRowCount(0)
         for key, value in sorted(env_overrides.items()):
             self._append_row(key, value)
+        self._finalize_table_rows()
 
     def _append_empty_row(self) -> None:
         self._append_row("", "")
@@ -139,6 +142,13 @@ class RunEnvOverridesDialog(QDialog):
         self._table.insertRow(row)
         self._table.setItem(row, 0, QTableWidgetItem(name))
         self._table.setItem(row, 1, QTableWidgetItem(value))
+        self._finalize_table_rows()
+
+    def _finalize_table_rows(self) -> None:
+        self._table.resizeRowsToContents()
+        for row in range(self._table.rowCount()):
+            if self._table.rowHeight(row) < _TABLE_MIN_ROW_HEIGHT:
+                self._table.setRowHeight(row, _TABLE_MIN_ROW_HEIGHT)
 
     def _on_add_row_clicked(self) -> None:
         self._append_empty_row()
@@ -152,6 +162,8 @@ class RunEnvOverridesDialog(QDialog):
         self._table.removeRow(row)
         if self._table.rowCount() == 0:
             self._append_empty_row()
+        else:
+            self._finalize_table_rows()
 
     def _on_paste_clicked(self) -> None:
         clipboard = QGuiApplication.clipboard()

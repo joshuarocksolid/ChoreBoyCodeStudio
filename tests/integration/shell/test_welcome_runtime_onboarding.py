@@ -8,20 +8,11 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
-
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 def _write_valid_project(project_root: Path) -> None:
@@ -36,8 +27,9 @@ def _write_valid_project(project_root: Path) -> None:
 def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_autoload(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     project_root = tmp_path / "project"
     _write_valid_project(project_root)
 
@@ -62,13 +54,12 @@ def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_aut
             onboarding_calls.append("opened")
         return 0
 
-    # Intercept the modal dialog at the QDialog boundary; patching the workflow
-    # method is ineffective because the Help action is wired to the bound method
-    # at composition time (before this test could patch the instance).
     monkeypatch.setattr("app.shell.runtime_onboarding_workflow.QDialog.exec_", _record_onboarding_exec)
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=app)
     try:
+        window._file_project_commands_workflow.try_restore_last_project()
         app.processEvents()
         app.processEvents()
 

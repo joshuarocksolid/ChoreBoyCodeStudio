@@ -3,49 +3,28 @@
 from __future__ import annotations
 
 from pathlib import Path
-import time
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtGui as qt_gui
-import PySide2.QtWidgets as qt_widgets
 from PySide2.QtWidgets import QDialog
 
 from app.project.project_service import create_blank_project
 from app.shell.history_restore_picker import HISTORY_RESTORE_ACTION_RESTORE_LATEST
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test, wait_for
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-    app = qt_widgets.QApplication.instance()
-    if app is None:
-        app = qt_widgets.QApplication([])
-    return app
-
-def _wait_for(predicate, app, *, timeout_seconds: float = 1.5) -> bool:  # type: ignore[no-untyped-def]
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        app.processEvents()
-        if predicate():
-            return True
-        time.sleep(0.01)
-    app.processEvents()
-    return predicate()
 
 
 def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
 
@@ -55,7 +34,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     file_path.write_text("print('disk')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
     monkeypatch.setattr(
         window._editor_tab_workflow,
         "apply_detected_indentation_for_widget",
@@ -102,7 +81,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_exec)
 
     window._local_history_workflow.open_global_history()
-    assert _wait_for(
+    assert wait_for(
         lambda: window._editor_manager.get_tab(str(file_path.resolve())) is not None,
         app,
     )

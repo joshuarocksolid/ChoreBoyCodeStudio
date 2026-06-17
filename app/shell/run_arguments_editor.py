@@ -80,7 +80,7 @@ class RunArgumentsEditorRow(QWidget):
         if argv_tooltip:
             self._argv_edit.setToolTip(argv_tooltip)
         self._argv_edit.textChanged.connect(self._emit_validation_changed)
-        layout.addWidget(self._argv_edit, 1)
+        layout.addWidget(self._argv_edit, 0)
 
         hints_row = QWidget(self)
         hints_layout = QHBoxLayout(hints_row)
@@ -102,7 +102,7 @@ class RunArgumentsEditorRow(QWidget):
 
         layout.addWidget(hints_row)
 
-        self._argv_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._argv_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._update_argv_preview()
 
     def argv_text(self) -> str:

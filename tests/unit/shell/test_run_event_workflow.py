@@ -93,6 +93,7 @@ class _FakeRunEventHost:
         self.loaded_project = None
         self.debug_control_workflow = SimpleNamespace(breakpoint_store=SimpleNamespace(has_any_breakpoints=lambda: False))
         self.run_service = SimpleNamespace(supervisor=SimpleNamespace(is_running=lambda: False))
+        self.run_debug_presenter = SimpleNamespace(execute_pending_restart_if_any=lambda: None)
         self.test_runner_workflow = None
         self.editor_manager = SimpleNamespace(active_tab=lambda: None)
         self.status_controller = None

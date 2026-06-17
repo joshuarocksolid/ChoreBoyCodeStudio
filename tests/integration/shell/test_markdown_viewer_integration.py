@@ -12,30 +12,17 @@ from app.editors.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide2.QtWidgets import QApplication
-    import PySide2.QtGui as qt_gui
-    import PySide2.QtWidgets as qt_widgets
-
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -44,7 +31,7 @@ def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
     readme.write_text("# Original\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
     assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     readme_path = str(readme.resolve())

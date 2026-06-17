@@ -8,45 +8,23 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtGui as qt_gui
-import PySide2.QtWidgets as qt_widgets
 from PySide2.QtWidgets import QDialog
 
 from app.core import constants
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test, wait_for
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-    app = qt_widgets.QApplication.instance()
-    if app is None:
-        app = qt_widgets.QApplication([])
-    return app
-
-def _wait_for(predicate, app, *, timeout_seconds: float = 2.0) -> bool:  # type: ignore[no-untyped-def]
-    import time
-
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        app.processEvents()
-        if predicate():
-            return True
-        time.sleep(0.01)
-    app.processEvents()
-    return predicate()
 
 
 def test_local_history_dialogs_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -55,7 +33,7 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     file_path.write_text("print('current')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(state_root.resolve()))
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
     assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
     assert window._loaded_project is not None
 
@@ -81,10 +59,10 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_history_restore_exec)
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
-        window._shell_preferences_runtime.handle_set_theme(mode)
+        window._shell_preferences_runtime.handle_set_theme(mode, skip_theme_styles=True)
         window._local_history_workflow.show_local_history_for_path(str(file_path.resolve()))
         window._local_history_workflow.open_global_history()
-        assert _wait_for(lambda: window._local_history_workflow.history_restore_picker_dialog is not None, app)
+        assert wait_for(lambda: window._local_history_workflow.history_restore_picker_dialog is not None, app)
 
         picker_dialog = window._local_history_workflow.history_restore_picker_dialog
         assert picker_dialog is not None

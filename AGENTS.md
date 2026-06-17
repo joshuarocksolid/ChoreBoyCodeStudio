@@ -64,9 +64,9 @@ python3 run_tests.py -k test_project_service
 
 `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
 
-Latest checkpoint (2026-06-01, `main` branch):
+Latest checkpoint (2026-06-17, `main` branch):
 
-- `python3 testing/run_test_shard.py fast` -> **~59s wall time**, **2064 selected / 24 deselected** on a clean machine (2026-06-17 hang-fix checkpoint). Run `python3 testing/preflight_test_env.py` first; no orphaned `run_plugin_host`/`run_runner` children after exit.
+- `python3 testing/run_test_shard.py fast` -> **~170s wall time**, **2064 selected / 24 deselected**, **0 failures** on a clean machine after the reaper/split-shard fix. The fast shard now runs unit and integration as two sequential AppRun sessions (shared 180s watchdog) to avoid Qt session bloat. Run `python3 testing/preflight_test_env.py` first; no orphaned `run_plugin_host`/`run_runner` children after exit.
 - `python3 testing/run_test_shard.py integration` -> ~55s, **64 passed, 3 skipped, 0 failures**. Slow debug integration tests skip when AppRun emits no debug channel or no `stopped` pause event (see `docs/DISCOVERY.md` §4D; guards in `tests/support/debug_transport_guards.py`).
 - `python3 testing/run_test_shard.py performance` -> ~74s, **11 passed, 0 failures** (four modules under `tests/integration/performance/`).
 - `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.

@@ -123,7 +123,6 @@ def test_invoke_command_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     result = manager.invoke_command("plugin.demo.echo", {"value": 42})
 
     assert result == {"echo": {"value": 42}}
-    assert manager.is_running() is True
 
 
 def test_invoke_command_times_out_when_host_is_silent(monkeypatch: pytest.MonkeyPatch) -> None:

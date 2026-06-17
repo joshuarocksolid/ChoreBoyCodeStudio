@@ -8,20 +8,11 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
-
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 def _record_runtime_center_dialogs(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -67,13 +58,14 @@ def _write_project(
 def test_run_project_preflight_opens_runtime_center_for_missing_entry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    _ = _ensure_qapplication(monkeypatch)
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True, exist_ok=True)
     _write_project(project_root, default_entry="missing.py")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 

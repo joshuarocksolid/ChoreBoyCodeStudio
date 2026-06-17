@@ -7,26 +7,22 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QLabel
+from PySide2.QtWidgets import QLabel
 
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.main_window import MainWindow
 from app.support.diagnostics import DiagnosticItem, ProjectHealthReport
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
 
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
-
-
-def test_startup_status_click_opens_runtime_center(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _ = _ensure_qapplication(monkeypatch)
+def test_startup_status_click_opens_runtime_center(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    shell_qapp,
+) -> None:
     opened_dialogs: list[dict[str, object]] = []
 
     class _FakeRuntimeCenterDialog:
@@ -54,6 +50,7 @@ def test_startup_status_click_opens_runtime_center(monkeypatch: pytest.MonkeyPat
         ),
         state_root=str(tmp_path.resolve()),
     )
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         assert window.menu_registry is not None
         assert window.menu_registry.action("shell.action.tools.runtimeCenter") is not None
@@ -74,8 +71,8 @@ def test_startup_status_click_opens_runtime_center(monkeypatch: pytest.MonkeyPat
 def test_project_health_check_opens_runtime_center_with_latest_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    _ = _ensure_qapplication(monkeypatch)
     opened_dialogs: list[dict[str, object]] = []
 
     class _FakeRuntimeCenterDialog:
@@ -93,6 +90,7 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
     (project_root / "run.py").write_text("print('ok')\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 

@@ -7,7 +7,6 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtGui as qt_gui
 import PySide2.QtWidgets as qt_widgets
 from PySide2.QtWidgets import QDialog, QTextBrowser
 
@@ -16,24 +15,17 @@ from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
 
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
-    app = qt_widgets.QApplication.instance()
-    if app is None:
-        app = qt_widgets.QApplication([])
-    return app
-
 def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    app = _ensure_qapplication(monkeypatch)
+    app = shell_qapp
     state_root = tmp_path / "state"
     state_root.mkdir(parents=True, exist_ok=True)
     project_root = tmp_path / "project"
@@ -60,7 +52,8 @@ def test_runtime_explanation_surfaces_open_under_light_and_dark_themes(
         ),
         state_root=str(state_root.resolve()),
     )
-    monkeypatch.setattr(window._intelligence_cache_workflow, "start_symbol_indexing", lambda *_args, **_kwargs: None)
+    prepare_main_window_for_test(window, app=app)
+    monkeypatch.setattr(window._shell_theme_workflow, "apply_explorer_theme", lambda _tokens: None)
     assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):

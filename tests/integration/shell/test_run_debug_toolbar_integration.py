@@ -9,25 +9,19 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
-
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
 
 
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
-
-
-def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    _ = _ensure_qapplication(monkeypatch)
+def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(
+    monkeypatch: pytest.MonkeyPatch,
+    shell_qapp,
+) -> None:
     window = MainWindow(state_root=str(Path("/tmp").resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         registry = window.menu_registry
         assert registry is not None
@@ -81,9 +75,9 @@ def test_run_debug_toolbar_actions_exist_and_enable_after_project_open(monkeypat
         shutdown_main_window_for_test(window)
 
 
-def test_restart_action_routes_through_presenter(monkeypatch: pytest.MonkeyPatch) -> None:
-    _ = _ensure_qapplication(monkeypatch)
+def test_restart_action_routes_through_presenter(monkeypatch: pytest.MonkeyPatch, shell_qapp) -> None:
     window = MainWindow(state_root=str(Path("/tmp").resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         presenter = window._run_debug_presenter
         assert hasattr(presenter, "restart_session")

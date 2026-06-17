@@ -46,10 +46,23 @@ def pytest_configure(config: pytest.Config) -> None:
     _require_pytest_timeout(config)
 
 
+def _should_reap_after_test(item: pytest.Item) -> bool:
+    """Reap only after tests likely to spawn nested AppRun children."""
+    nodeid = item.nodeid.replace("\\", "/")
+    if "/integration/" in nodeid or "/runtime_parity/" in nodeid:
+        return True
+    if "/unit/plugins/" in nodeid:
+        return True
+    if "/unit/shell/test_main_window_background_teardown.py" in nodeid:
+        return True
+    return False
+
+
 @pytest.fixture(autouse=True)
-def _reap_runtime_children_after_test() -> None:
+def _reap_runtime_children_after_test(request: pytest.FixtureRequest) -> None:
     yield
-    reap_leaked_runtime_children()
+    if _should_reap_after_test(request.node):
+        reap_leaked_runtime_children()
 
 
 @pytest.fixture(scope="session")

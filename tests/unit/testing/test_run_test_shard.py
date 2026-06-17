@@ -42,6 +42,32 @@ def test_build_command_targets_fast_shard_excluding_slow_and_performance() -> No
     ]
 
 
+def test_fast_shard_sequence_splits_unit_and_integration_runs() -> None:
+    commands = run_test_shard._fast_shard_commands(python_executable="/usr/bin/python3")
+
+    assert commands == [
+        [
+            "/usr/bin/python3",
+            str(run_test_shard.RUN_TESTS_PATH),
+            "-q",
+            "--import-mode=importlib",
+            "tests/unit",
+            "-m",
+            "not slow",
+        ],
+        [
+            "/usr/bin/python3",
+            str(run_test_shard.RUN_TESTS_PATH),
+            "-q",
+            "--import-mode=importlib",
+            "tests/integration",
+            "--ignore=tests/integration/performance",
+            "-m",
+            "not slow",
+        ],
+    ]
+
+
 def test_build_command_targets_all_shard_for_full_suite() -> None:
     command = run_test_shard.build_command("all", python_executable="/usr/bin/python3")
 

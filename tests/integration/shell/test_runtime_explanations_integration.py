@@ -8,21 +8,14 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QDialog
+from PySide2.QtWidgets import QDialog
 
 from app.packaging.models import PACKAGE_PROFILE_INSTALLABLE
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
+from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.integration
-
-
-def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 def _record_runtime_center_dialogs(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -63,12 +56,13 @@ def _write_project(project_root: Path, *, source_text: str, default_entry: str =
 def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    _ = _ensure_qapplication(monkeypatch)
     project_root = tmp_path / "project"
     _write_project(project_root, source_text="import totally_fake\n")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 
@@ -95,9 +89,10 @@ def test_analyze_imports_opens_runtime_center_with_structured_import_issue(
 def test_headless_runtime_signature_updates_latest_run_issue_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    _ = _ensure_qapplication(monkeypatch)
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         window._active_run_output_tail.append(
             "Traceback...\nCannot load Gui module in console application\n"
@@ -116,8 +111,8 @@ def test_headless_runtime_signature_updates_latest_run_issue_report(
 def test_packaging_preflight_opens_runtime_center_before_export(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    shell_qapp,
 ) -> None:
-    _ = _ensure_qapplication(monkeypatch)
     project_root = tmp_path / "project"
     _write_project(project_root, source_text="print('ok')\n", default_entry="run.py")
     manifest_path = project_root / "cbcs" / "project.json"
@@ -126,6 +121,7 @@ def test_packaging_preflight_opens_runtime_center_before_export(
     manifest_path.write_text(json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8")
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
     try:
         assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
 

@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+
 from app.project.run_configs import parse_env_overrides_text
-from app.shell.run_env_overrides_dialog import collect_env_overrides_from_rows, summarize_env_overrides
+from app.shell.run_env_overrides_dialog import (
+    RunEnvOverridesDialog,
+    collect_env_overrides_from_rows,
+    summarize_env_overrides,
+)
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _qapp(qapp):  # type: ignore[no-untyped-def]
+    return qapp
 
 
 def test_summarize_env_overrides_empty() -> None:
@@ -43,3 +54,11 @@ def test_collect_env_overrides_from_rows_skips_blank_names() -> None:
 def test_parse_env_overrides_text_supports_paste_format() -> None:
     parsed = parse_env_overrides_text("DEBUG=1, LOG_LEVEL=debug")
     assert parsed == {"DEBUG": "1", "LOG_LEVEL": "debug"}
+
+
+def test_run_env_overrides_dialog_table_row_height_accommodates_editor() -> None:
+    dialog = RunEnvOverridesDialog({"DEBUG": "1"})
+    table = dialog._table
+    assert table.verticalHeader().minimumSectionSize() >= 28
+    for row in range(table.rowCount()):
+        assert table.rowHeight(row) >= 28

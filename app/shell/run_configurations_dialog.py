@@ -11,6 +11,7 @@ from PySide2.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -19,6 +20,7 @@ from PySide2.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -212,25 +214,32 @@ class RunConfigurationsDialog(QDialog):
         self._detail_panel.setMinimumHeight(320)
         self._detail_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         detail_layout = QVBoxLayout(self._detail_panel)
-        detail_layout.setContentsMargins(12, 12, 12, 12)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
+
+        self._detail_form_host = QWidget(self._detail_panel)
+        self._detail_form_host.setObjectName("shell.runConfigurationsDialog.configsDetailForm")
+        self._detail_form_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        form_host_layout = QVBoxLayout(self._detail_form_host)
+        form_host_layout.setContentsMargins(12, 12, 12, 12)
+        form_host_layout.setSpacing(0)
 
         form_layout = QFormLayout()
         form_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
         form_layout.setHorizontalSpacing(12)
         form_layout.setVerticalSpacing(10)
-        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
 
-        self._name_edit = QLineEdit(self._detail_panel)
+        self._name_edit = QLineEdit(self._detail_form_host)
         self._name_edit.setObjectName("shell.runConfigurationsDialog.nameField")
         self._name_edit.textEdited.connect(self._on_name_changed)
-        name_label = QLabel("Name:", self._detail_panel)
+        name_label = QLabel("Name:", self._detail_form_host)
         form_layout.addRow(name_label, self._name_edit)
 
-        self._entry_edit = QLineEdit(self._detail_panel)
+        self._entry_edit = QLineEdit(self._detail_form_host)
         self._entry_edit.setObjectName("shell.runConfigurationsDialog.entryField")
         self._entry_edit.textEdited.connect(self._on_entry_changed)
-        entry_row = QWidget(self._detail_panel)
+        entry_row = QWidget(self._detail_form_host)
         entry_row_layout = QHBoxLayout(entry_row)
         entry_row_layout.setContentsMargins(0, 0, 0, 0)
         entry_row_layout.setSpacing(8)
@@ -238,12 +247,12 @@ class RunConfigurationsDialog(QDialog):
         self._browse_entry_button = make_field_action_button("Browse\u2026", entry_row)
         self._browse_entry_button.clicked.connect(self._on_browse_entry_clicked)
         entry_row_layout.addWidget(self._browse_entry_button, 0)
-        entry_label = QLabel("Entry file:", self._detail_panel)
+        entry_label = QLabel("Entry file:", self._detail_form_host)
         form_layout.addRow(entry_label, entry_row)
 
-        argv_label = QLabel("Arguments:", self._detail_panel)
+        argv_label = QLabel("Arguments:", self._detail_form_host)
         self._argv_editor = RunArgumentsEditorRow(
-            self._detail_panel,
+            self._detail_form_host,
             tokens=self._tokens,
             object_name_prefix="shell.runConfigurationsDialog.argv",
             show_recent=False,
@@ -251,10 +260,10 @@ class RunConfigurationsDialog(QDialog):
         self._argv_editor.validation_changed.connect(self._on_argv_changed)
         form_layout.addRow(argv_label, self._argv_editor)
 
-        self._working_dir_edit = QLineEdit(self._detail_panel)
+        self._working_dir_edit = QLineEdit(self._detail_form_host)
         self._working_dir_edit.setObjectName("shell.runConfigurationsDialog.workingDirField")
         self._working_dir_edit.textEdited.connect(self._on_working_dir_changed)
-        wd_row = QWidget(self._detail_panel)
+        wd_row = QWidget(self._detail_form_host)
         wd_row_layout = QHBoxLayout(wd_row)
         wd_row_layout.setContentsMargins(0, 0, 0, 0)
         wd_row_layout.setSpacing(8)
@@ -262,18 +271,26 @@ class RunConfigurationsDialog(QDialog):
         self._browse_wd_button = make_field_action_button("Browse\u2026", wd_row)
         self._browse_wd_button.clicked.connect(self._on_browse_working_dir_clicked)
         wd_row_layout.addWidget(self._browse_wd_button, 0)
-        wd_label = QLabel("Working directory:", self._detail_panel)
+        wd_label = QLabel("Working directory:", self._detail_form_host)
         form_layout.addRow(wd_label, wd_row)
 
-        env_label = QLabel("Environment:", self._detail_panel)
+        env_label = QLabel("Environment:", self._detail_form_host)
         self._env_row = RunEnvOverridesRow(
-            self._detail_panel,
+            self._detail_form_host,
             tokens=self._tokens,
             object_name_prefix="shell.runConfigurationsDialog.env",
         )
         self._env_row.value_changed.connect(self._on_env_changed)
         form_layout.addRow(env_label, self._env_row)
-        detail_layout.addLayout(form_layout)
+        form_host_layout.addLayout(form_layout)
+
+        self._detail_scroll = QScrollArea(self._detail_panel)
+        self._detail_scroll.setObjectName("shell.runConfigurationsDialog.configsDetailScroll")
+        self._detail_scroll.setWidgetResizable(True)
+        self._detail_scroll.setFrameShape(QFrame.NoFrame)
+        self._detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._detail_scroll.setWidget(self._detail_form_host)
+        detail_layout.addWidget(self._detail_scroll, 1)
         right_layout.addWidget(self._detail_panel, 1)
 
         self._error_label = QLabel(right_panel)
