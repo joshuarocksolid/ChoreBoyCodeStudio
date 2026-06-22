@@ -43,13 +43,13 @@ Known completed areas from the original audit:
 
 Remaining risk areas:
 
-- `app/shell/main_window.py` is still the highest concentration of orchestration and change risk.
+- ~~`app/shell/main_window.py` is still the highest concentration of orchestration and change risk.~~ **Largely addressed:** at HEAD (2026-06-22) `main_window.py` is 375 lines / 28 method-like defs; orchestration moved into shell composition and workflow modules. Residual shell hotspots are tracked in handoff R3.
 - Several shell/debug/intelligence modules still exceed or sit near the original 700-line smell threshold.
 - Some silent fallback paths remain and need triage.
 - ~~The autosave legacy migration bridge~~ **removed** (drafts use `LocalHistoryStore` only; see `app/persistence/autosave_store.py`).
 - Project traversal/exclude policy is repeated across multiple subsystems.
 - Dependency/native-extension/runtime classification is split across project, packaging, and diagnostics code.
-- `AUDIT_app.md` now mixes historical findings with completed notes and stale metrics, so future agents can misread fixed items as open.
+- ~~`AUDIT_app.md` now mixes historical findings with completed notes and stale metrics~~ **addressed by R0 (2026-06-22):** closeout status section and historical §5 markers updated; re-run metric sweep before R1+ work.
 - `tests/`, top-level launchers, scripts, bundled plugins, top-level templates, and examples were out of scope for the original app audit.
 
 Re-run metrics at the start of any implementation. Do not trust historical line counts in `AUDIT_app.md`.
@@ -128,6 +128,8 @@ Practical order:
 
 ### R0 - Close Out The Original Audit
 
+**Status: COMPLETE (2026-06-22).** Docs-only closeout landed at HEAD. No code changes.
+
 Goal: make `docs/deslop/AUDIT_app.md` safe to read as history.
 
 Files in scope:
@@ -150,9 +152,9 @@ Concrete work:
 
 Acceptance criteria:
 
-- Future readers can tell what is fixed, what remains, and where to start.
-- No code changes in this brief.
-- Metric sweep included in the doc.
+- Future readers can tell what is fixed, what remains, and where to start. **Met.**
+- No code changes in this brief. **Met.**
+- Metric sweep included in the doc. **Met** — see `AUDIT_app.md` closeout status (2026-06-22): **87,048** app LOC, **375** / **28** MainWindow lines/method-like defs, **35** bare `except Exception:`, **121** `# type: ignore`, **0** hard-cutover hits in `app/`.
 
 Suggested validation:
 

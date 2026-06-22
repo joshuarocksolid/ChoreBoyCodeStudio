@@ -8,21 +8,23 @@ Out of scope (this pass): `tests/`, `scripts/`, `bundled_plugins/`, `templates/`
 Owner: Codebase quality
 Audience: any agent or human picking up one of the eleven work briefs in section 6
 
-## Current closeout status (2026-04-25)
+## Current closeout status (2026-06-22)
 
 This file stays useful as a **historical playbook** and as the **Agent A–L progress log** in section 6. **Do not treat the quantitative section 5 snapshot as current inventory**; re-run the metric sweep before planning work. For **what remains** after the original app audit, use [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md).
 
-**Metric sweep (re-baselined 2026-04-25, repo `app/` tree):**
+**Metric sweep (re-baselined 2026-06-22, repo `app/` tree at HEAD):**
 
-- Total Python source lines: **56,999** (`find app -name '*.py' -not -path '*__pycache__*' -exec wc -l {} + | tail -1`)
-- [`app/shell/main_window.py`](../../app/shell/main_window.py): **6,176** lines; **363** `def` entries matching `^    def ` (method-like surface; not a perfect OO method count)
-- Bare `except Exception:` lines: **29** (`rg` on `app/**/*.py`)
-- `# type: ignore` lines: **95** (`rg` on `app/**/*.py`)
-- Old hard-cutover string hits (`__CB_DEBUG_`, `ingest_output_line`, `debug_event_protocol`, `app.run.test_(runner|discovery)_service`): **0** across `app/`, `tests/`, `bundled_plugins/`
+- Total Python source lines: **87,048** (`find app -name '*.py' -not -path '*__pycache__*' -exec wc -l {} + | tail -1`)
+- [`app/shell/main_window.py`](../../app/shell/main_window.py): **375** lines; **28** `def` entries matching `^    def ` (method-like surface; not a perfect OO method count)
+- Bare `except Exception:` lines: **35** (`rg '^\s*except\s+Exception\s*:\s*$'` on `app/**/*.py`)
+- `# type: ignore` lines: **121** (`rg '# type: ignore'` on `app/**/*.py`)
+- Old hard-cutover string hits in `app/`: **0** (`__CB_DEBUG_`, `ingest_output_line`, `debug_event_protocol`, `app.run.test_(runner|discovery)_service`). Three intentional grep-gate literals remain in `tests/unit/run/test_run_wave_grep_gates.py` only.
 
-**Test and type-check checkpoints** are maintained in [AGENTS.md](../../AGENTS.md) (e.g. fast shard ~**1445** passed, **0** pyright diagnostics as of the latest checkpoint on that branch). Section 4.6 below may cite older numbers; **prefer AGENTS.md** for current counts.
+**Test and type-check checkpoints** are maintained in [AGENTS.md](../../AGENTS.md) (fast shard **2064 selected / 24 deselected**, **0 failures**; `npx pyright` **0 errors** as of the latest checkpoint there). Section 4.6 below may cite older numbers; **prefer AGENTS.md** for current counts. Agent K/L pyright caveats (tree-sitter mixins, `resizeEvent`, `product_builder`) are **resolved** at HEAD.
 
-**Superseded §5 findings (historical only):** Items such as orphan intelligence modules, the empty `app/designer/` tree, `pytest` service `test_*` names, the stdout debug marker path, and similar issues were addressed by Agents A–L (see their **Progress** blocks in section 6 and the summary in the handoff). Section 5.1–5.3 still describes the *audit-era* tree shape for archaeology.
+**Fixed by Agents A–L (verified at HEAD):** orphan intelligence modules removed; `app/designer/` deleted; menus split; `LocalHistoryWorkflow`, `TestRunnerWorkflow`, and `PluginActivationWorkflow` extracted; `local_history_store` / treesitter highlighter splits; `product_builder` owns packaging; stdout debug marker protocol removed; visible metadata paths; completion degradation surfaced via `CompletionEnvelope.degradation_reason`; `RunManifest` breakpoint updates use `dataclasses.replace` (see `app/runner/debug/breakpoints.py`).
+
+**Still open (see handoff briefs R1–R7):** silent `except Exception:` triage, oversized shell UI modules (R3), project inventory SSOT (R4), dependency classifier SSOT (R5), test/tooling audit (R6), out-of-scope audit (R7). Section 5.1–5.3 below describes the *audit-era* tree shape for archaeology only.
 
 ---
 
@@ -137,7 +139,7 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
 
 > **Historical snapshot:** subsection 5.1–5.3 reflects metrics gathered during the original audit pass. The **Current closeout status** at the top of this document and [AUDIT_app_remaining_handoff.md](AUDIT_app_remaining_handoff.md) reflect the live tree.
 
-### 5.1 Quantitative shape of `app/`
+### 5.1 Quantitative shape of `app/` *(historical — audit-era snapshot)*
 
 - Subsystems under `app/`: 19 (counting `app/designer/`, which is empty of `.py` and not in git)
 - Total Python source lines under `app/`: ~52,378
@@ -163,7 +165,7 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
   - `app/examples/` — 2 files, 40 lines
   - `app/designer/` — 0 `.py` files (orphan; see Agent L)
 
-### 5.2 Top god modules
+### 5.2 Top god modules *(historical — audit-era snapshot; current top modules differ — see closeout status)*
 
 - `app/shell/main_window.py` — 7,151 lines, 387 methods on `MainWindow`
 - `app/shell/style_sheet_sections.py` — 1,787 lines
@@ -177,18 +179,18 @@ Before opening the PR, run the metric sweep in section 9 and paste the before/af
 - `app/editors/code_editor_widget.py` — 752 lines
 - `app/intelligence/diagnostics_service.py` — 717 lines
 
-### 5.3 Most consequential findings
+### 5.3 Most consequential findings *(historical — each item below was addressed by Agents A–L unless noted)*
 
-1. `**MainWindow` violates AD-015 by an order of magnitude.** 387 methods is not a "composition root", it is an orchestration monolith. The architecture explicitly lists which controllers should own which workflows; the work has been started but is far from complete. Three large workflow groups are still inside the file (local history, pytest, plugin contributions reload).
-2. `**menus.py` has one ~780-line function.** `build_menu_stubs` registers the entire application menu surface in a single function and uses `main_window: Any` to escape typing. It is also the upstream chokepoint for any `MainWindow` decomposition because every workflow handler is wired here.
-3. **The intelligence layer has parallel orphan engines.** `hover_service.py`, `signature_service.py`, `navigation_service.py`, `refactor_service.py` and the `find_references` heuristic in `reference_service.py` are not imported from any module under `app/`. They duplicate `SemanticSession` / `SemanticFacade` capability and exist only because tests reference them, which directly contradicts AD-016 ("Single-owner semantic session").
-4. **Silent fallback in completion ranking.** `app/intelligence/completion_service.py` lines 51–62 swallow Jedi failures into an empty list and then continue to rank approximate-only candidates as if Jedi had simply returned nothing. ARCHITECTURE 17.4.1 requires degradation states to be **visible**.
-5. `**app/designer/` is dead code.** No `.py` files; not in git; no imports anywhere in `app/` or `tests/`. The directory exists only because old `__pycache__/` was left behind.
-6. **~~Stale rule documentation.~~ (RESOLVED 2026-04-24.)** Visible-path migration is complete; [`.cursor/rules/no_hidden_folders.mdc`](../../.cursor/rules/no_hidden_folders.mdc) documents `cbcs/` and `choreboy_code_studio_state/`. Do not re-run Agent L migration tasks.
-7. **Architecture example diverges from implementation.** `docs/ARCHITECTURE.md` §13.1 example uses `debug_options`; the runtime serializer in `app/run/run_manifest.py` uses `debug_exception_policy`.
-8. **Frozen dataclass mutated in place.** `RunManifest` is `frozen=True`, but `app/runner/debug_runner.py` line 350 does `self._manifest.breakpoints[:] = breakpoints  # type: ignore[misc]`. This compiles, but breaks the immutable manifest story.
-9. **Vestigial debug stdout marker path.** `app/debug/debug_event_protocol.py` and `DebugSession.ingest_output_line` parse `__CB_DEBUG_*__` markers from stdout. Production routes through the dedicated transport (matching ARCHITECTURE §13.4A), so the stdout path is not exercised. It survives only in tests of itself. Hard cutover applies.
-10. **Naming collision under `app/run/`.** `app/run/test_runner_service.py` and `app/run/test_discovery_service.py` are product features (the in-app pytest runner and discovery), but the `test_`* prefix collides with pytest test files everywhere else in the repo.
+1. **~~`MainWindow` violates AD-015 by an order of magnitude.~~ (FIXED — Agents C–E and follow-on shell composition.)** At audit time, 387 methods was not a "composition root". Local history, pytest, and plugin reload workflows now live in dedicated modules; at HEAD `main_window.py` is 375 lines / 28 method-like defs. Further shell hotspot work is tracked in handoff R2–R3.
+2. **~~`menus.py` has one ~780-line function.~~ (FIXED — Agent B.)** `build_menu_stubs` was split into per-menu builders; `menus.py` is now ~212 lines.
+3. **~~The intelligence layer has parallel orphan engines.~~ (FIXED — Agent F.)** `hover_service.py`, `signature_service.py`, `navigation_service.py`, `refactor_service.py`, and `reference_service.py` are removed; production uses `SemanticSession` / `SemanticFacade`.
+4. **~~Silent fallback in completion ranking.~~ (FIXED — Agent G.)** Semantic failures now surface via `CompletionEnvelope.degradation_reason` and shell status messaging; see `app/intelligence/completion_broker.py`.
+5. **~~`app/designer/` is dead code.~~ (FIXED — Agent L.)** Directory removed; no `app/designer/` at HEAD.
+6. **~~Stale rule documentation.~~ (FIXED 2026-04-24 — Agent L.)** Visible-path migration is complete; [`.cursor/rules/no_hidden_folders.mdc`](../../.cursor/rules/no_hidden_folders.mdc) documents `cbcs/` and `choreboy_code_studio_state/`. Do not re-run Agent L migration tasks.
+7. **~~Architecture example diverges from implementation.~~ (FIXED — Agent L.)** `docs/ARCHITECTURE.md` §13.1 now uses `debug_exception_policy`, matching `app/run/run_manifest.py`.
+8. **~~Frozen dataclass mutated in place.~~ (FIXED — Agent L.)** Breakpoint updates use `dataclasses.replace` in `app/runner/debug/breakpoints.py`; in-place list mutation removed.
+9. **~~Vestigial debug stdout marker path.~~ (FIXED — Agent L.)** `debug_event_protocol.py`, `ingest_output_line`, and `__CB_DEBUG_*__` markers are gone from `app/`; production uses structured debug transport only.
+10. **~~Naming collision under `app/run/`.~~ (FIXED — Agent D.)** Production pytest services were renamed away from `test_*`; pytest orchestration lives in `TestRunnerWorkflow` and related shell modules at HEAD.
 
 ---
 
