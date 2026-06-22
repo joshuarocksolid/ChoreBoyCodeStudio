@@ -7,17 +7,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.runner.repl_control import _handle_request
-from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL
+from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, build_ping_request
 
 pytestmark = pytest.mark.unit
 
 
 def _request(**overrides: object) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "protocol": REPL_CONTROL_PROTOCOL,
-        "session_token": "expected-token",
-        "method": "ping",
-    }
+    payload: dict[str, object] = build_ping_request(
+        protocol=REPL_CONTROL_PROTOCOL,
+        session_token="expected-token",
+    )
     payload.update(overrides)
     return payload
 
@@ -52,6 +51,23 @@ def test_handle_request_rejects_invalid_session_token() -> None:
 
     assert response == {"ok": False, "error": "Invalid REPL control session token."}
     completion_service.complete.assert_not_called()
+
+
+def test_handle_request_rejects_unsupported_method() -> None:
+    completion_service = MagicMock()
+    introspection_service = MagicMock()
+
+    response = _handle_request(
+        _request(method="unknown"),
+        protocol=REPL_CONTROL_PROTOCOL,
+        session_token="expected-token",
+        completion_service=completion_service,
+        introspection_service=introspection_service,
+    )
+
+    assert response == {"ok": False, "error": "Unsupported REPL control method: unknown"}
+    completion_service.complete.assert_not_called()
+    introspection_service.introspect.assert_not_called()
 
 
 def test_handle_request_introspect_returns_envelope() -> None:

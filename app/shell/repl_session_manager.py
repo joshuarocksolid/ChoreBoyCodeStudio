@@ -18,7 +18,13 @@ from app.intelligence.completion_models import CompletionEnvelope
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 from app.run.run_manifest import ReplControlConfig
 from app.run.run_service import RunService
-from app.runner.repl_protocol import dumps_message, envelope_from_dict, loads_message
+from app.runner.repl_protocol import (
+    build_complete_request,
+    build_introspect_request,
+    dumps_message,
+    envelope_from_dict,
+    loads_message,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -114,16 +120,15 @@ class ReplSessionManager:
         config = self._control_config
         if config is None or not self._supervisor.is_running():
             return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
-        payload = {
-            "protocol": config.protocol,
-            "session_token": config.session_token,
-            "method": "complete",
-            "line_buffer": line_buffer,
-            "cursor_offset": cursor_offset,
-            "trigger_kind": trigger_kind,
-            "trigger_character": trigger_character,
-            "max_results": max_results,
-        }
+        payload = build_complete_request(
+            protocol=config.protocol,
+            session_token=config.session_token,
+            line_buffer=line_buffer,
+            cursor_offset=cursor_offset,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+            max_results=max_results,
+        )
         timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
         try:
             with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:
@@ -153,15 +158,14 @@ class ReplSessionManager:
         config = self._control_config
         if config is None or not self._supervisor.is_running():
             return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
-        payload = {
-            "protocol": config.protocol,
-            "session_token": config.session_token,
-            "method": "introspect",
-            "target_path": target_path,
-            "member_prefix": member_prefix,
-            "include_private": include_private,
-            "max_results": max_results,
-        }
+        payload = build_introspect_request(
+            protocol=config.protocol,
+            session_token=config.session_token,
+            target_path=target_path,
+            member_prefix=member_prefix,
+            include_private=include_private,
+            max_results=max_results,
+        )
         timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
         try:
             with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:

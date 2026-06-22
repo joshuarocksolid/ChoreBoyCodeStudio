@@ -10,7 +10,18 @@ from typing import Any
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_completion import ReplCompletionRequest, ReplCompletionService
 from app.runner.repl_introspection import ReplIntrospectionRequest, ReplIntrospectionService
-from app.runner.repl_protocol import dumps_message, envelope_to_dict, loads_message
+from app.runner.repl_protocol import (
+    REPL_METHOD_COMPLETE,
+    REPL_METHOD_INTROSPECT,
+    REPL_METHOD_PING,
+    ReplControlProtocolError,
+    build_repl_error_response,
+    build_repl_success_response,
+    dumps_message,
+    envelope_to_dict,
+    loads_message,
+    validate_repl_request,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -49,11 +60,13 @@ class ReplControlServer:
                         completion_service=completion_service,
                         introspection_service=introspection_service,
                     )
+                except ReplControlProtocolError as exc:
+                    response_payload = build_repl_error_response(str(exc))
                 except (ValueError, TypeError, KeyError) as exc:
-                    response_payload = {"ok": False, "error": str(exc)}
+                    response_payload = build_repl_error_response(str(exc))
                 except Exception:
                     _logger.warning("REPL control request failed", exc_info=True)
-                    response_payload = {"ok": False, "error": "repl_internal_error"}
+                    response_payload = build_repl_error_response("repl_internal_error")
                 self.wfile.write(dumps_message(response_payload))
 
         socketserver.ThreadingTCPServer.allow_reuse_address = True
@@ -83,14 +96,16 @@ def _handle_request(
     completion_service: ReplCompletionService,
     introspection_service: ReplIntrospectionService,
 ) -> dict[str, Any]:
-    if payload.get("protocol") != protocol:
-        return {"ok": False, "error": "Incompatible REPL control protocol."}
+    try:
+        method = validate_repl_request(
+            payload,
+            expected_protocol=protocol,
+            expected_session_token=session_token,
+        )
+    except ReplControlProtocolError as exc:
+        return build_repl_error_response(str(exc))
 
-    if payload.get("session_token") != session_token:
-        return {"ok": False, "error": "Invalid REPL control session token."}
-
-    method = payload.get("method")
-    if method == "complete":
+    if method == REPL_METHOD_COMPLETE:
         envelope = completion_service.complete(
             ReplCompletionRequest(
                 line_buffer=str(payload.get("line_buffer") or ""),
@@ -100,9 +115,9 @@ def _handle_request(
                 max_results=int(payload.get("max_results") or 100),
             )
         )
-        return {"ok": True, "result": envelope_to_dict(envelope)}
+        return build_repl_success_response(envelope_to_dict(envelope))
 
-    if method == "introspect":
+    if method == REPL_METHOD_INTROSPECT:
         envelope = introspection_service.introspect(
             ReplIntrospectionRequest(
                 target_path=str(payload.get("target_path") or ""),
@@ -111,9 +126,9 @@ def _handle_request(
                 max_results=int(payload.get("max_results") or 100),
             )
         )
-        return {"ok": True, "result": envelope_to_dict(envelope)}
+        return build_repl_success_response(envelope_to_dict(envelope))
 
-    if method == "ping":
-        return {"ok": True, "result": {"status": "ready"}}
+    if method == REPL_METHOD_PING:
+        return build_repl_success_response({"status": "ready"})
 
-    return {"ok": False, "error": "Unsupported REPL control method: %s" % (method,)}
+    return build_repl_error_response("Unsupported REPL control method: %s" % (method,))
