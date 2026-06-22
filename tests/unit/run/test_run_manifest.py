@@ -187,6 +187,91 @@ def test_parse_run_manifest_requires_debug_transport_for_debug_mode() -> None:
         )
 
 
+def _loopback_transport_payload() -> dict[str, Any]:
+    return {
+        "protocol": "cbcs_loopback_v1",
+        "host": "127.0.0.1",
+        "port": 49123,
+        "session_token": "session-token",
+    }
+
+
+def _minimal_manifest_payload(*, mode: str, **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "manifest_version": constants.RUN_MANIFEST_VERSION,
+        "run_id": "run_1",
+        "project_root": "/tmp/project",
+        "entry_file": "run.py",
+        "working_directory": "/tmp/project",
+        "log_file": "/tmp/project/logs/run_1.log",
+        "mode": mode,
+        "argv": [],
+        "env": {},
+        "timestamp": "2026-03-01T01:01:01",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("mode", "field_name", "overrides"),
+    [
+        (
+            constants.RUN_MODE_PYTHON_SCRIPT,
+            "debug_transport",
+            {"debug_transport": _loopback_transport_payload()},
+        ),
+        (
+            constants.RUN_MODE_PYTHON_SCRIPT,
+            "repl_control",
+            {"repl_control": _loopback_transport_payload()},
+        ),
+        (
+            constants.RUN_MODE_PYTHON_REPL,
+            "debug_transport",
+            {
+                "debug_transport": _loopback_transport_payload(),
+                "repl_control": _loopback_transport_payload(),
+            },
+        ),
+    ],
+)
+def test_parse_run_manifest_rejects_forbidden_mode_fields(
+    mode: str,
+    field_name: str,
+    overrides: dict[str, Any],
+) -> None:
+    """Cross-mode transport fields must be rejected at the manifest boundary."""
+    with pytest.raises(RunManifestValidationError, match=f"{field_name} is not allowed"):
+        parse_run_manifest(_minimal_manifest_payload(mode=mode, **overrides))
+
+
+def test_parse_run_manifest_uses_immutable_tuple_containers() -> None:
+    """Parsed argv/env/breakpoints must be tuples, not mutable list/dict aliases."""
+    manifest = parse_run_manifest(
+        _minimal_manifest_payload(
+            mode=constants.RUN_MODE_PYTHON_SCRIPT,
+            argv=["--foo"],
+            env={"ENV_A": "1"},
+            breakpoints=[{"file_path": "/tmp/project/run.py", "line_number": 3}],
+        )
+    )
+
+    assert isinstance(manifest.argv, tuple)
+    assert isinstance(manifest.env, tuple)
+    assert isinstance(manifest.breakpoints, tuple)
+    assert manifest.argv == ("--foo",)
+    assert manifest.env == (("ENV_A", "1"),)
+
+
+def test_run_manifest_tuple_fields_resist_shallow_mutation() -> None:
+    """Frozen tuple containers must not expose list/dict mutation hooks."""
+    manifest = _base_manifest(Path("/tmp"))
+
+    with pytest.raises(AttributeError):
+        manifest.argv.append("injected")  # type: ignore[attr-defined]
+
+
 def test_run_manifest_round_trips_repl_control_config(tmp_path: Path) -> None:
     manifest = RunManifest(
         manifest_version=constants.RUN_MANIFEST_VERSION,
