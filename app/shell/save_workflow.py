@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
 from PySide2.QtWidgets import QMessageBox, QWidget
 
@@ -27,6 +27,7 @@ from app.shell.document_safety import (
     DocumentScope,
     dirty_buffer_snapshots,
 )
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
@@ -191,8 +192,8 @@ LocalHistoryPort = SaveDocumentLocalHistoryPort
 class MainWindowSaveDocumentHost:
     """Host ports for ``SaveWorkflow`` backed by a MainWindow instance."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def dialog_parent(self) -> QWidget:
         return self._window

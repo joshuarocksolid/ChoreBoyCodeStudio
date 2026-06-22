@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Protocol
 
 from PySide2.QtCore import QTimer
 
@@ -13,7 +13,15 @@ from app.persistence.local_history_store import LocalHistoryStore
 from app.support.diagnostics import ProjectHealthReport
 
 
-def bind_private_attrs(window: Any, attrs: Mapping[str, Any]) -> None:
+class MainWindowCompositionSurface(Protocol):
+    """Structural typing marker for MainWindow during composition wiring.
+
+    Private attrs are bound dynamically via :func:`bind_private_attrs`; host
+    adapters use :func:`typing.cast` internally when accessing those fields.
+    """
+
+
+def bind_private_attrs(window: MainWindowCompositionSurface, attrs: Mapping[str, Any]) -> None:
     """Assign multiple private MainWindow fields in one call."""
     for name, value in attrs.items():
         setattr(window, name, value)
@@ -39,7 +47,7 @@ class ShellRuntimeIssueState:
             latest_package_issue_report=RuntimeIssueReport(workflow="package", issues=[]),
         )
 
-    def bind_to_window(self, window: Any) -> None:
+    def bind_to_window(self, window: MainWindowCompositionSurface) -> None:
         bind_private_attrs(
             window,
             {
@@ -53,31 +61,41 @@ class ShellRuntimeIssueState:
             },
         )
 
-    def set_latest_health_report(self, window: Any, report: ProjectHealthReport | None) -> None:
+    def set_latest_health_report(
+        self, window: MainWindowCompositionSurface, report: ProjectHealthReport | None
+    ) -> None:
         self.latest_health_report = report
-        window._latest_health_report = report
+        setattr(window, "_latest_health_report", report)
 
-    def set_latest_import_issue_report(self, window: Any, report: RuntimeIssueReport) -> None:
+    def set_latest_import_issue_report(
+        self, window: MainWindowCompositionSurface, report: RuntimeIssueReport
+    ) -> None:
         self.latest_import_issue_report = report
-        window._latest_import_issue_report = report
+        setattr(window, "_latest_import_issue_report", report)
 
-    def set_latest_run_issue_report(self, window: Any, report: RuntimeIssueReport) -> None:
+    def set_latest_run_issue_report(
+        self, window: MainWindowCompositionSurface, report: RuntimeIssueReport
+    ) -> None:
         self.latest_run_issue_report = report
-        window._latest_run_issue_report = report
+        setattr(window, "_latest_run_issue_report", report)
 
-    def set_latest_package_issue_report(self, window: Any, report: RuntimeIssueReport) -> None:
+    def set_latest_package_issue_report(
+        self, window: MainWindowCompositionSurface, report: RuntimeIssueReport
+    ) -> None:
         self.latest_package_issue_report = report
-        window._latest_package_issue_report = report
+        setattr(window, "_latest_package_issue_report", report)
 
-    def set_latest_runtime_issue_report(self, window: Any, report: RuntimeIssueReport) -> None:
+    def set_latest_runtime_issue_report(
+        self, window: MainWindowCompositionSurface, report: RuntimeIssueReport
+    ) -> None:
         self.latest_runtime_issue_report = report
-        window._latest_runtime_issue_report = report
+        setattr(window, "_latest_runtime_issue_report", report)
 
-    def clear_active_run_config(self, window: Any) -> None:
+    def clear_active_run_config(self, window: MainWindowCompositionSurface) -> None:
         self.active_named_run_config_name = None
         self.latest_run_issue_ids = ()
-        window._active_named_run_config_name = None
-        window._latest_run_issue_ids = ()
+        setattr(window, "_active_named_run_config_name", None)
+        setattr(window, "_latest_run_issue_ids", ())
 
 
 @dataclass
@@ -87,7 +105,7 @@ class ShellDiagnosticsLatchState:
     pending_realtime_lint_file_path: str | None = None
     known_runtime_modules: frozenset[str] | None = None
 
-    def bind_to_window(self, window: Any) -> None:
+    def bind_to_window(self, window: MainWindowCompositionSurface) -> None:
         bind_private_attrs(
             window,
             {
@@ -96,13 +114,17 @@ class ShellDiagnosticsLatchState:
             },
         )
 
-    def set_pending_realtime_lint_file_path(self, window: Any, file_path: str | None) -> None:
+    def set_pending_realtime_lint_file_path(
+        self, window: MainWindowCompositionSurface, file_path: str | None
+    ) -> None:
         self.pending_realtime_lint_file_path = file_path
-        window._pending_realtime_lint_file_path = file_path
+        setattr(window, "_pending_realtime_lint_file_path", file_path)
 
-    def set_known_runtime_modules(self, window: Any, modules: frozenset[str]) -> None:
+    def set_known_runtime_modules(
+        self, window: MainWindowCompositionSurface, modules: frozenset[str]
+    ) -> None:
         self.known_runtime_modules = modules
-        window._known_runtime_modules = modules
+        setattr(window, "_known_runtime_modules", modules)
 
 
 @dataclass
@@ -134,7 +156,7 @@ class ShellCompositionTimers:
         self.runtime_probe.stop()
         self.startup_probe_refresh.stop()
 
-    def bind_to_window(self, window: Any) -> None:
+    def bind_to_window(self, window: MainWindowCompositionSurface) -> None:
         bind_private_attrs(
             window,
             {
@@ -158,7 +180,7 @@ class ShellCompositionTimers:
 class ShellCompositionContext:
     """Holds wired shell collaborators during phased main-window composition."""
 
-    window: Any
+    window: MainWindowCompositionSurface
     startup_report: Optional[CapabilityProbeReport]
     state_root: str | None
     local_history_store: LocalHistoryStore | None = None
@@ -168,11 +190,12 @@ class ShellCompositionContext:
     diagnostics_latches: ShellDiagnosticsLatchState | None = None
 
     @property
-    def w(self) -> Any:
+    def w(self) -> MainWindowCompositionSurface:
         return self.window
 
 
 __all__ = [
+    "MainWindowCompositionSurface",
     "ShellCompositionContext",
     "ShellCompositionTimers",
     "ShellDiagnosticsLatchState",

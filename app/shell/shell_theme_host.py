@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.shell_theme_surface_appliers import build_main_window_shell_theme_callbacks
 from app.shell.shell_theme_workflow import ExplorerThemeHost
 
@@ -11,8 +12,8 @@ from app.shell.shell_theme_workflow import ExplorerThemeHost
 class _WindowBackedExplorerThemeSink:
     """Explorer icon fields stored on ``MainWindow`` for project tree rendering."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     @property
     def tree_file_icon(self) -> Any:
@@ -66,17 +67,18 @@ class _WindowBackedExplorerThemeSink:
 class MainWindowShellThemeHost:
     """Live ``MainWindow`` view for :class:`ShellThemeWorkflow`."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        backing = cast(Any, window)
+        self._window = backing
         self.is_applying_theme_styles = False
         self.system_dark_theme_preference: bool | None = None
-        self.child_callbacks = build_main_window_shell_theme_callbacks(window)
+        self.child_callbacks = build_main_window_shell_theme_callbacks(backing)
         self.explorer = ExplorerThemeHost(
             sink=_WindowBackedExplorerThemeSink(window),
-            explorer_new_file_btn=window._explorer_new_file_btn,
-            explorer_new_folder_btn=window._explorer_new_folder_btn,
-            explorer_refresh_btn=window._explorer_refresh_btn,
-            loaded_project=window._loaded_project,
+            explorer_new_file_btn=backing._explorer_new_file_btn,
+            explorer_new_folder_btn=backing._explorer_new_folder_btn,
+            explorer_refresh_btn=backing._explorer_refresh_btn,
+            loaded_project=backing._loaded_project,
         )
 
     @property

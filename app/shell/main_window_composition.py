@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 from app.core.models import CapabilityProbeReport
 from app.shell.main_window_composition_phases import (
@@ -17,11 +17,11 @@ from app.shell.main_window_composition_phases import (
     install_theme_and_finalize,
     start_composition_timers,
 )
-from app.shell.shell_composition_context import ShellCompositionContext
+from app.shell.shell_composition_context import MainWindowCompositionSurface, ShellCompositionContext
 
 
 def install_main_window_composition(
-    window: Any,
+    window: MainWindowCompositionSurface,
     *,
     startup_report: Optional[CapabilityProbeReport],
     state_root: str | None,

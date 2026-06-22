@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence, cast
 
 from PySide2.QtWidgets import QMessageBox, QStatusBar, QTabWidget, QWidget
 
@@ -20,6 +20,7 @@ from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.run_config_controller import RunConfigController
 from app.shell.run_debug_presenter import RunDebugPresenterPort
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.run_configurations_dialog import RunConfigurationsDialog, RunConfigurationsInitial, RunConfigurationsResult
 from app.shell.run_launch.active_file_launch import ActiveFileLaunchWorkflow
 from app.shell.run_launch.debug_targets import (
@@ -189,8 +190,8 @@ class RunLaunchWorkflowHost(Protocol):
 class MainWindowRunLaunchHost:
     """Host ports for ``RunLaunchWorkflow`` backed by a MainWindow instance."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def dialog_parent(self) -> QWidget:
         return self._window

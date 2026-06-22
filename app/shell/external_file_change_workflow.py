@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from PySide2.QtWidgets import QMessageBox
 
@@ -13,6 +13,7 @@ from app.editors.editor_manager import EditorManager
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 
 
 class ExternalFileChangeOutcome(str, Enum):
@@ -44,8 +45,8 @@ class ExternalFileChangeHostPorts(Protocol):
 class MainWindowExternalFileChangeHost:
     """Host ports for ``ExternalFileChangeWorkflow`` backed by a MainWindow instance."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def editor_widget_for_path(self, file_path: str) -> object | None:
         return self._window._editor_widgets_by_path.get(file_path)

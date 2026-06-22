@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, replace
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.shell.settings_models import EditorSettingsSnapshot
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.shell_preferences import SettingsReader, ShellPreferencesBundle, build_shell_preferences_bundle
 
 _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
@@ -253,8 +254,8 @@ class SettingsApplyHostPorts(Protocol):
 class MainWindowSettingsApplyHost:
     """Host ports for ``SettingsApplyWorkflow`` backed by a MainWindow instance."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def lint_rule_overrides(self) -> dict[str, dict[str, object]]:
         return self._window._lint_rule_overrides

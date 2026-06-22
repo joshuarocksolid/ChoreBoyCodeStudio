@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 
 from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
@@ -13,6 +13,7 @@ from app.shell.clear_console_policy import (
     clear_run_output_sinks,
     prepare_new_run,
 )
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 
 _PYTHON_CONSOLE_FILE_PATH = "<python_console>"
 
@@ -102,8 +103,8 @@ class PythonConsoleWorkflowHost(Protocol):
 class MainWindowPythonConsoleHost:
     """Host ports for ``PythonConsoleWorkflow`` backed by a MainWindow instance."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def python_console_widget(self) -> object | None:
         return self._window._python_console_widget
