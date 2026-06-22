@@ -2,16 +2,66 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from app.core import constants
 from app.core.errors import RunManifestValidationError
-from app.debug.debug_breakpoints import build_breakpoint
+from app.debug.debug_breakpoints import breakpoint_to_wire_dict, build_breakpoint
+from app.debug.debug_models import DebugBreakpoint
 from app.run.run_manifest import ReplControlConfig, RunManifest, load_run_manifest, parse_run_manifest, save_run_manifest
 
 pytestmark = pytest.mark.unit
+
+
+def _base_manifest(tmp_path: Path, *, breakpoints: tuple[DebugBreakpoint, ...] = ()) -> RunManifest:
+    project_root = (tmp_path / "project").resolve()
+    return RunManifest(
+        manifest_version=constants.RUN_MANIFEST_VERSION,
+        run_id="20260301_010101_ab12cd",
+        project_root=str(project_root),
+        entry_file="run.py",
+        working_directory=str(project_root),
+        log_file=str((project_root / "logs" / "run_20260301_010101_ab12cd.log").resolve()),
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        argv=("--foo", "bar"),
+        env=(("ENV_A", "1"),),
+        timestamp="2026-03-01T01:01:01",
+        breakpoints=breakpoints,
+    )
+
+
+@pytest.mark.parametrize(
+    "breakpoint_kwargs",
+    [
+        {},
+        {"condition": "x > 1"},
+        {"hit_condition": 3},
+        {"condition": "flag", "hit_condition": 2, "enabled": False},
+        {"breakpoint_id": "bp_custom_99"},
+    ],
+)
+def test_run_manifest_breakpoint_codec_round_trip(
+    tmp_path: Path,
+    breakpoint_kwargs: dict[str, Any],
+) -> None:
+    """Manifest save/load must preserve breakpoint wire shapes via the shared codec."""
+
+    source_file = (tmp_path / "project" / "run.py").resolve()
+    breakpoint = build_breakpoint(str(source_file), 12, **breakpoint_kwargs)
+    manifest = _base_manifest(tmp_path, breakpoints=(breakpoint,))
+    manifest_path = tmp_path / "manifest.json"
+
+    save_run_manifest(manifest_path, manifest)
+    loaded = load_run_manifest(manifest_path)
+
+    assert loaded.breakpoints == (breakpoint,)
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["breakpoints"] == [breakpoint_to_wire_dict(breakpoint)]
 
 
 def test_run_manifest_round_trip_save_and_load(tmp_path: Path) -> None:

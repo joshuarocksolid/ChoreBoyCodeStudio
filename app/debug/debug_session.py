@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from app.debug.debug_breakpoints import parse_breakpoint_entry
+from app.debug.debug_breakpoints import parse_breakpoint_list
 from app.debug.debug_models import (
-    DebugBreakpoint,
     DebugExceptionInfo,
     DebugExceptionPolicy,
     DebugExecutionState,
@@ -70,7 +69,7 @@ class DebugSession:
             self._state.last_message = str(body.get("message", "")).strip() or "Debug session ended."
             return
         if event_name == "breakpoints_updated":
-            self._state.breakpoints = _parse_breakpoints(body.get("breakpoints", []))
+            self._state.breakpoints = parse_breakpoint_list(body.get("breakpoints", []))
             return
         if event_name == "stopped":
             self._state.execution_state = DebugExecutionState.PAUSED
@@ -83,7 +82,7 @@ class DebugSession:
             self._state.scopes = _parse_scopes(body.get("scopes", []))
             self._state.variables_by_reference = _parse_scope_variables(body.get("scope_variables", {}))
             self._sync_selected_scope_variables()
-            self._state.breakpoints = _parse_breakpoints(body.get("breakpoints", [])) or self._state.breakpoints
+            self._state.breakpoints = parse_breakpoint_list(body.get("breakpoints", [])) or self._state.breakpoints
             self._state.exception_info = _parse_exception_info(body.get("exception"))
             return
         if event_name == "exception_policy":
@@ -132,7 +131,7 @@ class DebugSession:
                 )
             return
         if command_name == "update_breakpoints":
-            self._state.breakpoints = _parse_breakpoints(body.get("breakpoints", []))
+            self._state.breakpoints = parse_breakpoint_list(body.get("breakpoints", []))
             return
         if command_name == "update_exception_policy":
             self._state.exception_policy = _parse_exception_policy(body)
@@ -246,20 +245,6 @@ def _parse_scope_variables(raw_value: object) -> dict[int, list[DebugVariable]]:
             continue
         variables_by_reference[reference] = _parse_variables(value)
     return variables_by_reference
-
-
-def _parse_breakpoints(raw_value: object) -> list[DebugBreakpoint]:
-    if not isinstance(raw_value, list):
-        return []
-    breakpoints: list[DebugBreakpoint] = []
-    for entry in raw_value:
-        if not isinstance(entry, Mapping):
-            continue
-        parsed = parse_breakpoint_entry(entry)
-        if parsed is not None:
-            breakpoints.append(parsed)
-    return breakpoints
-
 
 def _parse_exception_info(raw_value: object) -> DebugExceptionInfo | None:
     if not isinstance(raw_value, Mapping):

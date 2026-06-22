@@ -125,6 +125,40 @@ def breakpoint_to_wire_dict(
     return payload
 
 
+def breakpoint_to_verified_wire_dict(
+    breakpoint: DebugBreakpoint,
+    *,
+    runtime_file_path: str | None = None,
+    verified: bool | None = None,
+    verification_message: str | None = None,
+) -> dict[str, object]:
+    """Serialize one breakpoint for runner verification transport events."""
+
+    payload = dict(breakpoint_to_wire_dict(breakpoint, runtime_file_path=runtime_file_path))
+    payload["verified"] = breakpoint.verified if verified is None else bool(verified)
+    payload["verification_message"] = (
+        breakpoint.verification_message
+        if verification_message is None
+        else str(verification_message or "").strip()
+    )
+    return payload
+
+
+def parse_breakpoint_list(raw_value: object) -> list[DebugBreakpoint]:
+    """Parse a wire-format breakpoint list, skipping invalid entries."""
+
+    if not isinstance(raw_value, list):
+        return []
+    breakpoints: list[DebugBreakpoint] = []
+    for entry in raw_value:
+        if not isinstance(entry, Mapping):
+            continue
+        parsed = parse_breakpoint_entry(entry)
+        if parsed is not None:
+            breakpoints.append(parsed)
+    return breakpoints
+
+
 def parse_breakpoint_entry(entry: Mapping[str, object]) -> DebugBreakpoint | None:
     """Parse one wire-format breakpoint entry, or None when the entry is invalid."""
 

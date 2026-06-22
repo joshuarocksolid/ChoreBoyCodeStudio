@@ -64,7 +64,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-04 | P0 | **closed** | RUN-R-05 | `app/pytest/launch_plan.py` | grep gate + `test_pytest_*` |
 | CC-05 | P0 | **closed** | RUN-R-06 | `runner_service.py`, `discovery_service.py`, `test_runner_workflow.py` | `-q -rA` stdout → `parse_test_results` → explorer outcomes |
 | CC-06 | P0 | **closed** | RUN-R-02 | `debug_transport.py`, `run_service.py` | shutdown-before-close fix; threaded stress + RunService close test |
-| CC-07 | P1 | open | RUN-R-08 | `run_manifest.py`, `debug_breakpoints.py`, `command_loop.py` | Breakpoint round-trip SSOT |
+| CC-07 | P1 | **closed** | RUN-R-08 | `run_manifest.py`, `debug_breakpoints.py`, `command_loop.py` | Breakpoint round-trip SSOT |
 | CC-08 | P1 | **closed** | RUN-R-04 | `run_service.py`, `launch_context.py` | Manifest rollback on failed launch |
 | CC-09 | P1 | open | RUN-R-09 | `run_service.py`, `run_session_controller.py`, shell mirrors | Single session store |
 | CC-10 | P1 | **closed** | RUN-R-10 | `debug_runner.py`, `app/runner/debug/*` | facade ≤30 LOC |
@@ -84,7 +84,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-24 | P2 | partial | RUN-R-24 | `outcome_types.py`, `problem_parser.py` | Typed outcomes end-to-end |
 | CC-25 | P2 | open | RUN-R-25 | `clear_console_policy.py`, runner hints | Unified clear policy |
 
-**@ HEAD summary:** 9 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-08, CC-10, CC-11), 4 partial, 12 open — **P0 milestone verified @ `57aac8d`**; RUN-R-08 (Wave 2) next.
+**@ HEAD summary:** 10 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-07, CC-08, CC-10, CC-11), 4 partial, 11 open — **P0 milestone verified @ `57aac8d`**; RUN-R-09 (Wave 2) next.
 
 ---
 
