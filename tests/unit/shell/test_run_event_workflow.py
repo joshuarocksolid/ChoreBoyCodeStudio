@@ -219,6 +219,19 @@ def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
     assert host.active_transient_entry_file_path is None
 
 
+def test_apply_run_event_exit_executes_pending_restart() -> None:
+    host = _FakeRunEventHost()
+    restart_calls: list[str] = []
+    host.run_debug_presenter = SimpleNamespace(
+        execute_pending_restart_if_any=lambda: restart_calls.append("restart"),
+    )
+    workflow, _host = _build_workflow(host)
+
+    workflow.apply_run_event(ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False))
+
+    assert restart_calls == ["restart"]
+
+
 def test_enqueue_run_event_ignored_while_shutting_down() -> None:
     workflow, host = _build_workflow()
     host.is_shutting_down = True

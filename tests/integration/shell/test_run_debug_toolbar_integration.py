@@ -94,3 +94,24 @@ def test_restart_action_routes_through_presenter(monkeypatch: pytest.MonkeyPatch
         assert triggered == ["restart"]
     finally:
         shutdown_main_window_for_test(window)
+
+
+def test_stop_action_routes_through_presenter(monkeypatch: pytest.MonkeyPatch, shell_qapp) -> None:
+    window = MainWindow(state_root=str(Path("/tmp").resolve()))
+    prepare_main_window_for_test(window, app=shell_qapp)
+    try:
+        presenter = window._run_debug_presenter
+        assert hasattr(presenter, "stop_session")
+        assert not hasattr(window, "_handle_stop_action")
+
+        triggered: list[str] = []
+        monkeypatch.setattr(
+            presenter,
+            "stop_session",
+            lambda: triggered.append("stop"),
+        )
+        presenter.stop_session()
+
+        assert triggered == ["stop"]
+    finally:
+        shutdown_main_window_for_test(window)
