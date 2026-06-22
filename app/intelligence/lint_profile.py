@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from app.core import constants
+from app.intelligence.diagnostics_models import CodeDiagnostic, DiagnosticSeverity
 
 LINT_SEVERITY_ERROR = "error"
 LINT_SEVERITY_WARNING = "warning"
@@ -174,3 +175,31 @@ def resolve_lint_rule_settings(
     ):
         severity = str(override["severity"])
     return (enabled, severity)
+
+
+def apply_lint_rule_profile(
+    diagnostics: list[CodeDiagnostic],
+    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None,
+) -> list[CodeDiagnostic]:
+    """Filter and re-severity diagnostics using persisted lint rule overrides."""
+    if not diagnostics:
+        return diagnostics
+    profiled: list[CodeDiagnostic] = []
+    for diagnostic in diagnostics:
+        is_enabled, severity = resolve_lint_rule_settings(diagnostic.code, lint_rule_overrides)
+        if not is_enabled:
+            continue
+        target_severity = _severity_from_profile_value(severity)
+        if diagnostic.severity == target_severity:
+            profiled.append(diagnostic)
+            continue
+        profiled.append(replace(diagnostic, severity=target_severity))
+    return profiled
+
+
+def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
+    if value == LINT_SEVERITY_ERROR:
+        return DiagnosticSeverity.ERROR
+    if value == LINT_SEVERITY_INFO:
+        return DiagnosticSeverity.INFO
+    return DiagnosticSeverity.WARNING

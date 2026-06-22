@@ -666,7 +666,7 @@ def test_pyflakes_unused_import_col_end_spans_module_name(tmp_path: Path) -> Non
 
 def test_pyflakes_col_end_fallback_when_no_message_args(tmp_path: Path) -> None:
     """When message_args is empty or absent, col_end falls back to col_start + 1."""
-    from app.intelligence.diagnostics_service import _diagnostic_from_pyflakes_message
+    from app.intelligence.pyflakes_adapter import diagnostic_from_pyflakes_message as _diagnostic_from_pyflakes_message
 
     class _FakeMessage:
         lineno = 1

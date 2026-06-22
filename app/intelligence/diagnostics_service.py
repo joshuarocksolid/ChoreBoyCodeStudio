@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,17 +22,11 @@ from app.intelligence.diagnostics_models import (
 )
 from app.intelligence.import_diagnostics import collect_unresolved_import_diagnostics
 from app.intelligence.import_explanations import build_import_explanation
-from app.intelligence.lint_profile import (
-    LINT_SEVERITY_ERROR,
-    LINT_SEVERITY_INFO,
-    resolve_lint_rule_settings,
-)
+from app.intelligence.lint_profile import apply_lint_rule_profile
 from app.intelligence.pyflakes_adapter import (
-    _pyflakes_import_warning_emitted,
-    diagnostic_from_pyflakes_message as _diagnostic_from_pyflakes_message,
     pyflakes_diagnostics as _pyflakes_diagnostics,
 )
-from app.project.file_inventory import ProjectInventorySnapshot, iter_python_files
+from app.project.file_inventory import ProjectInventorySnapshot
 from app.project.import_layout import ProjectImportLayout, resolve_project_import_layout
 
 __all__ = [
@@ -160,7 +153,7 @@ def analyze_python_file(
             )
         )
 
-    diagnostics = _apply_lint_rule_profile(diagnostics, lint_rule_overrides)
+    diagnostics = apply_lint_rule_profile(diagnostics, lint_rule_overrides)
     diagnostics.sort(key=lambda item: (item.file_path, item.line_number, item.code))
     return diagnostics
 
@@ -224,33 +217,6 @@ def explain_unresolved_import(
         allow_runtime_import_probe=allow_runtime_import_probe,
         project_metadata=project_metadata,
     )
-
-
-def _apply_lint_rule_profile(
-    diagnostics: list[CodeDiagnostic],
-    lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None,
-) -> list[CodeDiagnostic]:
-    if not diagnostics:
-        return diagnostics
-    profiled: list[CodeDiagnostic] = []
-    for diagnostic in diagnostics:
-        is_enabled, severity = resolve_lint_rule_settings(diagnostic.code, lint_rule_overrides)
-        if not is_enabled:
-            continue
-        target_severity = _severity_from_profile_value(severity)
-        if diagnostic.severity == target_severity:
-            profiled.append(diagnostic)
-            continue
-        profiled.append(replace(diagnostic, severity=target_severity))
-    return profiled
-
-
-def _severity_from_profile_value(value: str) -> DiagnosticSeverity:
-    if value == LINT_SEVERITY_ERROR:
-        return DiagnosticSeverity.ERROR
-    if value == LINT_SEVERITY_INFO:
-        return DiagnosticSeverity.INFO
-    return DiagnosticSeverity.WARNING
 
 
 def _normalize_linter_provider(selected_linter: str) -> str:
