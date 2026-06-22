@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Protocol
+from typing import Protocol
 
 from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QMenu, QToolButton, QWidget
+from PySide2.QtWidgets import QMenu, QStatusBar, QToolButton, QWidget
 
 from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.project.project_manifest import set_project_default_argv
 from app.project.run_configs import RunConfiguration
+from app.shell.run_config_controller import RunConfigController
 from app.shell.run_configurations_dialog import (
     RunConfigurationsDialog,
     RunConfigurationsInitial,
     RunConfigurationsResult,
 )
+from app.shell.theme_tokens import ShellThemeTokens
 
 
 def proposed_new_config_name(existing_configs: list[RunConfiguration]) -> str:
@@ -36,7 +38,7 @@ class RunConfigurationHost(Protocol):
     def dialog_parent(self) -> QWidget:
         ...
 
-    def status_bar(self) -> Any:
+    def status_bar(self) -> QStatusBar:
         ...
 
     def loaded_project(self) -> LoadedProject | None:
@@ -51,10 +53,10 @@ class RunConfigurationHost(Protocol):
     def set_active_named_run_config_name(self, name: str | None) -> None:
         ...
 
-    def run_config_controller(self) -> Any:
+    def run_config_controller(self) -> RunConfigController:
         ...
 
-    def resolve_theme_tokens(self) -> Any:
+    def resolve_theme_tokens(self) -> ShellThemeTokens:
         ...
 
     def refresh_run_action_states(self) -> None:

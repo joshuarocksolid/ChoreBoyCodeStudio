@@ -262,7 +262,7 @@ class MainWindowRunLaunchHost:
     def show_information(self, title: str, message: str) -> None:
         QMessageBox.information(self._window, title, message)
 
-    def logger(self) -> Any:
+    def logger(self) -> logging.Logger:
         return self._window._logger
 
 
