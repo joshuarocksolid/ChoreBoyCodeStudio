@@ -381,6 +381,83 @@ def test_forward_event_exit_clears_active_session_state(tmp_path: Path) -> None:
     assert service.current_session is None
 
 
+def test_second_start_run_raises_and_preserves_debug_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-03: re-entrant start_run must fail before tearing down active debug transport."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    supervisor_running = {"value": False}
+
+    def _start_and_mark_running(*_args, **_kwargs) -> int:  # type: ignore[no-untyped-def]
+        supervisor_running["value"] = True
+        return 4242
+
+    monkeypatch.setattr(service.supervisor, "start", _start_and_mark_running)
+    monkeypatch.setattr(service.supervisor, "is_running", lambda: supervisor_running["value"])
+
+    session = service.start_run(loaded_project, mode=constants.RUN_MODE_PYTHON_DEBUG)
+    first_transport = service._debug_transport_server  # noqa: SLF001
+    assert first_transport is not None
+    assert session.mode == constants.RUN_MODE_PYTHON_DEBUG
+
+    with pytest.raises(RunLifecycleError, match="already active"):
+        service.start_run(loaded_project, mode=constants.RUN_MODE_PYTHON_DEBUG)
+
+    assert service._debug_transport_server is first_transport  # noqa: SLF001
+    assert first_transport._server_socket is not None  # noqa: SLF001
+    service._close_debug_transport_server()  # noqa: SLF001 - avoid leaking a listener in unit tests
+
+
+@pytest.mark.parametrize("failure", [RunLifecycleError("Runner process is already active."), RuntimeError("boom")])
+def test_start_run_rolls_back_manifest_when_supervisor_start_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    """CC-08: failed supervisor launch must remove manifest and clear debug transport."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    manifest_dir = project_root / "cbcs" / "runs"
+
+    def _raise_on_start(*_args, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        raise failure
+
+    monkeypatch.setattr(service.supervisor, "start", _raise_on_start)
+
+    with pytest.raises(type(failure), match=str(failure) if str(failure) else None):
+        service.start_run(loaded_project, mode=constants.RUN_MODE_PYTHON_DEBUG)
+
+    assert service.current_session is None
+    assert list(manifest_dir.glob("run_manifest_*.json")) == []
+    assert service._debug_transport_server is None  # noqa: SLF001
+
+
 def test_forward_debug_transport_error_closes_server_and_emits_events(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

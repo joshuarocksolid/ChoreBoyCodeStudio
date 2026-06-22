@@ -60,12 +60,12 @@ Status key: **closed** | **partial** | **open** | **waived**
 |----|-----|---------------|---------------|-----------|--------------|
 | CC-01 | P0 | **closed** | RUN-R-02 | `debug_transport.py`, `command_loop.py`, `run_service.py` | lifecycle + mid-pause + shutdown-order fix |
 | CC-02 | P0 | **closed** | RUN-R-03 | `debug_session.py`, `run_session_controller.py`, `actions.py` | `_is_debug_paused` removed; `test_refresh_action_states_derives_pause_from_debug_execution_state` |
-| CC-03 | P0 | **partial** | RUN-R-04 | `run_service.py`, `process_supervisor.py` | `_assert_idle()` first; verify transport ordering |
+| CC-03 | P0 | **closed** | RUN-R-04 | `run_service.py`, `process_supervisor.py` | `_assert_idle()` first; second start preserves transport |
 | CC-04 | P0 | **closed** | RUN-R-05 | `app/pytest/launch_plan.py` | grep gate + `test_pytest_*` |
 | CC-05 | P0 | **partial** | RUN-R-06 | `runner_service.py`, `discovery_service.py`, `test_runner_workflow.py` | `-rA` present; workflow Run All characterization |
 | CC-06 | P0 | **closed** | RUN-R-02 | `debug_transport.py`, `run_service.py` | shutdown-before-close fix; threaded stress + RunService close test |
 | CC-07 | P1 | open | RUN-R-08 | `run_manifest.py`, `debug_breakpoints.py`, `command_loop.py` | Breakpoint round-trip SSOT |
-| CC-08 | P1 | partial | RUN-R-04 | `run_service.py`, `launch_context.py` | Manifest rollback on failed launch |
+| CC-08 | P1 | **closed** | RUN-R-04 | `run_service.py`, `launch_context.py` | Manifest rollback on failed launch |
 | CC-09 | P1 | open | RUN-R-09 | `run_service.py`, `run_session_controller.py`, shell mirrors | Single session store |
 | CC-10 | P1 | **closed** | RUN-R-10 | `debug_runner.py`, `app/runner/debug/*` | facade ≤30 LOC |
 | CC-11 | P1 | **closed** | RUN-R-11 | `app/pytest/*` | no `app/run/pytest_*` |
@@ -84,7 +84,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-24 | P2 | partial | RUN-R-24 | `outcome_types.py`, `problem_parser.py` | Typed outcomes end-to-end |
 | CC-25 | P2 | open | RUN-R-25 | `clear_console_policy.py`, runner hints | Unified clear policy |
 
-**@ HEAD summary:** 6 closed (CC-01, CC-02, CC-04, CC-06, CC-10, CC-11), 7 partial, 12 open — P0 blockers CC-03, CC-05 remain partial; RUN-R-04…RUN-R-07 next.
+**@ HEAD summary:** 8 closed (CC-01, CC-02, CC-03, CC-04, CC-06, CC-08, CC-10, CC-11), 5 partial, 12 open — P0 blocker CC-05 remains partial; RUN-R-05…RUN-R-07 next.
 
 ---
 
