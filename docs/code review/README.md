@@ -2,6 +2,17 @@
 
 Point-in-time thermo-nuclear review records. These are **not operational runbooks**.
 
+## Active program (orchestrator)
+
+Full-codebase review + remediation runs via the custom agent:
+
+| Resource | Purpose |
+|----------|---------|
+| [`.cursor/agents/thermo-program-orchestrator.md`](../../.cursor/agents/thermo-program-orchestrator.md) | Custom agent — invoke with `/thermo-program-orchestrator` |
+| [`THERMO_PROGRAM_WORKFLOW.md`](THERMO_PROGRAM_WORKFLOW.md) | **Your workflow** — what you do vs what the agent does |
+| [`THERMO_PROGRAM_ORCHESTRATOR.md`](THERMO_PROGRAM_ORCHESTRATOR.md) | Full prompt, roadmap, verification gates |
+| [`PROGRAM_STATUS.md`](PROGRAM_STATUS.md) | Live state (created on first run) |
+
 ## Contents
 
 - [`run-wave-1/`](run-wave-1/) — run/debug/runner subsystem findings

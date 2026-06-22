@@ -61,7 +61,7 @@ PASS = behaves as specified · FAIL = broken · WARN = works with caveat · SKIP
 
 | # | Request | Result | Notes |
 |---|---------|--------|-------|
-| 35 | Installable packaging export + launcher | | |
+| 35 | Installable packaging export + launcher | PASS | Run > Package Project (installable) exported to `/home/joshua/runargssmoketest_installer_v0.1.0`. Contains installer/ (bootstrap.py, install.py, launcher_bootstrap.py), payload/app_files/ (project files correctly rooted), package_manifest.json (sha256 per file, entry `app_files/main.py`, launcher_mode `absolute_install_root`, default_install_base `/home/default`), package_report.json (`success: true`, dependency audit clear, 2 non-blocking advisories: generic description + no custom icon), README.txt, INSTALL.txt, and install_*.desktop with `Path=` set to package root and Exec → AppRun + installer/bootstrap.py. Packaging Report UI surfaced the 2 advisories correctly. Drove the installer headlessly (InstallWorker._do_install against a temp target): checksum verify + payload copy + atomic stage→swap + launcher write all succeeded, and the installed main.py executed via the launcher Exec form with correct runtime cwd/argv/env. **Minor defect found:** install marker `cbcs_installed_package.json` records `install_dir` as the transient `*_installing` staging path instead of the final dir (marker is written into stage_dir before the rename in `_do_install`). Launcher Exec is correct (built from `self.install_dir`); upgrade detection unaffected (reads dir path, not marker field). Low impact. |
 
 ## Group I — By-design confirm
 
