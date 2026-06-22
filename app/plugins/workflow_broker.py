@@ -7,11 +7,15 @@ from typing import Any, Callable, Mapping
 from app.core import constants
 from app.plugins.api_broker import PluginApiBroker, PluginRuntimeJob
 from app.plugins.project_config import ProjectPluginConfig, preferred_provider_for
-from app.plugins.workflow_catalog import WorkflowProviderCatalog
+from app.plugins.workflow_catalog import WorkflowProviderCatalog, provider_matches_context
+from app.plugins.workflow_payload_codec import WorkflowIpcPayload
 
-WorkflowQueryHandler = Callable[[Mapping[str, Any]], Any]
+WorkflowQueryHandler = Callable[[Mapping[str, Any]], WorkflowIpcPayload]
 WorkflowJobEventHandler = Callable[[str, Mapping[str, Any]], None]
-WorkflowJobHandler = Callable[[Mapping[str, Any], WorkflowJobEventHandler, Callable[[], bool]], Any]
+WorkflowJobHandler = Callable[
+    [Mapping[str, Any], WorkflowJobEventHandler, Callable[[], bool]],
+    WorkflowIpcPayload,
+]
 
 
 @dataclass(frozen=True)
@@ -145,7 +149,7 @@ class WorkflowBroker:
     ) -> list[WorkflowProviderDescriptor]:
         descriptors: list[WorkflowProviderDescriptor] = []
         for builtin in self._builtin_providers.values():
-            if not _descriptor_matches(
+            if not provider_matches_context(
                 builtin.descriptor,
                 kind=kind,
                 lane=lane,
@@ -191,7 +195,7 @@ class WorkflowBroker:
         language: str | None = None,
         file_path: str | None = None,
         preferred_provider_key: str | None = None,
-    ) -> tuple[WorkflowProviderDescriptor, Any]:
+    ) -> tuple[WorkflowProviderDescriptor, WorkflowIpcPayload]:
         descriptor = self._resolve_provider_descriptor(
             kind=kind,
             lane=constants.WORKFLOW_PROVIDER_LANE_QUERY,
@@ -235,7 +239,7 @@ class WorkflowBroker:
         preferred_provider_key: str | None = None,
         on_event: WorkflowJobEventHandler | None = None,
         timeout_seconds: float | None = None,
-    ) -> tuple[WorkflowProviderDescriptor, Any]:
+    ) -> tuple[WorkflowProviderDescriptor, WorkflowIpcPayload]:
         descriptor = self._resolve_provider_descriptor(
             kind=kind,
             lane=constants.WORKFLOW_PROVIDER_LANE_JOB,
@@ -301,7 +305,7 @@ class WorkflowBroker:
         )
         if builtin_preferred is not None:
             builtin = self._builtin_providers.get(builtin_preferred)
-            if builtin is not None and _descriptor_matches(
+            if builtin is not None and provider_matches_context(
                 builtin.descriptor,
                 kind=kind,
                 lane=lane,
@@ -382,29 +386,6 @@ def _default_builtin_provider_key(*, kind: str, lane: str) -> str | None:
         (constants.WORKFLOW_PROVIDER_KIND_PACKAGING, constants.WORKFLOW_PROVIDER_LANE_JOB): "builtin:packaging",
     }
     return defaults.get((kind, lane))
-
-
-def _descriptor_matches(
-    descriptor: WorkflowProviderDescriptor,
-    *,
-    kind: str | None,
-    lane: str | None,
-    language: str | None,
-    file_path: str | None,
-) -> bool:
-    if kind is not None and descriptor.kind != kind:
-        return False
-    if lane is not None and descriptor.lane != lane:
-        return False
-    if language is not None and descriptor.languages:
-        if language.lower() not in {value.lower() for value in descriptor.languages}:
-            return False
-    if file_path is not None and descriptor.file_extensions:
-        suffix = file_path.rsplit(".", 1)
-        normalized_suffix = f".{suffix[-1].lower()}" if len(suffix) == 2 else ""
-        if normalized_suffix not in {value.lower() for value in descriptor.file_extensions}:
-            return False
-    return True
 
 
 def _noop_job_event_handler(_event_type: str, _payload: Mapping[str, Any]) -> None:

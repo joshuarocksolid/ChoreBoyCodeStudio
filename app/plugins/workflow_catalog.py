@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 from app.core import constants
 from app.plugins.models import DiscoveredPlugin, DiscoveredWorkflowProvider, PluginWorkflowProvider
+
+
+class ProviderContextMatchable(Protocol):
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def lane(self) -> str: ...
+
+    @property
+    def languages(self) -> tuple[str, ...]: ...
+
+    @property
+    def file_extensions(self) -> tuple[str, ...]: ...
 from app.plugins.project_config import (
     ProjectPluginConfig,
     is_plugin_enabled_in_project,
@@ -89,7 +104,7 @@ class WorkflowProviderCatalog:
         return [
             provider
             for provider in self._providers
-            if _matches_provider_context(
+            if provider_matches_context(
                 provider.provider,
                 kind=kind,
                 lane=lane,
@@ -109,7 +124,7 @@ class WorkflowProviderCatalog:
     ) -> DiscoveredWorkflowProvider | None:
         if preferred_provider_key:
             preferred = self.get(preferred_provider_key)
-            if preferred is not None and _matches_provider_context(
+            if preferred is not None and provider_matches_context(
                 preferred.provider,
                 kind=kind,
                 lane=lane,
@@ -146,8 +161,8 @@ def _default_capability_for_provider_kind(kind: str) -> str:
     }[kind]
 
 
-def _matches_provider_context(
-    provider: PluginWorkflowProvider,
+def provider_matches_context(
+    provider: ProviderContextMatchable,
     *,
     kind: str | None,
     lane: str | None,

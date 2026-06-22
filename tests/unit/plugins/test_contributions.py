@@ -12,6 +12,12 @@ from app.shell.events import RunSessionStartedEvent
 pytestmark = pytest.mark.unit
 
 
+def _resolve_run_start_event_type(event_name: str) -> type[object] | None:
+    if event_name == "run_start":
+        return RunSessionStartedEvent
+    return None
+
+
 def test_apply_registers_commands_and_event_hooks() -> None:
     registered_runtime_commands: list[str] = []
     registered_menu_commands: list[str] = []
@@ -28,6 +34,7 @@ def test_apply_registers_commands_and_event_hooks() -> None:
         execute_runtime_command=lambda command_id, _payload, _activation_event: executed.append(command_id),
         subscribe_shell_event=lambda event_type, _handler: subscribed_events.append(event_type),
         unsubscribe_shell_event=lambda event_type, _handler: unsubscribed_events.append(event_type),
+        resolve_event_type=_resolve_run_start_event_type,
         emit_message=lambda _message: None,
         execute_plugin_runtime_command=lambda _command_id, payload, _activation_event: payload,
         on_runtime_command_success=lambda plugin_id, version: runtime_success.append((plugin_id, version)),
@@ -91,6 +98,7 @@ def test_clear_unregisters_commands_and_unsubscribes_handlers() -> None:
         execute_runtime_command=lambda _command_id, _payload, _activation_event: None,
         subscribe_shell_event=lambda event_type, handler: subscriptions.append((event_type, handler)),
         unsubscribe_shell_event=lambda event_type, _handler: unsubscribed_events.append(event_type),
+        resolve_event_type=_resolve_run_start_event_type,
         emit_message=lambda _message: None,
         execute_plugin_runtime_command=lambda _command_id, _payload, _activation_event: None,
         on_runtime_command_success=lambda _plugin_id, _version: None,
@@ -124,6 +132,7 @@ def test_apply_continues_when_one_menu_registration_fails() -> None:
         execute_runtime_command=lambda _command_id, _payload, _activation_event: None,
         subscribe_shell_event=lambda _event_type, _handler: None,
         unsubscribe_shell_event=lambda _event_type, _handler: None,
+        resolve_event_type=_resolve_run_start_event_type,
         emit_message=lambda _message: None,
         execute_plugin_runtime_command=lambda _command_id, payload, _activation_event: payload,
         on_runtime_command_success=lambda _plugin_id, _version: None,
@@ -180,6 +189,7 @@ def test_event_hook_failures_are_logged_with_plugin_and_hook_id(caplog: pytest.L
         ),
         subscribe_shell_event=lambda event_type, handler: subscriptions.append((event_type, handler)),
         unsubscribe_shell_event=lambda _event_type, _handler: None,
+        resolve_event_type=_resolve_run_start_event_type,
         emit_message=lambda _message: None,
         execute_plugin_runtime_command=lambda _command_id, _payload, _activation_event: None,
         on_runtime_command_success=lambda _plugin_id, _version: None,
@@ -214,7 +224,8 @@ def test_event_hook_failures_are_logged_with_plugin_and_hook_id(caplog: pytest.L
     with caplog.at_level("WARNING", logger="app.plugins.contributions"):
         event_type, handler = subscriptions[0]
         assert event_type is RunSessionStartedEvent
-        handler(
+        assert callable(handler)
+        handler(  # type: ignore[operator]
             RunSessionStartedEvent(
                 run_id="session-1",
                 mode="normal",

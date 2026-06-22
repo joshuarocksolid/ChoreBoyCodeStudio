@@ -1,0 +1,17 @@
+from __future__ import annotations
+
+PLUGIN_EVENT_HOOK_RUN_START = "run_start"
+PLUGIN_EVENT_HOOK_RUN_OUTPUT = "run_output"
+PLUGIN_EVENT_HOOK_RUN_EXIT = "run_exit"
+PLUGIN_EVENT_HOOK_PROJECT_OPENED = "project_opened"
+PLUGIN_EVENT_HOOK_PROJECT_OPEN_FAILED = "project_open_failed"
+
+PLUGIN_EVENT_HOOK_TYPE_NAMES: frozenset[str] = frozenset(
+    {
+        PLUGIN_EVENT_HOOK_RUN_START,
+        PLUGIN_EVENT_HOOK_RUN_OUTPUT,
+        PLUGIN_EVENT_HOOK_RUN_EXIT,
+        PLUGIN_EVENT_HOOK_PROJECT_OPENED,
+        PLUGIN_EVENT_HOOK_PROJECT_OPEN_FAILED,
+    }
+)

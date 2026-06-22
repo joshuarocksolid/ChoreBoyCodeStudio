@@ -89,6 +89,9 @@ class RuntimePluginIndex:
     def provider_count(self) -> int:
         return len(self._provider_bindings)
 
+    def iter_command_ids(self) -> tuple[str, ...]:
+        return tuple(self._command_bindings)
+
     def invoke_command(
         self,
         command_id: str,
@@ -289,25 +292,11 @@ def load_runtime_command_handlers(
         api_version=api_version,
     )
     handlers: dict[str, RuntimeCommandHandler] = {}
-    for command_id in list(runtime_index._command_bindings):
+    for command_id in runtime_index.iter_command_ids():
         handlers[command_id] = (
             lambda payload, cid=command_id, index=runtime_index: index.invoke_command(cid, payload)
         )
     return handlers
-
-
-def _load_runtime_module(
-    *,
-    plugin_id: str,
-    install_path: Path,
-    runtime_entrypoint: str,
-) -> object:
-    return load_plugin_runtime_module(
-        plugin_id,
-        install_path,
-        runtime_entrypoint,
-        module_cache={},
-    )
 
 
 def _is_runtime_plugin_effectively_trusted(

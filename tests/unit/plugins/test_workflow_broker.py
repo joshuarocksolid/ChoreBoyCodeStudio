@@ -38,6 +38,7 @@ def test_workflow_broker_records_success_metrics_for_builtin_query_provider() ->
     metrics = broker.list_provider_metrics()
 
     assert descriptor.provider_key == "builtin:formatter"
+    assert isinstance(result, dict)
     assert result["status"] == "ok"
     assert len(metrics) == 1
     metric = metrics[0]

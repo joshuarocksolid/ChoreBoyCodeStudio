@@ -9,12 +9,11 @@ from app.intelligence.diagnostics_service import CodeDiagnostic, ImportDiagnosti
 from app.packaging.config import ProjectPackageConfig, parse_project_package_config
 from app.packaging.packager import PackageResult, package_project
 from app.plugins.workflow_broker import WorkflowBroker
+from app.plugins.workflow_payload_codec import serialize_package_result, serialize_pytest_run_result
 from app.python_tools.black_adapter import format_python_text
 from app.python_tools.isort_adapter import organize_imports_text
 from app.python_tools.models import PythonTextTransformResult
-from app.run.problem_parser import ProblemEntry
 from app.pytest.runner_service import (
-    PytestRunResult,
     run_pytest_args,
     run_pytest_project,
     run_pytest_target,
@@ -154,7 +153,7 @@ def _run_builtin_pytest_job(
     emit_event,
     is_cancelled,
 ) -> dict[str, Any]:
-    _ = is_cancelled
+    _raise_if_cancelled(is_cancelled)
     project_root = _require_string(request, "project_root")
     target_path = _optional_string(request, "target_path")
     target_node_id = _optional_string(request, "target_node_id")
@@ -177,6 +176,7 @@ def _run_builtin_pytest_job(
         result = run_pytest_target(project_root, target_path, timeout_seconds=timeout_seconds)
     else:
         result = run_pytest_project(project_root, timeout_seconds=timeout_seconds)
+    _raise_if_cancelled(is_cancelled)
     emit_event(
         "job_finished",
         {
@@ -185,7 +185,7 @@ def _run_builtin_pytest_job(
             "elapsed_ms": result.elapsed_ms,
         },
     )
-    return _pytest_run_result_to_dict(result)
+    return serialize_pytest_run_result(result)
 
 
 def _run_builtin_packaging_job(
@@ -193,7 +193,7 @@ def _run_builtin_packaging_job(
     emit_event,
     is_cancelled,
 ) -> dict[str, Any]:
-    _ = is_cancelled
+    _raise_if_cancelled(is_cancelled)
     emit_event("job_started", {"project_root": _require_string(request, "project_root")})
     package_config = _parse_project_package_config(request.get("package_config"))
     project_metadata = _parse_project_metadata(request.get("project_metadata"))
@@ -217,33 +217,14 @@ def _run_builtin_packaging_job(
         project_metadata=project_metadata,
         known_runtime_modules=known_runtime_modules,
     )
+    _raise_if_cancelled(is_cancelled)
     emit_event("job_finished", {"success": result.success, "artifact_root": result.artifact_root})
-    return result.to_dict()
+    return serialize_package_result(result)
 
 
-def _pytest_run_result_to_dict(result: PytestRunResult) -> dict[str, Any]:
-    return {
-        "command": list(result.command),
-        "project_root": result.project_root,
-        "return_code": result.return_code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "elapsed_ms": result.elapsed_ms,
-        "failures": [_problem_entry_to_dict(item) for item in result.failures],
-    }
-
-
-def _package_result_to_dict(result: PackageResult) -> dict[str, Any]:
-    return result.to_dict()
-
-
-def _problem_entry_to_dict(entry: ProblemEntry) -> dict[str, Any]:
-    return {
-        "file_path": entry.file_path,
-        "line_number": entry.line_number,
-        "context": entry.context,
-        "message": entry.message,
-    }
+def _raise_if_cancelled(is_cancelled) -> None:
+    if is_cancelled():
+        raise RuntimeError("Workflow job cancelled.")
 
 
 def _parse_capability_probe_report(raw_value: Any) -> CapabilityProbeReport:

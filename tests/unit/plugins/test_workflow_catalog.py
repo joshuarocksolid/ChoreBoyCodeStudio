@@ -7,7 +7,8 @@ import pytest
 from app.core import constants
 from app.plugins.models import DiscoveredPlugin, PluginManifest, PluginWorkflowProvider
 from app.plugins.project_config import ProjectPluginConfig
-from app.plugins.workflow_catalog import WorkflowProviderCatalog, provider_key
+from app.plugins.workflow_broker import WorkflowProviderDescriptor
+from app.plugins.workflow_catalog import WorkflowProviderCatalog, provider_key, provider_matches_context
 
 pytestmark = pytest.mark.unit
 
@@ -141,3 +142,45 @@ def test_workflow_provider_catalog_respects_project_pins_and_preferred_provider(
 
     assert selected is not None
     assert selected.plugin_id == "cbcs.alt_formatter"
+
+
+def test_provider_matches_context_uses_path_suffix_for_multi_dot_filenames() -> None:
+    provider = PluginWorkflowProvider(
+        provider_id="formatter",
+        kind=constants.WORKFLOW_PROVIDER_KIND_FORMATTER,
+        lane=constants.WORKFLOW_PROVIDER_LANE_QUERY,
+        title="Formatter",
+        languages=("python",),
+        file_extensions=(".py",),
+    )
+    descriptor = WorkflowProviderDescriptor(
+        provider_key="builtin:formatter",
+        kind=provider.kind,
+        lane=provider.lane,
+        title=provider.title,
+        source_kind=constants.PLUGIN_SOURCE_BUILTIN,
+        languages=provider.languages,
+        file_extensions=provider.file_extensions,
+    )
+
+    assert provider_matches_context(
+        provider,
+        kind=constants.WORKFLOW_PROVIDER_KIND_FORMATTER,
+        lane=constants.WORKFLOW_PROVIDER_LANE_QUERY,
+        language="python",
+        file_path="pkg.module.test.py",
+    )
+    assert provider_matches_context(
+        descriptor,
+        kind=constants.WORKFLOW_PROVIDER_KIND_FORMATTER,
+        lane=constants.WORKFLOW_PROVIDER_LANE_QUERY,
+        language="python",
+        file_path="pkg.module.test.py",
+    )
+    assert not provider_matches_context(
+        provider,
+        kind=constants.WORKFLOW_PROVIDER_KIND_FORMATTER,
+        lane=constants.WORKFLOW_PROVIDER_LANE_QUERY,
+        language="python",
+        file_path="README",
+    )

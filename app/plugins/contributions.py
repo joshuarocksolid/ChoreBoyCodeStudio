@@ -4,22 +4,9 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
+from app.plugins.events import PLUGIN_EVENT_HOOK_TYPE_NAMES
 from app.plugins.models import DiscoveredPlugin, PluginCommandContribution
-from app.shell.events import (
-    ProjectOpenFailedEvent,
-    ProjectOpenedEvent,
-    RunProcessExitEvent,
-    RunProcessOutputEvent,
-    RunSessionStartedEvent,
-)
 
-EVENT_TYPE_MAP: dict[str, type[object]] = {
-    "run_start": RunSessionStartedEvent,
-    "run_output": RunProcessOutputEvent,
-    "run_exit": RunProcessExitEvent,
-    "project_opened": ProjectOpenedEvent,
-    "project_open_failed": ProjectOpenFailedEvent,
-}
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -33,8 +20,9 @@ class DeclarativeContributionManager:
         execute_runtime_command: Callable[[str, dict[str, Any] | None, str | None], object],
         subscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
         unsubscribe_shell_event: Callable[[type[object], Callable[[object], None]], None],
+        resolve_event_type: Callable[[str], type[object] | None],
         emit_message: Callable[[str], None],
-        execute_plugin_runtime_command: Callable[[str, dict[str, Any], str | None], Any],
+        execute_plugin_runtime_command: Callable[[str, dict[str, Any], str | None], object],
         on_runtime_command_success: Callable[[str, str], None],
         on_runtime_command_failure: Callable[[str, str, str], None],
     ) -> None:
@@ -44,6 +32,7 @@ class DeclarativeContributionManager:
         self._execute_runtime_command = execute_runtime_command
         self._subscribe_shell_event = subscribe_shell_event
         self._unsubscribe_shell_event = unsubscribe_shell_event
+        self._resolve_event_type = resolve_event_type
         self._emit_message = emit_message
         self._execute_plugin_runtime_command = execute_plugin_runtime_command
         self._on_runtime_command_success = on_runtime_command_success
@@ -146,7 +135,7 @@ class DeclarativeContributionManager:
         command_id: str,
         payload: dict[str, Any],
         activation_event: str | None,
-    ) -> Any:
+    ) -> object:
         try:
             result = self._execute_plugin_runtime_command(command_id, payload, activation_event)
         except Exception as exc:
@@ -169,13 +158,15 @@ class DeclarativeContributionManager:
             command_id = hook_payload.get("command_id")
             if not isinstance(event_type_name, str) or not isinstance(command_id, str):
                 continue
-            event_type = EVENT_TYPE_MAP.get(event_type_name.strip())
+            normalized_event_type_name = event_type_name.strip()
+            if normalized_event_type_name not in PLUGIN_EVENT_HOOK_TYPE_NAMES:
+                continue
+            event_type = self._resolve_event_type(normalized_event_type_name)
             if event_type is None:
                 continue
             normalized_command_id = command_id.strip()
             if not normalized_command_id:
                 continue
-            normalized_event_type_name = event_type_name.strip()
             hook_id = f"{normalized_event_type_name}:{normalized_command_id}"
 
             def _handler(

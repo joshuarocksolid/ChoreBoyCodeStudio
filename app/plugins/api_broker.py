@@ -76,7 +76,7 @@ class PluginApiBroker:
     def last_runtime_error(self) -> str | None:
         return self._runtime_manager.last_error
 
-    def coerce_result_payload(self, result: Any) -> object:
+    def coerce_result_payload(self, result: object) -> object:
         if result is None:
             return {}
         if isinstance(result, (dict, list)):

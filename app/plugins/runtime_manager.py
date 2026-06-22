@@ -97,7 +97,7 @@ class PluginRuntimeManager:
         *,
         timeout_seconds: float = 5.0,
         activation_event: str | None = None,
-    ) -> Any:
+    ) -> object:
         message = build_command_request(
             request_id=uuid.uuid4().hex,
             command_id=command_id,
@@ -119,7 +119,7 @@ class PluginRuntimeManager:
         *,
         timeout_seconds: float = 5.0,
         activation_event: str | None = None,
-    ) -> Any:
+    ) -> object:
         message = build_provider_query_request(
             request_id=uuid.uuid4().hex,
             provider_key=provider_key,
@@ -174,7 +174,7 @@ class PluginRuntimeManager:
         job: PluginRuntimeJob,
         *,
         timeout_seconds: float | None = None,
-    ) -> Any:
+    ) -> object:
         with self._pending_lock:
             result_queue = self._job_result_queues.get(job.job_id)
         if result_queue is None:
@@ -201,7 +201,7 @@ class PluginRuntimeManager:
         job_id: str,
         *,
         timeout_seconds: float = 5.0,
-    ) -> Any:
+    ) -> object:
         message = build_provider_job_cancel_request(
             request_id=uuid.uuid4().hex,
             job_id=job_id,
@@ -220,7 +220,7 @@ class PluginRuntimeManager:
         message: Mapping[str, Any],
         timeout_seconds: float,
         failure_label: str,
-    ) -> Any:
+    ) -> object:
         self.start()
         response_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
         with self._pending_lock:
@@ -384,7 +384,7 @@ class PluginRuntimeManager:
             ) from exc
         return response
 
-    def _unwrap_response(self, response: dict[str, Any], *, failure_label: str) -> Any:
+    def _unwrap_response(self, response: dict[str, Any], *, failure_label: str) -> object:
         ok = bool(response.get("ok", False))
         if ok:
             return response.get("result")

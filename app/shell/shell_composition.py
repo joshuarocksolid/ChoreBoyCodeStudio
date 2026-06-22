@@ -10,7 +10,21 @@ from PySide2.QtWidgets import QMessageBox, QWidget
 from app.bootstrap.test_runtime_flags import background_runtime_disabled
 from app.core.models import RuntimeIssue, RuntimeIssueReport
 from app.plugins.contributions import DeclarativeContributionManager
+from app.plugins.events import (
+    PLUGIN_EVENT_HOOK_PROJECT_OPEN_FAILED,
+    PLUGIN_EVENT_HOOK_PROJECT_OPENED,
+    PLUGIN_EVENT_HOOK_RUN_EXIT,
+    PLUGIN_EVENT_HOOK_RUN_OUTPUT,
+    PLUGIN_EVENT_HOOK_RUN_START,
+)
 from app.plugins.workflow_adapters import run_pytest_with_workflow
+from app.shell.events import (
+    ProjectOpenFailedEvent,
+    ProjectOpenedEvent,
+    RunProcessExitEvent,
+    RunProcessOutputEvent,
+    RunSessionStartedEvent,
+)
 from app.shell.diagnostics_search_coordinator import DiagnosticsOrchestrator
 from app.shell.editor_sync_factory import build_editor_sync_workflow
 from app.shell.external_file_change_workflow import (
@@ -154,6 +168,13 @@ def focus_bottom_tab(ctx: ShellCompositionContext, widget: QWidget | None) -> No
 
 def build_declarative_contribution_manager(ctx: ShellCompositionContext) -> DeclarativeContributionManager:
     window = ctx.w
+    plugin_event_type_map: dict[str, type[object]] = {
+        PLUGIN_EVENT_HOOK_RUN_START: RunSessionStartedEvent,
+        PLUGIN_EVENT_HOOK_RUN_OUTPUT: RunProcessOutputEvent,
+        PLUGIN_EVENT_HOOK_RUN_EXIT: RunProcessExitEvent,
+        PLUGIN_EVENT_HOOK_PROJECT_OPENED: ProjectOpenedEvent,
+        PLUGIN_EVENT_HOOK_PROJECT_OPEN_FAILED: ProjectOpenFailedEvent,
+    }
     return DeclarativeContributionManager(
         register_runtime_command=lambda command_id, handler, replace: window.register_runtime_command(
             command_id=command_id,
@@ -165,6 +186,7 @@ def build_declarative_contribution_manager(ctx: ShellCompositionContext) -> Decl
         execute_runtime_command=window.execute_runtime_command,
         subscribe_shell_event=lambda event_type, handler: window.subscribe_shell_event(event_type, handler),
         unsubscribe_shell_event=lambda event_type, handler: window.unsubscribe_shell_event(event_type, handler),
+        resolve_event_type=lambda event_name: plugin_event_type_map.get(event_name),
         emit_message=lambda message: QMessageBox.information(window, "Plugin Command", message),
         execute_plugin_runtime_command=lambda command_id, payload, activation_event: window._plugin_api_broker.invoke_runtime_command_for_event(
             command_id,

@@ -203,6 +203,7 @@ def test_invoke_workflow_query_round_trip(monkeypatch: pytest.MonkeyPatch) -> No
 
     result = manager.invoke_workflow_query("cbcs.python_tools:formatter", {"source_text": "x=1\n"})
 
+    assert isinstance(result, dict)
     assert result["provider_key"] == "cbcs.python_tools:formatter"
     assert result["request"] == {"source_text": "x=1\n"}
 
