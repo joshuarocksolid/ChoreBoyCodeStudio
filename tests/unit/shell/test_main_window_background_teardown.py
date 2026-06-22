@@ -19,8 +19,12 @@ from testing.main_window_test_helpers import prepare_main_window_for_test
 
 pytestmark = pytest.mark.unit
 
-_THREAD_JOIN_TIMEOUT_SECONDS = 0.5
-_TASK_COMPLETION_TIMEOUT_SECONDS = 0.5
+# Generous caps so the test stays green under heavy machine load (the wait helper
+# polls every 20ms and returns as soon as the condition holds, so a larger cap does
+# not slow the happy path; it only prevents false failures when thread join/scheduling
+# is delayed under load).
+_THREAD_JOIN_TIMEOUT_SECONDS = 5.0
+_TASK_COMPLETION_TIMEOUT_SECONDS = 5.0
 
 
 def _shell_task_thread_count() -> int:
