@@ -49,6 +49,17 @@ class _FakeTransport:
         return None
 
 
+class _DisconnectOnStopTransport(_FakeTransport):
+    """Simulates transport loss while runner is paused at a breakpoint."""
+
+    def send_message(self, message: dict[str, object]) -> None:
+        self.sent_messages.append(message)
+        if message.get("kind") == "event" and message.get("event") == "stopped":
+            self._on_error("Debug transport disconnected.")
+            return
+        super().send_message(message)
+
+
 def _build_manifest(tmp_path: Path, *, breakpoints=None, exception_policy: DebugExceptionPolicy | None = None) -> RunManifest:
     return RunManifest(
         manifest_version=constants.RUN_MANIFEST_VERSION,
@@ -160,6 +171,31 @@ def test_run_debug_session_first_pause_targets_user_breakpoint(
     assert matching_pause is not None
     assert breakpoint_updates
     assert breakpoint_updates[0]["breakpoints"][0]["verified"] is True  # type: ignore[index]
+
+
+def test_run_debug_session_exits_when_transport_fails_mid_pause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-01: transport loss during pause must not block the runner indefinitely."""
+    script_path = tmp_path / "run.py"
+    script_path.write_text("value = 41\nvalue = value + 1\nprint(value)\n", encoding="utf-8")
+    manifest = _build_manifest(
+        tmp_path,
+        breakpoints=[build_breakpoint(str(script_path.resolve()), 2)],
+    )
+    _DisconnectOnStopTransport.instances.clear()
+    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _DisconnectOnStopTransport)
+
+    def _entry_callable(path: str) -> None:
+        runpy.run_path(path, run_name="__main__")
+
+    exit_code = run_debug_session(manifest, _entry_callable, str(script_path.resolve()))
+
+    transport = _DisconnectOnStopTransport.instances[-1]
+    assert exit_code in (constants.RUN_EXIT_SUCCESS, constants.RUN_EXIT_TERMINATED_BY_USER)
+    assert _event_messages(transport, "stopped")
+    # session_ended is intentionally skipped once transport_failed is set.
 
 
 def test_run_debug_session_invalid_breakpoint_is_reported_in_breakpoint_update(

@@ -379,3 +379,48 @@ def test_forward_event_exit_clears_active_session_state(tmp_path: Path) -> None:
     )
 
     assert service.current_session is None
+
+
+def test_forward_debug_transport_error_closes_server_and_emits_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-06: transport errors must close the editor-side server and notify observers."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+        ),
+        entries=[],
+    )
+    captured_events: list[ProcessEvent] = []
+    service = RunService(
+        on_event=captured_events.append,
+        runtime_executable=sys.executable,
+        runner_boot_path=str(tmp_path / "run_runner.py"),
+    )
+    monkeypatch.setattr(service.supervisor, "start", lambda *args, **kwargs: None)
+
+    service.start_run(loaded_project, mode=constants.RUN_MODE_PYTHON_DEBUG)
+    assert service._debug_transport_server is not None  # noqa: SLF001
+
+    service._forward_debug_transport_error("Debug transport disconnected.")  # noqa: SLF001
+
+    assert service._debug_transport_server is None  # noqa: SLF001
+    debug_payloads = [
+        event.payload
+        for event in captured_events
+        if event.event_type == "debug" and isinstance(event.payload, dict)
+    ]
+    assert any(payload.get("event") == "session_ended" for payload in debug_payloads)
+    assert any(
+        event.event_type == "output" and "[debug]" in (event.text or "")
+        for event in captured_events
+    )
+

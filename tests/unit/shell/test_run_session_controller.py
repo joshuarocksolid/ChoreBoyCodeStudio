@@ -8,6 +8,7 @@ import pytest
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
+from app.debug.debug_models import DebugExecutionState
 from app.run.run_service import RunSession
 from app.shell.menus import MenuStubRegistry
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
@@ -35,7 +36,6 @@ class _FakeRunService:
     def __init__(self) -> None:
         self.supervisor = _FakeSupervisor()
         self.is_debug_mode = False
-        self.is_debug_paused = False
         self.stopped = False
         self.paused = False
 
@@ -324,3 +324,30 @@ def test_refresh_action_states_updates_run_action_enablement() -> None:
     assert registry.action("shell.action.run.stop").enabled is True
     assert registry.action("shell.action.run.runWithArgs").enabled is False
     assert registry.action("shell.action.run.runWithConfig").enabled is False
+
+
+def test_refresh_action_states_derives_pause_from_debug_execution_state() -> None:
+    """CC-02: toolbar pause/continue gates must follow DebugSession execution state."""
+    run_service = _FakeRunService()
+    run_service.supervisor._running = True
+    run_service.is_debug_mode = True
+    controller = RunSessionController(run_service)  # type: ignore[arg-type]
+    registry = _menu_registry()
+
+    controller.refresh_action_states(
+        registry,
+        has_project=True,
+        debug_execution_state=DebugExecutionState.PAUSED,
+    )
+    assert registry.action("shell.action.run.continue").enabled is True
+    assert registry.action("shell.action.run.pause").enabled is False
+    assert registry.action("shell.action.run.stepOver").enabled is True
+
+    controller.refresh_action_states(
+        registry,
+        has_project=True,
+        debug_execution_state=DebugExecutionState.RUNNING,
+    )
+    assert registry.action("shell.action.run.continue").enabled is False
+    assert registry.action("shell.action.run.pause").enabled is True
+    assert registry.action("shell.action.run.stepOver").enabled is False

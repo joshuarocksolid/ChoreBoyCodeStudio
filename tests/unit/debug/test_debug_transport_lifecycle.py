@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import threading
 import time
 
 import pytest
@@ -74,3 +75,72 @@ def test_debug_transport_server_rejects_invalid_hello_token() -> None:
     finally:
         server.close()
     assert errors
+
+
+def _connect_runner_client(
+    server: DebugTransportServer,
+    config,
+    *,
+    on_message=None,
+    on_error=None,
+) -> RunnerDebugTransportClient:
+    client = RunnerDebugTransportClient(
+        config,
+        engine_name="test",
+        on_message=on_message or (lambda _message: None),
+        on_error=on_error,
+    )
+    client.connect()
+    _wait_until(lambda: server.is_connected)
+    return client
+
+
+def test_runner_client_eof_invokes_error_callback() -> None:
+    errors: list[str] = []
+    server = DebugTransportServer(on_message=lambda _message: None)
+    config = server.start()
+    client = _connect_runner_client(server, config, on_error=errors.append)
+    try:
+        server.close()
+        _wait_until(lambda: bool(errors))
+    finally:
+        client.close()
+    assert any("disconnect" in message.lower() or "failed" in message.lower() for message in errors)
+
+
+def test_debug_transport_concurrent_send_while_peer_disconnects() -> None:
+    errors: list[str] = []
+    server = DebugTransportServer(on_message=lambda _message: None, on_error=errors.append)
+    config = server.start()
+    client_sock = socket.create_connection(("127.0.0.1", config.port), timeout=2.0)
+    writer = client_sock.makefile("w", encoding="utf-8")
+    writer.write(
+        encode_debug_message(
+            build_hello_message(session_token=config.session_token, engine_name="test")
+        )
+    )
+    writer.flush()
+    _wait_until(lambda: server.is_connected)
+
+    send_errors: list[BaseException] = []
+
+    def spam_send() -> None:
+        for _ in range(100):
+            try:
+                server.send_command("continue")
+            except BaseException as exc:  # noqa: BLE001 - stress test captures all send failures
+                send_errors.append(exc)
+                return
+            time.sleep(0.001)
+
+    sender = threading.Thread(target=spam_send, daemon=True)
+    sender.start()
+    time.sleep(0.05)
+    client_sock.close()
+    sender.join(timeout=2.0)
+    try:
+        server.close()
+        server.close()
+    finally:
+        pass
+    assert sender.is_alive() is False

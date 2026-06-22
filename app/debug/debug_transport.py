@@ -164,15 +164,15 @@ class DebugTransportServer:
     @staticmethod
     def _close_socket_resources(resources: _SocketResources) -> None:
         try:
+            resources.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
             resources.reader.close()
         except OSError:
             pass
         try:
             resources.writer.close()
-        except OSError:
-            pass
-        try:
-            resources.sock.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
         try:
