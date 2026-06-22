@@ -69,22 +69,22 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-09 | P1 | **closed** | RUN-R-09 | `run_session_store.py`, `run_session_controller.py`, `run_event_workflow.py` | `test_start_session_populates_session_store_from_run_service`; `test_exit_event_clears_session_store` |
 | CC-10 | P1 | **closed** | RUN-R-10 | `debug_runner.py`, `app/runner/debug/*` | facade ≤30 LOC |
 | CC-11 | P1 | **closed** | RUN-R-11 | `app/pytest/*` | no `app/run/pytest_*` |
-| CC-12 | P1 | partial | RUN-R-12 | `run_service.py`, `launch_context.py` | `HostProcessManager` gone; `start_run` slim |
+| CC-12 | P1 | **closed** | RUN-R-12 | `run_service.py`, `launch_context.py` | `HostProcessManager` gone; `start_run` ≤50 LOC coordinator via `plan_launch` |
 | CC-13 | P1 | open | RUN-R-13 | `run_manifest.py` | Mode-aware validation; tuple containers |
 | CC-14 | P1 | open | RUN-R-14 | `repl_control.py`, `repl_protocol.py` | Protocol validation |
 | CC-15 | P1 | open | RUN-R-15 | `debug_session.py` | `continued` clears inspector |
 | CC-16 | P1 | open | RUN-R-16 | `run_launch_workflow.py` | Split below 500 LOC |
 | CC-17 | P1 | open | RUN-R-17 | `run_debug_presenter.py`, restart paths | Exit-gated restart |
 | CC-18 | P1 | open | RUN-R-18 | `BreakpointStore`, shell workflows | No dict alias injection |
-| CC-19 | P1 | partial | RUN-R-19 | `run_service.py`, `repl_session_manager.py` | REPL launch SSOT in run layer |
+| CC-19 | P1 | **closed** | RUN-R-19 | `run_service.py`, `repl_session_manager.py` | REPL launch SSOT in run layer |
 | CC-20 | P1 | open | RUN-R-20 | `console_model.py`, `exit_status.py` | Relocate to shell |
 | CC-21 | P2 | open | RUN-R-21 | `debug_session.py` | Legacy reducer removed |
 | CC-22 | P2 | open | RUN-R-22 | supervisor, repl_control, runner bootstrap | bare `except` ≤8 |
-| CC-23 | P2 | partial | RUN-R-23 | `tests/unit/debug/test_debug_transport_lifecycle.py` | Expand lifecycle suite |
-| CC-24 | P2 | partial | RUN-R-24 | `outcome_types.py`, `problem_parser.py` | Typed outcomes end-to-end |
+| CC-23 | P2 | **closed** | RUN-R-23 | `tests/unit/debug/test_debug_transport_lifecycle.py` | 14 lifecycle tests: shutdown order, EOF, error paths, concurrency |
+| CC-24 | P2 | **closed** | RUN-R-24 | `outcome_types.py`, `discovery_service.py`, `test_runner_workflow.py`, `test_explorer_panel.py` | Typed outcomes end-to-end; pyright on pytest pkg |
 | CC-25 | P2 | open | RUN-R-25 | `clear_console_policy.py`, runner hints | Unified clear policy |
 
-**@ HEAD summary:** 11 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-07, CC-08, CC-09, CC-10, CC-11), 4 partial, 10 open — **P0 milestone verified @ `57aac8d`**; RUN-R-12 (Wave 2) next.
+**@ HEAD summary:** 15 closed (incl. CC-19, CC-23, CC-24), 10 open — **P0 milestone verified @ `57aac8d`**; RUN-R-13 (Wave 2) next.
 
 ---
 
@@ -116,7 +116,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | **RUN-R-09** | 2 | CC-09 | *(closed @ HEAD)* — `RunSessionStore` single mirror | session store tests |
 | **RUN-R-10** | 2 | CC-10 | *(closed @ HEAD)* — preserve grep gate | grep gate |
 | **RUN-R-11** | 2 | CC-11 | *(closed @ HEAD)* — preserve grep gate | grep gate |
-| **RUN-R-12** | 2 | CC-12 | Slim `start_run` coordinator | LOC + unit tests |
+| **RUN-R-12** | 2 | CC-12 | *(closed @ HEAD)* — slim `start_run` coordinator | grep gate + `test_start_run_is_thin_coordinator` |
 | **RUN-R-13** | 2 | CC-13 | Manifest validation + tuple containers | mode rejection tests |
 | **RUN-R-14** | 2 | CC-14 | REPL protocol typing + validation | `test_repl_protocol.py` |
 | **RUN-R-15** | 2 | CC-15 | Session reducer: `continued` clears inspector | unit reducer tests |
@@ -127,7 +127,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | **RUN-R-20** | 3 | CC-20 | Relocate presentation modules to shell | import graph |
 | **RUN-R-21** | 5 | CC-21 | Remove legacy debug reducer paths | grep + unit |
 | **RUN-R-22** | 5 | CC-22 | Narrow bare `except Exception:` | count ≤8 |
-| **RUN-R-23** | 4 | CC-23 | Expand transport lifecycle suite | full lifecycle module |
+| **RUN-R-23** | 4 | CC-23 *(closed)* | Expand transport lifecycle suite | `test_debug_transport_lifecycle.py` — 14 tests green |
 | **RUN-R-24** | 4 | CC-24 | Typed test outcomes end-to-end | pyright strict on pytest pkg |
 | **RUN-R-25** | 3 | CC-25 | Unified clear-console policy | characterization tests |
 
@@ -173,7 +173,7 @@ Automated in `tests/unit/run/test_run_wave_grep_gates.py`:
 | CC-04 | `build_pytest_launch_plan` in discovery + runner |
 | CC-02 partial | No `_is_debug_paused` in `run_service.py` |
 | CC-03 partial | `_assert_idle()` before `plan_launch()` in `start_run` |
-| CC-12 partial | No `HostProcessManager` under `app/run/` |
+| CC-12 | No `HostProcessManager` under `app/run/`; `start_run` ≤50 LOC with `plan_launch` + `_start_manifest` |
 | CC-01/06 partial | Transport error forwards + closes server; runner pause loop bounded |
 | CC-05 | Runner uses `-q` + `-rA`; workflow maps summary lines to explorer |
 | CC-22 ceiling | bare `except Exception:` count ≤20 (tighten to ≤8 at RUN-R-22) |
@@ -196,8 +196,8 @@ find app -name "*.py" -exec wc -l {} + | awk '$1>=1000 {print}'
 |----|-------------|
 | CC-21 | Close in RUN-R-21 or waive if legacy path unreachable |
 | CC-22 | Close in RUN-R-22 — target ≤8 bare except |
-| CC-23 | Partial closed @ HEAD; complete in RUN-R-23 |
-| CC-24 | Partial — `TestOutcome` exists; complete typing in RUN-R-24 |
+| CC-23 | **closed** @ HEAD — 14-test lifecycle suite (shutdown order, EOF, error callbacks, concurrent send) |
+| CC-24 | **closed** @ HEAD — `TestOutcome` flows parse → workflow → explorer |
 | CC-25 | Close in RUN-R-25 or document UX waiver |
 
 ---

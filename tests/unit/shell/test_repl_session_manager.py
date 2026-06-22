@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.run.run_manifest import ReplControlConfig
 from app.shell.repl_session_manager import ReplSessionManager
 
 pytestmark = pytest.mark.unit
@@ -120,3 +121,19 @@ def test_launch_delegates_start_to_supervisor(tmp_path) -> None:  # type: ignore
     command, cwd = sup.start_calls[0]
     assert command
     assert cwd
+
+
+def test_launch_delegates_to_run_service_start_repl_sidecar(tmp_path) -> None:
+    fake_supervisor = _FakeSupervisor()
+    mock_run_service = MagicMock()
+    mock_control = MagicMock(spec=ReplControlConfig)
+    mock_launch = MagicMock(repl_control=mock_control)
+    mock_run_service.start_repl_sidecar.return_value = mock_launch
+
+    mgr = ReplSessionManager(state_root=str(tmp_path), run_service=mock_run_service)
+    mgr._supervisor = fake_supervisor  # type: ignore[assignment]
+
+    mgr._launch()
+
+    mock_run_service.start_repl_sidecar.assert_called_once_with(supervisor=fake_supervisor)
+    assert mgr._control_config is mock_control

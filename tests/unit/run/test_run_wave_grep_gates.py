@@ -80,6 +80,18 @@ def test_no_host_process_manager_under_app_run() -> None:
         assert "HostProcessManager" not in path.read_text(encoding="utf-8")
 
 
+def test_start_run_is_thin_coordinator() -> None:
+    """CC-12: start_run delegates to plan_launch and _start_manifest within LOC budget."""
+    run_service = _read("app/run/run_service.py")
+    start_index = run_service.index("    def start_run(")
+    next_def_index = run_service.index("\n    def ", start_index + 1)
+    start_run_block = run_service[start_index:next_def_index]
+    line_count = len(start_run_block.splitlines())
+    assert line_count <= 50, f"start_run is {line_count} LOC; CC-12 budget is ≤50"
+    assert "plan_launch(" in start_run_block
+    assert "_start_manifest(" in start_run_block
+
+
 def test_run_service_forwards_transport_errors_and_closes_server() -> None:
     run_service = _read("app/run/run_service.py")
     assert "on_error=self._forward_debug_transport_error" in run_service
@@ -98,6 +110,16 @@ def test_pytest_runner_uses_q_with_ra_summary() -> None:
     runner = _read("app/pytest/runner_service.py")
     assert '"-q"' in runner or "'-q'" in runner
     assert '"-rA"' in runner or "'-rA'" in runner
+
+
+def test_repl_session_manager_delegates_launch_to_run_service() -> None:
+    """CC-19: ReplSessionManager must not duplicate run-layer manifest/command assembly."""
+    repl_mgr = _read("app/shell/repl_session_manager.py")
+    assert "start_repl_sidecar" in repl_mgr
+    assert "build_repl_sidecar_launch" not in repl_mgr
+    assert "build_runner_command" not in repl_mgr
+    assert "resolve_runtime_executable" not in repl_mgr
+    assert "generate_run_id" not in repl_mgr
 
 
 def test_bare_except_exception_count_documented_ceiling() -> None:

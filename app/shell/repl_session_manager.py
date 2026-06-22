@@ -8,20 +8,16 @@ app launch and auto-restart when the REPL process exits unexpectedly.
 from __future__ import annotations
 
 import logging
-import os
 import socket
 import threading
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
 
-from app.bootstrap.paths import PathInput, resolve_app_root
+from app.bootstrap.paths import PathInput
 from app.intelligence.completion_models import CompletionEnvelope
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 from app.run.run_manifest import ReplControlConfig
-from app.run.run_service import build_repl_sidecar_launch, generate_run_id
-from app.run.runner_command_builder import build_runner_command
-from app.run.runtime_launch import resolve_runtime_executable
+from app.run.run_service import RunService
 from app.runner.repl_protocol import dumps_message, envelope_from_dict, loads_message
 
 _logger = logging.getLogger(__name__)
@@ -40,6 +36,7 @@ class ReplSessionManager:
         on_output: Callable[[str, str], None] | None = None,
         on_session_ended: Callable[[int | None, bool], None] | None = None,
         on_session_started: Callable[[], None] | None = None,
+        run_service: RunService | None = None,
         runtime_executable: str | None = None,
         runner_boot_path: str | None = None,
         state_root: PathInput | None = None,
@@ -47,14 +44,12 @@ class ReplSessionManager:
         self._on_output = on_output
         self._on_session_ended = on_session_ended
         self._on_session_started = on_session_started
-        self._runtime_executable = runtime_executable
-        self._runner_boot_path = str(
-            Path(runner_boot_path).expanduser().resolve()
-            if runner_boot_path
-            else resolve_app_root() / "run_runner.py"
-        )
         self._supervisor = ProcessSupervisor(on_event=self._handle_event)
-        self._state_root = state_root
+        self._run_service = run_service or RunService(
+            runtime_executable=runtime_executable,
+            runner_boot_path=runner_boot_path,
+            state_root=state_root,
+        )
         self._auto_restart = True
         self._shutting_down = False
         self._recent_exit_times: list[float] = []
@@ -191,18 +186,8 @@ class ReplSessionManager:
             self._supervisor.stop()
 
     def _launch(self) -> None:
-        launch = build_repl_sidecar_launch(
-            run_id=generate_run_id(now=datetime.now()),
-            now=datetime.now(),
-            state_root=self._state_root,
-        )
+        launch = self._run_service.start_repl_sidecar(supervisor=self._supervisor)
         self._control_config = launch.repl_control
-        command = build_runner_command(
-            runtime_executable=resolve_runtime_executable(self._runtime_executable),
-            runner_boot_path=self._runner_boot_path,
-            manifest_path=launch.manifest_path,
-        )
-        self._supervisor.start(command, cwd=launch.launch_cwd, env=os.environ.copy())
 
     def _handle_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:

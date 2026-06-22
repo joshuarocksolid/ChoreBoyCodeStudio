@@ -298,7 +298,7 @@ def install_run_debug(ctx: ShellCompositionContext) -> None:
         on_output=window._repl_event_workflow.enqueue_output,
         on_session_ended=window._repl_event_workflow.enqueue_ended,
         on_session_started=window._repl_event_workflow.enqueue_started,
-        state_root=window._state_root,
+        run_service=run_service,
     )
     window._latest_runtime_issue_report = runtime_onboarding_workflow.build_runtime_issue_report()
     ctx.runtime_issues.latest_runtime_issue_report = window._latest_runtime_issue_report
