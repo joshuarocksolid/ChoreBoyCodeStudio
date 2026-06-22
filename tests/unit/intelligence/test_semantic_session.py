@@ -7,7 +7,13 @@ import pytest
 
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind, CompletionRequestResult
 from app.intelligence.completion_service import CompletionRequest
-from app.intelligence.semantic_models import SemanticHoverResult, SemanticOperationMetadata, SemanticSignatureResult
+from app.intelligence.semantic_models import (
+    SemanticDefinitionResult,
+    SemanticHoverResult,
+    SemanticLocation,
+    SemanticOperationMetadata,
+    SemanticSignatureResult,
+)
 from app.intelligence.semantic_session import SemanticSession
 
 pytestmark = pytest.mark.unit
@@ -118,4 +124,56 @@ def test_request_hover_and_signature_use_same_owned_semantic_facade() -> None:
     assert signature_results[0][0] == 5
     assert signature_results[0][1] is not None
     assert signature_results[0][1].signature_text == "helper(alpha)"
+    session.shutdown()
+
+
+def test_concurrent_definition_requests_for_two_files_both_complete() -> None:
+    """Per-file worker keys must not cancel cross-file navigation (CC-09 / INT-R-06)."""
+    session = SemanticSession(
+        dispatch_to_main_thread=lambda callback: callback(),
+        cache_db_path=":memory:",
+    )
+    done_a = threading.Event()
+    done_b = threading.Event()
+    results_a: list[SemanticDefinitionResult] = []
+    results_b: list[SemanticDefinitionResult] = []
+
+    class _FacadeStub:
+        def lookup_definition(self, **kwargs):  # type: ignore[no-untyped-def]
+            file_path = kwargs["current_file_path"]
+            return SemanticDefinitionResult(
+                symbol_name="helper",
+                locations=[
+                    SemanticLocation(
+                        name="helper",
+                        file_path=file_path,
+                        line_number=1,
+                        column_number=0,
+                        symbol_kind="function",
+                    )
+                ],
+                metadata=SemanticOperationMetadata(engine="stub", source="semantic", confidence="exact"),
+            )
+
+    session._semantic_facade = _FacadeStub()  # type: ignore[assignment]
+
+    session.request_lookup_definition(
+        project_root="/tmp/project",
+        current_file_path="/tmp/project/a.py",
+        source_text="helper()\n",
+        cursor_position=0,
+        on_success=lambda result: (results_a.append(result), done_a.set()),
+    )
+    session.request_lookup_definition(
+        project_root="/tmp/project",
+        current_file_path="/tmp/project/b.py",
+        source_text="helper()\n",
+        cursor_position=0,
+        on_success=lambda result: (results_b.append(result), done_b.set()),
+    )
+
+    assert done_a.wait(timeout=1.0) is True
+    assert done_b.wait(timeout=1.0) is True
+    assert results_a[0].locations[0].file_path == "/tmp/project/a.py"
+    assert results_b[0].locations[0].file_path == "/tmp/project/b.py"
     session.shutdown()

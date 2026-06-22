@@ -2,8 +2,8 @@
 overall: IN_PROGRESS
 current_phase: P1
 current_item: P1-2
-last_verified_commit: bd293d3
-last_session_ended: 2026-06-23T03:00:00Z
+last_verified_commit: c8177ce
+last_session_ended: 2026-06-23T04:00:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
@@ -21,37 +21,35 @@ phases:
   P4: pending
 blockers: []
 next_actions:
-  - "INT-R-06 CC-09: per-file navigation worker keys in semantic_session.py (definition/references/rename); verify two-file concurrent nav test; then INT-R-07 broker tiered merge (CC-02)"
-sessions_completed: 11
+  - "INT-R-08 CC-03: revision-safe cache reuse in completion_broker._reuse_cached_envelope; verify bump-without-edit returns None; then INT-R-09 session LOC shrink (CC-08)"
+sessions_completed: 12
 ```
 
-## Session 11 summary (2026-06-23) — INT-R-04 + INT-R-05
+## Session 12 summary (2026-06-23) — INT-R-06 + INT-R-07 verify
 
-### Baseline @ HEAD (bd293d3)
+### Baseline @ HEAD (c8177ce)
 
 | Gate | Result |
 |------|--------|
-| `complete_fast` in `app/shell/` | **0** |
-| `resolve_*_blocking` in `app/` | **0** |
-| `semantic_navigation_workflow.py` LOC | **130** |
-| Menu hover/signature tests | **present** (async request_* paths) |
+| Per-file nav keys in `semantic_session.py` | **present** (`definition:/references:/rename:{path}`) |
+| `completion_merge_policy.py` + tests | **present** |
+| `_merge_completion` in `app/shell/` | **0** |
 | app files ≥1k | **0** |
 
 ### Landed this session
 
-**INT-R-04 (CC-04 ACCEPT):** Verified @ HEAD — `InlineIntelligenceWorkflow` menu handlers use async `request_hover_info` / `request_signature_help` with AD-018 stale gate; no blocking resolvers on controller API. Added `test_menu_intelligence_controller_has_no_blocking_resolvers`.
+**INT-R-06 (CC-09 ACCEPT):** Verified per-file worker keys @ HEAD; added `test_concurrent_definition_requests_for_two_files_both_complete` proving two-file definition nav both complete (no global-key cancellation).
 
-**INT-R-05 (CC-05 ACCEPT):** Routed editor prefix + accept fallback through `build_completion_context` SSOT in `code_editor_semantics.py`; deleted `resolve_completion_prefix` editor import. Accept fallback uses `CompletionContext.replacement_range` for dotted/import spans. Added dotted-member and import-from accept tests.
+**INT-R-07 (CC-02 ACCEPT):** Verified @ HEAD — `completion_merge_policy.py` owns tiered merge; `test_completion_merge_policy.py` covers approximate-never-exact envelope contract; shell paints pre-merged envelopes only (no third merge locus).
 
 ### Verification @ session end
 
 | Gate | Result |
 |------|--------|
-| fast shard | **PASS** (exit 0; ~135s) |
+| fast shard | **PASS** (exit 0) |
 | pyright | **0 errors** |
-| `extract_completion_prefix` in `app/editors/` | **0** |
-| `resolve_completion_prefix` in `app/editors/` | **0** |
-| targeted tests (shell nav + editor semantic) | **PASS** (23) |
+| `test_semantic_session.py` | **PASS** (4 tests) |
+| `test_completion_merge_policy.py` | **PASS** |
 
 ### CC theme status (Intelligence Wave 1)
 
@@ -61,8 +59,10 @@ sessions_completed: 11
 | CC-01/07 | R-03 | **ACCEPT** |
 | CC-04 | R-04 | **ACCEPT** |
 | CC-05 | R-05 | **ACCEPT** |
-| CC-09 | R-06 | **open** — next |
-| CC-02 … CC-18 remainder | R-07+ | **open** |
+| CC-09 | R-06 | **ACCEPT** |
+| CC-02 | R-07 | **ACCEPT** |
+| CC-03 | R-08 | **open** — next |
+| CC-08 … CC-18 remainder | R-09+ | **open** |
 
 ### Wave status
 
@@ -70,25 +70,22 @@ sessions_completed: 11
 |------|--------|
 | editors-wave-1 | ACCEPT |
 | shell-wave-2 | ACCEPT (P1 milestones) |
-| intelligence-wave-1 | **in_progress** — R-01…R-05 closed; R-06 next |
+| intelligence-wave-1 | **in_progress** — R-01…R-07 closed; R-08 next |
 | project-ssot-wave-1 | open (P1-3) |
 | run-wave-1 | open (P1-4) |
 
 ### Uncommitted working tree (ready for parent commit)
 
 ```
- M app/editors/code_editor_semantics.py
- M tests/unit/editors/test_semantic_editor_interactions.py
- M tests/unit/shell/test_semantic_navigation_workflow.py
+ M tests/unit/intelligence/test_semantic_session.py
  M docs/code review/PROGRAM_STATUS.md
 ```
 
-### Verification commands (re-run before INT-R-06)
+### Verification commands (re-run before INT-R-08)
 
 ```bash
-rg "extract_completion_prefix|resolve_completion_prefix" app/editors/
-rg "resolve_.*_blocking" app/
-python3 run_tests.py tests/unit/shell/test_semantic_navigation_workflow.py tests/unit/editors/test_semantic_editor_interactions.py
+python3 run_tests.py tests/unit/intelligence/test_semantic_session.py tests/unit/intelligence/test_completion_merge_policy.py
+rg "_merge_completion" app/shell/
 python3 testing/preflight_test_env.py
 python3 testing/run_test_shard.py fast
 npx pyright
