@@ -271,6 +271,8 @@ npx pyright
 
 ### R3 - Shell Hotspot Splits
 
+**Status: ACCEPT with documented waivers (2026-06-22).** See [P3_shell_hotspot_waiver_2026-06-22.md](P3_shell_hotspot_waiver_2026-06-22.md). Five modules remain ≥700 LOC (782–725); all below 1k blocker; splits deferred to post-program briefs.
+
 Goal: reduce remaining oversized shell UI/style modules without changing behavior.
 
 **Status (2026-04-25):** Stylesheet generation is already decomposed: `app/shell/style_sheet.py` is the composer, and `app/shell/style_sheet_sections.py` re-exports section builders from `style_sheet_sections_chrome`, `style_sheet_sections_workspace`, `style_sheet_sections_panels`, `style_sheet_sections_dialogs`, and `style_sheet_sections_settings`. Remaining hotspots for a follow-up pass: `app/shell/settings_dialog.py`, `app/shell/outline_panel.py`, and large panel widgets as listed below.
@@ -409,6 +411,8 @@ npx pyright
 
 ### R6 - Test And Tooling Audit
 
+**Status: COMPLETE (2026-06-22).** Catalog in [TEST_TOOLING_AUDIT.md](TEST_TOOLING_AUDIT.md) — private-widget brittleness quantified; no new repo-wide tools; rewrite briefs R6-T1…T5 documented.
+
 Goal: make future refactors less noisy after shell and SSOT work.
 
 Files in scope:
@@ -444,6 +448,8 @@ npx pyright
 ---
 
 ### R7 - Out-Of-Scope Deslop Audit
+
+**Status: COMPLETE (2026-06-22).** Full catalog in [AUDIT_out_of_scope.md](AUDIT_out_of_scope.md). OS-M1/M2 (visible `cbcs/`, remove root `test.py`) landed @ `22bef2d`.
 
 Goal: audit areas intentionally excluded from the original app pass.
 

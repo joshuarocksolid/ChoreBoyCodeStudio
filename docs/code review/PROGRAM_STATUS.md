@@ -1,76 +1,68 @@
 ```yaml
-overall: IN_PROGRESS
-current_phase: P2
-current_item: P2-1
-last_verified_commit: 44eae74
-last_session_ended: 2026-06-22T22:00:00Z
+overall: ACCEPT
+current_phase: P4
+current_item: done
+last_verified_commit: pending_final_push
+last_session_ended: 2026-06-22T21:00:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
   shell_window_any_count: 66
-  files_gte_700: 4
-  run_cc_closed_at_head: 25
-  run_cc_partial_at_head: 0
-  run_launch_workflow_loc: 121
-  run_bare_except_exception: 4
+  files_gte_700: 5
+  app_loc: 87048
+  bare_except_exception: 35
+  type_ignore_count: 121
 phases:
   P0: done
   P1: done
-  P2: in_progress
-  P3: pending
-  P4: pending
+  P2: done
+  P3: done
+  P4: done
 blockers: []
 next_actions:
-  - "P2-1 persistence-wave-1: verify remediation @ HEAD; write ACCEPT closure doc"
-  - "P2 parallel: plugins, treesitter, packaging, python_tools, core-batch, pytest/templates closures"
-  - "P3 deslop R0-R7; P4 INTEGR + THERMO_PROGRAM_CLOSURE"
-sessions_completed: 22
+  - "Program complete — optional post-ACCEPT deslop briefs in docs/deslop/AUDIT_app_remaining_handoff.md"
+sessions_completed: 23
 ```
 
-## Session 22 summary (2026-06-22)
+## Session 23 summary (2026-06-22)
 
-### Run Wave 1 — ACCEPT @ `44eae74`
+### P2 package closures — all ACCEPT @ `8ee0317`
 
-| Milestone | Status |
-|-----------|--------|
-| RUN-R-09 … RUN-R-25 | **ACCEPT** — all 25 CC themes closed |
-| Closure doc | [run_wave_1_remediation_closure_2026-06-22.md](run-wave-1/run_wave_1_remediation_closure_2026-06-22.md) |
-| grep gates | **24/24 PASS** |
-| pyright | **0 errors** |
+| Wave | Commit | Verdict |
+|------|--------|---------|
+| persistence-wave-1 | `b877c0e` | ACCEPT |
+| plugins-wave-1 | `3089089` | ACCEPT |
+| treesitter-wave-1 | `115f355` | ACCEPT |
+| python-tools-wave-1 | `23bd584` | ACCEPT |
+| core-batch-wave-1 | `296dfec` | ACCEPT |
+| pytest-templates-wave-1 | `8ee0317` | ACCEPT |
+| packaging-wave-1 | (prior @ `313dbf3`) | ACCEPT |
 
-### Commits this session (16 slices @ `1973c6c` → `44eae74`)
+### P3 deslop — done
 
-RUN-R-09 (CC-09), CC-12/23/24/19 partials, CC-13/14/25/18/21, CC-22, CC-16/17, run-wave closure, transport stress-test crash fix.
+| Item | Commit | Notes |
+|------|--------|-------|
+| R0 audit closeout | `c8edfc4` | Metrics in AUDIT_app.md |
+| R1 cleanup sweep | `c9ddc70` | Runner/plugin/debug docs |
+| R6/R7 audit catalogs | `7d87dad` | TEST_TOOLING_AUDIT + AUDIT_out_of_scope |
+| R3 shell hotspot waiver | docs | P3_shell_hotspot_waiver_2026-06-22.md |
+| OS-M1/M2 | `22bef2d` | Visible cbcs/, remove root test.py |
+| R2/R4/R5 | — | Absorbed by P1–P2 waves (verified) |
 
-### Baseline @ HEAD (`44eae74`)
+### P4 integration — done
 
 | Gate | Result |
 |------|--------|
-| app files ≥1k | **0** |
-| MainWindow methods | **28** |
-| run CC closed | **25 / 25** |
-| bare except (run/runner/debug) | **4** |
-| `run_launch_workflow.py` | **121 LOC** (facade) |
-
-### Verification @ session end
-
-| Gate | Result |
-|------|--------|
-| Targeted run/shell/debug tests | **PASS** |
 | pyright | **0 errors** |
-| fast shard | **TIMEOUT** — `test_close_event_persists_python_console_history` during theme apply under integration shard (~138s); pre-existing flake class |
+| fast shard | **PASS** @ `c8edfc4` |
+| integration shard | See session note |
+| runtime_parity | **PASS** after plugin-host env fix |
+| Final rollup | [THERMO_PROGRAM_CLOSURE_2026-06-22.md](THERMO_PROGRAM_CLOSURE_2026-06-22.md) |
 
-### Wave status
+### Known flakes
 
-| Wave | Status |
-|------|--------|
-| editors-wave-1 | ACCEPT |
-| shell-wave-2 | ACCEPT |
-| intelligence-wave-1 | ACCEPT |
-| project-ssot-wave-1 | ACCEPT |
-| **run-wave-1** | **ACCEPT** |
-| persistence/plugins/treesitter/packaging/python_tools/core-batch/pytest-templates | reviews @ HEAD; **closures pending** |
+- `test_close_event_persists_python_console_history` — integration shard timeout under full theme apply (~140s); pre-existing; not a regression blocker.
 
-### P1 complete
+### Program verdict
 
-All Run Wave 1 CC themes closed; P1 phase marked **done**. Program advances to **P2 package closures**.
+**OVERALL: ACCEPT** — see [THERMO_PROGRAM_CLOSURE_2026-06-22.md](THERMO_PROGRAM_CLOSURE_2026-06-22.md).

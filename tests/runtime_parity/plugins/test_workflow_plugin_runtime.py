@@ -18,8 +18,14 @@ def _require_apprun() -> None:
         pytest.skip(f"AppRun not available at {app_run}; skipping plugin runtime parity tests.")
 
 
-def test_bundled_workflow_plugins_run_through_host_without_hidden_paths(tmp_path: Path) -> None:
+def test_bundled_workflow_plugins_run_through_host_without_hidden_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _require_apprun()
+    # run_tests.py sets CBCS_DISABLE_BACKGROUND_RUNTIME=1 for MainWindow hygiene; this
+    # runtime-parity test must exercise a real plugin host subprocess.
+    monkeypatch.delenv("CBCS_DISABLE_BACKGROUND_RUNTIME", raising=False)
     state_root = (tmp_path / "state_root").resolve()
     project_root = (tmp_path / "project_root").resolve()
     state_root.mkdir(parents=True, exist_ok=True)
