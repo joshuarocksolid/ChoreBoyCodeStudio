@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
-from PySide2.QtWidgets import QStatusBar, QTabWidget, QWidget
+from PySide2.QtWidgets import QMessageBox, QStatusBar, QTabWidget, QWidget
 
 from app.core import constants
 from app.core.models import LoadedProject, RuntimeIssue
@@ -184,6 +184,85 @@ class RunLaunchWorkflowHost(Protocol):
 
     def logger(self) -> logging.Logger:
         ...
+
+
+class MainWindowRunLaunchHost:
+    """Host ports for ``RunLaunchWorkflow`` backed by a MainWindow instance."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def dialog_parent(self) -> QWidget:
+        return self._window
+
+    def loaded_project(self) -> LoadedProject | None:
+        return self._window._loaded_project
+
+    def set_loaded_project(self, project: LoadedProject) -> None:
+        self._window._loaded_project = project
+
+    def active_named_run_config_name(self) -> str | None:
+        return self._window._active_named_run_config_name
+
+    def set_active_named_run_config_name(self, name: str | None) -> None:
+        self._window._active_named_run_config_name = name
+
+    def editor_manager(self) -> EditorManager:
+        return self._window._editor_manager
+
+    def debug_control_workflow(self) -> DebugControlWorkflow:
+        return self._window._debug_control_workflow
+
+    def debug_exception_policy(self) -> DebugExceptionPolicy:
+        return self._window._debug_exception_policy
+
+    def run_config_controller(self) -> RunConfigController:
+        return self._window._run_config_controller
+
+    def run_debug_presenter(self) -> RunDebugPresenterPort:
+        return self._window._run_debug_presenter
+
+    def settings_service(self) -> SettingsService:
+        return self._window._settings_service
+
+    def resolve_theme_tokens(self) -> ShellThemeTokens:
+        return self._window._shell_theme_workflow.resolve_theme_tokens()
+
+    def show_run_preflight_result(self, title: str, summary: str, issues: list[RuntimeIssue]) -> None:
+        self._window._run_event_workflow.show_run_preflight_result(title, summary, issues)
+
+    def refresh_run_action_states(self) -> None:
+        self._window._run_event_workflow.refresh_run_action_states()
+
+    def editor_tab_factory(self) -> EditorTabFactory:
+        return self._window._editor_tab_factory
+
+    def editor_tabs_widget(self) -> QTabWidget | None:
+        return self._window._editor_tabs_widget
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
+
+    def test_runner_workflow(self) -> TestRunnerWorkflow:
+        return self._window._test_runner_workflow
+
+    def active_transient_entry_file_path(self) -> str | None:
+        return self._window._active_transient_entry_file_path
+
+    def set_active_transient_entry_file_path(self, path: str | None) -> None:
+        self._window._active_transient_entry_file_path = path
+
+    def status_bar(self) -> QStatusBar:
+        return self._window.statusBar()
+
+    def show_warning(self, title: str, message: str) -> None:
+        QMessageBox.warning(self._window, title, message)
+
+    def show_information(self, title: str, message: str) -> None:
+        QMessageBox.information(self._window, title, message)
+
+    def logger(self) -> Any:
+        return self._window._logger
 
 
 class RunLaunchWorkflow:

@@ -7,7 +7,12 @@ from typing import Any, Callable, Protocol
 
 from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
-from app.shell.clear_console_policy import ClearConsoleHost, clear_run_output_sinks, prepare_new_run
+from app.shell.clear_console_policy import (
+    ClearConsoleHost,
+    MainWindowClearConsoleHost,
+    clear_run_output_sinks,
+    prepare_new_run,
+)
 
 _PYTHON_CONSOLE_FILE_PATH = "<python_console>"
 
@@ -92,6 +97,36 @@ class PythonConsoleWorkflowHost(Protocol):
 
     def clear_console_host(self) -> ClearConsoleHost:
         ...
+
+
+class MainWindowPythonConsoleHost:
+    """Host ports for ``PythonConsoleWorkflow`` backed by a MainWindow instance."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def python_console_widget(self) -> object | None:
+        return self._window._python_console_widget
+
+    def dispatch_to_main_thread(self, callback: Callable[[], None]) -> None:
+        self._window._dispatch_to_main_thread(callback)
+
+    def show_status_message(self, message: str, timeout_ms: int) -> None:
+        self._window.statusBar().showMessage(message, timeout_ms)
+
+    def focus_python_console_tab(self) -> None:
+        bottom_tabs = self._window._bottom_tabs_widget
+        container = self._window._python_console_container
+        if bottom_tabs is not None and container is not None:
+            index = bottom_tabs.indexOf(container)
+            if index >= 0:
+                bottom_tabs.setCurrentIndex(index)
+
+    def log_repl_warning(self, message: str, exc: Exception) -> None:
+        self._window._logger.warning(message, exc)
+
+    def clear_console_host(self) -> MainWindowClearConsoleHost:
+        return MainWindowClearConsoleHost(self._window)
 
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]

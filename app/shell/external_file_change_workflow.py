@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+from PySide2.QtWidgets import QMessageBox
 
 from app.editors.editor_manager import EditorManager
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope
@@ -37,6 +39,32 @@ class ExternalFileChangeHostPorts(Protocol):
 
     def update_editor_status_for_path(self, file_path: str) -> None:
         ...
+
+
+class MainWindowExternalFileChangeHost:
+    """Host ports for ``ExternalFileChangeWorkflow`` backed by a MainWindow instance."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def editor_widget_for_path(self, file_path: str) -> object | None:
+        return self._window._editor_widgets_by_path.get(file_path)
+
+    def confirm_clean_tab_reload(self) -> bool:
+        choice = QMessageBox.question(
+            self._window,
+            "External file change detected",
+            "This file changed on disk. Reload the file from disk?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return choice == QMessageBox.Yes
+
+    def refresh_save_action_states(self) -> None:
+        self._window._refresh_save_action_states()
+
+    def update_editor_status_for_path(self, file_path: str) -> None:
+        self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
 
 
 @dataclass(frozen=True)

@@ -163,10 +163,10 @@ def install_layout_foundation(ctx: ShellCompositionContext) -> None:
     window._workflow_provider_catalog = WorkflowProviderCatalog([])
     window._plugin_safe_mode = window._shell_preferences_runtime.load_plugin_safe_mode()
     window._plugin_dialog_workflow = build_plugin_dialog_workflow(window)
-    contribution_manager = build_declarative_contribution_manager(window)
+    contribution_manager = build_declarative_contribution_manager(ctx)
     window._declarative_contribution_manager = contribution_manager
     window._plugin_activation_workflow = build_plugin_activation_workflow(
-        window,
+        ctx,
         contribution_manager=contribution_manager,
     )
     ctx.diagnostics_latches = ShellDiagnosticsLatchState(
@@ -317,7 +317,7 @@ def install_intelligence(ctx: ShellCompositionContext) -> None:
     )
     window._example_project_service = ExampleProjectService()
     window._runtime_support_workflow = build_runtime_support_workflow(
-        window,
+        ctx,
         runtime_issues=ctx.runtime_issues,
     )
     window._intelligence_cache_workflow = build_intelligence_cache_workflow(window)
@@ -327,13 +327,13 @@ def install_intelligence(ctx: ShellCompositionContext) -> None:
     )
     window._lint_workflow = build_lint_workflow(window)
     window._diagnostics_orchestrator = build_diagnostics_orchestrator(
-        window,
+        ctx,
         diagnostics_latches=ctx.diagnostics_latches,
     )
-    window._settings_apply_workflow = build_settings_apply_workflow(window)
-    window._python_console_workflow = build_python_console_workflow(window)
-    window._find_replace_workflow = build_find_replace_workflow(window)
-    window._semantic_navigation_workflow = build_semantic_navigation_workflow(window)
+    window._settings_apply_workflow = build_settings_apply_workflow(ctx)
+    window._python_console_workflow = build_python_console_workflow(ctx)
+    window._find_replace_workflow = build_find_replace_workflow(ctx)
+    window._semantic_navigation_workflow = build_semantic_navigation_workflow(ctx)
 
 
 def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
@@ -350,17 +350,17 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         background_tasks=window._background_tasks,
         retention_policy=window._local_history_retention_policy,
     )
-    window._save_workflow = build_save_workflow(window)
+    window._save_workflow = build_save_workflow(ctx)
     window._project_controller = ProjectController(
         state_root=window._state_root,
         logger=window._logger,
         dispatch_to_main_thread=window._dispatch_to_main_thread,
     )
-    window._file_project_commands_workflow = build_file_project_commands_workflow(window)
+    window._file_project_commands_workflow = build_file_project_commands_workflow(ctx)
     window._project_load_workflow = ProjectLoadWorkflow(MainWindowProjectLoadHost(window))
     window._project_rescan_workflow = ProjectRescanWorkflow(MainWindowProjectRescanHost(window))
     window._source_root_workflow = build_source_root_workflow(window)
-    window._external_file_change_workflow = build_external_file_change_workflow(window)
+    window._external_file_change_workflow = build_external_file_change_workflow(ctx)
     window._editor_tab_workflow = build_editor_tab_workflow(window)
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
@@ -383,14 +383,14 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         record_deleted_path=window._local_history_workflow.record_deleted_path,
         remap_file_lineage=window._local_history_workflow.remap_file_lineage,
     )
-    window._project_tree_action_workflow = build_project_tree_action_workflow(window)
+    window._project_tree_action_workflow = build_project_tree_action_workflow(ctx)
     window._shell_layout_workflow = build_shell_layout_workflow(window)
 
 
 def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     """Build physical shell layout, theme, menus, and post-install refresh hooks."""
     window = ctx.w
-    window._shell_theme_workflow = build_shell_theme_workflow(window)
+    window._shell_theme_workflow = build_shell_theme_workflow(ctx)
     window._help_controller = ShellHelpController(
         state_root=window._state_root,
         resolve_theme_tokens=window._shell_theme_workflow.resolve_theme_tokens,
@@ -399,8 +399,8 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     )
     configure_window_frame(window)
     build_layout_shell(window)
-    window._run_launch_workflow = build_run_launch_workflow(window)
-    window._test_runner_workflow = build_test_runner_workflow(window)
+    window._run_launch_workflow = build_run_launch_workflow(ctx)
+    window._test_runner_workflow = build_test_runner_workflow(ctx)
     connect_test_explorer_navigation(window)
     window._shell_preferences_runtime.configure_close_tab_shortcut()
     window._shell_preferences_runtime.configure_keep_preview_open_shortcut()

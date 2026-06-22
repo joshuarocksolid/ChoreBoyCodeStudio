@@ -188,6 +188,93 @@ class SaveDocumentHost(Protocol):
 LocalHistoryPort = SaveDocumentLocalHistoryPort
 
 
+class MainWindowSaveDocumentHost:
+    """Host ports for ``SaveWorkflow`` backed by a MainWindow instance."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def dialog_parent(self) -> QWidget:
+        return self._window
+
+    def editor_manager(self) -> EditorManager:
+        return self._window._editor_manager
+
+    def editor_exit_behavior(self) -> str:
+        return self._window._editor_exit_behavior
+
+    def refresh_save_action_states(self) -> None:
+        self._window._refresh_save_action_states()
+
+    def editor_auto_save(self) -> bool:
+        return self._window._editor_auto_save
+
+    def set_editor_auto_save(self, enabled: bool) -> None:
+        self._window._editor_auto_save = enabled
+
+    def stop_auto_save_timer(self) -> None:
+        self._window._auto_save_to_file_timer.stop()
+
+    def logger(self) -> Any:
+        return self._window._logger
+
+    def has_editor_tabs_widget(self) -> bool:
+        return self._window._editor_tabs_widget is not None
+
+    def editor_trim_trailing_whitespace_on_save(self) -> bool:
+        return self._window._editor_trim_trailing_whitespace_on_save
+
+    def editor_insert_final_newline_on_save(self) -> bool:
+        return self._window._editor_insert_final_newline_on_save
+
+    def editor_organize_imports_on_save(self) -> bool:
+        return self._window._editor_organize_imports_on_save
+
+    def editor_format_on_save(self) -> bool:
+        return self._window._editor_format_on_save
+
+    def resolve_python_tooling_project_root(self, file_path: str) -> str:
+        return self._window._resolve_python_tooling_project_root(file_path)
+
+    def apply_text_to_open_tab(self, file_path: str, transformed_text: str) -> None:
+        self._window._apply_text_to_open_tab(file_path, transformed_text)
+
+    def intelligence_runtime_settings(self) -> Any:
+        return self._window._intelligence_runtime_settings
+
+    def loaded_project(self) -> Any | None:
+        return self._window._loaded_project
+
+    def project_inventory_snapshot(self) -> Any:
+        return self._window._project_inventory_orchestrator.snapshot
+
+    def workflow_broker(self) -> Any:
+        return self._window._workflow_broker
+
+    def tab_index_for_path(self, file_path: str) -> int:
+        return self._window._editor_tab_workflow.tab_index_for_path(file_path)
+
+    def refresh_tab_presentation(self, file_path: str) -> None:
+        self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
+
+    def update_editor_status_for_path(self, file_path: str) -> None:
+        self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
+
+    def rescan_project_from_disk(self, *, reload_plugins: bool, reindex: bool) -> None:
+        self._window._project_rescan_workflow.rescan_from_disk(
+            reload_plugins=reload_plugins,
+            reindex=reindex,
+        )
+
+    def render_lint_for_file(self, file_path: str, *, trigger: str) -> None:
+        self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
+
+    def refresh_test_discovery(self) -> None:
+        test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)
+        if test_runner_workflow is not None:
+            test_runner_workflow.refresh_discovery()
+
+
 class SaveWorkflow:
     """Owns save, autosave-to-file, and style-on-save coordination."""
 

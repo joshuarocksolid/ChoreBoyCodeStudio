@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, replace
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.shell.settings_models import EditorSettingsSnapshot
@@ -248,6 +248,135 @@ class SettingsApplyHostPorts(Protocol):
 
     def log_settings_updated(self) -> None:
         ...
+
+
+class MainWindowSettingsApplyHost:
+    """Host ports for ``SettingsApplyWorkflow`` backed by a MainWindow instance."""
+
+    def __init__(self, window: Any) -> None:
+        self._window = window
+
+    def lint_rule_overrides(self) -> dict[str, dict[str, object]]:
+        return self._window._lint_rule_overrides
+
+    def diagnostics_enabled(self) -> bool:
+        return self._window._diagnostics_enabled
+
+    def selected_linter(self) -> str:
+        return self._window._selected_linter
+
+    def editor_enable_preview(self) -> bool:
+        return self._window._editor_enable_preview
+
+    def editor_auto_save(self) -> bool:
+        return self._window._editor_auto_save
+
+    def diagnostics_realtime(self) -> bool:
+        return self._window._diagnostics_realtime
+
+    def intelligence_cache_enabled(self) -> bool:
+        return self._window._intelligence_runtime_settings.cache_enabled
+
+    def loaded_project_root(self) -> str | None:
+        loaded = self._window._loaded_project
+        return None if loaded is None else loaded.project_root
+
+    def loaded_project_name(self) -> str | None:
+        loaded = self._window._loaded_project
+        return None if loaded is None else loaded.metadata.name
+
+    def set_ui_font_weight(self, ui_font_weight: str) -> None:
+        self._window._ui_font_weight = ui_font_weight
+
+    def set_dark_chrome_palette(self, dark_chrome_palette: str) -> None:
+        from app.shell.settings_models import resolve_dark_chrome_palette
+
+        self._window._dark_chrome_palette = resolve_dark_chrome_palette(dark_chrome_palette)
+
+    def apply_theme_mode(self, theme_mode: str, *, skip_theme_styles: bool = False) -> None:
+        self._window._shell_preferences_runtime.handle_set_theme(
+            theme_mode,
+            skip_theme_styles=skip_theme_styles,
+        )
+
+    def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
+        self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
+
+    def sync_auto_save_menu_state(self) -> None:
+        self._window._sync_auto_save_menu_state()
+
+    def stop_auto_save_timer(self) -> None:
+        self._window._auto_save_to_file_timer.stop()
+
+    def stop_realtime_lint_timer(self) -> None:
+        self._window._realtime_lint_timer.stop()
+
+    def clear_pending_realtime_lint_path(self) -> None:
+        self._window._pending_realtime_lint_file_path = None
+
+    def cancel_symbol_index_worker_if_running(self) -> None:
+        self._window._intelligence_cache_workflow.cancel_symbol_indexing()
+
+    def start_symbol_indexing(self, project_root: str) -> None:
+        self._window._intelligence_cache_workflow.start_symbol_indexing(
+            project_root,
+            inventory_snapshot=self._window._project_inventory_orchestrator.snapshot,
+        )
+
+    def apply_editor_preferences_to_open_editors(self) -> None:
+        self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
+
+    def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
+        self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
+
+    def apply_shortcut_overrides_runtime(self) -> None:
+        self._window._shell_preferences_runtime.apply_shortcut_overrides_runtime()
+
+    def apply_theme_styles(self) -> None:
+        self._window._shell_theme_workflow.apply_theme_styles()
+
+    def cancel_pending_project_tree_preview(self) -> None:
+        self._window._project_tree_ui_workflow.cancel_pending_project_tree_preview()
+
+    def promote_existing_preview_tab(self) -> None:
+        self._window._editor_tab_workflow.promote_existing_preview_tab()
+
+    def relint_open_python_files(self) -> None:
+        self._window._diagnostics_orchestrator.relint_open_python_files()
+
+    def clear_stored_lint_diagnostics(self) -> None:
+        self._window._stored_lint_diagnostics.clear()
+
+    def render_merged_problems_panel(self) -> None:
+        self._window._problems_controller.render_merged_problems_panel()
+
+    def load_effective_exclude_patterns(self, project_root: str | None) -> list[str]:
+        return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
+
+    def reload_current_project(self) -> None:
+        self._window._project_tree_ui_workflow.reload_current_project()
+
+    def refresh_search_sidebar_excludes(self) -> None:
+        sidebar = self._window._search_sidebar
+        loaded = self._window._loaded_project
+        if sidebar is None or loaded is None:
+            return
+        from app.project.file_excludes import EffectiveExcludes
+
+        sidebar.set_exclude_patterns(
+            EffectiveExcludes.merge(
+                self._window._file_project_commands_workflow.load_effective_exclude_patterns(
+                    loaded.project_root
+                ),
+                loaded.metadata.exclude_patterns,
+            ).as_list()
+        )
+
+    def set_project_placeholder(self, project_name: str) -> None:
+        self._window.set_project_placeholder(project_name)
+
+    def log_settings_updated(self) -> None:
+        self._window._logger.info("Settings updated.")
 
 
 class SettingsApplyWorkflow:
