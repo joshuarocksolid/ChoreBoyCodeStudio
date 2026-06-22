@@ -15,7 +15,7 @@ from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
-from app.project.file_inventory import iter_project_entries, iter_python_files
+from app.project.file_inventory import iter_project_entries, iter_python_files, walk_project
 from app.project.import_layout import resolve_project_import_layout
 from app.project.project_manifest import (
     build_default_project_manifest_payload,
@@ -390,11 +390,17 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
         if candidate.exists() and candidate.is_file():
             return name
 
-    top_level_python_files = sorted(
-        file_path.name
-        for file_path in project_root.iterdir()
-        if file_path.is_file() and file_path.suffix == ".py" and file_path.name != "__init__.py"
-    )
+    top_level_python_files: list[str] = []
+    for _current_path, relative_dir, _dir_names, file_names in walk_project(
+        project_root,
+        extra_top_level_skips=_ENTRY_INFERENCE_TOP_LEVEL_SKIPS,
+    ):
+        if relative_dir != "":
+            break
+        top_level_python_files = sorted(
+            name for name in file_names if name.endswith(".py") and name != "__init__.py"
+        )
+        break
     if top_level_python_files:
         return top_level_python_files[0]
 

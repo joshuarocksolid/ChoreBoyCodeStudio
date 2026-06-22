@@ -13,6 +13,7 @@ from app.intelligence.import_resolver import resolve_project_import
 from app.project.import_layout import (
     detect_suggested_source_root,
     resolve_project_import_layout,
+    suggest_missing_source_root,
 )
 
 pytestmark = pytest.mark.unit
@@ -114,6 +115,26 @@ def test_detect_suggested_source_root_returns_src_for_src_layout(tmp_path: Path)
     (project_root / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
 
     assert detect_suggested_source_root(project_root) == "src"
+
+
+def test_suggest_missing_source_root_finds_src_layout_module(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "src" / "my_pkg"
+    package_dir.mkdir(parents=True)
+    (package_dir / "util.py").write_text("VALUE = 1\n", encoding="utf-8")
+    metadata = ProjectMetadata(schema_version=2, name="demo", source_roots=[])
+    layout = resolve_project_import_layout(project_root, metadata)
+
+    assert suggest_missing_source_root(layout, "my_pkg.util") == "src"
+
+
+def test_suggest_missing_source_root_skips_vendor_directory(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "vendor" / "pkg").mkdir(parents=True)
+    (project_root / "vendor" / "pkg" / "util.py").write_text("VALUE = 1\n", encoding="utf-8")
+    layout = resolve_project_import_layout(project_root)
+
+    assert suggest_missing_source_root(layout, "pkg.util") is None
 
 
 def test_runtime_sys_path_entries_deduplicates_by_resolved_path(tmp_path: Path) -> None:

@@ -1,16 +1,17 @@
 ```yaml
 overall: IN_PROGRESS
 current_phase: P1
-current_item: P1-3
-last_verified_commit: 5db7a69
-last_session_ended: 2026-06-23T22:00:00Z
+current_item: P1-4
+last_verified_commit: 25f6b52
+last_session_ended: 2026-06-24T02:00:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
   shell_window_any_count: 66
   files_gte_700: 5
   diagnostics_service_loc: 225
-  dependency_classifier_loc: 293
+  run_runner_debug_loc: 4792
+  run_launch_workflow_loc: 676
   project_intelligence_imports: 0
 phases:
   P0: done
@@ -20,49 +21,36 @@ phases:
   P4: pending
 blockers: []
 next_actions:
-  - "P1-3 CC-PROJ-14 tail (PROJ-R-12): replace import_layout.py iterdir/glob entry probes with inventory-backed paths; then write project_ssot_wave_1_remediation_closure doc and advance P1-4 Run W1 baseline"
-sessions_completed: 17
+  - "P1-4 RUN-R-01: re-baseline run-wave-1 @ HEAD (run/runner/debug LOC, CC-RUN grep gates); read run_wave_1_thermo_review + TN-RUN-INTEG; verify remediation plan exists or scaffold RUN-R-01 parity fixtures"
+sessions_completed: 18
 ```
 
-## Session 17 summary (2026-06-23) — PROJ-R-24 CC-PROJ-18 + P1 audit
+## Session 18 summary (2026-06-24) — CC-PROJ-14 tail + Project SSOT closure
 
-### Baseline @ HEAD (5db7a69)
+### Baseline @ HEAD (25f6b52)
 
 | Gate | Result |
 |------|--------|
-| `rg 'from app\.intelligence' app/project/` | **0** |
-| Diagnostics lane split (`builtin_lint_rules`, `import_explanations`, `diagnostics_models`) | **present** |
-| `diagnostics_service.py` LOC (pre-fix) | **259** (>250 gate) |
+| `rg 'iterdir\|glob\(' app/project/import_layout.py` (pre-fix) | **2 hits** |
+| P0/P1 CC-PROJ audit (sessions 16–17) | **all ACCEPT except CC-PROJ-14** |
 | app files ≥1k | **0** |
 
 ### Landed this session
 
-**PROJ-R-24 / CC-PROJ-18 (ACCEPT):** Moved `apply_lint_rule_profile` + severity mapping to `lint_profile.py`; removed dead imports from `diagnostics_service.py`. Facade now **225 LOC** (all diagnostics lane files ≤250). Fixed test import to `pyflakes_adapter`.
+**CC-PROJ-14 / PROJ-R-12 (ACCEPT):** Replaced `import_layout.py` `iterdir`/`glob` with inventory-backed `walk_project` in `suggest_missing_source_root` and `resolve_import_at_base` (namespace package probe). Replaced `project_service.py` top-level entry `iterdir` with `walk_project`. Added `test_suggest_missing_source_root_*` (src layout + vendor skip). Lazy imports avoid `file_inventory` ↔ `import_layout` cycle.
 
-**P1 CC-PROJ matrix audit @ HEAD:**
+**Project SSOT Wave 1 closure:** Wrote [project_ssot_wave_1_remediation_closure_2026-06-22.md](project-ssot-wave-1/project_ssot_wave_1_remediation_closure_2026-06-22.md) — **ACCEPT (P0 + P1 milestones)**; CC-PROJ-21…23 deferred P2.
 
-| CC | Status | Evidence |
-|----|--------|----------|
-| CC-PROJ-10 | **ACCEPT** | `import_explanations.py`; `explain_unresolved_import` delegates |
-| CC-PROJ-11 | **ACCEPT** | Hot lint `allow_runtime_import_probe=False`; `test_import_diagnostics_probe.py` |
-| CC-PROJ-12 | **ACCEPT** | `code_actions.py` typed `add_source_root`; `test_code_actions.py` |
-| CC-PROJ-13 | **ACCEPT** | `ProjectInventoryOrchestrator`; `test_inventory_orchestration.py` |
-| CC-PROJ-14 | **PARTIAL** | Vendor entry skip landed (session 16); `import_layout.py` `iterdir`/`glob` remain |
-| CC-PROJ-15 | **ACCEPT** | `python_structure.py` consumed by symbol_index/completion_providers |
-| CC-PROJ-16 | **ACCEPT** | `test_inventory_parity.py -k cbcs_vendor` |
-| CC-PROJ-17 | **ACCEPT** | `test_dependency_manifest_audit.py` |
-| CC-PROJ-18 | **ACCEPT** | Lane LOC gate: `diagnostics_service.py` **225**, `builtin_lint_rules` **138**, `import_explanations` **211** |
-| CC-PROJ-19 | **ACCEPT** | `RuntimeModuleInventory` tri-state in `dependency_classifier.py` |
-| CC-PROJ-20 | **ACCEPT** | Broker `_reuse_cached_envelope` preserves tier/`source_phase` metadata |
-| CC-PROJ-21…23 | **deferred** | P2 backlog |
+**P1-4 Run W1 baseline (started):** `app/run` + `app/runner` + `app/debug` **4792** LOC; `run_launch_workflow.py` **676**; review docs present @ `docs/code review/run-wave-1/`.
 
 ### Verification @ session end
 
 | Gate | Result |
 |------|--------|
-| `test_diagnostics_service.py` + probe + code_actions + manifest audit | **PASS** (56) |
+| `tests/unit/project/` | **PASS** |
+| `rg 'iterdir\|glob\(' app/project/import_layout.py` | **empty** |
+| fast shard | **PASS** (exit 0) |
 | pyright | **0 errors** |
-| fast shard | **FLaky** — `test_main_window_background_teardown` intermittent F in shard; **PASS** in isolation (pre-existing) |
 
 ### Wave status
 
@@ -71,23 +59,25 @@ sessions_completed: 17
 | editors-wave-1 | ACCEPT |
 | shell-wave-2 | ACCEPT (P1 milestones) |
 | intelligence-wave-1 | ACCEPT (P1 milestones) |
-| project-ssot-wave-1 | **in_progress** — P0+P1 audit done; CC-PROJ-14 tail blocks formal closure |
-| run-wave-1 | open (P1-4) |
+| project-ssot-wave-1 | **ACCEPT (P0 + P1 milestones)** |
+| run-wave-1 | **open (P1-4)** — baseline started |
 
 ### Uncommitted working tree (ready for parent commit)
 
 ```
- M app/intelligence/diagnostics_service.py
- M app/intelligence/lint_profile.py
- M tests/unit/intelligence/test_diagnostics_service.py
+ M app/project/import_layout.py
+ M app/project/project_service.py
+ M tests/unit/project/test_import_layout.py
+?? docs/code review/project-ssot-wave-1/project_ssot_wave_1_remediation_closure_2026-06-22.md
  M docs/code review/PROGRAM_STATUS.md
 ```
 
-### Verification commands (re-run before CC-PROJ-14 tail)
+### Verification commands (re-run before P1-4 RUN-R-01)
 
 ```bash
-find app/intelligence -name 'diagnostics*.py' -exec wc -l {} + | awk '$1>250'
-python3 run_tests.py tests/unit/intelligence/test_diagnostics_service.py tests/unit/project/
+python3 run_tests.py tests/unit/project/test_import_layout.py tests/unit/project/test_project_service.py -k vendor
+rg 'iterdir|glob\(' app/project/import_layout.py
+find app/run app/runner app/debug -name '*.py' -exec wc -l {} + | tail -1
 python3 testing/preflight_test_env.py
 python3 testing/run_test_shard.py fast
 npx pyright

@@ -323,9 +323,20 @@ def resolve_import_at_base(base: Path, module_name: str) -> str | None:
         return str(package_init.resolve())
     package_dir = base / module_path
     if package_dir.is_dir() and not package_init.is_file():
-        if any(package_dir.glob("*.py")):
+        if _directory_contains_python_file(package_dir):
             return str(package_dir.resolve())
     return None
+
+
+def _directory_contains_python_file(directory: Path) -> bool:
+    """Return True when *directory* contains at least one ``.py`` file at its top level."""
+    from app.project.file_inventory import walk_project
+
+    for _current_path, relative_dir, _dir_names, file_names in walk_project(directory):
+        if relative_dir != "":
+            break
+        return any(name.endswith(".py") for name in file_names)
+    return False
 
 
 def detect_suggested_source_root(project_root: PathInput) -> str | None:
@@ -338,14 +349,20 @@ def detect_suggested_source_root(project_root: PathInput) -> str | None:
 
 def suggest_missing_source_root(layout: ProjectImportLayout, module_name: str) -> str | None:
     """If the module exists under a non-root child dir (e.g. ``src/``), return that dir as a source root."""
+    from app.project.file_inventory import walk_project
+
     configured = {path.resolve() for path in layout.source_roots}
-    for child in sorted(layout.project_root.iterdir()):
-        if not child.is_dir():
-            continue
-        if child.name in _RESERVED_ROOT_NAMES:
-            continue
-        if child.resolve() in configured:
-            continue
-        if _module_path_prefix_exists_at_base(child, module_name):
-            return child.relative_to(layout.project_root).as_posix()
+    for _current_path, relative_dir, dir_names, _file_names in walk_project(
+        layout.project_root,
+        extra_top_level_skips=tuple(_RESERVED_ROOT_NAMES),
+    ):
+        if relative_dir != "":
+            break
+        for name in sorted(dir_names):
+            child = layout.project_root / name
+            if child.resolve() in configured:
+                continue
+            if _module_path_prefix_exists_at_base(child, module_name):
+                return child.relative_to(layout.project_root).as_posix()
+        break
     return None
