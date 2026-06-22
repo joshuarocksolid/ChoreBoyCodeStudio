@@ -297,4 +297,30 @@ def test_apply_theme_defers_hidden_editor_rehighlight_until_show(editor: CodeEdi
     QApplication.processEvents()
 
     assert fake_highlighter.rehighlight_calls == 1
+
+
+def test_accept_dotted_member_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("obj.mem")
+    cursor = editor.textCursor()
+    cursor.movePosition(cursor.End)
+    editor.setTextCursor(cursor)
+
+    editor._insert_completion_from_item(
+        CompletionItem(label="member", insert_text="member", kind=CompletionKind.SYMBOL),
+    )
+
+    assert editor.toPlainText() == "obj.member"
+
+
+def test_accept_import_from_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
+    editor.setPlainText("from collections import de")
+    cursor = editor.textCursor()
+    cursor.movePosition(cursor.End)
+    editor.setTextCursor(cursor)
+
+    editor._insert_completion_from_item(
+        CompletionItem(label="defaultdict", insert_text="defaultdict", kind=CompletionKind.SYMBOL),
+    )
+
+    assert editor.toPlainText() == "from collections import defaultdict"
     assert editor._syntax_theme_refresh_pending is False

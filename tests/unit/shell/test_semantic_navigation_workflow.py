@@ -145,6 +145,15 @@ def _build_workflow() -> tuple[SemanticNavigationWorkflow, _FakeHost]:
     return SemanticNavigationWorkflow(host), host
 
 
+def test_menu_intelligence_controller_has_no_blocking_resolvers() -> None:
+    from app.shell.editor_intelligence_controller import EditorIntelligenceController
+
+    assert not hasattr(EditorIntelligenceController, "resolve_hover_info_blocking")
+    assert not hasattr(EditorIntelligenceController, "resolve_signature_help_blocking")
+    assert not hasattr(EditorIntelligenceController, "build_inline_hover_text")
+    assert not hasattr(EditorIntelligenceController, "build_inline_signature_text")
+
+
 def test_handle_go_to_definition_action_dispatches_semantic_task() -> None:
     workflow, host = _build_workflow()
 

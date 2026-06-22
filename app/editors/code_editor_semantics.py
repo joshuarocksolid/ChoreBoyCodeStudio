@@ -10,7 +10,7 @@ from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.core.completion_tier import is_tier_header_item
-from app.intelligence.completion_context import resolve_completion_prefix
+from app.intelligence.completion_context import CompletionContext, build_completion_context
 from app.intelligence.completion_models import CompletionItem
 from app.shell.editor_completion_contracts import CompletionRequester
 
@@ -111,6 +111,28 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         if not enabled:
             self._completion_popup.hide()
 
+    def _build_editor_completion_context(
+        self,
+        *,
+        source_text: str,
+        cursor_position: int,
+        manual: bool,
+        force_empty_prefix: bool,
+        trigger_kind: str,
+        trigger_character: str,
+    ) -> CompletionContext:
+        return build_completion_context(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            current_file_path=self._active_file_path or "",
+            project_root=None,
+            trigger_is_manual=manual or force_empty_prefix,
+            min_prefix_chars=self._completion_min_chars,
+            max_results=100,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+        )
+
     def trigger_completion(
         self,
         *,
@@ -131,17 +153,15 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             self._completion_popup.hide()
             return
 
-        current_prefix = resolve_completion_prefix(
+        context = self._build_editor_completion_context(
             source_text=source_text,
             cursor_position=cursor_position,
-            current_file_path=self._active_file_path or "",
-            project_root=None,
-            trigger_is_manual=manual or force_empty_prefix,
-            min_prefix_chars=self._completion_min_chars,
-            max_results=100,
+            manual=manual,
+            force_empty_prefix=force_empty_prefix,
             trigger_kind=trigger_kind,
             trigger_character=effective_trigger_character,
         )
+        current_prefix = context.prefix
         if (
             not manual
             and not force_empty_prefix
@@ -376,16 +396,18 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             cursor.setPosition(item.replacement_end, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
         else:
-            source_text = self.toPlainText()
-            cursor_position = cursor.position()
-            replacement_start = cursor_position
-            while replacement_start > 0 and (
-                source_text[replacement_start - 1].isalnum() or source_text[replacement_start - 1] == "_"
-            ):
-                replacement_start -= 1
-            if replacement_start < cursor_position:
-                cursor.setPosition(replacement_start)
-                cursor.setPosition(cursor_position, QTextCursor.KeepAnchor)
+            context = self._build_editor_completion_context(
+                source_text=self.toPlainText(),
+                cursor_position=cursor.position(),
+                manual=True,
+                force_empty_prefix=True,
+                trigger_kind="invoked",
+                trigger_character="",
+            )
+            replacement = context.replacement_range
+            if replacement.start < replacement.end:
+                cursor.setPosition(replacement.start)
+                cursor.setPosition(replacement.end, QTextCursor.KeepAnchor)
                 cursor.removeSelectedText()
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)
