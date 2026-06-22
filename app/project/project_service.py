@@ -11,6 +11,7 @@ from pathlib import Path
 from app.bootstrap.paths import PathInput, project_cbcs_dir, project_manifest_path
 from app.bootstrap import toml_io
 from app.bootstrap.toml_io import TomlReadError
+from app.core import constants
 from app.core.errors import AppValidationError, ProjectEnumerationError, ProjectStructureValidationError
 from app.core.models import LoadedProject, ProjectFileEntry
 from app.persistence.atomic_write import atomic_write_text
@@ -21,6 +22,9 @@ from app.project.project_manifest import (
     build_synthetic_project_metadata,
     ensure_project_id,
 )
+
+_ENTRY_INFERENCE_TOP_LEVEL_SKIPS = tuple(constants.RESERVED_PROJECT_TOP_LEVEL_NAMES)
+
 
 class ProjectRootState(str, Enum):
     """Classification for project root metadata readiness."""
@@ -398,7 +402,10 @@ def _infer_default_entry_file(project_root: Path) -> str | None:
     if package_main_entry is not None:
         return package_main_entry
 
-    for python_file in iter_python_files(project_root):
+    for python_file in iter_python_files(
+        project_root,
+        extra_top_level_skips=_ENTRY_INFERENCE_TOP_LEVEL_SKIPS,
+    ):
         if python_file.name == "__init__.py":
             continue
         return python_file.relative_to(project_root).as_posix()
@@ -465,7 +472,10 @@ def _resolve_module_reference_to_entry(project_root: Path, module_reference: str
 
 
 def _infer_recursive_package_main(project_root: Path) -> str | None:
-    for candidate in iter_python_files(project_root):
+    for candidate in iter_python_files(
+        project_root,
+        extra_top_level_skips=_ENTRY_INFERENCE_TOP_LEVEL_SKIPS,
+    ):
         if candidate.name != "__main__.py":
             continue
         if candidate.parent == project_root:
@@ -475,7 +485,18 @@ def _infer_recursive_package_main(project_root: Path) -> str | None:
 
 
 def _contains_any_python_file(project_root: Path) -> bool:
-    return next(iter(iter_python_files(project_root)), None) is not None
+    return (
+        next(
+            iter(
+                iter_python_files(
+                    project_root,
+                    extra_top_level_skips=_ENTRY_INFERENCE_TOP_LEVEL_SKIPS,
+                )
+            ),
+            None,
+        )
+        is not None
+    )
 
 
 def _resolve_project_root(project_root: PathInput) -> Path:

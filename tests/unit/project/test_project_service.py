@@ -358,6 +358,27 @@ def test_assess_project_root_returns_importable_state_for_python_folder(tmp_path
     assert assessment.inferred_entry == "run.py"
 
 
+def test_infer_default_entry_skips_vendor_only_python_tree(tmp_path: Path) -> None:
+    project_root = tmp_path / "vendor_only"
+    project_root.mkdir()
+    (project_root / "vendor").mkdir()
+    (project_root / "vendor" / "run.py").write_text("print('vendor')\n", encoding="utf-8")
+
+    assert project_service._infer_default_entry_file(project_root) is None
+
+
+def test_assess_project_root_treats_vendor_only_tree_as_generic_workspace(tmp_path: Path) -> None:
+    project_root = tmp_path / "vendor_only"
+    project_root.mkdir()
+    (project_root / "vendor").mkdir()
+    (project_root / "vendor" / "run.py").write_text("print('vendor')\n", encoding="utf-8")
+
+    assessment = assess_project_root(project_root)
+
+    assert assessment.state == ProjectRootState.GENERIC_WORKSPACE
+    assert assessment.inferred_entry == "main.py"
+
+
 def test_assess_project_root_returns_generic_workspace_for_non_python_folder(tmp_path: Path) -> None:
     project_root = tmp_path / "generic_folder"
     project_root.mkdir()
