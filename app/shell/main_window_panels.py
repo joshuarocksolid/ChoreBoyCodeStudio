@@ -18,6 +18,7 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
+from app.core.clear_console_contract import CLEAR_PYTHON_CONSOLE_DISPLAY_TOOLTIP
 from app.editors.find_replace_bar import FindReplaceBar
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.shell.activity_bar import ActivityBar
@@ -276,7 +277,7 @@ def build_bottom_panel(window: Any) -> QWidget:
     clear_btn = QToolButton(window._python_console_container)
     clear_btn.setText("Clear")
     clear_btn.setObjectName("shell.bottom.pythonConsole.clearBtn")
-    clear_btn.setToolTip("Clear the Python Console display")
+    clear_btn.setToolTip(CLEAR_PYTHON_CONSOLE_DISPLAY_TOOLTIP)
     clear_btn.setAutoRaise(True)
     console_toolbar.addWidget(clear_btn)
     container_layout.addLayout(console_toolbar)

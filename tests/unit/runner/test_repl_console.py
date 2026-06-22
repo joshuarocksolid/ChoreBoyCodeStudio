@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from app.core.clear_console_contract import CLEAR_RUN_OUTPUT_MENU_HINT
 from app.runner.runner_main import _QuietConsole, _make_clear_helper
 
 pytestmark = pytest.mark.unit
@@ -66,15 +67,12 @@ class TestQuietConsoleRawInput:
 class TestClearHelper:
     """The clear helper injected into REPL locals."""
 
-    def test_repr_shows_guidance(self) -> None:
+    def test_repr_shows_menu_policy_hint(self) -> None:
         helper = _make_clear_helper()
-        text = repr(helper)
-        assert "Clear Console" in text
-        assert "Run Log" in text
+        assert repr(helper) == CLEAR_RUN_OUTPUT_MENU_HINT
 
-    def test_callable_prints_guidance(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_callable_prints_menu_policy_hint(self, capsys: pytest.CaptureFixture[str]) -> None:
         helper = _make_clear_helper()
         helper()  # type: ignore[operator]
         captured = capsys.readouterr()
-        assert "Clear Console" in captured.out
-        assert "Run Log" in captured.out
+        assert captured.out.strip() == CLEAR_RUN_OUTPUT_MENU_HINT

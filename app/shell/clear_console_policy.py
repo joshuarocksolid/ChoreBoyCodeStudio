@@ -1,4 +1,7 @@
-"""Named clear-console policies for run output vs Python Console display."""
+"""Named clear-console policies for run output vs Python Console display.
+
+UX copy SSOT: ``app.core.clear_console_contract``.
+"""
 
 from __future__ import annotations
 

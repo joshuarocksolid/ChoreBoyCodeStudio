@@ -7,6 +7,7 @@ import runpy
 import sys
 
 from app.core import constants
+from app.core.clear_console_contract import CLEAR_RUN_OUTPUT_MENU_HINT
 from app.core.errors import RunLifecycleError, RunManifestValidationError
 from app.run.run_manifest import RunManifest, load_run_manifest
 from app.runner.debug_runner import run_debug_session
@@ -33,21 +34,15 @@ class _QuietConsole(code.InteractiveConsole):
         return line.rstrip("\n")
 
 
-_CLEAR_CONSOLE_HINT = (
-    "Use Run \u2192 Clear Console to clear run output "
-    "(Python Console, Run Log, and debug output)."
-)
-
-
 def _make_clear_helper() -> object:
     """Return a callable that tells the user how to clear the console."""
 
     class _ClearHint:
         def __repr__(self) -> str:
-            return _CLEAR_CONSOLE_HINT
+            return CLEAR_RUN_OUTPUT_MENU_HINT
 
         def __call__(self) -> None:
-            print(_CLEAR_CONSOLE_HINT)
+            print(CLEAR_RUN_OUTPUT_MENU_HINT)
 
     return _ClearHint()
 
