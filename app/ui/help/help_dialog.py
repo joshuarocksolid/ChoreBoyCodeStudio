@@ -16,10 +16,10 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from app.shell.theme_tokens import ShellThemeTokens
+from app.ui.theme_tokens import HelpThemeTokens
 
 
-def markdown_to_html(text: str, tokens: ShellThemeTokens) -> str:
+def markdown_to_html(text: str, tokens: HelpThemeTokens) -> str:
     """Convert a limited markdown subset to themed HTML.
 
     Covers: ``#``/``##`` headings, numbered lists, bullet lists, indented
@@ -143,7 +143,7 @@ class HelpDialog(QDialog):
         self,
         title: str,
         markdown_text: str,
-        tokens: ShellThemeTokens,
+        tokens: HelpThemeTokens,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -207,7 +207,7 @@ class HelpDialog(QDialog):
 def show_help_file(
     title: str,
     file_name: str,
-    tokens: ShellThemeTokens,
+    tokens: HelpThemeTokens,
     parent: QWidget | None = None,
 ) -> None:
     """Load a markdown help file and show it in a themed dialog."""
@@ -225,7 +225,7 @@ def show_help_file(
 def show_help_markdown(
     title: str,
     markdown_text: str,
-    tokens: ShellThemeTokens,
+    tokens: HelpThemeTokens,
     parent: QWidget | None = None,
 ) -> None:
     """Show inline markdown content in the themed help dialog."""
