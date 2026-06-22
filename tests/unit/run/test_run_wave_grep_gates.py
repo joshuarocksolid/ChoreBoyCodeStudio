@@ -112,6 +112,26 @@ def test_pytest_runner_uses_q_with_ra_summary() -> None:
     assert '"-rA"' in runner or "'-rA'" in runner
 
 
+def test_breakpoint_store_has_no_mutable_dict_property_exports() -> None:
+    """CC-18: BreakpointStore exposes methods only — no live dict aliases."""
+    store_source = _read("app/shell/breakpoint_store.py")
+    assert "@property" not in store_source
+    assert "def breakpoints_by_file" not in store_source
+    assert "def breakpoint_specs_by_key" not in store_source
+
+
+def test_shell_workflows_use_breakpoint_store_not_dict_aliases() -> None:
+    """CC-18: shell workflows must not inject or mutate breakpoint dict aliases."""
+    shell_root = _REPO_ROOT / "app" / "shell"
+    forbidden = ("breakpoints_by_file=", "breakpoint_specs_by_key=")
+    for path in shell_root.rglob("*.py"):
+        if path.name == "breakpoint_store.py":
+            continue
+        source = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            assert token not in source, f"{path.relative_to(_REPO_ROOT)} contains {token!r}"
+
+
 def test_repl_session_manager_delegates_launch_to_run_service() -> None:
     """CC-19: ReplSessionManager must not duplicate run-layer manifest/command assembly."""
     repl_mgr = _read("app/shell/repl_session_manager.py")
@@ -128,3 +148,18 @@ def test_bare_except_exception_count_documented_ceiling() -> None:
     for path in _py_files_under(_APP_RUN, _APP_RUNNER, _APP_DEBUG):
         count += len(pattern.findall(path.read_text(encoding="utf-8")))
     assert count <= 20, f"bare except Exception count {count} exceeds wave ceiling 20"
+
+
+def test_no_legacy_debug_reducer_paths() -> None:
+    """CC-21: legacy DebugEvent/stdout-marker reducers stay removed; protocol path only."""
+    forbidden = (
+        "class DebugEvent",
+        "def apply_event(",
+        "ingest_output_line",
+        "debug_event_protocol",
+        "__CB_DEBUG_",
+    )
+    for path in _py_files_under(_APP_DEBUG):
+        source = path.read_text(encoding="utf-8")
+        for needle in forbidden:
+            assert needle not in source, f"{needle!r} found in {path.relative_to(_REPO_ROOT)}"

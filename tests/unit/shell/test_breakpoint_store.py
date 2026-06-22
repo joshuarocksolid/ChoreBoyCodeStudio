@@ -62,3 +62,67 @@ def test_breakpoint_store_list_all_and_get_spec() -> None:
     store.clear_all()
     assert store.list_all() == []
     assert store.has_any_breakpoints() is False
+
+
+def test_breakpoint_store_lines_for_file_returns_independent_copy() -> None:
+    store = BreakpointStore()
+    store.set_line_enabled("/tmp/project/main.py", 4, enabled=True)
+
+    lines = store.lines_for_file("/tmp/project/main.py")
+    lines.add(99)
+
+    assert store.lines_for_file("/tmp/project/main.py") == {4}
+
+
+def test_breakpoint_store_lines_snapshot_returns_independent_copy() -> None:
+    store = BreakpointStore()
+    store.set_line_enabled("/tmp/project/main.py", 2, enabled=True)
+
+    snapshot = store.lines_snapshot()
+    snapshot["/tmp/project/main.py"].add(99)
+    snapshot["/tmp/project/other.py"] = {7}
+
+    assert store.lines_for_file("/tmp/project/main.py") == {2}
+    assert store.lines_for_file("/tmp/project/other.py") == set()
+
+
+def test_breakpoint_store_restore_session_breakpoints_isolates_caller_mutation() -> None:
+    store = BreakpointStore()
+    caller_lines = {1, 3}
+    caller_dict = {"/tmp/project/a.py": caller_lines}
+
+    store.restore_session_breakpoints(
+        caller_dict,
+        ensure_spec=store.ensure_spec,
+    )
+
+    caller_lines.add(99)
+    caller_dict["/tmp/project/b.py"] = {7}
+
+    assert store.lines_for_file("/tmp/project/a.py") == {1, 3}
+    assert store.lines_for_file("/tmp/project/b.py") == set()
+
+
+def test_breakpoint_store_enabled_lines_have_matching_specs() -> None:
+    store = BreakpointStore()
+    store.set_line_enabled("/tmp/project/main.py", 5, enabled=True)
+
+    assert store.get_spec("/tmp/project/main.py", 5) is not None
+
+    store.set_line_enabled("/tmp/project/main.py", 5, enabled=False)
+
+    assert store.get_spec("/tmp/project/main.py", 5) is None
+    assert store.lines_for_file("/tmp/project/main.py") == set()
+    assert store.has_any_breakpoints() is False
+
+
+def test_breakpoint_store_remove_line_clears_gutter_and_spec() -> None:
+    store = BreakpointStore()
+    store.set_line_enabled("/tmp/project/main.py", 8, enabled=True)
+    store.set_line_enabled("/tmp/project/main.py", 11, enabled=True)
+
+    store.remove_line("/tmp/project/main.py", 8)
+
+    assert store.lines_for_file("/tmp/project/main.py") == {11}
+    assert store.get_spec("/tmp/project/main.py", 8) is None
+    assert store.get_spec("/tmp/project/main.py", 11) is not None

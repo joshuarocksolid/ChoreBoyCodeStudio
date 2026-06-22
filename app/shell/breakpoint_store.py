@@ -76,11 +76,13 @@ class BreakpointStore:
         ] = breakpoint
 
     def remove_line(self, file_path: str, line_number: int) -> None:
-        breakpoints = self._breakpoints_by_file.get(file_path, set())
-        breakpoints.discard(line_number)
-        if not breakpoints:
-            self._breakpoints_by_file.pop(file_path, None)
-        self._breakpoint_specs_by_key.pop(breakpoint_key(file_path, line_number), None)
+        key = breakpoint_key(file_path, line_number)
+        breakpoints = self._breakpoints_by_file.get(file_path)
+        if breakpoints is not None:
+            breakpoints.discard(line_number)
+            if not breakpoints:
+                self._breakpoints_by_file.pop(file_path, None)
+        self._breakpoint_specs_by_key.pop(key, None)
 
     def set_line_enabled(self, file_path: str, line_number: int, enabled: bool) -> None:
         breakpoints = self._breakpoints_by_file.setdefault(file_path, set())
