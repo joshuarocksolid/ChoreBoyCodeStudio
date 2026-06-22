@@ -215,3 +215,10 @@ def _project_run_tests_script(project_root: str) -> Path | None:
     if candidate.exists() and candidate.is_file():
         return candidate
     return None
+
+
+def build_pytest_subprocess_env() -> dict[str, str]:
+    """Return environment overrides shared by discovery and runner subprocesses."""
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    return env

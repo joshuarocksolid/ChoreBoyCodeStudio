@@ -74,6 +74,92 @@ tests/test_foo.py::test_bar
     assert func_nodes[0].name == "test_bar"
 
 
+def test_parse_collect_output_handles_nested_classes_and_parametrized_tests(tmp_path) -> None:
+    output = """\
+tests/test_nested.py::TestOuter::TestInner::test_deep
+tests/test_params.py::test_values[1-2]
+tests/test_params.py::test_values[3-4]
+"""
+    nodes = _parse_collect_output(output, project_root=str(tmp_path))
+
+    class_nodes = [n for n in nodes if n.kind == "class"]
+    func_nodes = [n for n in nodes if n.kind == "function"]
+
+    assert {node.node_id for node in class_nodes} == {
+        "tests/test_nested.py::TestOuter",
+        "tests/test_nested.py::TestOuter::TestInner",
+    }
+    assert any(node.node_id == "tests/test_nested.py::TestOuter::TestInner::test_deep" for node in func_nodes)
+    assert any(node.node_id == "tests/test_params.py::test_values[1-2]" for node in func_nodes)
+    assert any(node.node_id == "tests/test_params.py::test_values[3-4]" for node in func_nodes)
+
+
+def test_parse_collect_output_populates_function_line_numbers(tmp_path) -> None:
+    test_file = tmp_path / "tests" / "test_sample.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text(
+        """\
+class TestCase:
+    def test_method(self):
+        assert True
+
+def test_top_level():
+    assert True
+""",
+        encoding="utf-8",
+    )
+    output = """\
+tests/test_sample.py::TestCase::test_method
+tests/test_sample.py::test_top_level
+"""
+    nodes = _parse_collect_output(output, project_root=str(tmp_path))
+    function_nodes = {node.node_id: node.line_number for node in nodes if node.kind == "function"}
+
+    assert function_nodes["tests/test_sample.py::TestCase::test_method"] == 2
+    assert function_nodes["tests/test_sample.py::test_top_level"] == 5
+
+
+def test_parse_test_results_handles_parametrized_node_ids_in_summary_output() -> None:
+    output = (
+        "FAILED tests/test_foo.py::test_values[1-2] - AssertionError\n"
+        "PASSED tests/test_foo.py::test_values[3-4]\n"
+    )
+    results = parse_test_results(output)
+    assert len(results) == 2
+    assert results[0].node_id == "tests/test_foo.py::test_values[1-2]"
+    assert results[1].node_id == "tests/test_foo.py::test_values[3-4]"
+
+
+def test_discover_tests_uses_offscreen_qt_platform(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    captured_env: dict[str, str] | None = None
+
+    monkeypatch.setattr(
+        "app.pytest.discovery_service._build_collect_command",
+        lambda *, project_root: ["/bin/sh", "-c", ":"],
+    )
+
+    def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal captured_env
+        captured_env = kwargs.get("env")
+        class _FakeCompleted:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return _FakeCompleted()
+
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.setattr("app.pytest.discovery_service.subprocess.run", fake_run)
+
+    discover_tests(str(tmp_path))
+
+    assert captured_env is not None
+    assert captured_env["QT_QPA_PLATFORM"] == "offscreen"
+
+
 def test_build_collect_command_resolves_default_runtime_when_given_project_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -104,9 +104,11 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
 ) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
 
     def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
         assert kwargs["cwd"] == str(project_root.resolve())
+        assert kwargs["env"]["QT_QPA_PLATFORM"] == "offscreen"
         command = list(args[0])
         assert command[0] == "/opt/freecad/AppRun"
         assert command[1] == "-c"

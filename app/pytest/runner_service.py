@@ -8,15 +8,11 @@ import subprocess
 import time
 
 from app.pytest.launch_plan import (
-    PytestLaunchPlan,
     build_pytest_command as _build_pytest_command_from_plan,
-    build_pytest_launch_plan as _build_pytest_launch_plan_impl,
+    build_pytest_launch_plan,
+    build_pytest_subprocess_env,
 )
 from app.run.problem_parser import ProblemEntry
-
-
-def build_pytest_launch_plan(project_root: str) -> PytestLaunchPlan:
-    return _build_pytest_launch_plan_impl(project_root)
 
 
 @dataclass(frozen=True)
@@ -107,10 +103,6 @@ def _build_pytest_command(*, project_root: str, pytest_args: list[str]) -> list[
     return _build_pytest_command_from_plan(plan, pytest_args)
 
 
-def _select_pytest_runtime(*, project_root: str) -> str:
-    return build_pytest_launch_plan(project_root).runtime_executable
-
-
 def _run_pytest_command(project_root: str, command: list[str], *, timeout_seconds: int) -> PytestRunResult:
     """Run pytest command and parse results."""
     started_at = time.perf_counter()
@@ -121,6 +113,7 @@ def _run_pytest_command(project_root: str, command: list[str], *, timeout_second
         capture_output=True,
         check=False,
         timeout=timeout_seconds,
+        env=build_pytest_subprocess_env(),
     )
     elapsed_ms = (time.perf_counter() - started_at) * 1000.0
     combined_output = f"{completed.stdout}\n{completed.stderr}".strip()
