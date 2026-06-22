@@ -161,6 +161,44 @@ def test_plan_launch_rejects_missing_projectless_entry_file(tmp_path: Path) -> N
         )
 
 
+def test_start_run_is_thin_coordinator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CC-12: start_run coordinates plan_launch then _start_manifest without inline planning."""
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    (project_root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    loaded_project = LoadedProject(
+        project_root=str(project_root.resolve()),
+        manifest_path=str((project_root / "cbcs" / "project.json").resolve()),
+        metadata=ProjectMetadata(
+            schema_version=1,
+            name="demo",
+            default_entry="run.py",
+        ),
+        entries=[],
+    )
+    service = RunService(runtime_executable=sys.executable, runner_boot_path=str(tmp_path / "run_runner.py"))
+    delegation: list[str] = []
+    original_plan_launch = plan_launch
+
+    def _tracking_plan_launch(**kwargs):  # type: ignore[no-untyped-def]
+        delegation.append("plan_launch")
+        return original_plan_launch(**kwargs)
+
+    def _tracking_start_manifest(self, manifest_path: str, *, cwd: str) -> None:  # type: ignore[no-untyped-def]
+        delegation.append("_start_manifest")
+
+    monkeypatch.setattr("app.run.run_service.plan_launch", _tracking_plan_launch)
+    monkeypatch.setattr(RunService, "_start_manifest", _tracking_start_manifest)
+
+    session = service.start_run(loaded_project)
+
+    assert delegation == ["plan_launch", "_start_manifest"]
+    assert session.run_id
+
+
 def test_start_run_applies_explicit_run_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Explicit run overrides should flow into generated run manifest fields."""
     project_root = tmp_path / "project"
