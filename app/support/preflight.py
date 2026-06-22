@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core.models import LoadedProject, RuntimeIssue, WorkflowPreflightResult
-from app.packaging.layout import (
-    is_packaging_excluded_path as _is_packaging_excluded,
+from app.support.preflight_paths import (
+    is_preflight_packaging_excluded_path as _is_packaging_excluded,
     paths_overlap as _paths_overlap,
     resolve_entry_path as _resolve_entry_path,
     sanitize_project_name,
