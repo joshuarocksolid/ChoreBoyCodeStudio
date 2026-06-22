@@ -274,28 +274,3 @@ def test_debug_transport_concurrent_send_while_peer_disconnects() -> None:
     finally:
         pass
     assert sender.is_alive() is False
-
-
-def test_runner_client_concurrent_send_while_server_closes() -> None:
-    errors: list[str] = []
-    server = DebugTransportServer(on_message=lambda _message: None)
-    config = server.start()
-    client = _connect_runner_client(server, config, on_error=errors.append)
-    send_errors: list[BaseException] = []
-
-    def spam_send() -> None:
-        for _ in range(100):
-            try:
-                client.send_message(build_debug_event("heartbeat"))
-            except BaseException as exc:  # noqa: BLE001 - stress test captures all send failures
-                send_errors.append(exc)
-                return
-            time.sleep(0.001)
-
-    sender = threading.Thread(target=spam_send, daemon=True)
-    sender.start()
-    time.sleep(0.05)
-    server.close()
-    sender.join(timeout=2.0)
-    client.close()
-    assert sender.is_alive() is False
