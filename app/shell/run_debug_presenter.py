@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Literal, Protocol
+from typing import Any, Callable, Literal, Protocol, cast
 
 from PySide2.QtWidgets import QMessageBox, QWidget
 
@@ -10,6 +10,7 @@ from app.core import constants
 from app.core.models import LoadedProject
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
 from app.shell.run_session_controller import RunSessionController, RunSessionStartFailureReason
+from app.shell.shell_composition_context import MainWindowCompositionSurface
 
 
 class RunDebugPresenterSaveWorkflowPort(Protocol):
@@ -303,8 +304,8 @@ class RunDebugPresenter:
 class MainWindowRunDebugPresenterHost:
     """Adapts :class:`MainWindow` to :class:`RunDebugPresenterHost`."""
 
-    def __init__(self, window: Any) -> None:
-        self._window = window
+    def __init__(self, window: MainWindowCompositionSurface) -> None:
+        self._window = cast(Any, window)
 
     def dialog_parent(self) -> QWidget:
         return self._window

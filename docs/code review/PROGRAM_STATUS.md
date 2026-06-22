@@ -2,15 +2,14 @@
 overall: IN_PROGRESS
 current_phase: P1
 current_item: P1-1
-last_verified_commit: 1d00cf7
-last_session_ended: 2026-06-22T18:00:00Z
+last_verified_commit: 9fa23e3
+last_session_ended: 2026-06-22T19:30:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
-  shell_window_any_count: 67
+  shell_window_any_count: 66
   files_gte_700: 5
   shell_composition_loc: 404
-  composition_phases_loc: 453
 phases:
   P0: done
   P1: in_progress
@@ -19,67 +18,63 @@ phases:
   P4: pending
 blockers: []
 next_actions:
-  - "SHELL-R-15 CC-SHELL2-18: consolidate debug clear-all paths in debug_control_workflow.py / debug_panel/; verify single clear-all path test; preserve window:Any ≤79 and shell_composition.py ≤700 LOC"
-sessions_completed: 4
+  - "SHELL-R-16 CC-SHELL2-19 (continue): narrow RunLaunchWorkflowHost Any ports (logger, run_debug_presenter, debug_control_workflow return types) and remaining MainWindow*Host __init__ window:Any; verify test_run_debug_presenter green; preserve window:Any ≤79"
+sessions_completed: 5
 ```
 
-## Session 4 summary (2026-06-22) — SHELL-R-04c
+## Session 5 summary (2026-06-22) — SHELL-R-15 + SHELL-R-16 partial
 
 ### Landed
 
-**SHELL-R-04c (CC-SHELL2-05 metric gate ACCEPT):** Introduced `MainWindowCompositionSurface` Protocol in `shell_composition_context.py`. Replaced all 13 `window: Any` bind/setter signatures in that module. Updated SHELL-R-04b host adapters (`MainWindowSaveDocumentHost`, `MainWindowExternalFileChangeHost`, `MainWindowSettingsApplyHost`, `MainWindowPythonConsoleHost`, `MainWindowRunLaunchHost`, `MainWindowShellThemeHost` + sink) and `install_main_window_composition` to use the typed surface with internal `cast(Any, …)` for private field access.
+**SHELL-R-15 (CC-SHELL2-18 ACCEPT):** Verified clear-all consolidation already at HEAD — panel `clear_all_breakpoints_requested` → `DebugControlWorkflow.clear_all_breakpoints`; menu `handle_remove_all_breakpoints_action` delegates to same path. Added `test_clear_all_breakpoints_sends_single_update_command_when_paused` (single `update_breakpoints` transport when paused).
 
-### Verification @ HEAD (1d00cf7 + uncommitted SHELL-R-04c)
+**SHELL-R-16 (CC-SHELL2-19 partial):** `MainWindowRunDebugPresenterHost.__init__` now uses `MainWindowCompositionSurface` + internal `cast(Any, …)`.
+
+### Verification @ HEAD (9fa23e3 + uncommitted session 5)
 
 | Gate | Result |
 |------|--------|
-| fast shard | **PASS** (exit 0, ~148s; 1 flake on retry 2, green on retry 3) |
+| fast shard | **PASS** (exit 0, ~107s) |
 | pyright | **0 errors** |
 | app files ≥1k | **0** |
 | main_window methods | **28** |
-| `window: Any` shell-wide | **67** (was 88; gate ≤79 **PASS**) |
-| `shell_composition.py` LOC | **404** (gate ≤700 **PASS**) |
-| `window: Any` in shell_composition_context.py | **0** (was 13) |
+| `window: Any` shell-wide | **66** (was 67; gate ≤79 **PASS**) |
+| `shell_composition.py` LOC | **404** |
+| Debug clear-all tests (29) | **PASS** |
 | Editors grep gates | clean |
 
-### CC-SHELL2-05 status — **METRIC GATE ACCEPT**
+### CC theme status (Shell Wave 2)
 
-| Metric | SHELL-R-04b | SHELL-R-04c | Gate |
-|--------|-------------|-------------|------|
-| shell_window_any_count | 88 | **67** | ≤79 ✓ |
-| shell_composition.py LOC | 404 | 404 | ≤700 ✓ |
-| shell_composition_context window:Any | 13 | 0 | ✓ |
-
-**Remaining CC-SHELL2-05 debt:** ~67 `window: Any` across other shell modules (host adapters, build_* factories, panel builders) — no longer a program blocker per review baseline 79.
+| CC | PR | Status |
+|----|-----|--------|
+| CC-SHELL2-05 | R-04b/c | **ACCEPT** (metric gate) |
+| CC-SHELL2-18 | R-15 | **ACCEPT** (single clear-all path + test) |
+| CC-SHELL2-19 | R-16 | **PARTIAL** (presenter host typed; launch host Any ports remain) |
 
 ### Wave status
 
 | Wave | Status |
 |------|--------|
 | editors-wave-1 | ACCEPT |
-| shell-wave-2 | in_progress — CC-05 metric gate closed; continue Wave 4–6 items |
-| intelligence-wave-1 | open |
-| project-ssot-wave-1 | open |
-| run-wave-1 | open |
+| shell-wave-2 | in_progress — Wave 4 partial; continue R-16, R-14, R-17–R-20 |
+| intelligence-wave-1 | open (P1-2) |
+| project-ssot-wave-1 | open (P1-3) |
+| run-wave-1 | open (P1-4) |
+
+Shell Wave 2 closure doc deferred until Wave 4–6 CC themes closed.
 
 ### Uncommitted working tree (ready for parent commit)
 
 ```
- M app/shell/external_file_change_workflow.py
- M app/shell/main_window_composition.py
- M app/shell/python_console_workflow.py
- M app/shell/run_launch_workflow.py
- M app/shell/save_workflow.py
- M app/shell/settings_apply_workflow.py
- M app/shell/shell_composition_context.py
- M app/shell/shell_theme_host.py
+ M app/shell/run_debug_presenter.py
+ M tests/unit/shell/test_debug_control_workflow.py
 ```
 
 ### Verification commands (re-run before next execute)
 
 ```bash
 rg "window: Any" app/shell --count-matches
-wc -l app/shell/shell_composition.py
+python3 run_tests.py tests/unit/shell/test_debug_control_workflow.py tests/unit/shell/test_run_debug_presenter.py
 python3 testing/preflight_test_env.py
 python3 testing/run_test_shard.py fast
 npx pyright

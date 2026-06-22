@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy  # noqa: E402
+from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugExecutionState  # noqa: E402
 from app.debug.debug_session import DebugSession  # noqa: E402
 from app.run.run_service import RunService  # noqa: E402
 from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
@@ -176,3 +176,20 @@ def test_handle_remove_all_breakpoints_action_delegates_to_clear_all_breakpoints
     workflow.handle_remove_all_breakpoints_action()
 
     assert workflow.all_breakpoints() == []
+
+
+def test_clear_all_breakpoints_sends_single_update_command_when_paused() -> None:
+    host = StubDebugShellHost()
+    host._run_service._is_debug_mode = True
+    host._run_service._supervisor.running = True
+    host._debug_session.state.execution_state = DebugExecutionState.PAUSED
+    workflow = _workflow(host)
+    workflow._store.ensure_spec("/tmp/project/main.py", 10)
+    workflow._store.ensure_spec("/tmp/project/util.py", 3)
+
+    workflow.clear_all_breakpoints()
+
+    assert len(host._run_service.commands) == 1
+    command_name, arguments = host._run_service.commands[0]
+    assert command_name == "update_breakpoints"
+    assert arguments == {"breakpoints": []}
