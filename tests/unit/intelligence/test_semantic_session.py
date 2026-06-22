@@ -177,3 +177,72 @@ def test_concurrent_definition_requests_for_two_files_both_complete() -> None:
     assert results_a[0].locations[0].file_path == "/tmp/project/a.py"
     assert results_b[0].locations[0].file_path == "/tmp/project/b.py"
     session.shutdown()
+
+
+def test_semantic_session_submit_priorities() -> None:
+    """Document worker lane priorities for completion vs navigation (INT-R-09)."""
+    session = SemanticSession(
+        dispatch_to_main_thread=lambda callback: callback(),
+        cache_db_path=":memory:",
+    )
+    captured: list[tuple[str, int]] = []
+
+    def capture_submit(**kwargs):  # type: ignore[no-untyped-def]
+        captured.append((kwargs["key"], kwargs["priority"]))
+        result = kwargs["task"]()
+        on_success = kwargs.get("on_success")
+        if on_success is not None:
+            on_success(result)
+
+    session._worker.submit = capture_submit  # type: ignore[method-assign]
+
+    class _FacadeStub:
+        def lookup_definition(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return SemanticDefinitionResult(
+                symbol_name="sym",
+                locations=[],
+                metadata=SemanticOperationMetadata(engine="stub", source="semantic", confidence="exact"),
+            )
+
+        def resolve_hover_info(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return None
+
+    session._semantic_facade = _FacadeStub()  # type: ignore[assignment]
+    session._completion_service.complete_fast = lambda _request: CompletionEnvelope(items=[])  # type: ignore[method-assign, assignment]
+    session._completion_service.complete_semantic = lambda _request: CompletionEnvelope(items=[])  # type: ignore[method-assign, assignment]
+
+    session.request_completion_fast(
+        request=CompletionRequest(
+            source_text="alpha",
+            cursor_position=5,
+            current_file_path="/tmp/a.py",
+            project_root="/tmp",
+            trigger_is_manual=True,
+            min_prefix_chars=1,
+        ),
+        prefix="alpha",
+        request_generation=1,
+        on_success=lambda _result: None,
+    )
+    session.request_lookup_definition(
+        project_root="/tmp",
+        current_file_path="/tmp/a.py",
+        source_text="alpha",
+        cursor_position=5,
+        on_success=lambda _result: None,
+    )
+    session.request_hover_info(
+        project_root="/tmp",
+        current_file_path="/tmp/a.py",
+        source_text="alpha",
+        cursor_position=5,
+        request_generation=2,
+        on_success=lambda _result: None,
+    )
+
+    assert captured == [
+        ("completion_fast:/tmp/a.py", 0),
+        ("definition:/tmp/a.py", 40),
+        ("hover:/tmp/a.py", 30),
+    ]
+    session.shutdown()

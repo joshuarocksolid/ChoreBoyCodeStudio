@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import TypeVar, cast
 
 T = TypeVar("T")
+U = TypeVar("U")
 
 from app.bootstrap.paths import PathInput
 from app.intelligence.completion_context import CompletionContext
@@ -74,6 +75,27 @@ class SemanticSession:
             on_success=cast(Callable[[object], None], on_success) if on_success is not None else None,
             on_error=on_error,
             priority=priority,
+        )
+
+    def _submit_generation_result(
+        self,
+        *,
+        key: str,
+        priority: int,
+        request_generation: int,
+        resolve: Callable[[], U | None],
+        on_success: Callable[[tuple[int, U | None]], None],
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        def task() -> tuple[int, U | None]:
+            return (request_generation, resolve())
+
+        self._submit(
+            key=key,
+            priority=priority,
+            task=task,
+            on_success=on_success,
+            on_error=on_error,
         )
 
     def shutdown(self) -> None:
@@ -308,19 +330,15 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Resolve go-to-definition on the semantic worker."""
-
-        def task() -> SemanticDefinitionResult:
-            return self._semantic_facade.lookup_definition(
+        self._submit(
+            key=f"definition:{current_file_path}",
+            priority=40,
+            task=lambda: self._semantic_facade.lookup_definition(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
                 cursor_position=cursor_position,
-            )
-
-        self._submit(
-            key=f"definition:{current_file_path}",
-            priority=40,
-            task=task,
+            ),
             on_success=on_success,
             on_error=on_error,
         )
@@ -336,19 +354,15 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Resolve project references on the semantic worker."""
-
-        def task() -> SemanticReferenceResult:
-            return self._semantic_facade.find_references(
+        self._submit(
+            key=f"references:{current_file_path}",
+            priority=70,
+            task=lambda: self._semantic_facade.find_references(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
                 cursor_position=cursor_position,
-            )
-
-        self._submit(
-            key=f"references:{current_file_path}",
-            priority=70,
-            task=task,
+            ),
             on_success=on_success,
             on_error=on_error,
         )
@@ -365,20 +379,16 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Plan a semantic rename on the semantic worker."""
-
-        def task() -> SemanticRenamePlan | None:
-            return self._semantic_facade.plan_rename(
+        self._submit(
+            key=f"rename:{current_file_path}",
+            priority=70,
+            task=lambda: self._semantic_facade.plan_rename(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
                 cursor_position=cursor_position,
                 new_symbol=new_symbol,
-            )
-
-        self._submit(
-            key=f"rename:{current_file_path}",
-            priority=70,
-            task=task,
+            ),
             on_success=on_success,
             on_error=on_error,
         )
@@ -391,14 +401,10 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Apply a semantic rename on the semantic worker."""
-
-        def task() -> SemanticRenameApplyResult:
-            return self._semantic_facade.apply_rename(plan)
-
         self._submit(
             key="apply_rename",
             priority=60,
-            task=task,
+            task=lambda: self._semantic_facade.apply_rename(plan),
             on_success=on_success,
             on_error=on_error,
         )
@@ -415,20 +421,16 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Resolve hover info asynchronously for one editor request."""
-
-        def task() -> tuple[int, SemanticHoverResult | None]:
-            result = self._semantic_facade.resolve_hover_info(
+        self._submit_generation_result(
+            key=f"hover:{current_file_path}",
+            priority=30,
+            request_generation=request_generation,
+            resolve=lambda: self._semantic_facade.resolve_hover_info(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
                 cursor_position=cursor_position,
-            )
-            return (request_generation, result)
-
-        self._submit(
-            key=f"hover:{current_file_path}",
-            priority=30,
-            task=task,
+            ),
             on_success=on_success,
             on_error=on_error,
         )
@@ -445,20 +447,16 @@ class SemanticSession:
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Resolve signature-help asynchronously for one editor request."""
-
-        def task() -> tuple[int, SemanticSignatureResult | None]:
-            result = self._semantic_facade.resolve_signature_help(
+        self._submit_generation_result(
+            key=f"signature:{current_file_path}",
+            priority=25,
+            request_generation=request_generation,
+            resolve=lambda: self._semantic_facade.resolve_signature_help(
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
                 cursor_position=cursor_position,
-            )
-            return (request_generation, result)
-
-        self._submit(
-            key=f"signature:{current_file_path}",
-            priority=25,
-            task=task,
+            ),
             on_success=on_success,
             on_error=on_error,
         )
