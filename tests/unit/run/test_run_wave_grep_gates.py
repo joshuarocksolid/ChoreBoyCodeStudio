@@ -142,12 +142,62 @@ def test_repl_session_manager_delegates_launch_to_run_service() -> None:
     assert "generate_run_id" not in repl_mgr
 
 
+def test_presentation_modules_not_under_app_run() -> None:
+    """CC-20: shell presentation buffers must not live in the run layer."""
+    assert not (_APP_RUN / "console_model.py").is_file()
+    assert not (_APP_RUN / "exit_status.py").is_file()
+
+
+def test_presentation_modules_live_in_shell_package() -> None:
+    """CC-20: ConsoleModel and describe_exit_code belong under app/shell/."""
+    shell_root = _REPO_ROOT / "app" / "shell"
+    assert (shell_root / "console_model.py").is_file()
+    assert (shell_root / "exit_status.py").is_file()
+
+
+def test_no_imports_from_app_run_presentation_modules() -> None:
+    """CC-20: import graph has no edges to app.run.console_model or app.run.exit_status."""
+    import_pattern = re.compile(
+        r"from app\.run\.(console_model|exit_status)\b|"
+        r"import app\.run\.(console_model|exit_status)\b"
+    )
+    app_root = _REPO_ROOT / "app"
+    for path in app_root.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        match = import_pattern.search(source)
+        assert match is None, (
+            f"{path.relative_to(_REPO_ROOT)} imports misplaced run presentation: {match.group(0)!r}"
+        )
+
+
+def test_app_run_has_no_shell_presentation_references() -> None:
+    """CC-20: run layer must not reference shell-only presentation modules."""
+    forbidden = ("console_model", "exit_status", "ConsoleModel", "describe_exit_code")
+    for path in _py_files_under(_APP_RUN):
+        source = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            assert token not in source, f"{path.relative_to(_REPO_ROOT)} references {token!r}"
+
+
 def test_bare_except_exception_count_documented_ceiling() -> None:
+    """CC-22: bare ``except Exception:`` reserved for observer/bootstrap paths only."""
     pattern = re.compile(r"^\s*except\s+Exception\s*:\s*$", re.MULTILINE)
+    allowed_sites = {
+        "app/run/process_supervisor.py",
+        "app/runner/debug/session.py",
+        "app/runner/repl_control.py",
+        "app/runner/runner_main.py",
+    }
     count = 0
     for path in _py_files_under(_APP_RUN, _APP_RUNNER, _APP_DEBUG):
-        count += len(pattern.findall(path.read_text(encoding="utf-8")))
-    assert count <= 20, f"bare except Exception count {count} exceeds wave ceiling 20"
+        source = path.read_text(encoding="utf-8")
+        matches = pattern.findall(source)
+        if not matches:
+            continue
+        rel = path.relative_to(_REPO_ROOT).as_posix()
+        assert rel in allowed_sites, f"unexpected bare except Exception in {rel}"
+        count += len(matches)
+    assert count <= 8, f"bare except Exception count {count} exceeds CC-22 ceiling 8"
 
 
 def test_no_legacy_debug_reducer_paths() -> None:
@@ -163,3 +213,42 @@ def test_no_legacy_debug_reducer_paths() -> None:
         source = path.read_text(encoding="utf-8")
         for needle in forbidden:
             assert needle not in source, f"{needle!r} found in {path.relative_to(_REPO_ROOT)}"
+
+
+_APP_SHELL = _REPO_ROOT / "app" / "shell"
+_RUN_LAUNCH_WORKFLOW = _APP_SHELL / "run_launch_workflow.py"
+_RUN_LAUNCH_PKG = _APP_SHELL / "run_launch"
+
+
+def test_run_launch_workflow_facade_loc_budget() -> None:
+    """CC-16: run_launch_workflow.py stays a thin orchestrator (≤500 LOC)."""
+    line_count = len(_read("app/shell/run_launch_workflow.py").splitlines())
+    assert line_count <= 500, f"run_launch_workflow.py is {line_count} LOC; CC-16 budget is ≤500"
+
+
+def test_run_launch_split_modules_loc_budget() -> None:
+    """CC-16: each run_launch submodule stays below 400 LOC."""
+    module_paths = [
+        _RUN_LAUNCH_WORKFLOW,
+        *_RUN_LAUNCH_PKG.glob("*.py"),
+    ]
+    for path in module_paths:
+        if path.name == "__init__.py":
+            continue
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        assert line_count <= 400, (
+            f"{path.relative_to(_REPO_ROOT)} is {line_count} LOC; CC-16 budget is ≤400 per module"
+        )
+
+
+def test_run_launch_workflow_has_no_public_reexport_surface() -> None:
+    """CC-16: facade keeps no __all__ re-export surface for moved symbols."""
+    facade = _read("app/shell/run_launch_workflow.py")
+    assert "__all__" not in facade
+    for symbol in (
+        "RunDebugPresenterPort",
+        "CurrentTestTarget",
+        "TestNodeTarget",
+        "MainWindowRunLaunchHost",
+    ):
+        assert symbol not in facade, f"run_launch_workflow.py must not re-export {symbol!r}"

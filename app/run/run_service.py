@@ -178,7 +178,7 @@ class RunService:
         self._persist_run_manifest(launch, manifest)
         try:
             self._start_manifest(str(launch.manifest_path), cwd=launch.launch_cwd)
-        except Exception:
+        except (RunLifecycleError, OSError, RuntimeError):
             self._close_debug_transport_server()
             self._remove_manifest_file(launch.manifest_path)
             raise

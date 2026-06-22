@@ -74,6 +74,7 @@ def execute_manifest(manifest: RunManifest) -> int:
             return constants.RUN_EXIT_BOOTSTRAP_ERROR
 
         print(f"[runner] run_id={manifest.run_id} mode={manifest.mode} entry={manifest.entry_file}")
+        # CC-22 observer-path: map user/script failures to runner exit codes.
         try:
             with apply_execution_context(execution_context):
                 if manifest.mode == constants.RUN_MODE_PYTHON_SCRIPT:

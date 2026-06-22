@@ -51,6 +51,7 @@ class ReplControlServer:
 
         class _Handler(socketserver.StreamRequestHandler):
             def handle(self) -> None:  # noqa: D401 - inherited protocol method
+                # CC-22 observer-path: keep server thread alive; return structured error.
                 try:
                     request_payload = loads_message(self.rfile.readline())
                     response_payload = _handle_request(

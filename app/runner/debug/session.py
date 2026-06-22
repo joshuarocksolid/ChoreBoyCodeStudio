@@ -26,6 +26,7 @@ def run_debug_session(manifest: RunManifest, entry_callable: Callable[[str], Non
         None,
         -1,
     )
+    # CC-22 observer-path: optional debug pause, then propagate to process exit.
     try:
         sys.settrace(host.debugger.trace_dispatch)
         entry_callable(entry_script_path)

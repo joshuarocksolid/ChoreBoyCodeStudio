@@ -18,6 +18,7 @@ from app.intelligence.completion_models import CompletionEnvelope, CompletionIte
 from app.intelligence.completion_providers import extract_completion_prefix
 from app.intelligence.runtime_introspection import attach_replacement_metadata, resolve_runtime_introspection_query
 from app.runner.repl_introspection import (
+    REPL_RUNTIME_DEGRADATION_EXCEPTIONS,
     ReplIntrospectionRequest,
     ReplIntrospectionService,
     is_whitelisted_target_path,
@@ -313,18 +314,18 @@ class ReplCompletionService:
         if is_whitelisted_target_path(expression):
             try:
                 value = resolve_whitelisted_target(expression)
-            except Exception:
+            except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
                 value = None
         if value is None:
             try:
                 with self._namespace_lock:
                     value = eval(expression, {"__builtins__": builtins}, self._namespace)
-            except Exception:
+            except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
                 return []
         names: list[str]
         try:
             names = sorted(name for name in dir(value) if not name.startswith("__"))
-        except Exception:
+        except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
             return []
         items: list[CompletionItem] = []
         for name in names:
@@ -332,7 +333,7 @@ class ReplCompletionService:
                 continue
             try:
                 member_value = getattr(value, name)
-            except Exception:
+            except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
                 member_value = None
             items.append(
                 _item_from_value(
@@ -414,9 +415,9 @@ def _safe_completion_doc(completion: Any) -> str:
     except TypeError:
         try:
             return str(docstring() or "")
-        except Exception:
+        except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
             return ""
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         return ""
 
 
@@ -431,7 +432,7 @@ def _safe_completion_signature(completion: Any) -> str:
 def _safe_doc(value: Any) -> str:
     try:
         return inspect.getdoc(value) or ""
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         return ""
 
 

@@ -304,6 +304,7 @@ class ProcessSupervisor:
     def _emit_event(self, event: ProcessEvent) -> None:
         if self._on_event is None:
             return
+        # CC-22 observer-path: shell callbacks must not crash supervisor threads.
         try:
             self._on_event(event)
         except Exception:

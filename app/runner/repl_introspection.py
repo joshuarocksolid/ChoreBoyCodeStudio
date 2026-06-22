@@ -15,6 +15,20 @@ _logger = logging.getLogger(__name__)
 
 REPL_INTROSPECTION_DEGRADATION_IMPORT_FAILED = "repl_introspection_import_failed"
 
+# CC-22: live REPL targets may raise during import, dir(), getattr, or doc lookup.
+REPL_RUNTIME_DEGRADATION_EXCEPTIONS = (
+    AttributeError,
+    ImportError,
+    KeyError,
+    ModuleNotFoundError,
+    NameError,
+    OSError,
+    RuntimeError,
+    SyntaxError,
+    TypeError,
+    ValueError,
+)
+
 
 @dataclass(frozen=True)
 class ReplIntrospectionRequest:
@@ -88,7 +102,7 @@ def resolve_whitelisted_target(target_path: str) -> Any:
 def _member_names(target: Any, *, include_private: bool) -> list[str]:
     try:
         names = dir(target)
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         return []
     filtered: list[str] = []
     for name in names:
@@ -103,7 +117,7 @@ def _member_names(target: Any, *, include_private: bool) -> list[str]:
 def _safe_getattr(target: Any, name: str) -> Any:
     try:
         return getattr(target, name)
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         return None
 
 
@@ -142,7 +156,7 @@ def _kind_from_value(value: Any) -> CompletionKind:
 def _safe_doc(value: Any) -> str:
     try:
         return inspect.getdoc(value) or ""
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         return ""
 
 
