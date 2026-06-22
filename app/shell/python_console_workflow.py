@@ -10,6 +10,7 @@ from app.intelligence.completion_models import CompletionEnvelope, CompletionIte
 from app.shell.clear_console_policy import (
     ClearConsoleHost,
     MainWindowClearConsoleHost,
+    clear_python_console_display,
     clear_run_output_sinks,
     prepare_new_run,
 )
@@ -193,6 +194,10 @@ class PythonConsoleWorkflow:
     def handle_clear_console_action(self) -> None:
         """Clear all run-related output sinks (Run menu → Clear Console)."""
         clear_run_output_sinks(self._host.clear_console_host())
+
+    def handle_clear_display_action(self) -> None:
+        """Clear the Python Console tab display only (panel toolbar Clear)."""
+        clear_python_console_display(self._host.clear_console_host())
 
     def prepare_for_session_start(self) -> None:
         """Reset output and debug state before starting a new run session."""

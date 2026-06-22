@@ -39,6 +39,7 @@ class FakePythonConsoleHost:
     focused_tab: bool = False
     repl_warnings: list[tuple[str, Exception]] = field(default_factory=list)
     clear_console_calls: int = 0
+    last_clear_host: FakeClearConsoleHost | None = None
 
     def python_console_widget(self) -> FakeConsoleWidget | None:
         return self.console_widget
@@ -58,12 +59,14 @@ class FakePythonConsoleHost:
 
     def clear_console_host(self) -> FakeClearConsoleHost:
         self.clear_console_calls += 1
-        return FakeClearConsoleHost()
+        self.last_clear_host = FakeClearConsoleHost()
+        return self.last_clear_host
 
 
 @dataclass
 class FakeClearConsoleHost:
     cleared: bool = False
+    display_cleared: bool = False
 
     def console_model(self) -> object:
         return SimpleNamespace(clear=lambda: setattr(self, "cleared", True))
@@ -71,8 +74,9 @@ class FakeClearConsoleHost:
     def run_log_panel(self) -> None:
         return None
 
-    def python_console_widget(self) -> None:
-        return None
+    def python_console_widget(self) -> object:
+        host = self
+        return SimpleNamespace(clear_console=lambda: setattr(host, "display_cleared", True))
 
     def debug_panel(self) -> None:
         return None
@@ -366,3 +370,16 @@ def test_handle_clear_console_action_uses_clear_policy_host() -> None:
     workflow.handle_clear_console_action()
 
     assert host.clear_console_calls == 1
+
+
+def test_handle_clear_display_action_clears_python_console_display_only() -> None:
+    repl = FakeReplSession(running=True)
+    host = FakePythonConsoleHost()
+    workflow = PythonConsoleWorkflow(repl_manager=repl, host=host)
+
+    workflow.handle_clear_display_action()
+
+    assert host.clear_console_calls == 1
+    assert host.last_clear_host is not None
+    assert host.last_clear_host.display_cleared is True
+    assert host.last_clear_host.cleared is False

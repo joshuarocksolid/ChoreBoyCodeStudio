@@ -285,7 +285,7 @@ def build_bottom_panel(window: Any) -> QWidget:
     window._python_console_widget.setObjectName("shell.bottom.pythonConsole")
     window._python_console_workflow.bind_widget(window._python_console_widget)
     _restore_python_console_history(window)
-    clear_btn.clicked.connect(window._python_console_widget.clear_console)
+    clear_btn.clicked.connect(window._python_console_workflow.handle_clear_display_action)
     container_layout.addWidget(window._python_console_widget)
 
     repl_index = tabs.addTab(window._python_console_container, "Python Console")
