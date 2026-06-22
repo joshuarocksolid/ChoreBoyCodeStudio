@@ -84,7 +84,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-24 | P2 | partial | RUN-R-24 | `outcome_types.py`, `problem_parser.py` | Typed outcomes end-to-end |
 | CC-25 | P2 | open | RUN-R-25 | `clear_console_policy.py`, runner hints | Unified clear policy |
 
-**@ HEAD summary:** 9 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-08, CC-10, CC-11), 4 partial, 12 open — P0 milestone CC-01…CC-06 closed; RUN-R-07 next.
+**@ HEAD summary:** 9 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-08, CC-10, CC-11), 4 partial, 12 open — **P0 milestone verified @ `57aac8d`**; RUN-R-08 (Wave 2) next.
 
 ---
 

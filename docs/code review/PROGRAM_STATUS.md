@@ -2,65 +2,79 @@
 overall: IN_PROGRESS
 current_phase: P1
 current_item: P1-4
-last_verified_commit: 6eb9e4f
-last_session_ended: 2026-06-22T18:00:00Z
+last_verified_commit: 57aac8d
+last_session_ended: 2026-06-22T20:30:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
   shell_window_any_count: 66
-  files_gte_700: 5
+  files_gte_700: 4
   run_runner_debug_loc: 4792
   debug_runner_loc: 8
   run_launch_workflow_loc: 676
   run_bare_except_exception: 15
   project_intelligence_imports: 0
-  run_cc_closed_at_head: 6
-  run_cc_partial_at_head: 7
+  run_cc_closed_at_head: 9
+  run_cc_partial_at_head: 4
 phases:
   P0: done
   P1: in_progress
-  P2: pending
+  P2: in_progress
   P3: pending
   P4: pending
 blockers: []
 next_actions:
-  - "P1-4 RUN-R-04: CC-03 + CC-08 atomic start_run — verify transport ordering after supervisor accepts; manifest rollback on failed launch; unit test second start_run raises RunLifecycleError"
-sessions_completed: 20
+  - "P1-4 RUN-R-08: CC-07 breakpoint wire SSOT — manifest codec round-trip tests; unify breakpoint serialization"
+sessions_completed: 21
 ```
 
-## Session 20 summary (2026-06-22) — RUN-R-02 + RUN-R-03
+## Session 21 summary (2026-06-22)
 
-### Baseline @ HEAD (`6eb9e4f`)
+### Commits landed (6 slices + RUN-R-04/06/07)
+
+| Commit | Scope |
+|--------|-------|
+| `c34dc1e` | P2-6 support foundation seams (CC-CORE-02/03) |
+| `2a1f611` | P2-6 shell support bundle wiring (CC-CORE-03/04/05) |
+| `be4e8f8` | P2-6 HelpThemeTokens protocol (CC-CORE-08) |
+| `ce5d221` | P2-7 pytest subprocess env SSOT + discovery hardening |
+| `508d207` | P2-7 template default_entry manifest parity |
+| `8272f48` | RUN-R-04 CC-03 + CC-08 atomic start_run tests |
+| `57aac8d` | RUN-R-06 CC-05 -q -rA explorer outcome tests |
+
+### Baseline @ HEAD (`57aac8d`)
 
 | Gate | Result |
 |------|--------|
-| run + runner + debug LOC | **4,792** |
-| CC closed @ HEAD | **6** (CC-01, CC-02, CC-04, CC-06, CC-10, CC-11) |
-| CC partial @ HEAD | **7** (CC-03, CC-05, CC-08, CC-12, CC-19, CC-23, CC-24) |
 | app files ≥1k | **0** |
 | MainWindow methods | **28** |
+| files ≥700 LOC | **4** (max 782 python_console_widget) |
+| run CC closed | **9** (CC-01…06, CC-08, CC-10, CC-11) |
+| run CC partial | **4** (CC-12, CC-19, CC-23, CC-24) |
+| P0 milestone (CC-01…06) | **ALL CLOSED** |
 
-### Landed this session
+### Run Wave 1 status
 
-**RUN-R-02 / CC-01 + CC-06 (ACCEPT):**
-- Production fix: `DebugTransportServer._close_socket_resources` — **shutdown socket before closing reader/writer** (prevents `server.close()` hang on active read thread).
-- Tests: `test_runner_client_eof_invokes_error_callback`, `test_debug_transport_concurrent_send_while_peer_disconnects` in `test_debug_transport_lifecycle.py`.
-- Tests: `test_forward_debug_transport_error_closes_server_and_emits_events` in `test_run_service.py`.
-- Tests: `test_run_debug_session_exits_when_transport_fails_mid_pause` in `test_debug_runner.py`.
+| Milestone | Status |
+|-----------|--------|
+| RUN-R-01…03 | ACCEPT |
+| RUN-R-04 (CC-03, CC-08) | ACCEPT |
+| RUN-R-06 (CC-05) | ACCEPT |
+| RUN-R-07 P0 verification | **DONE** — grep gates + P0 test sweep green |
+| RUN-R-08…25 | open |
 
-**RUN-R-03 / CC-02 (ACCEPT):**
-- Test: `test_refresh_action_states_derives_pause_from_debug_execution_state` — toolbar pause/continue/step gates derive from `DebugExecutionState`, not `RunService._is_debug_paused`.
+### P2 progress (this session)
 
-**Docs:** Updated `run_wave_1_implementation_plan.md` CC matrix (CC-01, CC-02, CC-06 → closed).
+- Core-batch support/pytest/templates remediation landed (5 commits)
+- Package reviews exist @ `c4aed0a`; closures pending for persistence/plugins/treesitter/packaging/python_tools
 
 ### Verification @ session end
 
 | Gate | Result |
 |------|--------|
-| Session-changed tests (52) | **PASS** |
-| `test_run_wave_grep_gates.py` | **12 passed** |
-| pyright | **0 errors** |
-| fast shard | **FLAKY** — `test_main_window_background_teardown` fails under full unit shard (~64%); **passes in isolation** (pre-existing; not a regression from this session) |
+| P0 milestone tests (47) | **PASS** |
+| Targeted slice tests | **PASS** |
+| fast shard | not re-run this session (prior flaky `test_main_window_background_teardown` noted) |
 
 ### Wave status
 
@@ -69,26 +83,5 @@ sessions_completed: 20
 | editors-wave-1 | ACCEPT |
 | shell-wave-2 | ACCEPT (P1 milestones) |
 | intelligence-wave-1 | ACCEPT (P1 milestones) |
-| project-ssot-wave-1 | ACCEPT (P0 + P1 milestones) |
-| run-wave-1 | **open (P1-4)** — RUN-R-01…03 done; P0 CC-03, CC-05 remain partial |
-
-### Uncommitted working tree (ready for parent commit)
-
-```
- M app/debug/debug_transport.py
- M docs/code review/run-wave-1/run_wave_1_implementation_plan.md
- M tests/unit/debug/test_debug_transport_lifecycle.py
- M tests/unit/run/test_run_service.py
- M tests/unit/runner/test_debug_runner.py
- M tests/unit/shell/test_run_session_controller.py
- M docs/code review/PROGRAM_STATUS.md
-```
-
-### Verification commands (re-run before RUN-R-04)
-
-```bash
-python3 run_tests.py tests/unit/debug/test_debug_transport_lifecycle.py tests/unit/run/test_run_service.py tests/unit/runner/test_debug_runner.py tests/unit/shell/test_run_session_controller.py tests/unit/run/test_run_wave_grep_gates.py
-python3 testing/preflight_test_env.py
-python3 testing/run_test_shard.py fast   # note flaky test_main_window_background_teardown
-npx pyright
-```
+| project-ssot-wave-1 | ACCEPT |
+| run-wave-1 | **open** — P0 done; Wave 2 CC themes remain |
