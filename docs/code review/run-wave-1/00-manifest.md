@@ -1,9 +1,9 @@
 # Scope manifest: run-wave-1 thermo-nuclear review
 
-Status: Wave 1 kickoff  
-Baseline commit: `24a7cb37fc9c4d2890ab0c0d701d7e61098c13c2`  
-Date: 2026-05-25  
-Intent: **Document only** — no remediation commits in this round.
+Status: Phase 2 remediation in progress (RUN-R-01 @ HEAD)  
+Kickoff baseline: `24a7cb37fc9c4d2890ab0c0d701d7e61098c13c2` (2026-05-25)  
+Re-baseline commit: `4a5c2c7672305168bcad60f3f65dcdb506caf152` (2026-06-22)  
+Intent: Review complete; remediation tracked in [`run_wave_1_implementation_plan.md`](run_wave_1_implementation_plan.md).
 
 ---
 
@@ -20,7 +20,7 @@ Sequenced as **Shell Wave 4** in [`shell_wave_1_thermo_review_2026-05-25.md`](..
 
 ---
 
-## Metric sweep (at kickoff)
+## Metric sweep (at kickoff — 2026-05-25)
 
 | Metric | Value |
 |--------|------:|
@@ -35,6 +35,25 @@ Sequenced as **Shell Wave 4** in [`shell_wave_1_thermo_review_2026-05-25.md`](..
 | Bare `except Exception:` in run/runner/debug | 11 |
 | `# type: ignore` in run/runner/debug | 7 |
 | `window: Any` in shell seam modules (sample) | 1 |
+
+## Metric sweep (re-baseline @ `4a5c2c7` — 2026-06-22)
+
+| Metric | Value | Δ vs kickoff |
+|--------|------:|--------------|
+| Re-baseline commit | `4a5c2c7672305168bcad60f3f65dcdb506caf152` | — |
+| `app/run/` + `app/runner/` + `app/debug/` Python LOC | **4,792** | +168 (pytest relocated to `app/pytest/`) |
+| `debug_runner.py` LOC | **8** (facade) | −795 (**CC-10 closed**) |
+| `app/runner/debug/` package LOC | ~1,050 (split modules) | new |
+| `run_service.py` LOC | **372** | +43 (`plan_launch`, transport error path) |
+| `process_supervisor.py` LOC | **326** | +10 |
+| `run_manifest.py` LOC | **480** | +85 |
+| `debug_session.py` LOC | **294** | −21 |
+| `run_launch_workflow.py` LOC | **676** | −49 (shell W2) |
+| pytest services | **`app/pytest/`** (5 modules) | moved from `app/run/` (**CC-11 closed**) |
+| `HostProcessManager` | **absent** | deleted (**CC-12 partial**) |
+| Bare `except Exception:` in run/runner/debug | **15** | +4 (**CC-22 open**) |
+| `# type: ignore` in run/runner/debug | **7** | unchanged |
+| CC themes closed @ HEAD | **3** (CC-04, CC-10, CC-11) | partial on 9 P0/P1 |
 
 Re-run before fix-agent work:
 
@@ -87,13 +106,15 @@ rg "^\s*except\s+Exception\s*:\s*$" app/run app/runner app/debug --type py | wc 
 
 ---
 
-## High-risk hotspots
+## High-risk hotspots (@ re-baseline)
 
-- `app/runner/debug_runner.py` — 803 LOC god module
-- `app/run/process_supervisor.py` + `run_service.py` — subprocess blast radius
-- `app/debug/debug_transport.py` + `debug_session.py` — editor/runner desync risk
-- `app/shell/run_launch_workflow.py` — 725 LOC shell orchestration into run layer
-- pytest services mixed into `app/run/` lifecycle package
+- `app/run/process_supervisor.py` + `run_service.py` — subprocess blast radius (CC-03, CC-08)
+- `app/debug/debug_transport.py` + `debug_session.py` — editor/runner desync risk (CC-01, CC-06)
+- `app/shell/run_launch_workflow.py` — 676 LOC shell orchestration (CC-16)
+- `app/run/run_manifest.py` — 480 LOC contract surface (CC-07, CC-13)
+- P0 transport/pause themes — verify @ HEAD before feature growth (see implementation plan §3)
+
+**Resolved since kickoff:** `debug_runner.py` god module (split to `app/runner/debug/`); pytest package extraction.
 
 ---
 
@@ -109,7 +130,9 @@ docs/code review/run-wave-1/
 │   ├── TN-DEBUG-01.md, TN-DEBUG-02.md
 │   ├── TN-RUN-SHELL.md
 │   └── TN-RUN-INTEG.md
-└── run_wave_1_thermo_review_2026-05-25.md
+├── run_wave_1_thermo_review_2026-05-25.md
+├── run_wave_1_remediation_plan.md
+└── run_wave_1_implementation_plan.md
 ```
 
 ---

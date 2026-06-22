@@ -1,0 +1,108 @@
+"""Static contract gates for Run Wave 1 remediation (@ HEAD).
+
+Guards structural wins and P0 prerequisites documented in
+docs/code review/run-wave-1/run_wave_1_implementation_plan.md §15.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+import pytest
+
+pytestmark = pytest.mark.unit
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_APP_RUN = _REPO_ROOT / "app" / "run"
+_APP_RUNNER = _REPO_ROOT / "app" / "runner"
+_APP_DEBUG = _REPO_ROOT / "app" / "debug"
+_APP_PYTEST = _REPO_ROOT / "app" / "pytest"
+
+
+def _read(relative_path: str) -> str:
+    return (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def _py_files_under(*roots: Path) -> list[Path]:
+    files: list[Path] = []
+    for root in roots:
+        files.extend(path for path in root.rglob("*.py") if path.is_file())
+    return files
+
+
+def test_no_pytest_modules_under_app_run() -> None:
+    pytest_modules = list(_APP_RUN.glob("pytest*.py"))
+    assert pytest_modules == []
+
+
+def test_app_pytest_package_exists() -> None:
+    assert (_APP_PYTEST / "launch_plan.py").is_file()
+    assert (_APP_PYTEST / "discovery_service.py").is_file()
+    assert (_APP_PYTEST / "runner_service.py").is_file()
+
+
+def test_pytest_launch_plan_shared_by_discovery_and_runner() -> None:
+    discovery = _read("app/pytest/discovery_service.py")
+    runner = _read("app/pytest/runner_service.py")
+    assert "build_pytest_launch_plan" in discovery
+    assert "build_pytest_launch_plan" in runner
+
+
+def test_debug_runner_is_thin_facade() -> None:
+    line_count = len(_read("app/runner/debug_runner.py").splitlines())
+    assert line_count <= 30
+
+
+def test_debug_runner_modules_decomposed() -> None:
+    debug_pkg = _APP_RUNNER / "debug"
+    assert debug_pkg.is_dir()
+    module_names = {path.stem for path in debug_pkg.glob("*.py") if path.name != "__init__.py"}
+    assert {"command_loop", "engine", "inspector", "breakpoints", "session"}.issubset(module_names)
+
+
+def test_run_service_has_no_is_debug_paused() -> None:
+    run_service = _read("app/run/run_service.py")
+    assert "_is_debug_paused" not in run_service
+    assert "is_debug_paused" not in run_service
+
+
+def test_run_service_asserts_idle_before_launch() -> None:
+    run_service = _read("app/run/run_service.py")
+    start_run_index = run_service.index("def start_run(")
+    assert_idle_index = run_service.index("self._assert_idle()", start_run_index)
+    plan_launch_index = run_service.index("plan_launch(", start_run_index)
+    assert assert_idle_index < plan_launch_index
+
+
+def test_no_host_process_manager_under_app_run() -> None:
+    for path in _py_files_under(_APP_RUN):
+        assert "HostProcessManager" not in path.read_text(encoding="utf-8")
+
+
+def test_run_service_forwards_transport_errors_and_closes_server() -> None:
+    run_service = _read("app/run/run_service.py")
+    assert "on_error=self._forward_debug_transport_error" in run_service
+    forward_block = run_service.split("def _forward_debug_transport_error", 1)[1]
+    assert "_close_debug_transport_server()" in forward_block
+
+
+def test_runner_pause_loop_bounded_and_transport_aware() -> None:
+    command_loop = _read("app/runner/debug/command_loop.py")
+    assert "_PAUSE_COMMAND_TIMEOUT_SEC" in command_loop
+    assert "_transport_failed" in command_loop
+    assert "on_error=self._handle_transport_error" in command_loop
+
+
+def test_pytest_runner_uses_q_with_ra_summary() -> None:
+    runner = _read("app/pytest/runner_service.py")
+    assert '"-q"' in runner or "'-q'" in runner
+    assert '"-rA"' in runner or "'-rA'" in runner
+
+
+def test_bare_except_exception_count_documented_ceiling() -> None:
+    pattern = re.compile(r"^\s*except\s+Exception\s*:\s*$", re.MULTILINE)
+    count = 0
+    for path in _py_files_under(_APP_RUN, _APP_RUNNER, _APP_DEBUG):
+        count += len(pattern.findall(path.read_text(encoding="utf-8")))
+    assert count <= 20, f"bare except Exception count {count} exceeds wave ceiling 20"
