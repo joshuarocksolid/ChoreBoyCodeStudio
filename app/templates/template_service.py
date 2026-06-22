@@ -28,6 +28,7 @@ class TemplateMetadata:
     display_name: str
     description: str
     template_version: int
+    default_entry: str
     source_path: str
 
 
@@ -82,6 +83,7 @@ class TemplateService:
             destination=destination,
             project_name=project_name,
             template_id=template.template_id,
+            default_entry=template.default_entry,
         )
         return destination
 
@@ -105,17 +107,25 @@ class TemplateService:
             display_name=_require_non_empty_string(payload, "display_name"),
             description=_require_non_empty_string(payload, "description"),
             template_version=_require_int(payload, "template_version"),
+            default_entry=_optional_non_empty_string(payload, "default_entry", default="main.py"),
             source_path=str(template_dir.resolve()),
         )
 
-    def _inject_project_manifest(self, *, destination: Path, project_name: str, template_id: str) -> None:
+    def _inject_project_manifest(
+        self,
+        *,
+        destination: Path,
+        project_name: str,
+        template_id: str,
+        default_entry: str,
+    ) -> None:
         if not project_name.strip():
             raise AppValidationError("project_name must be a non-empty string.")
         manifest_path = project_manifest_path(destination)
         try:
             payload = build_default_project_manifest_payload(
                 project_name=project_name.strip(),
-                default_entry="main.py",
+                default_entry=default_entry,
                 working_directory=".",
                 template=template_id,
             )
@@ -137,3 +147,12 @@ def _require_int(payload: dict[str, Any], field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise AppValidationError(f"{field_name} must be an integer.")
     return value
+
+
+def _optional_non_empty_string(payload: dict[str, Any], field_name: str, *, default: str) -> str:
+    value = payload.get(field_name)
+    if value is None:
+        return default
+    if not isinstance(value, str) or not value.strip():
+        raise AppValidationError(f"{field_name} must be a non-empty string when provided.")
+    return value.strip()

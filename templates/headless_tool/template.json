@@ -2,5 +2,6 @@
   "template_id": "headless_tool",
   "display_name": "Headless FreeCAD Tool",
   "description": "Starter tool for FreeCAD-safe headless automation.",
-  "template_version": 1
+  "template_version": 1,
+  "default_entry": "main.py"
 }

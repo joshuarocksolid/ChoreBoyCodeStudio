@@ -44,6 +44,38 @@ def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:
     assert metadata.template == "utility_script"
 
 
+def test_materialize_template_reads_default_entry_from_template_json(tmp_path: Path) -> None:
+    """Materializer should honor template.json default_entry when present."""
+    templates_root = tmp_path / "templates"
+    template_dir = templates_root / "custom_entry"
+    template_dir.mkdir(parents=True, exist_ok=True)
+    (template_dir / "template.json").write_text(
+        """
+{
+  "template_id": "custom_entry",
+  "display_name": "Custom Entry",
+  "description": "Uses a non-default entrypoint.",
+  "template_version": 1,
+  "default_entry": "run.py"
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (template_dir / "run.py").write_text("print('ok')\n", encoding="utf-8")
+
+    service = TemplateService(templates_root=str(templates_root))
+    destination = tmp_path / "generated"
+    created = service.materialize_template(
+        template_id="custom_entry",
+        destination_path=destination,
+        project_name="Custom",
+    )
+
+    metadata = load_project_manifest(created / "cbcs" / "project.json")
+    assert metadata.default_entry == "run.py"
+
+
 def test_materialize_template_rejects_non_empty_destination(tmp_path: Path) -> None:
     """Materialization should fail when destination already contains files."""
     service = TemplateService(templates_root=str(_repo_templates_root()))
