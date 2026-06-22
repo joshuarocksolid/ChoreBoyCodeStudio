@@ -90,10 +90,15 @@ def _build_run_launch_workflow(
     return RunLaunchWorkflow(cast(Any, host)), host
 
 
-def test_launch_ad_hoc_run_invocation_forwards_argv_env_and_wd(tmp_path: Path) -> None:
+def test_launch_ad_hoc_run_invocation_forwards_argv_env_and_wd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     loaded = _loaded_project_with_configs(tmp_path, default_entry="main.py")
     workflow, _host = _build_run_launch_workflow(loaded)
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_arguments.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: True,
+    )
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
@@ -120,10 +125,15 @@ def test_launch_ad_hoc_run_invocation_forwards_argv_env_and_wd(tmp_path: Path) -
     ]
 
 
-def test_launch_ad_hoc_run_invocation_skips_when_preflight_blocks(tmp_path: Path) -> None:
+def test_launch_ad_hoc_run_invocation_skips_when_preflight_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     loaded = _loaded_project_with_configs(tmp_path)
     workflow, _host = _build_run_launch_workflow(loaded)
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: False  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_arguments.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: False,
+    )
     workflow.start_session = lambda **_kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
         AssertionError("session should not start when preflight refuses")
     )
@@ -140,7 +150,9 @@ def test_launch_ad_hoc_run_invocation_skips_when_preflight_blocks(tmp_path: Path
     assert workflow.launch_ad_hoc_run_invocation(invocation) is False
 
 
-def test_handle_run_project_action_uses_active_named_run_configuration(tmp_path: Path) -> None:
+def test_handle_run_project_action_uses_active_named_run_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config_payload = {
         "name": "Debug",
         "entry_file": "debug.py",
@@ -155,7 +167,10 @@ def test_handle_run_project_action_uses_active_named_run_configuration(tmp_path:
         run_configs=[config_payload],
     )
     workflow, _host = _build_run_launch_workflow(loaded, active_named_run_config_name="Debug")
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_actions.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: True,
+    )
     workflow.refresh_active_run_config_indicator = lambda: None  # type: ignore[method-assign]
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
@@ -176,14 +191,19 @@ def test_handle_run_project_action_uses_active_named_run_configuration(tmp_path:
     ]
 
 
-def test_handle_run_project_action_falls_back_to_default_argv_when_no_active_config(tmp_path: Path) -> None:
+def test_handle_run_project_action_falls_back_to_default_argv_when_no_active_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     loaded = _loaded_project_with_configs(
         tmp_path,
         default_entry="app.py",
         default_argv=["--from-default-argv"],
     )
     workflow, _host = _build_run_launch_workflow(loaded, active_named_run_config_name=None)
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_actions.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: True,
+    )
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
@@ -202,11 +222,14 @@ def test_handle_run_with_arguments_action_persists_argv_text_in_recent_history(
     workflow, host = _build_run_launch_workflow(loaded)
     settings_service = SettingsService(state_root=tmp_path / "state")
     host.settings_service = lambda: settings_service
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_arguments.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: True,
+    )
     workflow.start_session = lambda **_kwargs: True  # type: ignore[method-assign]
 
     monkeypatch.setattr(
-        "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
+        "app.shell.run_launch.run_launch_arguments.RunWithArgumentsDialog.run_dialog",
         lambda *_args, **_kwargs: RunWithArgumentsResult(
             outcome=RunWithArgumentsOutcomeKind.RUN,
             invocation=RunInvocation(
@@ -240,7 +263,7 @@ def test_handle_run_with_arguments_action_cancelled_dialog_does_not_run(
     )
 
     monkeypatch.setattr(
-        "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
+        "app.shell.run_launch.run_launch_arguments.RunWithArgumentsDialog.run_dialog",
         lambda *_args, **_kwargs: RunWithArgumentsResult(),
     )
 
@@ -270,7 +293,7 @@ def test_handle_run_with_arguments_action_open_configurations_redirects(
     calls: list[str] = []
 
     monkeypatch.setattr(
-        "app.shell.run_launch_workflow.RunWithArgumentsDialog.run_dialog",
+        "app.shell.run_launch.run_launch_arguments.RunWithArgumentsDialog.run_dialog",
         lambda *_args, **_kwargs: RunWithArgumentsResult(
             outcome=RunWithArgumentsOutcomeKind.OPEN_CONFIGURATIONS,
         ),

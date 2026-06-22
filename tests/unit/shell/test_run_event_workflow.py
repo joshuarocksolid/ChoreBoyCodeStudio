@@ -226,6 +226,7 @@ def test_apply_run_event_exit_cleans_transient_entry_file() -> None:
 
 
 def test_apply_run_event_exit_executes_pending_restart() -> None:
+    """CC-17 / RUN-R-17: process exit event triggers execute_pending_restart_if_any()."""
     host = _FakeRunEventHost()
     restart_calls: list[str] = []
     host.run_debug_presenter = SimpleNamespace(

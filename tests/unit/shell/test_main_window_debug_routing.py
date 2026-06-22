@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
-from app.shell.run_launch_workflow import ProjectTarget  # noqa: E402
+from app.shell.run_launch.debug_targets import ProjectTarget  # noqa: E402
 from app.shell.run_session_controller import RunSessionStartFailureReason, RunSessionStartResult  # noqa: E402
 from app.shell.run_session_store import RunSessionStore  # noqa: E402
 from app.run.run_service import RunSession  # noqa: E402

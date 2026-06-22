@@ -71,20 +71,20 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-11 | P1 | **closed** | RUN-R-11 | `app/pytest/*` | no `app/run/pytest_*` |
 | CC-12 | P1 | **closed** | RUN-R-12 | `run_service.py`, `launch_context.py` | `HostProcessManager` gone; `start_run` ≤50 LOC coordinator via `plan_launch` |
 | CC-13 | P1 | **closed** | RUN-R-13 | `run_manifest.py` | Mode-aware validation; tuple containers; forbidden-field + tuple tests |
-| CC-14 | P1 | open | RUN-R-14 | `repl_control.py`, `repl_protocol.py` | Protocol validation |
+| CC-14 | P1 | **closed** | RUN-R-14 | `repl_control.py`, `repl_protocol.py` | Protocol validation; typed builders + `validate_repl_request` |
 | CC-15 | P1 | **closed** | RUN-R-15 | `debug_session.py`, `debug_models.py` | `continued` → `clear_inspector_state()`; `test_apply_protocol_message_continued_clears_inspector_state` |
-| CC-16 | P1 | open | RUN-R-16 | `run_launch_workflow.py` | Split below 500 LOC |
-| CC-17 | P1 | open | RUN-R-17 | `run_debug_presenter.py`, restart paths | Exit-gated restart |
+| CC-16 | P1 | **closed** | RUN-R-16 | `run_launch_workflow.py`, `run_launch/*` | Facade ≤500 LOC; each split module ≤400 LOC |
+| CC-17 | P1 | **closed** | RUN-R-17 | `run_debug_presenter.py`, `run_event_workflow.py`, restart paths | Pending restart on stop; relaunch on exit event; `ALREADY_RUNNING` QMessageBox; `test_restart_while_running_defers_relaunch_until_exit` + `test_apply_run_event_exit_executes_pending_restart` |
 | CC-18 | P1 | **closed** | RUN-R-18 | `BreakpointStore`, shell workflows | Methods-only store API; `test_breakpoint_store.py` invariant tests; CC-18 grep gates |
 | CC-19 | P1 | **closed** | RUN-R-19 | `run_service.py`, `repl_session_manager.py` | REPL launch SSOT in run layer |
-| CC-20 | P1 | open | RUN-R-20 | `console_model.py`, `exit_status.py` | Relocate to shell |
+| CC-20 | P1 | **closed** | RUN-R-20 | `app/shell/console_model.py`, `app/shell/exit_status.py` | Relocated from `app/run/`; CC-20 import-graph grep gates |
 | CC-21 | P2 | **closed** | RUN-R-21 | `debug_session.py`, `debug_models.py` | Legacy `DebugEvent`/`apply_event`/stdout path gone; grep gate + unit reducer tests |
-| CC-22 | P2 | open | RUN-R-22 | supervisor, repl_control, runner bootstrap | bare `except` ≤8 |
+| CC-22 | P2 | **closed** | RUN-R-22 | supervisor, repl_control, runner bootstrap | bare `except` ≤8 |
 | CC-23 | P2 | **closed** | RUN-R-23 | `tests/unit/debug/test_debug_transport_lifecycle.py` | 14 lifecycle tests: shutdown order, EOF, error paths, concurrency |
 | CC-24 | P2 | **closed** | RUN-R-24 | `outcome_types.py`, `discovery_service.py`, `test_runner_workflow.py`, `test_explorer_panel.py` | Typed outcomes end-to-end; pyright on pytest pkg |
 | CC-25 | P2 | **closed** | RUN-R-25 | `clear_console_policy.py`, `clear_console_contract.py`, runner hints | Unified clear policy + characterization tests |
 
-**@ HEAD summary:** 19 closed (incl. CC-18, CC-19, CC-21, CC-23, CC-24), 6 open — **P0 milestone verified @ `57aac8d`**; RUN-R-14 / RUN-R-16 next.
+**@ HEAD summary:** 25 closed, 0 open — **Run Wave 1 CC matrix complete @ `8b94cd8+`**; proceed to wave closure doc + INTEGR gate.
 
 ---
 
@@ -121,12 +121,12 @@ Status key: **closed** | **partial** | **open** | **waived**
 | **RUN-R-14** | 2 | CC-14 *(closed)* | REPL protocol typing + validation | `test_repl_protocol.py` + `test_repl_control.py` |
 | **RUN-R-15** | 2 | CC-15 | *(closed @ HEAD)* — `continued` calls `clear_inspector_state()` | `test_apply_protocol_message_continued_clears_inspector_state` |
 | **RUN-R-16** | 3 | CC-16 | Split `run_launch_workflow.py` | each module <400 LOC |
-| **RUN-R-17** | 3 | CC-17 | Exit-gated restart; surface `ALREADY_RUNNING` | slow integration |
+| **RUN-R-17** | 3 | CC-17 *(closed)* | Exit-gated restart; surface `ALREADY_RUNNING` | `test_run_debug_presenter.py` + `test_run_event_workflow.py` + `test_restart_action_routes_through_presenter` |
 | **RUN-R-18** | 3 | CC-18 *(closed)* | `BreakpointStore` encapsulation | store invariant tests + CC-18 grep gates |
 | **RUN-R-19** | 2 | CC-19 | REPL launch SSOT in run layer | import graph gate |
-| **RUN-R-20** | 3 | CC-20 | Relocate presentation modules to shell | import graph |
+| **RUN-R-20** | 3 | CC-20 *(closed)* | Relocate presentation modules to shell | import graph grep gates + `test_console_model.py` |
 | **RUN-R-21** | 5 | CC-21 *(closed)* | Remove legacy debug reducer paths | `test_no_legacy_debug_reducer_paths` + `test_debug_session.py` |
-| **RUN-R-22** | 5 | CC-22 | Narrow bare `except Exception:` | count ≤8 |
+| **RUN-R-22** | 5 | CC-22 *(closed)* | Narrow bare `except Exception:` | count ≤8 + allowlist gate |
 | **RUN-R-23** | 4 | CC-23 *(closed)* | Expand transport lifecycle suite | `test_debug_transport_lifecycle.py` — 14 tests green |
 | **RUN-R-24** | 4 | CC-24 | Typed test outcomes end-to-end | pyright strict on pytest pkg |
 | **RUN-R-25** | 3 | CC-25 *(closed)* | Unified clear-console policy | `test_clear_console_policy.py` + REPL hint SSOT |
@@ -145,8 +145,8 @@ Status key: **closed** | **partial** | **open** | **waived**
 | `process_supervisor.py` LOC | 326 |
 | `run_manifest.py` LOC | 480 |
 | `debug_session.py` LOC | 294 |
-| `run_launch_workflow.py` LOC | 676 |
-| bare `except Exception:` (run/runner/debug) | 15 |
+| `run_launch_workflow.py` LOC | 121 |
+| bare `except Exception:` (run/runner/debug) | 4 |
 | `# type: ignore` (run/runner/debug) | 7 |
 | `window: Any` in run/debug shell seam | 0 in `run_launch_workflow.py` |
 
@@ -176,9 +176,12 @@ Automated in `tests/unit/run/test_run_wave_grep_gates.py`:
 | CC-12 | No `HostProcessManager` under `app/run/`; `start_run` ≤50 LOC with `plan_launch` + `_start_manifest` |
 | CC-01/06 partial | Transport error forwards + closes server; runner pause loop bounded |
 | CC-05 | Runner uses `-q` + `-rA`; workflow maps summary lines to explorer |
-| CC-22 ceiling | bare `except Exception:` count ≤20 (tighten to ≤8 at RUN-R-22) |
+| CC-22 ceiling | bare `except Exception:` count ≤8; only observer/bootstrap paths in allowlist |
 | CC-18 | No `@property` / dict-alias exports on `BreakpointStore`; no `breakpoints_by_file=` injection in shell workflows |
+| CC-19 | `ReplSessionManager` delegates REPL launch to `RunService.start_repl_sidecar` (no local manifest/command assembly) |
+| CC-20 | No `console_model.py` / `exit_status.py` under `app/run/`; no `from app.run.(console_model|exit_status)` imports |
 | CC-21 | No `DebugEvent`, `apply_event(`, `ingest_output_line`, `debug_event_protocol`, or `__CB_DEBUG_` under `app/debug/` |
+| CC-16 | `run_launch_workflow.py` ≤500 LOC; each `app/shell/run_launch/*.py` split module ≤400 LOC; no debug-target re-exports on facade |
 
 Manual gates (extend as themes close):
 
@@ -197,7 +200,7 @@ find app -name "*.py" -exec wc -l {} + | awk '$1>=1000 {print}'
 | CC | Disposition |
 |----|-------------|
 | CC-21 | **closed** @ HEAD — legacy `DebugEvent`/`apply_event()` removed @ `c1ab898`; stdout marker path gone; `test_no_legacy_debug_reducer_paths` grep gate |
-| CC-22 | Close in RUN-R-22 — target ≤8 bare except |
+| CC-22 | **closed** @ HEAD — bare `except Exception:` narrowed to 4 observer/bootstrap paths; REPL runtime degradation uses `REPL_RUNTIME_DEGRADATION_EXCEPTIONS`; grep gate ≤8 + allowlist |
 | CC-23 | **closed** @ HEAD — 14-test lifecycle suite (shutdown order, EOF, error callbacks, concurrent send) |
 | CC-24 | **closed** @ HEAD — `TestOutcome` flows parse → workflow → explorer |
 | CC-25 | **closed** @ HEAD — `clear_console_contract.py` SSOT; `test_clear_console_policy.py` sink matrix |

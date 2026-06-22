@@ -158,6 +158,7 @@ def test_start_session_already_running_shows_warning(monkeypatch: pytest.MonkeyP
 
 
 def test_restart_while_running_defers_relaunch_until_exit() -> None:
+    """CC-17 / RUN-R-17: restart while supervisor running stops first; relaunch waits for exit."""
     host = _PresenterHostStub(is_running=True, active_mode=constants.RUN_MODE_PYTHON_SCRIPT)
     presenter = RunDebugPresenter(host)
 

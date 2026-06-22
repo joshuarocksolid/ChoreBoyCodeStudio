@@ -125,7 +125,9 @@ def test_handle_debug_action_routes_to_active_file_and_collects_breakpoints() ->
     ]
 
 
-def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path) -> None:
+def test_handle_run_project_action_uses_project_entry_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     project_root = tmp_path / "proj"
     project_root.mkdir()
     (project_root / "app.py").write_text("print('run')\n", encoding="utf-8")
@@ -142,7 +144,10 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
         loaded_project=loaded,
         active_named_run_config_name=None,
     )
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: True  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_actions.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: True,
+    )
     calls: list[dict[str, object]] = []
     workflow.start_session = lambda **kwargs: calls.append(kwargs) or True  # type: ignore[method-assign]
 
@@ -152,7 +157,9 @@ def test_handle_run_project_action_uses_project_entry_resolution(tmp_path: Path)
     assert calls == [{"mode": constants.RUN_MODE_PYTHON_SCRIPT, "entry_file": "app.py"}]
 
 
-def test_handle_run_project_action_stops_when_preflight_fails_without_modal_resolution(tmp_path: Path) -> None:
+def test_handle_run_project_action_stops_when_preflight_fails_without_modal_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     project_root = tmp_path / "proj"
     project_root.mkdir()
     manifest_path = project_root / "cbcs" / "project.json"
@@ -168,7 +175,10 @@ def test_handle_run_project_action_stops_when_preflight_fails_without_modal_reso
         loaded_project=loaded,
         active_named_run_config_name=None,
     )
-    workflow._ensure_run_preflight_ready = lambda **_kwargs: False  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        "app.shell.run_launch.run_launch_actions.ensure_run_preflight_ready",
+        lambda *_args, **_kwargs: False,
+    )
     workflow.start_session = lambda **_kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
         AssertionError("session should not start")
     )

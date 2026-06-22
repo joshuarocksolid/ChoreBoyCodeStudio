@@ -41,7 +41,8 @@ from app.shell.python_console_workflow import (
     MainWindowPythonConsoleHost,
     PythonConsoleWorkflow,
 )
-from app.shell.run_launch_workflow import MainWindowRunLaunchHost, RunLaunchWorkflow
+from app.shell.run_launch.run_launch_workflow_host import MainWindowRunLaunchHost
+from app.shell.run_launch_workflow import RunLaunchWorkflow
 from app.shell.runtime_support_workflow import RuntimeSupportWorkflow
 from app.shell.save_workflow import MainWindowSaveDocumentHost, SaveWorkflow
 from app.shell.settings_apply_workflow import (
