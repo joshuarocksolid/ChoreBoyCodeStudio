@@ -2,17 +2,17 @@
 overall: IN_PROGRESS
 current_phase: P1
 current_item: P1-2
-last_verified_commit: a015e0a
-last_session_ended: 2026-06-23T01:00:00Z
+last_verified_commit: fd8726d
+last_session_ended: 2026-06-23T02:00:00Z
 metrics:
   app_files_gte_1000: 0
   main_window_methods: 28
   shell_window_any_count: 66
   files_gte_700: 5
-  shell_composition_loc: 404
-  diff_view_loc: 446
   semantic_navigation_workflow_loc: 130
-  intelligence_loc: 6901
+  editor_stale_result_policy_loc: 54
+  intelligence_loc: 6897
+  complete_fast_shell_matches: 0
 phases:
   P0: done
   P1: in_progress
@@ -21,58 +21,77 @@ phases:
   P4: pending
 blockers: []
 next_actions:
-  - "INT-R-01 CC-01: baseline Intelligence Wave 1 @ HEAD — verify semantic_session worker-only broker lane, rg 'complete_fast' shell callers, semantic_navigation_workflow LOC gate; run tests/unit/intelligence/ + targeted shell seam tests"
-sessions_completed: 9
+  - "INT-R-04 CC-04: verify menu/nav paths never call resolve_*_blocking; add regression test if missing; then INT-R-05 (CC-05 completion prefix SSOT)"
+sessions_completed: 10
 ```
 
-## Session 9 summary (2026-06-23) — Shell Wave 2 closure + Intelligence W1 handoff
+## Session 10 summary (2026-06-23) — Intelligence W1 baseline + INT-R-01/03
 
-### Landed
-
-**SHELL-R-18 (CC-SHELL2-11 ACCEPT):** Verified editor text menu routes fully on `EditorTabsCoordinator` (`menu_wiring.py` lines 108–120); MainWindow **28** methods; zero `window._handle_*` in menu wiring. Added `tests/unit/shell/test_editor_tabs_coordinator.py` behavioral delegate tests.
-
-**SHELL-R-19 (CC-SHELL2-22 PARTIAL → P1 milestone):** Verified diff decomposition @ HEAD (`diff_parser.py` 273, `diff_gutter.py` 149, `diff_view.py` 446); targeted tests PASS. Residual: `recovery_orchestrator.py` not extracted (`local_history_workflow.py` 773 LOC).
-
-**SHELL-R-20 (CC-SHELL2-10/16 ACCEPT):** Verified settings handler split (`settings_dialog_handlers.py` 21 LOC composite) + `build_settings_apply_diff` SSOT; outline in-place theme test green.
-
-**Shell Wave 2 closure:** [`shell_wave_2_remediation_closure_2026-06-22.md`](shell-wave-2/shell_wave_2_remediation_closure_2026-06-22.md) — **ACCEPT (P1 milestones)** with documented P2 residuals.
-
-### Verification @ HEAD (a015e0a + session 9 local)
+### Baseline @ HEAD (fd8726d)
 
 | Gate | Result |
 |------|--------|
-| fast shard | **PASS** (exit 0; ~106s) |
-| pyright | **0 errors** |
+| `semantic_navigation_workflow.py` LOC | **130** (was 1103 @ kickoff) |
+| `complete_fast` in `app/shell/` | **0** (post INT-R-03) |
+| `editor_stale_result_policy.py` | **54 LOC** + 6 unit tests |
+| `complete_blocking` / `_completion_provider` | **absent** (INT-R-02 pre-landed) |
+| intelligence package LOC | **6897**; no files ≥700 |
 | app files ≥1k | **0** |
-| main_window methods | **28** |
-| `window: Any` shell-wide | **66** |
-| Wave 5–6 targeted tests | **PASS** (173 + 3 new coordinator tests) |
+
+### Landed this session
+
+**INT-R-01 (CC-18 ACCEPT):** Verified @ HEAD — stale gate module exists; `lint_workflow`, `inline_intelligence_workflow`, `editor_completion_workflow`, `editor_tab_outline_workflow` use `deliver_revision_gated_editor_result`.
+
+**INT-R-02 (CC-22/19/23 partial ACCEPT):** Verified @ HEAD — `complete_blocking` and `_completion_provider` sync paths deleted.
+
+**INT-R-03 (CC-01/CC-07 ACCEPT):** Removed UI-thread `complete_fast_sync` duplicate fast path from `editor_completion_workflow.py`; deleted `complete_fast_sync` from `editor_intelligence_controller.py` and `semantic_session.py`. Fast tier now worker-only via existing `request_completion_fast` / `request_editor_completions`. Added `test_request_editor_completions_uses_worker_lane_not_ui_sync_fast`.
+
+### Verification @ session end
+
+| Gate | Result |
+|------|--------|
+| fast shard | **PASS** (exit 0; ~139s) |
+| pyright | **0 errors** |
+| `test_completion_broker_concurrency.py` | **PASS** |
+| targeted intelligence/shell tests | **PASS** (25) |
+
+### CC theme status (Intelligence Wave 1)
+
+| CC | PR | Status |
+|----|-----|--------|
+| CC-18 | R-01 | **ACCEPT** |
+| CC-22/19/23 | R-02 | **PARTIAL** (dead paths deleted; full CC-22/23 backlog remains) |
+| CC-01 | R-03 | **ACCEPT** |
+| CC-07 | R-03 | **ACCEPT** (acceptance via workflow → worker) |
+| CC-04 | R-04 | **open** — next |
+| CC-05 … CC-07 remainder | R-05+ | **open** |
 
 ### Wave status
 
 | Wave | Status |
 |------|--------|
 | editors-wave-1 | ACCEPT |
-| shell-wave-2 | **ACCEPT (P1 milestones)** — closure doc written |
-| intelligence-wave-1 | **open (P1-2)** — next |
+| shell-wave-2 | ACCEPT (P1 milestones) |
+| intelligence-wave-1 | **in_progress** — R-01/02/03 closed; R-04 next |
 | project-ssot-wave-1 | open (P1-3) |
 | run-wave-1 | open (P1-4) |
 
 ### Uncommitted working tree (ready for parent commit)
 
 ```
+ M app/intelligence/semantic_session.py
+ M app/shell/editor_completion_workflow.py
+ M app/shell/editor_intelligence_controller.py
+ M tests/unit/shell/test_editor_completion_workflow.py
  M docs/code review/PROGRAM_STATUS.md
-?? docs/code review/shell-wave-2/shell_wave_2_remediation_closure_2026-06-22.md
-?? tests/unit/shell/test_editor_tabs_coordinator.py
 ```
 
-### Verification commands (Intelligence W1 kickoff)
+### Verification commands (re-run before INT-R-04)
 
 ```bash
-find app/intelligence -name "*.py" -exec wc -l {} + | awk '$1>=700'
 rg "complete_fast" app/shell/
-wc -l app/shell/semantic_navigation_workflow.py
-python3 run_tests.py tests/unit/intelligence/
+rg "complete_blocking|_completion_provider" app/
+python3 run_tests.py tests/unit/shell/test_editor_completion_workflow.py tests/unit/intelligence/test_completion_broker_concurrency.py
 python3 testing/preflight_test_env.py
 python3 testing/run_test_shard.py fast
 npx pyright

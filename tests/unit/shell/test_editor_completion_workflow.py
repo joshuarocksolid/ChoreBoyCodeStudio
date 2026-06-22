@@ -18,9 +18,13 @@ pytestmark = pytest.mark.unit
 class _FakeIntelligenceController:
     def __init__(self) -> None:
         self.resolve_calls: list[dict[str, Any]] = []
+        self.editor_completion_calls: list[dict[str, Any]] = []
 
     def request_completion_resolve(self, **kwargs: Any) -> None:
         self.resolve_calls.append(kwargs)
+
+    def request_editor_completions(self, **kwargs: Any) -> None:
+        self.editor_completion_calls.append(kwargs)
 
 
 class _FakeHost:
@@ -73,3 +77,33 @@ def test_completion_resolve_skips_delivery_when_generation_is_stale() -> None:
     )
 
     assert editor_widget.show_resolved_calls == []
+
+
+def test_request_editor_completions_uses_worker_lane_not_ui_sync_fast() -> None:
+    editor_widget = SimpleNamespace(
+        completion_request_generation=lambda: 1,
+        show_completion_calls=[],
+        show_completion_items_for_request=lambda **kwargs: editor_widget.show_completion_calls.append(kwargs),
+    )
+    host = _FakeHost(editor_widget=editor_widget)
+    host.show_status_message = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    host.reported_completion_degradation_reasons = lambda: set()  # type: ignore[attr-defined]
+    host.intelligence_metrics_logging_enabled = lambda: False  # type: ignore[attr-defined]
+    host.completion_min_chars = lambda: 2  # type: ignore[attr-defined]
+    host.log_info = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    host.log_warning = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    workflow = EditorCompletionWorkflow(host)
+
+    workflow.request_editor_completions_async(
+        file_path="/tmp/a.py",
+        editor_widget=editor_widget,
+        source_text="obj.\n",
+        cursor_position=4,
+        manual_trigger=False,
+        request_generation=1,
+        trigger_kind="invoked",
+        trigger_character=".",
+    )
+
+    assert len(host.intelligence_controller().editor_completion_calls) == 1
+    assert not hasattr(host.intelligence_controller(), "complete_fast_sync")
