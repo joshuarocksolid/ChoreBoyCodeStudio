@@ -26,9 +26,11 @@ from app.packaging.models import (
     PACKAGE_KIND_PRODUCT,
     PACKAGE_PROFILE_INSTALLABLE,
 )
+from app.packaging.prune_rules import PRODUCT_PACKAGING_PRUNE_RULES
 from app.packaging.tree_sitter_cp39 import (
     CP39_TREE_SITTER_SOABI,
     stage_cp39_tree_sitter_core_binding,
+    tree_sitter_core_binding_name,
 )
 from app.treesitter.language_specs import LANGUAGE_SPECS
 
@@ -40,8 +42,6 @@ INCLUDE_FILES = (
     "launcher.py",
     "LICENSE",
 )
-PRUNE_DIR_NAMES = {"__pycache__", ".pyc"}
-PRUNE_DIR_SUFFIXES = {".dist-info"}
 VENDOR_ALLOWLIST = (
     # Formatting
     "black", "blib2to3", "click", "mypy_extensions.py",
@@ -312,15 +312,11 @@ def build_product_artifact(
 
 
 def _should_prune_dir(name: str) -> bool:
-    if name.startswith("."):
-        return True
-    if name in PRUNE_DIR_NAMES:
-        return True
-    return any(name.endswith(suffix) for suffix in PRUNE_DIR_SUFFIXES)
+    return PRODUCT_PACKAGING_PRUNE_RULES.should_prune_dir_name(name)
 
 
 def _should_skip_file(name: str) -> bool:
-    if name.endswith(".pyc"):
+    if PRODUCT_PACKAGING_PRUNE_RULES.should_prune_file_name(name):
         return True
     if name.endswith(".so"):
         return any(tag in name for tag in _CPYTHON_SO_EXCLUDE_TAGS)
@@ -363,7 +359,7 @@ def _copy_vendor_allowlisted(
 def _expected_tree_sitter_binding_name(
     soabi: str = CHOREBOY_PRODUCT_TREE_SITTER_SOABI,
 ) -> str:
-    return f"_binding.{soabi}.so"
+    return tree_sitter_core_binding_name(soabi)
 
 
 def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:

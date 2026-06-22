@@ -7,8 +7,14 @@ from collections import Counter
 from pathlib import Path
 
 from app.core.models import RuntimeIssue
-from app.packaging.layout import is_packaging_excluded_path
+from app.packaging.manifest_consistency_audit import check_manifest_consistency
 from app.packaging.models import DependencyAuditRecord, DependencyAuditReport
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
+from app.packaging.subprocess_packaging_rules import subprocess_issues
+from app.packaging.vendor_native_validation import (
+    collect_imported_top_levels_from_tree,
+    orphan_vendor_native_issues,
+)
 from app.project.dependency_classifier import (
     CATEGORY_FIRST_PARTY,
     CATEGORY_FIRST_PARTY_RELATIVE,
@@ -21,12 +27,8 @@ from app.project.dependency_classifier import (
     classify_module,
     classify_relative_import,
 )
-from app.project.file_inventory import iter_python_files
 from app.project.import_layout import ProjectImportLayout, resolve_project_import_layout
-from app.project.native_extension_scan import iter_native_artifacts_in_tree
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
-
-_SUBPROCESS_CALL_NAMES = {"Popen", "call", "check_call", "check_output", "run"}
 
 _CATEGORY_DETAILS: dict[str, str] = {
     CATEGORY_STDLIB: "Python standard library import.",
@@ -65,11 +67,10 @@ def run_dependency_audit(
     issues: list[RuntimeIssue] = []
     issue_keys: set[tuple[str, str, str]] = set()
     classification_counts: Counter[str] = Counter()
+    imported_top_levels: set[str] = set()
 
-    for file_path in iter_python_files(root, extra_top_level_skips=("vendor",)):
+    for file_path in DEFAULT_PACKAGING_PAYLOAD_POLICY.iter_audit_python_files(root):
         rel_path = file_path.relative_to(root)
-        if is_packaging_excluded_path(rel_path):
-            continue
         try:
             source = file_path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(file_path))
@@ -98,6 +99,8 @@ def run_dependency_audit(
             )
             continue
 
+        imported_top_levels.update(collect_imported_top_levels_from_tree(tree))
+
         for record in _collect_import_records(
             tree=tree,
             file_path=file_path,
@@ -112,13 +115,12 @@ def run_dependency_audit(
             if issue is not None:
                 _append_issue(issues, issue_keys, issue)
 
-        for issue in _subprocess_issues(tree=tree, file_path=file_path, project_root=root):
+        for issue in subprocess_issues(tree=tree, file_path=file_path, project_root=root):
             _append_issue(issues, issue_keys, issue)
 
-    imported_top_levels = _collect_imported_top_levels(root)
-    for orphan_issue in _orphan_vendor_native_issues(
+    for orphan_issue in orphan_vendor_native_issues(
         project_root=root,
-        imported_top_levels=imported_top_levels,
+        imported_top_levels=frozenset(imported_top_levels),
     ):
         _append_issue(issues, issue_keys, orphan_issue)
 
@@ -323,134 +325,6 @@ def _issue_for_record(record: DependencyAuditRecord) -> RuntimeIssue | None:
     return None
 
 
-def _subprocess_issues(
-    *,
-    tree: ast.AST,
-    file_path: Path,
-    project_root: Path,
-) -> list[RuntimeIssue]:
-    issues: list[RuntimeIssue] = []
-    rel_file = file_path.relative_to(project_root).as_posix()
-    if _imports_subprocess_module(tree):
-        issues.append(
-            RuntimeIssue(
-                issue_id=f"package.subprocess.review.{rel_file}",
-                workflow="package",
-                severity="degraded",
-                title="Project uses subprocess APIs that need ChoreBoy review",
-                summary="This project imports `subprocess`, which can behave differently on constrained ChoreBoy systems.",
-                why_it_happened="Inside the validated AppRun environment, subprocess execution is intentionally restricted and should not assume arbitrary executables are available.",
-                next_steps=[
-                    "Review subprocess calls for reliance on executables other than `/bin/sh`.",
-                    "Prefer in-process Python or documented shell entrypoints where possible.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={"source_file": rel_file},
-            )
-        )
-    for lineno, command_name in _literal_external_commands(tree):
-        issues.append(
-            RuntimeIssue(
-                issue_id=f"package.subprocess.literal_binary.{rel_file}.{lineno}",
-                workflow="package",
-                severity="blocking",
-                title="Package hardcodes a subprocess target that is unlikely to work on ChoreBoy",
-                summary=f"A subprocess call launches `{command_name}` directly instead of `/bin/sh`.",
-                why_it_happened="The validated ChoreBoy runtime only guarantees subprocess compatibility through `/bin/sh` inside AppRun.",
-                next_steps=[
-                    "Rewrite the subprocess call to use a supported shell entrypoint or an in-process alternative.",
-                    "Re-run packaging after removing the direct binary assumption.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={
-                    "source_file": rel_file,
-                    "line_number": lineno,
-                    "command_name": command_name,
-                },
-            )
-        )
-    for lineno in _shell_true_subprocess_calls(tree):
-        issues.append(
-            RuntimeIssue(
-                issue_id=f"package.subprocess.shell_true.{rel_file}.{lineno}",
-                workflow="package",
-                severity="blocking",
-                title="Package uses shell=True subprocess execution",
-                summary="A subprocess call opts into shell parsing, which is not part of the supported ChoreBoy packaging contract.",
-                why_it_happened="Shell-mediated subprocesses hide the executable boundary and are difficult to validate under ChoreBoy's restricted runtime.",
-                next_steps=[
-                    "Replace shell=True with an explicit argv-list launch.",
-                    "If a shell is required, call `/bin/sh` explicitly and document the command contract.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={"source_file": rel_file, "line_number": lineno},
-            )
-        )
-    return issues
-
-
-def _imports_subprocess_module(tree: ast.AST) -> bool:
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            if any(alias.name.split(".")[0] == "subprocess" for alias in node.names):
-                return True
-        if isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.split(".")[0] == "subprocess":
-                return True
-    return False
-
-
-def _literal_external_commands(tree: ast.AST) -> list[tuple[int, str]]:
-    commands: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        command_name = ""
-        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-            if func.value.id == "subprocess" and func.attr in _SUBPROCESS_CALL_NAMES:
-                command_name = _first_command_name(node)
-            elif func.value.id == "os" and func.attr in {"execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp", "execvpe", "system", "popen"}:
-                command_name = _first_command_name(node)
-        if not command_name:
-            continue
-        if command_name != "/bin/sh":
-            commands.append((int(getattr(node, "lineno", 1) or 1), command_name))
-    return commands
-
-
-def _first_command_name(node: ast.Call) -> str:
-    if not node.args:
-        return ""
-    first_arg = node.args[0]
-    if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
-        command_text = first_arg.value.strip()
-        if not command_text:
-            return ""
-        return command_text.split()[0]
-    if isinstance(first_arg, (ast.List, ast.Tuple)) and first_arg.elts:
-        first_element = first_arg.elts[0]
-        if isinstance(first_element, ast.Constant) and isinstance(first_element.value, str):
-            return first_element.value.strip()
-    return ""
-
-
-def _shell_true_subprocess_calls(tree: ast.AST) -> list[int]:
-    line_numbers: list[int] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
-            continue
-        if func.value.id != "subprocess" or func.attr not in _SUBPROCESS_CALL_NAMES:
-            continue
-        for keyword in node.keywords:
-            if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
-                line_numbers.append(int(getattr(node, "lineno", 1) or 1))
-    return line_numbers
-
-
 def _append_issue(
     issues: list[RuntimeIssue],
     issue_keys: set[tuple[str, str, str]],
@@ -461,171 +335,6 @@ def _append_issue(
         return
     issue_keys.add(key)
     issues.append(issue)
-
-
-def _collect_imported_top_levels(project_root: Path) -> frozenset[str]:
-    top_levels: set[str] = set()
-    for file_path in iter_python_files(project_root, extra_top_level_skips=("vendor",)):
-        rel_path = file_path.relative_to(project_root)
-        if is_packaging_excluded_path(rel_path):
-            continue
-        try:
-            source = file_path.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=str(file_path))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    top_levels.add(alias.name.split(".")[0])
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                top_levels.add(node.module.split(".")[0])
-    return frozenset(top_levels)
-
-
-def _native_artifact_top_level(vendor_root: Path, artifact: Path) -> str:
-    try:
-        relative = artifact.relative_to(vendor_root)
-    except ValueError:
-        return ""
-    if not relative.parts:
-        return ""
-    if len(relative.parts) == 1:
-        stem = artifact.stem
-        if ".cpython-" in stem:
-            stem = stem.split(".cpython-", 1)[0]
-        return stem
-    return relative.parts[0]
-
-
-def _orphan_vendor_native_issues(
-    *,
-    project_root: Path,
-    imported_top_levels: frozenset[str],
-) -> list[RuntimeIssue]:
-    vendor_root = project_root / "vendor"
-    if not vendor_root.is_dir():
-        return []
-    issues: list[RuntimeIssue] = []
-    seen_top_levels: set[str] = set()
-    for artifact in iter_native_artifacts_in_tree(vendor_root):
-        top_level = _native_artifact_top_level(vendor_root, artifact)
-        if not top_level or top_level in imported_top_levels or top_level in seen_top_levels:
-            continue
-        seen_top_levels.add(top_level)
-        issues.append(
-            RuntimeIssue(
-                issue_id=f"package.dependency.orphan_native.{top_level}",
-                workflow="package",
-                severity="blocking",
-                title="Vendored native extension is not referenced by project imports",
-                summary=(
-                    f"A compiled extension for `{top_level}` exists under `vendor/`, "
-                    "but no project import references that top-level module."
-                ),
-                why_it_happened=(
-                    "Packaging blocks orphan native payloads that are not tied to an import graph entry."
-                ),
-                next_steps=[
-                    "Remove the unused native artifact from vendor/.",
-                    "Or add an explicit import that references the vendored module before exporting.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={
-                    "top_level": top_level,
-                    "artifact_path": artifact.relative_to(project_root).as_posix(),
-                },
-            )
-        )
-    return issues
-
-
-def check_manifest_consistency(*, project_root: str) -> list[RuntimeIssue]:
-    """Check that cbcs/dependencies.json entries are consistent with vendor/ state."""
-    from app.project.dependency_manifest import (
-        CLASSIFICATION_NATIVE_EXTENSION,
-        CLASSIFICATION_PURE_PYTHON,
-        load_dependency_manifest,
-    )
-    from app.project.native_extension_scan import tree_contains_native_artifacts
-
-    root = Path(project_root).expanduser().resolve()
-    manifest = load_dependency_manifest(project_root)
-    issues: list[RuntimeIssue] = []
-
-    for entry in manifest.active_entries():
-        if not entry.vendor_path:
-            continue
-        vendor_path = root / entry.vendor_path
-        if not vendor_path.exists():
-            issues.append(
-                RuntimeIssue(
-                    issue_id=f"package.dependency.manifest_missing_vendor.{entry.name}",
-                    workflow="package",
-                    severity="blocking",
-                    title=f"Dependency '{entry.name}' is in manifest but missing from vendor/",
-                    summary=(
-                        f"The dependency manifest lists '{entry.name}' as active, "
-                        f"but the vendored files at '{entry.vendor_path}' are missing."
-                    ),
-                    why_it_happened=(
-                        "The vendor directory may have been cleaned, or the dependency "
-                        "was removed from disk without updating the manifest."
-                    ),
-                    next_steps=[
-                        f"Re-add '{entry.name}' through the Add Dependency wizard.",
-                        "Or remove the entry from the dependency manifest.",
-                    ],
-                )
-            )
-            continue
-
-        has_native = tree_contains_native_artifacts(vendor_path)
-        if entry.classification == CLASSIFICATION_PURE_PYTHON and has_native:
-            issues.append(
-                RuntimeIssue(
-                    issue_id=f"package.dependency.manifest_native_mismatch.{entry.name}",
-                    workflow="package",
-                    severity="blocking",
-                    title=f"Dependency '{entry.name}' manifest says pure Python but vendor/ has native files",
-                    summary=(
-                        f"The manifest classifies '{entry.name}' as pure Python, "
-                        f"but compiled extension files were found under '{entry.vendor_path}'."
-                    ),
-                    why_it_happened=(
-                        "The dependency manifest classification no longer matches the vendored payload."
-                    ),
-                    next_steps=[
-                        "Re-ingest the dependency so the manifest classification is updated.",
-                        "Or remove the native artifacts if they were added accidentally.",
-                    ],
-                    help_topic=HELP_TOPIC_PACKAGING,
-                    evidence={"vendor_path": entry.vendor_path},
-                )
-            )
-        elif entry.classification == CLASSIFICATION_NATIVE_EXTENSION and not has_native:
-            issues.append(
-                RuntimeIssue(
-                    issue_id=f"package.dependency.manifest_pure_mismatch.{entry.name}",
-                    workflow="package",
-                    severity="degraded",
-                    title=f"Dependency '{entry.name}' manifest says native but vendor/ is pure Python",
-                    summary=(
-                        f"The manifest classifies '{entry.name}' as a native extension, "
-                        f"but no compiled extension files were found under '{entry.vendor_path}'."
-                    ),
-                    why_it_happened=(
-                        "The dependency manifest classification may be stale relative to the vendored files."
-                    ),
-                    next_steps=[
-                        "Re-ingest the dependency to refresh manifest classification.",
-                        "Or update the manifest entry if the dependency is now pure Python.",
-                    ],
-                    help_topic=HELP_TOPIC_PACKAGING,
-                    evidence={"vendor_path": entry.vendor_path},
-                )
-            )
-    return issues
 
 
 def _build_summary(classification_counts: Counter[str], issues: list[RuntimeIssue]) -> str:
@@ -639,9 +348,16 @@ def _build_summary(classification_counts: Counter[str], issues: list[RuntimeIssu
     degraded_count = sum(1 for issue in issues if issue.severity == "degraded")
     if not issues:
         return f"Dependency audit is clear: {count_text}."
-    parts = [f"Dependency audit found {blocking_count} blocking" if blocking_count else "Dependency audit has no blocking issues"]
+    parts = [
+        f"Dependency audit found {blocking_count} blocking"
+        if blocking_count
+        else "Dependency audit has no blocking issues"
+    ]
     if degraded_count:
         parts.append(f"{degraded_count} degraded")
     if count_text:
         parts.append(count_text)
     return "; ".join(parts) + "."
+
+
+__all__ = ("check_manifest_consistency", "run_dependency_audit")

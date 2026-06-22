@@ -19,7 +19,14 @@ CP39_TREE_SITTER_VERSION = "0.23.2"
 CP39_TREE_SITTER_PYTHON_VERSION = "3.9"
 CP39_TREE_SITTER_PLATFORM = "manylinux_2_17_x86_64"
 CP39_TREE_SITTER_SOABI = "cpython-39-x86_64-linux-gnu"
-CP39_TREE_SITTER_BINDING_NAME = f"_binding.{CP39_TREE_SITTER_SOABI}.so"
+
+
+def tree_sitter_core_binding_name(soabi: str) -> str:
+    """Return the tree-sitter core ``_binding`` filename for *soabi*."""
+    return f"_binding.{soabi}.so"
+
+
+CP39_TREE_SITTER_BINDING_NAME = tree_sitter_core_binding_name(CP39_TREE_SITTER_SOABI)
 
 _WHEEL_FILENAME_RE = re.compile(
     r"^tree_sitter-"

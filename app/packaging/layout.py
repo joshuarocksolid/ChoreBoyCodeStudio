@@ -5,9 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from app.packaging.launcher_bootstrap import validate_packaged_entry_relative_path
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
-
-_UNSAFE_ENTRY_CHARS = {'"', "'", "\n", "\r", "\t", "\x00"}
 
 
 def sanitize_project_name(name: str) -> str:
@@ -92,21 +91,6 @@ def resolve_entry_path(*, root: Path, entry_file: str) -> tuple[Path | None, str
     if not resolved_entry.exists() or not resolved_entry.is_file():
         return None, f"Entry file not found in project: {entry_file}"
     return resolved_entry, None
-
-
-def validate_packaged_entry_relative_path(entry_relative_path: str) -> str:
-    """Return a normalized package entry path or raise for unsafe values."""
-    normalized = entry_relative_path.strip().replace("\\", "/")
-    if not normalized:
-        raise ValueError("entry_relative_path must be a non-empty relative path.")
-    if any(char in normalized for char in _UNSAFE_ENTRY_CHARS):
-        raise ValueError("entry_relative_path contains unsafe shell or control characters.")
-    path = Path(normalized)
-    if path.is_absolute():
-        raise ValueError("entry_relative_path must be relative.")
-    if any(part in {"", ".", ".."} for part in path.parts):
-        raise ValueError("entry_relative_path must not contain empty, current, or parent segments.")
-    return path.as_posix()
 
 
 def is_packaging_excluded_path(rel_path: Path) -> bool:

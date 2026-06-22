@@ -6,12 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Union
 
+from app.packaging.prune_rules import DEFAULT_PACKAGING_PRUNE_RULES
 from app.project.file_inventory import iter_python_files, walk_project
 
 PathInput = Union[str, Path]
-
-_EXCLUDED_DIR_NAMES = frozenset({"__pycache__"})
-_EXCLUDED_SUFFIXES = frozenset({".pyc", ".pyo"})
 
 
 @dataclass(frozen=True)
@@ -35,16 +33,14 @@ class PackagingPayloadPolicy:
     def is_payload_excluded(self, rel_path: Path) -> bool:
         """Return True when *rel_path* must not appear in the exported payload."""
         parts = rel_path.parts
-        if any(part in _EXCLUDED_DIR_NAMES for part in parts):
-            return True
-        if any(part.startswith(".") for part in parts if part not in {".", ".."}):
+        if any(DEFAULT_PACKAGING_PRUNE_RULES.is_path_part_excluded(part) for part in parts):
             return True
         posix_path = rel_path.as_posix()
         for subtree in self.prune_cbcs_subtrees:
             excluded_prefix = f"cbcs/{subtree}"
             if posix_path == excluded_prefix or posix_path.startswith(excluded_prefix + "/"):
                 return True
-        if rel_path.suffix in _EXCLUDED_SUFFIXES:
+        if DEFAULT_PACKAGING_PRUNE_RULES.should_prune_file_name(rel_path.name):
             return True
         return False
 

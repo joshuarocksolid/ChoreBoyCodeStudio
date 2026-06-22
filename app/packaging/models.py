@@ -241,7 +241,7 @@ class PackageValidationReport:
 
     @property
     def is_ready(self) -> bool:
-        return self.preflight.is_ready and self.dependency_audit.is_ready
+        return not any(issue.is_blocking for issue in self.issue_report.issues)
 
     @property
     def highest_severity(self) -> str:

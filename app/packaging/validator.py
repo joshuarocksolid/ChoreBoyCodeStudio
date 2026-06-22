@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
+from app.bootstrap.paths import project_manifest_path
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core.models import RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
-from app.packaging.dependency_audit import (
-    _collect_imported_top_levels,
-    _orphan_vendor_native_issues,
-    check_manifest_consistency,
-    run_dependency_audit,
-)
+from app.packaging.dependency_audit import check_manifest_consistency, run_dependency_audit
 from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import (
     DependencyAuditReport,
@@ -20,12 +15,13 @@ from app.packaging.models import (
     PackageValidationReport,
     ProjectPackageConfig,
 )
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
+from app.project.file_excludes import should_exclude_relative_path
 from app.project.file_inventory import walk_project
+from app.project.project_manifest import load_project_manifest
 from app.support.preflight import build_package_preflight
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
 
-_PACKAGE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
-_PACKAGE_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$")
 _SEVERITY_ORDER = {
     "blocking": 3,
     "degraded": 2,
@@ -134,56 +130,6 @@ def validate_package_config(
             )
         )
 
-    if not _PACKAGE_ID_RE.match(package_config.package_id):
-        issues.append(
-            RuntimeIssue(
-                issue_id="package.config.package_id_invalid",
-                workflow="package",
-                severity="blocking",
-                title="Package ID is not stable enough for upgrades",
-                summary="package_id must contain only lowercase letters, digits, dots, hyphens, or underscores.",
-                why_it_happened="Installable packages need a deterministic package ID so upgrades and cleanup decisions target the right app.",
-                next_steps=[
-                    "Update cbcs/package.json with a stable lowercase package_id.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={"package_id": package_config.package_id},
-            )
-        )
-
-    if not package_config.display_name.strip():
-        issues.append(
-            RuntimeIssue(
-                issue_id="package.config.display_name_missing",
-                workflow="package",
-                severity="blocking",
-                title="Package display name is missing",
-                summary="display_name must be present before exporting a user-facing package.",
-                why_it_happened="Generated docs and launchers need a human-readable application name.",
-                next_steps=[
-                    "Set display_name in cbcs/package.json.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-            )
-        )
-
-    if not _PACKAGE_VERSION_RE.match(package_config.version):
-        issues.append(
-            RuntimeIssue(
-                issue_id="package.config.version_invalid",
-                workflow="package",
-                severity="blocking",
-                title="Package version is not install-grade",
-                summary="version must use a dotted release format such as 1.0.0.",
-                why_it_happened="Install and upgrade decisions need a stable version string for package metadata and generated docs.",
-                next_steps=[
-                    "Update cbcs/package.json to a dotted release version like 0.1.0 or 1.0.0-beta.",
-                ],
-                help_topic=HELP_TOPIC_PACKAGING,
-                evidence={"version": package_config.version},
-            )
-        )
-
     effective_entry = package_config.effective_entry_file(project_default_entry=project_default_entry)
     if not effective_entry.strip():
         issues.append(
@@ -258,11 +204,30 @@ def validate_package_config(
             )
         )
 
-    for orphan_issue in _orphan_vendor_native_issues(
-        project_root=root,
-        imported_top_levels=_collect_imported_top_levels(root),
-    ):
-        issues.append(orphan_issue)
+    excluded_python = _discover_user_excluded_python_that_ships(root)
+    if excluded_python:
+        issues.append(
+            RuntimeIssue(
+                issue_id="package.project.user_excluded_python_will_ship",
+                workflow="package",
+                severity="degraded",
+                title="Some user-excluded Python files will still be packaged",
+                summary=(
+                    "Project exclude patterns hide these files in the editor tree, "
+                    "but packaging still ships them in the exported artifact."
+                ),
+                why_it_happened=(
+                    "Packaging uses its own payload policy and always includes vendor/; "
+                    "editor file excludes do not automatically remove files from exports."
+                ),
+                next_steps=[
+                    "Review the listed Python files before sharing the package.",
+                    "Move excluded code out of the project or update cbcs/project.json exclude_patterns if export should omit them.",
+                ],
+                help_topic=HELP_TOPIC_PACKAGING,
+                evidence={"python_files": excluded_python[:10]},
+            )
+        )
 
     return issues
 
@@ -346,6 +311,37 @@ def _discover_hidden_paths(root: Path) -> list[str]:
             if any(part.startswith(".") for part in rel_path.parts if part not in {".", ".."}):
                 hidden_paths.append(rel_path.as_posix())
     return sorted(hidden_paths)
+
+
+def _load_project_exclude_patterns(root: Path) -> tuple[str, ...]:
+    manifest_path = project_manifest_path(root)
+    if not manifest_path.is_file():
+        return ()
+    try:
+        metadata = load_project_manifest(manifest_path)
+    except (OSError, ValueError):
+        return ()
+    return tuple(metadata.exclude_patterns)
+
+
+def _discover_user_excluded_python_that_ships(root: Path) -> list[str]:
+    exclude_patterns = _load_project_exclude_patterns(root)
+    if not exclude_patterns:
+        return []
+    shipped: list[str] = []
+    for path in DEFAULT_PACKAGING_PAYLOAD_POLICY.iter_payload_entries(root):
+        if not path.is_file() or path.suffix != ".py":
+            continue
+        rel_path = path.relative_to(root).as_posix()
+        if rel_path == "vendor" or rel_path.startswith("vendor/"):
+            continue
+        if should_exclude_relative_path(
+            rel_path,
+            exclude_patterns,
+            is_directory=False,
+        ):
+            shipped.append(rel_path)
+    return sorted(shipped)
 
 
 def _sort_issues(issues: list[RuntimeIssue]) -> list[RuntimeIssue]:
