@@ -54,19 +54,13 @@ class _FakeRunSessionController:
                 log_path="/tmp/project/logs/run_run123.log",
                 entry_file="run.py",
             )
-        self.active_session_mode = active_mode
 
-    def set_active_session_mode(self, mode: str | None) -> None:
-        self.active_session_mode = mode
-        if mode is None:
-            self.session_store.clear()
-        elif self.session_store.active_session is None:
-            self.session_store._active = ActiveRunSession(  # noqa: SLF001 - test fake
-                mode=mode,
-                run_id="run123",
-                log_path="/tmp/project/logs/run_run123.log",
-                entry_file="run.py",
-            )
+    @property
+    def active_session_mode(self) -> str | None:
+        return self.session_store.active_session_mode
+
+    def clear_active_session(self) -> None:
+        self.session_store.clear()
 
     def refresh_action_states(self, *_args, **_kwargs) -> None:
         return None
@@ -130,7 +124,19 @@ class _FakeRunEventHost:
 
 def _build_workflow(host: _FakeRunEventHost | None = None) -> tuple[RunEventWorkflow, _FakeRunEventHost]:
     resolved_host = host or _FakeRunEventHost()
-    return RunEventWorkflow(resolved_host), resolved_host
+    return RunEventWorkflow(cast(Any, resolved_host)), resolved_host
+
+
+def test_exit_event_clears_session_store() -> None:
+    """CC-09: process exit clears RunSessionStore via output coordinator."""
+    host = _FakeRunEventHost()
+    workflow, host = _build_workflow(host)
+    assert host.run_session_controller.session_store.active_session is not None
+
+    workflow.apply_run_event(ProcessEvent(event_type="exit", return_code=0, terminated_by_user=False))
+
+    assert host.run_session_controller.session_store.active_session is None
+    assert host.run_session_controller.active_session_mode is None
 
 
 def test_apply_run_event_routes_debug_output_to_debug_panel_only() -> None:

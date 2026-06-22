@@ -66,7 +66,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-06 | P0 | **closed** | RUN-R-02 | `debug_transport.py`, `run_service.py` | shutdown-before-close fix; threaded stress + RunService close test |
 | CC-07 | P1 | **closed** | RUN-R-08 | `run_manifest.py`, `debug_breakpoints.py`, `command_loop.py` | Breakpoint round-trip SSOT |
 | CC-08 | P1 | **closed** | RUN-R-04 | `run_service.py`, `launch_context.py` | Manifest rollback on failed launch |
-| CC-09 | P1 | open | RUN-R-09 | `run_service.py`, `run_session_controller.py`, shell mirrors | Single session store |
+| CC-09 | P1 | **closed** | RUN-R-09 | `run_session_store.py`, `run_session_controller.py`, `run_event_workflow.py` | `test_start_session_populates_session_store_from_run_service`; `test_exit_event_clears_session_store` |
 | CC-10 | P1 | **closed** | RUN-R-10 | `debug_runner.py`, `app/runner/debug/*` | facade ≤30 LOC |
 | CC-11 | P1 | **closed** | RUN-R-11 | `app/pytest/*` | no `app/run/pytest_*` |
 | CC-12 | P1 | partial | RUN-R-12 | `run_service.py`, `launch_context.py` | `HostProcessManager` gone; `start_run` slim |
@@ -84,7 +84,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | CC-24 | P2 | partial | RUN-R-24 | `outcome_types.py`, `problem_parser.py` | Typed outcomes end-to-end |
 | CC-25 | P2 | open | RUN-R-25 | `clear_console_policy.py`, runner hints | Unified clear policy |
 
-**@ HEAD summary:** 10 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-07, CC-08, CC-10, CC-11), 4 partial, 11 open — **P0 milestone verified @ `57aac8d`**; RUN-R-09 (Wave 2) next.
+**@ HEAD summary:** 11 closed (CC-01, CC-02, CC-03, CC-04, CC-05, CC-06, CC-07, CC-08, CC-09, CC-10, CC-11), 4 partial, 10 open — **P0 milestone verified @ `57aac8d`**; RUN-R-12 (Wave 2) next.
 
 ---
 
@@ -113,7 +113,7 @@ Status key: **closed** | **partial** | **open** | **waived**
 | **RUN-R-06** | 1 | CC-05 | Explorer outcome pipeline with production stdout | workflow test |
 | **RUN-R-07** | 1 | — | P0 milestone verification + doc update | §4 all green |
 | **RUN-R-08** | 2 | CC-07 | Breakpoint wire SSOT / manifest codec | round-trip tests |
-| **RUN-R-09** | 2 | CC-09 | `RunSessionStore` single mirror | integration exit/restart |
+| **RUN-R-09** | 2 | CC-09 | *(closed @ HEAD)* — `RunSessionStore` single mirror | session store tests |
 | **RUN-R-10** | 2 | CC-10 | *(closed @ HEAD)* — preserve grep gate | grep gate |
 | **RUN-R-11** | 2 | CC-11 | *(closed @ HEAD)* — preserve grep gate | grep gate |
 | **RUN-R-12** | 2 | CC-12 | Slim `start_run` coordinator | LOC + unit tests |

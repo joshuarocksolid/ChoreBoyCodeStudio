@@ -176,6 +176,65 @@ def test_start_session_allows_projectless_script_with_explicit_entry() -> None:
     assert result.session is not None
 
 
+def test_start_session_populates_session_store_from_run_service() -> None:
+    """CC-09: shell session metadata comes from RunService session at start."""
+    run_service = _FakeRunService()
+    controller = RunSessionController(run_service)  # type: ignore[arg-type]
+    result = controller.start_session(
+        loaded_project=_loaded_project(),
+        mode=constants.RUN_MODE_PYTHON_DEBUG,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        debug_exception_policy=None,
+        source_maps=None,
+        skip_save=True,
+        save_all=lambda: True,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+
+    assert result.started is True
+    assert result.session is not None
+    active = controller.session_store.active_session
+    assert active is not None
+    assert active.run_id == result.session.run_id
+    assert active.mode == result.session.mode
+    assert active.log_path == result.session.log_file_path
+    assert active.entry_file == result.session.entry_file
+
+
+def test_clear_active_session_clears_store() -> None:
+    """CC-09: exit/shutdown paths clear the single shell session mirror."""
+    run_service = _FakeRunService()
+    controller = RunSessionController(run_service)  # type: ignore[arg-type]
+    controller.start_session(
+        loaded_project=_loaded_project(),
+        mode=constants.RUN_MODE_PYTHON_SCRIPT,
+        entry_file=None,
+        argv=None,
+        working_directory=None,
+        env_overrides=None,
+        breakpoints=None,
+        debug_exception_policy=None,
+        source_maps=None,
+        skip_save=True,
+        save_all=lambda: True,
+        before_start=lambda: None,
+        append_console_line=lambda _text, _stream: None,
+        append_python_console_line=lambda _text: None,
+    )
+    assert controller.session_store.active_session is not None
+
+    controller.clear_active_session()
+
+    assert controller.session_store.active_session is None
+    assert controller.active_session_mode is None
+
+
 def test_start_session_success_updates_active_mode_and_returns_session() -> None:
     controller = RunSessionController(_FakeRunService())  # type: ignore[arg-type]
     lines: list[str] = []

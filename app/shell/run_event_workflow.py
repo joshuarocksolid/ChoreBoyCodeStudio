@@ -252,7 +252,7 @@ class RunEventWorkflow:
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._host.is_shutting_down,
             get_active_session_mode=lambda: self._host.run_session_controller.active_session_mode,
-            set_active_session_mode=self._host.run_session_controller.set_active_session_mode,
+            clear_active_session=self._host.run_session_controller.clear_active_session,
             get_debug_session=lambda: self._host.debug_session,
             append_output_tail=append_output_tail,
             append_console_line=self.bind_append_console_line(),

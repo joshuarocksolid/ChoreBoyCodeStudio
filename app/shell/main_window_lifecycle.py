@@ -84,7 +84,7 @@ class MainWindowLifecycle:
 
         window._repl_manager.shutdown()
         window._plugin_runtime_manager.stop()
-        window._run_session_controller.clear_active_session_mode()
+        window._run_session_controller.clear_active_session()
         window._run_event_workflow.set_run_status("idle")
         if window._python_console_widget is not None:
             window._python_console_widget.set_session_active(False)

@@ -19,7 +19,7 @@ class RunOutputCoordinator:
         *,
         is_shutting_down: Callable[[], bool],
         get_active_session_mode: Callable[[], str | None],
-        set_active_session_mode: Callable[[str | None], None],
+        clear_active_session: Callable[[], None],
         get_debug_session: Callable[[], DebugSession],
         append_output_tail: Callable[[str], None],
         append_console_line: Callable[[str, str], None],
@@ -37,7 +37,7 @@ class RunOutputCoordinator:
     ) -> None:
         self._is_shutting_down = is_shutting_down
         self._get_active_session_mode = get_active_session_mode
-        self._set_active_session_mode = set_active_session_mode
+        self._clear_active_session = clear_active_session
         self._get_debug_session = get_debug_session
         self._append_output_tail = append_output_tail
         self._append_console_line = append_console_line
@@ -109,7 +109,7 @@ class RunOutputCoordinator:
 
             self._refresh_run_action_states()
             self._finalize_run_log(return_code)
-            self._set_active_session_mode(None)
+            self._clear_active_session()
             problems = self._update_problems_from_output()
             if (
                 not event.terminated_by_user

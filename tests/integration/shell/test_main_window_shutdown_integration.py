@@ -44,7 +44,7 @@ def test_close_event_stops_active_run_before_accepting_exit(
         monkeypatch.setattr(window._run_service, "stop_run", lambda: stop_calls.append("stop"))
         monkeypatch.setattr(
             window._run_session_controller,
-            "clear_active_session_mode",
+            "clear_active_session",
             lambda: clear_mode_calls.append("cleared"),
         )
         assert window._python_console_widget is not None

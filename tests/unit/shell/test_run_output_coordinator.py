@@ -37,7 +37,7 @@ class _CoordinatorHarness:
         return RunOutputCoordinator(
             is_shutting_down=lambda: self.shutting_down,
             get_active_session_mode=lambda: self.active_mode,
-            set_active_session_mode=lambda mode: setattr(self, "active_mode", mode),
+            clear_active_session=lambda: setattr(self, "active_mode", None),
             get_debug_session=lambda: self.debug_session,
             append_output_tail=self.output_tail.append,
             append_console_line=lambda text, stream: self.console_lines.append((text, stream)),

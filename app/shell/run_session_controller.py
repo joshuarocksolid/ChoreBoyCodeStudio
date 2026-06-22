@@ -127,12 +127,9 @@ class RunSessionController:
         self._run_service.stop_run()
         append_console_line("Stop requested.\n", "system")
 
-    def clear_active_session_mode(self) -> None:
+    def clear_active_session(self) -> None:
+        """Clear shell session metadata after stop/exit/shutdown."""
         self._session_store.clear()
-
-    def set_active_session_mode(self, mode: str | None) -> None:
-        if mode is None:
-            self._session_store.clear()
 
     def pause_session(
         self,
