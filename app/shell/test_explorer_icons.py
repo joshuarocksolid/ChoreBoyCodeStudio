@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide2.QtCore import QPoint, Qt
 from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygon
 
-_OUTCOME_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
+from app.pytest.outcome_types import TestOutcome
+
+_OUTCOME_ICON_CACHE: dict[tuple[TestOutcome, str], QIcon] = {}
 _KIND_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
 _ACTION_ICON_CACHE: dict[tuple[str, str], QIcon] = {}
 
@@ -88,7 +92,7 @@ def _make_not_run_icon(color_hex: str) -> QIcon:
     return QIcon(px)
 
 
-_OUTCOME_BUILDERS = {
+_OUTCOME_BUILDERS: dict[TestOutcome, Callable[[str], QIcon]] = {
     "passed": _make_passed_icon,
     "failed": _make_failed_icon,
     "skipped": _make_skipped_icon,
@@ -97,7 +101,7 @@ _OUTCOME_BUILDERS = {
 }
 
 
-def outcome_icon(outcome: str, color_hex: str) -> QIcon:
+def outcome_icon(outcome: TestOutcome, color_hex: str) -> QIcon:
     key = (outcome, color_hex)
     cached = _OUTCOME_ICON_CACHE.get(key)
     if cached is not None:

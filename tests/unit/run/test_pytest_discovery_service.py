@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.pytest.launch_plan import PYTEST_MISSING_MARKER, build_apprun_pytest_payload
+from app.pytest.outcome_types import TestOutcome
 from app.pytest.discovery_service import (
     PYTEST_MISSING_MESSAGE,
     DiscoveredTestNode,
@@ -249,6 +250,31 @@ tests/test_foo.py::test_err ERROR
 def test_parse_test_results_empty_output() -> None:
     results = parse_test_results("")
     assert results == []
+
+
+def test_parse_test_results_outcomes_are_test_outcome_literals() -> None:
+    """Boundary: parse_test_results must produce TestOutcome, not bare str."""
+    output = (
+        "FAILED tests/test_foo.py::test_fail - AssertionError\n"
+        "PASSED tests/test_foo.py::test_pass\n"
+        "SKIPPED tests/test_foo.py::test_skip - reason\n"
+        "ERROR tests/test_foo.py::test_err\n"
+    )
+    results = parse_test_results(output)
+    assert len(results) == 4
+    for item in results:
+        typed_outcome: TestOutcome = item.outcome
+        assert typed_outcome in {"passed", "failed", "skipped", "error", "not_run"}
+    assert results[0].outcome == "failed"
+    assert results[1].outcome == "passed"
+    assert results[2].outcome == "skipped"
+    assert results[3].outcome == "error"
+
+
+def test_discovered_test_result_outcome_field_is_test_outcome() -> None:
+    result = DiscoveredTestResult(node_id="tests/test_foo.py::test_a", outcome="passed")
+    assigned: TestOutcome = result.outcome
+    assert assigned == "passed"
 
 
 # ---------------------------------------------------------------------------

@@ -5,8 +5,6 @@ import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
-from typing import cast
-
 from app.pytest.launch_plan import (
     PYTEST_MISSING_MARKER,
     PYTEST_MISSING_MESSAGE,
@@ -14,7 +12,12 @@ from app.pytest.launch_plan import (
     build_pytest_launch_plan,
     build_pytest_subprocess_env,
 )
-from app.pytest.outcome_types import TestNodeKind, TestOutcome
+from app.pytest.outcome_types import (
+    SUMMARY_OUTCOME_PREFIXES,
+    VERBOSE_OUTCOME_SUFFIXES,
+    TestNodeKind,
+    TestOutcome,
+)
 
 
 @dataclass(frozen=True)
@@ -121,30 +124,20 @@ def parse_test_results(output: str) -> list[DiscoveredTestResult]:
 
 
 def _parse_summary_result_line(stripped: str) -> tuple[str, TestOutcome] | None:
-    for prefix, outcome in (
-        ("PASSED ", "passed"),
-        ("FAILED ", "failed"),
-        ("SKIPPED ", "skipped"),
-        ("ERROR ", "error"),
-    ):
+    for prefix, outcome in SUMMARY_OUTCOME_PREFIXES:
         if stripped.startswith(prefix):
             node_id = stripped[len(prefix) :].split(" - ", 1)[0].strip()
             if node_id:
-                return (node_id, cast(TestOutcome, outcome))
+                return (node_id, outcome)
     return None
 
 
 def _parse_verbose_result_line(stripped: str) -> tuple[str, TestOutcome] | None:
-    for suffix, outcome in (
-        (" PASSED", "passed"),
-        (" FAILED", "failed"),
-        (" SKIPPED", "skipped"),
-        (" ERROR", "error"),
-    ):
+    for suffix, outcome in VERBOSE_OUTCOME_SUFFIXES:
         if suffix in stripped:
             node_id = stripped.rsplit(suffix, 1)[0].strip()
             if node_id and "::" in node_id:
-                return (node_id, cast(TestOutcome, outcome))
+                return (node_id, outcome)
     return None
 
 

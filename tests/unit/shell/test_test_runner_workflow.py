@@ -10,6 +10,7 @@ import pytest
 from app.core.models import LoadedProject, ProjectMetadata
 from app.run.problem_parser import ProblemEntry
 from app.pytest.discovery_service import DiscoveredTestNode, DiscoveryResult
+from app.pytest.outcome_types import TestOutcome
 from app.pytest.runner_service import PytestRunResult
 from app.shell.test_runner_workflow import ActiveTestEditor, TestRunnerWorkflow
 
@@ -37,7 +38,7 @@ class FakeExplorer:
     def __init__(self) -> None:
         self.running_states: list[bool] = []
         self.discovery: DiscoveryResult | None = None
-        self.outcomes: dict[str, str] = {}
+        self.outcomes: dict[str, TestOutcome] = {}
 
     def set_running(self, running: bool) -> None:
         self.running_states.append(running)
@@ -45,7 +46,7 @@ class FakeExplorer:
     def update_discovery(self, result: DiscoveryResult) -> None:
         self.discovery = result
 
-    def set_outcomes(self, outcomes: dict[str, str]) -> None:
+    def set_outcomes(self, outcomes: dict[str, TestOutcome]) -> None:
         self.outcomes = dict(outcomes)
 
     def failed_node_ids(self) -> list[str]:
@@ -228,6 +229,8 @@ def test_handle_pytest_result_updates_outcomes_and_problems(tmp_path: Path) -> N
     harness.workflow.run_all_tests()
 
     assert harness.explorer.outcomes == {"tests/test_sample.py::test_alpha": "failed"}
+    typed_outcomes: dict[str, TestOutcome] = harness.explorer.outcomes
+    assert typed_outcomes["tests/test_sample.py::test_alpha"] == "failed"
     assert harness.problems[-1][0].message == "AssertionError: boom"
 
 

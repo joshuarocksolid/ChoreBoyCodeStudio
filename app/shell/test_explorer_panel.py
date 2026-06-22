@@ -84,11 +84,11 @@ class TestExplorerPanel(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.testExplorer")
-        self._outcomes: dict[str, str] = {}
+        self._outcomes: dict[str, TestOutcome] = {}
         self._discovery_count = 0
         self._is_running = False
 
-        self._outcome_colors: dict[str, str] = {
+        self._outcome_colors: dict[TestOutcome, str] = {
             "passed": "#3FB950",
             "failed": "#FF6B6B",
             "skipped": "#ADB5BD",
@@ -425,7 +425,7 @@ class TestExplorerPanel(QWidget):
         self._apply_filters()
 
     def _apply_filters(self) -> None:
-        show = set()
+        show: set[TestOutcome] = set()
         if self._passed_toggle.isChecked():
             show.add("passed")
         if self._failed_toggle.isChecked():
@@ -439,7 +439,7 @@ class TestExplorerPanel(QWidget):
         for i in range(self._tree.topLevelItemCount()):
             self._apply_filter_item(self._tree.topLevelItem(i), show)
 
-    def _apply_filter_item(self, item: QTreeWidgetItem, show: set[str]) -> bool:
+    def _apply_filter_item(self, item: QTreeWidgetItem, show: set[TestOutcome]) -> bool:
         kind = item.data(0, _ROLE_KIND)
         if kind == "function":
             oc = item.data(1, _ROLE_OUTCOME) or "not_run"
