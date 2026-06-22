@@ -46,7 +46,7 @@ Remaining risk areas:
 - ~~`app/shell/main_window.py` is still the highest concentration of orchestration and change risk.~~ **Largely addressed:** at HEAD (2026-06-22) `main_window.py` is 375 lines / 28 method-like defs; orchestration moved into shell composition and workflow modules. Residual shell hotspots are tracked in handoff R3.
 - Several shell/debug/intelligence modules still exceed or sit near the original 700-line smell threshold.
 - Some silent fallback paths remain and need triage.
-- ~~The autosave legacy migration bridge~~ **removed** (drafts use `LocalHistoryStore` only; see `app/persistence/autosave_store.py`).
+- ~~The autosave legacy migration bridge~~ **removed** (drafts use `LocalHistoryStore` only; verified at HEAD — no `_legacy_*` helpers remain in `app/persistence/autosave_store.py`; L04 migration complete).
 - Project traversal/exclude policy is repeated across multiple subsystems.
 - Dependency/native-extension/runtime classification is split across project, packaging, and diagnostics code.
 - ~~`AUDIT_app.md` now mixes historical findings with completed notes and stale metrics~~ **addressed by R0 (2026-06-22):** closeout status section and historical §5 markers updated; re-run metric sweep before R1+ work.
@@ -166,6 +166,8 @@ npx pyright
 ---
 
 ### R1 - Small Cleanup Sweep
+
+**Status: COMPLETE (2026-06-22).** Runner/debug shutdown paths use narrow ``OSError`` handling with debug logging; ``PluginRuntimeManager`` logs decode skips (debug level) and queue backpressure drops; legacy ``DebugEvent`` / ``apply_event`` removed; autosave legacy bridge removed (drafts use ``LocalHistoryStore`` only); completion degradation UX documented on ``CompletionService``.
 
 Goal: remove or document remaining low-risk slop before larger refactors.
 

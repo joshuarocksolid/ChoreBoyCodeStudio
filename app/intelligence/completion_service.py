@@ -38,7 +38,14 @@ class CompletionRequest:
 
 
 class CompletionService:
-    """Compatibility facade used by shell/session callers."""
+    """Compatibility facade used by shell/session callers.
+
+    Degradation UX: when the semantic engine fails, ``CompletionEnvelope.degradation_reason``
+    is set (for example ``semantic_engine_error``) and the shell status bar surfaces it once
+    per reason. Approximate fast-tier items are tagged via ``source``, ``detail`` (including
+    an ``approximate`` suffix), and ``confidence`` so they remain distinguishable from
+    semantic results without separate popup grouping.
+    """
 
     def __init__(self, *, cache_db_path: str, semantic_facade: SemanticFacade | None = None) -> None:
         self._cache_db_path = str(Path(cache_db_path).expanduser().resolve())

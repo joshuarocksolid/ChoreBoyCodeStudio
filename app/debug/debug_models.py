@@ -120,7 +120,11 @@ class DebugWatchResult:
 
 @dataclass
 class DebugSessionState:
-    """Mutable debug session state aggregator."""
+    """Mutable debug session state updated from structured transport messages.
+
+    Shell-side reducers in ``DebugSession.apply_protocol_message`` apply
+    protocol events and command responses; this model holds the resulting fields.
+    """
 
     execution_state: DebugExecutionState = DebugExecutionState.IDLE
     last_message: str = ""

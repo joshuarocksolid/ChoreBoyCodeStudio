@@ -307,6 +307,9 @@ class PluginRuntimeManager:
             try:
                 response_queue.put_nowait(payload)
             except queue.Full:
+                self._append_runtime_log(
+                    "plugin runtime: dropped response (response queue full)"
+                )
                 return False
             return True
         if message_type == "job_event":

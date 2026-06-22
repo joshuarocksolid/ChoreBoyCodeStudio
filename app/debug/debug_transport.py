@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any, Callable, IO, Mapping
 import socket
 import threading
@@ -19,6 +20,7 @@ from app.debug.debug_protocol import (
 
 _MessageCallback = Callable[[dict[str, Any]], None]
 _ErrorCallback = Callable[[str], None]
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -105,8 +107,8 @@ class DebugTransportServer:
         if server_socket is not None:
             try:
                 server_socket.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                _LOGGER.debug("Debug transport server socket close failed: %s", exc)
         if self._accept_thread is not None and self._accept_thread.is_alive():
             self._accept_thread.join(timeout=0.5)
         if self._read_thread is not None and self._read_thread.is_alive():
@@ -165,20 +167,20 @@ class DebugTransportServer:
     def _close_socket_resources(resources: _SocketResources) -> None:
         try:
             resources.sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+        except OSError as exc:
+            _LOGGER.debug("Debug transport socket shutdown failed: %s", exc)
         try:
             resources.reader.close()
-        except OSError:
-            pass
+        except OSError as exc:
+            _LOGGER.debug("Debug transport reader close failed: %s", exc)
         try:
             resources.writer.close()
-        except OSError:
-            pass
+        except OSError as exc:
+            _LOGGER.debug("Debug transport writer close failed: %s", exc)
         try:
             resources.sock.close()
-        except OSError:
-            pass
+        except OSError as exc:
+            _LOGGER.debug("Debug transport socket close failed: %s", exc)
 
 
 class RunnerDebugTransportClient:
