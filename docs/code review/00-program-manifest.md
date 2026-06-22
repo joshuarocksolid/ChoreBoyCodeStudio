@@ -1,7 +1,7 @@
 # Thermo Program — Master Manifest
 
 Status: **active** (kickoff 2026-06-22)
-Last verified commit: `48d9cfe`
+Last verified commit: `b6b8ceb`
 Orchestrator: Composer 2.5 Fast (`/thermo-program-orchestrator`)
 
 ---
