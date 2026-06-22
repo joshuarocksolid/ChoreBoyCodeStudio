@@ -1,7 +1,7 @@
 # Thermo Program — Master Manifest
 
 Status: **active** (kickoff 2026-06-22)
-Last verified commit: `9c9886d01bb84fd80f8a0d882dd0efd6aab6e8d3`
+Last verified commit: `48d9cfe`
 Orchestrator: Composer 2.5 Fast (`/thermo-program-orchestrator`)
 
 ---
@@ -30,14 +30,14 @@ Complete thermo-nuclear code quality **review + remediation + closure** for all 
 | Metric | Value | Gate |
 |--------|------:|------|
 | `app/` files ≥1000 LOC | **0** | pass |
-| `main_window` methods | **38** | pass (≤40) |
-| `window: Any` in `app/shell/` | **104** | fail (review baseline 79; post SHELL-R-03) |
+| `main_window` methods | **28** | pass (≤40) |
+| `window: Any` in `app/shell/` | **104** | fail (review baseline 79; CC-SHELL2-05 blocker) |
 | `main_window_composition_phases` LOC | **453** | improved (was 639 pre-R-03) |
 | `window._` in composition phases | **110** | improved (was 297 pre-R-03) |
 | `app/` files ≥700 LOC | **5** | smell |
 | Editors grep gates | clean | pass |
 | pyright | 0 errors | pass |
-| fast shard | not run kickoff | pending |
+| fast shard | PASS @ session 2 | pass |
 
 Files ≥700 LOC: `python_console_widget.py` (782), `local_history_workflow.py` (773), `settings_models.py` (736), `style_sheet_sections_workspace.py` (735), `persistence/local_history_repository.py` (725).
 
@@ -55,7 +55,7 @@ Files ≥700 LOC: `python_console_widget.py` (782), `local_history_workflow.py` 
 
 ### P1 work queue
 
-1. **P1-1** shell-wave-2 — SHELL-R-03 CC-SHELL2-04 **landed**; next: SHELL-R-04 CC-SHELL2-05 typed hosts
+1. **P1-1** shell-wave-2 — Wave 1 hosts verified; SHELL-R-18 landed; **next: SHELL-R-04b extract host adapters, net-reduce `window: Any` ≤79**
 2. **P1-2** intelligence-wave-1 — verify CC-01…23 → closure
 3. **P1-3** project-ssot-wave-1 — formalize P0 closure → finish P1/P2
 4. **P1-4** run-wave-1 — author plans → remediate → closure

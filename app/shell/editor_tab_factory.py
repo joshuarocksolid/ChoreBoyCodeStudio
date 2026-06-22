@@ -22,10 +22,10 @@ class MainWindowEditorBindingsHost:
         return self._window._semantic_navigation_workflow
 
     def enable_auto_reindent_flat_python_paste_from_hint(self) -> Any:
-        return self._window._enable_auto_reindent_flat_python_paste_from_hint
+        return self._window._editor_tabs_coordinator.enable_auto_reindent_flat_python_paste_from_hint
 
     def handle_paste_hint_repair_result(self) -> Any:
-        return self._window._handle_paste_hint_repair_result
+        return self._window._editor_tabs_coordinator.handle_paste_hint_repair_result
 
 
 class EditorTabFactory:

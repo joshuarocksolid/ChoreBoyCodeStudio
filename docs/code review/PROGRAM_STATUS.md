@@ -2,15 +2,16 @@
 overall: IN_PROGRESS
 current_phase: P1
 current_item: P1-1
-last_verified_commit: 9c9886d01bb84fd80f8a0d882dd0efd6aab6e8d3
-last_session_ended: 2026-06-22T12:00:00Z
+last_verified_commit: 48d9cfe
+last_session_ended: 2026-06-22T14:50:00Z
 metrics:
   app_files_gte_1000: 0
-  main_window_methods: 38
+  main_window_methods: 28
   shell_window_any_count: 104
   files_gte_700: 5
   composition_phases_loc: 453
-  composition_window_underscore_writes: 110
+  composition_window_underscore_writes: 113
+  shell_composition_loc: 837
 phases:
   P0: done
   P1: in_progress
@@ -19,68 +20,75 @@ phases:
   P4: pending
 blockers: []
 next_actions:
-  - "Execute SHELL-R-04 CC-SHELL2-05: typed host migration for remaining window: Any workflows; target shell_window_any_count below 79 baseline without re-growing compositor"
-sessions_completed: 1
+  - "SHELL-R-04b CC-SHELL2-05: extract MainWindow*Host adapters from shell_composition.py into colocated *_host.py modules; change build_* factories to accept Protocol/context not window: Any; gate window: Any ≤79 and shell_composition.py ≤700 LOC"
+sessions_completed: 2
 ```
 
-## Session 1 summary (2026-06-22 kickoff)
+## Session 2 summary (2026-06-22)
 
-### P0 completed
+### Verification @ HEAD (post SHELL-R-18)
 
-- Created `PROGRAM_STATUS.md` and `00-program-manifest.md`
-- Baseline metric sweep @ `9c9886d`
-- Wave artifact inventory (6 waves; only editors-wave-1 has ACCEPT closure)
-- Preflight + pyright clean @ kickoff; fast shard pending post-remediation
+| Gate | Result |
+|------|--------|
+| fast shard | **PASS** (exit 0, ~132s) |
+| pyright | **0 errors** |
+| app files ≥1k | **0** |
+| main_window methods | **28** (was 38; SHELL-R-18) |
+| window: Any | **104** (regression vs 79 baseline — blocker) |
+| Editors grep gates | clean |
 
-### P1-1 Shell Wave 2 re-baseline @ HEAD
+### Wave 1 typed-host gates — verified ACCEPT @ HEAD
 
-Compared live tree vs `shell_wave_2_thermo_review_2026-06-17.md` (@ `fccb611`):
+| PR | CC | Status | Evidence |
+|----|-----|--------|----------|
+| SHELL-R-04 | CC-SHELL2-05 (SaveWorkflow) | **ACCEPT** | `SaveDocumentHost` Protocol; zero `window: Any` in `save_workflow.py`; `test_save_workflow` green |
+| SHELL-R-05 | CC-SHELL2-06 (LHIST) | **ACCEPT** | `LocalHistoryEditorHost` + `MainWindowLocalHistoryEditorHost`; `test_local_history_workflow` green |
+| SHELL-R-06 | CC-SHELL2-07 | **ACCEPT** | `editor_sync_factory.py`; no upward import from `editor_tab_workflow` → `shell_composition` |
 
-| Delta | Review | Kickoff HEAD | Post SHELL-R-03 |
-|-------|--------|--------------|-----------------|
-| app files ≥1k | 1 | **0** | **0** |
-| main_window methods | 45 | **38** | **38** |
-| window: Any | 79 | 87 | **104** ⚠️ |
-| composition phases LOC | 639 | 639 | **453** |
-| window._ in phases | 297 | 297 | **110** |
+### SHELL-R-18 landed
 
-**CC-SHELL2-04 (SHELL-R-03):** Executed — compositor setattr grid collapsed via `bind_private_attrs`, `ShellRuntimeIssueState`, `ShellDiagnosticsLatchState`, `ShellCompositionTimers`, and extracted builders in `shell_composition.py`. Phases LOC −29%, `window._` −63%. MainWindow methods held at 38. **Slice verdict: ACCEPT** for CC-04 scope.
+**CC-SHELL2-11 (partial):** Moved 10 editor text action handlers from `MainWindow` → `EditorTabsCoordinator`. `menu_wiring.py` and `editor_tab_factory.py` wired to coordinator. MainWindow methods **38 → 28**. Targeted shell tests (47) + pyright clean.
 
-**CC-SHELL2-05 regression watch:** `window: Any` rose 87→104 during compositor refactor (new host/state bindings). Next lane must net-reduce below review baseline (79).
+**Files:**
+- `app/shell/editor_tabs_coordinator.py`
+- `app/shell/main_window.py`
+- `app/shell/menu_wiring.py`
+- `app/shell/editor_tab_factory.py`
 
-**Editors Wave 2 ACCEPT preserved:** grep gates clean (`hover_provider`, `build_completion_context`, project→intelligence import).
+### Thermo delta review @ c85f7f1
 
-### CC theme tally @ HEAD (post SHELL-R-03)
+**CC themes CLOSED @ HEAD:** 01, 04, 07, 08, 09, 17, 18 (+ SHELL-R-18 improves 11)
+
+**Program blocker:** CC-SHELL2-05 — `window: Any` **104 vs 79** review baseline. Root cause: SHELL-R-03 host adapters in `shell_composition.py` (837 LOC, 23 matches) and `shell_composition_context.py` (13 matches).
+
+**Watch:** `shell_composition.py` at 837 LOC — one PR from 1k violation.
+
+### CC theme tally @ HEAD (post session 2)
 
 | Status | Themes |
 |--------|--------|
-| CLOSED | 01, 07, 08, 09, 17, 21 |
-| PARTIAL (improved) | 04 (compositor), 02, 03, 06, 10–11, 13–16, 18–20, 22 |
-| OPEN | 12 (search sidebar) |
-| REGRESSION metric | 05 (`window: Any` 104 vs 79 review baseline) |
+| CLOSED | 01, 04, 07, 08, 09, 17, 18 |
+| PARTIAL (improved) | 02, 03, 06, 10, 11, 13–16, 19–22 |
+| OPEN (metric) | **05** (`window: Any` 104) |
+| OPEN (scope) | **12** (search sidebar monolith) |
 
 ### Wave status
 
 | Wave | Status |
 |------|--------|
 | editors-wave-1 | ACCEPT |
-| shell-wave-2 | in_progress — SHELL-R-03 landed; 19 CC themes remain |
+| shell-wave-2 | in_progress — Wave 0–1 hosts verified; R-18 landed; CC-05 metric blocker |
 | intelligence-wave-1 | open |
 | project-ssot-wave-1 | open |
-| run-wave-1 | open (no remediation plan) |
+| run-wave-1 | open |
 
-### Verification pending next session
+### Verification commands (re-run before next execute)
 
 ```bash
+find app -name "*.py" -exec wc -l {} + | awk '$1>=1000 && $2 !~ /total$/ {print "BLOCKER:", $2}'
+rg "window: Any" app/shell --count-matches
+rg "^    def " app/shell/main_window.py | wc -l
+python3 testing/preflight_test_env.py
 python3 testing/run_test_shard.py fast
 npx pyright
 ```
-
-Unit shell: 884 pass / 1 pre-existing flaky teardown test (`test_shutdown_main_window_for_test_returns_executor_threads_to_baseline`).
-
-### Files modified (uncommitted)
-
-- `app/shell/main_window_composition_phases.py`
-- `app/shell/shell_composition_context.py`
-- `app/shell/shell_composition.py`
-- (and related composition wiring)
