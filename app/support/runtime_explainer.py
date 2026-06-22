@@ -1,7 +1,7 @@
 """Structured runtime/onboarding explanation helpers."""
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Protocol
 
 from app.bootstrap.capability_probe import (
     APP_RUN_PRESENCE_CHECK_ID,
@@ -14,7 +14,7 @@ from app.bootstrap.capability_probe import (
     TREESITTER_RUNTIME_CHECK_ID,
 )
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport, RuntimeIssue, RuntimeIssueReport
-from app.intelligence.diagnostics_service import ImportDiagnostic, explain_unresolved_import
+from app.support.contracts import ImportExplanationResolver, runtime_severity_rank
 from app.support.diagnostics import DiagnosticItem, ProjectHealthReport
 
 HELP_TOPIC_GETTING_STARTED = "getting_started"
@@ -22,11 +22,6 @@ HELP_TOPIC_HEADLESS_NOTES = "headless_notes"
 HELP_TOPIC_PACKAGING = "packaging_backup"
 
 _HEADLESS_GUI_SIGNATURE = "Cannot load Gui module in console application"
-_SEVERITY_ORDER = {
-    "blocking": 3,
-    "degraded": 2,
-    "advisory": 1,
-}
 
 
 def build_startup_issue_report(report: CapabilityProbeReport) -> RuntimeIssueReport:
@@ -60,10 +55,17 @@ def merge_runtime_issue_reports(*reports: RuntimeIssueReport, workflow: str = "g
     return RuntimeIssueReport(workflow=workflow, issues=_sort_issues(merged.values()))
 
 
+class ImportDiagnosticLike(Protocol):
+    """Structural type for import diagnostics passed into issue builders."""
+
+    message: str
+
+
 def build_import_issue_report(
     project_root: str,
-    diagnostics: list[ImportDiagnostic],
+    diagnostics: list[ImportDiagnosticLike],
     *,
+    resolve_explanation: ImportExplanationResolver,
     known_runtime_modules: frozenset[str] | None = None,
     allow_runtime_import_probe: bool = False,
 ) -> RuntimeIssueReport:
@@ -73,11 +75,11 @@ def build_import_issue_report(
         module_name = diagnostic.message.removeprefix("Unresolved import: ").strip()
         if not module_name:
             continue
-        explanation = explain_unresolved_import(
+        explanation = resolve_explanation(
             project_root,
             module_name,
-            known_runtime_modules=known_runtime_modules,
-            allow_runtime_import_probe=allow_runtime_import_probe,
+            known_runtime_modules,
+            allow_runtime_import_probe,
         )
         issues.append(
             RuntimeIssue(
@@ -360,7 +362,7 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
 def _sort_issues(issues: Iterable[RuntimeIssue]) -> list[RuntimeIssue]:
     return sorted(
         issues,
-        key=lambda issue: (-_SEVERITY_ORDER.get(issue.severity, 0), issue.workflow, issue.issue_id),
+        key=lambda issue: (-runtime_severity_rank(issue.severity), issue.workflow, issue.issue_id),
     )
 
 

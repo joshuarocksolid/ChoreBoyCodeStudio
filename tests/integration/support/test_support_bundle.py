@@ -13,7 +13,8 @@ from app.core.models import RuntimeIssue, RuntimeIssueReport
 from app.persistence.local_history_store import LocalHistoryStore
 from app.persistence.settings_service import SettingsService
 from app.project.project_manifest import load_project_manifest
-from app.support.diagnostics import run_project_health_check
+from app.shell.project_health_checks import run_project_health_check
+from app.shell.support_bundle_collectors import collect_local_history_diagnostics
 from app.support.support_bundle import build_support_bundle
 from tests.support.minimal_project import write_minimal_project
 
@@ -174,6 +175,10 @@ def test_build_support_bundle_includes_local_history_diagnostics(tmp_path: Path)
         project_root,
         state_root=state_root,
         destination_dir=tmp_path / "bundles",
+        local_history_diagnostics=collect_local_history_diagnostics(
+            project_root.resolve(),
+            state_root=state_root,
+        ),
     )
 
     with zipfile.ZipFile(bundle_path, "r") as archive:
@@ -211,6 +216,10 @@ def test_build_support_bundle_local_history_falls_back_for_corrupt_manifest(tmp_
         project_root,
         state_root=state_root,
         destination_dir=tmp_path / "bundles",
+        local_history_diagnostics=collect_local_history_diagnostics(
+            project_root.resolve(),
+            state_root=state_root,
+        ),
     )
 
     with zipfile.ZipFile(bundle_path, "r") as archive:

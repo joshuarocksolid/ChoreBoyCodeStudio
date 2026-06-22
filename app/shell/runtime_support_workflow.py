@@ -12,7 +12,7 @@ from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssue, 
 from app.packaging.config import resolve_project_package_config
 from app.plugins.workflow_adapters import package_project_with_workflow
 from app.plugins.workflow_broker import WorkflowBroker
-from app.support.diagnostics import ProjectHealthReport, run_project_health_check
+from app.support.diagnostics import ProjectHealthReport
 from app.support.runtime_explainer import (
     build_project_health_issue_report,
     build_startup_issue_report,
@@ -21,6 +21,8 @@ from app.support.runtime_explainer import (
 from app.support.support_bundle import build_support_bundle
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.package_wizard_dialog import PackageProjectWizard
+from app.shell.project_health_checks import run_project_health_check
+from app.shell.support_bundle_collectors import collect_local_history_diagnostics, collect_plugin_diagnostics
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -143,7 +145,15 @@ class RuntimeSupportWorkflow:
                 project_root,
                 diagnostics_report=report,
                 runtime_issue_report=runtime_issue_report,
-                workflow_provider_metrics=self._workflow_broker.list_provider_metrics(),
+                local_history_diagnostics=collect_local_history_diagnostics(
+                    Path(project_root).expanduser().resolve(),
+                    state_root=state_root,
+                ),
+                plugin_diagnostics=collect_plugin_diagnostics(
+                    Path(project_root).expanduser().resolve(),
+                    state_root=state_root,
+                    workflow_provider_metrics=self._workflow_broker.list_provider_metrics(),
+                ),
                 state_root=state_root,
                 destination_dir=project_root,
                 last_run_log_path=latest_run_log_path,

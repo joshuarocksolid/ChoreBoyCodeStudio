@@ -12,6 +12,7 @@ from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INF
 from app.plugins.workflow_adapters import analyze_python_with_workflow
 from app.project.file_inventory import ProjectInventorySnapshot
 from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.import_issue_adapter import resolve_import_explanation
 from app.support.runtime_explainer import build_import_issue_report
 
 
@@ -260,6 +261,7 @@ class LintWorkflow:
             import_report = build_import_issue_report(
                 project_root,
                 diagnostics,
+                resolve_explanation=resolve_import_explanation,
                 known_runtime_modules=known_modules,
                 allow_runtime_import_probe=True,
             )

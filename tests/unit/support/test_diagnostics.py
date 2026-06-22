@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.support.diagnostics import run_project_health_check
+from app.shell.project_health_checks import run_project_health_check
 from tests.support.minimal_project import write_minimal_project
 
 pytestmark = pytest.mark.unit

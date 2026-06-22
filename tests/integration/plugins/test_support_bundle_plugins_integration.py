@@ -9,6 +9,7 @@ import zipfile
 import pytest
 
 from app.plugins.project_config import set_project_plugin_version_pin, set_project_preferred_provider
+from app.shell.support_bundle_collectors import collect_plugin_diagnostics
 from app.support.support_bundle import build_support_bundle
 from tests.support.minimal_project import write_minimal_project
 
@@ -34,22 +35,26 @@ def test_support_bundle_includes_plugin_project_config_and_provider_inventory(tm
         project_root,
         state_root=state_root,
         destination_dir=tmp_path / "bundles",
-        workflow_provider_metrics=[
-            {
-                "provider_key": "cbcs.python_tools:formatter",
-                "kind": "formatter",
-                "lane": "query",
-                "title": "CBCS Python Formatter",
-                "source_kind": "bundled",
-                "invocation_count": 2,
-                "success_count": 2,
-                "failure_count": 0,
-                "timeout_count": 0,
-                "last_elapsed_ms": 12.5,
-                "max_elapsed_ms": 17.0,
-                "last_error": None,
-            }
-        ],
+        plugin_diagnostics=collect_plugin_diagnostics(
+            project_root.resolve(),
+            state_root=state_root,
+            workflow_provider_metrics=[
+                {
+                    "provider_key": "cbcs.python_tools:formatter",
+                    "kind": "formatter",
+                    "lane": "query",
+                    "title": "CBCS Python Formatter",
+                    "source_kind": "bundled",
+                    "invocation_count": 2,
+                    "success_count": 2,
+                    "failure_count": 0,
+                    "timeout_count": 0,
+                    "last_elapsed_ms": 12.5,
+                    "max_elapsed_ms": 17.0,
+                    "last_error": None,
+                }
+            ],
+        ),
     )
 
     with zipfile.ZipFile(bundle_path, "r") as archive:
