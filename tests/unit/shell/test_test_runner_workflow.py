@@ -91,7 +91,7 @@ class WorkflowHarness:
             command=["pytest"],
             project_root=str(self.project_root),
             return_code=0,
-            stdout="tests/test_sample.py::test_alpha PASSED\n",
+            stdout="PASSED tests/test_sample.py::test_alpha\n",
             stderr="",
             elapsed_ms=1.0,
             failures=[],
@@ -207,7 +207,12 @@ def test_handle_pytest_result_updates_outcomes_and_problems(tmp_path: Path) -> N
         command=["pytest"],
         project_root=str(harness.project_root),
         return_code=1,
-        stdout="FAILED tests/test_sample.py::test_alpha - AssertionError\n",
+        stdout=(
+            "F                                                                        [100%]\n"
+            "=========================== short test summary info ============================\n"
+            "FAILED tests/test_sample.py::test_alpha - AssertionError: boom\n"
+            "1 failed in 0.05s\n"
+        ),
         stderr="",
         elapsed_ms=1.0,
         failures=[
@@ -215,7 +220,7 @@ def test_handle_pytest_result_updates_outcomes_and_problems(tmp_path: Path) -> N
                 file_path=str(harness.test_file),
                 line_number=1,
                 context="pytest",
-                message="AssertionError",
+                message="AssertionError: boom",
             )
         ],
     )
@@ -223,4 +228,72 @@ def test_handle_pytest_result_updates_outcomes_and_problems(tmp_path: Path) -> N
     harness.workflow.run_all_tests()
 
     assert harness.explorer.outcomes == {"tests/test_sample.py::test_alpha": "failed"}
-    assert harness.problems[-1][0].message == "AssertionError"
+    assert harness.problems[-1][0].message == "AssertionError: boom"
+
+
+def test_run_all_updates_explorer_from_q_rA_mixed_outcomes(tmp_path: Path) -> None:
+    harness = WorkflowHarness(tmp_path)
+    beta_file = harness.project_root / "tests" / "test_other.py"
+    beta_file.write_text("def test_beta():\n    assert False\n", encoding="utf-8")
+    harness.discovery = DiscoveryResult(nodes=[
+        DiscoveredTestNode(
+            node_id="tests/test_sample.py",
+            name="test_sample.py",
+            file_path=str(harness.test_file),
+            line_number=0,
+            kind="file",
+        ),
+        DiscoveredTestNode(
+            node_id="tests/test_sample.py::test_alpha",
+            name="test_alpha",
+            file_path=str(harness.test_file),
+            line_number=1,
+            kind="function",
+            parent_id="tests/test_sample.py",
+        ),
+        DiscoveredTestNode(
+            node_id="tests/test_other.py",
+            name="test_other.py",
+            file_path=str(beta_file),
+            line_number=0,
+            kind="file",
+        ),
+        DiscoveredTestNode(
+            node_id="tests/test_other.py::test_beta",
+            name="test_beta",
+            file_path=str(beta_file),
+            line_number=1,
+            kind="function",
+            parent_id="tests/test_other.py",
+        ),
+    ])
+    harness.result = PytestRunResult(
+        command=["pytest", "-q", "-rA"],
+        project_root=str(harness.project_root),
+        return_code=1,
+        stdout=(
+            ".F                                                                       [100%]\n"
+            "=========================== short test summary info ============================\n"
+            "PASSED tests/test_sample.py::test_alpha\n"
+            "FAILED tests/test_other.py::test_beta - AssertionError: expected False\n"
+            "1 failed, 1 passed in 0.08s\n"
+        ),
+        stderr="",
+        elapsed_ms=1.0,
+        failures=[
+            ProblemEntry(
+                file_path=str(beta_file),
+                line_number=1,
+                context="pytest",
+                message="AssertionError: expected False",
+            )
+        ],
+    )
+
+    harness.workflow.refresh_discovery()
+    harness.workflow.run_all_tests()
+
+    assert harness.explorer.outcomes == {
+        "tests/test_sample.py::test_alpha": "passed",
+        "tests/test_other.py::test_beta": "failed",
+    }

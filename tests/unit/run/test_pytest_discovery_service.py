@@ -193,6 +193,44 @@ def test_parse_test_results_from_summary_output() -> None:
     assert results[1].outcome == "passed"
 
 
+def test_parse_test_results_from_q_rA_production_stdout() -> None:
+    """Production Run All uses ``pytest -q -rA``; summary lines prefix outcomes."""
+    output = """\
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+______________________________ test_beta _______________________________
+    def test_beta():
+>       assert False
+E       AssertionError: boom
+
+tests/test_sample.py:5: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sample.py::test_beta - AssertionError: boom
+PASSED tests/test_sample.py::test_alpha
+SKIPPED tests/test_sample.py::test_gamma - reason: not ready
+ERROR tests/test_sample.py::test_setup
+2 failed, 1 passed, 1 skipped, 1 error in 0.12s
+"""
+    results = parse_test_results(output)
+    assert len(results) == 4
+    assert results[0].node_id == "tests/test_sample.py::test_beta"
+    assert results[0].outcome == "failed"
+    assert results[1].node_id == "tests/test_sample.py::test_alpha"
+    assert results[1].outcome == "passed"
+    assert results[2].node_id == "tests/test_sample.py::test_gamma"
+    assert results[2].outcome == "skipped"
+    assert results[3].node_id == "tests/test_sample.py::test_setup"
+    assert results[3].outcome == "error"
+
+
+def test_parse_test_results_q_rA_strips_failure_message_suffix() -> None:
+    output = "FAILED tests/test_sample.py::test_alpha - AssertionError: boom\n"
+    results = parse_test_results(output)
+    assert len(results) == 1
+    assert results[0].node_id == "tests/test_sample.py::test_alpha"
+    assert results[0].outcome == "failed"
+
+
 def test_parse_test_results_from_verbose_output() -> None:
     output = """\
 tests/test_foo.py::test_pass PASSED
