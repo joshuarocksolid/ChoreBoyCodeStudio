@@ -103,11 +103,10 @@ def test_deliver_runs_when_current() -> None:
     assert delivered == ["ran"]
 
 
-# AD-018 gate matrix — inline/menu generation omission (Wave 3c contract).
-# inline_intelligence_workflow.py calls deliver_revision_gated_editor_result with
-# revision only; generation is checked inside editor paint methods for async inline
-# paths, and menu paths use ungated show_calltip. Wave 3c must pass generation
-# through the policy module for all four deliver sites.
+# AD-018 gate matrix — generation-aware delivery (INT-R-10).
+# Inline/menu and completion workflows pass requested_generation through
+# deliver_revision_gated_editor_result. Tests below cover policy-module
+# behavior when generation args are omitted vs supplied.
 
 
 @pytest.mark.parametrize(

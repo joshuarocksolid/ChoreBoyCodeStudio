@@ -277,3 +277,22 @@ def test_hover_info_action_shows_calltip_after_async_success() -> None:
     )
 
     assert shown == ["Symbol: helper_task"]
+
+
+def test_hover_info_skips_calltip_when_generation_is_stale() -> None:
+    workflow, host = _build_workflow()
+    shown: list[str] = []
+    host._editor_widget.show_calltip = lambda text: shown.append(text)
+
+    workflow.handle_hover_info_action()
+    host._editor_widget.hover_request_generation = lambda: 2
+
+    call = host.intelligence_controller().hover_info_calls[0]
+    call["on_success"](
+        (
+            1,
+            SimpleNamespace(symbol_name="helper_task"),
+        )
+    )
+
+    assert shown == []

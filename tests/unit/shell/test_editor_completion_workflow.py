@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.intelligence.completion_models import CompletionItem, CompletionKind, CompletionResolveResult
+from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind, CompletionResolveResult
 from app.shell.editor_completion_workflow import EditorCompletionWorkflow
 
 pytestmark = pytest.mark.unit
@@ -77,6 +77,42 @@ def test_completion_resolve_skips_delivery_when_generation_is_stale() -> None:
     )
 
     assert editor_widget.show_resolved_calls == []
+
+
+def test_completion_paint_skips_delivery_when_generation_is_stale() -> None:
+    editor_widget = SimpleNamespace(
+        completion_request_generation=lambda: 2,
+        show_completion_calls=[],
+        show_completion_items_for_request=lambda **kwargs: editor_widget.show_completion_calls.append(kwargs),
+    )
+    host = _FakeHost(editor_widget=editor_widget)
+    host.show_status_message = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    host.reported_completion_degradation_reasons = lambda: set()  # type: ignore[attr-defined]
+    host.intelligence_metrics_logging_enabled = lambda: False  # type: ignore[attr-defined]
+    host.completion_min_chars = lambda: 2  # type: ignore[attr-defined]
+    host.log_info = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    host.log_warning = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    workflow = EditorCompletionWorkflow(host)
+
+    workflow.request_editor_completions_async(
+        file_path="/tmp/a.py",
+        editor_widget=editor_widget,
+        source_text="alpha",
+        cursor_position=5,
+        manual_trigger=True,
+        request_generation=1,
+        trigger_kind="manual",
+        trigger_character="",
+    )
+
+    completion_call = host.intelligence_controller().editor_completion_calls[0]
+    completion_call["on_paint"](
+        "alpha",
+        [CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL)],
+        CompletionEnvelope(items=[], source_phase="fast"),
+    )
+
+    assert editor_widget.show_completion_calls == []
 
 
 def test_request_editor_completions_uses_worker_lane_not_ui_sync_fast() -> None:
