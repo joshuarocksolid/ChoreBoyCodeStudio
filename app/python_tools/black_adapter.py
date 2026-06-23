@@ -64,6 +64,14 @@ def format_python_text(source_text: str, *, file_path: str, project_root: str) -
             settings=settings,
             error_message=str(exc),
         )
+    except Exception as exc:
+        return PythonTextTransformResult(
+            formatted_text=source_text,
+            changed=False,
+            status=PYTHON_TOOLING_STATUS_TOOL_UNAVAILABLE,
+            settings=settings,
+            error_message=str(exc),
+        )
 
     return PythonTextTransformResult(
         formatted_text=formatted_text,

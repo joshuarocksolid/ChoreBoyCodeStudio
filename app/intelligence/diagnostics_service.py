@@ -49,6 +49,7 @@ def find_unresolved_imports(
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     project_metadata: ProjectMetadata | None = None,
     inventory_snapshot: ProjectInventorySnapshot | None = None,
+    manifest_materialized: bool = True,
 ) -> list[ImportDiagnostic]:
     """Find unresolved project-local imports in Python files.
 
@@ -58,7 +59,11 @@ def find_unresolved_imports(
     are included in the analysis.
     """
     root = Path(project_root).expanduser().resolve()
-    layout = resolve_project_import_layout(root, project_metadata)
+    layout = resolve_project_import_layout(
+        root,
+        project_metadata,
+        manifest_materialized=manifest_materialized,
+    )
     resolved_overrides: dict[str, str] = {}
     if source_overrides:
         for p, src in source_overrides.items():
@@ -94,6 +99,7 @@ def analyze_python_file(
     selected_linter: str = constants.LINTER_PROVIDER_DEFAULT,
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     project_metadata: ProjectMetadata | None = None,
+    manifest_materialized: bool = True,
 ) -> list[CodeDiagnostic]:
     """Run focused diagnostics for one Python file.
 
@@ -139,7 +145,11 @@ def analyze_python_file(
 
     if project_root:
         resolved_root = Path(project_root).expanduser().resolve()
-        layout = resolve_project_import_layout(resolved_root, project_metadata)
+        layout = resolve_project_import_layout(
+            resolved_root,
+            project_metadata,
+            manifest_materialized=manifest_materialized,
+        )
         diagnostics.extend(
             collect_unresolved_import_diagnostics(
                 resolved_root,

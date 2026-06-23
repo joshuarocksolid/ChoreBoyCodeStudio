@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -181,10 +182,15 @@ class RunEventWorkflow:
     def enqueue_run_event(self, event: ProcessEvent) -> None:
         if self._host.is_shutting_down:
             return
+        active_session = self._host.run_session_controller.session_store.active_session
+        run_id = active_session.run_id if active_session is not None else None
+        if run_id is not None and event.run_id is None:
+            event = replace(event, run_id=run_id)
         self._host.run_event_queue.put(event)
 
     def process_queued_run_events(self) -> None:
         if self._host.is_shutting_down:
+            self._drain_exit_cleanup_events()
             self.drain_run_event_queue()
             return
         processed = 0
@@ -223,6 +229,8 @@ class RunEventWorkflow:
                 )
             )
         elif event.event_type == "exit":
+            if not self._is_matching_exit_event(event, run_id):
+                return
             self._host.event_bus.publish(
                 RunProcessExitEvent(
                     run_id=run_id,
@@ -231,10 +239,7 @@ class RunEventWorkflow:
                     terminated_by_user=event.terminated_by_user,
                 )
             )
-            transient_entry_file = self._host.active_transient_entry_file_path
-            if transient_entry_file:
-                self._host.run_launch_workflow.delete_transient_entry_file(transient_entry_file)
-                self._host.active_transient_entry_file_path = None
+            self._apply_exit_cleanup(event)
             self._host.run_debug_presenter.execute_pending_restart_if_any()
 
     def drain_run_event_queue(self) -> None:
@@ -244,6 +249,42 @@ class RunEventWorkflow:
             except queue.Empty:
                 break
 
+    def _drain_exit_cleanup_events(self) -> None:
+        pending: list[ProcessEvent] = []
+        while True:
+            try:
+                pending.append(self._host.run_event_queue.get_nowait())
+            except queue.Empty:
+                break
+        for event in pending:
+            if event.event_type != "exit":
+                continue
+            active_session = self._host.run_session_controller.session_store.active_session
+            active_run_id = active_session.run_id if active_session is not None else None
+            if not self._is_matching_exit_event(event, active_run_id):
+                continue
+            try:
+                self._apply_exit_cleanup(event)
+            except Exception:
+                self._host.log_exception("Failed to process run exit during shutdown")
+
+    @staticmethod
+    def _is_matching_exit_event(event: ProcessEvent, active_run_id: str | None) -> bool:
+        if event.event_type != "exit":
+            return False
+        if active_run_id is None:
+            return False
+        if event.run_id is not None and event.run_id != active_run_id:
+            return False
+        return True
+
+    def _apply_exit_cleanup(self, event: ProcessEvent) -> None:
+        del event
+        transient_entry_file = self._host.active_transient_entry_file_path
+        if transient_entry_file:
+            self._host.run_launch_workflow.delete_transient_entry_file(transient_entry_file)
+            self._host.active_transient_entry_file_path = None
+
     def get_run_output_coordinator(self) -> RunOutputCoordinator:
         if self._run_output_coordinator is not None:
             return self._run_output_coordinator
@@ -252,6 +293,11 @@ class RunEventWorkflow:
         coordinator = RunOutputCoordinator(
             is_shutting_down=lambda: self._host.is_shutting_down,
             get_active_session_mode=lambda: self._host.run_session_controller.active_session_mode,
+            get_active_run_id=lambda: (
+                None
+                if self._host.run_session_controller.session_store.active_session is None
+                else self._host.run_session_controller.session_store.active_session.run_id
+            ),
             clear_active_session=self._host.run_session_controller.clear_active_session,
             get_debug_session=lambda: self._host.debug_session,
             append_output_tail=append_output_tail,

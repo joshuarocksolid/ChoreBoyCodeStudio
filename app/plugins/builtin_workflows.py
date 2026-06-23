@@ -120,6 +120,7 @@ def _run_builtin_diagnostics_query(request: Mapping[str, Any]) -> list[CodeDiagn
         selected_linter=_optional_string(request, "selected_linter") or constants.LINTER_PROVIDER_DEFAULT,
         lint_rule_overrides=_mapping_value(request, "lint_rule_overrides"),
         project_metadata=project_metadata,
+        manifest_materialized=bool(request.get("manifest_materialized", True)),
     )
 
 

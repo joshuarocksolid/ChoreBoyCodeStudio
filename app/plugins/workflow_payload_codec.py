@@ -241,8 +241,11 @@ def serialize_runtime_issue_result(
 def parse_runtime_result(raw_value: WorkflowIpcPayload) -> RuntimeIssueReport | list[RuntimeIssue]:
     if isinstance(raw_value, RuntimeIssueReport):
         return raw_value
-    if isinstance(raw_value, list) and all(isinstance(item, RuntimeIssue) for item in raw_value):
-        return list(raw_value)
+    if isinstance(raw_value, list):
+        if all(isinstance(item, RuntimeIssue) for item in raw_value):
+            return list(raw_value)
+        if all(isinstance(item, dict) for item in raw_value):
+            return _parse_runtime_issue_list(raw_value)
     if not isinstance(raw_value, dict):
         raise TypeError("Workflow runtime explanation result must be a RuntimeIssueReport or dict.")
     if "issues" in raw_value:

@@ -28,6 +28,7 @@ from PySide2.QtWidgets import (
 
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.run.problem_parser import ProblemEntry
+from app.shell.theme_tokens import ShellThemeTokens
 
 if TYPE_CHECKING:
     from PySide2.QtCore import QPoint
@@ -317,6 +318,14 @@ class ProblemsPanel(QWidget):
         }
 
     # -- public API --
+
+    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        """Update severity icon/row colors from theme tokens."""
+        self.set_severity_colors(
+            tokens.diag_error_color or tokens.accent,
+            tokens.diag_warning_color or tokens.text_muted,
+            tokens.diag_info_color or tokens.accent,
+        )
 
     def set_severity_colors(
         self,

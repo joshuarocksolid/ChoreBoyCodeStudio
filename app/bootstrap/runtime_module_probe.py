@@ -200,6 +200,8 @@ def save_runtime_modules_cache(
 
 def load_cached_runtime_modules(
     state_root: Optional[PathInput] = None,
+    *,
+    expected_runtime_path: str | None = None,
 ) -> frozenset[str] | None:
     """Load cached module set from disk.  Returns *None* when cache is missing or corrupt."""
     path = _cache_path(state_root)
@@ -207,6 +209,10 @@ def load_cached_runtime_modules(
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if expected_runtime_path is not None:
+            cached_runtime = str(data.get("runtime_path", ""))
+            if cached_runtime != expected_runtime_path:
+                return None
         return frozenset(data["modules"])
     except (json.JSONDecodeError, KeyError, TypeError, OSError):
         return None
@@ -233,7 +239,7 @@ def probe_and_cache_runtime_modules(
     if result.success:
         save_runtime_modules_cache(result, state_root)
         return result.modules
-    cached = load_cached_runtime_modules(state_root)
+    cached = load_cached_runtime_modules(state_root, expected_runtime_path=effective_runtime)
     if cached is not None:
         return cached
     return result.modules

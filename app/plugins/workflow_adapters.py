@@ -84,6 +84,7 @@ def analyze_python_with_workflow(
     lint_rule_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     preferred_provider_key: str | None = None,
     project_metadata: ProjectMetadata | None = None,
+    manifest_materialized: bool = True,
 ) -> tuple[WorkflowProviderDescriptor, list[CodeDiagnostic]]:
     request: dict[str, Any] = {
         "file_path": file_path,
@@ -93,6 +94,7 @@ def analyze_python_with_workflow(
         "allow_runtime_import_probe": allow_runtime_import_probe,
         "selected_linter": selected_linter,
         "lint_rule_overrides": dict(lint_rule_overrides or {}),
+        "manifest_materialized": manifest_materialized,
     }
     if project_metadata is not None:
         request["project_metadata"] = project_metadata.to_dict()

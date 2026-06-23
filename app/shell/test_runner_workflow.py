@@ -412,7 +412,9 @@ class TestRunnerWorkflow:
         loaded_project: LoadedProject,
     ) -> str:
         for node in self._test_discovery_result.function_nodes():
-            if Path(node.file_path).expanduser().resolve() == target_path and node.name == test_name:
+            if Path(node.file_path).expanduser().resolve() == target_path and (
+                node.name == test_name or node.node_id.endswith(f"::{test_name}")
+            ):
                 return node.node_id
         relative_path = target_path.relative_to(Path(loaded_project.project_root).expanduser().resolve())
         return f"{relative_path.as_posix()}::{test_name}"

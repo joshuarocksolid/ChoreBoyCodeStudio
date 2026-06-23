@@ -152,22 +152,32 @@ class PluginRuntimeManager:
             self._job_result_queues[job_id] = job_result_queue
             if on_event is not None:
                 self._job_event_handlers[job_id] = on_event
-        message = build_provider_job_start_request(
-            request_id=request_id,
-            job_id=job_id,
-            provider_key=provider_key,
-            request=request,
-            activation_event=activation_event,
-        )
-        self._host_supervisor.send_input(encode_message(message))
-        response = self._wait_for_response(
-            request_id=request_id,
-            response_queue=response_queue,
-            timeout_seconds=timeout_seconds,
-            failure_label=provider_key,
-        )
-        self._unwrap_response(response, failure_label=provider_key)
+        try:
+            message = build_provider_job_start_request(
+                request_id=request_id,
+                job_id=job_id,
+                provider_key=provider_key,
+                request=request,
+                activation_event=activation_event,
+            )
+            self._host_supervisor.send_input(encode_message(message))
+            response = self._wait_for_response(
+                request_id=request_id,
+                response_queue=response_queue,
+                timeout_seconds=timeout_seconds,
+                failure_label=provider_key,
+            )
+            self._unwrap_response(response, failure_label=provider_key)
+        except Exception:
+            self._release_workflow_job(job_id=job_id, request_id=request_id)
+            raise
         return PluginRuntimeJob(job_id=job_id, provider_key=provider_key)
+
+    def _release_workflow_job(self, *, job_id: str, request_id: str) -> None:
+        with self._pending_lock:
+            self._pending_requests.pop(request_id, None)
+            self._job_result_queues.pop(job_id, None)
+            self._job_event_handlers.pop(job_id, None)
 
     def wait_for_workflow_job(
         self,

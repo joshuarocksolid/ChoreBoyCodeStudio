@@ -79,7 +79,12 @@ def install() -> bool:
     libc = _resolve_libc()
     impl = _build_libc_memfd(libc)
     if impl is None:
-        impl = _build_syscall_memfd(libc)
+        try:
+            impl = _build_syscall_memfd(libc)
+        except _MemfdShimError:
+            return False
+    if impl is None:
+        return False
 
     def memfd_create(name, flags=0):  # type: ignore[no-untyped-def]
         encoded = _normalize_name(name)

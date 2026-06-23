@@ -120,6 +120,8 @@ class RunnerDebugHost(PausePayloadMixin, BreakpointMixin, InspectorMixin):
         payload = self._build_pause_payload(frame=frame, reason=reason, exc_info=exc_info)
         self._send_event("stopped", payload)
         if self._transport_failed:
+            self._paused = False
+            self.debugger.set_quit()
             return
         try:
             self._pause_loop(frame=frame, exc_info=exc_info, allow_stepping=True)
@@ -142,6 +144,8 @@ class RunnerDebugHost(PausePayloadMixin, BreakpointMixin, InspectorMixin):
         payload = self._build_traceback_pause_payload(frames=frames, exc_info=exc_info)
         self._send_event("stopped", payload)
         if self._transport_failed:
+            self._paused = False
+            self.debugger.set_quit()
             return
         try:
             self._pause_loop(frame=frames[0], exc_info=exc_info, allow_stepping=False)

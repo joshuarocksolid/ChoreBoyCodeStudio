@@ -158,18 +158,21 @@ def load_project_import_layout(project_root: PathInput) -> ProjectImportLayout:
 def resolve_project_import_layout(
     project_root: PathInput,
     metadata: ProjectMetadata | None = None,
+    *,
+    manifest_materialized: bool = True,
 ) -> ProjectImportLayout:
     """Build import layout using manifest, pyproject, then auto-detect precedence."""
     root = Path(project_root).expanduser().resolve()
     vendor_root = root / "vendor"
 
     if metadata is not None:
-        configured = resolve_configured_src_paths(
-            root,
-            list(metadata.source_roots),
-            auto_detect_src=False,
-        )
-        return ProjectImportLayout(project_root=root, source_roots=configured, vendor_root=vendor_root)
+        if metadata.source_roots or manifest_materialized:
+            configured = resolve_configured_src_paths(
+                root,
+                list(metadata.source_roots),
+                auto_detect_src=False,
+            )
+            return ProjectImportLayout(project_root=root, source_roots=configured, vendor_root=vendor_root)
 
     pyproject_paths = _read_pyproject_src_paths(root)
     if pyproject_paths:

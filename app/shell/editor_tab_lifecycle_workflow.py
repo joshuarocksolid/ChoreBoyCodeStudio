@@ -171,6 +171,11 @@ class EditorTabLifecycleWorkflow:
         self._host.local_history_stop_autosave_timer()
         self._host.stop_auto_save_to_file_timer()
         self._host.stop_realtime_lint_timer()
+        self._host.stop_outline_refresh_timer()
+        self._host.outline_symbols_by_path().clear()
+        outline_panel = self._host.outline_panel()
+        if outline_panel is not None:
+            outline_panel.set_outline([], "")
         self._host.local_history_clear_pending_autosaves()
         self._host.clear_pending_realtime_lint_file_path()
         self._host.clear_debug_execution_indicator()

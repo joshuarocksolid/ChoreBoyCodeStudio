@@ -2,16 +2,27 @@
 
 Point-in-time thermo-nuclear review records. These are **not operational runbooks**.
 
-## Active program (orchestrator)
+## Active programs (orchestrators)
 
-Full-codebase review + remediation runs via the custom agent:
+### Thermo-nuclear (maintainability) — COMPLETE @ 2026-06-22
 
 | Resource | Purpose |
 |----------|---------|
-| [`.cursor/agents/thermo-program-orchestrator.md`](../../.cursor/agents/thermo-program-orchestrator.md) | Custom agent — invoke with `/thermo-program-orchestrator` |
-| [`THERMO_PROGRAM_WORKFLOW.md`](THERMO_PROGRAM_WORKFLOW.md) | **Your workflow** — what you do vs what the agent does |
-| [`THERMO_PROGRAM_ORCHESTRATOR.md`](THERMO_PROGRAM_ORCHESTRATOR.md) | Full prompt, roadmap, verification gates |
-| [`PROGRAM_STATUS.md`](PROGRAM_STATUS.md) | Live state (created on first run) |
+| [`.cursor/agents/thermo-program-orchestrator.md`](../../.cursor/agents/thermo-program-orchestrator.md) | Custom agent — `/thermo-program-orchestrator` |
+| [`THERMO_PROGRAM_WORKFLOW.md`](THERMO_PROGRAM_WORKFLOW.md) | Human workflow |
+| [`THERMO_PROGRAM_ORCHESTRATOR.md`](THERMO_PROGRAM_ORCHESTRATOR.md) | Full prompt, roadmap, gates |
+| [`PROGRAM_STATUS.md`](PROGRAM_STATUS.md) | Live state |
+
+### Bugbot (review → fix loop)
+
+| Resource | Purpose |
+|----------|---------|
+| [`.cursor/agents/bugbot-program-orchestrator.md`](../../.cursor/agents/bugbot-program-orchestrator.md) | Custom agent — `/bugbot-program-orchestrator` |
+| [`BUGBOT_PROGRAM_WORKFLOW.md`](BUGBOT_PROGRAM_WORKFLOW.md) | Human workflow |
+| [`BUGBOT_PROGRAM_ORCHESTRATOR.md`](BUGBOT_PROGRAM_ORCHESTRATOR.md) | Modes, slice manifest, dispatch templates |
+| [`BUGBOT_PROGRAM_STATUS.md`](BUGBOT_PROGRAM_STATUS.md) | Live state (created on first run) |
+
+One-shot review without fix loop: `/review-bugbot` skill.
 
 ## Contents
 

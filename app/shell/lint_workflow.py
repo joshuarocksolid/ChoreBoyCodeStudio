@@ -134,6 +134,7 @@ class LintWorkflow:
 
         def task(_cancel_event) -> object:  # type: ignore[no-untyped-def]
             project_metadata = None if loaded_project is None else loaded_project.metadata
+            manifest_materialized = True if loaded_project is None else loaded_project.manifest_materialized
             _provider, diagnostics = analyze_python_with_workflow(
                 self._host.workflow_broker(),
                 file_path=file_path,
@@ -144,6 +145,7 @@ class LintWorkflow:
                 selected_linter=self._host.selected_linter(),
                 lint_rule_overrides=self._host.lint_rule_overrides(),
                 project_metadata=project_metadata,
+                manifest_materialized=manifest_materialized,
             )
             return diagnostics
 
@@ -232,6 +234,7 @@ class LintWorkflow:
                 lint_rule_overrides=lint_rule_overrides,
                 project_metadata=loaded_project.metadata,
                 inventory_snapshot=inventory_snapshot,
+                manifest_materialized=loaded_project.manifest_materialized,
             )
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
@@ -255,8 +258,12 @@ class LintWorkflow:
                 )
                 for d in diagnostics
             ]
-            problems_panel.set_diagnostics(import_diags)
-            self._host.update_problems_tab_title(problems_panel.problem_count())
+            stored = self._host.stored_lint_diagnostics()
+            for path in list(stored.keys()):
+                stored[path] = [diag for diag in stored[path] if diag.code != "PY200"]
+            for diag in import_diags:
+                stored.setdefault(diag.file_path, []).append(diag)
+            self._host.render_merged_problems_panel()
             self._host.focus_problems_tab()
             import_report = build_import_issue_report(
                 project_root,

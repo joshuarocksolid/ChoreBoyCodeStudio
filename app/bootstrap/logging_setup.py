@@ -69,6 +69,8 @@ def get_active_log_path(state_root: Optional[PathInput] = None) -> Optional[Path
         resolved = _ACTIVE_LOG_PATH.resolve()
         if resolved.exists():
             return resolved
+    if _ACTIVE_LOG_PATH is None and _ACTIVE_STATE_ROOT == requested_state_root:
+        return None
     fallback = global_app_log_path(state_root)
     if fallback.exists():
         return fallback.resolve()

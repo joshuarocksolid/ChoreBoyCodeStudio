@@ -217,8 +217,14 @@ class CompletionController(QObject):
     def accept_current(self) -> None:
         """Emit :pyattr:`activated` for the highlighted item, then hide."""
         item = self.current_item()
+        if item is not None and is_tier_header_item(item):
+            self._popup.list_view().move_to_next_selectable()
+            next_item = self.current_item()
+            if next_item is None or is_tier_header_item(next_item):
+                self._popup.hide()
+            return
         self._popup.hide()
-        if item is not None and not is_tier_header_item(item):
+        if item is not None:
             self.activated.emit(item)
 
     # ------------------------------------------------------------------

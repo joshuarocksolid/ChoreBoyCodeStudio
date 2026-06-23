@@ -29,6 +29,7 @@ class ProcessEvent:
     state: ProcessState | None = None
     terminated_by_user: bool = False
     payload: object | None = None
+    run_id: str | None = None
 
 
 @dataclass
@@ -73,6 +74,14 @@ class ProcessSupervisor:
     def start(self, command: list[str], *, cwd: str, env: Mapping[str, str] | None = None) -> int:
         """Start an external process and begin streaming output events."""
         state_event: ProcessEvent
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:
+                raise RunLifecycleError("Runner process is already active.")
+            pending_waiter = self._waiter_thread
+
+        if pending_waiter is not None and pending_waiter.is_alive():
+            pending_waiter.join()
+
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 raise RunLifecycleError("Runner process is already active.")

@@ -48,7 +48,7 @@ def build_main_window_menus(
         on_debug_pytest_failed=window._test_runner_workflow.debug_failed_test,
         on_run_with_config=window._run_launch_workflow.handle_run_with_configuration_action,
         on_run_with_args=window._run_launch_workflow.handle_run_with_arguments_action,
-        on_stop=window._run_debug_presenter.stop_session,
+        on_stop=window._run_debug_presenter.user_stop_session,
         on_restart=window._run_debug_presenter.restart_session,
         on_rerun_last_debug_target=window._run_launch_workflow.handle_rerun_last_debug_target_action,
         on_continue_debug=lambda: window._debug_control_workflow.dispatch_debug_transport_command(continue_command),

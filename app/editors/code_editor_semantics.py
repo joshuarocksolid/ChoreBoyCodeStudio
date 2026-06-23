@@ -109,6 +109,8 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         self._completion_auto_trigger_period = auto_trigger_period
         self._completion_min_chars = max(1, min_chars)
         if not enabled:
+            self._completion_debounce_timer.stop()
+            self._debounced_completion_request = None
             self._completion_popup.hide()
 
     def _build_editor_completion_context(
@@ -170,6 +172,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             and self._completion_popup.reuse_items_for_prefix(current_prefix)
         ):
             self._active_completion_prefix = current_prefix
+            self._completion_popup.complete(self.cursorRect())
             self._debounced_completion_request = (
                 source_text,
                 cursor_position,
@@ -193,6 +196,9 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         self._pending_completion_trigger_character = ""
 
     def _flush_debounced_completion_request(self) -> None:
+        if not self._completion_enabled:
+            self._debounced_completion_request = None
+            return
         pending = self._debounced_completion_request
         self._debounced_completion_request = None
         if pending is None or self._completion_requester is None:
@@ -216,6 +222,8 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         trigger_character: str,
     ) -> None:
         if self._completion_requester is None:
+            return
+        if not self._completion_enabled:
             return
         self._completion_request_generation += 1
         request_generation = self._completion_request_generation
@@ -273,6 +281,8 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         items: list[CompletionItem],
     ) -> None:
         """Apply asynchronous completion results if still current."""
+        if not self._completion_enabled:
+            return
         if request_generation != self._completion_request_generation:
             return
         if not items:

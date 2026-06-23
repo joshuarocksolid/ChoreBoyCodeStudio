@@ -65,6 +65,9 @@ class EditorTabsCoordinator:
         tab_bar = tabs.tabBar()
         if isinstance(tab_bar, QTabBar):
             tab_bar.update()
+        window = self._window
+        if hasattr(window, "_editor_tab_workflow"):
+            window._editor_tab_workflow.refresh_tab_presentation(file_path)
 
     def promote_preview_tab(self, file_path: str) -> bool:
         window = self._window

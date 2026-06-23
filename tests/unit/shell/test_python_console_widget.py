@@ -9,11 +9,12 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
-from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent  # noqa: E402
+from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
 from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402
 from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
+from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -65,7 +66,8 @@ def _get_plain_text(widget: PythonConsoleWidget) -> str:
 # ---------------------------------------------------------------------------
 
 class TestIdleState:
-    def test_shows_startup_hint_on_construction(self, widget: PythonConsoleWidget) -> None:
+    def test_shows_startup_hint_after_theme_apply(self, widget: PythonConsoleWidget) -> None:
+        widget.apply_theme(tokens_from_palette(QPalette(), force_mode="light"))
         text = _get_plain_text(widget)
         assert "Starting Python Console" in text
 

@@ -86,7 +86,7 @@ class PythonConsoleWidget(QTextEdit):
         self._col_bg: str = "#1B1F23"
 
         self._setup_appearance()
-        self._render_startup_hint()
+        self._startup_hint_rendered = False
         self._show_prompt()
 
     # ------------------------------------------------------------------
@@ -121,6 +121,9 @@ class PythonConsoleWidget(QTextEdit):
         self.setPalette(palette)
         self._completion_popup.apply_theme(tokens)
         self._reformat_existing_output()
+        if not self._startup_hint_rendered and not self._session_active:
+            self._render_startup_hint()
+            self._startup_hint_rendered = True
 
     def set_completion_requester(self, requester: Any) -> None:
         """Attach asynchronous live-completion requester."""

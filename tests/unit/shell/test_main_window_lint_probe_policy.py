@@ -9,9 +9,35 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.intelligence.diagnostics_service import CodeDiagnostic  # noqa: E402
+from app.core.models import LoadedProject, ProjectMetadata  # noqa: E402
 from tests.support.shell_host_stubs import lint_workflow_stub  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+
+def test_render_lint_threads_manifest_materialized_for_lazy_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow, host = lint_workflow_stub()
+    host._loaded_project = LoadedProject(
+        project_root="/tmp/project",
+        manifest_path="/tmp/project/cbcs/project.json",
+        metadata=ProjectMetadata(schema_version=1, name="demo", source_roots=[]),
+        manifest_materialized=False,
+    )
+    captured: list[bool] = []
+
+    def _fake_analyze(_broker, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(bool(kwargs.get("manifest_materialized")))
+        return (SimpleNamespace(title="lint"), [])
+
+    monkeypatch.setattr("app.shell.lint_workflow.analyze_python_with_workflow", _fake_analyze)
+
+    workflow.render_diagnostics_for_file("/tmp/project/main.py", trigger="manual")
+    background_call = host.background_tasks().calls[0]
+    background_call["task"](threading.Event())
+
+    assert captured == [False]
 
 
 def test_render_lint_manual_trigger_uses_static_import_resolution(monkeypatch: pytest.MonkeyPatch) -> None:

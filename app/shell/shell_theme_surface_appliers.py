@@ -28,6 +28,7 @@ class ShellThemeSurfaceRefs:
     menu_registry: Any | None
     test_explorer_panel: Any | None
     outline_panel: Any | None
+    problems_panel: Any | None
     shell_style_setter: Callable[[str], None]
 
     @classmethod
@@ -43,6 +44,7 @@ class ShellThemeSurfaceRefs:
             menu_registry=window._menu_registry,
             test_explorer_panel=window._test_explorer_panel,
             outline_panel=window._outline_panel,
+            problems_panel=window._problems_panel,
             shell_style_setter=window.setStyleSheet,
         )
 
@@ -123,6 +125,11 @@ def apply_outline_theme(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -
         refs.outline_panel.apply_theme_tokens(tokens)
 
 
+def apply_problems_panel_theme(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:
+    if refs.problems_panel is not None:
+        refs.problems_panel.apply_theme(tokens)
+
+
 def build_main_window_shell_theme_callbacks(window: Any) -> ShellThemeChildCallbacks:
     refs = ShellThemeSurfaceRefs.from_main_window(window)
     return ShellThemeChildCallbacks(
@@ -137,4 +144,5 @@ def build_main_window_shell_theme_callbacks(window: Any) -> ShellThemeChildCallb
         apply_menu_bar_icons=lambda tokens: apply_menu_bar_icons(refs, tokens),
         apply_test_explorer_theme=lambda tokens: apply_test_explorer_theme(refs, tokens),
         apply_outline_theme=lambda tokens: apply_outline_theme(refs, tokens),
+        apply_problems_panel_theme=lambda tokens: apply_problems_panel_theme(refs, tokens),
     )

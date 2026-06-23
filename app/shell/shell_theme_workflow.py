@@ -63,6 +63,7 @@ class ShellThemeChildCallbacks:
     apply_menu_bar_icons: Callable[[ShellThemeTokens], None] | None = None
     apply_test_explorer_theme: Callable[[ShellThemeTokens], None] | None = None
     apply_outline_theme: Callable[[ShellThemeTokens], None] | None = None
+    apply_problems_panel_theme: Callable[[ShellThemeTokens], None] | None = None
 
 
 @dataclass
@@ -109,6 +110,12 @@ class ShellThemeWorkflow:
 
     def __init__(self, host: ShellThemeWorkflowHost | Any) -> None:
         self._host = host
+
+    def refresh_surface_refs(self) -> None:
+        """Rebind shell child widget refs after layout construction."""
+        refresh = getattr(self._host, "refresh_surface_refs", None)
+        if callable(refresh):
+            refresh()
 
     @property
     def host(self) -> Any:
@@ -223,6 +230,8 @@ class ShellThemeWorkflow:
                 callbacks.apply_test_explorer_theme(tokens)
             if callbacks.apply_outline_theme is not None:
                 callbacks.apply_outline_theme(tokens)
+            if callbacks.apply_problems_panel_theme is not None:
+                callbacks.apply_problems_panel_theme(tokens)
         finally:
             host.is_applying_theme_styles = False
 
@@ -247,6 +256,11 @@ class ShellThemeWorkflow:
             )
         if explorer.explorer_refresh_btn is not None:
             explorer.explorer_refresh_btn.setIcon(refresh_icon(tokens.icon_primary))
+        presenter = getattr(self._host, "_window", None)
+        if presenter is not None:
+            tree_presenter = getattr(presenter, "_project_tree_presenter", None)
+            if tree_presenter is not None:
+                tree_presenter.refresh_tree_item_icons()
 
     def system_prefers_dark_theme(self) -> bool:
         host = self._host

@@ -34,9 +34,10 @@ def load_recent_projects(
     projects = _extract_project_list(payload.get("projects"))
     normalized = _normalize_and_dedupe_paths(projects)
     pruned = _prune_invalid_projects(normalized)
-    limited = pruned[:max_entries] if max_entries is not None else pruned
-    _save_recent_projects_payload(recents_path, limited)
-    return limited
+    _save_recent_projects_payload(recents_path, pruned)
+    if max_entries is not None:
+        return pruned[:max_entries]
+    return pruned
 
 
 def remember_recent_project(
@@ -49,11 +50,12 @@ def remember_recent_project(
     if max_entries is not None:
         _validate_max_entries(max_entries)
     resolved_project_root = validate_openable_project_root(project_root)
-    recents = load_recent_projects(state_root=state_root, max_entries=max_entries)
+    recents = load_recent_projects(state_root=state_root)
     remembered = [str(resolved_project_root)] + [entry for entry in recents if entry != str(resolved_project_root)]
-    limited = remembered[:max_entries] if max_entries is not None else remembered
-    _save_recent_projects_payload(global_recent_projects_path(state_root), limited)
-    return limited
+    _save_recent_projects_payload(global_recent_projects_path(state_root), remembered)
+    if max_entries is not None:
+        return remembered[:max_entries]
+    return remembered
 
 
 def _extract_project_list(raw_projects: object) -> list[str]:

@@ -190,6 +190,11 @@ class RunDebugPresenter:
         run_events.set_run_status("stopping")
         run_events.refresh_run_action_states()
 
+    def user_stop_session(self) -> None:
+        """Stop the active run and cancel any armed restart."""
+        self.clear_pending_restart()
+        self.stop_session()
+
     def restart_session(self) -> None:
         host = self._host
         if host.run_service().supervisor.is_running():  # type: ignore[attr-defined]

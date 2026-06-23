@@ -239,6 +239,120 @@ def test_apply_run_event_exit_executes_pending_restart() -> None:
     assert restart_calls == ["restart"]
 
 
+def test_apply_run_event_stale_exit_is_fully_ignored() -> None:
+    host = _FakeRunEventHost()
+    published: list[object] = []
+    host.event_bus = SimpleNamespace(publish=published.append)
+    host.active_transient_entry_file_path = "/tmp/transient.py"
+    deleted: list[str] = []
+    host.run_launch_workflow = cast(  # type: ignore[assignment]
+        RunLaunchWorkflow,
+        SimpleNamespace(delete_transient_entry_file=deleted.append),
+    )
+    restart_calls: list[str] = []
+    host.run_debug_presenter = SimpleNamespace(
+        execute_pending_restart_if_any=lambda: restart_calls.append("restart"),
+    )
+    workflow, host = _build_workflow(host)
+
+    workflow.apply_run_event(
+        ProcessEvent(
+            event_type="exit",
+            return_code=99,
+            terminated_by_user=False,
+            run_id="stale-run",
+        )
+    )
+
+    assert published == []
+    assert deleted == []
+    assert host.active_transient_entry_file_path == "/tmp/transient.py"
+    assert restart_calls == []
+    assert host.run_session_controller.session_store.active_session is not None
+
+
+def test_apply_run_event_stale_exit_after_session_cleared_is_ignored() -> None:
+    host = _FakeRunEventHost()
+    host.run_session_controller.clear_active_session()
+    published: list[object] = []
+    host.event_bus = SimpleNamespace(publish=published.append)
+    host.active_transient_entry_file_path = "/tmp/transient.py"
+    deleted: list[str] = []
+    host.run_launch_workflow = cast(  # type: ignore[assignment]
+        RunLaunchWorkflow,
+        SimpleNamespace(delete_transient_entry_file=deleted.append),
+    )
+    restart_calls: list[str] = []
+    host.run_debug_presenter = SimpleNamespace(
+        execute_pending_restart_if_any=lambda: restart_calls.append("restart"),
+    )
+    workflow, host = _build_workflow(host)
+
+    workflow.apply_run_event(
+        ProcessEvent(
+            event_type="exit",
+            return_code=99,
+            terminated_by_user=False,
+            run_id="run123",
+        )
+    )
+
+    assert published == []
+    assert deleted == []
+    assert host.active_transient_entry_file_path == "/tmp/transient.py"
+    assert restart_calls == []
+
+
+def test_drain_exit_cleanup_events_ignores_stale_run_id_during_shutdown() -> None:
+    host = _FakeRunEventHost()
+    host.is_shutting_down = True
+    host.active_transient_entry_file_path = "/tmp/current_transient.py"
+    deleted: list[str] = []
+    host.run_launch_workflow = cast(  # type: ignore[assignment]
+        RunLaunchWorkflow,
+        SimpleNamespace(delete_transient_entry_file=deleted.append),
+    )
+    workflow, host = _build_workflow(host)
+    host.run_event_queue.put(
+        ProcessEvent(
+            event_type="exit",
+            return_code=0,
+            terminated_by_user=False,
+            run_id="stale-other-run",
+        )
+    )
+
+    workflow.process_queued_run_events()
+
+    assert deleted == []
+    assert host.active_transient_entry_file_path == "/tmp/current_transient.py"
+
+
+def test_drain_exit_cleanup_events_deletes_transient_for_matching_run_id() -> None:
+    host = _FakeRunEventHost()
+    host.is_shutting_down = True
+    host.active_transient_entry_file_path = "/tmp/current_transient.py"
+    deleted: list[str] = []
+    host.run_launch_workflow = cast(  # type: ignore[assignment]
+        RunLaunchWorkflow,
+        SimpleNamespace(delete_transient_entry_file=deleted.append),
+    )
+    workflow, host = _build_workflow(host)
+    host.run_event_queue.put(
+        ProcessEvent(
+            event_type="exit",
+            return_code=0,
+            terminated_by_user=False,
+            run_id="run123",
+        )
+    )
+
+    workflow.process_queued_run_events()
+
+    assert deleted == ["/tmp/current_transient.py"]
+    assert host.active_transient_entry_file_path is None
+
+
 def test_enqueue_run_event_ignored_while_shutting_down() -> None:
     workflow, host = _build_workflow()
     host.is_shutting_down = True

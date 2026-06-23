@@ -18,6 +18,7 @@ pytestmark = pytest.mark.unit
 @dataclass
 class _CoordinatorHarness:
     active_mode: str | None = constants.RUN_MODE_PYTHON_SCRIPT
+    active_run_id: str | None = "run123"
     shutting_down: bool = False
     auto_open_console: bool = False
     auto_open_problems: bool = False
@@ -37,7 +38,11 @@ class _CoordinatorHarness:
         return RunOutputCoordinator(
             is_shutting_down=lambda: self.shutting_down,
             get_active_session_mode=lambda: self.active_mode,
-            clear_active_session=lambda: setattr(self, "active_mode", None),
+            get_active_run_id=lambda: self.active_run_id,
+            clear_active_session=lambda: (
+                setattr(self, "active_mode", None),
+                setattr(self, "active_run_id", None),
+            ),
             get_debug_session=lambda: self.debug_session,
             append_output_tail=self.output_tail.append,
             append_console_line=lambda text, stream: self.console_lines.append((text, stream)),
@@ -136,7 +141,7 @@ def test_apply_exit_clears_session_and_focuses_problems_for_failed_run() -> None
     )
     coordinator = harness.build()
 
-    coordinator.apply(ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False))
+    coordinator.apply(ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False, run_id="run123"))
 
     assert harness.active_mode is None
     assert harness.debug_input_enabled == [False]
@@ -145,3 +150,59 @@ def test_apply_exit_clears_session_and_focuses_problems_for_failed_run() -> None
     assert harness.focused_tabs == ["problems"]
     assert harness.refresh_calls == 1
     assert any("Run finished" in line[0] for line in harness.console_lines)
+
+
+def test_apply_exit_ignores_stale_exit_after_session_cleared() -> None:
+    harness = _CoordinatorHarness(active_mode=None, active_run_id=None)
+    coordinator = harness.build()
+
+    coordinator.apply(
+        ProcessEvent(
+            event_type="exit",
+            return_code=99,
+            terminated_by_user=False,
+            run_id="stale-run",
+        )
+    )
+
+    assert harness.statuses == []
+    assert harness.finalized_return_codes == []
+    assert harness.console_lines == []
+
+
+def test_apply_exit_ignores_run_id_mismatch() -> None:
+    harness = _CoordinatorHarness(active_run_id="run-b")
+    coordinator = harness.build()
+
+    coordinator.apply(
+        ProcessEvent(
+            event_type="exit",
+            return_code=99,
+            terminated_by_user=False,
+            run_id="run-a",
+        )
+    )
+
+    assert harness.active_mode == constants.RUN_MODE_PYTHON_SCRIPT
+    assert harness.active_run_id == "run-b"
+    assert harness.statuses == []
+    assert harness.finalized_return_codes == []
+
+
+def test_apply_exit_processes_matching_run_id_once() -> None:
+    harness = _CoordinatorHarness(active_run_id="run-match")
+    coordinator = harness.build()
+
+    coordinator.apply(
+        ProcessEvent(
+            event_type="exit",
+            return_code=0,
+            terminated_by_user=False,
+            run_id="run-match",
+        )
+    )
+
+    assert harness.active_mode is None
+    assert harness.active_run_id is None
+    assert harness.finalized_return_codes == [0]
+    assert harness.statuses == [("success", 0)]

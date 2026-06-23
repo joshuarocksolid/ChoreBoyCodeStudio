@@ -416,3 +416,15 @@ def test_identify_test_at_cursor_handles_syntax_error() -> None:
 
     source = "def test_broken(\n"
     assert identify_test_at_cursor(source, 1) is None
+
+
+def test_identify_test_at_cursor_returns_full_nested_class_chain() -> None:
+    from app.pytest.runner_service import identify_test_at_cursor
+
+    source = """\
+class TestOuter:
+    class TestInner:
+        def test_nested(self):
+            assert True
+"""
+    assert identify_test_at_cursor(source, 4) == "TestOuter::TestInner::test_nested"

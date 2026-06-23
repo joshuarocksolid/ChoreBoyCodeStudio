@@ -59,6 +59,22 @@ def test_manifest_empty_source_roots_skips_auto_detect(tmp_path: Path) -> None:
     assert layout.source_roots == ()
 
 
+def test_lazy_import_empty_source_roots_auto_detects_src(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "src" / "my_pkg"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    metadata = ProjectMetadata(schema_version=2, name="demo", source_roots=[])
+
+    layout = resolve_project_import_layout(
+        project_root,
+        metadata,
+        manifest_materialized=False,
+    )
+
+    assert tuple(path.name for path in layout.source_roots) == ("src",)
+
+
 def test_manifest_source_roots_override_auto_detect(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     lib_dir = project_root / "lib" / "pkg"

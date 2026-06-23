@@ -158,6 +158,28 @@ class ProjectTreePresenter:
         else:
             item.setIcon(0, window._tree_folder_icon)
 
+    def refresh_tree_item_icons(self) -> None:
+        """Re-apply explorer icon fields to existing tree rows after a theme change."""
+        window = self._window
+        for item in self.iter_items():
+            is_directory = bool(item.data(0, TREE_ROLE_IS_DIRECTORY))
+            if is_directory:
+                self.set_folder_icon(item, expanded=item.isExpanded())
+                continue
+            absolute_path = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
+            relative_path = str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+            filename = Path(absolute_path).name.lower()
+            icon = window._tree_filename_icon_map.get(filename)
+            if icon is None:
+                ext = Path(absolute_path).suffix.lower()
+                icon = window._tree_file_icon_map.get(ext, window._tree_file_icon)
+            if (
+                window._loaded_project is not None
+                and relative_path == window._loaded_project.metadata.default_entry
+            ):
+                icon = window._tree_entrypoint_icon
+            item.setIcon(0, icon)
+
     def reveal_path(self, file_path: str) -> None:
         """Select and scroll to the tree item matching ``file_path``."""
         if self._reveal_suppressed:

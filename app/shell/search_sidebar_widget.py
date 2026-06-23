@@ -269,6 +269,8 @@ class SearchSidebarWidget(QWidget):
         self._active_worker: SearchWorker | None = None
         self._search_generation = 0
         self._last_matches: list[SearchMatch] = []
+        self._last_matches_query: str = ""
+        self._last_matches_generation = 0
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(300)
@@ -507,6 +509,8 @@ class SearchSidebarWidget(QWidget):
         )
 
     def _on_input_changed(self, _text: str = "") -> None:
+        self._last_matches.clear()
+        self._last_matches_query = ""
         self._debounce_timer.start()
         has_filters = bool(
             self._include_input.text().strip() or self._exclude_input.text().strip()
@@ -516,6 +520,8 @@ class SearchSidebarWidget(QWidget):
         self._filter_toggle_btn.style().polish(self._filter_toggle_btn)
 
     def _on_option_changed(self, _checked: bool) -> None:
+        self._last_matches.clear()
+        self._last_matches_query = ""
         self._debounce_timer.start()
 
     def _toggle_replace(self, checked: bool) -> None:
@@ -588,6 +594,8 @@ class SearchSidebarWidget(QWidget):
             return
         matches = getattr(self, "_pending_results", [])
         self._last_matches = matches
+        self._last_matches_query = pending_query or ""
+        self._last_matches_generation = pending_generation or self._search_generation
         self._results_tree.clear()
 
         files: dict[str, list[SearchMatch]] = {}
@@ -666,7 +674,11 @@ class SearchSidebarWidget(QWidget):
     def _on_replace_all(self) -> None:
         query = self._search_input.text().strip()
         replacement = self._replace_input.text()
-        if not query or not self._last_matches:
+        if not query or not self._last_matches or self._searching:
+            return
+        if query != self._last_matches_query:
+            return
+        if self._last_matches_generation != self._search_generation:
             return
 
         total_files = len({m.absolute_path for m in self._last_matches})

@@ -111,7 +111,7 @@ def test_load_recent_projects_normalizes_and_deduplicates_paths(tmp_path: Path) 
 
 
 def test_load_recent_projects_limits_entries_to_max_count(tmp_path: Path) -> None:
-    """Loaded recents should respect the caller-provided entry cap."""
+    """max_entries should slice the returned view without truncating persisted history."""
     state_root = tmp_path / "state"
     max_entries = 2
     project_a = _write_valid_project(tmp_path / "project_a", name="Project A")
@@ -123,8 +123,41 @@ def test_load_recent_projects_limits_entries_to_max_count(tmp_path: Path) -> Non
     remember_recent_project(project_c, state_root=state_root)
 
     result = load_recent_projects(state_root=state_root, max_entries=max_entries)
+    full_history = load_recent_projects(state_root=state_root)
 
     assert result == [str(project_c.resolve()), str(project_b.resolve())]
+    assert full_history == [
+        str(project_c.resolve()),
+        str(project_b.resolve()),
+        str(project_a.resolve()),
+    ]
+
+
+def test_remember_recent_project_with_max_entries_does_not_truncate_persisted_history(
+    tmp_path: Path,
+) -> None:
+    """max_entries must slice the return value only, never the persisted history."""
+    state_root = tmp_path / "state"
+    max_entries = 2
+    project_a = _write_valid_project(tmp_path / "project_a", name="Project A")
+    project_b = _write_valid_project(tmp_path / "project_b", name="Project B")
+    project_c = _write_valid_project(tmp_path / "project_c", name="Project C")
+    project_d = _write_valid_project(tmp_path / "project_d", name="Project D")
+
+    remember_recent_project(project_a, state_root=state_root)
+    remember_recent_project(project_b, state_root=state_root)
+    remember_recent_project(project_c, state_root=state_root)
+
+    result = remember_recent_project(project_d, state_root=state_root, max_entries=max_entries)
+    full_history = load_recent_projects(state_root=state_root)
+
+    assert result == [str(project_d.resolve()), str(project_c.resolve())]
+    assert full_history == [
+        str(project_d.resolve()),
+        str(project_c.resolve()),
+        str(project_b.resolve()),
+        str(project_a.resolve()),
+    ]
 
 
 def test_load_recent_projects_unbounded_by_default(tmp_path: Path) -> None:

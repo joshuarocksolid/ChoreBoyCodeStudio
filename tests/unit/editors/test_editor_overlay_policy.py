@@ -16,7 +16,7 @@ pytestmark = pytest.mark.unit
 
 def test_is_large_document_uses_reduced_threshold() -> None:
     assert is_large_document(document_size=1001, reduced_threshold_chars=1000) is True
-    assert is_large_document(document_size=1000, reduced_threshold_chars=1000) is False
+    assert is_large_document(document_size=1000, reduced_threshold_chars=1000) is True
 
 
 def test_effective_highlighting_mode_respects_forced_lexical_mode() -> None:

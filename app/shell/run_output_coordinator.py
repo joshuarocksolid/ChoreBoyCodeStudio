@@ -19,6 +19,7 @@ class RunOutputCoordinator:
         *,
         is_shutting_down: Callable[[], bool],
         get_active_session_mode: Callable[[], str | None],
+        get_active_run_id: Callable[[], str | None],
         clear_active_session: Callable[[], None],
         get_debug_session: Callable[[], DebugSession],
         append_output_tail: Callable[[str], None],
@@ -37,6 +38,7 @@ class RunOutputCoordinator:
     ) -> None:
         self._is_shutting_down = is_shutting_down
         self._get_active_session_mode = get_active_session_mode
+        self._get_active_run_id = get_active_run_id
         self._clear_active_session = clear_active_session
         self._get_debug_session = get_debug_session
         self._append_output_tail = append_output_tail
@@ -79,6 +81,11 @@ class RunOutputCoordinator:
             return
 
         if event.event_type == "exit":
+            active_run_id = self._get_active_run_id()
+            if active_run_id is None:
+                return
+            if event.run_id is not None and event.run_id != active_run_id:
+                return
             return_code = event.return_code
             exit_detail = describe_exit_code(return_code)
             if active_mode == constants.RUN_MODE_PYTHON_DEBUG:

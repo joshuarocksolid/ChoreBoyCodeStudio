@@ -81,6 +81,10 @@ class MainWindowShellThemeHost:
             loaded_project=backing._loaded_project,
         )
 
+    def refresh_surface_refs(self) -> None:
+        """Refresh widget refs captured for theme application after layout is built."""
+        self.child_callbacks = build_main_window_shell_theme_callbacks(self._window)
+
     @property
     def palette_accessor(self) -> Any:
         return self._window

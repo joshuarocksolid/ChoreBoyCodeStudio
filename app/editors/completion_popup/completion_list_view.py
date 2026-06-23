@@ -36,7 +36,7 @@ class CompletionListView(QListView):
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
-        self.setUniformItemSizes(True)
+        self.setUniformItemSizes(False)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -123,6 +123,19 @@ class CompletionListView(QListView):
         index = model.index(0, 0)
         self.setCurrentIndex(index)
         self._on_current_row_changed(index, QModelIndex())
+
+    def move_to_next_selectable(self) -> None:
+        model = self.model()
+        if model is None or not isinstance(model, CompletionItemModel):
+            return
+        start_row = self.currentIndex().row() + 1 if self.currentIndex().isValid() else 0
+        for row in range(start_row, model.rowCount()):
+            item = model.item_at(row)
+            if item is not None and not is_tier_header_item(item):
+                index = model.index(row, 0)
+                self.setCurrentIndex(index)
+                self._on_current_row_changed(index, QModelIndex())
+                return
 
     def current_item(self) -> CompletionItem | None:
         index = self.currentIndex()

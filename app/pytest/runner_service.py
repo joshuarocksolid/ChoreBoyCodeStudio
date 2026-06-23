@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import ast
 import subprocess
 import time
 
@@ -54,31 +55,55 @@ def run_pytest_failed(project_root: str, failed_node_ids: list[str], *, timeout_
 
 
 def identify_test_at_cursor(source_text: str, cursor_line: int) -> str | None:
-    """Identify the enclosing test function name at the given line (1-based).
+    """Identify the enclosing pytest test at the given line (1-based).
 
-    Returns the function name (e.g. 'test_foo') or None if cursor is not inside a test.
+    Returns a pytest node suffix (``test_foo`` or ``TestClass::test_foo``) or None.
     """
-    import ast
-
     try:
         tree = ast.parse(source_text)
     except SyntaxError:
         return None
 
-    best_match: str | None = None
-    best_start = -1
+    visitor = _TestAtCursorVisitor(cursor_line)
+    visitor.visit(tree)
+    return visitor.best_match
 
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if not node.name.startswith("test_") and not node.name.startswith("test"):
-                continue
-            end_line = getattr(node, "end_lineno", None) or node.lineno + 100
-            if node.lineno <= cursor_line <= end_line:
-                if node.lineno > best_start:
-                    best_match = node.name
-                    best_start = node.lineno
 
-    return best_match
+def _is_pytest_collectible_test(name: str) -> bool:
+    return name.startswith("test_") or name.endswith("_test")
+
+
+class _TestAtCursorVisitor(ast.NodeVisitor):
+    def __init__(self, cursor_line: int) -> None:
+        self._cursor_line = cursor_line
+        self._class_stack: list[str] = []
+        self.best_match: str | None = None
+        self._best_start = -1
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._class_stack.append(node.name)
+        self.generic_visit(node)
+        self._class_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._consider_test(node)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._consider_test(node)
+        self.generic_visit(node)
+
+    def _consider_test(self, node: ast.AST) -> None:
+        assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if not _is_pytest_collectible_test(node.name):
+            return
+        end_line = getattr(node, "end_lineno", None) or node.lineno + 100
+        if node.lineno <= self._cursor_line <= end_line and node.lineno > self._best_start:
+            if self._class_stack:
+                self.best_match = f"{'::'.join(self._class_stack)}::{node.name}"
+            else:
+                self.best_match = node.name
+            self._best_start = node.lineno
 
 
 def run_pytest_target(project_root: str, target_path: str, *, timeout_seconds: int = 300) -> PytestRunResult:
@@ -106,15 +131,31 @@ def _build_pytest_command(*, project_root: str, pytest_args: list[str]) -> list[
 def _run_pytest_command(project_root: str, command: list[str], *, timeout_seconds: int) -> PytestRunResult:
     """Run pytest command and parse results."""
     started_at = time.perf_counter()
-    completed = subprocess.run(
-        command,
-        cwd=project_root,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=timeout_seconds,
-        env=build_pytest_subprocess_env(),
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=project_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+            env=build_pytest_subprocess_env(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", errors="replace")
+        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", errors="replace")
+        combined_output = f"{stdout}\n{stderr}".strip()
+        failures = parse_pytest_failures(combined_output, project_root)
+        return PytestRunResult(
+            command=command,
+            project_root=project_root,
+            return_code=-1,
+            stdout=stdout,
+            stderr=stderr or f"pytest timed out after {timeout_seconds}s",
+            elapsed_ms=elapsed_ms,
+            failures=failures,
+        )
     elapsed_ms = (time.perf_counter() - started_at) * 1000.0
     combined_output = f"{completed.stdout}\n{completed.stderr}".strip()
     failures = parse_pytest_failures(combined_output, project_root)

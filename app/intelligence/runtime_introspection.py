@@ -211,7 +211,10 @@ class RuntimeIntrospectionCoordinator:
         self._cache.clear()
 
     def cached_items(self, query: RuntimeIntrospectionQuery, *, include_private: bool = True) -> list[CompletionItem] | None:
-        return self._cache.get(target_path=query.target_path, include_private=include_private)
+        cached = self._cache.get(target_path=query.target_path, include_private=include_private)
+        if cached is None:
+            return None
+        return _filter_prefix(clone_completion_items(cached), query.member_prefix)
 
     def fetch_and_cache_from_runner(
         self,

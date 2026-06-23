@@ -219,6 +219,7 @@ class SemanticSession:
             coordinator=runtime_coordinator,
         )
         fast_envelope: list[CompletionEnvelope | None] = [None]
+        semantic_envelope: list[CompletionEnvelope | None] = [None]
 
         def paint_merged(*, fast: CompletionEnvelope | None, semantic: CompletionEnvelope | None) -> None:
             merged = self.merge_completion_for_display(
@@ -265,7 +266,7 @@ class SemanticSession:
                 if not attached:
                     return
                 runtime_items.extend(attached)
-                paint_merged(fast=fast_envelope[0], semantic=None)
+                paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
 
             def introspection_error(exc: Exception) -> None:
                 if on_error is not None:
@@ -279,6 +280,7 @@ class SemanticSession:
             )
 
         def on_semantic_success(result: CompletionRequestResult) -> None:
+            semantic_envelope[0] = result.envelope
             paint_merged(fast=fast_envelope[0], semantic=result.envelope)
 
         def on_semantic_error(exc: Exception) -> None:

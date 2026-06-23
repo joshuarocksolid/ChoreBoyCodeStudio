@@ -7,7 +7,7 @@ from app.core import constants
 
 def is_large_document(*, document_size: int, reduced_threshold_chars: int) -> bool:
     """Return whether a document should be treated as large."""
-    return document_size > reduced_threshold_chars
+    return document_size >= reduced_threshold_chars
 
 
 def effective_highlighting_mode(

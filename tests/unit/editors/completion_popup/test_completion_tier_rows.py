@@ -17,7 +17,7 @@ from app.editors.completion_popup.completion_item_model import (  # noqa: E402
     RowKindRole,
     row_kind_for_item,
 )
-from app.core.completion_tier import is_tier_header_item  # noqa: E402
+from app.core.completion_tier import TIER_HEADER_SIDE_EFFECT, is_tier_header_item  # noqa: E402
 from app.intelligence.completion_merge_policy import merge_completion_display  # noqa: E402
 from app.intelligence.completion_models import (  # noqa: E402
     CompletionEnvelope,
@@ -95,3 +95,27 @@ def test_tier_headers_survive_prefix_lengthen(
     assert row_kinds.count("header") >= 2
     assert row_kinds[0] == "header"
     assert "item" in row_kinds
+
+
+def _tier_header(label: str) -> CompletionItem:
+    return CompletionItem(
+        label=label,
+        insert_text="",
+        kind=CompletionKind.TEXT,
+        source="tier_header",
+        confidence="unsupported",
+        side_effect_risk=TIER_HEADER_SIDE_EFFECT,
+    )
+
+
+def test_accept_current_on_trailing_header_hides_popup_when_no_selectable_below(qapp) -> None:
+    controller = CompletionController()
+    items = [_item("alpha"), _tier_header("Semantic")]
+    controller.set_items(items, prefix="")
+    list_view = controller.popup().list_view()
+    list_view.setCurrentIndex(controller.model().index(1, 0))
+    assert is_tier_header_item(controller.current_item())
+
+    controller.accept_current()
+
+    assert controller.is_visible() is False

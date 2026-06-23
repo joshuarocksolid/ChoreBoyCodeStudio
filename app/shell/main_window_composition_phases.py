@@ -399,6 +399,7 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     )
     configure_window_frame(window)
     build_layout_shell(window)
+    window._shell_theme_workflow.refresh_surface_refs()
     window._run_launch_workflow = build_run_launch_workflow(ctx)
     window._test_runner_workflow = build_test_runner_workflow(ctx)
     connect_test_explorer_navigation(window)
