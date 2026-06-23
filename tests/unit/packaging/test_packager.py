@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 import pytest
 
+from app.packaging import artifact_builder
 from app.packaging.packager import (
     PackageResult,
     _paths_overlap,
@@ -182,3 +184,70 @@ def test_package_project_rebuild_removes_stale_files(tmp_path: Path) -> None:
     assert second.success is True
     payload_root = Path(second.artifact_root) / "payload" / "app_files"
     assert not (payload_root / "extra.py").exists()
+
+
+def _make_installed_app_root(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "packaging").mkdir(parents=True, exist_ok=True)
+    (path / "packaging" / "install.py").write_text("print('install')\n", encoding="utf-8")
+    (path / "packaging" / "bootstrap.py").write_text("print('bootstrap')\n", encoding="utf-8")
+    (path / "app" / "packaging").mkdir(parents=True, exist_ok=True)
+    (path / "app" / "packaging" / "launcher_bootstrap.py").write_text(
+        "def build_fixed_root_bootstrap(*_args, **_kwargs): return ''\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_package_project_succeeds_from_installed_app_root_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _make_project(tmp_path / "project")
+    installed_root = _make_installed_app_root(tmp_path / "installed_code_studio")
+    monkeypatch.setattr(artifact_builder, "resolve_app_root", lambda: installed_root)
+
+    result = package_project(
+        project_root=str(project),
+        project_name="My Project",
+        entry_file="main.py",
+        output_dir=str(tmp_path / "exports"),
+    )
+
+    assert result.success is True
+    artifact_root = Path(result.artifact_root)
+    assert (artifact_root / "install_my_project.desktop").is_file()
+    assert (artifact_root / "installer" / "install.py").is_file()
+
+
+def test_package_project_removes_partial_artifact_when_export_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _make_project(tmp_path / "project")
+    installed_root = _make_installed_app_root(tmp_path / "installed_code_studio")
+    monkeypatch.setattr(artifact_builder, "resolve_app_root", lambda: installed_root)
+
+    original_copy2 = shutil.copy2
+
+    def _copy2_fail_on_installer(source: str | Path, destination: str | Path, **kwargs: object) -> None:
+        destination_path = Path(destination)
+        if destination_path.name == "install.py" and destination_path.parent.name == "installer":
+            raise FileNotFoundError(f"Simulated installer copy failure: {source}")
+        original_copy2(source, destination, **kwargs)
+
+    monkeypatch.setattr(artifact_builder.shutil, "copy2", _copy2_fail_on_installer)
+
+    output_dir = tmp_path / "exports"
+    result = package_project(
+        project_root=str(project),
+        project_name="My Project",
+        entry_file="main.py",
+        output_dir=str(output_dir),
+    )
+
+    assert result.success is False
+    assert result.artifact_root == ""
+    assert result.error is not None
+    assert "Simulated installer copy failure" in result.error
+    assert not (output_dir / "my_project_installer_v0.1.0").exists()

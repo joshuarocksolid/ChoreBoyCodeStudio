@@ -257,3 +257,42 @@ def testfilter_tree_signature_entries_strips_run_and_cache_artifacts() -> None:
         "src/main.py",
         "logs/keepme.txt",
     )
+
+
+def test_poll_external_file_changes_skips_missing_project_root(tmp_path: Path) -> None:
+    from app.shell.editor_tab_poll_workflow import EditorTabPollWorkflow
+
+    missing_root = tmp_path / "missing-project"
+    loaded_project = LoadedProject(
+        project_root=str(missing_root),
+        manifest_path=str(missing_root / "cbcs" / "project.json"),
+        metadata=ProjectMetadata(schema_version=1, name="Missing"),
+        entries=[],
+    )
+    rescan_calls: list[tuple[bool, bool]] = []
+    host = SimpleNamespace(
+        loaded_project=lambda: loaded_project,
+        project_tree_structure_signature=lambda: ("src",),
+        set_project_tree_structure_signature=lambda _sig: None,
+        rescan_project_from_disk=lambda *, reload_plugins, reindex: rescan_calls.append(
+            (reload_plugins, reindex)
+        ),
+        project_python_paths_fingerprint=lambda: None,
+        start_symbol_indexing_for_loaded_project=lambda: None,
+        project_inventory_generation=lambda: 1,
+        project_inventory_tree_signature=lambda: ("src",),
+    )
+    workflow = EditorTabPollWorkflow(
+        host=host,
+        editor_manager=SimpleNamespace(
+            stale_open_paths=lambda: [],
+            active_tab=lambda: None,
+        ),
+        editor_sync_workflow=SimpleNamespace(apply_disk_content=lambda *_args, **_kwargs: None),
+        external_file_change_workflow=SimpleNamespace(check_and_handle=lambda *_args, **_kwargs: None),
+        refresh_save_action_states=lambda: None,
+    )
+
+    workflow.poll_external_file_changes()
+
+    assert rescan_calls == []

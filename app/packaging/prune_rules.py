@@ -39,3 +39,5 @@ DEFAULT_PACKAGING_PRUNE_RULES = PackagingPruneRules()
 PRODUCT_PACKAGING_PRUNE_RULES = PackagingPruneRules(
     prune_dir_suffixes=frozenset({".dist-info"}),
 )
+# Keep wheel metadata for vendored runtime packages that read importlib.metadata at import.
+VENDOR_PRODUCT_COPY_PRUNE_RULES = DEFAULT_PACKAGING_PRUNE_RULES

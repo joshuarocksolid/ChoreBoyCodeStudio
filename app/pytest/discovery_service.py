@@ -73,7 +73,10 @@ def discover_tests(project_root: str, *, timeout_seconds: int = 30) -> Discovery
     report plugin is available in the vendor tree.
     """
     normalized_root = str(Path(project_root).expanduser().resolve())
-    command = _build_collect_command(project_root=normalized_root)
+    try:
+        command = _build_collect_command(project_root=normalized_root)
+    except RuntimeError as exc:
+        return DiscoveryResult(error_message=str(exc))
 
     try:
         result = subprocess.run(

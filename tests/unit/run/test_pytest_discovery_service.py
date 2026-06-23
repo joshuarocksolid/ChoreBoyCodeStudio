@@ -1,6 +1,8 @@
 """Unit tests for test discovery service."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.pytest.launch_plan import PYTEST_MISSING_MARKER, build_apprun_pytest_payload
@@ -179,6 +181,29 @@ def test_build_collect_command_resolves_default_runtime_when_given_project_root(
     command = _build_collect_command(project_root="/tmp/project")
 
     assert command[:3] == ["/usr/bin/python3", "-m", "pytest"]
+
+
+def test_discover_tests_returns_error_when_launch_plan_runtime_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setattr(
+        "app.pytest.discovery_service.build_pytest_launch_plan",
+        lambda _project_root: (_ for _ in ()).throw(
+            RuntimeError(
+                "Pytest is not available in detected runtimes. "
+                "Tried: /opt/freecad/AppRun. "
+                "Install pytest in the configured runtime or set CBCS_PYTEST_EXECUTABLE."
+            )
+        ),
+    )
+
+    result = discover_tests(str(project_root))
+
+    assert result.succeeded is False
+    assert "Pytest is not available in detected runtimes" in result.error_message
 
 
 # ---------------------------------------------------------------------------

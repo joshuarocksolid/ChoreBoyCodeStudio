@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import importlib
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,11 @@ from app.packaging.models import (
     PACKAGE_KIND_PRODUCT,
     PACKAGE_PROFILE_INSTALLABLE,
 )
-from app.packaging.prune_rules import PRODUCT_PACKAGING_PRUNE_RULES
+from app.packaging.prune_rules import (
+    PRODUCT_PACKAGING_PRUNE_RULES,
+    PackagingPruneRules,
+    VENDOR_PRODUCT_COPY_PRUNE_RULES,
+)
 from app.packaging.tree_sitter_cp39 import (
     CP39_TREE_SITTER_SOABI,
     stage_cp39_tree_sitter_core_binding,
@@ -34,7 +39,7 @@ from app.packaging.tree_sitter_cp39 import (
 )
 from app.treesitter.language_specs import LANGUAGE_SPECS
 
-INCLUDE_DIRS = ("app", "templates", "example_projects")
+INCLUDE_DIRS = ("app", "templates", "example_projects", "packaging")
 INCLUDE_FILES = (
     "run_editor.py",
     "run_runner.py",
@@ -45,8 +50,9 @@ INCLUDE_FILES = (
 VENDOR_ALLOWLIST = (
     # Formatting
     "black", "blib2to3", "click", "mypy_extensions.py",
-    "_black_version.py", "_black_version.pyi",
-    "pathspec", "platformdirs", "isort", "tomli",
+    "_black_version.py",
+    "pathspec", "platformdirs", "packaging", "typing_extensions.py",
+    "isort", "tomli",
     # Linting
     "pyflakes",
     # Tree-sitter core + curated grammars
@@ -57,7 +63,24 @@ VENDOR_ALLOWLIST = (
     # Intelligence (code completion, refactoring)
     "jedi", "parso", "rope", "pytoolconfig",
     # Test runner (Test Explorer support on ChoreBoy)
-    "pytest", "_pytest", "pluggy", "iniconfig", "exceptiongroup",
+    "pytest", "_pytest", "pluggy", "iniconfig", "exceptiongroup", "py.py",
+)
+CHOREBOY_PYTHON_TOOLING_MODULES = (
+    "typing_extensions",
+    "packaging",
+    "black",
+    "isort",
+    "tomli",
+)
+CHOREBOY_PYTHON_TOOLING_BLACK_APIS = (
+    "Mode",
+    "format_file_contents",
+    "NothingChanged",
+    "InvalidInput",
+)
+CHOREBOY_PYTHON_TOOLING_ISORT_APIS = (
+    "Config",
+    "api",
 )
 CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
@@ -79,6 +102,8 @@ CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES = tuple(
 )
 _CPYTHON_SO_EXCLUDE_TAGS = ("cpython-312", "cpython-313", "cpython-314")
 _ARCHIVE_PASSWORD_ENV_VAR = "CBCS_PACKAGE_ZIP_PASSWORD"
+ARCHIVE_PASSWORD_ENV_VAR = _ARCHIVE_PASSWORD_ENV_VAR
+DEFAULT_PRODUCT_ARCHIVE_PASSWORD = "rsd"
 
 
 @dataclass(frozen=True)
@@ -91,10 +116,13 @@ class ProductArtifactResult:
     archive_budget_bytes: int
     archive_within_budget: bool
     tree_sitter_bundle: dict[str, object]
+    python_tooling_bundle: dict[str, object] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
 
 
 TreeSitterCoreStager = Callable[[Path, Path], Path]
+
+PRODUCT_VENDOR_DIRNAME = "vendor_py39"
 
 
 def default_artifacts_dir(repo_root: Path) -> Path:
@@ -102,6 +130,11 @@ def default_artifacts_dir(repo_root: Path) -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (repo_root.parent / "ChoreBoyCodeStudio_artifacts").resolve()
+
+
+def resolve_product_vendor_dir(artifacts_dir: Path) -> Path:
+    """Return the ChoreBoy cp39 vendor tree used as the product packaging source."""
+    return artifacts_dir.expanduser().resolve() / PRODUCT_VENDOR_DIRNAME
 
 
 def build_product_manifest(
@@ -174,13 +207,12 @@ def build_archive_zip_command(
 
 
 def _resolve_archive_password(password: str | None) -> str:
-    archive_password = password if password is not None else os.environ.get(_ARCHIVE_PASSWORD_ENV_VAR)
-    if archive_password is None or not archive_password.strip():
-        raise ValueError(
-            "Product archive password is required. Pass archive_password or set "
-            f"{_ARCHIVE_PASSWORD_ENV_VAR}."
-        )
-    return archive_password
+    if password is not None and password.strip():
+        return password.strip()
+    configured = os.environ.get(_ARCHIVE_PASSWORD_ENV_VAR, "").strip()
+    if configured:
+        return configured
+    return DEFAULT_PRODUCT_ARCHIVE_PASSWORD
 
 
 def build_product_artifact(
@@ -195,6 +227,7 @@ def build_product_artifact(
     archive_password: str | None = None,
     tree_sitter_core_stager: TreeSitterCoreStager = stage_cp39_tree_sitter_core_binding,
     strip_shared_objects: bool = True,
+    validate_python_tooling: bool = True,
     print_status: bool = True,
 ) -> ProductArtifactResult:
     """Build the product installer tree and password-protected release archive."""
@@ -210,6 +243,7 @@ def build_product_artifact(
     manifest = build_product_manifest(version=version, staging_parent=staging_parent)
     warnings: list[str] = []
     tree_sitter_bundle: dict[str, object] = {}
+    python_tooling_bundle: dict[str, object] = {}
 
     installer_icon_value = ""
     installer_icon_source = root / "app" / "ui" / "icons" / "installer_icon.png"
@@ -221,7 +255,7 @@ def build_product_artifact(
         warnings.append(f"installer icon not found: {installer_icon_source}")
 
     def _copy_product_payload(payload_dir: Path) -> None:
-        nonlocal tree_sitter_bundle
+        nonlocal tree_sitter_bundle, python_tooling_bundle
         for dir_name in include_dirs:
             src = root / dir_name
             if not src.is_dir():
@@ -229,11 +263,11 @@ def build_product_artifact(
                 continue
             _copytree_filtered(src, payload_dir / dir_name)
 
-        vendor_src = output_root / "vendor"
+        vendor_src = resolve_product_vendor_dir(output_root)
         if not vendor_src.is_dir():
             raise RuntimeError(
-                f"vendor directory not found at {vendor_src}. "
-                "Set CBCS_ARTIFACTS_DIR or place vendor/ in the artifacts directory."
+                f"vendor_py39 directory not found at {vendor_src}. "
+                "Run ./scripts/setup_vendor_py39.sh or set CBCS_ARTIFACTS_DIR."
             )
         vendor_missing = _copy_vendor_allowlisted(
             vendor_src,
@@ -242,6 +276,11 @@ def build_product_artifact(
         )
         for name in vendor_missing:
             warnings.append(f"allowlisted vendor entry not found: {name}")
+        _copy_vendor_dist_info(
+            vendor_src,
+            payload_dir / "vendor",
+            vendor_allowlist=vendor_allowlist,
+        )
 
         cp39_cache_dir = output_root / "vendor_cp39_cache"
         staged_cp39_binding = tree_sitter_core_stager(
@@ -258,6 +297,14 @@ def build_product_artifact(
                 f"{tree_sitter_bundle['target_soabi']} "
                 f"({len(validated_bindings)} bindings)"
             )
+        if validate_python_tooling:
+            python_tooling_bundle = validate_choreboy_python_tooling_bundle(payload_dir / "vendor")
+            if print_status:
+                validated_modules = cast(Sequence[object], python_tooling_bundle["validated_modules"])
+                print(
+                    "Validated ChoreBoy Python tooling bundle: "
+                    f"{len(validated_modules)} modules"
+                )
         if strip_shared_objects:
             stripped = _strip_shared_objects(payload_dir / "vendor")
             if print_status:
@@ -296,6 +343,7 @@ def build_product_artifact(
         archive_path=archive_path,
         archive_size_bytes=archive_size_bytes,
         tree_sitter_bundle=tree_sitter_bundle,
+        python_tooling_bundle=python_tooling_bundle,
     )
 
     return ProductArtifactResult(
@@ -307,33 +355,64 @@ def build_product_artifact(
         archive_budget_bytes=archive_budget_bytes(),
         archive_within_budget=is_archive_within_budget(archive_size_bytes),
         tree_sitter_bundle=tree_sitter_bundle,
+        python_tooling_bundle=python_tooling_bundle,
         warnings=tuple(warnings),
     )
 
 
-def _should_prune_dir(name: str) -> bool:
-    return PRODUCT_PACKAGING_PRUNE_RULES.should_prune_dir_name(name)
+def _should_prune_dir(name: str, *, prune_rules: PackagingPruneRules) -> bool:
+    return prune_rules.should_prune_dir_name(name)
 
 
-def _should_skip_file(name: str) -> bool:
-    if PRODUCT_PACKAGING_PRUNE_RULES.should_prune_file_name(name):
+def _should_skip_file(name: str, *, prune_rules: PackagingPruneRules) -> bool:
+    if prune_rules.should_prune_file_name(name):
         return True
     if name.endswith(".so"):
         return any(tag in name for tag in _CPYTHON_SO_EXCLUDE_TAGS)
     return False
 
 
-def _copytree_filtered(src: Path, dst: Path) -> None:
+def _copytree_filtered(
+    src: Path,
+    dst: Path,
+    *,
+    prune_rules: PackagingPruneRules = PRODUCT_PACKAGING_PRUNE_RULES,
+) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for entry in sorted(src.iterdir()):
         if entry.is_dir():
-            if _should_prune_dir(entry.name):
+            if _should_prune_dir(entry.name, prune_rules=prune_rules):
                 continue
-            _copytree_filtered(entry, dst / entry.name)
+            _copytree_filtered(entry, dst / entry.name, prune_rules=prune_rules)
             continue
-        if _should_skip_file(entry.name):
+        if _should_skip_file(entry.name, prune_rules=prune_rules):
             continue
         shutil.copy2(str(entry), str(dst / entry.name))
+
+
+def _dist_info_matches_allowlist(dist_info_name: str, entry_name: str) -> bool:
+    normalized_entry = entry_name[:-3] if entry_name.endswith(".py") else entry_name
+    package_stem = dist_info_name[: -len(".dist-info")]
+    return package_stem == normalized_entry or package_stem.startswith(f"{normalized_entry}-")
+
+
+def _copy_vendor_dist_info(
+    vendor_src: Path,
+    vendor_dst: Path,
+    *,
+    vendor_allowlist: Iterable[str],
+) -> None:
+    """Copy wheel metadata directories required by importlib.metadata at import time."""
+    for entry in sorted(vendor_src.iterdir()):
+        if not entry.is_dir() or not entry.name.endswith(".dist-info"):
+            continue
+        if not any(_dist_info_matches_allowlist(entry.name, allowed) for allowed in vendor_allowlist):
+            continue
+        _copytree_filtered(
+            entry,
+            vendor_dst / entry.name,
+            prune_rules=VENDOR_PRODUCT_COPY_PRUNE_RULES,
+        )
 
 
 def _copy_vendor_allowlisted(
@@ -348,7 +427,11 @@ def _copy_vendor_allowlisted(
     for entry_name in vendor_allowlist:
         src = vendor_src / entry_name
         if src.is_dir():
-            _copytree_filtered(src, vendor_dst / entry_name)
+            _copytree_filtered(
+                src,
+                vendor_dst / entry_name,
+                prune_rules=VENDOR_PRODUCT_COPY_PRUNE_RULES,
+            )
         elif src.is_file():
             shutil.copy2(str(src), str(vendor_dst / entry_name))
         else:
@@ -395,6 +478,56 @@ def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
         "required_bindings": dict(CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS),
         "optional_packages_not_shipped": list(CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES),
         "validated_bindings": validated_bindings,
+    }
+
+
+def validate_choreboy_python_tooling_bundle(vendor_dir: Path) -> dict[str, object]:
+    """Validate that staged vendor supports in-process format/import tooling on ChoreBoy."""
+    import sys
+
+    vendor_text = str(vendor_dir.resolve())
+    if vendor_text not in sys.path:
+        sys.path.insert(0, vendor_text)
+
+    validated_modules: list[str] = []
+    for module_name in CHOREBOY_PYTHON_TOOLING_MODULES:
+        try:
+            importlib.import_module(module_name)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Python tooling import failed for {module_name}: {exc}"
+            ) from exc
+        validated_modules.append(module_name)
+
+    black_module = importlib.import_module("black")
+    missing_black_apis = [
+        api_name
+        for api_name in CHOREBOY_PYTHON_TOOLING_BLACK_APIS
+        if not hasattr(black_module, api_name)
+    ]
+    if missing_black_apis:
+        raise RuntimeError(
+            "black missing required APIs: " + ", ".join(missing_black_apis)
+        )
+
+    isort_module = importlib.import_module("isort")
+    missing_isort_apis = [
+        api_name
+        for api_name in CHOREBOY_PYTHON_TOOLING_ISORT_APIS
+        if not hasattr(isort_module, api_name)
+    ]
+    if missing_isort_apis:
+        raise RuntimeError(
+            "isort missing required APIs: " + ", ".join(missing_isort_apis)
+        )
+    isort_api = importlib.import_module("isort.api")
+    if not hasattr(isort_api, "sort_code_string"):
+        raise RuntimeError("isort.api missing sort_code_string")
+
+    return {
+        "validated_modules": validated_modules,
+        "black_version": getattr(black_module, "__version__", ""),
+        "isort_version": getattr(isort_module, "__version__", ""),
     }
 
 
@@ -456,6 +589,7 @@ def _write_product_report(
     archive_path: Path,
     archive_size_bytes: int,
     tree_sitter_bundle: dict[str, object],
+    python_tooling_bundle: dict[str, object] | None = None,
 ) -> None:
     report_payload = {
         "package_kind": manifest.package_kind,
@@ -467,6 +601,7 @@ def _write_product_report(
         "archive_size_bytes": archive_size_bytes,
         "archive_budget_bytes": archive_budget_bytes(),
         "tree_sitter_bundle": tree_sitter_bundle,
+        "python_tooling_bundle": python_tooling_bundle or {},
     }
     report_path.write_text(
         json.dumps(report_payload, indent=2, sort_keys=True) + "\n",

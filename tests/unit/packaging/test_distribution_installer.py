@@ -65,7 +65,7 @@ def _stage_tree_sitter_bundle(
     grammar_binding_name: str | None = None,
     extra_binding_name: str | None = None,
 ) -> Path:
-    vendor_dir = root / "vendor"
+    vendor_dir = root / package_module.PRODUCT_VENDOR_DIRNAME
     vendor_dir.mkdir(parents=True, exist_ok=True)
     for package_name in package_module.CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES:
         package_dir = vendor_dir / package_name
@@ -80,6 +80,14 @@ def _stage_tree_sitter_bundle(
         if extra_binding_name is not None:
             (package_dir / extra_binding_name).write_bytes(b"extra")
     return vendor_dir
+
+
+def _stage_python_tooling_vendor_stubs(root: Path, package_module: ModuleType) -> None:
+    vendor_dir = root / package_module.PRODUCT_VENDOR_DIRNAME
+    for entry_name in ("black", "packaging"):
+        package_dir = vendor_dir / entry_name
+        package_dir.mkdir(parents=True, exist_ok=True)
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
 
 
 def _make_product_repo(root: Path) -> Path:
@@ -148,14 +156,15 @@ def test_distribution_archive_zip_command_uses_compression() -> None:
     assert "release-password" in command
 
 
-def test_distribution_archive_zip_command_requires_explicit_password(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_distribution_archive_zip_command_uses_default_password(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CBCS_PACKAGE_ZIP_PASSWORD", raising=False)
 
-    with pytest.raises(ValueError, match="CBCS_PACKAGE_ZIP_PASSWORD"):
-        product_package.build_archive_zip_command(
-            Path("/tmp/staging"),
-            Path("/tmp/archive.zip"),
-        )
+    command = product_package.build_archive_zip_command(
+        Path("/tmp/staging"),
+        Path("/tmp/archive.zip"),
+    )
+
+    assert product_package.DEFAULT_PRODUCT_ARCHIVE_PASSWORD in command
 
 
 def test_distribution_archive_zip_command_uses_environment_password(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,6 +271,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
     repo_root = _make_product_repo(tmp_path / "repo")
     artifacts_dir = tmp_path / "artifacts"
     _stage_tree_sitter_bundle(artifacts_dir, product_package)
+    _stage_python_tooling_vendor_stubs(artifacts_dir, product_package)
 
     result = product_package.build_product_artifact(
         repo_root=repo_root,
@@ -269,6 +279,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
         artifacts_dir=artifacts_dir,
         tree_sitter_core_stager=_existing_tree_sitter_stager,
         strip_shared_objects=False,
+        validate_python_tooling=False,
         print_status=False,
         archive_password="pw",
     )
@@ -298,7 +309,31 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
     assert f"{package_root}/installer/bootstrap.py" in archive_names
     assert f"{package_root}/installer/launcher_bootstrap.py" in archive_names
     assert f"{package_root}/payload/run_editor.py" in archive_names
+    assert f"{package_root}/payload/packaging/install.py" in archive_names
+    assert f"{package_root}/payload/packaging/bootstrap.py" in archive_names
     assert all(".hidden_cache" not in name for name in archive_names)
+    assert (result.staging_dir / "payload" / "vendor" / "black").is_dir()
+    assert (result.staging_dir / "payload" / "vendor" / "packaging").is_dir()
+    assert (result.staging_dir / "payload" / "packaging" / "install.py").is_file()
+    assert (result.staging_dir / "payload" / "packaging" / "bootstrap.py").is_file()
+
+
+def test_build_product_artifact_requires_vendor_py39(tmp_path: Path) -> None:
+    repo_root = _make_product_repo(tmp_path / "repo")
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(RuntimeError, match="vendor_py39 directory not found"):
+        product_package.build_product_artifact(
+            repo_root=repo_root,
+            version="0.2.0",
+            artifacts_dir=artifacts_dir,
+            tree_sitter_core_stager=_existing_tree_sitter_stager,
+            strip_shared_objects=False,
+            validate_python_tooling=False,
+            print_status=False,
+            archive_password="pw",
+        )
 
 
 def test_installed_desktop_entry_hardcodes_selected_install_dir() -> None:

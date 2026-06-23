@@ -139,6 +139,15 @@ def test_packaging_preflight_opens_runtime_center_before_export(
 
         monkeypatch.setattr("app.shell.runtime_support_workflow.PackageProjectWizard", _FakeWizard)
         opened_dialogs = _record_runtime_center_dialogs(monkeypatch)
+        critical_messages: list[str] = []
+
+        def _record_critical(_parent, title: str, message: str) -> None:
+            critical_messages.append(f"{title}:{message}")
+
+        monkeypatch.setattr(
+            "app.shell.runtime_support_workflow.QMessageBox.critical",
+            staticmethod(_record_critical),
+        )
 
         def _run_immediately(*, key, task, on_success, on_error):  # type: ignore[no-untyped-def]
             _ = key
@@ -153,6 +162,8 @@ def test_packaging_preflight_opens_runtime_center_before_export(
 
         assert len(opened_dialogs) == 1
         assert opened_dialogs[0]["title"] == "Packaging Failed"
+        assert len(critical_messages) == 1
+        assert critical_messages[0].startswith("Packaging failed:")
         report = opened_dialogs[0]["report"]
         assert report is not None
         issue_ids = [issue.issue_id for issue in report.issues]

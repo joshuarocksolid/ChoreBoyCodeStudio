@@ -6,6 +6,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, TypeVar
 
+from app.bootstrap.logging_setup import get_subsystem_logger
+
+_LOGGER = get_subsystem_logger("shell.background_tasks")
+
 T = TypeVar("T")
 
 DispatchToMainThread = Callable[[Callable[[], None]], None]
@@ -50,9 +54,13 @@ class GeneralTaskScheduler:
             try:
                 result = task(cancellation)
             except Exception as exc:  # pragma: no cover - defensive guard
-                self._dispatch_to_main_thread(lambda: self._handle_error(key, cancellation, exc, on_error))
+                self._dispatch_to_main_thread(
+                    lambda exc=exc: self._handle_error(key, cancellation, exc, on_error)
+                )
                 return
-            self._dispatch_to_main_thread(lambda: self._handle_success(key, cancellation, result, on_success))
+            self._dispatch_to_main_thread(
+                lambda result=result: self._handle_success(key, cancellation, result, on_success)
+            )
 
         self._executor.submit(worker)
 
@@ -94,6 +102,12 @@ class GeneralTaskScheduler:
     ) -> None:
         if not self._is_current(key, cancellation):
             return
+        _LOGGER.warning(
+            "Background task %r failed: %s",
+            key,
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__) if exc.__traceback__ is not None else None,
+        )
         if on_error is not None and not cancellation.is_set():
             on_error(exc)
 

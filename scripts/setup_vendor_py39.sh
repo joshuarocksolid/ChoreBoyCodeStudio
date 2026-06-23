@@ -17,7 +17,8 @@ pip3 install \
   tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
   tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
   tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
-  jedi parso isort tomli rope \
+  tree-sitter-sql==0.3.9 \
+  jedi parso isort tomli rope typing_extensions \
   pytest==8.3.4 pytest-timeout==2.3.1 pluggy iniconfig exceptiongroup \
   --target="$TARGET" \
   --python-version=3.9 \

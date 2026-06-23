@@ -300,3 +300,40 @@ def test_run_all_updates_explorer_from_q_rA_mixed_outcomes(tmp_path: Path) -> No
         "tests/test_sample.py::test_alpha": "passed",
         "tests/test_other.py::test_beta": "failed",
     }
+
+
+def test_refresh_discovery_surfaces_launch_plan_error_with_deferred_dispatch(
+    tmp_path: Path,
+) -> None:
+    """ChoreBoy remediation: deferred dispatch must not crash when discovery fails."""
+    import threading
+
+    from app.shell.background_tasks import GeneralTaskScheduler
+
+    pending: list[object] = []
+    worker_done = threading.Event()
+    unavailable_message = (
+        "Pytest is not available in detected runtimes. "
+        "Tried: /opt/freecad/AppRun. "
+        "Install pytest in the configured runtime or set CBCS_PYTEST_EXECUTABLE."
+    )
+    scheduler = GeneralTaskScheduler(dispatch_to_main_thread=pending.append)
+    harness = WorkflowHarness(tmp_path)
+    harness.scheduler = scheduler
+    harness.workflow = harness._make_workflow()
+    harness.workflow._discover_tests = lambda _project_root: (
+        worker_done.set(),
+        DiscoveryResult(error_message=unavailable_message),
+    )[1]
+
+    try:
+        harness.workflow.refresh_discovery()
+
+        assert worker_done.wait(timeout=1.0)
+        assert len(pending) == 1
+        pending[0]()  # type: ignore[operator]
+
+        assert harness.explorer.discovery is not None
+        assert harness.explorer.discovery.error_message == unavailable_message
+    finally:
+        scheduler.shutdown(wait=False)

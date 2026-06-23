@@ -137,10 +137,12 @@ def build_project_package_artifact(
             validation=validation,
         )
     except Exception as exc:
+        if artifact_root.exists():
+            shutil.rmtree(artifact_root)
         return PackageExportResult(
             profile=profile,
             success=False,
-            artifact_root=str(artifact_root),
+            artifact_root="",
             manifest_path="",
             report_path="",
             readme_path="",

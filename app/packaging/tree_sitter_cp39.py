@@ -2,8 +2,8 @@
 
 The shipped product runs on FreeCAD's CPython 3.9.2 AppRun, so the
 `tree_sitter` core wheel must contribute `_binding.cpython-39-x86_64-linux-gnu.so`.
-Developers commonly populate the local artifacts vendor with a cp311 wheel for
-Cloud-dev work; these helpers fetch the matching cp39 manylinux wheel on demand
+Developers commonly populate ``vendor_py311`` for Cloud-dev work while product
+packaging reads from ``vendor_py39``; these helpers fetch the matching cp39 manylinux wheel on demand
 and overlay the correct binding onto the staged product payload.
 """
 

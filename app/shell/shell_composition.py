@@ -7,6 +7,7 @@ from typing import Any, Callable
 from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QMessageBox, QWidget
 
+from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.test_runtime_flags import background_runtime_disabled
 from app.core.models import RuntimeIssue, RuntimeIssueReport
 from app.plugins.contributions import DeclarativeContributionManager
@@ -102,11 +103,19 @@ def build_settings_apply_workflow(ctx: ShellCompositionContext) -> SettingsApply
 
 def build_python_console_workflow(ctx: ShellCompositionContext) -> PythonConsoleWorkflow:
     window = ctx.w
+    logger = get_subsystem_logger("shell")
 
     def _start_background_work(work: Callable[[], None]) -> None:
+        def task(_cancellation: object) -> None:
+            work()
+
+        def on_error(exc: Exception) -> None:
+            logger.warning("Python console background work failed: %s", exc)
+
         window._background_tasks.run(
             key="python_console_completion",
-            task=lambda _cancellation: work(),
+            task=task,
+            on_error=on_error,
         )
 
     return PythonConsoleWorkflow(

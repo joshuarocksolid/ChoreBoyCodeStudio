@@ -5,11 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from app.bootstrap.logging_setup import get_subsystem_logger
+from app.core.errors import ProjectEnumerationError
 from app.core.models import LoadedProject
 from app.editors.editor_manager import EditorManager
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.editor_tab_host_protocols import EditorTabPollHost
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
+
+_LOGGER = get_subsystem_logger("shell")
 
 
 class EditorTabPollWorkflow:
@@ -69,38 +73,42 @@ class EditorTabPollWorkflow:
         if loaded_project is None:
             return
 
-        project_mtime = Path(loaded_project.project_root).stat().st_mtime
-        inventory_generation = self._host.project_inventory_generation()
-        if (
-            self._poll_signature_stable
-            and self._last_poll_inventory_generation == inventory_generation
-            and self._last_poll_project_mtime == project_mtime
-        ):
-            return
+        try:
+            project_mtime = Path(loaded_project.project_root).stat().st_mtime
+            inventory_generation = self._host.project_inventory_generation()
+            if (
+                self._poll_signature_stable
+                and self._last_poll_inventory_generation == inventory_generation
+                and self._last_poll_project_mtime == project_mtime
+            ):
+                return
 
-        current_signature = self.scan_project_tree_signature(loaded_project)
-        stored_signature = self._host.project_tree_structure_signature()
-        self._poll_signature_stable = (
-            stored_signature is not None and current_signature == stored_signature
-        )
-        self._last_poll_inventory_generation = inventory_generation
-        self._last_poll_project_mtime = project_mtime
+            current_signature = self.scan_project_tree_signature(loaded_project)
+            stored_signature = self._host.project_tree_structure_signature()
+            self._poll_signature_stable = (
+                stored_signature is not None and current_signature == stored_signature
+            )
+            self._last_poll_inventory_generation = inventory_generation
+            self._last_poll_project_mtime = project_mtime
 
-        previous_signature = stored_signature
-        if previous_signature is None:
+            previous_signature = stored_signature
+            if previous_signature is None:
+                self._host.set_project_tree_structure_signature(current_signature)
+                return
+            if current_signature == previous_signature:
+                return
             self._host.set_project_tree_structure_signature(current_signature)
+            previous_python_fingerprint = self._host.project_python_paths_fingerprint()
+            self._host.rescan_project_from_disk(reload_plugins=False, reindex=False)
+            self._last_poll_inventory_generation = self._host.project_inventory_generation()
+            self._poll_signature_stable = True
+            self._last_poll_project_mtime = project_mtime
+            current_python_fingerprint = self._host.project_python_paths_fingerprint()
+            if previous_python_fingerprint != current_python_fingerprint:
+                self._host.start_symbol_indexing_for_loaded_project()
+        except (OSError, ProjectEnumerationError) as exc:
+            _LOGGER.warning("External file poll skipped: %s", exc)
             return
-        if current_signature == previous_signature:
-            return
-        self._host.set_project_tree_structure_signature(current_signature)
-        previous_python_fingerprint = self._host.project_python_paths_fingerprint()
-        self._host.rescan_project_from_disk(reload_plugins=False, reindex=False)
-        self._last_poll_inventory_generation = self._host.project_inventory_generation()
-        self._poll_signature_stable = True
-        self._last_poll_project_mtime = project_mtime
-        current_python_fingerprint = self._host.project_python_paths_fingerprint()
-        if previous_python_fingerprint != current_python_fingerprint:
-            self._host.start_symbol_indexing_for_loaded_project()
 
     def scan_project_tree_signature(self, loaded_project: LoadedProject) -> tuple[str, ...]:
         orchestrator_signature = self._host.project_inventory_tree_signature()

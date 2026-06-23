@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -67,6 +68,37 @@ def test_background_task_runner_routes_errors() -> None:
             task=lambda _cancel: (_ for _ in ()).throw(RuntimeError("boom")),
             on_error=lambda exc: (errors.append(str(exc)), done.set()),
         )
+
+        assert done.wait(timeout=1.0)
+        assert errors == ["boom"]
+    finally:
+        runner.shutdown(wait=False)
+
+
+def test_background_task_runner_routes_errors_with_deferred_dispatch() -> None:
+    """Regression: except-as exc must be bound before queued main-thread dispatch."""
+    pending: list[Callable[[], None]] = []
+    errors: list[str] = []
+    done = threading.Event()
+    worker_done = threading.Event()
+    runner = GeneralTaskScheduler(dispatch_to_main_thread=pending.append)
+
+    def failing_task(_cancel: threading.Event) -> None:
+        try:
+            raise RuntimeError("boom")
+        finally:
+            worker_done.set()
+
+    try:
+        runner.run(
+            key="deferred-error",
+            task=failing_task,
+            on_error=lambda exc: (errors.append(str(exc)), done.set()),
+        )
+
+        assert worker_done.wait(timeout=1.0)
+        assert len(pending) == 1
+        pending[0]()
 
         assert done.wait(timeout=1.0)
         assert errors == ["boom"]

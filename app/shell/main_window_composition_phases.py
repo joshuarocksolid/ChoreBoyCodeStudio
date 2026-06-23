@@ -427,6 +427,7 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
             center_layout = center_panel.layout()
             if isinstance(center_layout, QVBoxLayout):
                 center_layout.insertWidget(0, toolbar, 0)
+    window._shell_theme_workflow.refresh_surface_refs()
     window._shell_theme_workflow.apply_theme_styles()
     window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
     window._shell_preferences_runtime.sync_theme_menu_check_state()

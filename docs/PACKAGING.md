@@ -165,20 +165,21 @@ Supported behavior:
    - `CBCS_ARTIFACTS_DIR/dist/choreboy_code_studio_installer_v<version>/`
 3. produce a compressed password-protected archive:
    - `CBCS_ARTIFACTS_DIR/dist/choreboy_code_studio_installer_v<version>.zip`
+   - default zip password: `rsd` (courtesy label for email delivery, not security)
 4. enforce the product archive budget:
    - **15 MB maximum**
 
-Product release archives no longer have a built-in password fallback. Release
-builders must pass `archive_password` to `build_product_artifact(...)` or set
-`CBCS_PACKAGE_ZIP_PASSWORD`; otherwise archive creation fails with an explicit
-configuration error. This keeps release credentials out of source defaults.
+Release builders may override the zip password with `archive_password` on
+`build_product_artifact(...)` or by setting `CBCS_PACKAGE_ZIP_PASSWORD`.
 
-During staging, the product builder auto-fetches the cp39 manylinux `tree-sitter`
-wheel and overlays `_binding.cpython-39-x86_64-linux-gnu.so` onto
+During staging, the product builder copies allowlisted packages from
+`CBCS_ARTIFACTS_DIR/vendor_py39/` (populate with `./scripts/setup_vendor_py39.sh`),
+auto-fetches the cp39 manylinux `tree-sitter` wheel, and overlays
+`_binding.cpython-39-x86_64-linux-gnu.so` onto
 `payload/vendor/tree_sitter/`. The wheel is cached under
 `CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are
-offline-friendly. This keeps the product bundle on the cp39 contract even
-when the local artifacts vendor was populated for Cloud-dev (cp311) use.
+offline-friendly. Product packaging does not read from repo `vendor/` or
+`vendor_py311/`; only the cp39 artifacts tree is the packaging source.
 
 The product archive budget applies to Code Studio distribution only.
 It does **not** define the size budget for user-project packages.

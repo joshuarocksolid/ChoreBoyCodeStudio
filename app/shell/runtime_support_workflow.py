@@ -271,6 +271,12 @@ class RuntimeSupportWorkflow:
                     )
                     self._set_latest_package_issue_report(latest_package_issue_report)
                     self._set_latest_runtime_issue_report(self._build_runtime_issue_report())
+                failure_summary = result.error or "Packaging failed unexpectedly."
+                QMessageBox.critical(
+                    self._parent,
+                    "Packaging failed",
+                    failure_summary,
+                )
                 self._open_runtime_center_dialog(
                     title="Packaging Failed",
                     report=latest_package_issue_report,
@@ -299,6 +305,11 @@ class RuntimeSupportWorkflow:
             )
             self._set_latest_package_issue_report(latest_package_issue_report)
             self._set_latest_runtime_issue_report(self._build_runtime_issue_report())
+            QMessageBox.critical(
+                self._parent,
+                "Packaging failed",
+                str(exc),
+            )
             self._open_runtime_center_dialog(
                 title="Packaging Failed",
                 report=latest_package_issue_report,
