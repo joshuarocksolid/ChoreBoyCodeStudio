@@ -56,6 +56,8 @@ The capability check confirms things such as:
 ChoreBoy Code Studio includes built-in onboarding help that stays available even after
 the welcome screen is gone:
 
+![The built-in Getting Started guide](../screenshots/020_getting_started.png)
+
 - **Help > Getting Started** opens an in-application guide to your first steps.
 - **Tools > Runtime Center** explains the current runtime and project health.
 
