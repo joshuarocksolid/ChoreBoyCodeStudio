@@ -83,6 +83,37 @@ separate on purpose:
 If an accelerator (like the symbol index) is stale or missing, the editor still works —
 it just rebuilds when convenient.
 
+## The run lifecycle in detail
+
+When you press Run, the steps are:
+
+1. The editor resolves the **entry file** and the active **run configuration** (argv,
+   working directory, environment).
+2. It writes a **run manifest** (a JSON file under `cbcs/runs/`) describing exactly how to
+   run.
+3. It launches a fresh **runner process** for that manifest, in its own session so its
+   children can be cleaned up together.
+4. The runner sets up the path, executes your entry file, and streams stdout/stderr back
+   to the **Run Log** while also writing a saved per-run log.
+5. On exit, the runner returns an exit code; the editor records the final state
+   (finished, failed, terminated).
+
+Because everything is described by a manifest and captured in logs, runs are reproducible
+and easy to support — and stopping a run simply terminates that runner process group.
+
+## What happens when you save
+
+A save writes the buffer to disk, clears the modified marker, records a **Local History
+checkpoint**, and (if enabled) runs format/organize-imports. Crucially, your text is
+written even if a style step fails — save reliability outranks style automation.
+
+## Acceleration vs truth (why results are sometimes labeled)
+
+You may notice the editor labels some results as "approximate." That is deliberate: fast
+accelerators (syntax highlighting, the symbol index) make the editor responsive, while a
+separate semantic layer provides trustworthy go-to-definition, references, and rename. The
+editor never presents a fast guess as a proven fact — if it cannot be sure, it says so.
+
 ## Safety by design
 
 - Editing features never execute your project code inside the editor process.

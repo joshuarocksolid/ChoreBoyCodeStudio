@@ -109,6 +109,44 @@ parameters, class names, and constructors are coloured distinctly.
 > [!NOTE] For very large files, the editor automatically reduces highlighting work to
 > keep typing responsive. This is configurable in **Settings > Intelligence**.
 
+## Working with several files at once
+
+- Open as many files as you like; each gets a tab.
+- Close a tab with `Ctrl+W` or its close button.
+- Use `Ctrl+P` (Quick Open) to jump to a file without hunting in the tree.
+- The single preview tab keeps casual browsing from cluttering your tabs — only files you
+  edit or double-click become permanent.
+
+## The status bar while editing
+
+While a file is active, the status bar shows, on the right:
+
+- the indentation in use (for example, `Spaces: 4 (auto)`),
+- the active file name,
+- the cursor's line and column,
+- whether the file is **saved** or **modified**.
+
+This is the quickest way to confirm a save succeeded or to read your cursor position when
+following a traceback.
+
+## What happens when you save
+
+A save does more than write the file:
+
+1. The buffer is written to disk and the modified marker clears.
+2. A **Local History checkpoint** is recorded, so you can compare or restore this version
+   later.
+3. If you enabled them, **format-on-save** and **organize-imports-on-save** run — but if
+   they fail, your text is still written and you get a warning (save reliability wins).
+
+See "Local History & recovery" and "Python formatting & imports".
+
+## If a file changes outside the editor
+
+If a file you have open changes on disk (for example, you edited it elsewhere), Code
+Studio detects this and lets you reload it, recording a checkpoint when you do — so you
+never silently lose either version.
+
 ## Where to go next
 
 - Find and jump around your code in "Navigation & search".

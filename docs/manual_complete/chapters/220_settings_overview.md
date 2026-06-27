@@ -71,6 +71,28 @@ status-bar indicator clears once all overrides are removed.
 Click **Save** to apply your changes. Many settings — such as theme, keybindings, and
 syntax colors — apply immediately, without restarting the application.
 
+## A worked example: a per-project indentation override
+
+Suppose most of your projects use 4-space indentation, but one legacy project uses 2:
+
+1. Set your global default once: **Settings** (Global scope) **> Editor > Indent size** =
+   `4`. Save.
+2. Open the legacy project. Open **Settings** and switch the scope to **Project**.
+3. Set **Indent size** = `2` and **Save**.
+4. The status bar now shows **(project overrides)** for that project, and editing there
+   uses 2 spaces — while all your other projects still use 4.
+
+To undo it later, reopen Settings in **Project** scope and use **Reset to Global** on that
+field; the indicator clears once no overrides remain.
+
+## Which scope should I use?
+
+| You want to change… | Use scope |
+| --- | --- |
+| Your theme, colors, or shortcuts | Global (these are global-only) |
+| A preference for *this* project only (indentation, linter rules, excluded files) | Project |
+| A new default for *all* projects | Global |
+
 ## Where to go next
 
 - See every individual setting in "Every settings tab & field".
