@@ -19,7 +19,11 @@ saved versions you can compare and restore. Neither relies on Git or a terminal.
 
 If the application closes unexpectedly while you had unsaved changes, the next time you
 open the affected file you are offered recovery. Open the **Recovery Center**
-(**File > Open Recovery Center...**) to:
+(**File > Open Recovery Center...**) to review drafts and saved-history timelines together:
+
+![The Recovery Center: search unsaved drafts and saved local-history timelines](../screenshots/170_recovery_center.png)
+
+From here you can:
 
 - **compare** the draft against the saved file,
 - **Restore Draft to Buffer** (then decide whether to save),

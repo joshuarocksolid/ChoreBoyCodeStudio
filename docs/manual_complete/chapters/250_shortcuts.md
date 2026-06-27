@@ -3,6 +3,8 @@
 This chapter lists the default keyboard shortcuts and explains how to customize them. You
 can also view shortcuts in the application via **Help > Keyboard Shortcuts**.
 
+![The in-app Keyboard Shortcuts reference, grouped by category](../screenshots/250_keyboard_shortcuts.png)
+
 ## The essential ten
 
 If you learn only ten shortcuts, learn these — they cover the daily loop:
