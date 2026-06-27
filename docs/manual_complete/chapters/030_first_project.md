@@ -94,8 +94,40 @@ You have completed the core loop that you will use every day:
 5. read the output,
 6. repeat.
 
+## If your first run fails
+
+Do not worry — this is normal and easy to diagnose:
+
+1. Look at the **Run Log** for the error message and traceback.
+2. If the **Problems** panel opened, click the entry to jump to the offending line.
+3. Common first-run issues:
+   - **A typo** (for example, a misspelled name) — the traceback names the line; fix and
+     re-run.
+   - **No active file for `F5`** — use `Shift+F5` (Run Project), or open a file first.
+   - **A windowed app "stays running"** — that is expected; close its window or press
+     **Stop** (`Shift+F2`).
+4. Fix the issue, save (`Ctrl+S`), and run again.
+
+The chapter "Troubleshooting by symptom" covers many more cases.
+
+## What you learned
+
+In this one tutorial you used the complete core loop:
+
+| Step | Feature | Chapter |
+| --- | --- | --- |
+| Create | Templates | "Projects: open, create, import" |
+| Open & edit | Editor, tabs | "Editing files" |
+| Save | Save + Local History | "Editing files", "Local History & recovery" |
+| Run | Runner, Run Log | "Running code" |
+| Read output | Run Log / Problems | "Running code", "Linting & the Problems panel" |
+| Stop | Stop control | "Running code" |
+
+Everything else in the manual builds on this loop.
+
 ## Where to go next
 
 - Learn what every part of the window does in "A tour of the window".
 - Learn the full project and template options in "Projects: open, create, import".
 - Learn everything about running and stopping programs in "Running code".
+- Follow a longer worked example in "Worked Tutorial: Build a Windowed (Qt) App".

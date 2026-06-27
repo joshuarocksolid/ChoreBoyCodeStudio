@@ -3,6 +3,25 @@
 This chapter lists the default keyboard shortcuts and explains how to customize them. You
 can also view shortcuts in the application via **Help > Keyboard Shortcuts**.
 
+## The essential ten
+
+If you learn only ten shortcuts, learn these — they cover the daily loop:
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+P` | Open any file by name (Quick Open) |
+| `Ctrl+S` | Save |
+| `Ctrl+F` | Find in this file |
+| `Ctrl+Shift+F` | Find in all files |
+| `F5` | Run active file |
+| `Shift+F5` | Run project |
+| `Shift+F2` | Stop |
+| `F12` | Go to definition |
+| `F2` | Rename symbol |
+| `Ctrl+/` | Toggle comment |
+
+Everything else you can look up below or learn over time.
+
 ## Customizing shortcuts
 
 Open **File > Settings... > Keybindings** (global scope). The Keybindings tab lists every
