@@ -63,6 +63,64 @@ Formatting and import-organizing run **in-process** in the editor's runtime usin
 vendored, pure-Python tools. They do not spawn external command-line programs and do not
 create hidden cache folders, which keeps them reliable on the ChoreBoy appliance.
 
+## A worked example
+
+Suppose you paste this messy but valid Python:
+
+```python
+import sys, os
+def  greet(name ,greeting = "Hello"):
+    return greeting+', '+name+'!'
+x={'a':1,'b':2}
+```
+
+After **Tools > Organize Imports** and **Tools > Format Current File**, Black and isort
+produce the conventional result:
+
+```python
+import os
+import sys
+
+
+def greet(name, greeting="Hello"):
+    return greeting + ", " + name + "!"
+
+
+x = {"a": 1, "b": 2}
+```
+
+Notice: imports split onto separate lines and sorted, consistent spacing around operators
+and commas, double quotes, and blank lines around the function. This is recognizable Black
+formatting — not just trailing-whitespace cleanup.
+
+## Configuring with pyproject.toml
+
+Place a `pyproject.toml` in your project root to control style:
+
+```toml
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[project]
+requires-python = ">=3.9"
+```
+
+Code Studio honors these for the supported options, so your formatting matches your
+project's declared line length and target Python version. The status bar shows when a
+project configuration was detected (for example, `pyproject`).
+
+## Format-on-save workflow
+
+A common setup is to enable both **Format on save** and **Organize imports on save** in
+**Settings > Editor**. Then every `Ctrl+S` leaves the file consistently formatted with
+sorted imports. If a save-time transform fails (for example, the file has a syntax error),
+the file is still saved with your current text and you get a clear warning — save
+reliability always wins.
+
 ## Editor state is preserved
 
 After formatting, your cursor, selection, scroll position, and undo history remain

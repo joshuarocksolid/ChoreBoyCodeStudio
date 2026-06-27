@@ -63,6 +63,57 @@ These commands use real semantic analysis (see "Code intelligence"):
 | Show Hover Info | `Ctrl+Shift+I` | Show documentation for the symbol under the cursor. |
 | Signature Help | `Ctrl+Shift+Space` | Show the call signature of the current function. |
 
+## The find bar in detail
+
+When you press `Ctrl+F`, a small find bar appears for the active file. It offers three
+matching modes you can toggle independently:
+
+| Toggle | Effect | Example |
+| --- | --- | --- |
+| **Aa** (case-sensitive) | Matches case exactly | `Task` matches `Task` but not `task`. |
+| **W** (whole word) | Matches whole words only | `app` does not match `application`. |
+| **.\*** (regular expression) | Treats the query as a regex | `def \w+\(` finds function definitions. |
+
+The bar shows the number of matches and lets you step through them. Matches are
+highlighted in the editor so you can see them in context.
+
+> [!TIP] Regular-expression search is bounded for safety: extremely long or pathological
+> patterns are limited so they cannot freeze the editor. Normal patterns are unaffected.
+
+## Replacing safely
+
+`Ctrl+H` opens the find bar with a replace field. You can:
+
+- replace the current match and move to the next, or
+- replace all matches at once.
+
+Because replace operates on the active file's buffer, you can always **Undo** (`Ctrl+Z`) a
+replacement, and the change is only written to disk when you **Save**.
+
+> [!IMPORTANT] In-file Replace changes only the current file. To change text across many
+> files, use Find in Files to locate occurrences, then edit each file deliberately — this
+> keeps multi-file changes reviewable. For symbol renames specifically, prefer **Rename
+> Symbol** (`F2`), which is semantic and previewed (see "Code intelligence").
+
+## Working with Find in Files results
+
+The Search view groups results by file with a per-file count and a grand total. To work
+through them efficiently:
+
+1. Click a result to open that file at the matching line.
+2. Refine the query with the **Aa**, **W**, and **.\*** toggles to narrow results.
+3. Re-run by editing the query; results update in the background so the editor stays
+   responsive even on large projects.
+
+## Navigation scenarios
+
+- **"Where is this function defined?"** Put the cursor on the call and press `F12`.
+- **"What uses this function?"** Put the cursor on it and press `Shift+F12`.
+- **"Jump to a function in this file."** Press `Ctrl+R` and type its name.
+- **"Open that file I was just in."** Press `Ctrl+P` and type a few letters of its name.
+- **"Go to a specific line from a traceback."** Press `Ctrl+G` and type the line number,
+  or click the entry in the Problems panel.
+
 ## Where to go next
 
 - Understand how definitions and references are resolved in "Code intelligence".
