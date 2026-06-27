@@ -118,6 +118,97 @@ Runtime handlers execute in the plugin host process across two lanes (query and 
 never inside the editor. If your plugin fails repeatedly, the application quarantines it
 so the editor stays stable. Long jobs run on the job lane so the UI never freezes.
 
+## A complete worked example: a "shout" formatter
+
+This minimal, end-to-end example shows the full shape of a query-provider plugin. It is a
+toy formatter that uppercases comments — enough to demonstrate the contract without real
+formatting logic.
+
+### Files
+
+```text
+acme.shout/
+  plugin.json
+  runtime.py
+```
+
+### `plugin.json`
+
+```json
+{
+  "id": "acme.shout",
+  "name": "Acme Shout Formatter",
+  "version": "1.0.0",
+  "api_version": 1,
+  "runtime": { "entrypoint": "runtime.py" },
+  "activation_events": ["on_provider:formatter"],
+  "capabilities": ["workflow.formatter"],
+  "permissions": ["project.read"],
+  "contributes": {
+    "workflow_providers": [
+      {
+        "id": "shout",
+        "kind": "formatter",
+        "lane": "query",
+        "title": "Acme Shout",
+        "languages": ["python"],
+        "file_extensions": [".py"],
+        "query_handler": "handle_format"
+      }
+    ]
+  }
+}
+```
+
+### `runtime.py`
+
+```python
+from __future__ import annotations
+from typing import Any, Mapping
+
+
+def handle_format(provider_key: str, request: Mapping[str, Any]) -> dict[str, Any]:
+    source = request["source_text"]
+    lines = []
+    changed = False
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            upper = line.upper()
+            changed = changed or upper != line
+            lines.append(upper)
+        else:
+            lines.append(line)
+    formatted = "\n".join(lines)
+    if source.endswith("\n"):
+        formatted += "\n"
+    return {
+        "formatted_text": formatted,
+        "changed": changed,
+        "status": "formatted" if changed else "unchanged",
+        "error_message": None,
+    }
+```
+
+### Install and try it
+
+1. Zip the `acme.shout/` folder as `acme.shout.cbcs-plugin.zip` (or keep it as a folder).
+2. **Tools > Plugin Manager... > Install...** and select it.
+3. In a project, choose **Prefer Provider** for the `formatter:python` workflow and select
+   `acme.shout:shout`.
+4. Open a Python file with a comment and run **Format Current File** — the comment is
+   uppercased, and the editor applies the returned text.
+
+### What this demonstrates
+
+- The handler receives plain request data (`source_text`, `project_root`, `file_path`)
+  and returns plain result data.
+- The **editor** applies the edit; the plugin never writes the file directly.
+- The plugin runs in the isolated host process and only requested `project.read`.
+
+For a long-running job instead of a quick transform, use the **job** lane with a
+`start_handler` and `emit_event` (see the bundled `cbcs.pytest` plugin).
+
 ## Where to go next
 
 - Look up the exact manifest, IPC, and handler contract in "Plugin API reference &

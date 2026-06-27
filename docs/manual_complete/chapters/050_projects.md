@@ -96,6 +96,27 @@ You can edit this file directly, but most fields are easier to change through th
 application — for example, **Set as Entry Point** in the tree, or the Run Configurations
 dialog. The complete schema is in Part V, "File & folder reference".
 
+## A worked example: import an existing Python folder
+
+Suppose a colleague gives you a plain folder of Python files (no `cbcs/` folder) on a USB
+drive:
+
+1. Copy the folder onto the appliance.
+2. In Code Studio, choose **File > Open Project...** and select the folder.
+3. Because the folder has Python files but no `cbcs/project.json`, the application creates
+   one automatically with sensible defaults and an inferred entry point.
+4. The project opens normally — browse files, run, and edit as usual.
+
+From then on, the generated `cbcs/project.json` is the project's metadata. If the inferred
+entry point is wrong, right-click the correct file and choose **Set as Entry Point**.
+
+## Setting up a `src/` layout
+
+If the imported project keeps its package under `src/`, mark that folder as a **Sources
+Root** (right-click it in the Explorer). This makes `import yourpackage` resolve correctly
+in both diagnostics and runs, without adding `sys.path` hacks to your code. See "The
+project tree & file management" and "Code intelligence".
+
 ## Closing or switching projects
 
 Open another project at any time with **File > Open Project...** or **Open Recent**. The

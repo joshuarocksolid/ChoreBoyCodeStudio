@@ -115,6 +115,33 @@ that configuration's entry file, arguments, working directory, and environment.
 Right-click a `.py` file in the Explorer to find **Run** (no arguments) and **Run With
 Arguments...**, with the dialog pre-filled for that file.
 
+## A worked example: arguments, environment, and a saved config
+
+Suppose your program reads a config path argument and a `DEBUG` environment variable:
+
+```python
+import os, sys
+print("config:", sys.argv[1] if len(sys.argv) > 1 else "(default)")
+print("debug:", os.environ.get("DEBUG", "0"))
+```
+
+To run it once with custom values:
+
+1. **Run > Run With Arguments...** (`Ctrl+Shift+A`).
+2. In **Arguments**, type `--config "/tmp/my settings/app.toml"`. The "Parsed argv"
+   preview shows two tokens, with the quoted path kept intact (the space is preserved).
+3. Expand **Advanced**, set **Environment overrides** to `DEBUG=1`.
+4. Click **Run**. The Run Log shows the config path and `debug: 1`.
+
+To make this repeatable, click **Save as Configuration...**, name it `Debug run`, and
+**Save**. Later, pick `Debug run` from the status-bar run-target indicator and press
+`Shift+F5` — it reuses the entry, argv, working directory, and environment. The
+configuration is stored in `cbcs/project.json` under `run_configs`.
+
+> [!TIP] If you type an unbalanced quote in the Arguments field, the dialog shows an
+> inline error and disables Run until you fix it — so you never launch with mis-parsed
+> arguments.
+
 ## Output panel behavior
 
 By default, the application is helpful about which panel it shows:

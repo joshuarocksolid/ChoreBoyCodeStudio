@@ -2,8 +2,16 @@
 
 Definitions of terms used throughout this manual.
 
+**Activation event** — A condition (such as `on_provider:formatter`) that tells the
+application when to load a plugin.
+
 **Active run target** — The run configuration that **Run Project** will use, shown on the
 right of the status bar (`Default` or a configuration name).
+
+**Capability (plugin)** — A declared workflow kind a plugin offers, such as
+`workflow.formatter` or `workflow.test`.
+
+**Dirty buffer** — An editor buffer with unsaved changes. Shown with a marker on the tab.
 
 **AppRun** — The launcher for FreeCAD's bundled Python runtime, which ChoreBoy Code Studio
 runs inside.
@@ -64,9 +72,23 @@ preview unless promoted to a permanent tab.
 **Provider (workflow)** — A plugin component that handles an editor-owned workflow
 (formatter, test, diagnostics, and so on) over the query or job lane.
 
+**Preflight** — A check the application performs before a risky action (run or package) to
+explain a knowable problem early rather than failing late.
+
+**Quarantine** — Automatic disabling of a plugin that fails repeatedly, to keep the editor
+stable.
+
+**Query lane / Job lane** — The two ways a workflow provider runs: *query* for fast
+request/response, *job* for long-running streaming work.
+
 **Quick Open** — Fast file finder opened with `Ctrl+P`.
 
+**Run configuration** — A saved set of run settings (entry, arguments, working directory,
+environment) stored in `cbcs/project.json`.
+
 **REPL** — "Read–eval–print loop"; the interactive Python Console.
+
+**Squiggle** — The colored underline the editor draws under code with a diagnostic.
 
 **Runner process** — The separate process where your program executes when you press Run.
 
