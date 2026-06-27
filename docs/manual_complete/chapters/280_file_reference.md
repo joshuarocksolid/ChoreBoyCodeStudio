@@ -73,11 +73,49 @@ overridable sections are honored: `editor`, `intelligence`, `linter`, `file_excl
 }
 ```
 
+### Example with a run configuration
+
+```json
+{
+  "schema_version": 1,
+  "project_id": "proj_a1b2c3d4e5f6",
+  "name": "TaskTracker",
+  "default_entry": "main.py",
+  "working_directory": ".",
+  "template": "qt_app",
+  "default_argv": [],
+  "env_overrides": {},
+  "run_configs": [
+    {
+      "name": "Debug run",
+      "entry": "main.py",
+      "argv": ["--config", "/tmp/app.toml"],
+      "working_directory": ".",
+      "env": { "DEBUG": "1" }
+    }
+  ],
+  "project_notes": ""
+}
+```
+
 ## `cbcs/plugins.json`
 
 Per-project plugin policy: version pins, project enable/disable state, and preferred
 workflow providers. Written when you make project-specific plugin choices in the Plugin
 Manager.
+
+Example:
+
+```json
+{
+  "schema_version": 1,
+  "disabled": ["acme.noisy_plugin"],
+  "version_pins": { "acme.python_tools": "1.0.0" },
+  "preferred_providers": {
+    "formatter:python": "acme.python_tools:formatter"
+  }
+}
+```
 
 ## `cbcs/dependencies.json`
 
@@ -92,12 +130,49 @@ Packaging metadata saved by the packaging wizard so future builds reuse your cho
 exported package also contains `package_manifest.json` and `package_report.json` (in the
 output folder, not the project). See "Packaging, sharing & installing".
 
+### `cbcs/dependencies.json` example
+
+```json
+{
+  "schema_version": 1,
+  "dependencies": [
+    {
+      "name": "humanize",
+      "version": "4.9.0",
+      "source": "wheel",
+      "classification": "pure_python",
+      "status": "active",
+      "added_at": "2026-06-27T12:00:00Z"
+    }
+  ]
+}
+```
+
 ## Run manifests and logs
 
 Each run writes a JSON **run manifest** under `cbcs/runs/` describing exactly how the run
 was launched (entry file, working directory, mode, arguments, environment, and log path).
 The corresponding output is saved to `cbcs/logs/run_YYYYMMDD_HHMMSS.log`. Manifests make
 runs reproducible and easy to support.
+
+A run manifest looks like:
+
+```json
+{
+  "manifest_version": 1,
+  "run_id": "20260627_153500_001",
+  "project_root": "/home/default/projects/TaskTracker",
+  "entry_file": "main.py",
+  "working_directory": "/home/default/projects/TaskTracker",
+  "mode": "python_script",
+  "argv": [],
+  "env": {},
+  "log_file": "/home/default/projects/TaskTracker/cbcs/logs/run_20260627_153500.log"
+}
+```
+
+Run exit codes have defined meanings: `0` success, `1` user-code error, `2` runner
+bootstrap/config error, `3` invalid manifest, `130` terminated by the user.
 
 ## Global state directory
 

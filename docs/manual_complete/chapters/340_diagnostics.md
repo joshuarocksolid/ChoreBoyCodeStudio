@@ -58,6 +58,36 @@ subsystem that produced each message, and tracebacks are preserved in full.
 > [!TIP] If a run failed and you closed the application, you can still read exactly what
 > happened in the saved per-run log — nothing is lost when the window closes.
 
+## What's in a Support Bundle
+
+When you generate a Support Bundle, it gathers — into one archive suitable for USB
+transfer — the pieces a supporter needs:
+
+- the editor application log (`app.log`);
+- the open project's metadata (`cbcs/project.json`) and, if present, its plugin policy
+  (`cbcs/plugins.json`);
+- the most recent run log;
+- a machine-readable snapshot of the runtime explanation shown in the Runtime Center;
+- a plugin/provider inventory and any recent plugin/provider failures.
+
+It deliberately contains **files**, not a live session, so it can be reviewed offline. It
+does not include your source code unless that is part of the project metadata being
+captured.
+
+## A worked example: diagnosing a stuck project
+
+Suppose a project will not run and you are not sure why:
+
+1. Open **Tools > Runtime Center** — it summarizes runtime health and any active issues.
+2. Run **Tools > Project Health Check** — it scans for project-specific problems (missing
+   entry file, invalid config, unresolved imports) with suggested fixes.
+3. If you still need help, run **Tools > Generate Support Bundle** and share the archive.
+4. Meanwhile, open the latest per-run log via the Run Log's **Open Log** action to read
+   the full traceback.
+
+This sequence — Runtime Center, Health Check, Support Bundle, logs — resolves the large
+majority of "why won't this work?" situations without a terminal.
+
 ## Refreshing runtime knowledge
 
 Two Tools commands re-probe the environment when needed:

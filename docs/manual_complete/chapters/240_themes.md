@@ -69,6 +69,28 @@ standard Dark palette. Overrides persist across restarts.
 > [!TIP] If you change a token color and it looks wrong, you can clear the override to
 > return to the theme's default color for that token.
 
+## A worked example: recolor keywords in Dark mode
+
+1. Open **File > Settings... > Syntax Colors**.
+2. Set the scope dropdown to **Dark Theme**.
+3. Find the `keyword` token and pick a new color.
+4. **Save**, then switch to **View > Theme > Dark** to see it.
+
+Switch to **Light** and the standard light colors still apply — your override only
+affects the Dark scope. To revert, clear the override for that token.
+
+## Choosing a theme for your situation
+
+| Situation | Suggested theme |
+| --- | --- |
+| Bright room, default look | Light |
+| Dim room, reduced glare | Dark |
+| Low vision / maximum legibility | High Contrast Light or High Contrast Dark |
+| Want the OS to decide | System |
+
+> [!TIP] High Contrast modes are not only for accessibility — they are also useful for
+> screenshots, presentations, or any time you want maximum clarity.
+
 ## Readability is preserved
 
 All themes are designed so that diagnostics (error/warning/info squiggles), the debug
