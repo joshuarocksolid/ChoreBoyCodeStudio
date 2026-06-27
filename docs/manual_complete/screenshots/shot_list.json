@@ -1,0 +1,5 @@
+{
+  "_comment": "Screenshot manifest for the Complete Edition manual. Entries with status 'planned' are not yet captured and are skipped by build --check. Captured entries must have a real PNG present in this directory and be referenced by at least one chapter (no orphans).",
+  "capture_recipe": "screenshots/capture/README.md",
+  "screenshots": []
+}

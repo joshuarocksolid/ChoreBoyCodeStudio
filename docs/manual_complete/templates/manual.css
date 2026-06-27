@@ -1,0 +1,300 @@
+@page {
+  size: Letter;
+  margin: 0.75in;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+  color: #1f2937;
+  line-height: 1.5;
+  font-size: 10.5pt;
+  margin: 0;
+  padding: 0;
+}
+
+.manual {
+  max-width: 7.0in;
+  margin: 0 auto;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: #0f172a;
+  margin-top: 0.32em;
+  margin-bottom: 0.3em;
+  line-height: 1.25;
+}
+
+/* Each chapter (top-level H1) starts on a new page. */
+.chapter h1 {
+  font-size: 21pt;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 0.1in;
+  margin-top: 0;
+  page-break-before: always;
+  break-before: page;
+}
+
+/* Do not force a page break before the very first chapter's H1 right after the
+   TOC page-break-after; browsers collapse adjacent breaks, which is fine. */
+
+h2 {
+  font-size: 15pt;
+  margin-top: 0.28in;
+  color: #1e3a8a;
+}
+
+h3 {
+  font-size: 12.5pt;
+  margin-top: 0.2in;
+}
+
+h4 {
+  font-size: 11pt;
+  margin-top: 0.16in;
+  color: #334155;
+}
+
+p {
+  margin: 0.08in 0 0.1in 0;
+}
+
+a {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+ul,
+ol {
+  margin: 0.04in 0 0.13in 0.26in;
+}
+
+li {
+  margin: 0.035in 0;
+}
+
+li.sub {
+  list-style-type: circle;
+  margin-left: 0.26in;
+}
+
+code {
+  font-family: "JetBrains Mono", "Consolas", "SFMono-Regular", Menlo, monospace;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.92em;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 0.12in 0.14in;
+  overflow-x: auto;
+  font-size: 8.8pt;
+  line-height: 1.4;
+  margin: 0.12in 0;
+  page-break-inside: avoid;
+}
+
+pre code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.12in 0;
+  font-size: 9.4pt;
+  page-break-inside: avoid;
+}
+
+th,
+td {
+  border: 1px solid #cbd5e1;
+  padding: 0.05in 0.08in;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #eef2ff;
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+figure {
+  margin: 0.16in 0;
+  page-break-inside: avoid;
+}
+
+img {
+  width: 100%;
+  max-width: 6.6in;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto 0.05in auto;
+}
+
+figcaption.image-caption,
+p.image-caption {
+  color: #475569;
+  font-style: italic;
+  font-size: 9pt;
+  text-align: center;
+  margin-top: 0.04in;
+  margin-bottom: 0.1in;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #cbd5e1;
+  margin: 0.18in 0;
+}
+
+/* Cover */
+.cover {
+  padding-top: 1.7in;
+  text-align: center;
+}
+
+.cover-mark {
+  display: inline-block;
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+  background: #2563eb;
+  padding: 0.14in 0.26in;
+  border-radius: 12px;
+  font-size: 20pt;
+  margin-bottom: 0.3in;
+}
+
+.cover h1 {
+  border-bottom: none;
+  font-size: 30pt;
+  margin-bottom: 0.2in;
+  page-break-before: avoid;
+}
+
+.subtitle {
+  font-size: 16pt;
+  color: #334155;
+  margin-bottom: 0.4in;
+}
+
+.meta {
+  color: #475569;
+  margin: 0.06in 0;
+}
+
+/* Table of contents */
+.toc h1 {
+  margin-bottom: 0.15in;
+  page-break-before: avoid;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 0.1in;
+  font-size: 21pt;
+}
+
+.toc-list {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.toc-list li {
+  margin: 0.05in 0;
+}
+
+.toc-level-1 {
+  font-weight: 600;
+  margin-top: 0.12in !important;
+  color: #0f172a;
+}
+
+.toc-level-2 {
+  margin-left: 0.28in;
+  font-weight: 400;
+  font-size: 9.6pt;
+}
+
+/* Callouts */
+.callout {
+  padding: 0.1in 0.14in;
+  border-radius: 6px;
+  margin: 0.12in 0;
+  page-break-inside: avoid;
+}
+
+.callout-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 8.4pt;
+  letter-spacing: 0.04em;
+  margin-right: 0.06in;
+}
+
+.callout-tip {
+  background: #ecfeff;
+  border-left: 4px solid #06b6d4;
+}
+
+.callout-tip .callout-label {
+  color: #0e7490;
+}
+
+.callout-important {
+  background: #fff7ed;
+  border-left: 4px solid #f97316;
+}
+
+.callout-important .callout-label {
+  color: #c2410c;
+}
+
+.callout-note {
+  background: #f1f5f9;
+  border-left: 4px solid #64748b;
+}
+
+.callout-note .callout-label {
+  color: #475569;
+}
+
+.callout-limitation {
+  background: #fef2f2;
+  border-left: 4px solid #ef4444;
+}
+
+.callout-limitation .callout-label {
+  color: #b91c1c;
+}
+
+/* Page-break helpers */
+.page-break-after {
+  page-break-after: always;
+  break-after: page;
+}
