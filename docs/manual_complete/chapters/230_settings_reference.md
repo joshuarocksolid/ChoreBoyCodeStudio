@@ -117,6 +117,47 @@ Controls how much Local History is kept. See "Local History & recovery".
 | Max tracked file size | 1,000,000 bytes | Files larger than this are not tracked. |
 | Exclude patterns | (none) | Files matching these patterns are not tracked. |
 
+## Recommended starting settings
+
+These are sensible defaults to turn on once you are comfortable:
+
+| Setting | Suggested value | Why |
+| --- | --- | --- |
+| Format on save | On | Keeps every file consistently Black-formatted. |
+| Organize imports on save | On | Keeps imports tidy without thinking about it. |
+| Auto-trigger completion | On (if you like live suggestions) | Faster coding once you are used to it. |
+| Real-time diagnostics | On (default) | Catch problems as you type. |
+| Theme | Whatever is comfortable; High Contrast for max legibility | Reduces eye strain. |
+
+Leave the rest at their defaults until you have a reason to change them.
+
+## Settings that work together
+
+A few settings interact:
+
+- **Format on save** + **Organize imports on save** combine into one save-time transform.
+  If either fails, the file is still saved and you get a warning.
+- **Indent style/size** and **Detect indentation from file**: when detection is on, an
+  opened file's existing style takes precedence over your configured size, so you do not
+  fight a file's conventions.
+- **Enable diagnostics** gates the whole Problems experience; **Real-time diagnostics**
+  only controls *when* they update.
+- **Linter > Enable** gates the provider and rule-override controls; turning linting off
+  disables them.
+
+## Per-project vs global, at a glance
+
+| Tab | Per-project? |
+| --- | --- |
+| General → Appearance | Global only |
+| General → Output, Editor | Project-overridable |
+| Intelligence | Project-overridable |
+| Linter | Project-overridable |
+| Files | Project-overridable |
+| Local History | Project-overridable |
+| Keybindings | Global only |
+| Syntax Colors | Global only |
+
 ## Where settings are stored
 
 - Global: `~/choreboy_code_studio_state/settings.json`

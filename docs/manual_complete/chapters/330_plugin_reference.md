@@ -98,6 +98,47 @@ python3 run_tests.py -q --import-mode=importlib tests/integration/plugins/test_s
 python3 run_tests.py -q --import-mode=importlib tests/runtime_parity/plugins/test_workflow_plugin_runtime.py
 ```
 
+## A compatibility worked example
+
+Suppose your plugin uses a contract introduced in app version 0.4 and should not load on
+older builds. Declare:
+
+```json
+"engine_constraints": {
+  "min_app_version": "0.4.0",
+  "min_api_version": 1
+}
+```
+
+On an older build, the Plugin Manager shows the plugin as **installed but not activated**,
+with the compatibility reason. On a compatible build, it activates normally. This lets you
+ship one package safely across app versions.
+
+## Testing a plugin before shipping
+
+Validate against the bundled test lanes (these run through the FreeCAD AppRun runtime):
+
+```bash
+python3 run_tests.py -q --import-mode=importlib tests/unit/plugins/
+python3 run_tests.py -q --import-mode=importlib tests/integration/plugins/test_support_bundle_plugins_integration.py
+python3 run_tests.py -q --import-mode=importlib tests/runtime_parity/plugins/test_workflow_plugin_runtime.py
+```
+
+For your own plugin's logic, write ordinary pytest tests against your handler functions —
+they take plain mappings and return plain mappings, so they are easy to test without the
+editor running.
+
+## A distribution checklist
+
+Before sharing a plugin:
+
+- [ ] `plugin.json` validates (correct `id`, `version`, `api_version`).
+- [ ] Pure Python only; no native extensions or hidden directories.
+- [ ] Handlers return structured results; the plugin does not write project files directly.
+- [ ] `engine_constraints` set if you depend on a specific app/API version.
+- [ ] Packaged as a `.cbcs-plugin.zip` with exactly one plugin root, or shared as a folder.
+- [ ] Tested with the lanes above and with your own unit tests.
+
 ## Authoritative sources
 
 - `docs/plugins/SDK.md` — the SDK map and validation commands.

@@ -67,6 +67,30 @@ A compact dashboard, left to right:
 | Editor position | Indentation, active file, line/column, saved/modified. |
 | Active run target | The configuration Run Project will use; click to switch. |
 
+## Panel behaviors worth knowing
+
+- **Automatic switching:** the bottom area switches to **Run Log** when a run produces
+  output and to **Problems** when a run fails. Turn this off in **Settings > Output**.
+- **Run Log persistence:** the Run Log keeps saved per-run logs on disk (`cbcs/logs/`),
+  reachable via its **Open Log** action — output survives closing the app.
+- **Bounded output:** very long runs trim the oldest in-memory console lines to stay
+  responsive, while the full log is preserved on disk.
+- **Debug panel scope:** during debugging, program output still goes to the **Run Log**;
+  the **Debug** panel is reserved for the inspector (stack, scopes, variables, watches).
+- **Sidebar memory:** the application remembers your layout (splitter positions, which
+  panels are open) between sessions. Reset with **View > Reset Layout**.
+
+## Reading the status bar in practice
+
+| If you see… | It means… |
+| --- | --- |
+| `Runtime ready (8/8 checks)` | Everything is healthy. |
+| `Runtime issues (N/8 checks)` | Open the Runtime Center to see what failed. |
+| `Run: running` (green) | A program is executing; the Stop button is available. |
+| `Run: failed (code=1)` | The last run exited with an error; check Problems. |
+| `Project: Name (project overrides)` | This project has its own settings. |
+| `Editor: file.py \| Ln 1, Col 1 \| modified` | Unsaved changes in the active file. |
+
 ## Dialogs
 
 Major dialogs you will encounter:
