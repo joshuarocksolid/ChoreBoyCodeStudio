@@ -18,7 +18,7 @@ log folders, a writable temp folder, and syntax-highlighting support.
 | Message | Meaning |
 | --- | --- |
 | `Python: tools ready` | Formatting, linting, and intelligence tools loaded. |
-| `\| pyproject` | A project `pyproject.toml` was detected and is in use. |
+| `pyproject` (appended) | A project `pyproject.toml` was detected and is in use. |
 
 ## Run state (status bar)
 
