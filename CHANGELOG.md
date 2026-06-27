@@ -22,17 +22,21 @@ Consolidates the untagged `0.3.2`-`0.4.4` development line into a single release
 - Recovery Center, themed unsaved-changes dialog ("Keep for Next Launch"), and polished Recovery Draft / Local History dialogs with inline and side-by-side diff.
 - Test Explorer: Run Test at Cursor and Debug Failed Test workflows, with discovery for nested classes and parametrized tests.
 - Installable-only project packaging with an export validation gate, restyled Package Project wizard, and `vendor_py39` product pipeline.
+- Flat-Python paste repair: auto re-indent for code pasted without indentation (for example, from PDFs), plus Paste and Re-indent / Re-indent Selection actions (`Ctrl+Alt+V`).
 
 ### Changed
 
 - Background, non-blocking project open with progressive tree population and session-restored explorer state.
 - Unified Clear Console policy (Python Console output, Run Log, and debug output) distinct from display-only panel clear.
 - Argv parsing via `shlex` quoting; run dialogs restyled and scrollable across all four theme modes.
+- Multi-line Tab/Shift+Tab now preserves the selection for repeated indent/outdent, and multi-line pastes land pre-selected.
 - MainWindow decomposed into focused workflows; run launch split with exit-gated stop/restart.
 
 ### Fixed
 
 - Stale autocomplete, navigation, and search results after cursor or buffer changes (generation-gated delivery).
+- Auto-save no longer trims trailing whitespace on the line being typed; on-save transforms now run only on explicit Save.
+- Installed project launchers run from `app_files/` without hand-editing `Exec=`.
 - Run/debug session start-stop races, debug transport EOF/pause hangs, and breakpoint-sync drift.
 - Theme-refresh gaps after layout rebuild, external-file-change polling crashes, and packaging failures now surfaced in the UI.
 
