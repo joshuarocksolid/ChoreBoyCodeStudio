@@ -80,6 +80,28 @@ The current plugin SDK intentionally requires:
 
 These are part of the SDK contract, not temporary limitations.
 
+## When to choose each pattern
+
+| You want to… | Use |
+| --- | --- |
+| Add a menu item that shows a message or triggers an existing command | Declarative command |
+| Run custom logic on a command or editor event | Runtime command |
+| Provide formatting, diagnostics, tests, templates, packaging, etc. | Workflow provider |
+| Do fast, structured request/response work | Workflow provider, **query** lane |
+| Do long-running work with progress | Workflow provider, **job** lane |
+
+For most serious extensions — especially anything touching Python workflows — a
+**workflow provider** is the right choice, because the editor stays in control of applying
+edits and rendering results while your code supplies the logic.
+
+## The editor↔plugin boundary
+
+A useful mental model: your plugin is a **service** the editor calls, not a piece of the
+editor. The editor sends a structured request (for example, "format this text, here is the
+project root and file path"); your plugin returns a structured result; the editor decides
+what to do with it (apply the edit, show the diagnostics, display provenance). This keeps
+plugins safe, testable, and replaceable.
+
 ## Reference plugins
 
 The best examples are the first-party plugins bundled with the application, visible in the

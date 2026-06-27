@@ -107,6 +107,61 @@ Use **activation events** so your plugin loads only when needed:
 - `on_command:<command_id>`
 - `on_event:<event_type>`
 
+## A declarative menu command, in full
+
+Here is a complete declarative-command plugin that adds a Tools-menu item which shows a
+message — no runtime code at all:
+
+```json
+{
+  "id": "acme.hello",
+  "name": "Acme Hello",
+  "version": "1.0.0",
+  "api_version": 1,
+  "contributes": {
+    "commands": [
+      {
+        "id": "acme.hello.say",
+        "title": "Acme: Say Hello",
+        "menu_id": "tools",
+        "shortcut": "Ctrl+Alt+H",
+        "status_tip": "Show a greeting",
+        "tool_tip": "Acme greeting",
+        "message": "Hello from Acme!"
+      }
+    ]
+  }
+}
+```
+
+Install it, and **Tools > Acme: Say Hello** appears (with the shortcut you declared).
+Choosing it shows the message. This is the simplest possible extension and needs no Python
+code.
+
+## Reacting to a run finishing
+
+Add an event hook to run a command when a run ends:
+
+```json
+"event_hooks": [
+  { "event_type": "run_exit", "command_id": "acme.hello.say" }
+]
+```
+
+Now your command fires automatically after each run. Supported events are `run_start`,
+`run_output`, `run_exit`, `project_opened`, and `project_open_failed`. The event payload is
+passed to a runtime command if the command is backed by code.
+
+## Iterating on a plugin
+
+While developing, you will edit and re-test repeatedly:
+
+1. Make changes to the plugin folder.
+2. In the Plugin Manager, **Uninstall** the old version and **Install** the updated folder
+   (or use **Refresh**).
+3. Trigger your command/workflow and observe the result.
+4. If the plugin misbehaves, the host process isolates the failure — fix and reinstall.
+
 ## Safety rules to follow
 
 - Keep imports at module top-level.
