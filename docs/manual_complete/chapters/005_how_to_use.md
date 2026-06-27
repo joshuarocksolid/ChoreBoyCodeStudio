@@ -66,6 +66,16 @@ The manual uses four kinds of highlighted notes:
 > [!LIMITATION] A boundary of the product or the ChoreBoy runtime that shapes how a
 > feature behaves.
 
+## Quick legend
+
+| You'll see | It means |
+| --- | --- |
+| `File > Open Project...` | A menu path — follow each menu in order. |
+| `Ctrl+S`, `F5` | A keyboard shortcut. |
+| `cbcs/project.json` | A filename, path, or code (monospaced). |
+| **Run** | A button or control to click (bold on first mention). |
+| Tip / Important / Note / Limitation | Highlighted callouts (see below). |
+
 ## About the screenshots
 
 Screenshots show the exact area of the window to look at, and each caption explains

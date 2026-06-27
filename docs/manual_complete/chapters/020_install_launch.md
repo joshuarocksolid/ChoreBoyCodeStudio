@@ -62,6 +62,26 @@ the welcome screen is gone:
 These surfaces are designed so you never need a terminal or external documentation to
 understand the state of the application.
 
+## What happens on first launch
+
+The first time you open ChoreBoy Code Studio:
+
+1. It creates its global state folder (`~/choreboy_code_studio_state/`) for settings,
+   recent projects, logs, and Local History.
+2. It runs the capability check and shows the result in the status bar.
+3. It shows the welcome screen, because you have no recent project yet.
+
+On later launches, if you have a recent project, it may reopen that project directly
+instead of the welcome screen — getting you back to work faster. Onboarding help stays
+reachable from the **Help** menu either way.
+
+## If the status bar shows a warning at startup
+
+A startup warning does not mean the application is broken — it usually means one optional
+capability is unavailable, and most features still work. The right first step is always
+**Tools > Runtime Center**, which translates the check results into plain language and
+suggested actions. The chapter "Diagnostics & support tools" covers this in depth.
+
 ## Where your settings and logs live
 
 ChoreBoy Code Studio stores its own settings and logs in a single, visible folder under

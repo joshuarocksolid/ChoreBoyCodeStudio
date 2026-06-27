@@ -97,6 +97,24 @@ The status bar along the bottom is a compact dashboard. Reading left to right, i
 - **Active run target** — the configuration that Run Project will use (for example,
   `Default`). Click it to switch configurations.
 
+## First things to try
+
+To get oriented quickly, try these in order:
+
+1. Press `Ctrl+P` and open a file — see how Quick Open fuzzy-matches names.
+2. Watch the **status bar** as you move the cursor — note the line/column and saved state.
+3. Switch the bottom panel between **Run Log**, **Problems**, and **Python Console**.
+4. Open **View > Theme** and try Dark and a High Contrast mode.
+5. Press `F5` to run, then `Shift+F2` to stop.
+
+After these five, the layout will feel familiar.
+
+## Hovering reveals more
+
+Many controls have tooltips. Hover the runtime-readiness text, the run-target indicator,
+and toolbar buttons to see what they do. The status bar's leftmost item is also a button —
+click it to open the Runtime Center.
+
 ## Resizing and resetting the layout
 
 You can drag the dividers (splitters) between the sidebar, editor, and bottom panels to

@@ -75,6 +75,34 @@ throughout the manual, in one place.
 - Console output is bounded; extremely long runs trim the oldest in-memory output while
   the full per-run log is preserved on disk.
 
+## Editor interaction notes
+
+- **Bottom-panel tabs** (Python Console, Debug, Problems, Run Log) are switched by
+  clicking them or by the application's automatic switching (Run Log on output, Problems
+  on failure). The application chooses the most relevant panel for you during runs.
+- **Preview tabs** mean a single click opens a temporary tab; this is intentional and can
+  be turned off in **Settings > Editor**.
+- **External file changes** are detected and offered for reload rather than silently
+  overwriting your buffer.
+
+## Data and recovery notes
+
+- Drafts and Local History restore into the editor **buffer** first; the file on disk is
+  only changed when you save.
+- Local History is bounded by retention settings (max checkpoints, retention days, max
+  file size, exclude patterns). Very large or excluded files are intentionally not
+  tracked, and the UI says so.
+- Deleted files are recoverable from **Global History**; deleted items also go to a
+  recoverable trash rather than being destroyed immediately.
+
+## Networking notes
+
+- The environment is LAN-only with no general internet access. Design apps to work
+  offline; fetch data from local files or LAN services.
+- A PostgreSQL server may be reachable on the LAN, but it is an old version with SQL
+  feature limits (see "Appendix C — Runtime Capabilities"). SQLite is the recommended
+  local database.
+
 ## About these notes
 
 This manual documents shipped behavior only. For the underlying runtime facts that drive
