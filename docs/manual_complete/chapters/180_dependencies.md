@@ -15,6 +15,8 @@ decision history is always inspectable and travels with the project.
 
 ## Adding a dependency
 
+![The Add Dependency wizard: choose a wheel, zip, or folder to extract into vendor/](../screenshots/180_add_dependency.png)
+
 1. Choose **Tools > Add Dependency...**.
 2. Choose a source — a `.whl` wheel file, a `.zip` containing a Python package, or a
    folder.

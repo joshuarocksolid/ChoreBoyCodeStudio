@@ -72,8 +72,11 @@ ways to do this, from quickest to most permanent.
 
 ### One-off: Run With Arguments...
 
-Choose **Run > Run With Arguments...** (`Ctrl+Shift+A`). This dialog lets you set, for a
-single run:
+Choose **Run > Run With Arguments...** (`Ctrl+Shift+A`).
+
+![The Run With Arguments dialog: entry file, arguments with a Recent dropdown, and Save as Configuration](../screenshots/090_run_with_args.png)
+
+This dialog lets you set, for a single run:
 
 - **Entry file** — which file to run.
 - **Arguments** — command-line arguments, written with normal shell-style quoting. A
@@ -91,9 +94,13 @@ once and does **not** change your project's saved settings.
 ### Persistent: Run Configurations...
 
 Choose **Run > Run Configurations...** to create named configurations that are saved in
-`cbcs/project.json`. Each configuration has a **Name**, **Entry file**, **Arguments**,
-**Working directory**, and **Environment overrides**. Use **Add**, **Duplicate**, and
-**Delete** to manage them, then **Save**.
+`cbcs/project.json`.
+
+![The Run Configurations editor: default Run Project arguments plus a list of named configurations](../screenshots/090_run_configurations.png)
+
+Each configuration has a **Name**, **Entry file**, **Arguments**, **Working directory**,
+and **Environment overrides**. Use **Add**, **Duplicate**, and **Delete** to manage them,
+then **Save**.
 
 The same dialog has a **Default arguments for Run Project** field, which sets the
 arguments used by **Run Project** (`Shift+F5`) when no named configuration is active.
