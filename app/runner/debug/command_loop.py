@@ -9,6 +9,7 @@ from typing import Mapping
 from app.debug.debug_models import DebugExceptionPolicy
 from app.debug.debug_protocol import build_debug_event, build_debug_response
 from app.debug.debug_runtime_probe import probe_debug_runtime
+from app.debug.debug_transport import RunnerDebugTransportClient
 from app.run.run_manifest import RunManifest
 from app.runner.debug.breakpoints import BreakpointMixin
 from app.runner.debug.engine import StructuredBdbDebugger
@@ -25,10 +26,9 @@ class RunnerDebugHost(PausePayloadMixin, BreakpointMixin, InspectorMixin):
     def __init__(self, manifest: RunManifest) -> None:
         if manifest.debug_transport is None:
             raise RuntimeError("python_debug manifest missing debug transport configuration.")
-        from app.runner import debug_runner as debug_runner_facade
 
         self._manifest = manifest
-        self._transport = debug_runner_facade.RunnerDebugTransportClient(
+        self._transport = RunnerDebugTransportClient(
             manifest.debug_transport,
             engine_name="bdb",
             on_message=self._handle_transport_message,

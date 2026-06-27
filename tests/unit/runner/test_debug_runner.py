@@ -109,7 +109,7 @@ def test_run_debug_session_returns_success_for_clean_script(
     script_path.write_text("value = 1\n", encoding="utf-8")
     manifest = _build_manifest(tmp_path)
     _FakeTransport.instances.clear()
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(_path: str) -> None:
         return None
@@ -134,7 +134,7 @@ def test_run_debug_session_first_pause_targets_user_breakpoint(
         breakpoints=[build_breakpoint(str(script_path.resolve()), 2)],
     )
     _FakeTransport.instances.clear()
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -185,7 +185,7 @@ def test_run_debug_session_exits_when_transport_fails_mid_pause(
         breakpoints=[build_breakpoint(str(script_path.resolve()), 2)],
     )
     _DisconnectOnStopTransport.instances.clear()
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _DisconnectOnStopTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _DisconnectOnStopTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -209,7 +209,7 @@ def test_run_debug_session_invalid_breakpoint_is_reported_in_breakpoint_update(
         breakpoints=[build_breakpoint(str(script_path.resolve()), 999)],
     )
     _FakeTransport.instances.clear()
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -252,7 +252,7 @@ def test_run_debug_session_evaluate_defaults_to_safe_expression_subset(
             },
         ],
     )
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -293,7 +293,7 @@ def test_run_debug_session_evaluate_rejects_calls_by_default(
             },
         ],
     )
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -342,7 +342,7 @@ def test_run_debug_session_updates_breakpoints_without_mutating_manifest(
             },
         ],
     )
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")
@@ -372,7 +372,7 @@ def test_run_debug_session_pauses_on_uncaught_exception_when_enabled(
         exception_policy=DebugExceptionPolicy(stop_on_uncaught_exceptions=True),
     )
     _FakeTransport.instances.clear()
-    monkeypatch.setattr("app.runner.debug_runner.RunnerDebugTransportClient", _FakeTransport)
+    monkeypatch.setattr("app.runner.debug.command_loop.RunnerDebugTransportClient", _FakeTransport)
 
     def _entry_callable(path: str) -> None:
         runpy.run_path(path, run_name="__main__")

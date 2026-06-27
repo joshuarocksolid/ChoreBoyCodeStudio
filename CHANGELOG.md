@@ -2,13 +2,43 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`.
 
-## [Unreleased]
+## [0.4.5] - 2026-06-27
+
+Tag: `v0.4.5`
+
+Consolidates the untagged `0.3.2`-`0.4.4` development line into a single release.
+
+### Added
+
+- Run With Arguments dialog (`Ctrl+Shift+A`): live command preview, shell-style quoted argv, recent-runs history, working-directory and environment-variable editor, and Save as Configuration.
+- Run Configurations two-pane editor for named configs in `cbcs/project.json`, with a status-bar active-config indicator driving Run/Debug Project.
+- Project source roots (mark/unmark in the tree) for consistent import, completion, and test resolution.
+- Rich autocomplete popup (kind icons, inline documentation, signature/return type, side-effect-risk indicator) shared by the editor and Python Console.
+- Runner-backed dot completion for FreeCAD/PySide attribute paths, with curated API fallback when the REPL is unavailable.
+- Markdown preview for `.md` files (source, preview, and split view; `Ctrl+Shift+V` toggle, `Ctrl+K V` split).
+- High Contrast Light and High Contrast Dark theme modes (WCAG AAA), plus UI font-weight and neutral-gray dark-chrome preferences.
+- Recovery Center, themed unsaved-changes dialog ("Keep for Next Launch"), and polished Recovery Draft / Local History dialogs with inline and side-by-side diff.
+- Test Explorer: Run Test at Cursor and Debug Failed Test workflows, with discovery for nested classes and parametrized tests.
+- Installable-only project packaging with an export validation gate, restyled Package Project wizard, and `vendor_py39` product pipeline.
+
+### Changed
+
+- Background, non-blocking project open with progressive tree population and session-restored explorer state.
+- Unified Clear Console policy (Python Console output, Run Log, and debug output) distinct from display-only panel clear.
+- Argv parsing via `shlex` quoting; run dialogs restyled and scrollable across all four theme modes.
+- MainWindow decomposed into focused workflows; run launch split with exit-gated stop/restart.
+
+### Fixed
+
+- Stale autocomplete, navigation, and search results after cursor or buffer changes (generation-gated delivery).
+- Run/debug session start-stop races, debug transport EOF/pause hangs, and breakpoint-sync drift.
+- Theme-refresh gaps after layout rebuild, external-file-change polling crashes, and packaging failures now surfaced in the UI.
 
 ### Documentation
 
-- Documentation consistency remediation: unified test checkpoints, PRD shortcuts, four-theme manual coverage, and missing doc index files.
+- Consistency remediation: unified test checkpoints, PRD shortcuts, four-theme manual coverage, runtime pitfalls/discovery docs, and missing doc index files.
 
 ## [0.2] - 2026-03-09
 
