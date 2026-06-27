@@ -45,6 +45,41 @@ In other words, use Code Studio as the authoring environment and FreeCAD as the 
 environment for GUI/document-dependent macros. Use Code Studio's own Run/Debug for
 headless scripts, utilities, and backend geometry generation.
 
+## Export formats: what works headless
+
+If your tool exports geometry, the format matters:
+
+| Export | Headless? | Notes |
+| --- | --- | --- |
+| STL | Works | Available through the Part module without the GUI. |
+| Native FreeCAD document (`.FCStd`) | Works | Create and save documents in code. |
+| STEP / SVG (via GUI importers) | May fail | Exporters that depend on GUI modules fail headless with "Cannot load Gui module". |
+
+When an export needs a GUI-only module, either use a headless-safe export path or run the
+macro inside FreeCAD. Write output files to a folder inside your project so they travel
+with it.
+
+## A worked headless pattern
+
+A reliable headless tool follows this shape:
+
+1. `import FreeCAD` (never the GUI modules).
+2. Create a document explicitly with `FreeCAD.newDocument(...)` — do not rely on
+   `ActiveDocument`.
+3. Build objects and call `doc.recompute()`.
+4. Export with a headless-safe path, or save the `.FCStd`.
+5. `print(...)` a summary so the Run Log shows what happened.
+
+This keeps the tool fast and fully compatible with Code Studio's runner. See "Worked
+Tutorial: A Headless FreeCAD Tool" for a full walkthrough.
+
+## Why edit here but run in FreeCAD for GUI macros
+
+Code Studio gives you a real editor — highlighting, completion (with a trusted FreeCAD API
+index), linting, formatting, and version history — which the FreeCAD macro editor does not
+match. FreeCAD gives you the live document and GUI context. Using both plays to each
+tool's strength: author in Code Studio, execute GUI/document macros in FreeCAD.
+
 ## Completion for FreeCAD APIs
 
 FreeCAD's API is partly backed by C++ bindings, which generic static analysis cannot fully

@@ -84,6 +84,40 @@ or replace them cleanly. When a workflow runs (for example, formatting or runnin
 the application shows which provider handled it. Use **Prefer Provider** to choose a
 specific provider for a workflow kind in a project.
 
+## A worked example: disable a plugin for one project
+
+Suppose a workflow plugin behaves differently than you want in one project, but you still
+want it elsewhere:
+
+1. Open **Tools > Plugin Manager...** with that project open.
+2. Select the plugin and click **Disable In Project** (not the global **Disable**).
+3. The choice is saved in the project's `cbcs/plugins.json`, so it persists for that
+   project only and travels with it.
+
+To pin a project to a specific plugin version, use **Pin To Project**; to choose which
+provider handles a workflow kind, use **Prefer Provider**.
+
+## Recovering from a bad plugin
+
+If the editor becomes unstable after installing a plugin:
+
+1. Restart and use **Safe mode (disable all plugins)** in the Plugin Manager to get a
+   clean editor.
+2. Disable or uninstall the offending plugin.
+3. Re-enable other plugins.
+
+The application also auto-quarantines a plugin that fails repeatedly, so it disables
+itself before it can disrupt your work. You re-enable it explicitly after fixing the
+cause.
+
+## How bundled features relate to plugins
+
+Several core capabilities — formatting, import organizing, diagnostics, testing,
+templates, packaging, dependency audit, runtime explainers, FreeCAD helpers — are
+delivered by bundled workflow-provider plugins. That is why the Plugin Manager lists them.
+You normally leave these enabled; the architecture simply lets them be replaced or
+extended cleanly.
+
 ## Where to go next
 
 - Write your own plugin in Part VI, "Plugin platform concepts" and the chapters that
