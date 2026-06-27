@@ -114,6 +114,76 @@ checkpoint when you do. Choose to reload, or use the Explorer's refresh control.
 **Fix:** Reopen the file and use **File > Open Recovery Center...** to compare and restore
 your draft. For saved versions, use **Local History...**. See "Local History & recovery".
 
+## The editor will not start
+
+**Symptom:** Double-clicking the launcher does nothing, or the window never appears.
+
+**Likely causes & fixes:**
+
+- The runtime may be initializing — wait a few seconds.
+- Check the application log at `~/choreboy_code_studio_state/logs/app.log` (or the
+  fallback under the temp folder) for a startup error.
+- If a previous instance is stuck, the single-instance guard may be blocking a new one;
+  ensure the old window is fully closed.
+- Start in **safe mode** (Plugin Manager) to rule out a misbehaving plugin.
+
+## Completion or hover shows nothing
+
+**Symptom:** Pressing `Ctrl+Space` or hovering produces no suggestions.
+
+**Likely causes & fixes:**
+
+- Confirm **Enable completion** is on in **Settings > Intelligence**.
+- The symbol index may be building or stale — run **Tools > Rebuild Intelligence Cache**.
+- For third-party or runtime modules, confirm they are importable (**Tools > Refresh
+  Runtime Modules**) or vendored (**Add Dependency**).
+
+## Find in Files returns nothing
+
+**Symptom:** A search you expect to match returns no results.
+
+**Likely causes & fixes:**
+
+- Check the match toggles: **Aa** (case), **W** (whole word), **.\*** (regex). A stray
+  whole-word or case toggle is the usual cause.
+- The files may be excluded in **Settings > Files**. Remove the relevant exclude pattern
+  to include them.
+
+## Formatting did nothing
+
+**Symptom:** **Format Current File** reports no change.
+
+**Likely cause:** The file is already Black-formatted, so formatting is a no-op — that is
+correct behavior, not a failure. If a Python file with obvious issues is not formatted,
+confirm formatter dependencies are present (**Tools > Runtime Center**).
+
+## The theme is hard to read
+
+**Symptom:** Text or highlights are low-contrast.
+
+**Fix:** Switch to a clearer theme in **View > Theme** — the two **High Contrast** modes
+maximize legibility. If you previously customized syntax colors, clear the override for
+the affected token in **Settings > Syntax Colors**. See "Themes in depth".
+
+## A setting did not take effect
+
+**Symptom:** Changing a setting had no visible effect.
+
+**Likely causes & fixes:**
+
+- Confirm you saved the Settings dialog.
+- Check **scope**: a global value may be overridden by a **project** setting. The status
+  bar shows **(project overrides)** when the project has its own settings. Reset the
+  project override if needed. See "Settings overview".
+
+## The editor is slow on a huge file
+
+**Symptom:** Typing lags in a very large file.
+
+**Fix:** This is expected — the editor automatically reduces highlighting detail past size
+thresholds to stay responsive. You can tune the thresholds in **Settings > Intelligence**.
+See "Editing files".
+
 ## Still stuck?
 
 Generate a **Support Bundle** (**Tools > Generate Support Bundle**) and share it. It

@@ -44,11 +44,43 @@ An installable package is a self-contained folder that includes:
 The installer launcher locates itself by the package folder path. If you move the package
 folder before installing, the launcher's path must match the new location.
 
+## A worked install walkthrough
+
+To deploy a packaged project on another ChoreBoy appliance:
+
+1. Copy the entire package folder onto the target machine (for example, to
+   `/home/default/`) using a USB drive.
+2. Locate the installer's desktop launcher inside the package folder. If the appliance
+   requires it, mark the launcher as trusted/allowed to launch the first time.
+3. Double-click the installer launcher. It first **verifies** the package contents.
+4. Choose the install location. The installer copies the files and can publish a Desktop
+   shortcut for the installed application.
+5. Launch the installed application from its shortcut.
+
+> [!NOTE] The installer launcher finds itself by the package folder's path. If you move
+> the package folder before installing, the launcher's recorded path must match the new
+> location. The *installed* application's launcher, by contrast, is fixed to the install
+> directory you chose.
+
 ## Upgrades
 
 If you install a newer version of a package that is already installed, the installer can
 detect the older version and offer to clean it up or install side by side. This keeps
 upgrades predictable without relying on hidden, app-owned metadata.
+
+To upgrade:
+
+1. Package the new version of your project (a higher version in `cbcs/package.json`).
+2. Copy it to the target machine and run its installer.
+3. When the installer detects the older install, choose to replace it or install side by
+   side, and let it clean up the previous version if you replace it.
+
+## What the package report tells you
+
+After exporting, inspect `package_report.json` in the output folder. It captures the
+validation results and the dependency audit, so you can confirm the package is complete
+before distributing it. If validation flagged a missing entry file or a missing vendored
+dependency, fix it and re-export.
 
 ## Backups and portability
 

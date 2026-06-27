@@ -106,6 +106,51 @@ If stepping is not behaving, you can still diagnose most issues quickly:
 4. Use a normal **Run** and read the **Run Log** and **Problems** panel. A traceback
    usually tells you exactly what went wrong and where.
 
+## Worked example: a conditional breakpoint
+
+Suppose a loop misbehaves only on a particular item:
+
+```python
+for index, task in enumerate(tasks):
+    process(task)   # fails only for one task
+```
+
+Instead of stepping through every iteration:
+
+1. Set a breakpoint on the `process(task)` line (`F9`).
+2. Open the breakpoint's properties and add a **condition**, for example
+   `task.name == "broken"`.
+3. Start debugging. Execution runs full speed and pauses **only** when the condition is
+   true — dropping you exactly at the problematic item.
+
+A **hit count** works similarly: set it to pause only after the line has been reached a
+certain number of times.
+
+## Worked example: watch expressions
+
+While paused, you often want to track a value as you step:
+
+1. In the **Debug** panel, add a watch expression such as `len(tasks)` or
+   `task.status`.
+2. Step with `F10`/`F11`. The watch re-evaluates against the current paused frame after
+   each step.
+3. Switch frames in the call stack to evaluate the same watch at a different level.
+
+Watch evaluation is read-only by default, so inspecting values does not change program
+state.
+
+## Worked example: stop on an exception
+
+To catch where an exception originates:
+
+1. Open **Run > Exception Stop Settings...** and enable **stop on uncaught exceptions**.
+2. Debug the program. When an uncaught exception occurs, the debugger pauses at the point
+   it propagated from, with the exception details shown as the stop reason.
+3. Inspect the stack and locals to see what led to it, then stop the session.
+
+This is often faster than reading a traceback after the fact, because you can inspect live
+state at the moment of failure.
+
 ## FreeCAD macros
 
 Debug runs execute headless. If your code needs an open FreeCAD document
