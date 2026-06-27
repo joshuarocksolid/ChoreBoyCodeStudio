@@ -36,6 +36,31 @@ ChoreBoy Code Studio is focused and deliberate about its scope:
 - It does **not** run your code inside itself. Your programs always run in a separate
   process (explained below), so a crash in your code never takes down the editor.
 
+## How it compares to what you may know
+
+If you have used a desktop code editor before, ChoreBoy Code Studio will feel familiar: a
+file tree, tabbed editor, run/debug controls, a problems list, and an integrated terminal-
+*style* output panel. The differences come from the ChoreBoy environment:
+
+- There is **no terminal** — running, testing, and the Python Console all happen through
+  buttons and panels instead of typed commands.
+- There is **no internet and no package installer** — dependencies are added from local
+  files into the project's `vendor/` folder.
+- Your programs run through **FreeCAD's bundled Python**, which is why `import FreeCAD`
+  works and why some FreeCAD GUI operations are unavailable in a normal run.
+
+Everything in this manual is designed around those realities, so you get a real
+development experience without fighting the environment.
+
+## Who should read which part
+
+- **Brand new?** Read Part I in order, then keep Part VII's troubleshooting handy.
+- **Comfortable coder, new to this app?** Skim Part I's window tour, then use Part II and
+  III as needed and Part V as a reference.
+- **Power user?** Jump to Part IV (settings/shortcuts) and Part V (menu, file, and panel
+  references).
+- **Building extensions?** Go straight to Part VI (plugin authoring).
+
 ## The big idea: the editor and your program are separate
 
 The single most important concept in ChoreBoy Code Studio is that **the editor and your

@@ -120,6 +120,33 @@ editor never presents a fast guess as a proven fact — if it cannot be sure, it
 - Recovery flows restore into the editor buffer first, never silently overwriting files.
 - Plugins run in a separate host process, isolated from the editor.
 
+## Why the separate runner is worth it
+
+Running your code in the same process as the editor would be simpler to build, but it
+would mean that any infinite loop, crash, or memory blow-up in your program could freeze
+or kill the editor — losing your unsaved work and your place. By spending a little
+complexity on a separate runner process, the application guarantees the editor stays alive
+and responsive no matter what your code does. That trade is the foundation of the product's
+reliability.
+
+## Files you can safely inspect and back up
+
+Because everything is plain files, you can confidently:
+
+- copy a whole project folder to USB as a backup;
+- zip a project to share it;
+- open `cbcs/project.json`, settings JSON, and logs in any text viewer;
+- inspect a Support Bundle's contents before sharing it.
+
+Nothing important is hidden in a proprietary format, which is exactly what makes the
+application supportable on a locked-down appliance.
+
+## A note on versions and migration
+
+Project metadata, run manifests, settings, and package manifests carry **schema
+versions**. If a future release changes a format, the application migrates older data in a
+controlled, logged way rather than breaking it — so your existing projects keep working.
+
 ## Where to go next
 
 - See the concrete files this produces in "File & folder reference".

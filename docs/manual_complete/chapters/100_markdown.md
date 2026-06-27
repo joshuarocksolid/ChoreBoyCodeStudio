@@ -47,6 +47,25 @@ Very large Markdown files can be expensive to render continuously. For big docum
 preview is refreshed manually (or via the Refresh control) rather than live, so the
 editor stays responsive.
 
+## Supported Markdown elements
+
+The preview renders the common Markdown you will use in a `README.md` or notes: headings
+(`#`, `##`), bold (`**...**`) and italic (`*...*`), bulleted and numbered lists, links
+(`[text](url)`), inline code (`` `code` ``), fenced code blocks (triple backticks), and
+pipe tables.
+
+## Tips for good project docs
+
+- Keep a `README.md` at the project root explaining what the project is and how to run it
+  (the templates start you with one).
+- Use headings so the document is scannable, and fenced code blocks for commands and
+  snippets.
+- Link to other files with relative links; they open inside the editor.
+
+> [!TIP] This very manual is written in Markdown and built into HTML and PDF by a small
+> pipeline. Plain Markdown files are a durable, portable way to keep documentation with a
+> project.
+
 ## Themes
 
 The Markdown preview — its text, links, code blocks, and toolbar — remains readable in
