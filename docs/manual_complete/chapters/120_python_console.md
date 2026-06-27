@@ -75,6 +75,43 @@ runtime-inspection results so you know they come from the live session.
 If the console session fails or times out, it reports the problem visibly and can be
 restarted; it never takes the editor down with it.
 
+## Exploring live objects
+
+The console shines for exploring unfamiliar objects. For example, to discover what a Qt
+widget offers:
+
+```python
+>>> from PySide2.QtWidgets import QLabel
+>>> label = QLabel("hi")
+>>> label.text()
+'hi'
+>>> label.       # press Ctrl+Space here to list real methods on this live object
+```
+
+Because the console inspects the **live** `label` object, completion can reveal attributes
+that static analysis of source files cannot. This is especially useful for FreeCAD and Qt
+objects, whose APIs are partly defined in C++.
+
+## A worked example: try before you commit
+
+Before adding a calculation to a file, prototype it in the console:
+
+```python
+>>> prices = [19.99, 5.00, 3.50]
+>>> round(sum(prices) * 1.08, 2)   # add 8% tax
+30.31
+```
+
+Once you are happy with the expression, paste it into your file. The console is a
+scratchpad; nothing here changes your project until you put it in a file and save.
+
+## Multiline blocks and history
+
+- For blocks (loops, `def`, `class`), the prompt becomes `...` until you finish with a
+  blank line, just like a standard Python REPL.
+- The up/down arrows recall previous commands, and history persists across sessions, so
+  yesterday's experiments are still available.
+
 ## When to use the console vs a script
 
 - Use the **console** for quick, throwaway experiments and to inspect values.

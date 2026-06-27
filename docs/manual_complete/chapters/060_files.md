@@ -77,6 +77,45 @@ vendored dependencies folder (`vendor/`). You can control what is hidden in
 > [!TIP] If you need to browse a normally-hidden folder such as `vendor/`, remove its
 > pattern from the file excludes in Settings.
 
+## Cut, copy, paste, and duplicate
+
+These behave like a file manager:
+
+- **Copy** (`Ctrl+C`) then **Paste** (`Ctrl+V`) into a folder makes a copy there.
+- **Cut** (`Ctrl+X`) then **Paste** moves the item.
+- **Duplicate** makes a copy next to the original (useful for "save a variant").
+
+After any of these the tree refreshes to show the result.
+
+## Recovering from the trash
+
+**Move to Trash** does not destroy a file — it moves it to a recoverable trash with a
+confirmation. If you change your mind, deleted items remain recoverable; for files that
+had history, you can also restore them through **File > Open Global History...** (see
+"Local History & recovery").
+
+> [!IMPORTANT] Prefer **Move to Trash** over permanent deletion. Combined with Local
+> History, it means an accidental delete is almost always recoverable.
+
+## A worked example: reorganize into a package
+
+Suppose you started with everything in the project root and want to move `helpers.py` into
+a new `app/` package:
+
+1. Right-click the root and choose **New Folder...**, name it `app`.
+2. Drag `helpers.py` onto the `app` folder (or Cut it and Paste into `app`).
+3. If other files import it, Code Studio offers to update those imports. Choose **Ask
+   every time** (default), review the previewed rewrite, and apply it.
+4. Run your project to confirm everything still imports correctly.
+
+Because the move is tracked, `helpers.py` keeps its Local History across the rename, and
+the import rewrite is recorded as one grouped history transaction.
+
+## Reserved names
+
+Two top-level names are reserved for the application: `cbcs/` (project metadata) and
+`vendor/` (third-party packages). Avoid using these names for your own folders.
+
 ## Where to go next
 
 - Open and edit files in "Editing files".

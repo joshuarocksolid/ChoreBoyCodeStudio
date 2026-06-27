@@ -92,6 +92,55 @@ Completion and navigation run off the UI thread, so they never freeze the editor
 are tied to the version of the buffer they were requested for, so a stale result can
 never overwrite newer text you have typed.
 
+## Worked scenarios
+
+### Jump across files to a definition
+
+You call `repository.add_task(...)` in `main_window.py`, but `add_task` lives in
+`repository.py`. Put the cursor on `add_task` and press `F12` — the editor follows the
+import and opens `repository.py` at the function. This is semantic resolution, not a text
+search: it follows the actual binding.
+
+### Rename a function everywhere
+
+You want to rename `add_task` to `create_task` across the project:
+
+1. Put the cursor on `add_task` and press `F2`.
+2. Type `create_task`.
+3. Review the **preview**, grouped by file, showing each change as a patch.
+4. Apply. Only the semantically related occurrences change; an unrelated `add_task` in a
+   different scope is left alone.
+
+If anything makes the rename unsafe, it is blocked with an explanation rather than risking
+a wrong edit; and if applying fails partway, it rolls back so the project is never left
+half-renamed.
+
+### When the engine is unsure
+
+For deliberately dynamic code (for example, attributes created at runtime), the engine may
+not be able to prove a definition. Instead of silently guessing, it tells you the result
+is approximate or unsupported and offers a text-search fallback you can choose to use. You
+are never misled into thinking a guess is a fact.
+
+## Completion provenance
+
+Completion items carry metadata so you can judge them:
+
+- **kind** (function, class, module, variable, ...),
+- **source/engine** (fast index, trusted API index, or full semantic analysis),
+- **confidence** (exact vs approximate).
+
+Fast results appear first; slower, more precise semantic results refine the list a moment
+later. Documentation and signatures load for the selected item on demand, without changing
+what gets inserted.
+
+## Keeping it fast and correct
+
+- Completion and navigation run off the UI thread — they never freeze the editor.
+- Results are tied to the buffer version they were requested for, so a slow result can
+  never overwrite newer text you typed.
+- If results seem stale, rebuild the index with **Tools > Rebuild Intelligence Cache**.
+
 ## Where to go next
 
 - Format and organize your code in "Python formatting & imports".

@@ -71,6 +71,39 @@ missing from `vendor/`, packaging warns you before exporting.
 > [!TIP] If a diagnostic reports an unresolved import for a third-party package, the
 > message links to the Add Dependency workflow so you can vendor it.
 
+## A worked example: add a pure-Python package
+
+Suppose you have a wheel file for a small pure-Python library (for example, on a USB
+drive):
+
+1. Choose **Tools > Add Dependency...**.
+2. Select the `.whl` file.
+3. The classification preview reports **pure-Python** — the safest kind on ChoreBoy.
+4. Confirm. The package is extracted into `vendor/`, and an entry is added to
+   `cbcs/dependencies.json`.
+5. In your code, simply `import` the package — `vendor/` is on the path at runtime.
+
+If the import is still flagged after adding it, run **Tools > Refresh Runtime Modules** so
+the editor re-checks what is importable.
+
+## Pure-Python vs native extensions
+
+| Classification | ChoreBoy compatibility | Guidance |
+| --- | --- | --- |
+| `pure_python` | Reliable | Preferred. Works without special handling. |
+| `native_extension` | Risky | Contains compiled `.so`/`.pyd` files; may not load on the appliance. The wizard warns you; proceed only if you understand the risk and have validated it on the device. |
+| `runtime` | Provided by the runtime | Already available; recorded for clarity. |
+
+> [!TIP] When choosing between two libraries, prefer the pure-Python one for ChoreBoy.
+> See "Appendix C — Runtime Capabilities" for the cases where compiled packages can work.
+
+## Keeping dependencies and packaging in sync
+
+Before you package a project, make sure every **active** dependency's files are actually
+present in `vendor/`. The packaging preflight checks this and warns if the manifest lists
+a dependency whose files are missing. If you see such a warning, re-add the dependency,
+then package again. See "Packaging, sharing & installing".
+
 ## Where to go next
 
 - Bundle your project for sharing in "Packaging, sharing & installing".
