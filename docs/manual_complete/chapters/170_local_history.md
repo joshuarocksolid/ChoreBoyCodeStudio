@@ -72,6 +72,13 @@ Local History follows a file's *identity*, not just its path:
 - A **deleted** file remains recoverable. Use **File > Open Global History...** to search
   history across all files — including deleted ones — and restore them.
 
+![The Global History Restore dialog: search saved timelines across projects, including moved, renamed, or deleted files](../screenshots/170_global_history.png)
+
+The Global History Restore dialog lists each tracked file with its current or last-known
+path, status, latest revision time, and label. Select an entry and choose **Open
+Timeline** to review its revisions, or **Restore Latest to Buffer** to bring back the most
+recent version.
+
 ## Where history is stored, and limits
 
 Local History is stored in the visible global app-state folder
