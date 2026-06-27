@@ -10,6 +10,8 @@ The **Problems** panel is one of the bottom tabs. It lists issues found by the l
 by failed runs, grouped by file. Each entry shows a description, the file, the line and
 column, and a code (for example, `PY220`).
 
+![The Problems panel listing errors from a failed run, grouped by file with jump-to-source](../screenshots/150_problems_panel.png)
+
 - Click any entry to jump straight to the offending line in the editor.
 - The panel header summarizes counts: errors, warnings, and info.
 - The application switches to the Problems panel automatically when a run fails (you can
