@@ -1,5 +1,9 @@
 # ChoreBoy Code Studio User Manual
 
+> **Looking for the full, in-depth manual?** This directory holds the short *Hobbyist
+> Edition*. The comprehensive, end-to-end **Complete Edition** — which documents every
+> feature in detail with screenshots — lives in [`docs/manual_complete/`](../manual_complete/README.md).
+
 This directory contains the source for the printed user manual.
 
 The manual is designed for hobbyist users:
