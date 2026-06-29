@@ -45,7 +45,7 @@
     {"id": "160_test_explorer", "file": "160_test_explorer.png", "chapter": "160_testing", "purpose": "Test Explorer with discovered pytest tests (before running).", "status": "captured", "state": "demo project with a tests/ suite; CBCS_PYTEST_EXECUTABLE -> conda python so collection output is captured"},
     {"id": "160_test_results", "file": "160_test_results.png", "chapter": "160_testing", "purpose": "Test Explorer after a run (pass/fail counts + per-test status) with pytest output in the Run Log.", "status": "captured"},
 
-    {"id": "110_debug_paused", "file": "110_debug_paused.png", "chapter": "110_debugging", "purpose": "Debugger paused at a breakpoint showing threads/frames/scopes/watches.", "status": "planned"},
-    {"id": "130_intelligence_hover", "file": "130_intelligence_hover.png", "chapter": "130_intelligence", "purpose": "Hover / signature-help / completion popup in the editor.", "status": "planned"}
+    {"id": "110_debug_paused", "file": "110_debug_paused.png", "chapter": "110_debugging", "purpose": "Debugger paused at a breakpoint showing Threads, Variables (Locals/Globals), Call Stack, Breakpoints, Watch, and Debug Output.", "status": "captured", "state": "debug_target.py breakpoint at line 7; bottom dock switched to Debug panel"},
+    {"id": "130_intelligence_hover", "file": "130_intelligence_hover.png", "chapter": "130_intelligence", "purpose": "Hover / signature-help / completion popup in the editor (transient popup widget; not yet scriptable in the harness).", "status": "planned"}
   ]
 }

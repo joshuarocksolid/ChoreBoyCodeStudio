@@ -227,6 +227,56 @@ def main() -> int:
         except Exception as exc:
             log(f"tests capture failed: {exc!r}")
 
+    # Optional: paused-debugger capture (debug transport can be unreliable in dev).
+    debug_target = os.environ.get("CBCS_DEBUG_TARGET")
+    if debug_target and os.path.isfile(debug_target):
+        try:
+            from PySide2.QtCore import QElapsedTimer
+
+            from app.debug.debug_models import DebugExecutionState
+
+            win._file_project_commands_workflow.open_project_by_path(os.path.dirname(debug_target))
+            settle(app, 1000)
+            if win._editor_tab_factory.open_file_in_editor(debug_target, preview=False):
+                settle(app, 800)
+                ew = win._editor_widgets_by_path.get(str(Path(debug_target).resolve()))
+                bp_line = int(os.environ.get("CBCS_DEBUG_BP_LINE", "7"))
+                if ew is not None:
+                    ew.go_to_line(bp_line)
+                    settle(app, 300)
+                win._debug_control_workflow.handle_toggle_breakpoint_action()
+                settle(app, 500)
+                win._run_launch_workflow.handle_debug_action()
+                paused = False
+                t = QElapsedTimer()
+                t.start()
+                while t.elapsed() < 30000:
+                    app.processEvents()
+                    if win._debug_session.state.execution_state == DebugExecutionState.PAUSED:
+                        paused = True
+                        break
+                log(f"debug paused={paused}")
+                settle(app, 1500)
+                # Clean framing: Explorer on the left, Debug panel (frames/scopes/
+                # variables/watches) in the bottom dock.
+                try:
+                    if win._activity_bar is not None:
+                        win._activity_bar._on_button_clicked("explorer")
+                    bottom = getattr(win, "_bottom_tabs_widget", None)
+                    if bottom is not None and getattr(win, "_debug_panel", None) is not None:
+                        bottom.setCurrentWidget(win._debug_panel)
+                except Exception as exc:
+                    log(f"debug focus failed: {exc!r}")
+                settle(app, 1200)
+                grab(win, "win_debug_paused.png")
+                try:
+                    win._run_debug_presenter.user_stop_session()
+                except Exception:
+                    pass
+                settle(app, 800)
+        except Exception as exc:
+            log(f"debug capture failed: {exc!r}")
+
     log("done")
     return 0
 

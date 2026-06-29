@@ -24,6 +24,7 @@ Captions are the image `alt` text in the referencing chapter. The full shot inve
 | 090_run_with_args | The Run With Arguments dialog | |
 | 100_markdown_split | Markdown split view (source + preview) | |
 | 110_breakpoint | A breakpoint set in the gutter | |
+| 110_debug_paused | The debugger paused at a breakpoint: the Debug panel shows Threads, Variables (Locals/Globals), Call Stack, Breakpoints, Watch, and Debug Output | |
 | 150_problems_panel | The Problems panel with diagnostics | |
 | 160_test_explorer | The Test Explorer with discovered pytest tests, before running | Seeded demo suite |
 | 160_test_results | After running, the Test Explorer shows pass/fail counts and per-test status, with full pytest output in the Run Log | |

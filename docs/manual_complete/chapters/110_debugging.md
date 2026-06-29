@@ -59,6 +59,8 @@ The panel also shows:
 
 Selecting a stack frame updates the current-line highlight in the editor.
 
+![The debugger paused at a breakpoint: the Debug panel shows Threads, Variables (Locals/Globals), Call Stack, Breakpoints, Watch, and Debug Output](../screenshots/110_debug_paused.png)
+
 ## Step 3a — Watches and variable inspection
 
 While paused:
