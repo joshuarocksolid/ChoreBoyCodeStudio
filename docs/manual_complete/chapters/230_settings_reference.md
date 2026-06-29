@@ -9,8 +9,10 @@ default value and whether it can be overridden per project. Open Settings with
 
 ## General tab
 
-The General tab (project-overridable sections plus the global-only Appearance group)
-collects appearance, output, and editor behavior.
+The General tab is a single scrolling page that collects four groups: **Appearance**
+(global-only), **Output**, **Editor**, and **Intelligence** (all project-overridable).
+There is no separate "Intelligence" tab — its settings live in this group at the bottom
+of the General tab.
 
 ![The General settings tab](../screenshots/230_settings_general.png)
 
@@ -49,28 +51,31 @@ collects appearance, output, and editor behavior.
 | Hover tooltip enabled | Off | Show documentation tooltips on hover. |
 | Auto re-indent flat-Python paste | Off | Automatically fix indentation of pasted flat Python (high-confidence cases). |
 
-## Intelligence tab (project-overridable)
+### Intelligence (project-overridable)
 
-Controls code intelligence and syntax-highlighting performance.
+The Intelligence group (at the bottom of the General tab) controls code completion,
+diagnostics behavior, quick fixes, and the symbol index.
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Enable completion | On | Offer code completion. |
 | Auto-trigger completion | Off | Show completions automatically while typing. |
-| Completion minimum characters | 2 | Characters typed before auto-completion triggers. |
-| Enable diagnostics | On | Show linting/analysis problems. |
-| Real-time diagnostics | On | Update problems as you type. |
+| Completion min chars | 2 | Characters typed before auto-completion triggers. |
+| Realtime diagnostics | On | Update problems as you type. |
 | Enable quick fixes | On | Offer automatic fixes for problems. |
-| Require preview for multi-file fixes | On | Preview before applying fixes that touch several files. |
-| Cache enabled | On | Use the symbol index cache for speed. |
+| Preview required for multi-file fixes | On | Preview before applying fixes that touch several files. |
+| Enable intelligence cache | On | Use the symbol index cache for speed. |
 | Incremental indexing | On | Update the symbol index incrementally. |
-| Metrics logging enabled | On | Log intelligence performance metrics. |
+| Metrics logging | On | Log intelligence performance metrics. |
 | Force full reindex on open | Off | Rebuild the whole index when a project opens. |
-| Highlighting adaptive mode | normal | Highlighting detail level for large files. |
-| Reduced-highlighting threshold | 250,000 chars | File size at which highlighting is reduced. |
-| Lexical-only threshold | 600,000 chars | File size at which only basic highlighting is used. |
+
+> [!NOTE] Whether diagnostics appear at all is governed by **Enable Python linting** on
+> the Linter tab (below), not by this group. Large-file syntax-highlighting thresholds
+> are tuned automatically and are not exposed as editable fields in this dialog.
 
 ## Linter tab (project-overridable)
+
+![The Linter settings tab, with provider selection and the per-rule override table](../screenshots/230_settings_linter.png)
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -84,9 +89,26 @@ or change a rule's severity to a warning. In project scope, each override offers
 
 ## Files tab (project-overridable)
 
+The Files tab has two groups: **File Exclusions** and **Local History**.
+
+![The Files settings tab, with the File Exclusions and Local History groups](../screenshots/230_settings_files.png)
+
+### File Exclusions
+
 | Setting | Default | Description |
 | --- | --- | --- |
-| Exclude patterns | (project-dependent) | Glob patterns for files/folders hidden from the Explorer (for example, `vendor`, `__pycache__`, `*.sqlite3`). |
+| Exclude patterns | (project-dependent) | Glob patterns for files/folders hidden from the Explorer, Quick Open, and search (for example, `vendor`, `__pycache__`, `*.sqlite3`). Add, remove, or **Reset to Defaults**. |
+
+### Local History
+
+Controls how much Local History is kept. See "Local History & recovery".
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Max revisions per file | 50 | How many saved revisions to keep per file. |
+| Retention days | 30 | How long to keep history entries. |
+| Max tracked file size (KB) | ~977 KB | Files larger than this are not tracked (stored internally as bytes). |
+| Exclude patterns | (none) | Files matching these patterns skip durable history checkpoints. |
 
 ## Keybindings tab (global-only)
 
@@ -94,10 +116,14 @@ Lists every command with its current shortcut, grouped by category (File, Edit, 
 View, Tools). Click a shortcut to record a new key combination. Conflicts are detected
 and must be resolved. See "Keyboard shortcuts" for the full default table.
 
+![The Keybindings settings tab, with a searchable command/shortcut table](../screenshots/230_settings_keybindings.png)
+
 ## Syntax Colors tab (global-only)
 
 Customize the color of each syntax token. A scope dropdown offers four independent
 palettes:
+
+![The Syntax Colors settings tab, showing the per-theme token color table](../screenshots/230_settings_syntax_colors.png)
 
 - **Light Theme**
 - **Dark Theme**
@@ -105,17 +131,6 @@ palettes:
 - **High Contrast Dark**
 
 Overrides in one scope do not affect the others. See "Themes in depth".
-
-## Local History (project-overridable)
-
-Controls how much Local History is kept. See "Local History & recovery".
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| Max checkpoints per file | 50 | How many saved revisions to keep per file. |
-| Retention days | 30 | How long to keep history entries. |
-| Max tracked file size | 1,000,000 bytes | Files larger than this are not tracked. |
-| Exclude patterns | (none) | Files matching these patterns are not tracked. |
 
 ## Recommended starting settings
 
@@ -140,21 +155,19 @@ A few settings interact:
 - **Indent style/size** and **Detect indentation from file**: when detection is on, an
   opened file's existing style takes precedence over your configured size, so you do not
   fight a file's conventions.
-- **Enable diagnostics** gates the whole Problems experience; **Real-time diagnostics**
-  only controls *when* they update.
+- **Linter > Enable Python linting** gates the whole Problems experience; **Realtime
+  diagnostics** (General > Intelligence) only controls *when* they update.
 - **Linter > Enable** gates the provider and rule-override controls; turning linting off
   disables them.
 
 ## Per-project vs global, at a glance
 
-| Tab | Per-project? |
+| Tab → group | Per-project? |
 | --- | --- |
 | General → Appearance | Global only |
-| General → Output, Editor | Project-overridable |
-| Intelligence | Project-overridable |
+| General → Output, Editor, Intelligence | Project-overridable |
 | Linter | Project-overridable |
-| Files | Project-overridable |
-| Local History | Project-overridable |
+| Files → File Exclusions, Local History | Project-overridable |
 | Keybindings | Global only |
 | Syntax Colors | Global only |
 
