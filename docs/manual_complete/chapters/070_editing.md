@@ -8,7 +8,7 @@ the editing helpers built into ChoreBoy Code Studio.
 Open files appear as tabs across the top of the editor. Each tab shows the file name, a
 close button, and a small marker when the file has unsaved changes.
 
-![The editor with a file open](../screenshots/040_window_tour.png)
+![A Python file open in the editor, with syntax highlighting and the Outline panel populated](../screenshots/070_editor_code.png)
 
 ### Preview tabs
 

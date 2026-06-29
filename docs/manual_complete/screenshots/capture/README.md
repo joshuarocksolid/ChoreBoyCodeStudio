@@ -50,10 +50,38 @@ export DISPLAY=:1
 cd /workspace && ./run_dev.sh        # launches DETACHED; do not pipe stdout (held open by child)
 ```
 
-## Capture method (chosen)
+## Capture method (chosen): in-process Qt grab (primary)
 
-The chosen method is **ImageMagick window capture** (`import -window <id>`). It grabs
-only the application's client area — no desktop wallpaper or panel — and is crisp.
+The **primary, reproducible** method is an in-process capture harness,
+`capture_harness.py`, run through AppRun. It builds the real `MainWindow`, loads the
+demo project, drives dialogs/panels programmatically, and saves each as a PNG via
+`QWidget.grab()`. This needs **no mouse choreography and no window manager**, is
+DPI-stable, and produces dozens of deterministic shots in one run.
+
+```bash
+# A clean, headless X display avoids any wedged-session issues:
+Xvfb :99 -screen 0 1600x1050x24 >/tmp/xvfb.log 2>&1 &
+DISPLAY=:99 CBCS_SHOT_OUT=/tmp/caps \
+  docs/manual_complete/screenshots/capture/capture_run.sh
+# Review /tmp/caps/*.png, then copy the good ones into screenshots/ with shot_list ids.
+```
+
+`capture_run.sh` sets `FREECAD_APPRUN`, `CBCS_ARTIFACTS_DIR`, `XAUTHORITY`,
+`QT_QPA_PLATFORM=xcb`, and `CBCS_DISABLE_BACKGROUND_RUNTIME=1` (so no REPL/plugin-host
+subprocesses spawn), then runs the harness through AppRun. Add new shots by extending
+the capture sequence in `capture_harness.py` (call the relevant workflow method, then
+`grab(...)`); modal dialogs are captured with `QTimer.singleShot` while their `exec_()`
+loop runs.
+
+> [!NOTE] On the standard desktop display (`:1`), a stale X session can wedge new Qt
+> clients (QApplication hangs). Capturing on a throwaway `Xvfb` display sidesteps this
+> and is fully deterministic because `QWidget.grab()` does not need a compositor.
+
+## Alternative method: live-window capture (fallback)
+
+For ad-hoc shots of the live app (or states the harness cannot reach yet), use
+**ImageMagick window capture** (`import -window <id>`). It grabs only the application's
+client area — no desktop wallpaper or panel — and is crisp.
 
 ```bash
 export DISPLAY=:1
