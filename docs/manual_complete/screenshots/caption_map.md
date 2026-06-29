@@ -25,6 +25,8 @@ Captions are the image `alt` text in the referencing chapter. The full shot inve
 | 100_markdown_split | Markdown split view (source + preview) | |
 | 110_breakpoint | A breakpoint set in the gutter | |
 | 150_problems_panel | The Problems panel with diagnostics | |
+| 160_test_explorer | The Test Explorer with discovered pytest tests, before running | Seeded demo suite |
+| 160_test_results | After running, the Test Explorer shows pass/fail counts and per-test status, with full pytest output in the Run Log | |
 | 170_global_history | The Global History dialog | |
 | 170_recovery_center | The Recovery Center dialog | |
 | 180_add_dependency | The Add Dependency wizard | |

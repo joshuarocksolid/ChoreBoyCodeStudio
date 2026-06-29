@@ -20,6 +20,24 @@ export DISPLAY="${DISPLAY:-:1}"
 export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 
+# Ensure the repo vendor symlink points at the real py39 bundle (the launcher does
+# this too); discovery/runner subprocesses import pytest from here.
+if [ ! -d "$ROOT/vendor/pytest" ]; then
+  if [ -d "$CBCS_ARTIFACTS_DIR/vendor_py39/pytest" ]; then
+    rm -f "$ROOT/vendor"
+    ln -s "$CBCS_ARTIFACTS_DIR/vendor_py39" "$ROOT/vendor"
+  fi
+fi
+export PYTHONPATH="$ROOT/vendor${PYTHONPATH:+:$PYTHONPATH}"
+
+# In-app pytest discovery/runner capture stdout from a subprocess. FreeCAD's
+# freecadcmd redirects Python stdout, so collection output is lost; route pytest
+# through the conda runtime's plain python (non-FreeCAD) so stdout is captured.
+PLAIN_PYTHON="$(dirname "$FREECAD_APPRUN")/bin/python"
+if [ -x "$PLAIN_PYTHON" ]; then
+  export CBCS_PYTEST_EXECUTABLE="${CBCS_PYTEST_EXECUTABLE:-$PLAIN_PYTHON}"
+fi
+
 HARNESS="$ROOT/docs/manual_complete/screenshots/capture/capture_harness.py"
 
 exec "$FREECAD_APPRUN" -c "import runpy; runpy.run_path('$HARNESS', run_name='__main__')"

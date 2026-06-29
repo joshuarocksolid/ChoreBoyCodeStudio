@@ -21,6 +21,8 @@ and function. Each node shows its last-run status:
 
 The tree refreshes when you save test files.
 
+![The Test Explorer with discovered pytest tests, before running](../screenshots/160_test_explorer.png)
+
 > [!NOTE] Tests are discovered with pytest's collection. Tests live in files pytest
 > recognizes (for example, `test_*.py` or `*_test.py`).
 
@@ -45,6 +47,8 @@ class.
 - The Test Explorer updates each node's pass/fail/skip status after a run.
 - Failures also appear in the **Problems** panel with jump-to-source, so you can go
   straight to the failing assertion.
+
+![After running, the Test Explorer shows pass/fail counts and per-test status, with full pytest output in the Run Log](../screenshots/160_test_results.png)
 - Test output appears in the **Run Log**, like any other run.
 
 ## Rerun failed and debug failed

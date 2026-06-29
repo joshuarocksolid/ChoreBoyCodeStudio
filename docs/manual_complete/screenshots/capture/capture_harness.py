@@ -207,6 +207,26 @@ def main() -> int:
     except Exception as exc:
         log(f"theme capture failed: {exc!r}")
 
+    # Optional: a project that has tests, for the Test Explorer + results shots.
+    tests_project = os.environ.get("CBCS_TESTS_PROJECT")
+    if tests_project and os.path.isdir(tests_project):
+        try:
+            if win._file_project_commands_workflow.open_project_by_path(tests_project):
+                settle(app, 1500)
+                if win._activity_bar is not None:
+                    win._activity_bar._on_button_clicked("test_explorer")
+                win._test_runner_workflow.refresh_discovery()
+                settle(app, 2500)
+                grab(win, "win_test_explorer.png")
+                # Run the tests and wait for outcomes, then capture results + Run Log.
+                win._test_runner_workflow.run_all_tests()
+                settle(app, 8000)
+                grab(win, "win_test_results.png")
+            else:
+                log("open tests project returned False")
+        except Exception as exc:
+            log(f"tests capture failed: {exc!r}")
+
     log("done")
     return 0
 
