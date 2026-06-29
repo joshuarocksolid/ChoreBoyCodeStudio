@@ -163,15 +163,30 @@ def main() -> int:
         log(f"settings capture failed: {exc!r}")
     settle(app, 400)
 
-    # Test Explorer panel (requires a loaded project).
+    # Test Explorer panel (requires a loaded project). Use _on_button_clicked so the
+    # view_changed signal fires and the side panel actually switches.
     try:
         if win._activity_bar is not None:
-            win._activity_bar.set_active_view("test_explorer")
+            win._activity_bar._on_button_clicked("test_explorer")
         win._test_runner_workflow.refresh_discovery()
-        settle(app, 1500)
+        settle(app, 2500)
         grab(win, "win_test_explorer.png")
+        if win._activity_bar is not None:
+            win._activity_bar._on_button_clicked("explorer")
+        settle(app, 400)
     except Exception as exc:
         log(f"test explorer capture failed: {exc!r}")
+
+    # New Project from Template (template picker dialog).
+    try:
+        capture_modal(
+            app,
+            win._file_project_commands_workflow.handle_new_project_from_template_action,
+            "template_picker.png",
+        )
+    except Exception as exc:
+        log(f"template picker capture failed: {exc!r}")
+    settle(app, 400)
 
     # Plugin Manager dialog.
     try:
