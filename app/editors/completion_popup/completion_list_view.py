@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide2.QtCore import QModelIndex, Qt, Signal
+from PySide2.QtGui import QKeyEvent
 from PySide2.QtWidgets import QAbstractItemView, QFrame, QListView
 
 from app.editors.completion_popup.completion_item_delegate import CompletionItemDelegate
@@ -136,6 +137,36 @@ class CompletionListView(QListView):
                 self.setCurrentIndex(index)
                 self._on_current_row_changed(index, QModelIndex())
                 return
+
+    def move_to_previous_selectable(self) -> None:
+        model = self.model()
+        if model is None or not isinstance(model, CompletionItemModel):
+            return
+        start_row = self.currentIndex().row() - 1 if self.currentIndex().isValid() else model.rowCount() - 1
+        for row in range(start_row, -1, -1):
+            item = model.item_at(row)
+            if item is not None and not is_tier_header_item(item):
+                index = model.index(row, 0)
+                self.setCurrentIndex(index)
+                self._on_current_row_changed(index, QModelIndex())
+                return
+
+    def handle_navigation_key(self, event: QKeyEvent) -> None:
+        """Apply a navigation key without ``QApplication.sendEvent`` re-delivery.
+
+        Calling ``sendEvent`` on this view from the popup ``eventFilter`` causes
+        unconsumed boundary keys to bubble back to the popup parent and recurse.
+        Direct ``keyPressEvent`` dispatch plus explicit ``accept`` breaks that loop.
+        """
+        self.keyPressEvent(event)
+        event.accept()
+        item = self.current_item()
+        if item is None or not is_tier_header_item(item):
+            return
+        if event.key() in {Qt.Key_Down, Qt.Key_PageDown, Qt.Key_End}:
+            self.move_to_next_selectable()
+        elif event.key() in {Qt.Key_Up, Qt.Key_PageUp, Qt.Key_Home}:
+            self.move_to_previous_selectable()
 
     def current_item(self) -> CompletionItem | None:
         index = self.currentIndex()

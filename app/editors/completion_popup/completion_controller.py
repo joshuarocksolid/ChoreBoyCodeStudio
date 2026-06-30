@@ -198,19 +198,24 @@ class CompletionController(QObject):
         Returns ``True`` when the event has been handled by the controller and
         should not be processed further by the host widget.
         """
+        return self._dispatch_popup_key(event)
+
+    def _dispatch_popup_key(self, key_event: QKeyEvent) -> bool:
+        """Handle popup-owned keys for both host and ``eventFilter`` entry points."""
+
         if not self._popup.isVisible():
             return False
-        key = event.key()
+        key = key_event.key()
         if key == Qt.Key_Escape:
             self._popup.hide()
-            event.accept()
+            key_event.accept()
             return True
         if key in _ACCEPT_KEYS:
             self.accept_current()
-            event.accept()
+            key_event.accept()
             return True
         if key in _NAVIGATION_KEYS:
-            QApplication.sendEvent(self._popup.list_view(), event)
+            self._popup.list_view().handle_navigation_key(key_event)
             return True
         return False
 
@@ -244,17 +249,7 @@ class CompletionController(QObject):
         if popup is None or watched is not popup or event.type() != QEvent.KeyPress:
             return super().eventFilter(watched, event)
         key_event = event  # QKeyEvent at this point
-        key = key_event.key()
-        if key == Qt.Key_Escape:
-            self._popup.hide()
-            key_event.accept()
-            return True
-        if key in _ACCEPT_KEYS:
-            self.accept_current()
-            key_event.accept()
-            return True
-        if key in _NAVIGATION_KEYS:
-            QApplication.sendEvent(self._popup.list_view(), key_event)
+        if self._dispatch_popup_key(key_event):
             return True
         widget = self._widget
         if widget is None:
