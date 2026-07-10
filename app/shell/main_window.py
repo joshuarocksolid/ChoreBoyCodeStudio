@@ -364,6 +364,7 @@ class MainWindow(QMainWindow):
         if self._problems_panel is not None:
             self._problems_panel.clear()
             self._problems_controller.update_problems_tab_title(0)
+        self._problems_controller.clear_all_editor_diagnostics()
         self._problems_controller.clear_all_tab_diagnostic_indicators()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature

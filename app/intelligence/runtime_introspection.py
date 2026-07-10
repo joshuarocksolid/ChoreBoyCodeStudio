@@ -282,6 +282,9 @@ def attach_replacement_metadata(
 
 def _filter_prefix(items: list[CompletionItem], prefix: str) -> list[CompletionItem]:
     if not prefix:
-        return items
+        return [item for item in items if not item.label.startswith("_")]
     lowered = prefix.lower()
-    return [item for item in items if item.label.lower().startswith(lowered)]
+    filtered = [item for item in items if item.label.lower().startswith(lowered)]
+    if prefix.startswith("_"):
+        return filtered
+    return [item for item in filtered if not item.label.startswith("_")]

@@ -334,6 +334,7 @@ def install_intelligence(ctx: ShellCompositionContext) -> None:
     window._python_console_workflow = build_python_console_workflow(ctx)
     window._find_replace_workflow = build_find_replace_workflow(ctx)
     window._semantic_navigation_workflow = build_semantic_navigation_workflow(ctx)
+    window._python_console_workflow.bind_intelligence_controller(window._intelligence_controller)
 
 
 def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
@@ -371,10 +372,13 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         if window._editor_tabs_widget is not None
         else None,
         release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
-        close_editor_file=window._editor_manager.close_file,
+        close_editor_file=lambda file_path: window._editor_manager.close_file(file_path),
         breakpoint_store=window._debug_control_workflow.breakpoint_store,
         refresh_breakpoints_list=window._debug_control_workflow.refresh_breakpoints_list,
-        remap_editor_paths=window._editor_manager.remap_paths_for_move,
+        remap_editor_paths=lambda source_path, destination_path: window._editor_manager.remap_paths_for_move(
+            source_path,
+            destination_path,
+        ),
         update_tab_path_and_name=window._project_tree_ui_workflow.update_tab_path_and_name,
         apply_breakpoints_to_widget=lambda widget, breakpoints: widget.set_breakpoints(breakpoints),
         update_widget_language=window._project_tree_ui_workflow.update_widget_language_for_path,

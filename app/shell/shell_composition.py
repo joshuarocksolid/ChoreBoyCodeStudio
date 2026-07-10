@@ -299,7 +299,9 @@ def build_diagnostics_orchestrator(
         ),
         get_pending_realtime_file_path=lambda: diagnostics_latches.pending_realtime_lint_file_path,
         start_realtime_timer=window._realtime_lint_timer.start,
-        get_active_tab_file_path=window._editor_manager.active_file_path,
+        # Look up the current manager each call — reset_editor_tabs() replaces
+        # window._editor_manager, so a bound method from compose time goes stale.
+        get_active_tab_file_path=lambda: window._editor_manager.active_file_path(),
         render_lint_for_file=lambda file_path, trigger: window._lint_workflow.render_diagnostics_for_file(
             file_path,
             trigger=trigger,

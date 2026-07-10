@@ -128,7 +128,7 @@ class JediEngine:
         max_results: int = 150,
     ) -> CompletionItem:
         """Enrich one selected completion item with expensive Jedi metadata."""
-        if item.source != "semantic":
+        if item.resolve_provider != "jedi" and item.source != "semantic":
             return item
         completions = self._completions_at_cursor(
             project_root=project_root,

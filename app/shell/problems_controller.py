@@ -26,6 +26,44 @@ class ProblemsController:
         if active_tab is not None and active_tab.file_path == file_path:
             self.update_status_bar_diagnostics(diagnostics)
 
+    def optimistically_clear_file_diagnostics(self, file_path: str) -> None:
+        """Drop stale overlays immediately while a fresh realtime lint is pending.
+
+        Safe under AD-018: never re-applies old error results; the next current
+        lint result replaces this empty state.
+        """
+        window = self._window
+        if not window._stored_lint_diagnostics.get(file_path) and not self._editor_has_overlays(
+            file_path
+        ):
+            return
+        window._stored_lint_diagnostics[file_path] = []
+        self.push_diagnostics_to_editor(file_path, [])
+        self.update_tab_diagnostic_indicator(file_path, [])
+        self.render_merged_problems_panel()
+        active_tab = window._editor_manager.active_tab()
+        if active_tab is not None and active_tab.file_path == file_path:
+            self.update_status_bar_diagnostics([])
+
+    def clear_all_editor_diagnostics(self) -> None:
+        """Clear overlays on every open editor (stored state may already be empty)."""
+        for file_path, editor_widget in list(self._window._editor_widgets_by_path.items()):
+            if hasattr(editor_widget, "clear_diagnostics"):
+                editor_widget.clear_diagnostics()
+            else:
+                editor_widget.set_diagnostics([])
+            self.update_tab_diagnostic_indicator(file_path, [])
+        active_tab = self._window._editor_manager.active_tab()
+        if active_tab is not None:
+            self.update_status_bar_diagnostics([])
+
+    def _editor_has_overlays(self, file_path: str) -> bool:
+        editor_widget = self._window._editor_widgets_by_path.get(file_path)
+        if editor_widget is None:
+            return False
+        selections = getattr(editor_widget, "_diagnostic_selections", None)
+        return bool(selections)
+
     def push_diagnostics_to_editor(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
         editor_widget = self._window._editor_widgets_by_path.get(file_path)
         if editor_widget is None:

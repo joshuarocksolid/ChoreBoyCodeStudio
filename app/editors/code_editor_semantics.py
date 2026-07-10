@@ -79,6 +79,11 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         """Attach async lazy metadata resolver for selected completion items."""
         self._completion_resolve_requester = requester
 
+    def set_completion_docs_resolving(self, resolving: bool) -> None:
+        """Toggle the completion docs panel loading state."""
+
+        self._completion_popup.set_docs_resolving(resolving)
+
     def set_completion_accepted_callback(self, callback: Callable[[CompletionItem], None] | None) -> None:
         """Attach callback invoked when completion item is accepted."""
         self._completion_accepted_callback = callback
@@ -243,6 +248,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
         if self._completion_resolve_requester is None:
             return
+        self._completion_popup.set_docs_resolving(True)
         self._completion_resolve_requester(
             item,
             self.toPlainText(),
@@ -259,6 +265,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         """Apply lazy metadata for the selected item if still current."""
         if request_generation != self._completion_request_generation:
             return
+        self._completion_popup.set_docs_resolving(False)
         self._completion_popup.replace_item(item)
 
     def completion_request_generation(self) -> int:

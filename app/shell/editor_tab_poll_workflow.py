@@ -57,6 +57,8 @@ class EditorTabPollWorkflow:
                 refreshed,
                 source=EditorDiskSyncSource.TOOL_REFRESH,
             )
+            if file_path.lower().endswith(".py"):
+                self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
         self._refresh_save_action_states()
 
     def check_for_external_file_change(self, file_path: str) -> None:

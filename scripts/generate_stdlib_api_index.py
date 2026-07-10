@@ -27,6 +27,38 @@ from app.project.dependency_classifier import STDLIB_TOP_LEVELS
 
 OUTPUT_PATH = REPO_ROOT / "app" / "intelligence" / "stdlib_api_index.json"
 
+_DOC_MAX_CHARS = 500
+_SIGNATURE_MAX_CHARS = 200
+
+
+def _first_doc_paragraph(doc: str) -> str:
+    text = doc.strip()
+    if not text:
+        return ""
+    paragraph = text.split("\n\n", 1)[0].strip()
+    if len(paragraph) > _DOC_MAX_CHARS:
+        return paragraph[: _DOC_MAX_CHARS - 1].rstrip() + "…"
+    return paragraph
+
+
+def _safe_signature(value: Any) -> str:
+    try:
+        signature = str(inspect.signature(value))
+    except Exception:
+        return ""
+    if len(signature) > _SIGNATURE_MAX_CHARS:
+        return signature[: _SIGNATURE_MAX_CHARS - 1].rstrip() + "…"
+    return signature
+
+
+def _safe_documentation(value: Any) -> str:
+    try:
+        doc = inspect.getdoc(value)
+    except Exception:
+        return ""
+    if not doc:
+        return ""
+    return _first_doc_paragraph(doc)
 
 def _kind_for_member(module: Any, name: str) -> str:
     try:
@@ -59,13 +91,23 @@ def _members_for_module(module_name: str) -> list[dict[str, str]]:
         return []
 
     for name in names:
-        members.append(
-            {
-                "name": name,
-                "kind": _kind_for_member(module, name),
-                "detail": f"{module_name} stdlib member",
-            }
-        )
+        try:
+            value = getattr(module, name)
+        except Exception:
+            value = None
+        entry: dict[str, str] = {
+            "name": name,
+            "kind": _kind_for_member(module, name),
+            "detail": f"{module_name} stdlib member",
+        }
+        if value is not None:
+            signature = _safe_signature(value)
+            if signature:
+                entry["signature"] = f"{name}{signature}"
+            documentation = _safe_documentation(value)
+            if documentation:
+                entry["documentation"] = documentation
+        members.append(entry)
     return members
 
 

@@ -74,7 +74,7 @@ def test_os_dot_fast_completion_warm_p95_under_75ms(tmp_path: Path) -> None:
         started_at = time.perf_counter()
         envelope = service.complete_fast(request)
         durations.append((time.perf_counter() - started_at) * 1000.0)
-        assert any(item.label == "getcwd" for item in envelope.items)
+        assert any(item.label == "access" and item.source == "static_api_index" for item in envelope.items)
 
     p95 = statistics.quantiles(durations, n=20)[18]
     assert p95 <= 75.0

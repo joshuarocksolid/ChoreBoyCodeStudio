@@ -2,13 +2,14 @@
 
 Layout per row::
 
-    [icon] label  signature                                       origin
+    [icon] label  help_teaser / signature                         origin
 
 * ``[icon]`` is a 22px square chip painted in the kind accent color with the
   kind glyph centered.
 * ``label`` uses the primary text color; matched characters from the prefix
   are drawn bold.
-* ``signature`` (parameters / detail) is muted and elided right.
+* ``help_teaser`` is a muted one-line docstring/detail glance (preferred),
+  falling back to signature when no docs are available.
 * ``origin`` is a right-aligned badge showing ``engine`` or ``source``.
 """
 
@@ -47,8 +48,8 @@ _ICON_SIZE = 18
 _ICON_PADDING_LEFT = 6
 _ICON_PADDING_RIGHT = 8
 _RIGHT_PADDING = 8
-_GAP_LABEL_SIGNATURE = 8
-_GAP_SIGNATURE_ORIGIN = 12
+_GAP_SECONDARY_ORIGIN = 12
+_GAP_LABEL_HELP = 10
 
 
 class CompletionItemDelegate(QStyledItemDelegate):
@@ -134,31 +135,19 @@ class CompletionItemDelegate(QStyledItemDelegate):
                 badge_height,
             )
             self._paint_origin_badge(painter, badge_rect, origin_text, option.font)
-            right_edge = badge_rect.left() - _GAP_SIGNATURE_ORIGIN
+            right_edge = badge_rect.left() - _GAP_SECONDARY_ORIGIN
 
         text_top = rect.y()
         text_height = rect.height()
 
-        signature_text = item.signature or item.detail or ""
-        signature_width = 0
-        if signature_text:
-            max_signature_width = max(0, (right_edge - cursor_x) // 2)
-            elided_signature = font_metrics.elidedText(
-                signature_text, Qt.ElideRight, max_signature_width
-            )
-            signature_width = font_metrics.horizontalAdvance(elided_signature)
-            sig_rect = QRect(
-                right_edge - signature_width,
-                text_top,
-                signature_width,
-                text_height,
-            )
-            painter.setPen(QPen(self._color_muted))
-            painter.setFont(option.font)
-            painter.drawText(sig_rect, Qt.AlignVCenter | Qt.AlignRight, elided_signature)
-            right_edge = sig_rect.left() - _GAP_LABEL_SIGNATURE
+        help_teaser = _inline_help_teaser(item)
+        secondary_text = help_teaser or _row_secondary_text(item)
 
+        label_width = font_metrics.horizontalAdvance(item.label)
         label_max_width = max(0, right_edge - cursor_x)
+        if secondary_text:
+            # Reserve roughly half the remaining row for the help/signature glance.
+            label_max_width = min(label_max_width, max(label_width + 8, (right_edge - cursor_x) // 2))
         label_rect = QRect(cursor_x, text_top, label_max_width, text_height)
         match_ranges = index.data(MatchRangesRole) or []
         self._paint_label(
@@ -169,6 +158,15 @@ class CompletionItemDelegate(QStyledItemDelegate):
             base_font=option.font,
             base_color=self._color_text,
         )
+
+        if secondary_text:
+            help_x = cursor_x + min(label_width, label_max_width) + _GAP_LABEL_HELP
+            if help_x < right_edge:
+                help_rect = QRect(help_x, text_top, max(0, right_edge - help_x), text_height)
+                elided_help = font_metrics.elidedText(secondary_text, Qt.ElideRight, help_rect.width())
+                painter.setPen(QPen(self._color_muted))
+                painter.setFont(option.font)
+                painter.drawText(help_rect, Qt.AlignVCenter | Qt.AlignLeft, elided_help)
 
         painter.restore()
 
@@ -320,3 +318,26 @@ class CompletionItemDelegate(QStyledItemDelegate):
     @staticmethod
     def row_height() -> int:
         return _ROW_HEIGHT
+
+
+def _inline_help_teaser(item: CompletionItem) -> str:
+    """Return a one-line docstring glance for the completion row."""
+
+    documentation = (item.documentation or "").strip()
+    if documentation:
+        first_line = documentation.splitlines()[0].strip()
+        if first_line:
+            return first_line
+    detail = (item.detail or "").strip()
+    if detail and detail != (item.signature or "").strip():
+        return detail
+    return ""
+
+
+def _row_secondary_text(item: CompletionItem) -> str:
+    """Fallback secondary text when no docstring teaser is available."""
+
+    signature = (item.signature or "").strip()
+    if signature:
+        return signature
+    return (item.detail or "").strip()

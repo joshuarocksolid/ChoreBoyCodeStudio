@@ -60,6 +60,7 @@ class RecordingSettingsApplyHost:
     theme_styles_calls: int = 0
     relint_calls: int = 0
     cleared_diagnostics: int = 0
+    cleared_editor_diagnostics: int = 0
     rendered_problems: int = 0
     reload_calls: int = 0
     search_sidebar_refreshes: int = 0
@@ -153,6 +154,9 @@ class RecordingSettingsApplyHost:
 
     def clear_stored_lint_diagnostics(self) -> None:
         self.cleared_diagnostics += 1
+
+    def clear_all_editor_diagnostics(self) -> None:
+        self.cleared_editor_diagnostics += 1
 
     def render_merged_problems_panel(self) -> None:
         self.rendered_problems += 1
@@ -280,6 +284,7 @@ def test_apply_after_settings_saved_clears_diagnostics_when_disabled() -> None:
     )
 
     assert host.cleared_diagnostics == 1
+    assert host.cleared_editor_diagnostics == 1
     assert host.rendered_problems == 1
     assert host.relint_calls == 0
 

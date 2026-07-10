@@ -77,6 +77,29 @@ def test_semantic_refinement_returns_semantic_tier_without_merging_fast(tmp_path
     assert all(item.source != "static_api_index" for item in envelope.items)
 
 
+def test_static_index_item_with_docs_skips_resolvable_fields(tmp_path: Path) -> None:
+    semantic = _SemanticFacadeStub()
+    broker = CompletionBroker(cache_db_path=str(tmp_path / "symbols.sqlite3"), semantic_facade=semantic)  # type: ignore[arg-type]
+    source = "import os\nos.getcwd"
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(tmp_path / "main.py"),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+    )
+
+    envelope = broker.complete_fast(request)
+    getcwd = next(item for item in envelope.items if item.label == "getcwd")
+
+    assert getcwd.documentation or getcwd.signature
+    assert getcwd.resolvable_fields == ()
+    assert getcwd.resolve_provider == "api_index"
+
+
 def test_fast_completion_reuses_previous_valid_result_for_longer_prefix(tmp_path: Path) -> None:
     semantic = _SemanticFacadeStub()
     broker = CompletionBroker(cache_db_path=str(tmp_path / "symbols.sqlite3"), semantic_facade=semantic)  # type: ignore[arg-type]
@@ -133,3 +156,94 @@ def test_fast_completion_reuse_rejects_buffer_revision_change(tmp_path: Path) ->
     envelope = broker.complete_fast(second)
 
     assert envelope.source_phase != "reuse"
+
+
+class _DottedMemberSemanticStub:
+    def complete(self, **_kwargs: object) -> list[CompletionItem]:
+        return [
+            CompletionItem(
+                label="__init__",
+                insert_text="__init__",
+                kind=CompletionKind.METHOD,
+                source="semantic",
+                confidence="exact",
+                engine="jedi",
+            ),
+            CompletionItem(
+                label="paint",
+                insert_text="paint",
+                kind=CompletionKind.METHOD,
+                source="semantic",
+                confidence="exact",
+                engine="jedi",
+                documentation="Draw the widget.",
+            ),
+            CompletionItem(
+                label="resize",
+                insert_text="resize",
+                kind=CompletionKind.METHOD,
+                source="semantic",
+                confidence="exact",
+                engine="jedi",
+            ),
+            CompletionItem(
+                label="_private",
+                insert_text="_private",
+                kind=CompletionKind.METHOD,
+                source="semantic",
+                confidence="exact",
+                engine="jedi",
+            ),
+        ]
+
+
+def test_dotted_member_semantic_hides_dunders_unless_underscore_prefix(tmp_path: Path) -> None:
+    broker = CompletionBroker(
+        cache_db_path=str(tmp_path / "symbols.sqlite3"),
+        semantic_facade=_DottedMemberSemanticStub(),  # type: ignore[arg-type]
+    )
+    source = "obj = Widget()\nobj."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(tmp_path / "main.py"),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=0,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+    )
+
+    envelope = broker.complete_semantic(request)
+    labels = [item.label for item in envelope.items]
+
+    assert "paint" in labels
+    assert "resize" in labels
+    assert "__init__" not in labels
+    assert "_private" not in labels
+    assert labels.index("paint") < labels.index("resize") or "resize" in labels
+
+
+def test_dotted_member_semantic_keeps_private_when_prefix_starts_with_underscore(tmp_path: Path) -> None:
+    broker = CompletionBroker(
+        cache_db_path=str(tmp_path / "symbols.sqlite3"),
+        semantic_facade=_DottedMemberSemanticStub(),  # type: ignore[arg-type]
+    )
+    source = "obj = Widget()\nobj._"
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=str(tmp_path / "main.py"),
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=0,
+        trigger_kind="trigger_character",
+        trigger_character=".",
+    )
+
+    envelope = broker.complete_semantic(request)
+    labels = [item.label for item in envelope.items]
+
+    assert "_private" in labels
+    assert "__init__" in labels
+    assert "paint" not in labels

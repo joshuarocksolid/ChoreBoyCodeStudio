@@ -110,7 +110,12 @@ class CompletionBroker:
         with self._telemetry.span("fast_providers", breakdown):
             candidates = self._fast_candidates(context)
         with self._telemetry.span("rank_fast", breakdown):
-            ranked = self._rank_candidates(candidates, prefix=context.prefix, current_file_path=context.file_path)
+            ranked = self._rank_candidates(
+                candidates,
+                prefix=context.prefix,
+                current_file_path=context.file_path,
+                syntactic_context=context.syntactic_context,
+            )
         envelope = self._envelope(
             context,
             items=[entry.item for entry in ranked[: context.max_results]],
@@ -157,6 +162,7 @@ class CompletionBroker:
                 semantic_candidates,
                 prefix=context.prefix,
                 current_file_path=context.file_path,
+                syntactic_context=context.syntactic_context,
             )
         items = [entry.item for entry in ranked[: context.max_results]]
         tier = CompletionTier(
@@ -273,6 +279,7 @@ class CompletionBroker:
             filtered,
             prefix=context.prefix,
             current_file_path=context.file_path,
+            syntactic_context=context.syntactic_context,
         )
         return self._envelope(
             context,
@@ -292,9 +299,16 @@ class CompletionBroker:
         *,
         prefix: str,
         current_file_path: str,
+        syntactic_context: CompletionSyntacticContext | None = None,
     ) -> list[RankedCompletionItem]:
+        dotted_member = syntactic_context in {
+            CompletionSyntacticContext.DOTTED_MEMBER,
+            CompletionSyntacticContext.IMPORT_FROM_MEMBER,
+        }
         deduped: dict[str, RankedCompletionItem] = {}
         for candidate in candidates:
+            if dotted_member and not _include_member_for_prefix(candidate.label, prefix):
+                continue
             score = _base_match_score(candidate.label, prefix)
             if score <= 0:
                 continue
@@ -388,7 +402,13 @@ def _with_context_metadata(item: CompletionItem, *, context: CompletionContext) 
         if not resolvable_fields:
             resolvable_fields = ("documentation", "signature", "return_type", "detail")
     elif item.source == "static_api_index":
-        resolve_provider = resolve_provider or "api_index"
+        has_docs = bool((item.documentation or "").strip() or (item.signature or "").strip())
+        if not has_docs:
+            resolve_provider = "jedi"
+            if not resolvable_fields:
+                resolvable_fields = ("documentation", "signature", "return_type", "detail")
+        else:
+            resolve_provider = resolve_provider or "api_index"
     return CompletionItem(
         label=item.label,
         insert_text=item.insert_text,
@@ -468,6 +488,14 @@ def _tag_approximate_items(candidates: list[CompletionItem]) -> list[CompletionI
             )
         )
     return marked
+
+
+def _include_member_for_prefix(label: str, prefix: str) -> bool:
+    """Hide private/dunder members unless the user is typing a ``_`` prefix."""
+
+    if not label.startswith("_"):
+        return True
+    return prefix.startswith("_")
 
 
 def _base_match_score(label: str, prefix: str) -> int:

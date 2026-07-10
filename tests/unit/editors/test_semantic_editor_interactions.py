@@ -125,6 +125,26 @@ def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget)
     assert calls == [("alpha_local", "alpha", 5, 1)]
 
 
+def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: CodeEditorWidget) -> None:
+    calls: list[str] = []
+    item = CompletionItem(
+        label="getcwd",
+        insert_text="getcwd",
+        kind=CompletionKind.FUNCTION,
+        source="static_api_index",
+        documentation="Return the current working directory.",
+        signature="getcwd()",
+    )
+    editor.set_completion_requester(lambda *_args: None)
+    editor.set_completion_resolve_requester(
+        lambda selected, _source, _position, _generation: calls.append(selected.label)
+    )
+    editor.trigger_completion(manual=True)
+    editor.show_completion_items_for_request(request_generation=1, prefix="", items=[item])
+
+    assert calls == []
+
+
 def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorWidget) -> None:
     item = CompletionItem(
         label="alpha_local",

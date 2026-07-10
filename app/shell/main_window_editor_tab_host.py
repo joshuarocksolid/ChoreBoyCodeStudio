@@ -218,7 +218,12 @@ class MainWindowEditorTabHost:
         self._window._local_history_workflow.delete_draft(file_path)
 
     def diagnostics_schedule_realtime_lint(self, file_path: str) -> None:
-        self._window._diagnostics_orchestrator.schedule_realtime_lint(file_path)
+        orchestrator = self._window._diagnostics_orchestrator
+        # Clear immediately so fixed errors do not linger through debounce/lint latency.
+        if self._window._diagnostics_enabled and self._window._diagnostics_realtime:
+            if file_path.lower().endswith(".py"):
+                self._window._problems_controller.optimistically_clear_file_diagnostics(file_path)
+        orchestrator.schedule_realtime_lint(file_path)
 
 
 __all__ = ["MainWindowEditorTabHost"]

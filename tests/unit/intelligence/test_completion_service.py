@@ -228,7 +228,7 @@ def test_completion_service_uses_static_api_index_for_freecad_members(tmp_path: 
 
 
 def test_completion_service_uses_static_api_index_for_os_members(tmp_path: Path) -> None:
-    source = "import os\nos."
+    source = "import os\nos.getcwd"
     request = CompletionRequest(
         source_text=source,
         cursor_position=len(source),
@@ -243,7 +243,9 @@ def test_completion_service_uses_static_api_index_for_os_members(tmp_path: Path)
 
     items = service.complete_fast(request).items
 
-    assert any(item.label == "getcwd" and item.source == "static_api_index" for item in items)
+    getcwd = next(item for item in items if item.label == "getcwd")
+    assert getcwd.source == "static_api_index"
+    assert getcwd.documentation or getcwd.signature
 
 
 def test_completion_service_dedupes_project_symbol_rows_by_insert_text(tmp_path: Path) -> None:

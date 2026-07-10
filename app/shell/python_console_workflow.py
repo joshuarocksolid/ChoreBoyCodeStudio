@@ -6,7 +6,12 @@ import threading
 from typing import Any, Callable, Protocol, cast
 
 from app.intelligence.completion_context import resolve_completion_prefix
-from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
+from app.intelligence.completion_models import (
+    CompletionEnvelope,
+    CompletionItem,
+    CompletionResolveRequest,
+    CompletionResolveResult,
+)
 from app.shell.clear_console_policy import (
     ClearConsoleHost,
     MainWindowClearConsoleHost,
@@ -44,6 +49,26 @@ class PythonConsoleBindingPort(Protocol):
     restart_requested: Any
 
     def set_completion_requester(self, requester: Callable[..., None]) -> None:
+        ...
+
+    def set_completion_resolve_requester(
+        self,
+        requester: Callable[[CompletionItem, str, int, int], None] | None,
+    ) -> None:
+        ...
+
+    def set_completion_docs_resolving(self, resolving: bool) -> None:
+        ...
+
+    def completion_request_generation(self) -> int:
+        ...
+
+    def show_resolved_completion_item_for_request(
+        self,
+        *,
+        request_generation: int,
+        item: CompletionItem,
+    ) -> None:
         ...
 
 
@@ -157,6 +182,18 @@ class PythonConsoleWorkflow:
         self._repl_manager = repl_manager
         self._host = host
         self._start_background_work = start_background_work or self._default_start_background_work
+        self._intelligence_controller: Any | None = None
+
+    def bind_intelligence_controller(self, intelligence_controller: Any) -> None:
+        """Attach lazy completion resolve once intelligence runtime is available."""
+
+        self._intelligence_controller = intelligence_controller
+        widget = self._host.python_console_widget()
+        if widget is None:
+            return
+        cast(PythonConsoleBindingPort, widget).set_completion_resolve_requester(
+            self.request_completion_item_resolve_async
+        )
 
     def bind_widget(self, widget: PythonConsoleBindingPort) -> None:
         """Wire console widget signals to workflow-owned handlers."""
@@ -249,6 +286,58 @@ class PythonConsoleWorkflow:
             self._host.dispatch_to_main_thread(apply)
 
         self._start_background_work(work)
+
+    def request_completion_item_resolve_async(
+        self,
+        item: CompletionItem,
+        line_buffer: str,
+        cursor_offset: int,
+        request_generation: int,
+    ) -> None:
+        """Resolve lazy metadata for a selected Python Console completion item."""
+
+        if self._intelligence_controller is None:
+            return
+        console_widget = self._host.python_console_widget()
+        if console_widget is None:
+            return
+        request = CompletionResolveRequest(
+            item=item,
+            source_text=line_buffer,
+            cursor_position=cursor_offset,
+            current_file_path=_PYTHON_CONSOLE_FILE_PATH,
+            project_root=None,
+            context_fingerprint=item.context_fingerprint,
+            buffer_revision=None,
+            request_generation=request_generation,
+        )
+
+        def on_success(result: CompletionResolveResult) -> None:
+            def apply() -> None:
+                if request_generation != console_widget.completion_request_generation():
+                    return
+                console_widget.show_resolved_completion_item_for_request(
+                    request_generation=result.request_generation,
+                    item=result.item,
+                )
+
+            self._host.dispatch_to_main_thread(apply)
+
+        def on_error(exc: Exception) -> None:
+            self._host.log_repl_warning("Python Console completion resolve failed: %s", exc)
+
+            def apply() -> None:
+                if request_generation != console_widget.completion_request_generation():
+                    return
+                console_widget.set_completion_docs_resolving(False)
+
+            self._host.dispatch_to_main_thread(apply)
+
+        self._intelligence_controller.request_completion_resolve(
+            request=request,
+            on_success=on_success,
+            on_error=on_error,
+        )
 
     @staticmethod
     def _default_start_background_work(work: Callable[[], None]) -> None:

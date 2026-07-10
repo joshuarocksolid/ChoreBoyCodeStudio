@@ -62,6 +62,9 @@ class EditorTabPollHost(Protocol):
     def project_inventory_generation(self) -> int:
         ...
 
+    def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
+        ...
+
     def project_inventory_tree_signature(self) -> tuple[str, ...] | None:
         ...
 

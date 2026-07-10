@@ -189,6 +189,17 @@ class EditorCompletionWorkflow:
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Completion item resolve failed for %s: %s", file_path, exc)
 
+            def deliver() -> None:
+                editor_widget.set_completion_docs_resolving(False)
+
+            self._deliver_gated_completion_result(
+                file_path=file_path,
+                editor_widget=editor_widget,
+                requested_revision=requested_revision,
+                request_generation=request_generation,
+                deliver=deliver,
+            )
+
         self._host.intelligence_controller().request_completion_resolve(
             request=request,
             on_success=on_success,

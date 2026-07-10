@@ -1246,6 +1246,8 @@ Verify linter runtime controls (enable/disable + provider selection) and rule-le
 **Expected Result:**  
 
 - linter enable toggle suppresses diagnostics when off and re-enables them when on
+- disabling linting clears editor squiggles/gutter markers as well as the Problems panel
+- with realtime diagnostics on, fixing a syntax/lint error clears the red indicator promptly (optimistic clear + realtime relint after project open)
 - provider selection switches active lint backend between `default` and `pyflakes`
 - selected provider persists across settings reopen and app restart
 - disabled rule diagnostics are suppressed
@@ -1791,12 +1793,15 @@ Verify that editor `.` completion provides useful attribute/method discovery whi
 **Expected Result:**  
 
 - attribute/method/property candidates are relevant to the receiver when the semantic engine can prove them
-- rows and details show kind, source/engine, confidence, documentation or signature when available
+- public members appear before dunder/private names unless the typed prefix starts with `_`
+- rows show kind plus a muted one-line help teaser (docstring/detail/signature) after the attribute name when available
+- the docs side panel fills fuller documentation for the selected item (lazy resolve for semantic items)
+- continuing to type after `.` narrows by prefix and bold-highlights the matched prefix
 - fallback/static-index results are labeled distinctly from exact semantic results
 - trusted FreeCAD/PySide2 import and dot completions work from the shipped visible API index
 - stale completion responses are dropped by buffer revision and never overwrite newer UI state
 - no arbitrary project code executes in the editor process
-- popup text, badges, and details remain readable in both themes
+- popup text, badges, and details remain readable in Light, Dark, HC Light, and HC Dark
 
 ---
 

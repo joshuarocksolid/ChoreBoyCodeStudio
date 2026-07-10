@@ -23,7 +23,7 @@ from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
 from PySide2.QtGui import QKeyEvent
 from PySide2.QtWidgets import QApplication, QWidget
 
-from app.editors.completion_popup.completion_item_model import CompletionItemModel, compute_match_ranges
+from app.editors.completion_popup.completion_item_model import CompletionItemModel
 from app.editors.completion_popup.completion_popup_container import (
     CompletionPopupContainer,
 )
@@ -111,8 +111,14 @@ class CompletionController(QObject):
 
         replaced = self._model.replace_item(item)
         if replaced and self.current_item() == item:
+            self._popup.docs_panel().set_resolving(False)
             self._popup.docs_panel().set_item(item)
         return replaced
+
+    def set_docs_resolving(self, resolving: bool) -> None:
+        """Toggle the documentation panel loading state."""
+
+        self._popup.docs_panel().set_resolving(resolving)
 
     def reuse_items_for_prefix(self, prefix: str) -> bool:
         """Filter visible results for a longer prefix while async work runs."""
@@ -309,7 +315,7 @@ def _filter_items_preserving_tier_headers(
         if is_tier_header_item(item):
             pending_header = item
             continue
-        matches = not prefix or bool(compute_match_ranges(item.label, prefix))
+        matches = not prefix or item.label.lower().startswith(prefix.lower())
         if not matches:
             continue
         if pending_header is not None:

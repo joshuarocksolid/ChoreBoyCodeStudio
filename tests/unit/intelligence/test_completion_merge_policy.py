@@ -6,9 +6,11 @@ import pytest
 
 from app.intelligence.completion_merge_policy import (
     envelope_confidence,
+    flatten_tiered_items,
     is_tier_header_item,
     merge_completion_display,
 )
+from app.intelligence.completion_models import CompletionTier
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
@@ -54,9 +56,50 @@ def test_merge_completion_display_adds_tier_headers_and_dedupes_labels() -> None
     assert is_tier_header_item(merged.items[2])
 
 
-def test_envelope_confidence_never_exact_when_approximate_item_present() -> None:
-    from app.intelligence.completion_models import CompletionTier
+def test_flatten_tiered_items_merges_documentation_from_later_tier() -> None:
+    fast_item = CompletionItem(
+        label="getcwd",
+        insert_text="getcwd",
+        kind=CompletionKind.FUNCTION,
+        source="static_api_index",
+        confidence="static",
+        detail="os stdlib member",
+    )
+    semantic_item = CompletionItem(
+        label="getcwd",
+        insert_text="getcwd",
+        kind=CompletionKind.FUNCTION,
+        source="semantic",
+        confidence="exact",
+        documentation="Return the current working directory.",
+        signature="getcwd()",
+        resolve_provider="jedi",
+        resolvable_fields=("documentation", "signature"),
+    )
+    tiers = (
+        CompletionTier(
+            phase=CompletionTierPhase.FAST,
+            label="Indexed suggestions",
+            items=(fast_item,),
+        ),
+        CompletionTier(
+            phase=CompletionTierPhase.SEMANTIC,
+            label="Python analysis",
+            items=(semantic_item,),
+        ),
+    )
 
+    rows = flatten_tiered_items(tiers, max_results=100)
+    getcwd_rows = [item for item in rows if item.label == "getcwd"]
+
+    assert len(getcwd_rows) == 1
+    merged = getcwd_rows[0]
+    assert merged.source == "static_api_index"
+    assert merged.documentation == "Return the current working directory."
+    assert merged.signature == "getcwd()"
+
+
+def test_envelope_confidence_never_exact_when_approximate_item_present() -> None:
     tiers = (
         CompletionTier(
             phase=CompletionTierPhase.SEMANTIC,

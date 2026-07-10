@@ -232,6 +232,9 @@ class SettingsApplyHostPorts(Protocol):
     def clear_stored_lint_diagnostics(self) -> None:
         ...
 
+    def clear_all_editor_diagnostics(self) -> None:
+        ...
+
     def render_merged_problems_panel(self) -> None:
         ...
 
@@ -348,6 +351,9 @@ class MainWindowSettingsApplyHost:
     def clear_stored_lint_diagnostics(self) -> None:
         self._window._stored_lint_diagnostics.clear()
 
+    def clear_all_editor_diagnostics(self) -> None:
+        self._window._problems_controller.clear_all_editor_diagnostics()
+
     def render_merged_problems_panel(self) -> None:
         self._window._problems_controller.render_merged_problems_panel()
 
@@ -457,6 +463,7 @@ class SettingsApplyWorkflow:
 
         if not self._host.diagnostics_enabled():
             self._host.clear_stored_lint_diagnostics()
+            self._host.clear_all_editor_diagnostics()
             self._host.render_merged_problems_panel()
 
         effective_excludes = self._host.load_effective_exclude_patterns(project_root)

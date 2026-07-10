@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import code
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from PySide2.QtCore import Qt, Signal
 from PySide2.QtGui import (
@@ -75,7 +75,9 @@ class PythonConsoleWidget(QTextEdit):
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
+        self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
         self._completion_requester = None
+        self._completion_resolve_requester = None
 
         # Token-derived colors (set proper values via apply_theme).
         self._col_text: str = "#E9ECEF"
@@ -129,6 +131,35 @@ class PythonConsoleWidget(QTextEdit):
         """Attach asynchronous live-completion requester."""
 
         self._completion_requester = requester
+
+    def set_completion_resolve_requester(
+        self,
+        requester: Callable[[CompletionItem, str, int, int], None] | None,
+    ) -> None:
+        """Attach async lazy metadata resolver for selected completion items."""
+
+        self._completion_resolve_requester = requester
+
+    def set_completion_docs_resolving(self, resolving: bool) -> None:
+        """Toggle the completion docs panel loading state."""
+
+        self._completion_popup.set_docs_resolving(resolving)
+
+    def completion_request_generation(self) -> int:
+        return self._completion_request_generation
+
+    def show_resolved_completion_item_for_request(
+        self,
+        *,
+        request_generation: int,
+        item: CompletionItem,
+    ) -> None:
+        """Apply lazy metadata for the selected item if still current."""
+
+        if request_generation != self._completion_request_generation:
+            return
+        self._completion_popup.set_docs_resolving(False)
+        self._completion_popup.replace_item(item)
 
     def show_completion_items_for_request(
         self,
@@ -363,6 +394,22 @@ class PythonConsoleWidget(QTextEdit):
 
     def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
         return self._completion_popup.handle_navigation_event(event)
+
+    def _request_completion_item_resolution(self, item: object) -> None:
+        if not isinstance(item, CompletionItem):
+            return
+        if not item.resolvable_fields:
+            return
+        if self._completion_resolve_requester is None:
+            return
+        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+        self._completion_popup.set_docs_resolving(True)
+        self._completion_resolve_requester(
+            item,
+            line_buffer,
+            cursor_offset,
+            self._completion_request_generation,
+        )
 
     def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
         if not items:

@@ -41,6 +41,9 @@ class ExternalFileChangeHostPorts(Protocol):
     def update_editor_status_for_path(self, file_path: str) -> None:
         ...
 
+    def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
+        ...
+
 
 class MainWindowExternalFileChangeHost:
     """Host ports for ``ExternalFileChangeWorkflow`` backed by a MainWindow instance."""
@@ -66,6 +69,9 @@ class MainWindowExternalFileChangeHost:
 
     def update_editor_status_for_path(self, file_path: str) -> None:
         self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
+
+    def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
+        self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,8 @@ class ExternalFileChangeWorkflow:
         self._local_history.discard_drafts_for_paths([file_path])
         self._host.refresh_save_action_states()
         self._host.update_editor_status_for_path(file_path)
+        if file_path.lower().endswith(".py"):
+            self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
         return ExternalFileChangeOutcome.RELOADED
 
     def _resolve_dirty_reload(
