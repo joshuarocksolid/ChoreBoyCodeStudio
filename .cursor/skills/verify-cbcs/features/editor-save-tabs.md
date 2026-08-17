@@ -32,7 +32,8 @@ Preconditions:
 - **Save.** `control-cbcs trigger "$SID" shell.action.file.save`. `*` clears. Guest file contains the comment. Status contains `saved`.
 - **Save All.** Dirty two files; `control-cbcs trigger "$SID" shell.action.file.saveAll`. Both disks match.
 - **Preview.** Single-click a second file. Tab title is italic (preview). Open a third via single-click; the previous preview is replaced. Double-click pins.
-- **Drop open.** Synthesize `QMimeData` + `QUrl.fromLocalFile` + `QDropEvent` onto `#shell.mainWindow` for a file, then a folder. File→Open is not drop proof. A file tab opens; a folder must not. Say the drop was synthesized, not an OS drag. If the bridge cannot deliver the payload, report BLOCKED with the command and unmet precondition.
+- **Drop open.** Synthesize `QMimeData` + `QUrl.fromLocalFile` + `QDropEvent` onto `#shell.mainWindow` for a file, then a folder. File→Open is not drop proof. A file tab opens; a folder must not. Say the drop was synthesized, not an OS drag.
+- **OS drag.** A real desktop file drag onto `#shell.mainWindow` is a separate proof. `cbapp ctl mouse --action press|move|release` and `oskey` / `virsh send-key` do not start XDND. The guest image has no file manager (`pcmanfm` / `thunar` / `nautilus` absent). If those cannot deliver a drag, report BLOCKED with that command and unmet precondition. Do not count the synthesized drop as OS proof.
 - **External change.** From the Mac/SSH, append to the file on disk while the tab is clean. Wait for the poll. A reload dialog appears. Choose reload; buffer matches disk. Shot `editor-external`.
 - **Proof.** Shot of dirty then saved tabs, plus the guest file contents in artifacts.
 

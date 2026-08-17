@@ -43,3 +43,4 @@ Preconditions:
 - Do not use the human's `/home/default` profile. Doctor fails if HOME does not match `run.json`.
 - `#shell.startupStatusLabel` is a `_ClickableLabel`. Bridge `find('#…')` can miss it. Use `control-cbcs read` (scans `allWidgets` by objectName).
 - HOME must be on the guest disk (`/home/default/cbcs-verify-<run-id>`). Virtiofs HOME makes SQLite local-history lock and the editor exits.
+- Mac cockpit `vendor` is often a Darwin symlink. `control-cbcs` rsyncs lab Linux `vendor_py39` unless the local tree's SOABI is `cpython-39-x86_64-linux-gnu`. Do not hide the symlink; do not bake a Mac vendor path into the product.

@@ -16,6 +16,7 @@ Commands:
   shot <sid> <name>
   stop <sid>
   prove-launch [--run-id ID] [--repo PATH]
+  shard all [--repo PATH]   # in-process guest pytest (not Mac Darwin AppRun)
 """
 
 from __future__ import annotations
@@ -215,18 +216,40 @@ REMOTE_VENDOR = os.environ.get(
     "CBCS_REMOTE_VENDOR",
     "/home/joshua/Documents/ChoreBoyCodeStudio_artifacts/vendor_py39",
 )
+GUEST_SOABI = "cpython-39-x86_64-linux-gnu"
+
+
+def _vendor_has_guest_soabi(root: Path) -> bool:
+    """True when this tree has a Linux guest wheel, not Darwin."""
+    ts = root / "tree_sitter"
+    if ts.is_dir():
+        bindings = list(ts.glob("_binding*.so"))
+        if bindings:
+            return any(GUEST_SOABI in path.name for path in bindings)
+    for path in root.rglob("*.so"):
+        name = path.name
+        if GUEST_SOABI in name:
+            return True
+        if "darwin" in name:
+            return False
+    return False
 
 
 def _vendor_src(repo: Path) -> Optional[Path]:
+    """Local vendor only when SOABI matches the Linux guest. Else lab vendor_py39."""
+    candidates = []
     vendor = repo / "vendor"
-    if vendor.is_dir() and not vendor.is_symlink():
-        return vendor
-    if vendor.is_symlink() and vendor.exists():
-        return vendor
+    if vendor.is_dir():
+        candidates.append(vendor.resolve() if vendor.is_symlink() else vendor)
     artifacts = Path(os.environ.get("CBCS_ARTIFACTS_DIR", str(repo.parent / "ChoreBoyCodeStudio_artifacts")))
     for name in ("vendor_py39", "vendor"):
         cand = artifacts / name
         if cand.is_dir():
+            resolved = cand.resolve()
+            if resolved not in candidates:
+                candidates.append(resolved)
+    for cand in candidates:
+        if _vendor_has_guest_soabi(cand):
             return cand
     return None
 
@@ -257,6 +280,7 @@ def _rsync_source(repo: Path, remote_src: str) -> None:
     remote_vendor = remote_src.rstrip("/") + "/vendor"
     vendor = _vendor_src(repo)
     if vendor is not None:
+        print("vendor: local-matching " + str(vendor) + " (SOABI " + GUEST_SOABI + ")", file=sys.stderr)
         vproc = _run(
             [
                 "rsync",
@@ -271,6 +295,7 @@ def _rsync_source(repo: Path, remote_src: str) -> None:
         if vproc.returncode == 0:
             return
         print("note: local vendor rsync failed; trying lab vendor", file=sys.stderr)
+    print("vendor: lab " + REMOTE_VENDOR, file=sys.stderr)
     copy = _run(
         [
             "ssh",
@@ -780,6 +805,136 @@ def cmd_prove_launch(args: argparse.Namespace) -> int:
     return 0 if passed else 1
 
 
+def cmd_shard(args: argparse.Namespace) -> int:
+    """Run pytest in-process on the ChoreBoy guest. Mac Darwin AppRun is not this path."""
+    _lab_up()
+    _refuse_shared()
+    run_id = args.run_id or _now_stamp()
+    run_dir = _run_dir(run_id)
+    remote_root = "{}/cbcs-verify/{}".format(REMOTE_SHARE, run_id)
+    guest_root = "{}/cbcs-verify/{}".format(GUEST_SHARE, run_id)
+    guest_src = guest_root + "/src"
+    guest_home = "/home/default/cbcs-verify-" + run_id
+    guest_log = guest_root + "/shard-" + args.shard + ".log"
+    guest_done = guest_root + "/shard-" + args.shard + ".done"
+    repo = _find_repo(args.repo)
+    _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_root])
+    _rsync_source(repo, remote_root + "/src")
+    entry = guest_src + "/.cursor/skills/verify-cbcs/scripts/guest_shard.py"
+    launch_args = [
+        "app-run",
+        entry,
+        "--package-root",
+        guest_src,
+        "--cwd",
+        guest_src,
+        "--name",
+        SESSION_NAME,
+        "--env",
+        "HOME=" + guest_home,
+        "--env",
+        "CBCS_SHARD=" + args.shard,
+        "--env",
+        "CBCS_SHARD_LOG=" + guest_log,
+        "--env",
+        "CBCS_SHARD_DONE=" + guest_done,
+        "--env",
+        "QT_QPA_PLATFORM=offscreen",
+        "--env",
+        "CBCS_DISABLE_BACKGROUND_RUNTIME=1",
+        "--wait-ready",
+        str(args.wait_ready),
+    ]
+    print("launching shard={} run_id={}".format(args.shard, run_id), file=sys.stderr)
+    proc = _cbapp(launch_args, timeout=max(args.wait_ready + 30, 180))
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    sid = _extract_sid(combined)
+    record = {
+        "sid": sid,
+        "run_id": run_id,
+        "mode": "shard",
+        "shard": args.shard,
+        "guest_home": guest_home,
+        "guest_src": guest_src,
+        "guest_root": guest_root,
+        "remote_root": remote_root,
+        "guest_log": guest_log,
+        "guest_done": guest_done,
+        "artifact_dir": str(run_dir),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "app_run_rc": proc.returncode,
+    }
+    _write_json(run_dir / "run.json", record)
+    if sid:
+        print("SID=" + sid)
+    print("RUN_ID=" + run_id)
+    print("ARTIFACTS=" + str(run_dir))
+
+    remote_done = remote_root + "/shard-" + args.shard + ".done"
+    remote_log = remote_root + "/shard-" + args.shard + ".log"
+    deadline = time.time() + max(args.timeout, 30)
+    done = False
+    while time.time() < deadline:
+        check = _run(["ssh", "-o", "BatchMode=yes", "debian", "test -f " + remote_done])
+        if check.returncode == 0:
+            done = True
+            break
+        time.sleep(5)
+
+    local_log = run_dir / ("shard-" + args.shard + ".log")
+    pull = _run(["scp", "-o", "BatchMode=yes", "debian:" + remote_log, str(local_log)])
+    local_done = run_dir / ("shard-" + args.shard + ".done")
+    _run(["scp", "-o", "BatchMode=yes", "debian:" + remote_done, str(local_done)])
+
+    pytest_rc = None
+    if local_done.is_file():
+        try:
+            pytest_rc = int(local_done.read_text(encoding="utf-8").strip().splitlines()[0])
+        except (ValueError, IndexError):
+            pytest_rc = None
+
+    if sid:
+        _cbapp(["stop", sid])
+    if remote_root.startswith(REMOTE_SHARE + "/cbcs-verify/"):
+        _run(["ssh", "-o", "BatchMode=yes", "debian", "rm -rf " + remote_root])
+
+    result = {
+        "feature": "guest-shard",
+        "sid": sid,
+        "run_id": run_id,
+        "shard": args.shard,
+        "done": done,
+        "pytest_rc": pytest_rc,
+        "app_run_rc": proc.returncode,
+        "log": str(local_log) if local_log.is_file() else None,
+        "unmet": None
+        if done
+        else (
+            "guest did not write "
+            + guest_done
+            + " within "
+            + str(args.timeout)
+            + "s (cbapp app-run wait-ready="
+            + str(args.wait_ready)
+            + " rc="
+            + str(proc.returncode)
+            + ")"
+        ),
+    }
+    _write_json(run_dir / "shard-result.json", result)
+    print("SHARD: " + ("PASS" if done and pytest_rc == 0 else "FAIL" if done else "BLOCKED"))
+    if result["unmet"]:
+        print("UNMET: " + result["unmet"])
+    if local_log.is_file():
+        print("LOG: " + str(local_log))
+    print("ARTIFACTS_REMAIN: " + str(run_dir))
+    if not done:
+        return 2
+    return 0 if pytest_rc == 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="control-cbcs")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -854,6 +1009,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_prove.add_argument("--repo")
     p_prove.add_argument("--wait-ready", type=int, default=90)
     p_prove.set_defaults(func=cmd_prove_launch)
+
+    p_shard = sub.add_parser(
+        "shard",
+        help="run a pytest shard in-process on the Linux guest AppRun",
+    )
+    p_shard.add_argument(
+        "shard",
+        nargs="?",
+        default="all",
+        choices=("all", "fast", "unit", "integration", "performance", "runtime_parity"),
+    )
+    p_shard.add_argument("--run-id")
+    p_shard.add_argument("--repo")
+    p_shard.add_argument("--wait-ready", type=int, default=60)
+    p_shard.add_argument("--timeout", type=int, default=1800)
+    p_shard.set_defaults(func=cmd_shard)
     return parser
 
 

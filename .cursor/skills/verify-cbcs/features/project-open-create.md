@@ -28,7 +28,7 @@ Preconditions:
 - Scratch destination under the disposable HOME or `/mnt/cbprobe/cbcs-verify/<run-id>/project`.
 - For valid-open, seed a folder that already contains `cbcs/project.json` (copy `example_projects/crud_showcase` into the run tree).
 
-Folder pickers are native dialogs. Prefer in-app Python that calls the same workflow the menu uses, then prove the visible result. If you must drive the picker, use `oskey` only after a fresh shot.
+Folder pickers are Qt `QFileDialog` with `DontUseNativeDialog`. They are not `#shell.*`. After `arm`, complete the visible dialog: type the path into `#fileNameEdit`, then click `text:&Choose`. `open_project_by_path` is not picker proof. Use `oskey` only if the Qt dialog cannot be completed, and only after a fresh shot.
 
 - **Seed example on the share.** From the Mac, rsync `example_projects/crud_showcase` to `debian:/home/joshua/shared-usb/cbcs-verify/<run-id>/project/crud`.
 - **Open by path.** Run `control-cbcs ctl "$SID" exec --` with `win=find('#shell.mainWindow'); win._file_project_commands_workflow.open_project_by_path('/mnt/cbprobe/cbcs-verify/<run-id>/project/crud')` only if a user-visible Open dialog cannot be completed. Then assert the user-visible result below. Prefer triggering **File → Open Project** and typing the path when the dialog accepts it.
@@ -41,7 +41,7 @@ Folder pickers are native dialogs. Prefer in-app Python that calls the same work
 
 ## Gotchas
 
-- Native file dialogs are not `#shell.*`. Shot first; `oskey` the path; do not guess coordinates.
+- File dialogs are not `#shell.*`. After `arm`, `#fileNameEdit` + `text:&Choose` is the real picker. Shot first; do not guess coordinates. `open_project_by_path` is not picker proof.
 - Opening another project replaces the current one. There is no Close Project command.
 - `vendor/` is hidden in the tree by default.
 - Proving recents requires leaving state in the disposable HOME and reading it before `stop` deletes the guest tree — copy `recent_projects.json` into the Mac artifact dir first.

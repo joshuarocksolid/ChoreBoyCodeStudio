@@ -174,6 +174,12 @@ $CONTROL prove-launch --repo "$PWD"
 # then: $CONTROL stop "$SID"
 ```
 
+Linux-guest pytest (not Mac Darwin AppRun). Refuse a live `cbcs-verify-*` session first. Runs `pytest.main` in-process under guest AppRun — do not treat a Mac `run_test_shard.py` result as product proof:
+
+```bash
+$CONTROL shard all --repo "$PWD"
+```
+
 Topology, VM start, and generic `cbapp` ops live in the user skill `run-choreboy-app`. This helper only adds CBCS isolation, `#shell.*` conveniences, and the artifact contract.
 
 ## Out of product
