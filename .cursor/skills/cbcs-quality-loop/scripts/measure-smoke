@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""Frozen M1-M6 ruler for the verify-cbcs hillclimb.
+
+Parent-only. One command, then freeze. Changing this file starts a new series.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+REPO_DEFAULT = Path("/Users/local/Projects/ChoreBoyCodeStudio")
+FIXTURE = (
+    REPO_DEFAULT
+    / ".cursor"
+    / "skills"
+    / "cbcs-quality-loop"
+    / "references"
+    / "smoke-fixture"
+)
+DECISIONS = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs" / "decisions.tsv"
+HEADER = "id\thypothesis\tchange\tbefore\tafter\tdelta\tgate\tverdict\tnote\tartifacts\n"
+TOKEN = "cbcs-smoke-token"
+STEPS = ("M1", "M2", "M3", "M4", "M5", "M6")
+
+
+def _control(repo: Path) -> Path:
+    return repo / ".cursor" / "skills" / "verify-cbcs" / "scripts" / "control-cbcs"
+
+
+def _run(argv, timeout=180):
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    return subprocess.run(
+        list(argv), text=True, capture_output=True, timeout=timeout, env=env
+    )
+
+
+def _extract(text, key):
+    prefix = key + "="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return ""
+
+
+def _ctl_exec(control, sid, code, wait=45):
+    proc = _run(
+        [str(control), "ctl", sid, "exec", "--", code, "--wait", str(wait)],
+        timeout=wait + 30,
+    )
+    payload = {}
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {"raw": proc.stdout, "stderr": proc.stderr}
+    result = payload.get("result") or {}
+    stdout = ""
+    if isinstance(result, dict):
+        stdout = str(result.get("stdout") or "").strip()
+    return proc.returncode, stdout, proc.stdout or "", proc.stderr or ""
+
+
+def _widget_text(control, sid, name):
+    code = (
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "text=''\n"
+        "for w in app.allWidgets():\n"
+        "    if w.objectName()=={name!r}:\n"
+        "        text=w.text() if hasattr(w,'text') else ''\n"
+        "        break\n"
+        "print(text)\n"
+    ).format(name=name)
+    _rc, stdout, _out, _err = _ctl_exec(control, sid, code)
+    return stdout
+
+
+def _widget_exists(control, sid, name):
+    code = (
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "print(any(w.objectName()=={name!r} for w in app.allWidgets()))\n"
+    ).format(name=name)
+    _rc, stdout, _out, _err = _ctl_exec(control, sid, code)
+    return stdout.strip() == "True"
+
+
+def _main_window_code(body: str) -> str:
+    return (
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "win=None\n"
+        "for w in app.topLevelWidgets():\n"
+        "    if w.objectName()=='shell.mainWindow':\n"
+        "        win=w\n"
+        "        break\n"
+        "if win is None:\n"
+        "    raise RuntimeError('main window missing')\n"
+        + body
+    )
+
+
+def _step(results, name, ok, detail, artifacts, shot_name=None):
+    results[name] = {"ok": bool(ok), "detail": detail}
+    print("STEP {} {} {}".format(name, "PASS" if ok else "FAIL", detail))
+    if artifacts and shot_name:
+        pass
+
+
+def measure(repo: Path) -> dict:
+    control = _control(repo)
+    started = time.time()
+    prove = _run(
+        [str(control), "prove-launch", "--repo", str(repo), "--wait-ready", "120"],
+        timeout=420,
+    )
+    combined = (prove.stdout or "") + "\n" + (prove.stderr or "")
+    sys.stdout.write(prove.stdout or "")
+    sys.stderr.write(prove.stderr or "")
+    sid = _extract(combined, "SID")
+    artifacts = _extract(combined, "ARTIFACTS")
+    results = {}
+    _step(
+        results,
+        "M1",
+        prove.returncode == 0 and "PROVE_LAUNCH: PASS" in combined,
+        "prove-launch rc={} sid={}".format(prove.returncode, sid),
+        artifacts,
+    )
+    if not sid or not results["M1"]["ok"]:
+        return _finish(results, started, sid, artifacts, control, launched=bool(sid))
+
+    # M2 welcome + onboarding
+    welcome = _widget_exists(control, sid, "shell.welcome")
+    new_btn = _widget_exists(control, sid, "shell.welcome.newProjectBtn")
+    trig = _run([str(control), "arm", sid, "shell.action.help.runtimeOnboarding"])
+    time.sleep(1.5)
+    onboarding = _widget_exists(control, sid, "shell.runtimeOnboardingDialog")
+    if onboarding:
+        _ctl_exec(
+            control,
+            sid,
+            "from PySide2.QtWidgets import QApplication\n"
+            "app=QApplication.instance()\n"
+            "for w in app.topLevelWidgets():\n"
+            "    if w.objectName()=='shell.runtimeOnboardingDialog':\n"
+            "        w.reject()\n"
+            "        break\n"
+            "print('closed')\n",
+        )
+        time.sleep(0.5)
+    _run([str(control), "shot", sid, "m2-welcome"])
+    _step(
+        results,
+        "M2",
+        welcome and new_btn and trig.returncode == 0 and onboarding,
+        "welcome={} new_btn={} trigger_rc={} onboarding={}".format(
+            welcome, new_btn, trig.returncode, onboarding
+        ),
+        artifacts,
+    )
+
+    # Seed fixture and open project (needed for M3-M6)
+    rec_path = Path(artifacts) / "run.json" if artifacts else None
+    rec = json.loads(rec_path.read_text()) if rec_path and rec_path.is_file() else {}
+    run_id = rec.get("run_id") or ""
+    remote_proj = "/home/joshua/shared-usb/cbcs-verify/{}/project".format(run_id)
+    guest_proj = "/mnt/cbprobe/cbcs-verify/{}/project".format(run_id)
+    if run_id and FIXTURE.is_dir():
+        _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_proj])
+        _run(
+            [
+                "rsync",
+                "-az",
+                "-e",
+                "ssh -o BatchMode=yes",
+                str(FIXTURE).rstrip("/") + "/",
+                "debian:" + remote_proj.rstrip("/") + "/",
+            ]
+        )
+    open_rc, open_out, _, open_err = _ctl_exec(
+        control,
+        sid,
+        _main_window_code(
+            "from PySide2.QtCore import QTimer\n"
+            "QTimer.singleShot(0, lambda: win._file_project_commands_workflow.open_project_by_path({path!r}))\n"
+            "print('armed-open')\n".format(path=guest_proj)
+        ),
+        wait=20,
+    )
+    time.sleep(2)
+    project_chip = _widget_text(control, sid, "shell.projectStatusLabel")
+    opened = "smoke" in project_chip.lower() or open_out.strip() in ("True", "true")
+    file_rc, file_out, _, _ = _ctl_exec(
+        control,
+        sid,
+        _main_window_code(
+            "from PySide2.QtCore import QTimer\n"
+            "QTimer.singleShot(0, lambda: win._editor_tab_factory.open_file_in_editor({path!r}, preview=False))\n"
+            "print('armed-file')\n".format(path=guest_proj + "/main.py")
+        ),
+        wait=20,
+    )
+    time.sleep(1)
+
+    # M3 run active file
+    run_trig = _run([str(control), "arm", sid, "shell.action.run.run"])
+    run_ok = False
+    run_detail = "trigger_rc={}".format(run_trig.returncode)
+    if run_trig.returncode == 0:
+        deadline = time.time() + 45
+        last = ""
+        while time.time() < deadline:
+            last = _widget_text(control, sid, "shell.runStatusLabel")
+            if "success" in last.lower() or "failed" in last.lower() or "terminated" in last.lower():
+                break
+            time.sleep(1)
+        log_text = _widget_text(control, sid, "shell.bottom.runLog.textArea")
+        if not log_text:
+            _rc, log_text, _, _ = _ctl_exec(
+                control,
+                sid,
+                "from PySide2.QtWidgets import QApplication\n"
+                "app=QApplication.instance()\n"
+                "text=''\n"
+                "for w in app.allWidgets():\n"
+                "    n=w.objectName()\n"
+                "    if n in ('shell.bottom.runLog','shell.bottom.runLog.textArea'):\n"
+                "        text=w.toPlainText() if hasattr(w,'toPlainText') else (w.text() if hasattr(w,'text') else '')\n"
+                "        if text:\n"
+                "            break\n"
+                "print(text[-2000:] if text else '')\n",
+            )
+        run_ok = "success" in last.lower() and TOKEN in (log_text or "")
+        run_detail = "status={!r} token={} open={} file={}".format(
+            last, TOKEN in (log_text or ""), opened, file_out
+        )
+        _run([str(control), "shot", sid, "m3-run"])
+    _step(results, "M3", run_ok, run_detail, artifacts)
+
+    # M4 test explorer — project open already started background collect.
+    # Do not click Refresh: that restarts pytest --collect-only. Poll the tree.
+    _run([str(control), "ctl", sid, "click", "#shell.activityBar.btn.test_explorer"])
+    wait_tx = _run(
+        [
+            str(control),
+            "wait",
+            sid,
+            "shell.testExplorer.tree",
+            "--min-rows",
+            "1",
+            "--timeout",
+            "45",
+        ],
+        timeout=90,
+    )
+    try:
+        tree_count = int((wait_tx.stdout or "0").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        tree_count = 0
+    tx_visible = _widget_exists(control, sid, "shell.testExplorer")
+    status_tx = _widget_text(control, sid, "shell.testExplorer.statusText")
+    empty_tx = _widget_text(control, sid, "shell.testExplorer.emptyLabel")
+    _run([str(control), "shot", sid, "m4-explorer"])
+    _step(
+        results,
+        "M4",
+        tx_visible and tree_count > 0,
+        "visible={} nodes={} status={!r} empty={!r}".format(
+            tx_visible, tree_count, status_tx, empty_tx
+        ),
+        artifacts,
+    )
+
+    # M5 four themes
+    theme_ok = True
+    theme_notes = []
+    for action, label in (
+        ("shell.action.view.theme.light", "light"),
+        ("shell.action.view.theme.dark", "dark"),
+        ("shell.action.view.theme.high_contrast_light", "hc-light"),
+        ("shell.action.view.theme.high_contrast_dark", "hc-dark"),
+    ):
+        tr = _run([str(control), "trigger", sid, action])
+        time.sleep(0.4)
+        still = _widget_text(control, sid, "shell.startupStatusLabel")
+        shot = _run([str(control), "shot", sid, "m5-" + label])
+        ok = tr.returncode == 0 and "Runtime ready" in still
+        theme_ok = theme_ok and ok
+        theme_notes.append("{}:trig={} ready={}".format(label, tr.returncode, "Runtime ready" in still))
+    _step(results, "M5", theme_ok, "; ".join(theme_notes), artifacts)
+
+    # M6 dirty + save
+    type_rc, _, _, _ = _ctl_exec(
+        control,
+        sid,
+        _main_window_code(
+            "from PySide2.QtWidgets import QApplication, QPlainTextEdit, QTextEdit\n"
+            "ed=None\n"
+            "for w in QApplication.instance().allWidgets():\n"
+            "    if w.objectName()=='shell.editorTabs.textEditor' and w.isVisible():\n"
+            "        ed=w\n"
+            "        break\n"
+            "if ed is None:\n"
+            "    print('no-editor')\n"
+            "else:\n"
+            "    ed.setFocus()\n"
+            "    if hasattr(ed,'insertPlainText'):\n"
+            "        ed.insertPlainText('\\n# smoke-dirty\\n')\n"
+            "    QApplication.processEvents()\n"
+            "    print('typed')\n"
+        ),
+    )
+    time.sleep(0.5)
+    editor_chip = _widget_text(control, sid, "shell.editorStatusLabel")
+    dirty = "modified" in editor_chip.lower() or "*" in editor_chip
+    save = _run([str(control), "arm", sid, "shell.action.file.save"])
+    time.sleep(0.8)
+    editor_after = _widget_text(control, sid, "shell.editorStatusLabel")
+    saved = save.returncode == 0 and (
+        "saved" in editor_after.lower() or "modified" not in editor_after.lower()
+    )
+    _run([str(control), "shot", sid, "m6-save"])
+    _step(
+        results,
+        "M6",
+        dirty and saved,
+        "dirty={} saved={} chip_before={!r} chip_after={!r}".format(
+            dirty, saved, editor_chip, editor_after
+        ),
+        artifacts,
+    )
+
+    return _finish(results, started, sid, artifacts, control, launched=True)
+
+
+def _finish(results, started, sid, artifacts, control, launched):
+    elapsed = time.time() - started
+    passed = sum(1 for name in STEPS if results.get(name, {}).get("ok"))
+    total = len(STEPS)
+    if launched and sid:
+        stop = _run([str(control), "stop", sid], timeout=120)
+        sys.stdout.write(stop.stdout or "")
+        remain = _extract((stop.stdout or "") + "\n" + (stop.stderr or ""), "ARTIFACTS_REMAIN")
+        if remain:
+            artifacts = remain
+    remain_ok = bool(artifacts) and Path(artifacts).is_dir()
+    measure = {
+        "metric": "m1-m6-smoke",
+        "passed": passed,
+        "total": total,
+        "elapsed_s": round(elapsed, 2),
+        "sid": sid,
+        "artifact_dir": artifacts,
+        "artifacts_remain": remain_ok,
+        "steps": results,
+        "gate": "skipped-no-apprun",
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if artifacts:
+        Path(artifacts).mkdir(parents=True, exist_ok=True)
+        (Path(artifacts) / "measure.json").write_text(
+            json.dumps(measure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    print(
+        "MEASURE passed={}/{} elapsed_s={} artifacts={} remain={}".format(
+            passed, total, measure["elapsed_s"], artifacts, remain_ok
+        )
+    )
+    return measure
+
+
+def _log_row(measure, hypothesis, change, before, verdict, note):
+    DECISIONS.parent.mkdir(parents=True, exist_ok=True)
+    if not DECISIONS.is_file():
+        DECISIONS.write_text(HEADER, encoding="utf-8")
+    after = "{}/{}".format(measure.get("passed"), measure.get("total"))
+    delta = ""
+    if before:
+        try:
+            b = int(str(before).split("/")[0])
+            a = int(measure.get("passed") or 0)
+            delta = str(a - b)
+        except ValueError:
+            delta = ""
+    row_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    line = "\t".join(
+        [
+            row_id,
+            hypothesis,
+            change,
+            before or "",
+            after,
+            delta,
+            measure.get("gate") or "skipped-no-apprun",
+            verdict,
+            note,
+            measure.get("artifact_dir") or "",
+        ]
+    )
+    with DECISIONS.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    print("LOG=" + str(DECISIONS))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", default=str(REPO_DEFAULT))
+    parser.add_argument("--log-row", action="store_true")
+    parser.add_argument("--hypothesis", default="baseline")
+    parser.add_argument("--change", default="none")
+    parser.add_argument("--before", default="")
+    parser.add_argument("--verdict", default="logged")
+    parser.add_argument("--note", default="M1-M6 freeze")
+    args = parser.parse_args()
+    measure_result = measure(Path(args.repo))
+    if args.log_row:
+        _log_row(
+            measure_result,
+            args.hypothesis,
+            args.change,
+            args.before,
+            args.verdict,
+            args.note,
+        )
+    passed = int(measure_result.get("passed") or 0)
+    total = int(measure_result.get("total") or 6)
+    remain = bool(measure_result.get("artifacts_remain"))
+    return 0 if passed == total and remain else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

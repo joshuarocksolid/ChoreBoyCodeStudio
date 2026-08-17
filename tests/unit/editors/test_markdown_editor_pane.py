@@ -53,7 +53,9 @@ def test_markdown_editor_pane_keeps_source_editor_accessible(qapp, tmp_path) -> 
     pane.apply_theme(_tokens())
 
     assert pane.source_editor() is editor
-    assert pane.mode() == MarkdownPreviewMode.PREVIEW
+    assert pane.mode() == MarkdownPreviewMode.SPLIT
+    assert not pane.source_editor().isHidden()
+    assert not pane.preview_widget().isHidden()
 
     pane.set_mode(MarkdownPreviewMode.SOURCE)
 

@@ -1,0 +1,1 @@
+print("cbcs-smoke-token")

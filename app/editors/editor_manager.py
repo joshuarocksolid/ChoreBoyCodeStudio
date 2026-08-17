@@ -211,7 +211,7 @@ class EditorManager:
         return tab
 
     def stale_open_paths(self) -> list[str]:
-        """Return open file paths whose disk mtime changed since last snapshot."""
+        """Return open file paths whose disk copy diverged from the tab snapshot."""
         stale_paths: list[str] = []
         for path in self._open_order:
             tab = self._tabs_by_path[path]
@@ -219,7 +219,14 @@ class EditorManager:
             if current_mtime is None:
                 continue
             if tab.last_known_mtime is None:
-                tab.set_last_known_mtime(current_mtime)
+                try:
+                    disk_content = self._read_file_contents(path)
+                except (OSError, ValueError):
+                    continue
+                if disk_content == tab.current_content:
+                    tab.set_last_known_mtime(current_mtime)
+                    continue
+                stale_paths.append(path)
                 continue
             if current_mtime != tab.last_known_mtime:
                 stale_paths.append(path)

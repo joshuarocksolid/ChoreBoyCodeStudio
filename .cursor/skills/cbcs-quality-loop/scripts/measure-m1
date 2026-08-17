@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Frozen M1 ruler: launch + doctor + ready chip + shot, then stop.
+
+Parent-only. Do not plant this script in a candidate worktree.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+REPO_DEFAULT = Path("/Users/local/Projects/ChoreBoyCodeStudio")
+CONTROL = (
+    REPO_DEFAULT / ".cursor" / "skills" / "verify-cbcs" / "scripts" / "control-cbcs"
+)
+DECISIONS = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs" / "decisions.tsv"
+HEADER = "id\thypothesis\tchange\tbefore\tafter\tdelta\tgate\tverdict\tnote\tartifacts\n"
+
+
+def _run(argv, timeout=300):
+    return subprocess.run(list(argv), text=True, capture_output=True, timeout=timeout)
+
+
+def _extract(text, key):
+    prefix = key + "="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return ""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", default=str(REPO_DEFAULT))
+    parser.add_argument("--log-row", action="store_true", help="append a baseline row to decisions.tsv")
+    args = parser.parse_args()
+    repo = Path(args.repo)
+    control = repo / ".cursor" / "skills" / "verify-cbcs" / "scripts" / "control-cbcs"
+    if not control.is_file():
+        print("error: missing " + str(control), file=sys.stderr)
+        return 2
+
+    started = time.time()
+    prove = _run([str(control), "prove-launch", "--repo", str(repo)], timeout=420)
+    elapsed = time.time() - started
+    combined = (prove.stdout or "") + "\n" + (prove.stderr or "")
+    sys.stdout.write(prove.stdout or "")
+    sys.stderr.write(prove.stderr or "")
+    artifacts = _extract(combined, "ARTIFACTS")
+    sid = _extract(combined, "SID")
+    if not sid:
+        for line in combined.splitlines():
+            if line.startswith("SID="):
+                sid = line.split("=", 1)[1].strip()
+    passed = 1 if prove.returncode == 0 and "PROVE_LAUNCH: PASS" in combined else 0
+
+    stop_rc = 0
+    artifacts_remain = False
+    if sid:
+        stop = _run([str(control), "stop", sid], timeout=120)
+        sys.stdout.write(stop.stdout or "")
+        sys.stderr.write(stop.stderr or "")
+        stop_rc = stop.returncode
+        remain = _extract((stop.stdout or "") + "\n" + (stop.stderr or ""), "ARTIFACTS_REMAIN")
+        if remain:
+            artifacts = remain or artifacts
+        artifacts_remain = bool(artifacts) and Path(artifacts).is_dir()
+    elif artifacts:
+        artifacts_remain = Path(artifacts).is_dir()
+
+    if passed and not artifacts_remain:
+        passed = 0
+
+    measure = {
+        "metric": "m1-launch-runtime",
+        "passed": passed,
+        "total": 1,
+        "elapsed_s": round(elapsed, 2),
+        "sid": sid,
+        "artifact_dir": artifacts,
+        "artifacts_remain": artifacts_remain,
+        "prove_rc": prove.returncode,
+        "stop_rc": stop_rc,
+        "gate": "skipped-no-apprun",
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if artifacts:
+        Path(artifacts).mkdir(parents=True, exist_ok=True)
+        (Path(artifacts) / "measure.json").write_text(
+            json.dumps(measure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    print(
+        "MEASURE passed={}/{} elapsed_s={} artifacts={} remain={}".format(
+            passed, 1, measure["elapsed_s"], artifacts, artifacts_remain
+        )
+    )
+
+    if args.log_row:
+        DECISIONS.parent.mkdir(parents=True, exist_ok=True)
+        if not DECISIONS.is_file():
+            DECISIONS.write_text(HEADER, encoding="utf-8")
+        row_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        line = "\t".join(
+            [
+                row_id,
+                "baseline",
+                "none",
+                "",
+                "{}/1".format(passed),
+                "",
+                "skipped-no-apprun",
+                "logged",
+                "first M1 freeze",
+                artifacts or "",
+            ]
+        )
+        with DECISIONS.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+        print("LOG=" + str(DECISIONS))
+
+    return 0 if passed and artifacts_remain else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -4,6 +4,35 @@ All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
 Release tags: `v0.1`, `v0.2`, `v0.4.5`.
 
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30. Next list mail-out is v0.4.8.
+
+## [0.4.8] - 2026-08-17
+
+Not yet mailed to LibrePy.
+
+### Fixed
+
+- Red error indicators now clear when the underlying error is fixed, without requiring Save. Realtime lint was bound to a stale editor manager after project open (request #40, Reuben Shirk).
+- Dot-attribute completion lists public members first, highlights the typed prefix, and shows inline help after the name (request #40).
+- Outside file changes are detected again, including restored drafts with no recorded mtime. Auto-save and Run no longer overwrite a newer disk file without a prompt (request #42, Ervin Newswanger).
+- Test Explorer discovers tests in projects that do not ship `run_tests.py`. The AppRun `-c` pytest payload now actually runs collect.
+
+### Changed
+
+- New markdown tabs open in Split so the source is editable and the preview stays visible. Preview-only was the default and felt read-only (request #41, Reuben Shirk).
+
+### Added
+
+- Drop a file onto the main window to open it in an editor tab (request #43, Ervin Newswanger).
+
+## [0.4.7] - 2026-06-30
+
+Mailed to `librepy-users@timtech.io` on 2026-06-30 (`email:24999`). No git tag.
+
+### Fixed
+
+- Completion suggestion list no longer crashes with `RecursionError` when keyboard navigation hits the first or last row (request #39, Clair Nolt). Reported on v0.4.5.
+
 ## [0.4.5] - 2026-06-27
 
 Tag: `v0.4.5`

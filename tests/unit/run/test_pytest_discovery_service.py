@@ -366,8 +366,10 @@ def test_apprun_payload_emits_marker_when_pytest_missing(
 
     payload = build_apprun_pytest_payload(["--collect-only", "-q"])
 
-    assert "except ModuleNotFoundError" in payload
+    assert "\n" not in payload
+    assert "SystemExit(pytest.main" not in payload
     assert PYTEST_MISSING_MARKER in payload
+    assert "find_spec('pytest')" in payload
 
 
 def test_discover_tests_maps_pytest_missing_marker_to_friendly_message(

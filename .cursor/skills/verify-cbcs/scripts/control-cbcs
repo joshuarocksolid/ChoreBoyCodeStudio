@@ -1,0 +1,805 @@
+#!/usr/bin/env python3
+"""Host-side driver for ChoreBoy Code Studio on the ChoreBoy VM.
+
+You are on the Mac cockpit. This wraps cbapp / cb-virsh and keeps disposable
+guest state plus proof artifacts on this machine.
+
+Commands:
+  launch [--source|--install] [--run-id ID] [--repo PATH] [--zip PATH]
+  doctor <sid>
+  ctl <sid> <op> [args...]
+  trigger <sid> <action-id>
+  arm <sid> <action-id>
+  read <sid> <objectName>
+  wait <sid> <objectName> [--contains|--not-contains|--regex|--min-rows] [--timeout]
+  shot <sid> <name>
+  stop <sid>
+  prove-launch [--run-id ID] [--repo PATH]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple
+
+
+SKILL_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_ARTIFACTS = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs"
+REMOTE_SHARE = os.environ.get("CHOREBOY_REMOTE_SHARE", "/home/joshua/shared-usb")
+GUEST_SHARE = "/mnt/cbprobe"
+SESSION_NAME = "cbcs-verify"
+READY_NEEDLE = "Runtime ready"
+WINDOW_NEEDLE = "ChoreBoy Code Studio"
+RSYNC_EXCLUDES = (
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "node_modules",
+    ".venv-editor",
+    ".mypy_cache",
+    ".ruff_cache",
+    "ChoreBoyCodeStudio_artifacts",
+    "*.pyc",
+    ".DS_Store",
+)
+
+
+def _now_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _die(msg: str, code: int = 1) -> None:
+    print("error: " + msg, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def _which(name: str) -> str:
+    path = shutil.which(name)
+    if not path:
+        _die("missing on PATH: " + name + " (need ~/bin/cbapp and ~/bin/cb-virsh)")
+    return path
+
+
+def _run(
+    argv: Sequence[str],
+    check: bool = False,
+    capture: bool = True,
+    timeout: Optional[int] = None,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        list(argv),
+        check=check,
+        text=True,
+        capture_output=capture,
+        timeout=timeout,
+    )
+
+
+def _cbapp(args: Sequence[str], timeout: Optional[int] = None) -> subprocess.CompletedProcess:
+    return _run([_which("cbapp")] + list(args), timeout=timeout)
+
+
+def _cb_virsh(args: Sequence[str]) -> subprocess.CompletedProcess:
+    return _run([_which("cb-virsh")] + list(args))
+
+
+def _artifacts_root() -> Path:
+    root = Path(os.environ.get("CBCS_VERIFY_ARTIFACTS", str(DEFAULT_ARTIFACTS)))
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _run_dir(run_id: str) -> Path:
+    path = _artifacts_root() / run_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _write_json(path: Path, payload: object) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _load_json(path: Path) -> Optional[dict]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _find_run_record(sid: str) -> Optional[dict]:
+    root = _artifacts_root()
+    if not root.is_dir():
+        return None
+    for child in root.iterdir():
+        rec = _load_json(child / "run.json")
+        if rec and rec.get("sid") == sid:
+            return rec
+    return None
+
+
+def _record_for_sid(sid: str) -> dict:
+    rec = _find_run_record(sid)
+    if rec is None:
+        _die("no run.json for session " + sid + " (this run did not start it)")
+    return rec
+
+
+def _lab_up() -> None:
+    ping = _run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "debian", "true"])
+    if ping.returncode != 0:
+        _die("cannot reach debian (is Tailscale up?). Try: ssh debian true", 2)
+    status = _cb_virsh(["status"])
+    text = ((status.stdout or "") + (status.stderr or "")).lower()
+    if status.returncode != 0 or "running" not in text:
+        _die("ChoreBoy VM is not running. Start it: cb-virsh start (wait ~45-60s)")
+
+
+def _parse_sessions(text: str) -> List[Tuple[str, str]]:
+    rows = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("SESSION") or line.startswith("(no"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            rows.append((parts[0], parts[1]))
+    return rows
+
+
+def _active_verify_sessions() -> List[Tuple[str, str]]:
+    proc = _cbapp(["sessions"])
+    rows = _parse_sessions(proc.stdout or "")
+    live = []
+    for name, state in rows:
+        if not name.startswith(SESSION_NAME):
+            continue
+        if state in ("ready", "running", "launching", "starting"):
+            live.append((name, state))
+    return live
+
+
+def _refuse_shared(except_sid: Optional[str] = None) -> None:
+    live = [(n, s) for n, s in _active_verify_sessions() if n != except_sid]
+    if live:
+        shown = ", ".join("{} ({})".format(n, s) for n, s in live)
+        _die(
+            "another verify session is already live on the shared desktop: "
+            + shown
+            + ". Refuse to double-drive. Stop it first or wait."
+        )
+
+
+def _find_repo(explicit: Optional[str]) -> Path:
+    if explicit:
+        path = Path(explicit).expanduser().resolve()
+        if not (path / "run_editor.py").is_file():
+            _die("not a CBCS checkout (missing run_editor.py): " + str(path))
+        return path
+    env = os.environ.get("CBCS_REPO")
+    if env:
+        return _find_repo(env)
+    here = Path.cwd().resolve()
+    for root in [here, *here.parents]:
+        if (root / "run_editor.py").is_file():
+            return root
+    for root in SKILL_DIR.parents:
+        if (root / "run_editor.py").is_file():
+            return root
+    _die("could not find repo root (run_editor.py). Pass --repo or set CBCS_REPO")
+
+
+REMOTE_VENDOR = os.environ.get(
+    "CBCS_REMOTE_VENDOR",
+    "/home/joshua/Documents/ChoreBoyCodeStudio_artifacts/vendor_py39",
+)
+
+
+def _vendor_src(repo: Path) -> Optional[Path]:
+    vendor = repo / "vendor"
+    if vendor.is_dir() and not vendor.is_symlink():
+        return vendor
+    if vendor.is_symlink() and vendor.exists():
+        return vendor
+    artifacts = Path(os.environ.get("CBCS_ARTIFACTS_DIR", str(repo.parent / "ChoreBoyCodeStudio_artifacts")))
+    for name in ("vendor_py39", "vendor"):
+        cand = artifacts / name
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def _rsync_source(repo: Path, remote_src: str) -> None:
+    mkdir = _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_src])
+    if mkdir.returncode != 0:
+        _die("could not create remote src dir: " + remote_src)
+    argv = [
+        "rsync",
+        "-az",
+        "--copy-links",
+        "-e",
+        "ssh -o BatchMode=yes -o ConnectTimeout=15",
+    ]
+    for exc in RSYNC_EXCLUDES:
+        argv.extend(["--exclude", exc])
+    argv.extend(["--exclude", "vendor"])
+    argv.extend([str(repo).rstrip("/") + "/", "debian:" + remote_src.rstrip("/") + "/"])
+    proc = _run(argv)
+    # virtiofs often returns 23 on --delete; we never delete. 0 and 23 are ok
+    # if the editor entry arrived.
+    check = _run(["ssh", "-o", "BatchMode=yes", "debian", "test -f " + remote_src.rstrip("/") + "/run_editor.py"])
+    if check.returncode != 0:
+        _die("rsync of checkout failed (run_editor.py missing):\n" + (proc.stderr or proc.stdout or ""))
+    if proc.returncode not in (0, 23):
+        _die("rsync of checkout failed:\n" + (proc.stderr or proc.stdout or ""))
+    remote_vendor = remote_src.rstrip("/") + "/vendor"
+    vendor = _vendor_src(repo)
+    if vendor is not None:
+        vproc = _run(
+            [
+                "rsync",
+                "-az",
+                "--copy-links",
+                "-e",
+                "ssh -o BatchMode=yes -o ConnectTimeout=15",
+                str(vendor).rstrip("/") + "/",
+                "debian:" + remote_vendor + "/",
+            ]
+        )
+        if vproc.returncode == 0:
+            return
+        print("note: local vendor rsync failed; trying lab vendor", file=sys.stderr)
+    copy = _run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "debian",
+            "test -d {src} && mkdir -p {dest} && rsync -a {src}/ {dest}/".format(
+                src=REMOTE_VENDOR, dest=remote_vendor
+            ),
+        ]
+    )
+    if copy.returncode != 0:
+        print("note: no vendor tree found; tooling checks may fail", file=sys.stderr)
+
+
+def _extract_sid(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        line = line.strip()
+        if re.match(r"^cbcs-verify-\d{8}T\d{6}Z-[0-9a-f]+$", line):
+            return line
+        if re.match(r"^[A-Za-z0-9._-]+-\d{8}T\d{6}Z-[0-9a-f]+$", line) and "cbcs-verify" in line:
+            return line
+    return None
+
+
+def _shot_path_from_output(stdout: str, stderr: str) -> Optional[str]:
+    for line in (stdout + "\n" + stderr).splitlines():
+        if line.startswith("SHOT: "):
+            return line[6:].strip()
+    return None
+
+
+def cmd_launch(args: argparse.Namespace) -> int:
+    _lab_up()
+    _refuse_shared()
+    run_id = args.run_id or _now_stamp()
+    run_dir = _run_dir(run_id)
+    mode = "install" if args.install else "source"
+    remote_root = "{}/cbcs-verify/{}".format(REMOTE_SHARE, run_id)
+    guest_root = "{}/cbcs-verify/{}".format(GUEST_SHARE, run_id)
+    guest_src = guest_root + "/src"
+    # SQLite (local history) deadlocks on virtiofs. HOME must be on the guest disk.
+    guest_home = "/home/default/cbcs-verify-" + run_id
+    _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_root])
+
+    if mode == "source":
+        repo = _find_repo(args.repo)
+        _rsync_source(repo, remote_root + "/src")
+        entry = guest_src + "/.cursor/skills/verify-cbcs/scripts/guest_boot.py"
+        launch_args = [
+            "app-run",
+            entry,
+            "--package-root",
+            guest_src,
+            "--cwd",
+            guest_src,
+            "--name",
+            SESSION_NAME,
+            "--env",
+            "HOME=" + guest_home,
+            "--wait-ready",
+            str(args.wait_ready),
+        ]
+    else:
+        zip_path = args.zip
+        if not zip_path:
+            _die("install mode needs --zip /path/to/choreboy_code_studio_installer_v*.zip")
+        zip_path = str(Path(zip_path).expanduser().resolve())
+        if not os.path.isfile(zip_path):
+            _die("zip not found: " + zip_path)
+        dest = "/home/default/cbcs-verify-install-" + run_id
+        launch_args = [
+            "install-test",
+            zip_path,
+            "--extract-parent",
+            "/home/default",
+            "--extract-dest",
+            dest,
+            "--installer-entry",
+            "installer/install.py",
+            "--password",
+            args.password or "rsd",
+            "--name",
+            SESSION_NAME,
+            "--env",
+            "HOME=" + guest_home,
+        ]
+
+    print("launching mode={} run_id={}".format(mode, run_id), file=sys.stderr)
+    proc = _cbapp(launch_args, timeout=max(args.wait_ready + 30, 180))
+    time.sleep(5)
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    sid = _extract_sid(combined)
+    if sid is None:
+        _write_json(
+            run_dir / "launch-failed.json",
+            {"returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
+        )
+        _die("launch did not print a session id")
+    record = {
+        "sid": sid,
+        "run_id": run_id,
+        "mode": mode,
+        "guest_home": guest_home,
+        "guest_src": guest_src if mode == "source" else None,
+        "guest_root": guest_root,
+        "remote_root": remote_root,
+        "artifact_dir": str(run_dir),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _write_json(run_dir / "run.json", record)
+    print("SID=" + sid)
+    print("RUN_ID=" + run_id)
+    print("ARTIFACTS=" + str(run_dir))
+    payload = _status_payload(sid)
+    if not _session_state(payload):
+        print(
+            "note: guest runner did not claim this session. "
+            "The VM runs one app session at a time. "
+            "Check `cbapp sessions` for a live heartbeat and wait.",
+            file=sys.stderr,
+        )
+    return 0 if proc.returncode == 0 else proc.returncode
+
+
+def _status_payload(sid: str) -> dict:
+    proc = _cbapp(["status", sid])
+    try:
+        return json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return {"raw": proc.stdout, "returncode": proc.returncode}
+
+
+def _session_state(payload: dict) -> str:
+    state = payload.get("state") or {}
+    if isinstance(state, dict):
+        return str(state.get("state") or "")
+    return str(state or "")
+
+
+def _ctl_exec(sid: str, code: str, wait: int = 45) -> Tuple[int, dict, str, str]:
+    proc = _cbapp(["ctl", sid, "eval", "-", code, "--wait", str(wait)])
+    payload = {}
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {"raw": proc.stdout}
+    return proc.returncode, payload, proc.stdout or "", proc.stderr or ""
+
+
+def _exec_stdout(payload: dict) -> str:
+    result = payload.get("result") or {}
+    if isinstance(result, dict):
+        return str(result.get("stdout") or "").strip()
+    return ""
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    _lab_up()
+    sid = args.sid
+    rec = _find_run_record(sid)
+    if rec is None:
+        print("DOCTOR: FAIL (session was not started by control-cbcs)")
+        return 1
+    payload = _status_payload(sid)
+    state = _session_state(payload)
+    (rec.get("artifact_dir") and Path(rec["artifact_dir"]).mkdir(parents=True, exist_ok=True))
+    _write_json(Path(rec["artifact_dir"]) / "doctor-status.json", payload)
+    if state not in ("ready", "running"):
+        print("DOCTOR: FAIL (state={} want ready|running)".format(state or "?"))
+        return 1
+    others = [(n, s) for n, s in _active_verify_sessions() if n != sid]
+    if others:
+        print("DOCTOR: FAIL (other live verify session: {})".format(others))
+        return 1
+    rc, ev, out, err = _ctl_exec(
+        sid,
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "text=''\n"
+        "for w in app.allWidgets():\n"
+        "    if w.objectName()=='shell.startupStatusLabel':\n"
+        "        text=w.text()\n"
+        "        break\n"
+        "print(text)\n",
+    )
+    label = _exec_stdout(ev)
+    (Path(rec["artifact_dir"]) / "doctor-startup-label.txt").write_text(label + "\n", encoding="utf-8")
+    home_ok = False
+    guest_home = rec.get("guest_home") or ""
+    if guest_home:
+        rc2, ev2, _, _ = _ctl_exec(sid, "import os; print(os.environ.get('HOME',''))")
+        home_now = _exec_stdout(ev2)
+        home_ok = home_now == guest_home
+        (Path(rec["artifact_dir"]) / "doctor-home.txt").write_text(home_now + "\n", encoding="utf-8")
+    ready = READY_NEEDLE in label
+    print("state: " + state)
+    print("startup: " + (label or "(empty)"))
+    print("home: " + ("ok " + guest_home if home_ok else "mismatch"))
+    if ready and home_ok:
+        print("DOCTOR: OK")
+        return 0
+    if ready and not home_ok:
+        print("DOCTOR: FAIL (HOME is not the disposable dir)")
+        return 1
+    print("DOCTOR: FAIL (startup label does not contain {!r})".format(READY_NEEDLE))
+    return 1
+
+
+def _translate_ctl_argv(argv: List[str]) -> List[str]:
+    if argv and argv[0] == "exec":
+        rest = argv[1:]
+        if rest and rest[0] == "--":
+            rest = rest[1:]
+        if not rest:
+            _die("ctl exec needs Python code")
+        return ["eval", "-"] + rest
+    return argv
+
+
+def cmd_ctl(args: argparse.Namespace) -> int:
+    rec = _record_for_sid(args.sid)
+    forwarded = _translate_ctl_argv(list(args.ctl_args))
+    proc = _cbapp(["ctl", args.sid] + forwarded)
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    log_path = Path(rec["artifact_dir"]) / "ctl.log"
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write("$ cbapp ctl {} {}\n".format(args.sid, " ".join(forwarded)))
+        handle.write(proc.stdout or "")
+        handle.write(proc.stderr or "")
+        handle.write("\n")
+    return proc.returncode
+
+
+def _find_action_code(action_id: str, fire: str) -> str:
+    return (
+        "from PySide2.QtWidgets import QApplication, QAction\n"
+        "from PySide2.QtCore import QTimer\n"
+        "app=QApplication.instance()\n"
+        "act=None\n"
+        "for w in app.allWidgets():\n"
+        "    found=w.findChild(QAction, {id!r})\n"
+        "    if found:\n"
+        "        act=found\n"
+        "        break\n"
+        "if act is None:\n"
+        "    for a in app.findChildren(QAction):\n"
+        "        if a.objectName()=={id!r}:\n"
+        "            act=a\n"
+        "            break\n"
+        "if act is None:\n"
+        "    raise RuntimeError('action not found: '+{id!r})\n"
+        "{fire}\n"
+        "print(act.objectName())\n"
+    ).format(id=action_id, fire=fire)
+
+
+def cmd_trigger(args: argparse.Namespace) -> int:
+    action_id = args.action_id
+    code = _find_action_code(action_id, "act.trigger()")
+    rc, payload, out, err = _ctl_exec(args.sid, code)
+    sys.stdout.write(out)
+    sys.stderr.write(err)
+    rec = _record_for_sid(args.sid)
+    (Path(rec["artifact_dir"]) / "last-trigger.txt").write_text(
+        action_id + "\n" + _exec_stdout(payload) + "\n", encoding="utf-8"
+    )
+    return rc
+
+
+def cmd_arm(args: argparse.Namespace) -> int:
+    action_id = args.action_id
+    code = _find_action_code(action_id, "QTimer.singleShot(0, act.trigger)")
+    rc, payload, out, err = _ctl_exec(args.sid, code)
+    sys.stdout.write(out)
+    sys.stderr.write(err)
+    rec = _record_for_sid(args.sid)
+    (Path(rec["artifact_dir"]) / "last-arm.txt").write_text(
+        action_id + "\n" + _exec_stdout(payload) + "\n", encoding="utf-8"
+    )
+    return rc
+
+
+def _read_widget_text(sid: str, name: str) -> str:
+    code = (
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "text=''\n"
+        "for w in app.allWidgets():\n"
+        "    if w.objectName()=={name!r}:\n"
+        "        text=w.text() if hasattr(w,'text') else ''\n"
+        "        break\n"
+        "print(text)\n"
+    ).format(name=name)
+    _rc, payload, _out, _err = _ctl_exec(sid, code)
+    return _exec_stdout(payload).strip()
+
+
+def _read_tree_rows(sid: str, name: str) -> int:
+    code = (
+        "from PySide2.QtWidgets import QApplication\n"
+        "app=QApplication.instance()\n"
+        "count=0\n"
+        "for w in app.allWidgets():\n"
+        "    if w.objectName()=={name!r}:\n"
+        "        if hasattr(w,'topLevelItemCount'):\n"
+        "            count=w.topLevelItemCount()\n"
+        "        elif hasattr(w,'model') and w.model() is not None:\n"
+        "            count=w.model().rowCount()\n"
+        "        break\n"
+        "print(count)\n"
+    ).format(name=name)
+    _rc, payload, _out, _err = _ctl_exec(sid, code)
+    try:
+        return int(_exec_stdout(payload).splitlines()[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def cmd_read(args: argparse.Namespace) -> int:
+    name = args.object_name.lstrip("#")
+    text = _read_widget_text(args.sid, name)
+    print(text)
+    rec = _record_for_sid(args.sid)
+    (Path(rec["artifact_dir"]) / ("read-" + name.replace(".", "_") + ".txt")).write_text(
+        text + "\n", encoding="utf-8"
+    )
+    return 0 if text else 1
+
+
+def cmd_wait(args: argparse.Namespace) -> int:
+    name = args.object_name.lstrip("#")
+    deadline = time.time() + max(args.timeout, 1)
+    last = ""
+    matched = False
+    while time.time() < deadline:
+        if args.min_rows is not None:
+            count = _read_tree_rows(args.sid, name)
+            last = str(count)
+            matched = count >= args.min_rows
+        else:
+            last = _read_widget_text(args.sid, name)
+            matched = True
+            if args.contains is not None:
+                matched = matched and args.contains in last
+            if args.not_contains is not None:
+                matched = matched and args.not_contains not in last
+            if args.regex:
+                matched = matched and bool(re.search(args.regex, last))
+            if args.contains is None and args.not_contains is None and not args.regex:
+                matched = bool(last)
+        if matched:
+            break
+        time.sleep(max(args.interval, 0.2))
+    print(last)
+    rec = _record_for_sid(args.sid)
+    (Path(rec["artifact_dir"]) / ("wait-" + name.replace(".", "_") + ".txt")).write_text(
+        last + "\n", encoding="utf-8"
+    )
+    return 0 if matched else 1
+
+
+def cmd_shot(args: argparse.Namespace) -> int:
+    rec = _record_for_sid(args.sid)
+    proc = _cbapp(["ctl", args.sid, "screenshot", "--target", "app"])
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    src = _shot_path_from_output(proc.stdout or "", proc.stderr or "")
+    dest = Path(rec["artifact_dir"]) / (args.name if args.name.endswith(".png") else args.name + ".png")
+    if src and os.path.isfile(src):
+        shutil.copy2(src, dest)
+        print("SAVED: " + str(dest))
+        return 0
+    if src:
+        # Wrapper already pulled it; copy if the rewritten path exists.
+        if os.path.isfile(src):
+            shutil.copy2(src, dest)
+            print("SAVED: " + str(dest))
+            return 0
+    print("note: screenshot command returned but local copy was not found", file=sys.stderr)
+    return proc.returncode
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    rec = _find_run_record(args.sid)
+    if rec:
+        guest_home = rec.get("guest_home") or ""
+        if guest_home.startswith("/home/default/cbcs-verify-"):
+            _ctl_exec(
+                args.sid,
+                "import shutil, os\n"
+                "p=os.environ.get('HOME','')\n"
+                "shutil.rmtree(p, ignore_errors=True) if p.startswith('/home/default/cbcs-verify-') else None\n"
+                "print(p)\n",
+                wait=20,
+            )
+    proc = _cbapp(["stop", args.sid])
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    if rec:
+        remote_root = rec.get("remote_root")
+        if remote_root and remote_root.startswith(REMOTE_SHARE + "/cbcs-verify/"):
+            _run(["ssh", "-o", "BatchMode=yes", "debian", "rm -rf " + remote_root])
+        rec["stopped_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json(Path(rec["artifact_dir"]) / "run.json", rec)
+        print("ARTIFACTS_REMAIN: " + rec["artifact_dir"])
+    return proc.returncode
+
+
+def cmd_prove_launch(args: argparse.Namespace) -> int:
+    launch_ns = argparse.Namespace(
+        source=True,
+        install=False,
+        run_id=args.run_id,
+        repo=args.repo,
+        zip=None,
+        password="rsd",
+        wait_ready=args.wait_ready,
+    )
+    rc = cmd_launch(launch_ns)
+    if rc != 0:
+        return rc
+    rec = None
+    for child in _artifacts_root().iterdir():
+        cand = _load_json(child / "run.json")
+        if cand and cand.get("run_id") == (args.run_id or cand.get("run_id")):
+            if rec is None or cand.get("started_at", "") >= rec.get("started_at", ""):
+                rec = cand
+    if rec is None:
+        _die("prove-launch lost the run record")
+    sid = rec["sid"]
+    doctor_ns = argparse.Namespace(sid=sid)
+    doctor_rc = cmd_doctor(doctor_ns)
+    shot_ns = argparse.Namespace(sid=sid, name="launch-runtime")
+    shot_rc = cmd_shot(shot_ns)
+    tree = _cbapp(["ctl", sid, "tree", "--max-depth", "2", "--wait", "20"])
+    (Path(rec["artifact_dir"]) / "launch-tree.json").write_text(tree.stdout or "", encoding="utf-8")
+    title_rc, title_payload, _, _ = _ctl_exec(
+        sid,
+        "from PySide2.QtWidgets import QApplication\n"
+        "w=QApplication.activeWindow()\n"
+        "print(w.windowTitle() if w is not None else '')\n",
+    )
+    title = _exec_stdout(title_payload)
+    (Path(rec["artifact_dir"]) / "window-title.txt").write_text(title + "\n", encoding="utf-8")
+    label_path = Path(rec["artifact_dir"]) / "doctor-startup-label.txt"
+    label = label_path.read_text(encoding="utf-8").strip() if label_path.is_file() else ""
+    passed = doctor_rc == 0 and READY_NEEDLE in label and WINDOW_NEEDLE in title
+    result = {
+        "feature": "launch-runtime",
+        "sid": sid,
+        "run_id": rec["run_id"],
+        "passed": passed,
+        "doctor_rc": doctor_rc,
+        "shot_rc": shot_rc,
+        "startup_label": label,
+        "window_title": title,
+        "artifact_dir": rec["artifact_dir"],
+    }
+    _write_json(Path(rec["artifact_dir"]) / "prove-launch.json", result)
+    print("PROVE_LAUNCH: " + ("PASS" if passed else "FAIL"))
+    print("SID=" + sid)
+    print("ARTIFACTS=" + rec["artifact_dir"])
+    return 0 if passed else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="control-cbcs")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_launch = sub.add_parser("launch", help="start an isolated editor session")
+    mode = p_launch.add_mutually_exclusive_group()
+    mode.add_argument("--source", action="store_true", default=True)
+    mode.add_argument("--install", action="store_true")
+    p_launch.add_argument("--run-id")
+    p_launch.add_argument("--repo")
+    p_launch.add_argument("--zip")
+    p_launch.add_argument("--password", default="rsd")
+    p_launch.add_argument("--wait-ready", type=int, default=90)
+    p_launch.set_defaults(func=cmd_launch)
+
+    p_doc = sub.add_parser("doctor", help="is this session worth driving?")
+    p_doc.add_argument("sid")
+    p_doc.set_defaults(func=cmd_doctor)
+
+    p_ctl = sub.add_parser("ctl", help="pass through to cbapp ctl (exec maps to in-app Python)")
+    p_ctl.add_argument("sid")
+    p_ctl.add_argument("ctl_args", nargs=argparse.REMAINDER)
+    p_ctl.set_defaults(func=cmd_ctl)
+
+    p_tr = sub.add_parser("trigger", help="trigger a shell.action.* QAction")
+    p_tr.add_argument("sid")
+    p_tr.add_argument("action_id")
+    p_tr.set_defaults(func=cmd_trigger)
+
+    p_arm = sub.add_parser("arm", help="trigger an action on the next event-loop tick (safe for modal dialogs)")
+    p_arm.add_argument("sid")
+    p_arm.add_argument("action_id")
+    p_arm.set_defaults(func=cmd_arm)
+
+    p_read = sub.add_parser("read", help="read .text() of a named widget")
+    p_read.add_argument("sid")
+    p_read.add_argument("object_name")
+    p_read.set_defaults(func=cmd_read)
+
+    p_wait = sub.add_parser("wait", help="poll a named widget until text or tree rows match")
+    p_wait.add_argument("sid")
+    p_wait.add_argument("object_name")
+    p_wait.add_argument("--contains")
+    p_wait.add_argument("--not-contains")
+    p_wait.add_argument("--regex")
+    p_wait.add_argument("--min-rows", type=int)
+    p_wait.add_argument("--timeout", type=int, default=30)
+    p_wait.add_argument("--interval", type=float, default=1.0)
+    p_wait.set_defaults(func=cmd_wait)
+
+    p_shot = sub.add_parser("shot", help="app screenshot into this run's artifact dir")
+    p_shot.add_argument("sid")
+    p_shot.add_argument("name")
+    p_shot.set_defaults(func=cmd_shot)
+
+    p_stop = sub.add_parser("stop", help="stop this session and delete disposable guest dirs")
+    p_stop.add_argument("sid")
+    p_stop.set_defaults(func=cmd_stop)
+
+    p_prove = sub.add_parser("prove-launch", help="launch + doctor + capture launch-runtime proof")
+    p_prove.add_argument("--run-id")
+    p_prove.add_argument("--repo")
+    p_prove.add_argument("--wait-ready", type=int, default=90)
+    p_prove.set_defaults(func=cmd_prove_launch)
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

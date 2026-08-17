@@ -271,3 +271,37 @@ def test_stale_open_paths_reports_disk_modified_files(tmp_path: Path) -> None:
 
     manager.acknowledge_disk_mtime(str(file_path), manager.current_disk_mtime(str(file_path)))
     assert manager.stale_open_paths() == []
+
+
+def test_stale_open_paths_compares_content_when_mtime_is_unknown(tmp_path: Path) -> None:
+    file_path = tmp_path / "restored.py"
+    file_path.write_text("house office\n", encoding="utf-8")
+    manager = EditorManager()
+    opened = manager.open_file_with_content(
+        str(file_path),
+        "shop buffer\n",
+        original_content="shop buffer\n",
+        last_known_mtime=None,
+    )
+
+    stale = manager.stale_open_paths()
+
+    assert stale == [str(file_path.resolve())]
+    assert opened.tab.last_known_mtime is None
+
+
+def test_stale_open_paths_records_mtime_when_unknown_and_content_matches(tmp_path: Path) -> None:
+    file_path = tmp_path / "matched.py"
+    file_path.write_text("same\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file_with_content(
+        str(file_path),
+        "same\n",
+        original_content="same\n",
+        last_known_mtime=None,
+    )
+
+    assert manager.stale_open_paths() == []
+    tab = manager.get_tab(str(file_path))
+    assert tab is not None
+    assert tab.last_known_mtime is not None

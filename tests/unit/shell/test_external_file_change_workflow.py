@@ -90,6 +90,9 @@ class _RecordingExternalHost:
     def update_editor_status_for_path(self, file_path: str) -> None:
         self.status_updates.append(file_path)
 
+    def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
+        del file_path, trigger
+
 
 @dataclass
 class _RecordingLocalHistory:

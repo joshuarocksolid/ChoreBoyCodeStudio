@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "name": "smoke-fixture",
+  "default_entry": "main.py"
+}

@@ -1,0 +1,18 @@
+{
+  "_comment": "Maps this repo to its RockSolid Ops communications. Managed by the ops-comms-setup skill; read by the ops-comms skill. Safe to commit (contains no secrets). CBCS is an internal LibrePy open-source project, not a client company. Joshua Aguilar is the list liaison.",
+  "organization_id": 1,
+  "company": {
+    "id": 196,
+    "name": "RockSolid Internal",
+    "website": ""
+  },
+  "contacts": [],
+  "projects": [],
+  "extra_participants": {
+    "emails": [
+      "joshua@rocksoliddata.solutions",
+      "enn@mailaxis.net"
+    ],
+    "phones": []
+  }
+}

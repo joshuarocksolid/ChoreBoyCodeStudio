@@ -270,6 +270,19 @@ class MainWindowSaveDocumentHost:
     def render_lint_for_file(self, file_path: str, *, trigger: str) -> None:
         self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
 
+    def resolve_external_change_before_save(self, file_path: str) -> str:
+        from app.shell.external_file_change_workflow import ExternalFileChangeOutcome
+
+        outcome = self._window._external_file_change_workflow.check_and_handle(file_path)
+        if outcome is ExternalFileChangeOutcome.CANCELLED:
+            return "abort"
+        if outcome in (
+            ExternalFileChangeOutcome.RELOADED,
+            ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES,
+        ):
+            return "already_synced"
+        return "proceed"
+
     def refresh_test_discovery(self) -> None:
         test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)
         if test_runner_workflow is not None:
@@ -377,8 +390,9 @@ class SaveWorkflow:
             return True
 
         any_failure = False
+        check_stale_disk = decision.scope is not DocumentScope.EXTERNAL_RELOAD
         for file_path in decision.affected_paths:
-            if not self.save_tab(file_path):
+            if not self.save_tab(file_path, check_stale_disk=check_stale_disk):
                 any_failure = True
         return not any_failure
 
@@ -413,6 +427,8 @@ class SaveWorkflow:
         for tab in self._editor_manager().all_tabs():
             if not tab.is_dirty:
                 continue
+            if self._tab_is_stale_on_disk(tab.file_path):
+                continue
             try:
                 self.save_tab(
                     tab.file_path,
@@ -427,6 +443,30 @@ class SaveWorkflow:
                     exc_info=True,
                 )
 
+    def _tab_is_stale_on_disk(self, file_path: str) -> bool:
+        manager = self._editor_manager()
+        stale_fn = getattr(manager, "stale_open_paths", None)
+        if stale_fn is None:
+            return False
+        stale_paths = set(stale_fn())
+        if file_path in stale_paths:
+            return True
+        try:
+            normalized = str(Path(file_path).expanduser().resolve())
+        except OSError:
+            return False
+        return normalized in stale_paths
+
+    def _decide_stale_save(self, file_path: str, *, prompt: bool) -> str:
+        if not self._tab_is_stale_on_disk(file_path):
+            return "proceed"
+        if not prompt:
+            return "abort"
+        resolver = getattr(self._host, "resolve_external_change_before_save", None)
+        if resolver is None:
+            return "proceed"
+        return resolver(file_path)
+
     def save_tab(
         self,
         file_path: str,
@@ -434,8 +474,18 @@ class SaveWorkflow:
         show_style_warnings: bool = True,
         checkpoint_source: str = "save",
         apply_transforms: bool = True,
+        check_stale_disk: bool = True,
     ) -> bool:
         host = self._host
+        stale_decision = (
+            self._decide_stale_save(file_path, prompt=apply_transforms)
+            if check_stale_disk
+            else "proceed"
+        )
+        if stale_decision == "abort":
+            return False
+        if stale_decision == "already_synced":
+            return True
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
         if apply_transforms:
             self.apply_save_transforms(file_path, show_style_warnings=show_style_warnings)

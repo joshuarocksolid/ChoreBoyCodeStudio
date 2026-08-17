@@ -85,35 +85,36 @@ def build_pytest_command(plan: PytestLaunchPlan, pytest_args: list[str]) -> list
 
 
 def build_apprun_pytest_payload(pytest_args: list[str]) -> str:
-    """Build inline AppRun payload that imports vendor pytest before running."""
+    """Build inline AppRun payload that imports vendor pytest before running.
+
+    Keep this on one semicolon-joined line, like
+    ``build_runpy_bootstrap_payload``. Do not wrap ``pytest.main(...)`` in
+    ``SystemExit`` / ``sys.exit`` — AppRun swallows that and collect looks empty.
+    """
 
     vendor_root = str(resolve_vendor_root())
-    lines = [
-        "import sys",
-        f"sys.path.insert(0, {vendor_root!r})",
-        "try:",
-        "    import pytest",
-        "except ModuleNotFoundError:",
-        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
-        "    sys.exit(2)",
-        f"sys.exit(pytest.main({pytest_args!r}))",
-    ]
-    return "\n".join(lines)
+    return (
+        "import sys; "
+        f"sys.path.insert(0, {vendor_root!r}); "
+        "import importlib.util; "
+        "ok=importlib.util.find_spec('pytest') is not None; "
+        f"sys.stderr.write({PYTEST_MISSING_MARKER!r}+chr(10)) if not ok else None; "
+        "sys.exit(2) if not ok else None; "
+        "import pytest; "
+        f"pytest.main({pytest_args!r})"
+    )
 
 
 def build_apprun_pytest_probe_payload() -> str:
     vendor_root = str(resolve_vendor_root())
-    lines = [
-        "import sys",
-        f"sys.path.insert(0, {vendor_root!r})",
-        "try:",
-        "    import pytest",
-        "except ModuleNotFoundError:",
-        f"    sys.stderr.write({PYTEST_MISSING_MARKER!r} + '\\n')",
-        "    sys.exit(2)",
-        "sys.exit(0)",
-    ]
-    return "\n".join(lines)
+    return (
+        "import sys; "
+        f"sys.path.insert(0, {vendor_root!r}); "
+        "import importlib.util; "
+        "ok=importlib.util.find_spec('pytest') is not None; "
+        f"sys.stderr.write({PYTEST_MISSING_MARKER!r}+chr(10)) if not ok else None; "
+        "raise SystemExit(0 if ok else 2)"
+    )
 
 
 def _select_pytest_runtime(*, project_root: str) -> str:

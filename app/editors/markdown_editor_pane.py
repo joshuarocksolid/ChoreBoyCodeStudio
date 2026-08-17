@@ -42,7 +42,7 @@ class MarkdownEditorPane(QWidget):
         *,
         local_link_callback: LocalLinkCallback | None = None,
         external_link_callback: ExternalLinkCallback | None = None,
-        initial_mode: str = MarkdownPreviewMode.PREVIEW,
+        initial_mode: str = MarkdownPreviewMode.SPLIT,
         render_debounce_ms: int = 200,
         live_preview_threshold_chars: int = MAX_LIVE_MARKDOWN_PREVIEW_CHARS,
     ) -> None:

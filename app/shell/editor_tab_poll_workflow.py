@@ -68,8 +68,13 @@ class EditorTabPollWorkflow:
         stale_paths = self._editor_manager.stale_open_paths()
         if stale_paths:
             active_tab = self._editor_manager.active_tab()
+            ordered_paths = list(stale_paths)
             if active_tab is not None and active_tab.file_path in stale_paths:
-                self.check_for_external_file_change(active_tab.file_path)
+                ordered_paths = [active_tab.file_path] + [
+                    path for path in stale_paths if path != active_tab.file_path
+                ]
+            for stale_path in ordered_paths:
+                self.check_for_external_file_change(stale_path)
 
         loaded_project = self._host.loaded_project()
         if loaded_project is None:

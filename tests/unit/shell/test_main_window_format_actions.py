@@ -49,6 +49,10 @@ class _FakeEditorManager:
             display_name=Path(file_path).name,
         )
         self.saved_contents: list[str] = []
+        self.stale_paths: list[str] = []
+
+    def stale_open_paths(self) -> list[str]:
+        return list(self.stale_paths)
 
     def active_tab(self) -> object:
         return self._tab
@@ -124,6 +128,13 @@ class _FormatSaveDocumentHost:
         self._loaded_project = SimpleNamespace(project_root=str(Path(file_path).parent))
         self._workflow_broker = object()
         self._lint_workflow = SimpleNamespace(render_diagnostics_for_file=lambda *_args, **_kwargs: None)
+        self.external_save_decisions: list[str] = []
+
+    def resolve_external_change_before_save(self, file_path: str) -> str:
+        del file_path
+        if self.external_save_decisions:
+            return self.external_save_decisions.pop(0)
+        return "proceed"
 
     def dialog_parent(self) -> SimpleNamespace:
         return SimpleNamespace()
@@ -753,3 +764,53 @@ def test_flush_auto_save_to_file_does_not_apply_save_transforms(
     save_workflow.flush_auto_save_to_file()
 
     assert editor_manager.saved_contents == [buffer_with_trailing_indent]
+
+
+def test_flush_auto_save_skips_tab_when_disk_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = "/tmp/project/main.py"
+    save_workflow, save_host, editor_manager = _build_save_window(file_path, "shop buffer\n")
+    save_host._editor_auto_save = True
+    editor_manager.stale_paths = [file_path]
+    monkeypatch.setattr(
+        "app.shell.save_workflow.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+
+    save_workflow.flush_auto_save_to_file()
+
+    assert editor_manager.saved_contents == []
+    assert editor_manager._tab.is_dirty is True
+
+
+def test_save_tab_aborts_when_external_change_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = "/tmp/project/main.py"
+    save_workflow, save_host, editor_manager = _build_save_window(file_path, "shop buffer\n")
+    editor_manager.stale_paths = [file_path]
+    save_host.external_save_decisions = ["abort"]
+    monkeypatch.setattr(
+        "app.shell.save_workflow.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+
+    assert save_workflow.save_tab(file_path) is False
+    assert editor_manager.saved_contents == []
+
+
+def test_save_tab_skips_write_after_external_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = "/tmp/project/main.py"
+    save_workflow, save_host, editor_manager = _build_save_window(file_path, "shop buffer\n")
+    editor_manager.stale_paths = [file_path]
+    save_host.external_save_decisions = ["already_synced"]
+    monkeypatch.setattr(
+        "app.shell.save_workflow.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+
+    assert save_workflow.save_tab(file_path) is True
+    assert editor_manager.saved_contents == []

@@ -102,7 +102,7 @@ class EditorTabMarkdownWorkflow:
             file_path,
             parent,
             local_link_callback=lambda linked_path: open_linked_file(linked_path),
-            initial_mode=MarkdownPreviewMode.PREVIEW,
+            initial_mode=MarkdownPreviewMode.SPLIT,
         )
         markdown_pane.apply_theme(theme_tokens)
         markdown_pane.mode_changed.connect(lambda _mode: self._refresh_markdown_action_states())

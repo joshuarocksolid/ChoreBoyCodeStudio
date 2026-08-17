@@ -12,6 +12,7 @@ import pytest
 from app.core.models import LoadedProject, ProjectMetadata
 from app.editors.editor_manager import EditorManager
 from app.shell.editor_tab_content_registry import EditorTabContentRegistry
+from app.shell.editor_tab_poll_workflow import EditorTabPollWorkflow
 from app.shell.editor_tab_workflow import EditorTabWorkflow
 from app.shell.markdown_tab_registry import MarkdownTabRegistry
 
@@ -202,3 +203,26 @@ def test_markdown_registry_identity_is_stable() -> None:
 
     assert isinstance(first, MarkdownTabRegistry)
     assert first is second
+
+
+def test_poll_prompts_every_stale_path_active_first() -> None:
+    handled: list[str] = []
+    host = MagicMock()
+    host.loaded_project.return_value = None
+    editor_manager = SimpleNamespace(
+        stale_open_paths=lambda: ["/b.py", "/a.py"],
+        active_tab=lambda: SimpleNamespace(file_path="/a.py"),
+    )
+    poll = EditorTabPollWorkflow(
+        host=host,
+        editor_manager=cast(EditorManager, editor_manager),
+        editor_sync_workflow=SimpleNamespace(),
+        external_file_change_workflow=SimpleNamespace(
+            check_and_handle=lambda path: handled.append(path)
+        ),
+        refresh_save_action_states=lambda: None,
+    )
+
+    poll.poll_external_file_changes()
+
+    assert handled == ["/a.py", "/b.py"]

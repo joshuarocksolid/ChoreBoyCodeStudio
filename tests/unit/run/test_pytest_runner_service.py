@@ -65,6 +65,8 @@ def test_apprun_payload_inserts_editor_vendor_before_pytest_import(
     payload = build_apprun_pytest_payload(["-q"])
 
     _assert_vendor_inserted_before_pytest_import(payload, "/opt/cbcs/vendor")
+    assert "\n" not in payload
+    assert "SystemExit(pytest.main" not in payload
     assert "pytest.main(['-q'])" in payload
     assert PYTEST_MISSING_MARKER in payload
 
@@ -82,6 +84,7 @@ def test_apprun_probe_payload_inserts_editor_vendor_before_pytest_import(
     payload = build_apprun_pytest_probe_payload()
 
     _assert_vendor_inserted_before_pytest_import(payload, "/opt/cbcs/vendor")
+    assert "\n" not in payload
     assert PYTEST_MISSING_MARKER in payload
 
 

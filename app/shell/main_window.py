@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 from PySide2.QtCore import QEvent
-from PySide2.QtGui import QCloseEvent, QIcon
+from PySide2.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QIcon
 from PySide2.QtWidgets import QInputDialog, QMainWindow, QMessageBox
 
 from app.core import constants
@@ -15,6 +15,7 @@ from app.packaging.layout import resolve_entry_path
 from app.persistence.settings_store import project_settings_has_overrides
 from app.project.file_inventory import iter_python_files
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
+from app.shell.file_drop_open import local_file_paths_from_mime_data
 from app.shell.icon_provider import (
     file_icon,
     file_type_icon_map,
@@ -68,6 +69,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, startup_report: Optional[CapabilityProbeReport] = None, state_root: str | None = None) -> None:
         super().__init__()
+        self.setAcceptDrops(True)
         _app_icon_path = str(Path(__file__).resolve().parents[2] / "app" / "ui" / "icons" / "Python_Icon.png")
         if Path(_app_icon_path).is_file():
             self.setWindowIcon(QIcon(_app_icon_path))
@@ -366,6 +368,22 @@ class MainWindow(QMainWindow):
             self._problems_controller.update_problems_tab_title(0)
         self._problems_controller.clear_all_editor_diagnostics()
         self._problems_controller.clear_all_tab_diagnostic_indicators()
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
+        if local_file_paths_from_mime_data(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 - Qt signature
+        paths = local_file_paths_from_mime_data(event.mimeData())
+        factory = getattr(self, "_editor_tab_factory", None)
+        if not paths or factory is None:
+            super().dropEvent(event)
+            return
+        for path in paths:
+            factory.open_file_in_editor(path, preview=False)
+        event.acceptProposedAction()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt signature
         MainWindowLifecycle.handle_close_event(self, event)
