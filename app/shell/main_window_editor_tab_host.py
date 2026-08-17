@@ -135,6 +135,9 @@ class MainWindowEditorTabHost:
     def replace_editor_manager(self, editor_manager: EditorManager) -> None:
         self._window._editor_manager = editor_manager
         self._window._local_history_workflow.set_editor_manager(editor_manager)
+        external = getattr(self._window, "_external_file_change_workflow", None)
+        if external is not None:
+            external.set_editor_manager(editor_manager)
 
     def start_auto_save_to_file_timer(self) -> None:
         self._window._auto_save_to_file_timer.start()

@@ -13,6 +13,9 @@ class MainWindowEditorSyncHost:
     def __init__(self, window: Any) -> None:
         self._window = window
 
+    def editor_widget_for_path(self, file_path: str) -> Any:
+        return self._window._editor_widgets_by_path.get(file_path)
+
     def advance_buffer_revision(self, file_path: str) -> None:
         self._window._editor_tab_workflow.advance_buffer_revision(file_path)
 

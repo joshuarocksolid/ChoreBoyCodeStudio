@@ -14,7 +14,7 @@ Not yet mailed to LibrePy.
 
 - Red error indicators now clear when the underlying error is fixed, without requiring Save. Realtime lint was bound to a stale editor manager after project open (request #40, Reuben Shirk).
 - Dot-attribute completion lists public members first, highlights the typed prefix, and shows inline help after the name (request #40).
-- Outside file changes are detected again, including restored drafts with no recorded mtime. Auto-save and Run no longer overwrite a newer disk file without a prompt (request #42, Ervin Newswanger).
+- Outside file changes are detected again, including restored drafts with no recorded mtime. Auto-save and Run no longer overwrite a newer disk file without a prompt. Opening a project no longer leaves the reload prompt bound to an empty editor manager, and choosing Reload now updates the open buffer (request #42, Ervin Newswanger).
 - Test Explorer discovers tests in projects that do not ship `run_tests.py`. The AppRun `-c` pytest payload now actually runs collect.
 
 ### Changed

@@ -474,3 +474,37 @@ def test_check_and_handle_dirty_proceed_reloads_without_save_prompt_side_effects
     assert outcome is ExternalFileChangeOutcome.RELOADED
     assert save_workflow.applied == []
     assert tab.current_content == "print('new')\n"
+
+
+def test_check_and_handle_follows_replaced_editor_manager(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    compose_time_manager = EditorManager()
+    live_manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=True)
+    tab = _open_tab_with_widget(
+        live_manager,
+        file_path,
+        content="print('old')\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.write_text("print('new')\n", encoding="utf-8")
+    workflow = _build_workflows(
+        compose_time_manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.SKIPPED
+
+    workflow.set_editor_manager(live_manager)
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert tab.current_content == "print('new')\n"

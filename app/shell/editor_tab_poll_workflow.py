@@ -39,6 +39,8 @@ class EditorTabPollWorkflow:
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
+        self._editor_sync_workflow.set_editor_manager(editor_manager)
+        self._external_file_change_workflow.set_editor_manager(editor_manager)
 
     def reset_poll_state(self) -> None:
         """Clear stable-signature skip state after project open or full rescan."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.editors.editor_tab import EditorTabState  # noqa: E402
+from app.shell.editor_sync_factory import MainWindowEditorSyncHost  # noqa: E402
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow, EditorWidgetPort  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -151,3 +153,35 @@ def test_apply_disk_content_skips_tab_refresh_when_widget_unavailable(tmp_path: 
         is True
     )
     assert host.refreshed_paths == []
+
+
+def test_main_window_sync_host_can_apply_disk_content(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    manager = EditorManager()
+    tab = _open_tab(manager, file_path, content="print('old')\n", mtime=1.0)
+    widget = _FakeEditorWidget(tab.current_content)
+    window = SimpleNamespace(
+        _editor_widgets_by_path={tab.file_path: widget},
+        _editor_tabs_widget=object(),
+        _editor_tab_workflow=SimpleNamespace(
+            advance_buffer_revision=lambda _path: 1,
+            apply_detected_indentation_for_widget=lambda *_args: None,
+            tab_index_for_path=lambda _path: 0,
+            refresh_tab_presentation=lambda _path: None,
+        ),
+    )
+    workflow = EditorSyncWorkflow(
+        editor_manager=manager,
+        host=MainWindowEditorSyncHost(window),
+    )
+
+    applied = workflow.apply_disk_content(
+        tab.file_path,
+        "print('new')\n",
+        source=EditorDiskSyncSource.EXTERNAL_RELOAD,
+        last_known_mtime=2.0,
+    )
+
+    assert applied is True
+    assert widget.text == "print('new')\n"
+    assert tab.current_content == "print('new')\n"

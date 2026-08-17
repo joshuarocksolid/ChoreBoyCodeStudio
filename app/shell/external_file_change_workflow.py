@@ -103,6 +103,10 @@ class ExternalFileChangeWorkflow:
         self._local_history = local_history
         self._host = host
 
+    def set_editor_manager(self, editor_manager: EditorManager) -> None:
+        self._editor_manager = editor_manager
+        self._editor_sync.set_editor_manager(editor_manager)
+
     def check_and_handle(self, file_path: str) -> ExternalFileChangeOutcome:
         """Prompt when needed and reload ``file_path`` from disk."""
         tab_state = self._editor_manager.get_tab(file_path)

@@ -65,6 +65,9 @@ class EditorSyncWorkflow:
         self._editor_manager = editor_manager
         self._host = host
 
+    def set_editor_manager(self, editor_manager: EditorManager) -> None:
+        self._editor_manager = editor_manager
+
     def apply_disk_content(
         self,
         file_path: str,
