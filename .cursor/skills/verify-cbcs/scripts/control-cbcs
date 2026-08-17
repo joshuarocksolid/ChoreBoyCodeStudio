@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
@@ -55,6 +56,16 @@ RSYNC_EXCLUDES = (
 
 def _now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _zip_toplevel_dir(zip_path: str) -> Optional[str]:
+    """Return the single top-level folder inside a product zip, if any."""
+    with zipfile.ZipFile(zip_path) as archive:
+        names = archive.namelist()
+    tops = {name.split("/", 1)[0] for name in names if name and name.split("/", 1)[0]}
+    if len(tops) == 1:
+        return next(iter(tops))
+    return None
 
 
 def _die(msg: str, code: int = 1) -> None:
@@ -275,12 +286,11 @@ def _rsync_source(repo: Path, remote_src: str) -> None:
 
 
 def _extract_sid(text: str) -> Optional[str]:
+    token = re.compile(r"(cbcs-verify(?:-install)?-\d{8}T\d{6}Z-[0-9a-f]+)")
     for line in text.splitlines():
-        line = line.strip()
-        if re.match(r"^cbcs-verify-\d{8}T\d{6}Z-[0-9a-f]+$", line):
-            return line
-        if re.match(r"^[A-Za-z0-9._-]+-\d{8}T\d{6}Z-[0-9a-f]+$", line) and "cbcs-verify" in line:
-            return line
+        match = token.search(line.strip())
+        if match:
+            return match.group(1)
     return None
 
 
@@ -302,6 +312,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
     guest_src = guest_root + "/src"
     # SQLite (local history) deadlocks on virtiofs. HOME must be on the guest disk.
     guest_home = "/home/default/cbcs-verify-" + run_id
+    dest = None
+    zip_path = None
     _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_root])
 
     if mode == "source":
@@ -329,12 +341,14 @@ def cmd_launch(args: argparse.Namespace) -> int:
         zip_path = str(Path(zip_path).expanduser().resolve())
         if not os.path.isfile(zip_path):
             _die("zip not found: " + zip_path)
-        dest = "/home/default/cbcs-verify-install-" + run_id
+        extract_parent = "/home/default/cbcs-verify-install-" + run_id
+        wrapper = _zip_toplevel_dir(zip_path)
+        dest = extract_parent + "/" + wrapper if wrapper else extract_parent
         launch_args = [
             "install-test",
             zip_path,
             "--extract-parent",
-            "/home/default",
+            extract_parent,
             "--extract-dest",
             dest,
             "--installer-entry",
@@ -348,7 +362,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
         ]
 
     print("launching mode={} run_id={}".format(mode, run_id), file=sys.stderr)
-    proc = _cbapp(launch_args, timeout=max(args.wait_ready + 30, 180))
+    launch_timeout = max(args.wait_ready + 30, 420 if mode == "install" else 180)
+    proc = _cbapp(launch_args, timeout=launch_timeout)
     time.sleep(5)
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     sys.stdout.write(proc.stdout or "")
@@ -370,6 +385,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
         "remote_root": remote_root,
         "artifact_dir": str(run_dir),
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "extract_dest": dest if mode == "install" else None,
+        "zip_path": zip_path if mode == "install" else None,
     }
     _write_json(run_dir / "run.json", record)
     print("SID=" + sid)

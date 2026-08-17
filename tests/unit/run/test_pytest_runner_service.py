@@ -45,11 +45,13 @@ def _mock_launch_plan(
 
 
 def _assert_vendor_inserted_before_pytest_import(payload: str, vendor_path: str) -> None:
-    insert_pos = payload.find(f"sys.path.insert(0, {vendor_path!r})")
-    import_pos = payload.find("import pytest")
-    assert insert_pos != -1, "vendor/ path was not inserted into sys.path"
-    assert import_pos != -1, "pytest is never imported"
-    assert insert_pos < import_pos, "vendor/ must be on sys.path before `import pytest`"
+        insert_pos = payload.find(f"sys.path.insert(0, {vendor_path!r})")
+        import_pos = payload.find("import pytest")
+        spec_pos = payload.find("find_spec('pytest')")
+        assert insert_pos != -1, "vendor/ path was not inserted into sys.path"
+        pytest_use = import_pos if import_pos != -1 else spec_pos
+        assert pytest_use != -1, "pytest is never imported or probed"
+        assert insert_pos < pytest_use, "vendor/ must be on sys.path before pytest is used"
 
 
 def test_apprun_payload_inserts_editor_vendor_before_pytest_import(
@@ -324,17 +326,20 @@ def test_select_pytest_runtime_falls_back_to_apprun(
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     monkeypatch.delenv("CBCS_PYTEST_EXECUTABLE", raising=False)
-    monkeypatch.setattr("app.pytest.launch_plan.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    apprun = tmp_path / "AppRun"
+    apprun.write_text("#!/bin/sh\n", encoding="utf-8")
+    apprun.chmod(0o755)
+    monkeypatch.setattr("app.pytest.launch_plan.resolve_runtime_executable", lambda _runtime: str(apprun))
     monkeypatch.setattr(
         "app.pytest.launch_plan._runtime_supports_pytest",
-        lambda runtime: runtime == "/opt/freecad/AppRun",
+        lambda runtime: runtime == str(apprun),
     )
 
     from app.pytest.launch_plan import _select_pytest_runtime
 
     selected = _select_pytest_runtime(project_root=str(project_root.resolve()))
 
-    assert selected == "/opt/freecad/AppRun"
+    assert selected == str(apprun)
 
 
 def test_candidate_pytest_runtimes_do_not_include_venv_paths(
@@ -344,13 +349,16 @@ def test_candidate_pytest_runtimes_do_not_include_venv_paths(
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     monkeypatch.delenv("CBCS_PYTEST_EXECUTABLE", raising=False)
-    monkeypatch.setattr("app.pytest.launch_plan.resolve_runtime_executable", lambda _runtime: "/opt/freecad/AppRun")
+    apprun = tmp_path / "AppRun"
+    apprun.write_text("#!/bin/sh\n", encoding="utf-8")
+    apprun.chmod(0o755)
+    monkeypatch.setattr("app.pytest.launch_plan.resolve_runtime_executable", lambda _runtime: str(apprun))
 
     from app.pytest.launch_plan import _candidate_pytest_runtimes
 
     candidates = _candidate_pytest_runtimes(str(project_root.resolve()))
 
-    assert candidates == ["/opt/freecad/AppRun"]
+    assert candidates == [str(apprun)]
 
 
 def test_select_pytest_runtime_preserves_env_override_symlink_path(

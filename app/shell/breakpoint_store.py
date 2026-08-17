@@ -29,8 +29,14 @@ class BreakpointStore:
         self._breakpoint_specs_by_key.clear()
 
     def clear_file(self, file_path: str) -> None:
+        resolved = breakpoint_key(file_path, 0)[0]
         self._breakpoints_by_file.pop(file_path, None)
-        keys_to_remove = [key for key in self._breakpoint_specs_by_key if key[0] == file_path]
+        self._breakpoints_by_file.pop(resolved, None)
+        keys_to_remove = [
+            key
+            for key in self._breakpoint_specs_by_key
+            if key[0] in {file_path, resolved}
+        ]
         for key in keys_to_remove:
             self._breakpoint_specs_by_key.pop(key, None)
 
@@ -98,16 +104,26 @@ class BreakpointStore:
     def remap_paths(self, path_map: dict[str, str]) -> None:
         if not path_map:
             return
+        normalized_map = {
+            breakpoint_key(source, 0)[0]: target
+            for source, target in path_map.items()
+        }
+
+        def _mapped_target(file_path: str) -> str:
+            if file_path in path_map:
+                return path_map[file_path]
+            return normalized_map.get(breakpoint_key(file_path, 0)[0], file_path)
+
         remapped_by_file: dict[str, set[int]] = {}
         for file_path, lines in self._breakpoints_by_file.items():
-            target_path = path_map.get(file_path, file_path)
+            target_path = _mapped_target(file_path)
             remapped_by_file.setdefault(target_path, set()).update(lines)
         self._breakpoints_by_file.clear()
         self._breakpoints_by_file.update(remapped_by_file)
 
         remapped_specs: dict[tuple[str, int], DebugBreakpoint] = {}
         for (file_path, line_number), spec in self._breakpoint_specs_by_key.items():
-            target_path = path_map.get(file_path, file_path)
+            target_path = _mapped_target(file_path)
             remapped_specs[breakpoint_key(target_path, line_number)] = with_file_path(spec, target_path)
         self._breakpoint_specs_by_key.clear()
         self._breakpoint_specs_by_key.update(remapped_specs)

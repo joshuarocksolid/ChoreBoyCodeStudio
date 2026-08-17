@@ -61,9 +61,7 @@ class EditorTabOutlineWorkflow:
             self._host.outline_symbols_by_path().pop(file_path, None)
             self._outline_revision_by_path.pop(file_path, None)
             return
-        editor_widget = self._editor_widgets_by_path().get(
-            str(Path(file_path).expanduser().resolve())
-        )
+        editor_widget = self._editor_widget_for_path(file_path)
         source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
         self._schedule_outline_parse(
             file_path=file_path,
@@ -79,9 +77,7 @@ class EditorTabOutlineWorkflow:
         self._schedule_outline_parse(
             file_path=file_path,
             source=fallback_source or "",
-            editor_widget=self._editor_widgets_by_path().get(
-                str(Path(file_path).expanduser().resolve())
-            ),
+            editor_widget=self._editor_widget_for_path(file_path),
             deliver_to_panel=False,
         )
         return ()
@@ -98,9 +94,7 @@ class EditorTabOutlineWorkflow:
         if symbols is not None:
             on_success(flatten_symbols(symbols))
             return
-        editor_widget = self._editor_widgets_by_path().get(
-            str(Path(file_path).expanduser().resolve())
-        )
+        editor_widget = self._editor_widget_for_path(file_path)
         self._schedule_outline_parse(
             file_path=file_path,
             source=fallback_source or "",
@@ -116,9 +110,7 @@ class EditorTabOutlineWorkflow:
     def open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
         if not self._editor_tab_factory.open_file_in_editor(file_path, preview=preview):
             return
-        editor_widget = self._editor_widgets_by_path().get(
-            str(Path(file_path).expanduser().resolve())
-        )
+        editor_widget = self._editor_widget_for_path(file_path)
         if editor_widget is None or line_number is None:
             return
         editor_widget.go_to_line(line_number)
@@ -127,6 +119,16 @@ class EditorTabOutlineWorkflow:
         outline_panel = self._host.outline_panel()
         if outline_panel is not None and self._host.outline_follow_cursor():
             outline_panel.highlight_symbol_at_line(line_number)
+
+    def _editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
+        widgets = self._editor_widgets_by_path()
+        widget = widgets.get(file_path)
+        if widget is not None:
+            return widget
+        resolved = str(Path(file_path).expanduser().resolve())
+        if resolved != file_path:
+            return widgets.get(resolved)
+        return None
 
     def _cached_symbols_for_revision(self, file_path: str) -> tuple[OutlineSymbol, ...] | None:
         symbols = self._host.outline_symbols_by_path().get(file_path)
@@ -177,9 +179,7 @@ class EditorTabOutlineWorkflow:
                 file_path=file_path,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=lambda path: self._editor_widgets_by_path().get(
-                    str(Path(path).expanduser().resolve())
-                ),
+                editor_widget_for_path=self._editor_widget_for_path,
                 buffer_revision=self._buffer_revision,
                 deliver=deliver,
             )

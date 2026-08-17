@@ -18,13 +18,14 @@ def build_installer_package_launcher(
     icon_value: str = "",
 ) -> str:
     """Return the staging-package launcher that runs the standalone installer."""
-    resolved_package_root = str(Path(package_root).expanduser().resolve())
+    # Do not resolve(): that follows the build-host filesystem, not the guest path.
+    package_root_value = str(Path(package_root).expanduser())
     return _build_desktop_entry(
         name=f"Install {manifest.display_name}",
         comment=f"Install {manifest.display_name} on this ChoreBoy system",
         exec_value=build_path_key_installer_exec(manifest.app_run_path),
         icon_value=icon_value,
-        path_value=resolved_package_root,
+        path_value=package_root_value,
     )
 
 

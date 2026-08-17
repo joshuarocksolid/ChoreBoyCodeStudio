@@ -338,4 +338,4 @@ class RunLaunchHostStub:
 
 def run_launch_workflow_stub(**kwargs: object) -> tuple[RunLaunchWorkflow, RunLaunchHostStub]:
     host = RunLaunchHostStub(**kwargs)  # type: ignore[arg-type]
-    return RunLaunchWorkflow(host), host
+    return RunLaunchWorkflow(host), host  # type: ignore[arg-type]

@@ -44,7 +44,7 @@ def build_installer_launcher_filename(display_name: str) -> str:
 
 def rewrite_installer_desktop_path(launcher_path: Path, package_root: str | Path) -> None:
     """Rewrite the Path= key in an installer launcher to match *package_root*."""
-    resolved_package_root = str(Path(package_root).expanduser().resolve())
+    resolved_package_root = str(Path(package_root).expanduser())
     lines = launcher_path.read_text(encoding="utf-8").splitlines()
     rewritten: list[str] = []
     path_written = False

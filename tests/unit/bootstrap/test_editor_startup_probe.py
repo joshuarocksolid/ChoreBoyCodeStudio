@@ -1,4 +1,5 @@
 """Integration tests for startup capability probe wiring."""
+from __future__ import annotations
 
 from types import SimpleNamespace
 

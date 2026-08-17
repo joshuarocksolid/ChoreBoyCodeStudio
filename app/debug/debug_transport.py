@@ -109,9 +109,18 @@ class DebugTransportServer:
                 server_socket.close()
             except OSError as exc:
                 _LOGGER.debug("Debug transport server socket close failed: %s", exc)
-        if self._accept_thread is not None and self._accept_thread.is_alive():
+        current = threading.current_thread()
+        if (
+            self._accept_thread is not None
+            and self._accept_thread.is_alive()
+            and self._accept_thread is not current
+        ):
             self._accept_thread.join(timeout=0.5)
-        if self._read_thread is not None and self._read_thread.is_alive():
+        if (
+            self._read_thread is not None
+            and self._read_thread.is_alive()
+            and self._read_thread is not current
+        ):
             self._read_thread.join(timeout=0.5)
 
     def _accept_loop(self) -> None:

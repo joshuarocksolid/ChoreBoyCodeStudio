@@ -1,4 +1,5 @@
 """Unit tests for startup runtime capability probes."""
+from __future__ import annotations
 
 from pathlib import Path
 import subprocess
