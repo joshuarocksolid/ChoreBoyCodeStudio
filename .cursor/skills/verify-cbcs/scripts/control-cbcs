@@ -10,6 +10,7 @@ Commands:
   ctl <sid> <op> [args...]
   trigger <sid> <action-id>
   arm <sid> <action-id>
+  keypress <sid> <objectName> <text> [--return]
   read <sid> <objectName>
   wait <sid> <objectName> [--contains|--not-contains|--regex|--min-rows] [--timeout]
   shot <sid> <name>
@@ -598,6 +599,40 @@ def _read_tree_rows(sid: str, name: str) -> int:
         return 0
 
 
+def cmd_keypress(args: argparse.Namespace) -> int:
+    """Send printable keys through QWidget.keyPressEvent (not insertPlainText)."""
+    name = args.object_name.lstrip("#")
+    text = args.text
+    press_return = args.do_return
+    code = (
+        "from PySide2.QtWidgets import QApplication\n"
+        "from PySide2.QtCore import Qt\n"
+        "from PySide2.QtGui import QKeyEvent\n"
+        "app=QApplication.instance()\n"
+        "w=None\n"
+        "for x in app.allWidgets():\n"
+        "    if x.objectName()=={name!r} and x.isVisible():\n"
+        "        w=x\n"
+        "        break\n"
+        "if w is None:\n"
+        "    raise RuntimeError('widget not found: '+{name!r})\n"
+        "w.setFocus()\n"
+        "for ch in {text!r}:\n"
+        "    app.sendEvent(w, QKeyEvent(QKeyEvent.KeyPress, 0, Qt.NoModifier, ch))\n"
+        "if {press_return!r}:\n"
+        "    app.sendEvent(w, QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Return, Qt.NoModifier))\n"
+        "print(w.objectName())\n"
+    ).format(name=name, text=text, press_return=press_return)
+    rc, payload, out, err = _ctl_exec(args.sid, code)
+    sys.stdout.write(out)
+    sys.stderr.write(err)
+    rec = _record_for_sid(args.sid)
+    (Path(rec["artifact_dir"]) / "last-keypress.txt").write_text(
+        name + "\n" + text + "\n" + _exec_stdout(payload) + "\n", encoding="utf-8"
+    )
+    return rc
+
+
 def cmd_read(args: argparse.Namespace) -> int:
     name = args.object_name.lstrip("#")
     text = _read_widget_text(args.sid, name)
@@ -778,6 +813,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_arm.add_argument("sid")
     p_arm.add_argument("action_id")
     p_arm.set_defaults(func=cmd_arm)
+
+    p_keys = sub.add_parser(
+        "keypress",
+        help="type through keyPressEvent (REPL / editors that ignore insertPlainText)",
+    )
+    p_keys.add_argument("sid")
+    p_keys.add_argument("object_name")
+    p_keys.add_argument("text")
+    p_keys.add_argument("--return", dest="do_return", action="store_true")
+    p_keys.set_defaults(func=cmd_keypress)
 
     p_read = sub.add_parser("read", help="read .text() of a named widget")
     p_read.add_argument("sid")

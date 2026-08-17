@@ -27,7 +27,7 @@ Preconditions:
 - Runner/REPL child allowed to start (do not disable background runtime).
 
 - **Focus console.** Click `#shell.bottomRegion.tabs` page **Python Console** (or `text:Python Console`).
-- **Expression.** Click `#shell.bottom.pythonConsole`. Type `print("cbcs-repl-token")` and Return. The token appears in the console output. Shot `repl-print`.
+- **Expression.** Click `#shell.bottom.pythonConsole`. `control-cbcs keypress "$SID" shell.bottom.pythonConsole 'print("cbcs-repl-token")' --return`. Bridge `type` inserts text and skips `keyPressEvent`, so Return then submits empty. The token must appear on its own output line. Shot `repl-print`.
 - **Restart.** `control-cbcs trigger "$SID" shell.action.run.pythonConsole`. Console reconnects. Up recalls the previous line (history file under disposable HOME).
 - **Drop execute.** Drop `example.py` onto `#shell.bottom.pythonConsole` (or document verified-unreachable if the bridge cannot synthesize a drop). Console shows the script's prints.
 - **Completion.** Type `sys.` after `import sys`. A completion popup appears with attribute detail. Do not execute project code to populate it.

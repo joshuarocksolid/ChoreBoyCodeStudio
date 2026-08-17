@@ -27,7 +27,7 @@ Preconditions:
 - A known-good local plugin zip on the share (or bundled_plugins in the checkout).
 - Disposable HOME so install state is throwaway.
 
-- **Open manager.** `control-cbcs trigger "$SID" shell.action.tools.pluginManager`. The manager dialog is visible. Shot `plugin-manager`.
+- **Open manager.** `control-cbcs trigger "$SID" shell.action.tools.pluginManager`. `#shell.pluginManagerDialog` is visible. Close via that handle or `text:Close`. Shot `plugin-manager`.
 - **Install.** Choose the local package; confirm trust if prompted. The plugin appears with version, source, enabled.
 - **Disable / enable.** Toggle enabled. Contributions disappear / return (menu item or template, depending on the plugin).
 - **Safe mode.** Enable safe mode. Contributions stop. Disable safe mode; they return.

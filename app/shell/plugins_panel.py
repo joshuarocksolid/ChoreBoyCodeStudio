@@ -102,6 +102,7 @@ class PluginManagerDialog(QDialog):
         layout.addWidget(self._plugins_tree)
         layout.addLayout(controls_row)
 
+        self.setObjectName("shell.pluginManagerDialog")
         self.setWindowTitle("Plugin Manager")
         self.resize(980, 480)
 

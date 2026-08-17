@@ -32,7 +32,7 @@ Preconditions:
 - **Save.** `control-cbcs trigger "$SID" shell.action.file.save`. `*` clears. Guest file contains the comment. Status contains `saved`.
 - **Save All.** Dirty two files; `control-cbcs trigger "$SID" shell.action.file.saveAll`. Both disks match.
 - **Preview.** Single-click a second file. Tab title is italic (preview). Open a third via single-click; the previous preview is replaced. Double-click pins.
-- **Drop open.** Drop a `.py` from the share onto `#shell.mainWindow` if the bridge can synthesize a drop; otherwise **File → Open File** to the same path. A tab opens. Folders must not open as tabs.
+- **Drop open.** Synthesize `QMimeData` + `QUrl.fromLocalFile` + `QDropEvent` onto `#shell.mainWindow` for a file, then a folder. File→Open is not drop proof. A file tab opens; a folder must not. Say the drop was synthesized, not an OS drag. If the bridge cannot deliver the payload, report BLOCKED with the command and unmet precondition.
 - **External change.** From the Mac/SSH, append to the file on disk while the tab is clean. Wait for the poll. A reload dialog appears. Choose reload; buffer matches disk. Shot `editor-external`.
 - **Proof.** Shot of dirty then saved tabs, plus the guest file contents in artifacts.
 
