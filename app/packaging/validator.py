@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from app.bootstrap.paths import project_manifest_path
@@ -84,6 +85,8 @@ def build_package_validation_report(
         known_runtime_modules=effective_runtime_modules,
         allow_runtime_import_probe=False,
     )
+    if package_config.skip_missing_dependency_blockers:
+        dependency_audit = _with_optional_missing_imports(dependency_audit)
     manifest_issues = check_manifest_consistency(project_root=project_root)
     issue_report = RuntimeIssueReport(
         workflow="package",
@@ -342,6 +345,49 @@ def _discover_user_excluded_python_that_ships(root: Path) -> list[str]:
         ):
             shipped.append(rel_path)
     return sorted(shipped)
+
+
+_MISSING_IMPORT_PREFIXES = (
+    "package.dependency.missing.",
+    "package.dependency.relative_missing.",
+)
+
+
+def _is_missing_import_blocker(issue: RuntimeIssue) -> bool:
+    return issue.severity == "blocking" and issue.issue_id.startswith(_MISSING_IMPORT_PREFIXES)
+
+
+def _soften_missing_import_issue(issue: RuntimeIssue) -> RuntimeIssue:
+    return replace(
+        issue,
+        severity="advisory",
+        why_it_happened=(
+            issue.why_it_happened
+            + " This export is allowed because skip_missing_dependency_blockers is set."
+        ),
+        next_steps=list(issue.next_steps)
+        + [
+            "Confirm the unused import is safe to leave unresolved on ChoreBoy.",
+            "Clear skip_missing_dependency_blockers in cbcs/package.json to treat missing imports as blockers again.",
+        ],
+    )
+
+
+def _with_optional_missing_imports(report: DependencyAuditReport) -> DependencyAuditReport:
+    softened = [
+        _soften_missing_import_issue(issue) if _is_missing_import_blocker(issue) else issue
+        for issue in report.issues
+    ]
+    if softened == list(report.issues):
+        return report
+    remaining_blocking = sum(1 for issue in softened if issue.is_blocking)
+    summary = (
+        "Missing-import blockers were downgraded to warnings because "
+        "skip_missing_dependency_blockers is set."
+    )
+    if remaining_blocking:
+        summary += f" {remaining_blocking} other blocking issue(s) remain."
+    return replace(report, issues=softened, summary=summary)
 
 
 def _sort_issues(issues: list[RuntimeIssue]) -> list[RuntimeIssue]:

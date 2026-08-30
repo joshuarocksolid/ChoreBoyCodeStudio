@@ -11,8 +11,9 @@ Last versions mailed to the list:
 - v0.4.5 on 2026-06-27 (`email:24118`). Zip plus CHANGELOG. Password `rsd`.
 - Manual follow-up on 2026-06-29 (`email:24878`).
 - v0.4.7 on 2026-06-30 (`email:24999`). Completion-list crash fix for Clair Nolt (request #39).
+- v0.4.8 on 2026-08-24 (`email:46496` / thread `email:26851`). Outside-change overwrite guard, drag-and-drop open, stale-lint clear, richer `.` completion.
 
-The next list mail-out is v0.4.8 (stale-lint clear, richer `.` completion, markdown tabs open in Split, outside-change overwrite guard, drag-and-drop open).
+The next list mail-out is v0.4.9 (packaging relative-import crash, optional missing-dependency blockers).
 
 ---
 
@@ -671,6 +672,34 @@ The next list mail-out is v0.4.8 (stale-lint clear, richer `.` completion, markd
 | **Request**         | Dropping a file onto the editor should open it. Console drop already inserts or runs. The project tree drop moves files inside the tree. The main window did not open dropped files.                  |
 | **Implemented in**  | `app/shell/file_drop_open.py`; `app/shell/main_window.py` (`dragEnterEvent` / `dropEvent`). Local file URLs open in editor tabs. Folders are ignored.                                                  |
 | **Regression test** | `tests/unit/shell/test_file_drop_open.py`.                                                                                                                                                            |
+
+---
+
+### 44. Packaging crashes on relative imports (`resolve_name` arity)
+
+| Field               | Value                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**          | DONE                                                                                                                                                                                                                                                                                                                                  |
+| **Requested by**    | Ervin N. Newswanger (ENNtronic Repair, 2026-08-29, Ops thread `email:27174`, message `48051`, `enn@mailaxis.net`)                                                                                                                                                                                                                       |
+| **Request**         | Package Project sometimes fails with `resolve_name() takes 2 positional arguments but 3 were given`. Ervin patched `app/project/import_layout.py` to encode the relative level as leading dots and call the two-argument `resolve_name`.                                                                                                                                 |
+| **User frustration** | Export dies with a red error dialog on some projects and works on others. The difference is whether a packaged file lives inside a package and uses `from . import …`.                                                                                                                                                               |
+| **Root cause**      | `resolve_import_from_module` calls `importlib.util.resolve_name(relative_spec, package_name, level)`. That helper only accepts `(name, package)`. Level belongs in the name (`'.' * level + module`). Top-level files never reach the call (`package_name_for_file` is `None`), so the crash looks intermittent.                                                                 |
+| **Implemented in**  | `app/project/import_layout.py` (`resolve_import_from_module` now encodes `level` as leading dots and calls the two-argument `resolve_name`).                                                                                                                                                                                           |
+| **Regression test** | `tests/unit/packaging/test_dependency_audit.py::test_dependency_audit_classifies_same_package_relative_import`. ChoreBoy proof: `~/ChoreBoy/artifacts/verify-cbcs/20260829T231351Z/baseline-relative-packaging-error-2.png` then `~/ChoreBoy/artifacts/verify-cbcs/20260829T231937Z/verify-relative-after.png`. |
+
+---
+
+### 45. Optional missing-dependency blockers at package time
+
+| Field               | Value                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**          | DONE                                                                                                                                                                                                                                                                                                                                  |
+| **Requested by**    | Ervin N. Newswanger (ENNtronic Repair, 2026-08-29, Ops thread `email:27174`, message `48051`, `enn@mailaxis.net`)                                                                                                                                                                                                                       |
+| **Request**         | Make dependency checking optional. Packaging sometimes refuses an export over an unused import path even though the app runs.                                                                                                                                                                                                         |
+| **User frustration** | A working shop app cannot be packaged because static audit follows a dead import.                                                                                                                                                                                                                                                     |
+| **Root cause**      | Missing and missing-relative imports are `severity="blocking"` in `run_dependency_audit`. `PackageValidationReport.is_ready` is false when any issue is blocking, so `artifact_builder` refuses to write the artifact. There is no persistable way to warn-and-export. Default must stay enforce-on.                                                                 |
+| **Implemented in**  | `ProjectPackageConfig.skip_missing_dependency_blockers` in `cbcs/package.json`. Wizard checkbox `#shell.packageWizard.skipMissingDependencyBlockers`. `app/packaging/validator.py` downgrades missing/missing-relative issues to advisory. Native extensions and subprocess rules stay blocking.                                                                 |
+| **Regression test** | `tests/unit/packaging/test_validator.py` (default still blocks; opt-in warns and stays ready; native still blocks; softened summary no longer says `1 blocking`); `tests/unit/packaging/test_package_config.py` (persist and default). ChoreBoy proof: `~/ChoreBoy/artifacts/verify-cbcs/20260829T231937Z/verify-unused-still-blocks.png`, `verify-unused-allowed.png`, and `~/ChoreBoy/artifacts/verify-cbcs/20260829T234044Z/` (`wizard-page2-*-reopen.png` four themes, `export-result.png`, summary without `found N blocking`). AT-104. |
 
 ---
 

@@ -440,6 +440,12 @@ def shell_section_package_wizard(tokens: ShellThemeTokens) -> str:
     font-weight: 600;
     background: transparent;
 }}
+{dialog} QCheckBox {{
+    color: {tokens.text_primary};
+    font-size: 12px;
+    spacing: 6px;
+    background: transparent;
+}}
 {dialog} QLineEdit,
 {dialog} QTextEdit {{
     background: {tokens.editor_bg};

@@ -10,6 +10,7 @@ Owns AT-78, AT-81, AT-82, AT-84, AT-95.
 - `pkg-wizard` **Run → Package Project...** / `#shell.toolbar.btn.package` writes installer + payload + manifests (AT-81).
 - `pkg-theme` wizard readable in all four themes (AT-84).
 - `pkg-deps` export checks dependency manifest completeness (AT-95).
+- `pkg-skip-missing` `#shell.packageWizard.skipMissingDependencyBlockers` keeps missing imports as warnings so a working app can still export. Native extensions and subprocess rules still block.
 - `product-install` `control-cbcs launch --install --zip <product zip>` walks the Code Studio installer (AT-82).
 
 ## How to get to it (user POV)
