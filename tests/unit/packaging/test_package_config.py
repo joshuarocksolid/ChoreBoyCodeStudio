@@ -61,6 +61,35 @@ def test_load_or_create_project_package_config_persists_defaults(tmp_path: Path)
     assert (project_root / "cbcs" / "package.json").is_file()
 
 
+def test_parse_project_package_config_defaults_skip_missing_dependency_blockers() -> None:
+    config = parse_project_package_config(
+        {
+            "schema_version": 1,
+            "package_id": "my_project",
+            "display_name": "My Project",
+            "version": "1.0.0",
+        }
+    )
+
+    assert config.skip_missing_dependency_blockers is False
+    assert "skip_missing_dependency_blockers" not in config.to_dict()
+
+
+def test_parse_project_package_config_persists_skip_missing_dependency_blockers() -> None:
+    config = parse_project_package_config(
+        {
+            "schema_version": 1,
+            "package_id": "my_project",
+            "display_name": "My Project",
+            "version": "1.0.0",
+            "skip_missing_dependency_blockers": True,
+        }
+    )
+
+    assert config.skip_missing_dependency_blockers is True
+    assert config.to_dict()["skip_missing_dependency_blockers"] is True
+
+
 def test_parse_project_package_config_rejects_invalid_version() -> None:
     with pytest.raises(ValueError, match="version must use a stable dotted release format"):
         parse_project_package_config(

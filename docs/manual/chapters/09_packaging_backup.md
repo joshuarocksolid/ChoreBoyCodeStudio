@@ -40,8 +40,11 @@ Typical fields include:
 - optional `description`
 - package entry file override
 - optional icon path
+- optional "Allow export with missing imports" (`skip_missing_dependency_blockers`)
 
 Keep `package_id` stable between releases so installable packages can support clearer upgrade behavior.
+
+If Package Project stops on an unused import that the running app never needs, check **Allow export with missing imports** on the metadata page. Unresolved imports stay in the report as warnings. Native extensions and `shell=True` subprocess calls still block.
 
 ## Validation before export
 

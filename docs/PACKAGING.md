@@ -47,6 +47,7 @@ This is intentionally separate from:
 - `description`
 - packaging entry-file override
 - optional icon path
+- optional `skip_missing_dependency_blockers` (missing imports become warnings; native extensions and unsafe subprocess calls still block)
 
 ### Exported artifact metadata
 

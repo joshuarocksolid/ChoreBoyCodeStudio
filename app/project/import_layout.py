@@ -309,8 +309,8 @@ def resolve_import_from_module(
     try:
         from importlib.util import resolve_name
 
-        relative_spec = module if module is not None else ""
-        return resolve_name(relative_spec, package_name, level)
+        relative_spec = f"{'.' * level}{module or ''}"
+        return resolve_name(relative_spec, package_name)
     except (ImportError, ValueError):
         return None
 

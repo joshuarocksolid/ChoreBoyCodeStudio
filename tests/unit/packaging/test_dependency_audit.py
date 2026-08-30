@@ -99,3 +99,29 @@ def test_dependency_audit_uses_known_runtime_modules_when_provided(tmp_path: Pat
 
     assert any(record.classification == "runtime" for record in report.records)
     assert report.is_ready is True
+
+
+def test_dependency_audit_classifies_same_package_relative_import(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    package_dir = project_root / "pkg"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "sibling.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (package_dir / "mod.py").write_text("from . import sibling\n", encoding="utf-8")
+    (project_root / "main.py").write_text("from pkg import mod\n", encoding="utf-8")
+
+    report = run_dependency_audit(
+        project_root=str(project_root),
+        known_runtime_modules=frozenset(),
+    )
+
+    relative = [
+        record
+        for record in report.records
+        if record.classification == "first_party_relative"
+    ]
+    assert relative
+    assert not any(
+        issue.issue_id.startswith("package.dependency.relative_missing")
+        for issue in report.issues
+    )

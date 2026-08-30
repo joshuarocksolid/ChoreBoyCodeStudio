@@ -2703,6 +2703,31 @@ Verify that the packaging workflow uses the dependency manifest to validate expo
 
 ---
 
+## AT-104 — Optional missing-import blockers at package time
+
+**Purpose:**  
+Verify that a working app can still export when an unused import fails the dependency audit, without weakening native-extension or subprocess blockers.
+
+**Preconditions:**  
+
+- a project whose entry file runs, and a second unused `.py` file imports a module that is not in the project, `vendor/`, or AppRun
+
+**Steps:**  
+
+1. Run Package Project with the default wizard settings.
+2. Confirm export stops and Runtime Center lists the unused import as blocking.
+3. Run Package Project again. Check **Allow export with missing imports**. Finish the wizard.
+
+**Expected Result:**  
+
+- step 1 does not write an artifact
+- step 3 writes the installable artifact
+- `package_report.json` still lists the unused import as a warning
+- `cbcs/package.json` contains `"skip_missing_dependency_blockers": true`
+- a vendored `.so` with no approved loader still blocks export when the checkbox is on
+
+---
+
 ## 15b. First-Class Testing Workflow Acceptance Tests
 
 ## AT-96 — Test explorer discovers and displays project tests

@@ -47,6 +47,7 @@ class ProjectPackageConfig:
     description: str = ""
     entry_file: str = ""
     icon_path: str = ""
+    skip_missing_dependency_blockers: bool = False
 
     def effective_entry_file(self, *, project_default_entry: str) -> str:
         """Return the packaging entry override or fall back to project metadata."""
@@ -67,6 +68,8 @@ class ProjectPackageConfig:
             payload["entry_file"] = self.entry_file
         if self.icon_path:
             payload["icon_path"] = self.icon_path
+        if self.skip_missing_dependency_blockers:
+            payload["skip_missing_dependency_blockers"] = True
         return payload
 
 

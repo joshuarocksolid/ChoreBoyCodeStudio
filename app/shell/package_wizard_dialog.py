@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -324,10 +325,24 @@ class _MetadataPage:
         form.addRow("Icon Path:", icon_row)
 
         self._description_edit = QTextEdit(initial_config.description, metadata_form)
-        self._description_edit.setMinimumHeight(120)
+        self._description_edit.setMinimumHeight(80)
         form.addRow("Description:", self._description_edit)
         metadata_layout.addWidget(metadata_form)
         outer.addWidget(metadata_section)
+
+        self._skip_missing_checkbox = QCheckBox(
+            "Allow export with missing imports",
+            self.widget,
+        )
+        self._skip_missing_checkbox.setObjectName(
+            "shell.packageWizard.skipMissingDependencyBlockers"
+        )
+        self._skip_missing_checkbox.setChecked(initial_config.skip_missing_dependency_blockers)
+        self._skip_missing_checkbox.setToolTip(
+            "Still lists unresolved imports as warnings. "
+            "Native extensions and unsafe subprocess calls still block export."
+        )
+        outer.addWidget(self._skip_missing_checkbox)
 
         tip = QLabel(
             "Tip: keep `package_id` stable across releases so installable packages can "
@@ -348,6 +363,7 @@ class _MetadataPage:
             description=self._description_edit.toPlainText().strip(),
             entry_file=self._entry_line.text().strip(),
             icon_path=self._icon_line.text().strip(),
+            skip_missing_dependency_blockers=self._skip_missing_checkbox.isChecked(),
         )
 
     def set_icon_path(self, path: str) -> None:
