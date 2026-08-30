@@ -6,6 +6,15 @@ Release tags: `v0.1`, `v0.2`, `v0.4.5`.
 
 LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30. Next list mail-out is v0.4.8.
 
+## [0.4.9] - 2026-08-29
+
+Shop test build for Ervin Newswanger. Not a LibrePy list mail-out.
+
+### Fixed
+
+- Package Project no longer crashes on relative imports with `resolve_name() takes 2 positional arguments but 3 were given` (request #44, Ervin Newswanger).
+- Unused missing imports can warn instead of blocking export when **Allow export with missing imports** is checked. Native extensions and unsafe subprocess calls still block (request #45, Ervin Newswanger).
+
 ## [0.4.8] - 2026-08-17
 
 Not yet mailed to LibrePy.
