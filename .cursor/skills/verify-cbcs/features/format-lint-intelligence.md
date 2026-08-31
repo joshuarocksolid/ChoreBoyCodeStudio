@@ -28,8 +28,8 @@ Preconditions:
 - Project with a messy `fmt_me.py` (`x=1+2` / unsorted imports) and a file with an unused import or syntax issue.
 - Doctor passed. Vendor Black/isort/jedi available on the guest copy, or record degraded tooling on `#shell.pythonToolingStatusLabel`.
 
-- **Format.** Open the messy file. `control-cbcs trigger "$SID" shell.action.tools.formatCurrentFile`. Buffer matches Black. Shot `format-after`.
-- **Organize.** `control-cbcs trigger "$SID" shell.action.tools.organizeImportsCurrentFile`. Import block is sorted; no other user comments lost.
+- **Format.** Open the messy file. `control-cbcs arm "$SID" shell.action.tools.formatCurrentFile`. A modal **Formatting applied via Built-in Python Formatter** OK box blocks `trigger`. Dismiss with virsh `KEY_ENTER` if you already blocked the bridge (`KEY_RETURN` is invalid). Buffer matches Black. Shot `format-after`.
+- **Organize.** `control-cbcs arm "$SID" shell.action.tools.organizeImportsCurrentFile`. Same modal OK box (**Imports organized…**). Import block is sorted.
 - **Lint.** `control-cbcs trigger "$SID" shell.action.tools.lintCurrentFile`. `#shell.problemsPanel.tree` has rows or `#shell.diagnosticsStatusLabel` shows counts. Click a row; editor jumps.
 - **Safe fix.** Apply safe fixes; squiggles clear without Save. Re-lint is clean for that rule.
 - **Completion.** In a Python buffer type `json.` after `import json`. Popup lists attributes; Enter inserts. Down at the last row does not crash.

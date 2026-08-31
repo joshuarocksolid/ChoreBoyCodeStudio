@@ -10,6 +10,16 @@ Duplicate names exist (`shell.welcome.onboardingActionBtn` on several welcome bu
 
 The installer wizard (`packaging/install.py`) has no `shell.*` names. Use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`.
 
+Recovery Center has no object names. Arm `shell.action.file.recoveryCenter` and click `text:Open Timeline` / `text:Restore Latest to Buffer`.
+
+Explorer header buttons share `#shell.explorerAction`. They are icon-only. Select by tooltip **New File** / **New Folder** / **Refresh Explorer**.
+
+Paste overlay: `#PasteHintOverlay`, `#PasteHintOverlayReindentButton`, `#PasteHintOverlayAlwaysButton`, `#PasteHintOverlayDismissButton` (**×**). Only after `insertFromMimeData`.
+
+`#shell.quickOpen.input` is the Quick Open field (`show()`, not `exec_()`).
+
+Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` handle.
+
 ## Chrome
 
 | Handle | What |
@@ -54,10 +64,10 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 
 | Handle | What |
 |--------|------|
-| `#shell.startupStatusLabel` | `Startup: Runtime ready (N/N checks)` — click opens Runtime Center. Widget class is `_ClickableLabel`; use `control-cbcs read`, not bridge `find('#…')`. |
+| `#shell.startupStatusLabel` | `Startup: Runtime ready (N/N checks)`. Click runs `exec_()` and blocks the Qt bridge. Use `arm` `shell.action.tools.runtimeCenter` instead. Widget class is `_ClickableLabel`; use `control-cbcs read`, not bridge `find('#…')`. |
 | `#shell.diagnosticsStatusLabel` | Error / warning counts |
 | `#shell.pythonToolingStatusLabel` | Black / isort readiness |
-| `#shell.runStatusLabel` | idle / running / success / failed / terminated |
+| `#shell.runStatusLabel` | `Run: idle` / `Run: running` / `Run: success (code=0)` / `Run: failed (code=N)` / `Run: terminated` |
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
 | `#shell.editorStatusLabel` | file, line, col, modified/saved |
@@ -85,25 +95,34 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.debug.panel` | Debug pane |
 | `#shell.debug.watchInput` | Watch expression |
 | `#shell.debug.commandInput` | Debug command |
+| `#shell.debug.variablesTree` | Locals / scopes |
+| `#shell.debug.breakpointsTree` | Breakpoint list |
+| `#shell.debug.stackTree` | Call stack |
+| `#shell.debug.statusLabel` | `Paused at <file>:<line> in <func>` |
 | `#shell.problemsPanel` | Problems |
-| `#shell.bottom.pythonConsole` | REPL |
-| `#shell.bottom.runLog` | Run Log |
+| `#shell.bottom.pythonConsole` | REPL. Show the tab first (`#shell.bottomRegion.tabs` index 0). `text:Python Console` can miss. |
+| `#shell.bottom.runLog` | Run Log host |
+| `#shell.bottom.runLog.textArea` | Token / stdout text |
 | `#shell.testExplorer` | Test Explorer |
 | `#shell.testExplorer.runAllBtn` | Run All |
 | `#shell.testExplorer.refreshBtn` | Refresh (restarts collect) |
 | `#shell.testExplorer.tree` | Discovery tree |
 | `#shell.testExplorer.statusText` | `N tests` / `Discovery error` / empty |
 | `#shell.testExplorer.emptyLabel` | Empty or error copy |
+| `#shell.testExplorer.countPassed` | `✓ N` |
+| `#shell.testExplorer.countFailed` | `✗ N` |
+| `#shell.testExplorer.runFailedBtn` | Rerun failures |
 
 ## Dialogs
 
 | Handle | What |
 |--------|------|
-| `#shell.settingsDialog` | Settings |
+| `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
-| `#shell.packageWizardDialog` | Package Project |
-| `#shell.packageWizard.skipMissingDependencyBlockers` | Allow export with missing imports |
+| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. |
+| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104) |
+| `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked) |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |

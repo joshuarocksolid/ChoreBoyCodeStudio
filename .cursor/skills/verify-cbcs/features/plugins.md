@@ -27,8 +27,8 @@ Preconditions:
 - A known-good local plugin zip on the share (or bundled_plugins in the checkout).
 - Disposable HOME so install state is throwaway.
 
-- **Open manager.** `control-cbcs trigger "$SID" shell.action.tools.pluginManager`. `#shell.pluginManagerDialog` is visible. Close via that handle or `text:Close`. Shot `plugin-manager`.
-- **Install.** Choose the local package; confirm trust if prompted. The plugin appears with version, source, enabled.
+- **Open manager.** `control-cbcs trigger "$SID" shell.action.tools.pluginManager` (`show()`, not `exec_()`). `#shell.pluginManagerDialog` is visible. Close via that handle or `text:Close`. Shot `plugin-manager`.
+- **Install.** Folder-first, then `*.zip`. Trust prompt is on **Enable**, not Install. The plugin appears with version, source, enabled. Without a local plugin fixture this path is `verified-unreachable`.
 - **Disable / enable.** Toggle enabled. Contributions disappear / return (menu item or template, depending on the plugin).
 - **Safe mode.** Enable safe mode. Contributions stop. Disable safe mode; they return.
 - **Pin.** With a project open, Pin To Project. `<project>/cbcs/` records the pin. Clear Pin removes it.
@@ -38,6 +38,7 @@ Preconditions:
 ## Gotchas
 
 - There is no internet marketplace. Only local packages.
-- Trust prompt is part of the user path — do not skip it via internals.
+- Trust prompt is on Enable. Do not skip it via internals.
+- Quarantine is after 3 host failures. Pin file is `cbcs/plugins.json`.
 - Plugin host is a child process. `CBCS_DISABLE_BACKGROUND_RUNTIME` prevents this feature; do not set it here.
 - Compatibility failures must be explicit in the UI, not a silent skip.

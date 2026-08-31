@@ -33,9 +33,9 @@ Folder pickers are Qt `QFileDialog` with `DontUseNativeDialog`. They are not `#s
 - **Seed example on the share.** From the Mac, rsync `example_projects/crud_showcase` to `debian:/home/joshua/shared-usb/cbcs-verify/<run-id>/project/crud`.
 - **Open by path.** Run `control-cbcs ctl "$SID" exec --` with `win=find('#shell.mainWindow'); win._file_project_commands_workflow.open_project_by_path('/mnt/cbprobe/cbcs-verify/<run-id>/project/crud')` only if a user-visible Open dialog cannot be completed. Then assert the user-visible result below. Prefer triggering **File → Open Project** and typing the path when the dialog accepts it.
 - **Tree and status.** `#shell.projectTree` has rows. `control-cbcs read "$SID" shell.projectStatusLabel` contains the project name.
-- **Invalid folder.** Point Open Project at `/tmp` or an empty scratch dir. An error dialog appears; `#shell.mainWindow` is still visible. Shot `project-invalid`.
-- **New from template.** `control-cbcs trigger "$SID" shell.action.file.newProjectFromTemplate`. Complete name + destination into the disposable tree. New folder contains `cbcs/project.json`. Project status updates.
-- **Example.** `control-cbcs trigger "$SID" shell.action.help.loadExampleProject`. After the copy dialog, the showcase tree is visible.
+- **Invalid folder.** Point Open Project at a shared temp root such as `/tmp`. An error dialog appears; `#shell.mainWindow` is still visible. Shot `project-invalid`. An empty folder is `GENERIC_WORKSPACE`, not an error. Import does not write `cbcs/project.json` on open (`manifest_materialized=False`).
+- **New from template.** `control-cbcs trigger "$SID" shell.action.file.newProjectFromTemplate`. Ctrl+N is `newProject` (blank `blank_project`), not the template picker. Complete name + destination into the disposable tree. New folder contains `cbcs/project.json`. Project status updates.
+- **Example.** `control-cbcs trigger "$SID" shell.action.help.loadExampleProject`. Example Project uses the same name + folder prompts as New Project. After those dialogs, the showcase tree is visible.
 - **Recent.** Stop, relaunch with the **same** HOME only if you are proving recents (not the default isolate-and-destroy path). **File → Open Recent** lists the path. Otherwise prove recents by reading `$HOME/choreboy_code_studio_state/recent_projects.json` before `stop`.
 - **Proof.** Shot of the tree + `projectStatusLabel` text, and a guest read that `cbcs/project.json` exists.
 

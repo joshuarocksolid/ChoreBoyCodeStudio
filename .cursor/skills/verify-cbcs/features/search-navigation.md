@@ -27,9 +27,9 @@ Preconditions:
 
 - **Find.** `control-cbcs trigger "$SID" shell.action.edit.find`. `#shell.findBar.findInput` is focused. Type the unique token. `#shell.findBar.matchCount` is non-zero. Shot `find-match`.
 - **Replace.** `control-cbcs trigger "$SID" shell.action.edit.replace`. Fill `#shell.findBar.replaceInput`; click `#shell.findBar.replaceBtn`. Buffer is dirty; the token changed.
-- **Find in Files.** `control-cbcs ctl "$SID" click '#shell.activityBar.btn.search'`. Type the token in `#shell.searchSidebar.searchInput`. `#shell.searchSidebar.results` lists hits. Activate a row; an editor tab opens at that line.
+- **Find in Files.** `control-cbcs trigger "$SID" shell.action.edit.findInFiles` seeds the query. An activity-bar click does not. Type the token in `#shell.searchSidebar.searchInput` if the field is empty. `#shell.searchSidebar.results` lists hits. Activate a **match line**, not a file-group row. File-group rows do not open a file.
 - **Quick Open.** `control-cbcs trigger "$SID" shell.action.file.quickOpen`. Type `main.py`. Confirm. Tab opens.
-- **Go to Symbol.** `control-cbcs trigger "$SID" shell.action.tools.gotoSymbolInFile`. `#shell.quickSymbolDialog.input` accepts a name; choosing a row moves the cursor.
+- **Go to Symbol.** `control-cbcs arm "$SID" shell.action.tools.gotoSymbolInFile` (modal). `#shell.quickSymbolDialog.input` accepts a name. Choosing a row moves the cursor.
 - **Definition.** Place the cursor on a known function; `control-cbcs trigger "$SID" shell.action.edit.goToDefinition`. Cursor / tab moves to the definition.
 - **Proof.** Shot of find-in-files results plus the opened tab line, or the find bar match count and highlighted editor.
 
@@ -38,3 +38,4 @@ Preconditions:
 - Find-in-files results debounce. Wait for `#shell.searchSidebar.summary` or `#shell.searchSidebar.noResults`, not a fixed sleep.
 - F2 in the **tree** is rename-file, not rename-symbol. Focus the editor first.
 - Quick Open preview vs permanent follows the preview-tabs setting.
+- Find References lands in Problems, not Search.

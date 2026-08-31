@@ -8,7 +8,7 @@ Owns AT-18, AT-65–71.
 
 - `history-checkpoint` each Save creates a comparable revision (AT-65).
 - `history-restore` Local History restore puts older content in the buffer (AT-67).
-- `recovery-center` **File → Open Recovery Center...** diff / restore / keep for next launch (AT-18, AT-66).
+- `recovery-center` **File → Open Recovery Center...** lists drafts and saved-history timelines. Buttons are **Review Draft**, **Open Timeline**, and **Restore Latest to Buffer**. **Keep for Next Launch** is `#shell.unsavedChangesDialog` on exit, not this dialog.
 - `global-history` **File → Open Global History...** across projects (AT-68).
 - `history-multi` multi-file transactions are grouped (AT-69).
 - `history-retention` Settings → Files retention / size / excludes (AT-70).
@@ -29,8 +29,8 @@ Preconditions:
 
 - **Checkpoint.** Open `main.py`. Change a unique string; Save. Repeat with a second string. Local History lists at least two revisions.
 - **Compare.** Open Local History from the tab. Diff view (`#shell.diffView`) shows before/after. Shot `history-diff`.
-- **Restore.** Restore the first revision. Buffer contains the first unique string. Disk updates only after Save (or as the dialog states). No silent clobber of a newer disk file without a prompt.
-- **Recovery Center.** `control-cbcs trigger "$SID" shell.action.file.recoveryCenter`. Dialog lists drafts if you dirty a file and kill the session without Save — for a single-session proof, dirty a file and confirm a draft exists under disposable HOME `.../state` before stop, or relaunch the same HOME.
+- **Restore.** Restore the first revision. The **buffer** contains the first unique string. Disk stays at the later save until you Save again.
+- **Recovery Center.** `control-cbcs arm "$SID" shell.action.file.recoveryCenter` (modal). The dialog has no `#shell.recoveryCenterDialog` name. Click `text:Open Timeline` or `text:Restore Latest to Buffer`. History files live under `$HOME/choreboy_code_studio_state/history/`, not `.../state`.
 - **Proof.** Shot of the diff + the restored buffer, and a copied history blob or index listing in artifacts.
 
 ## Gotchas

@@ -25,10 +25,10 @@ Preconditions:
 - A pure-Python wheel or folder staged on the share.
 - Doctor passed.
 
-- **Add.** `control-cbcs trigger "$SID" shell.action.tools.addDependency`. Complete the wizard with the staged package. Guest `vendor/` contains the package. `cbcs/dependencies.json` has an entry. Shot `dep-added`.
+- **Add.** `control-cbcs arm "$SID" shell.action.tools.addDependency` (modal wizard). Complete it with the staged package. Guest `vendor/` contains the package. `cbcs/dependencies.json` has an entry. Shot `dep-added`.
 - **Native warning.** If you have a native wheel fixture, add it. The wizard shows a warning before finish. Cancel leaves the manifest unchanged.
-- **Inspect.** `control-cbcs trigger "$SID" shell.action.tools.dependencyInspector`. The row shows name / version / source.
-- **Remove.** Remove the entry; choose whether to clean vendor. Manifest updates. Re-open inspector — row is gone.
+- **Inspect.** `control-cbcs trigger "$SID" shell.action.tools.dependencyInspector` (`show()`, not `exec_()`). Window title is **Project Dependencies**. There is no `#shell.dependency*` handle. The row shows name / version / source.
+- **Remove.** Remove the entry. The row stays with `status=removed`. Manifest updates.
 - **Proof.** Copied `cbcs/dependencies.json` plus a listing of `vendor/` in artifacts, and the inspector shot.
 
 ## Gotchas

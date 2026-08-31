@@ -1,18 +1,18 @@
 # Test Explorer
 
-The Test Explorer activity discovers pytest nodes, runs all or a selection, reruns failures, and can debug a failed node. Results persist across sessions.
+The Test Explorer activity discovers pytest nodes, runs all or a selection, reruns failures, and can debug a failed node. Outcomes stay in memory (`TestRunnerWorkflow._test_outcomes_by_node_id`) for the session.
 
 Owns AT-96–101, AT-62, smoke M4.
 
 ## Sub-features
 
-- `tx-discover` populates `#shell.testExplorer.tree` after Refresh.
+- `tx-discover` populates `#shell.testExplorer.tree` after project-open collect.
 - `tx-run-all` runs the suite from `#shell.testExplorer.runAllBtn`.
 - `tx-run-node` runs a selected node from the tree context menu.
 - `tx-rerun-failed` `#shell.testExplorer.runFailedBtn` only hits failures.
 - `tx-debug-failed` `#shell.testExplorer.debugFailedBtn` / AT-62.
 - `tx-filters` Passed / Failed / Skipped / Errors chips.
-- `tx-persist` results survive a relaunch with the same disposable HOME (copy artifacts before stop if you will destroy HOME).
+- `tx-persist` is not on disk. AT-100 / copy-project-metadata has nothing to copy.
 - `tx-theme` panel stays readable in Light and Dark (AT-101); four themes preferred.
 
 ## How to get to it (user POV)
@@ -31,8 +31,8 @@ Preconditions:
 - **Discover.** Opening a project already starts background `pytest --collect-only`. Open the pane, then poll — do not click Refresh unless collect already finished empty. `control-cbcs wait "$SID" shell.testExplorer.tree --min-rows 1 --timeout 45`. Status becomes `N tests` or `Discovery error`. Shot `tx-discovered`.
 - **Run all.** `control-cbcs ctl "$SID" click '#shell.testExplorer.runAllBtn'`. Counts on `#shell.testExplorer.countPassed` / `countFailed` update. Failures also appear in Problems.
 - **Rerun failed.** After a failure, `#shell.testExplorer.runFailedBtn`. Only failed nodes re-run.
-- **Navigate.** Activate a failed node. Editor opens at the assertion line.
-- **Proof.** Shot of the tree with pass/fail icons and the count chips, plus (optional) copied session results from project metadata.
+- **Navigate.** Activate a failed node. The editor opens at the `def` line. Assertion-line jump is Problems, not this tree.
+- **Proof.** Shot of the tree with pass/fail icons and the count chips (`✓ N` / `✗ N`).
 
 ## Gotchas
 
@@ -40,4 +40,4 @@ Preconditions:
 - Clicking Refresh restarts collect. If one is already running from project open, wait for it.
 - AppRun `-c` runs one physical line. Do not `raise SystemExit(...)` / `sys.exit(pytest.main(...))` in that payload — AppRun swallows it and collect looks empty. Call `pytest.main(...)` and stop.
 - Empty tree on a project with no tests is a valid empty state (`#shell.testExplorer.emptyLabel`), not a failure.
-- Persistence proof requires reading stored results before `stop` deletes HOME.
+- There is no persisted results file to copy before `stop`.
