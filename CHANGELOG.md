@@ -6,6 +6,12 @@ Release tags: `v0.1`, `v0.2`, `v0.4.5`.
 
 LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30. Next list mail-out is v0.4.8.
 
+## [Unreleased]
+
+### Fixed
+
+- Product packaging now rejects tree-sitter `_binding*.so` files that are not little-endian ELF64 x86-64. A Mac-built 0.4.9 zip shipped Darwin grammar wheels under the same `_binding.abi3.so` name, which made syntax highlighting fail on ChoreBoy with `invalid ELF header`.
+
 ## [0.4.9] - 2026-08-29
 
 Shop test build for Ervin Newswanger. Not a LibrePy list mail-out.

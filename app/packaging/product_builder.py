@@ -446,6 +446,32 @@ def _expected_tree_sitter_binding_name(
     return tree_sitter_core_binding_name(soabi)
 
 
+ELF_MAGIC = b"\x7fELF"
+ELFCLASS64 = 2
+ELFDATA2LSB = 1
+EM_X86_64 = 62
+_ELF_HEADER_BYTES = 20
+
+
+def require_linux_x86_64_elf(path: Path) -> None:
+    """Reject non-ELF or non-x86-64 binaries that share an abi3 filename."""
+    header = path.read_bytes()[:_ELF_HEADER_BYTES]
+    if len(header) < _ELF_HEADER_BYTES or header[:4] != ELF_MAGIC:
+        raise RuntimeError(
+            f"{path} is not an ELF shared object (got {header[:4]!r}); "
+            "product packaging cannot ship Darwin or text stand-ins as _binding*.so"
+        )
+    if header[4] != ELFCLASS64 or header[5] != ELFDATA2LSB:
+        raise RuntimeError(
+            f"{path} is not a little-endian ELF64 binary (class={header[4]}, data={header[5]})"
+        )
+    machine = int.from_bytes(header[18:20], "little")
+    if machine != EM_X86_64:
+        raise RuntimeError(
+            f"{path} ELF e_machine={machine} is not EM_X86_64 ({EM_X86_64})"
+        )
+
+
 def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
     """Validate that staged tree-sitter extensions match the shipped ChoreBoy ABI."""
     validated_bindings: list[dict[str, str]] = []
@@ -469,6 +495,7 @@ def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
                 f"tree-sitter package {package_name} expected {expected_binding_name}; "
                 f"found incompatible bindings: {', '.join(candidates)}"
             )
+        require_linux_x86_64_elf(package_dir / expected_binding_name)
         validated_bindings.append(
             {"package": package_name, "binding": expected_binding_name}
         )
