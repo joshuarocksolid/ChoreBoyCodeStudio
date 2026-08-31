@@ -13,7 +13,7 @@ Last versions mailed to the list:
 - v0.4.7 on 2026-06-30 (`email:24999`). Completion-list crash fix for Clair Nolt (request #39).
 - v0.4.8 on 2026-08-24 (`email:46496` / thread `email:26851`). Outside-change overwrite guard, drag-and-drop open, stale-lint clear, richer `.` completion.
 
-The next list mail-out is v0.4.9 (packaging relative-import crash, optional missing-dependency blockers).
+v0.4.9 list mail drafted 2026-08-31 (`draft:1129` / thread `email:27237`). Packaging relative-import crash, optional missing-dependency blockers, silent Apps-slot install (request #46). Zip plus CHANGELOG. Password `rsd`. Not sent.
 
 ---
 

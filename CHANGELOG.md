@@ -4,7 +4,7 @@ All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
 Release tags: `v0.1`, `v0.2`, `v0.4.5`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30. Next list mail-out is v0.4.8.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24. Next list mail-out is v0.4.9.
 
 ## [Unreleased]
 
@@ -14,7 +14,11 @@ LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30. Next list ma
 
 ## [0.4.9] - 2026-08-29
 
-Shop test build for Ervin Newswanger. Not a LibrePy list mail-out.
+Shop-tested by Ervin Newswanger on 2026-08-31 (`email:27192`). List mail drafted 2026-08-31 (`draft:1129`).
+
+### Added
+
+- Packaged apps install to `$HOME/.local/share/FreeCAD/Macro/Apps/<app name>` by default. The installer creates a Desktop shortcut and does not ask for a folder. A different package already in that slot is refused by name. Check **Ask the installer for an install folder** in Package Project to pick a path (request #46, Ervin Newswanger).
 
 ### Fixed
 
@@ -23,7 +27,7 @@ Shop test build for Ervin Newswanger. Not a LibrePy list mail-out.
 
 ## [0.4.8] - 2026-08-17
 
-Not yet mailed to LibrePy.
+Mailed to `librepy-users@timtech.io` on 2026-08-24 (`email:26851`).
 
 ### Fixed
 
