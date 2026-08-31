@@ -454,7 +454,6 @@ _ELF_HEADER_BYTES = 20
 
 
 def require_linux_x86_64_elf(path: Path) -> None:
-    """Reject non-ELF or non-x86-64 binaries that share an abi3 filename."""
     header = path.read_bytes()[:_ELF_HEADER_BYTES]
     if len(header) < _ELF_HEADER_BYTES or header[:4] != ELF_MAGIC:
         raise RuntimeError(
