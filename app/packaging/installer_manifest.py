@@ -50,6 +50,7 @@ def create_distribution_manifest(
     app_run_path: str = "/opt/freecad/AppRun",
     write_menu_entry: bool = False,
     write_desktop_shortcut: bool = True,
+    ask_install_location: bool = False,
 ) -> DistributionManifest:
     """Create a normalized manifest with stable defaults."""
     effective_display_name = display_name.strip()
@@ -92,6 +93,7 @@ def create_distribution_manifest(
         app_run_path=app_run_path,
         write_menu_entry=bool(write_menu_entry),
         write_desktop_shortcut=bool(write_desktop_shortcut),
+        ask_install_location=bool(ask_install_location),
         checksum_algorithm=PACKAGE_CHECKSUM_ALGORITHM_SHA256,
         checksums=tuple(),
     )
@@ -117,6 +119,15 @@ def load_distribution_manifest(path: str | Path) -> DistributionManifest:
     target = Path(path).expanduser().resolve()
     payload = json.loads(target.read_text(encoding="utf-8"))
     return parse_distribution_manifest(payload)
+
+
+def _parse_ask_install_location(payload: Mapping[str, Any]) -> bool:
+    if "ask_install_location" not in payload:
+        return False
+    ask_install_location = payload["ask_install_location"]
+    if not isinstance(ask_install_location, bool):
+        raise ValueError("ask_install_location must be a boolean.")
+    return ask_install_location
 
 
 def parse_distribution_manifest(payload: Mapping[str, Any]) -> DistributionManifest:
@@ -178,6 +189,7 @@ def parse_distribution_manifest(payload: Mapping[str, Any]) -> DistributionManif
         app_run_path=str(payload.get("app_run_path", "/opt/freecad/AppRun")),
         write_menu_entry=bool(payload.get("write_menu_entry", False)),
         write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", True)),
+        ask_install_location=_parse_ask_install_location(payload),
         checksum_algorithm=str(payload.get("checksum_algorithm", PACKAGE_CHECKSUM_ALGORITHM_SHA256)),
         checksums=tuple(checksums),
     )

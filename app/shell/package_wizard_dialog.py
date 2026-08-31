@@ -344,6 +344,20 @@ class _MetadataPage:
         )
         outer.addWidget(self._skip_missing_checkbox)
 
+        self._ask_install_location_checkbox = QCheckBox(
+            "Ask the installer for an install folder",
+            self.widget,
+        )
+        self._ask_install_location_checkbox.setObjectName(
+            "shell.packageWizard.askInstallLocation"
+        )
+        self._ask_install_location_checkbox.setChecked(initial_config.ask_install_location)
+        self._ask_install_location_checkbox.setToolTip(
+            "Shop install uses the FreeCAD Apps folder. "
+            "Check this only when the app must live somewhere else."
+        )
+        outer.addWidget(self._ask_install_location_checkbox)
+
         tip = QLabel(
             "Tip: keep `package_id` stable across releases so installable packages can "
             "offer clearer upgrade and cleanup behavior.",
@@ -364,6 +378,7 @@ class _MetadataPage:
             entry_file=self._entry_line.text().strip(),
             icon_path=self._icon_line.text().strip(),
             skip_missing_dependency_blockers=self._skip_missing_checkbox.isChecked(),
+            ask_install_location=self._ask_install_location_checkbox.isChecked(),
         )
 
     def set_icon_path(self, path: str) -> None:

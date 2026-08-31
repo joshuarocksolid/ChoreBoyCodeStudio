@@ -2514,6 +2514,35 @@ Verify that installable packages have a clear, supportable install/upgrade story
 
 ---
 
+## AT-105 — Silent project install into FreeCAD Macro Apps
+
+**Purpose:**  
+Verify that a shop project package installs into the FreeCAD Apps slot without asking for a folder, creates a Desktop shortcut, refuses a foreign name, and upgrades the same `package_id`.
+
+**Preconditions:**  
+
+- a project package export exists with `ask_install_location` omitted or false
+- the target machine can run FreeCAD AppRun
+
+**Steps:**  
+
+1. Copy the installable package to `/home/default/` and launch the installer.
+2. Confirm DirectoryPage shows `$HOME/.local/share/FreeCAD/Macro/Apps/<sanitized display_name>` as a read-only destination. Browse is hidden.
+3. Finish install and confirm a Desktop shortcut was created.
+4. Export a second project with a different `package_id` and the same display name. Install it and confirm the installer refuses the occupied slot and names the occupant.
+5. Export a newer version of the first package (same `package_id` and display name). Install it and confirm replace, then install.
+
+**Expected Result:**  
+
+- the default destination is the FreeCAD Apps slot, not `/home/default/<name>_v<version>`
+- `package_manifest.json` stores `default_install_base` as `~/.local/share/FreeCAD/Macro/Apps`
+- a Desktop shortcut launches the installed app
+- a foreign or unmarked occupant in that slot is refused
+- the same `package_id` can replace the previous version after confirm
+- product packages still use `/home/default/choreboy_code_studio_v{version}` and still show a folder picker
+
+---
+
 ## AT-83 — Retired portable packaging profile
 
 **Purpose:**  

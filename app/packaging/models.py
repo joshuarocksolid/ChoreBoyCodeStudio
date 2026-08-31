@@ -48,6 +48,7 @@ class ProjectPackageConfig:
     entry_file: str = ""
     icon_path: str = ""
     skip_missing_dependency_blockers: bool = False
+    ask_install_location: bool = False
 
     def effective_entry_file(self, *, project_default_entry: str) -> str:
         """Return the packaging entry override or fall back to project metadata."""
@@ -70,6 +71,8 @@ class ProjectPackageConfig:
             payload["icon_path"] = self.icon_path
         if self.skip_missing_dependency_blockers:
             payload["skip_missing_dependency_blockers"] = True
+        if self.ask_install_location:
+            payload["ask_install_location"] = True
         return payload
 
 
@@ -118,6 +121,7 @@ class DistributionManifest:
     app_run_path: str = "/opt/freecad/AppRun"
     write_menu_entry: bool = False
     write_desktop_shortcut: bool = True
+    ask_install_location: bool = False
     checksum_algorithm: str = PACKAGE_CHECKSUM_ALGORITHM_SHA256
     checksums: tuple[ArtifactChecksum, ...] = field(default_factory=tuple)
 
@@ -147,6 +151,7 @@ class DistributionManifest:
             "app_run_path": self.app_run_path,
             "write_menu_entry": self.write_menu_entry,
             "write_desktop_shortcut": self.write_desktop_shortcut,
+            "ask_install_location": self.ask_install_location,
             "checksum_algorithm": self.checksum_algorithm,
             "checksums": [entry.to_dict() for entry in self.checksums],
         }

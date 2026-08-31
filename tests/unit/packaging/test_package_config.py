@@ -90,6 +90,48 @@ def test_parse_project_package_config_persists_skip_missing_dependency_blockers(
     assert config.to_dict()["skip_missing_dependency_blockers"] is True
 
 
+def test_parse_project_package_config_defaults_ask_install_location() -> None:
+    config = parse_project_package_config(
+        {
+            "schema_version": 1,
+            "package_id": "my_project",
+            "display_name": "My Project",
+            "version": "1.0.0",
+        }
+    )
+
+    assert config.ask_install_location is False
+    assert "ask_install_location" not in config.to_dict()
+
+
+def test_parse_project_package_config_persists_ask_install_location() -> None:
+    config = parse_project_package_config(
+        {
+            "schema_version": 1,
+            "package_id": "my_project",
+            "display_name": "My Project",
+            "version": "1.0.0",
+            "ask_install_location": True,
+        }
+    )
+
+    assert config.ask_install_location is True
+    assert config.to_dict()["ask_install_location"] is True
+
+
+def test_parse_project_package_config_rejects_non_bool_ask_install_location() -> None:
+    with pytest.raises(ValueError, match="ask_install_location must be a boolean"):
+        parse_project_package_config(
+            {
+                "schema_version": 1,
+                "package_id": "my_project",
+                "display_name": "My Project",
+                "version": "1.0.0",
+                "ask_install_location": "yes",
+            }
+        )
+
+
 def test_parse_project_package_config_rejects_invalid_version() -> None:
     with pytest.raises(ValueError, match="version must use a stable dotted release format"):
         parse_project_package_config(

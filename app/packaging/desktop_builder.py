@@ -8,7 +8,7 @@ from app.packaging.launcher_bootstrap import (
     build_fixed_root_bootstrap,
     build_path_key_installer_exec,
 )
-from app.packaging.models import DistributionManifest
+from app.packaging.models import PACKAGE_KIND_PROJECT, DistributionManifest
 
 
 def build_installer_package_launcher(
@@ -84,7 +84,7 @@ def build_installable_install_text(
         "1. Copy this entire folder onto the ChoreBoy machine.\n"
         f"2. Recommended: place the folder under `{manifest.staging_parent}` before launching the installer.\n"
         f"3. Open `{installer_launcher_filename}`.\n"
-        "4. Review the suggested install location and any older-version cleanup options.\n"
+        f"{_install_location_step(manifest)}"
         "5. Keep the package files together until installation finishes successfully.\n"
         "\n"
         "Installer behavior:\n"
@@ -101,6 +101,14 @@ def build_installable_install_text(
         "After install, the launcher inside the installed folder becomes the source of truth.\n"
         "Any Desktop shortcut points at that installed folder, not back at this staging package.\n"
     )
+
+
+def _install_location_step(manifest: DistributionManifest) -> str:
+    if manifest.package_kind == PACKAGE_KIND_PROJECT and not manifest.ask_install_location:
+        return (
+            "4. Confirm the FreeCAD Apps destination. A Desktop shortcut will be created.\n"
+        )
+    return "4. Review the suggested install location and any older-version cleanup options.\n"
 
 
 def _build_desktop_entry(

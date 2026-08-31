@@ -48,6 +48,7 @@ This is intentionally separate from:
 - packaging entry-file override
 - optional icon path
 - optional `skip_missing_dependency_blockers` (missing imports become warnings; native extensions and unsafe subprocess calls still block)
+- optional `ask_install_location` (when true, the installer asks for a folder; omitted or false uses the FreeCAD Apps slot)
 
 ### Exported artifact metadata
 
@@ -139,9 +140,30 @@ The installer must:
 - optionally publish a Desktop shortcut
 - publish an application-menu launcher on a best-effort basis when selected
 - detect older installs of the same `package_id`
+- classify occupancy of the destination folder itself before copying
 - allow side-by-side installs and optional cleanup of older versions
 
-The installed launcher is expected to hardcode the chosen final install directory.
+The installed launcher is expected to hardcode the final install directory.
+
+### Project install destination
+
+Project packages install to `$HOME/.local/share/FreeCAD/Macro/Apps/<sanitized display_name>`.
+The folder name is the display-name slug and does not include a version suffix.
+Export writes `default_install_base` as `~/.local/share/FreeCAD/Macro/Apps` so the installer calls `expanduser()` at install time and follows that machine's `HOME`.
+
+`ask_install_location` defaults to false. The installer still shows DirectoryPage, but the path is read-only and Browse is hidden.
+Set `ask_install_location` to true in `cbcs/package.json` when the app must live somewhere else. That restores Browse and a choosable path.
+
+Occupancy is the destination folder itself, not only sibling folders:
+
+- missing path or empty directory: install
+- `cbcs_installed_package.json` with the same `package_id`: confirm replace, then install
+- marker with a different `package_id`: refuse, and name the occupant
+- files and no readable same-schema marker: refuse
+
+If the Apps parent directory cannot be created, the installer raises and does not rewrite the path to `/home/default`.
+
+Product packages keep `/home/default/choreboy_code_studio_v{version}` and still ask for an install folder.
 
 That is deliberate. If the installed folder moves later, the supported recovery path is:
 
@@ -260,7 +282,7 @@ Installable packages are designed around the ChoreBoy copy-and-launch workflow:
 1. copy the whole installer package into `/home/default/`
 2. keep the installer folder together
 3. run the installer launcher from there
-4. choose the final install directory
+4. confirm the destination; shop project packages use the FreeCAD Apps slot unless `ask_install_location` is true
 
 The installer warns when the staging package is not under `/home/default/`.
 The installer launcher depends on its generated `Path=` key matching the package
