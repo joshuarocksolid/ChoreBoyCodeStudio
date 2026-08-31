@@ -31,11 +31,12 @@ Preconditions:
 - **Source only.** `control-cbcs trigger "$SID" shell.action.view.markdownShowSource`. Preview hides; source stays editable.
 - **Preview only.** `control-cbcs trigger "$SID" shell.action.view.markdownShowPreview`. Source hides.
 - **Split.** `control-cbcs trigger "$SID" shell.action.view.markdownShowSplit`. Both visible. Shot `markdown-split`.
-- **Edit + save.** Type a new heading in source; Save. Preview updates (or shows Paused on a large file). Disk matches.
+- **Edit.** Type a new heading in source. Preview updates on `textChanged` (~200 ms), not on Save. Disk matches only after Save.
 - **Proof.** Shot of Split with a visible heading in the preview, plus the saved `.md` on disk.
 
 ## Gotchas
 
 - Live preview pauses on large files. A Paused status is success, not a blank preview bug.
+- **View → Markdown: Toggle Preview** from Split goes to Preview-only and never back to Split. Use **Show Split** to return.
 - Local links stay in-app; do not expect a system browser.
 - Do not open the same `.md` twice as duplicate tabs — the editor should focus the existing tab.

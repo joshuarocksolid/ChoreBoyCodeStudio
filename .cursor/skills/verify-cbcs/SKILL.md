@@ -112,6 +112,12 @@ $CONTROL ctl "$SID" exec -- "find('#shell.runStatusLabel').text()"
 
 Actions that open a modal dialog must use `arm`, not `trigger`. `trigger` runs `QAction.trigger()` inside the bridge call; `QDialog.exec_()` then blocks that call until the dialog closes, so later commands time out. `arm` fires the action on the next event-loop tick.
 
+The same block happens if you click `#shell.startupStatusLabel` (Runtime Center) or `trigger` format / organize imports. Those OK boxes also use `exec_()`. If the bridge is already blocked, `cbapp desktop-shot` plus `cb-virsh send-key ChoreBoy KEY_ENTER` or `KEY_ESC` recovers it. `KEY_RETURN` is invalid. `oskey` queues behind the blocked bridge.
+
+Close a dialog you opened with `arm` by `reject()` via `ctl exec`, not by clicking Close while the opener is still in `exec_()`.
+
+Flat-Python paste only hints after a real Qt paste. Use `insertFromMimeData` via `ctl exec`. Bridge `type` will not show `#PasteHintOverlay`.
+
 One structural action, then re-observe (shot or read). Do not queue a script of clicks and only look at the last frame.
 
 Qt-native `click` / `type` first. Use `--mouse` / `oskey` only for desktop chrome the bridge cannot see.

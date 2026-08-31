@@ -29,7 +29,7 @@ Preconditions:
 
 - **Show Explorer.** Run `control-cbcs ctl "$SID" click '#shell.activityBar.btn.explorer'`. `#shell.projectTree` is visible.
 - **Contents.** Tree lists `main.py` (or the project's entry) and does not list `vendor/` by default.
-- **New file.** Use the explorer New File header button (`#shell.explorerAction` — several share this name; prefer `text:New File`). Name it `probe_tree.py` under the project root. Tree shows the new name. Guest disk has the file.
+- **New file.** Header buttons are icon-only `QToolButton`s that share `#shell.explorerAction`. Tooltips are **New File**, **New Folder**, and **Refresh Explorer**. `text:New File` misses. Arm-click the **New File** tooltip (`QTimer.singleShot` then `btn.click`) because `QInputDialog.getText` blocks a direct click. Name it `probe_tree.py`. Tree shows the new name. Guest disk has the file. After create, focus is in the editor. F2/Delete need the tree focused again.
 - **Rename.** Select the new file; `control-cbcs ctl "$SID" key F2` (tree focused). Rename to `probe_tree_renamed.py`. Disk matches.
 - **Trash.** Select it; `control-cbcs ctl "$SID" key Delete`. File leaves the tree. Trash under disposable HOME contains it.
 - **Source root.** On a `src/` directory, context **Mark as Sources Root**. Problems / Run resolve imports from that root (AT-83).
@@ -37,7 +37,8 @@ Preconditions:
 
 ## Gotchas
 
-- Multiple header buttons use `#shell.explorerAction`. Use `text:`.
+- Multiple header buttons use `#shell.explorerAction`. Select by tooltip, not `text:`.
+- Delete confirms **Move to Trash**.
 - Auto-refresh is ~1s. Wait for the new row; do not assert on a fixed sleep alone — re-read the tree.
 - Import rewrite is a policy dialog (Ask / Always / Never). Cancel leaves imports unchanged.
 - Multi-select context menus say `Move N Items to Trash`.

@@ -29,8 +29,7 @@ Preconditions:
 - **Doctor.** Run `control-cbcs doctor "$SID"`. Exit 0. Printed `startup:` contains `Runtime ready`. Printed `home:` is the disposable dir.
 - **Identity.** Run `control-cbcs ctl "$SID" exec -- "from PySide2.QtWidgets import QApplication; w=QApplication.activeWindow(); print(w.windowTitle() if w else '')"`. Title contains `ChoreBoy Code Studio`.
 - **Chip.** Run `control-cbcs read "$SID" shell.startupStatusLabel`. Text matches `Startup: Runtime ready (`…`)`.
-- **Runtime Center from chip.** Run `control-cbcs ctl "$SID" click '#shell.startupStatusLabel'`. `#shell.runtimeCenterDialog` exists. Run `control-cbcs shot "$SID" launch-runtime-center`.
-- **Close dialog.** Run `control-cbcs ctl "$SID" click '#shell.runtimeCenterDialog.closeButton'`.
+- **Runtime Center.** `control-cbcs arm "$SID" shell.action.tools.runtimeCenter`. `#shell.runtimeCenterDialog` exists. Shot `launch-runtime-center`. Close with `d.reject()` via `ctl exec`. Do not click `#shell.startupStatusLabel`. That chip also runs `exec_()` and blocks the bridge the same way `trigger` does.
 - **Proof.** Run `control-cbcs shot "$SID" launch-runtime` and keep `doctor-startup-label.txt`. Both show the ready chip and the app title.
 
 `control-cbcs prove-launch --repo <checkout>` performs launch, doctor, title, chip, and the launch screenshot. You still `stop` afterward.
@@ -38,7 +37,7 @@ Preconditions:
 ## Gotchas
 
 - A disposable HOME has no last project, so the center pane is welcome, not an editor. That is success for launch.
-- `Syntax highlighting off` can still sit next to `Runtime ready` if tree-sitter failed. Assert the ready phrase, then note the suffix.
+- After the deferred 8-check probe, a failed tree-sitter check becomes `Startup: Runtime issues`. Doctor then fails its ready needle. `Syntax highlighting off` next to `Runtime ready` is only the prepaint 5-check probe, which omits `treesitter_runtime`.
 - Session `ready` alone is not enough. The chip must contain `Runtime ready`.
 - Do not use the human's `/home/default` profile. Doctor fails if HOME does not match `run.json`.
 - `#shell.startupStatusLabel` is a `_ClickableLabel`. Bridge `find('#…')` can miss it. Use `control-cbcs read` (scans `allWidgets` by objectName).
