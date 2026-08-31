@@ -1,0 +1,12 @@
+---
+description: Product zips must be Linux ELF and proven on the live ChoreBoy VM before release
+alwaysApply: true
+---
+
+# ChoreBoy release gate
+
+A product installer is a ChoreBoy artifact, not a Mac artifact.
+
+- Package from a Linux manylinux `vendor_py39`. Darwin `_binding.abi3.so` files use the same name as Linux wheels. Filename checks accept them. The VM then fails with `ImportError: invalid ELF header` and `Syntax highlighting off`.
+- `python package.py` succeeding is not a release. Before tagging, mailing, or handing a shop zip, follow `.cursor/skills/release-cbcs/SKILL.md`.
+- Live proof is `verify-cbcs` `--install` of that zip. `#shell.startupStatusLabel` must contain `Runtime ready` and must not contain `Syntax highlighting off`. Mac AppRun and offscreen pytest do not count.

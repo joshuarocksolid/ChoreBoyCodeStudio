@@ -26,6 +26,15 @@ from app.packaging.packager import package_project
 
 pytestmark = pytest.mark.unit
 
+LINUX_X86_64_ELF_STUB = (
+    b"\x7fELF"
+    + b"\x02\x01\x01\x00"
+    + bytes(8)
+    + b"\x00\x00"
+    + b"\x3e\x00"
+)
+MACHO_ARM64_STUB = b"\xcf\xfa\xed\xfe" + bytes(16)
+
 
 def _load_module(module_name: str, relative_path: str) -> ModuleType:
     repo_root = Path(__file__).resolve().parents[3]
@@ -87,7 +96,7 @@ def _stage_tree_sitter_bundle(
             )
         else:
             binding_name = grammar_binding_name or package_module.CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS[package_name]
-        (package_dir / binding_name).write_bytes(b"binding")
+        (package_dir / binding_name).write_bytes(LINUX_X86_64_ELF_STUB)
         if extra_binding_name is not None:
             (package_dir / extra_binding_name).write_bytes(b"extra")
     return vendor_dir
@@ -243,6 +252,15 @@ def test_validate_choreboy_tree_sitter_bundle_rejects_wrong_abi(tmp_path: Path) 
     )
 
     with pytest.raises(RuntimeError, match="_binding.cpython-39-x86_64-linux-gnu.so"):
+        product_package.validate_choreboy_tree_sitter_bundle(vendor_dir)
+
+
+def test_validate_choreboy_tree_sitter_bundle_rejects_mach_o_grammar(tmp_path: Path) -> None:
+    vendor_dir = _stage_tree_sitter_bundle(tmp_path, product_package)
+    python_binding = vendor_dir / "tree_sitter_python" / "_binding.abi3.so"
+    python_binding.write_bytes(MACHO_ARM64_STUB)
+
+    with pytest.raises(RuntimeError, match="is not an ELF shared object"):
         product_package.validate_choreboy_tree_sitter_bundle(vendor_dir)
 
 

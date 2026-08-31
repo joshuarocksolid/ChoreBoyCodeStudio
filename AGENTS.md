@@ -160,7 +160,9 @@ under `<artifacts>/vendor_cp39_cache/`, and overlays
 `_binding.cpython-39-x86_64-linux-gnu.so` onto the staged payload. This means
 the local `vendor/tree_sitter/` may legitimately hold a cp311 binding for
 Cloud-dev use without breaking `python package.py`. Grammar wheels
-(`tree_sitter_*`) are `abi3` and version-agnostic, so they are not affected.
+(`tree_sitter_*`) are `abi3` across Python versions, not across OS or CPU.
+`validate_choreboy_tree_sitter_bundle` requires each `_binding*.so` to be a
+little-endian ELF64 x86-64 binary. A Darwin `abi3` file will fail the build.
 
 For local Cursor Cloud development only, populate the Python 3.11 bundle:
 

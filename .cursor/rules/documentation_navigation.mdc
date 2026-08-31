@@ -29,6 +29,7 @@ For any non-trivial task, review these files in order:
 - How to run tests -> `docs/TESTS.md` §5
 - Test suite audit / anti-patterns -> `docs/TEST_AUDIT.md`
 - How to execute work safely in this repo -> `AGENTS.md`
+- Release, mail, tag, or product zip -> `.cursor/skills/release-cbcs/SKILL.md`
 
 ## Conflict and missing-doc handling
 

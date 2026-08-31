@@ -332,13 +332,13 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
             title="Syntax highlighting is unavailable",
             summary="Tree-sitter could not initialize, so editor files render as plain text.",
             why_it_happened=(
-                "The vendored tree-sitter core binding must match the active AppRun Python ABI "
-                "(cp39 on ChoreBoy, cp311 in Cloud dev). A mismatched vendor tree is the most common cause."
+                "This install's tree-sitter grammar binaries are not Linux x86-64 ELF files. "
+                "A common cause is a product zip built on a Mac from Darwin wheels. "
+                "The filename _binding.abi3.so is the same on macOS and Linux, so the installer accepted them."
             ),
             next_steps=[
-                "Run ./scripts/setup_vendor_py39.sh for local Python 3.9 AppRun dev, or ./scripts/setup_vendor_py311.sh for Cloud.",
-                "Verify the vendor symlink with ./run_dev.sh --probe.",
-                "Optionally set CBCS_VENDOR_PROFILE=py39 or py311 to force a vendor profile.",
+                "Reinstall from a product zip packaged from Linux manylinux wheels.",
+                "If highlighting still fails after that reinstall, capture a support bundle.",
             ],
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,
