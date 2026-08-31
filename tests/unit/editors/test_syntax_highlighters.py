@@ -60,6 +60,8 @@ def _render(file_path: str, text: str, *, is_dark: bool = False) -> tuple[QTextD
         is_dark=is_dark,
         sample_text=text,
     )
+    if highlighter is None:
+        pytest.skip(f"tree-sitter highlighter unavailable for {file_path}")
     assert highlighter is not None
     document.setPlainText(text)
     highlighter.rehighlight()

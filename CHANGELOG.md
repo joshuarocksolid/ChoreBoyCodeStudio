@@ -2,19 +2,24 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24. Next list mail-out is v0.4.9.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.10.
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-08-31
+
+Hotfix for the v0.4.9 zip mailed to the list. Clair Nolt reported `invalid ELF header` loading `tree_sitter_python` (`email:27237`).
+
 ### Fixed
 
-- Product packaging now rejects tree-sitter `_binding*.so` files that are not little-endian ELF64 x86-64. A Mac-built 0.4.9 zip shipped Darwin grammar wheels under the same `_binding.abi3.so` name, which made syntax highlighting fail on ChoreBoy with `invalid ELF header`.
+- Product packaging now rejects tree-sitter `_binding*.so` files that are not little-endian ELF64 x86-64. The mailed 0.4.9 zip shipped Darwin grammar wheels under the same `_binding.abi3.so` name, which made syntax highlighting fail on ChoreBoy.
+- Opening a `.sql` file no longer raises when the vendored SQL grammar ABI does not match tree-sitter 0.23. That file falls back to plain text instead of breaking the highlighter.
 
 ## [0.4.9] - 2026-08-29
 
-Shop-tested by Ervin Newswanger on 2026-08-31 (`email:27192`). List mail drafted 2026-08-31 (`draft:1129`).
+Shop-tested by Ervin Newswanger on 2026-08-31 (`email:27192`). Mailed to `librepy-users@timtech.io` on 2026-08-31 (`email:27237`). Clair Nolt reported syntax highlighting off the same day; fixed in 0.4.10.
 
 ### Added
 

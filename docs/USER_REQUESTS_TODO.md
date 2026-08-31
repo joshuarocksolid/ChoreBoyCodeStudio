@@ -12,8 +12,9 @@ Last versions mailed to the list:
 - Manual follow-up on 2026-06-29 (`email:24878`).
 - v0.4.7 on 2026-06-30 (`email:24999`). Completion-list crash fix for Clair Nolt (request #39).
 - v0.4.8 on 2026-08-24 (`email:46496` / thread `email:26851`). Outside-change overwrite guard, drag-and-drop open, stale-lint clear, richer `.` completion.
+- v0.4.9 on 2026-08-31 (`email:27237`). Packaging relative-import crash, optional missing-dependency blockers, silent Apps-slot install (request #46). Zip plus CHANGELOG. Password `rsd`. Clair Nolt reported Darwin tree-sitter grammar wheels (`invalid ELF header`).
 
-v0.4.9 list mail drafted 2026-08-31 (`draft:1129` / thread `email:27237`). Packaging relative-import crash, optional missing-dependency blockers, silent Apps-slot install (request #46). Zip plus CHANGELOG. Password `rsd`. Not sent.
+v0.4.10 hotfix for Clair's syntax-highlighting report (`email:27237`). Product packaging now rejects non-ELF `_binding*.so` files. Zip plus CHANGELOG. Password `rsd`.
 
 ---
 

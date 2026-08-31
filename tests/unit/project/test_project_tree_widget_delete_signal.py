@@ -7,7 +7,6 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtTest import QTest  # noqa: E402
 from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.project.project_tree_widget import ProjectTreeWidget  # noqa: E402
@@ -26,6 +25,12 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
+def QTest():  # noqa: N802
+    """ChoreBoy AppRun does not ship PySide2.QtTest. Skip key-event tests there."""
+    return pytest.importorskip("PySide2.QtTest", exc_type=ImportError).QTest
+
+
+@pytest.fixture()
 def tree_widget():  # type: ignore[no-untyped-def]
     widget = ProjectTreeWidget()
     effective_shortcuts = build_effective_shortcut_map()
@@ -36,56 +41,56 @@ def tree_widget():  # type: ignore[no-untyped-def]
     return widget
 
 
-def test_delete_key_emits_delete_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_delete_key_emits_delete_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.deleteRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_Delete)
     assert received == [True]
 
 
-def test_backspace_key_emits_delete_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_backspace_key_emits_delete_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.deleteRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_Backspace)
     assert received == [True]
 
 
-def test_other_key_does_not_emit_delete_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_other_key_does_not_emit_delete_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.deleteRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_A)
     assert received == []
 
 
-def test_f2_emits_rename_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_f2_emits_rename_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.renameRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_F2)
     assert received == [True]
 
 
-def test_ctrl_c_emits_copy_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_ctrl_c_emits_copy_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.copyRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_C, Qt.ControlModifier)
     assert received == [True]
 
 
-def test_ctrl_x_emits_cut_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_ctrl_x_emits_cut_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.cutRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_X, Qt.ControlModifier)
     assert received == [True]
 
 
-def test_ctrl_v_emits_paste_requested(tree_widget: ProjectTreeWidget) -> None:
+def test_ctrl_v_emits_paste_requested(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     received: list[bool] = []
     tree_widget.pasteRequested.connect(lambda: received.append(True))
     QTest.keyPress(tree_widget, Qt.Key_V, Qt.ControlModifier)
     assert received == [True]
 
 
-def test_reconfigured_shortcut_is_used(tree_widget: ProjectTreeWidget) -> None:
+def test_reconfigured_shortcut_is_used(tree_widget: ProjectTreeWidget, QTest) -> None:  # noqa: N803
     effective_shortcuts = build_effective_shortcut_map(
         {project_tree_copy_shortcut_id(): "Ctrl+Shift+C"}
     )

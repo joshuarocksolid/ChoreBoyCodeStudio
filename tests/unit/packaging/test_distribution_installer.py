@@ -23,6 +23,7 @@ from app.packaging.models import (
     PACKAGE_PROFILE_INSTALLABLE,
 )
 from app.packaging.packager import package_project
+from tests.support.subprocess_guards import skip_unless_zip_available
 
 pytestmark = pytest.mark.unit
 
@@ -297,6 +298,7 @@ def test_product_report_records_tree_sitter_bundle_contract(tmp_path: Path) -> N
 
 
 def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(tmp_path: Path) -> None:
+    skip_unless_zip_available()
     repo_root = _make_product_repo(tmp_path / "repo")
     artifacts_dir = tmp_path / "artifacts"
     _stage_tree_sitter_bundle(artifacts_dir, product_package)

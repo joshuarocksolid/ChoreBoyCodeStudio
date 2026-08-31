@@ -47,12 +47,18 @@ class SyntaxHighlighterRegistry:
             override_language_key=language_override_key,
         )
         if resolved is not None:
-            return self._create_tree_sitter_highlighter(
-                resolved=resolved,
-                document=document,
-                is_dark=is_dark,
-                syntax_palette=syntax_palette,
-            )
+            try:
+                return self._create_tree_sitter_highlighter(
+                    resolved=resolved,
+                    document=document,
+                    is_dark=is_dark,
+                    syntax_palette=syntax_palette,
+                )
+            except ValueError as exc:
+                # tree-sitter 0.23 cores reject ABI-15 grammars (e.g. tree_sitter_sql 0.3.9).
+                if "Incompatible Language version" not in str(exc):
+                    raise
+                return None
         if self._looks_like_ini(file_path):
             return IniSyntaxHighlighter(
                 document,

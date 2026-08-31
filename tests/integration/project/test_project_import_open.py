@@ -12,6 +12,7 @@ import pytest
 from app.project.project_service import open_project
 from app.run.process_supervisor import ProcessEvent
 from app.run.run_service import RunService
+from tests.support.subprocess_guards import skip_unless_can_exec
 
 pytestmark = [
     pytest.mark.integration,
@@ -90,6 +91,7 @@ def test_open_plain_python_folder_ignores_package_callable_pyproject_target_when
 
     assert loaded_project.metadata.default_entry == "run.py"
 
+    skip_unless_can_exec()
     events: list[ProcessEvent] = []
     run_service = RunService(
         on_event=events.append,
@@ -115,6 +117,7 @@ def test_auto_initialized_project_runs_successfully(tmp_path: Path) -> None:
     loaded_project = open_project(project_root)
     assert loaded_project.metadata.default_entry == "main.py"
 
+    skip_unless_can_exec()
     events: list[ProcessEvent] = []
     run_service = RunService(
         on_event=events.append,

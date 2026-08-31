@@ -9,8 +9,14 @@ import time
 import pytest
 
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from tests.support.subprocess_guards import skip_unless_can_exec
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(180)]
+
+
+@pytest.fixture(autouse=True)
+def _require_nested_exec() -> None:
+    skip_unless_can_exec()
 
 
 def _wait_until(predicate, timeout_seconds: float = 3.0) -> bool:
