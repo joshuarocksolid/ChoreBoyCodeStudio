@@ -158,6 +158,7 @@ def build_product_manifest(
         app_run_path=constants.APP_RUN_PATH,
         write_menu_entry=False,
         write_desktop_shortcut=True,
+        ask_install_location=True,
     )
 
 

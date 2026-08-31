@@ -12,6 +12,17 @@ import zipfile
 import pytest
 
 from app.packaging import product_builder as product_package
+from app.packaging.installer_manifest import (
+    create_distribution_manifest,
+    parse_distribution_manifest,
+)
+from app.packaging.layout import FREECAD_MACRO_APPS_BASE, build_apps_slot_dirname
+from app.packaging.models import (
+    LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+    PACKAGE_KIND_PROJECT,
+    PACKAGE_PROFILE_INSTALLABLE,
+)
+from app.packaging.packager import package_project
 
 pytestmark = pytest.mark.unit
 
@@ -515,3 +526,272 @@ def test_directory_page_is_not_complete_when_empty(qapp) -> None:
 
     page.path_edit.clear()
     assert page.isComplete() is False
+
+
+def test_classify_install_slot_missing_path_is_empty(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "missing_slot"
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_EMPTY
+    assert occupancy.path == str(target.expanduser())
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_CONTINUE
+
+
+def test_classify_install_slot_empty_directory_is_empty(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "empty_slot"
+    target.mkdir()
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_EMPTY
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_CONTINUE
+
+
+def test_classify_install_slot_same_package_id(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "same_slot"
+    target.mkdir()
+    (target / "cbcs_installed_package.json").write_text(
+        json.dumps({"package_id": "demo_app", "version": "1.2.0"}),
+        encoding="utf-8",
+    )
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_SAME_PACKAGE
+    assert occupancy.occupant_package_id == "demo_app"
+    assert occupancy.occupant_version == "1.2.0"
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_CONFIRM_REPLACE
+
+
+def test_classify_install_slot_foreign_package_id(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "foreign_slot"
+    target.mkdir()
+    (target / "cbcs_installed_package.json").write_text(
+        json.dumps({"package_id": "other_app", "version": "3.0.0"}),
+        encoding="utf-8",
+    )
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_FOREIGN_PACKAGE
+    assert occupancy.occupant_package_id == "other_app"
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_REFUSE
+    assert "other_app" in installer_module.slot_refusal_message(occupancy)
+
+
+def test_classify_install_slot_unmarked_without_marker(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "unmarked_slot"
+    target.mkdir()
+    (target / "notes.txt").write_text("not a package\n", encoding="utf-8")
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_UNMARKED
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_REFUSE
+    assert installer_module.slot_refusal_message(occupancy)
+
+
+def test_classify_install_slot_unmarked_when_path_is_file(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "blocked_file"
+    target.write_text("not a directory\n", encoding="utf-8")
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_UNMARKED
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_REFUSE
+
+
+def test_classify_install_slot_unmarked_when_marker_unreadable(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "broken_marker"
+    target.mkdir()
+    (target / "cbcs_installed_package.json").write_text("{not-json", encoding="utf-8")
+
+    occupancy = installer_module.classify_install_slot(
+        target,
+        package_id="demo_app",
+        marker_filename="cbcs_installed_package.json",
+    )
+
+    assert occupancy.kind == installer_module.SLOT_UNMARKED
+    assert installer_module.install_slot_decision(occupancy) == installer_module.SLOT_ACTION_REFUSE
+
+
+def test_build_default_install_dir_expands_user_home(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    manifest = installer_module.PackageManifest(
+        **{
+            **_build_installer_manifest(installer_module).__dict__,
+            "package_kind": "project",
+            "default_install_base": "~/.local/share/FreeCAD/Macro/Apps",
+            "default_install_dirname": "demo_app",
+            "ask_install_location": False,
+        }
+    )
+
+    install_dir = installer_module.build_default_install_dir(manifest)
+
+    assert install_dir == str(tmp_path / ".local/share/FreeCAD/Macro/Apps/demo_app")
+    assert installer_module.resolve_silent_install_dir(manifest) == Path(install_dir)
+
+
+def test_ensure_install_parent_creates_missing_parent(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "FreeCAD" / "Macro" / "Apps" / "demo_app"
+
+    parent = installer_module.ensure_install_parent(target)
+
+    assert parent == target.parent
+    assert parent.is_dir()
+    assert not target.exists()
+
+
+def test_ensure_install_parent_raises_without_rewriting_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    target = tmp_path / "blocked" / "demo_app"
+
+    def _raise_oserror(self, *args, **kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", _raise_oserror)
+
+    with pytest.raises(OSError, match="blocked") as exc_info:
+        installer_module.ensure_install_parent(target)
+
+    assert "/home/default" not in str(exc_info.value)
+    assert str(target) not in ["/home/default", str(Path("/home/default"))]
+
+
+def test_project_export_seeds_silent_apps_slot(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (project / "cbcs").mkdir()
+    (project / "cbcs" / "project.json").write_text('{"name":"Demo App"}\n', encoding="utf-8")
+
+    result = package_project(
+        project_root=str(project),
+        project_name="Demo App",
+        entry_file="main.py",
+        output_dir=str(tmp_path / "exports"),
+    )
+
+    manifest_payload = json.loads(Path(result.artifact_root, "package_manifest.json").read_text(encoding="utf-8"))
+    assert result.success is True
+    assert manifest_payload["default_install_base"] == FREECAD_MACRO_APPS_BASE
+    assert manifest_payload["default_install_dirname"] == build_apps_slot_dirname("Demo App")
+    assert manifest_payload["default_install_dirname"] == "demo_app"
+    assert "_v" not in manifest_payload["default_install_dirname"]
+    assert manifest_payload["ask_install_location"] is False
+    assert "~" in manifest_payload["default_install_base"]
+    assert "/home/default" not in manifest_payload["default_install_base"]
+
+
+def test_product_manifest_stays_versioned_under_home_default() -> None:
+    manifest = product_package.build_product_manifest(version="0.2.0")
+
+    assert manifest.default_install_base == "/home/default"
+    assert manifest.default_install_dirname == "choreboy_code_studio_v0.2.0"
+    assert manifest.ask_install_location is True
+
+
+def test_create_distribution_manifest_always_writes_ask_install_location() -> None:
+    manifest = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="demo_app",
+        display_name="Demo App",
+        version="1.0.0",
+        description="",
+        entry_relative_path="app_files/main.py",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+    )
+    payload = manifest.to_dict()
+    parsed = parse_distribution_manifest(payload)
+
+    assert payload["ask_install_location"] is False
+    assert parsed.ask_install_location is False
+
+
+def test_parse_distribution_manifest_rejects_non_bool_ask_install_location() -> None:
+    manifest = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="demo_app",
+        display_name="Demo App",
+        version="1.0.0",
+        description="",
+        entry_relative_path="app_files/main.py",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+    )
+    payload = manifest.to_dict()
+    payload["ask_install_location"] = "yes"
+
+    with pytest.raises(ValueError, match="ask_install_location must be a boolean"):
+        parse_distribution_manifest(payload)
+
+
+def test_load_package_manifest_reads_ask_install_location(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer", "packaging/install.py")
+    payload = create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="demo_app",
+        display_name="Demo App",
+        version="1.0.0",
+        description="",
+        entry_relative_path="app_files/main.py",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+        default_install_base=FREECAD_MACRO_APPS_BASE,
+        default_install_dirname="demo_app",
+        ask_install_location=False,
+    ).to_dict()
+    payload["checksums"] = []
+    (tmp_path / "package_manifest.json").write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = installer_module.load_package_manifest(tmp_path)
+
+    assert loaded.ask_install_location is False
+    assert loaded.default_install_base == FREECAD_MACRO_APPS_BASE
+    assert loaded.default_install_dirname == "demo_app"

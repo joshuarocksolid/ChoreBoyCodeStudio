@@ -23,6 +23,8 @@ from app.packaging.installer_manifest import (
     save_distribution_manifest,
 )
 from app.packaging.layout import (
+    FREECAD_MACRO_APPS_BASE,
+    build_apps_slot_dirname,
     build_artifact_root_name,
     build_installer_launcher_filename,
     paths_overlap,
@@ -266,8 +268,9 @@ def _write_project_artifact(
             else ""
         ),
         launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
-        default_install_base="/home/default",
-        default_install_dirname="",
+        default_install_base=FREECAD_MACRO_APPS_BASE,
+        default_install_dirname=build_apps_slot_dirname(package_config.display_name),
+        ask_install_location=package_config.ask_install_location,
         staging_parent="/home/default",
         app_run_path=constants.APP_RUN_PATH,
         write_menu_entry=False,

@@ -132,6 +132,9 @@ def parse_project_package_config(
         raise ValueError(
             _with_path("skip_missing_dependency_blockers must be a boolean.", config_path)
         )
+    ask_install_location = payload.get("ask_install_location", False)
+    if not isinstance(ask_install_location, bool):
+        raise ValueError(_with_path("ask_install_location must be a boolean.", config_path))
 
     return ProjectPackageConfig(
         schema_version=schema_version,
@@ -142,6 +145,7 @@ def parse_project_package_config(
         entry_file=entry_file.strip(),
         icon_path=icon_path.strip(),
         skip_missing_dependency_blockers=skip_missing,
+        ask_install_location=ask_install_location,
     )
 
 

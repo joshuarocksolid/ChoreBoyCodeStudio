@@ -8,6 +8,8 @@ from pathlib import Path
 from app.packaging.launcher_bootstrap import validate_packaged_entry_relative_path
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 
+FREECAD_MACRO_APPS_BASE = "~/.local/share/FreeCAD/Macro/Apps"
+
 
 def sanitize_project_name(name: str) -> str:
     """Convert a human name into a filesystem-safe slug."""
@@ -21,6 +23,10 @@ def sanitize_project_name(name: str) -> str:
 def build_launcher_filename(display_name: str) -> str:
     """Return the stable launcher filename for one package."""
     return f"{sanitize_project_name(display_name)}.desktop"
+
+
+def build_apps_slot_dirname(display_name: str) -> str:
+    return sanitize_project_name(display_name)
 
 
 def build_default_install_dirname(display_name: str, version: str) -> str:

@@ -37,6 +37,15 @@ from PySide2.QtWidgets import (
 PACKAGE_MANIFEST_FILENAME = "package_manifest.json"
 CBCS_PACKAGE_ROOT_ENV = "CBCS_PACKAGE_ROOT"
 
+SLOT_EMPTY = "empty"
+SLOT_SAME_PACKAGE = "same_package"
+SLOT_FOREIGN_PACKAGE = "foreign_package"
+SLOT_UNMARKED = "unmarked"
+
+SLOT_ACTION_CONTINUE = "continue"
+SLOT_ACTION_CONFIRM_REPLACE = "confirm_replace"
+SLOT_ACTION_REFUSE = "refuse"
+
 
 @dataclass(frozen=True)
 class ArtifactChecksum:
@@ -71,6 +80,15 @@ class PackageManifest:
     write_menu_entry: bool
     write_desktop_shortcut: bool
     checksums: tuple[ArtifactChecksum, ...]
+    ask_install_location: bool = False
+
+
+@dataclass(frozen=True)
+class SlotOccupancy:
+    kind: str
+    path: str
+    occupant_package_id: str = ""
+    occupant_version: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,11 +169,109 @@ def load_package_manifest(package_root: Path) -> PackageManifest:
         write_menu_entry=bool(payload.get("write_menu_entry", False)),
         write_desktop_shortcut=bool(payload.get("write_desktop_shortcut", True)),
         checksums=checksums,
+        ask_install_location=_parse_ask_install_location(payload),
     )
 
 
+def _parse_ask_install_location(payload: dict[str, Any]) -> bool:
+    if "ask_install_location" not in payload:
+        return False
+    ask_install_location = payload["ask_install_location"]
+    if not isinstance(ask_install_location, bool):
+        raise ValueError("ask_install_location must be a boolean.")
+    return ask_install_location
+
+
+def is_silent_apps_install(manifest: PackageManifest) -> bool:
+    return manifest.package_kind == "project" and not manifest.ask_install_location
+
+
+def resolve_silent_install_dir(manifest: PackageManifest) -> Path:
+    return Path(manifest.default_install_base).expanduser() / manifest.default_install_dirname
+
+
 def build_default_install_dir(manifest: PackageManifest) -> str:
-    return str(Path(manifest.default_install_base) / manifest.default_install_dirname)
+    return str(resolve_silent_install_dir(manifest))
+
+
+def classify_install_slot(
+    path: str | Path,
+    *,
+    package_id: str,
+    marker_filename: str,
+) -> SlotOccupancy:
+    target = Path(path).expanduser()
+    target_str = str(target)
+    if not target.exists():
+        return SlotOccupancy(kind=SLOT_EMPTY, path=target_str)
+    if not target.is_dir():
+        return SlotOccupancy(kind=SLOT_UNMARKED, path=target_str)
+    try:
+        next(target.iterdir())
+    except StopIteration:
+        return SlotOccupancy(kind=SLOT_EMPTY, path=target_str)
+    marker_path = target / marker_filename
+    if not marker_path.is_file():
+        return SlotOccupancy(kind=SLOT_UNMARKED, path=target_str)
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return SlotOccupancy(kind=SLOT_UNMARKED, path=target_str)
+    if not isinstance(payload, dict):
+        return SlotOccupancy(kind=SLOT_UNMARKED, path=target_str)
+    occupant_id = payload.get("package_id")
+    occupant_version = payload.get("version", "")
+    if not isinstance(occupant_id, str) or not occupant_id.strip():
+        return SlotOccupancy(kind=SLOT_UNMARKED, path=target_str)
+    occupant_id = occupant_id.strip()
+    version_text = occupant_version.strip() if isinstance(occupant_version, str) else ""
+    if occupant_id == package_id:
+        return SlotOccupancy(
+            kind=SLOT_SAME_PACKAGE,
+            path=target_str,
+            occupant_package_id=occupant_id,
+            occupant_version=version_text,
+        )
+    return SlotOccupancy(
+        kind=SLOT_FOREIGN_PACKAGE,
+        path=target_str,
+        occupant_package_id=occupant_id,
+        occupant_version=version_text,
+    )
+
+
+def install_slot_decision(occupancy: SlotOccupancy) -> str:
+    if occupancy.kind == SLOT_EMPTY:
+        return SLOT_ACTION_CONTINUE
+    if occupancy.kind == SLOT_SAME_PACKAGE:
+        return SLOT_ACTION_CONFIRM_REPLACE
+    return SLOT_ACTION_REFUSE
+
+
+def slot_refusal_message(occupancy: SlotOccupancy) -> str:
+    if occupancy.kind == SLOT_FOREIGN_PACKAGE:
+        occupant = occupancy.occupant_package_id or "another package"
+        return (
+            f"The folder {occupancy.path} already belongs to package {occupant}. "
+            "The installer will not overwrite it."
+        )
+    if occupancy.kind == SLOT_UNMARKED:
+        return (
+            f"The folder {occupancy.path} already contains files that are not "
+            "a ChoreBoy packaged app. The installer will not overwrite it."
+        )
+    return ""
+
+
+def ensure_install_parent(target: Path) -> Path:
+    parent = Path(target).expanduser().parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OSError(
+            f"Could not create the install folder parent: {parent}. {exc}"
+        ) from exc
+    return parent
 
 
 def build_installed_desktop_entry(install_dir: str | Path, manifest: PackageManifest) -> str:
@@ -312,7 +428,10 @@ class InstallWorker(QThread):
 
         if self.install_dir.exists() and self.install_dir.is_file():
             raise ValueError(f"Install path is a file, not a directory: {self.install_dir}")
-        self.install_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            ensure_install_parent(self.install_dir)
+        except OSError as exc:
+            raise RuntimeError(str(exc)) from exc
 
         stage_dir = self.install_dir.parent / f"{self.install_dir.name}_installing"
         backup_dir = self.install_dir.parent / f"{self.install_dir.name}_backup"
@@ -411,13 +530,22 @@ class WelcomePage(QWizardPage):
         staging_warning = build_staging_location_warning(_package_root(), manifest)
         if staging_warning is not None:
             intro_lines.extend(["", "<b>Current staging warning:</b>", staging_warning.replace("\n", "<br>")])
-        intro_lines.extend(
-            [
-                "",
-                "On the next page you will choose the final install folder.",
-                "The installed launcher hardcodes that location and can also be published to the application menu or Desktop.",
-            ]
-        )
+        if is_silent_apps_install(manifest):
+            intro_lines.extend(
+                [
+                    "",
+                    "This app will install into the FreeCAD Apps folder.",
+                    "A Desktop shortcut will be created after install.",
+                ]
+            )
+        else:
+            intro_lines.extend(
+                [
+                    "",
+                    "On the next page you will choose the final install folder.",
+                    "The installed launcher hardcodes that location and can also be published to the application menu or Desktop.",
+                ]
+            )
         label = QLabel("<br>".join(intro_lines))
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -429,27 +557,35 @@ class DirectoryPage(QWizardPage):
     def __init__(self, manifest: PackageManifest, parent: Optional[QWizard] = None) -> None:
         super().__init__(parent)
         self._manifest = manifest
-        self.setTitle("Choose Installation Directory")
-        self.setSubTitle("Select the final location for the installed package.")
+        silent = is_silent_apps_install(manifest)
+        if silent:
+            self.setTitle("Install Destination")
+            self.setSubTitle("This app will be installed into the FreeCAD Apps folder.")
+        else:
+            self.setTitle("Choose Installation Directory")
+            self.setSubTitle("Select the final location for the installed package.")
 
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
         self.path_edit = QLineEdit()
         row.addWidget(self.path_edit)
-        browse_button = QPushButton("Browse...")
-        browse_button.clicked.connect(self._browse)
-        row.addWidget(browse_button)
+        self._browse_button = QPushButton("Browse...")
+        self._browse_button.clicked.connect(self._browse)
+        row.addWidget(self._browse_button)
         layout.addLayout(row)
         layout.addStretch()
         self.registerField("install_dir", self.path_edit)
         self.path_edit.textChanged.connect(self.completeChanged)
         self.path_edit.setText(build_default_install_dir(manifest))
+        if silent:
+            self.path_edit.setReadOnly(True)
+            self._browse_button.hide()
 
     def _browse(self) -> None:
         chosen = QFileDialog.getExistingDirectory(
             self,
             "Select Installation Directory",
-            self._manifest.default_install_base,
+            str(Path(self._manifest.default_install_base).expanduser()),
         )
         if chosen:
             self.path_edit.setText(str(Path(chosen) / self._manifest.default_install_dirname))
@@ -476,6 +612,35 @@ class DirectoryPage(QWizardPage):
         if target.exists() and target.is_file():
             QMessageBox.warning(self, "Invalid Path", f"{target} is a file, not a directory.")
             return False
+        try:
+            ensure_install_parent(target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Install Folder", str(exc))
+            return False
+        occupancy = classify_install_slot(
+            target,
+            package_id=self._manifest.package_id,
+            marker_filename=self._manifest.install_marker_filename,
+        )
+        decision = install_slot_decision(occupancy)
+        if decision == SLOT_ACTION_REFUSE:
+            QMessageBox.warning(self, "Folder In Use", slot_refusal_message(occupancy))
+            return False
+        if decision == SLOT_ACTION_CONFIRM_REPLACE:
+            version = occupancy.occupant_version or "unknown"
+            occupant = occupancy.occupant_package_id or self._manifest.package_id
+            reply = QMessageBox.question(
+                self,
+                "Replace Installed App",
+                (
+                    f"This folder already has package {occupant} version {version}. "
+                    "Install will replace that version."
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return False
         return True
 
 
@@ -529,11 +694,21 @@ class ConfirmPage(QWizardPage):
         else:
             self.cleanup_checkbox.setChecked(False)
             self.cleanup_checkbox.setVisible(False)
+        occupancy = classify_install_slot(
+            install_dir,
+            package_id=self._manifest.package_id,
+            marker_filename=self._manifest.install_marker_filename,
+        )
+        replace_text = ""
+        if occupancy.kind == SLOT_SAME_PACKAGE:
+            version = occupancy.occupant_version or "unknown"
+            replace_text = f"<br>This replaces version {version} of the same package."
         launcher_path = install_dir / self._manifest.launcher_filename
         self.summary_label.setText(
             f"<b>Install directory:</b><br><code>{install_dir}</code><br><br>"
             f"<b>Installed launcher:</b><br><code>{launcher_path}</code><br><br>"
             "The installer performs a staged copy before switching the final install directory."
+            f"{replace_text}"
             f"{existing_text}<br><br>"
             "Click <b>Install</b> to begin."
         )
