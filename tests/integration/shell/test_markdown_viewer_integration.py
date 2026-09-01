@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.editors.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 from testing.main_window_shutdown import shutdown_main_window_for_test

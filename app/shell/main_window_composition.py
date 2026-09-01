@@ -39,12 +39,12 @@ def install_main_window_composition(
     install_persistence(ctx)
     create_composition_timers(ctx)
     install_editors(ctx)
+    for feature_spec in FEATURE_SPECS:
+        if feature_spec.install is not None:
+            feature_spec.install(ctx)
     install_run_debug(ctx)
     install_intelligence(ctx)
     install_editor_project_wiring(ctx)
     connect_composition_timers(ctx)
     install_theme_and_finalize(ctx)
     start_composition_timers(ctx)
-    for feature_spec in FEATURE_SPECS:
-        if feature_spec.install is not None:
-            feature_spec.install(ctx)

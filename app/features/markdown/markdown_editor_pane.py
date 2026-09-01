@@ -15,8 +15,8 @@ from PySide2.QtWidgets import (
 )
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_preview_widget import ExternalLinkCallback, LocalLinkCallback, MarkdownPreviewWidget
 from app.editors.markdown_rendering import MAX_LIVE_MARKDOWN_PREVIEW_CHARS
+from app.features.markdown.markdown_preview_widget import ExternalLinkCallback, LocalLinkCallback, MarkdownPreviewWidget
 from app.shell import icon_provider
 from app.shell.theme_tokens import ShellThemeTokens
 

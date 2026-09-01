@@ -4,7 +4,7 @@
 
 Owns AT-102, AT-103.
 
-<!-- dune-owners: platform.editors -->
+<!-- dune-owners: markdown -->
 
 ## Sub-features
 

@@ -13,7 +13,10 @@ owners:
   platform.filesystem:
     - app/filesystem/**
   platform.features:
-    - app/features/**
+    - app/features/__init__.py
+    - app/features/spec.py
+  markdown:
+    - app/features/markdown/**
   platform.intelligence:
     - app/intelligence/**
   platform.packaging:

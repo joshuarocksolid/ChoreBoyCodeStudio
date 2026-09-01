@@ -13,10 +13,10 @@ from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidg
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.editors.markdown_rendering import is_markdown_path
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
+from app.features.markdown.markdown_tab_registry import release_editor_widget
 from app.project.file_operation_models import ImportUpdatePolicy
-from app.shell.markdown_tab_registry import release_editor_widget
 from app.project.project_manifest import set_project_default_entry
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY

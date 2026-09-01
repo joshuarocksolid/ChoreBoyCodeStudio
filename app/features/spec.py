@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Optional
 
+from app.features.markdown.install import install_markdown
+
 if TYPE_CHECKING:
     from app.shell.shell_composition_context import ShellCompositionContext
 
@@ -16,7 +18,13 @@ class FeatureSpec:
     install: Optional[FeatureInstall] = None
 
 
-FEATURE_SPECS: tuple[FeatureSpec, ...] = ()
+FEATURE_SPECS: tuple[FeatureSpec, ...] = (
+    FeatureSpec(
+        key="markdown",
+        ownership_globs=("app/features/markdown/**",),
+        install=install_markdown,
+    ),
+)
 
 
 __all__ = ["FEATURE_SPECS", "FeatureInstall", "FeatureSpec"]
