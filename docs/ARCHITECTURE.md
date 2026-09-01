@@ -491,6 +491,8 @@ This layout intentionally separates:
 - support tooling
 
 That makes the codebase more legible to both humans and AI agents.
+`dune.yaml` is the canonical ownership map for tracked files under `app/`;
+`python3 tools/dune/check.py` enforces exactly one owner per file.
 
 ---
 
