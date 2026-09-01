@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 if __package__:
+    from .concurrency import ConcurrencyError, find_concurrency_violations
     from .file_roles import FileRoleError, find_file_role_violations
     from .ownership import (
         OwnershipManifestError,
@@ -13,6 +14,7 @@ if __package__:
         parse_ownership_manifest,
     )
 else:
+    from concurrency import ConcurrencyError, find_concurrency_violations
     from file_roles import FileRoleError, find_file_role_violations
     from ownership import (
         OwnershipManifestError,
@@ -38,7 +40,14 @@ def run(
         )
         violations = find_ownership_violations(owners, app_files)
         violations.extend(find_file_role_violations(repo_root, app_files))
-    except (FileRoleError, OSError, OwnershipManifestError, RuntimeError) as exc:
+        violations.extend(find_concurrency_violations(repo_root, app_files))
+    except (
+        ConcurrencyError,
+        FileRoleError,
+        OSError,
+        OwnershipManifestError,
+        RuntimeError,
+    ) as exc:
         print(f"dune check error: {exc}", file=sys.stderr)
         return 1
 
