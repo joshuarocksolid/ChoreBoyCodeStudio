@@ -156,6 +156,37 @@ def test_scheduler_wrapped_invoke_is_allowed(tmp_path: Path) -> None:
     assert find_concurrency_violations(tmp_path, [relative_path]) == []
 
 
+def test_scheduled_task_name_collision_does_not_hide_gui_thread_call(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    relative_path = "app/shell/plugin_widget.py"
+    _write_manifest(tmp_path, relative_path)
+    _write_source(
+        tmp_path,
+        relative_path,
+        "def task(_cancel_event):\n"
+        "    return runtime_manager.invoke_command('plugin.demo', {})\n"
+        "\n"
+        "class Other:\n"
+        "    def task(self):\n"
+        "        return self._runtime_manager.invoke_command('plugin.hidden', {})\n"
+        "\n"
+        "def wrap(scheduler):\n"
+        "    scheduler.run(key='plugin', task=task)\n",
+    )
+
+    exit_code = run(tmp_path, [relative_path])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "concurrency: app/shell/plugin_widget.py:6: "
+        "GUI-thread invoke_command call must run through GeneralTaskScheduler\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
