@@ -15,6 +15,11 @@ from types import ModuleType
 from typing import Iterable, Iterator, Optional
 
 
+_LAW_DOCUMENT_PATHS = (
+    ".cursor/skills/verify-cbcs/references/handles.md",
+)
+
+
 @dataclass(frozen=True)
 class _Baseline:
     root: Path
@@ -85,6 +90,12 @@ def _judge_changed(repo_root: Path, baseline_root: Path) -> bool:
         return True
     if _path_bytes(repo_root / "dune.yaml") != _path_bytes(
         baseline_root / "dune.yaml"
+    ):
+        return True
+    if any(
+        _path_bytes(repo_root / path)
+        != _path_bytes(baseline_root / path)
+        for path in _LAW_DOCUMENT_PATHS
     ):
         return True
     return _budget_map(repo_root) != _budget_map(baseline_root)
@@ -209,6 +220,8 @@ def _git_changed_paths(repo_root: Path) -> set[str]:
 def _git_judge_changed(repo_root: Path, changed_paths: set[str]) -> bool:
     if "dune.yaml" in changed_paths:
         return True
+    if changed_paths.intersection(_LAW_DOCUMENT_PATHS):
+        return True
     if any(_is_checker_path(path) for path in changed_paths):
         return True
     for path in changed_paths:
@@ -246,6 +259,7 @@ def _materialize_git_baseline(repo_root: Path, baseline_root: Path) -> None:
         "--",
         "tools/dune",
         "dune.yaml",
+        *_LAW_DOCUMENT_PATHS,
     )
     for relative_path in paths.split("\0"):
         if not relative_path:
@@ -255,6 +269,21 @@ def _materialize_git_baseline(repo_root: Path, baseline_root: Path) -> None:
         target.write_bytes(
             _git_required_blob(repo_root, f"HEAD:{relative_path}")
         )
+
+
+def _overlay_baseline_law_documents(
+    baseline_root: Path,
+    subject_root: Path,
+) -> None:
+    for relative_path in _LAW_DOCUMENT_PATHS:
+        target = subject_root / relative_path
+        if target.is_symlink() or target.exists():
+            target.unlink()
+        source = baseline_root / relative_path
+        if not source.is_file():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _git_optional_blob(repo_root: Path, object_name: str) -> Optional[bytes]:
@@ -372,7 +401,7 @@ def _build_subject_root(
 ) -> None:
     subject_root.mkdir()
     for source in repo_root.iterdir():
-        if source.name in {"dune.yaml", "tools"}:
+        if source.name in {".cursor", "dune.yaml", "tools"}:
             continue
         (subject_root / source.name).symlink_to(source)
 
@@ -393,6 +422,7 @@ def _build_subject_root(
         baseline_root / "tools" / "dune",
         subject_tools / "dune",
     )
+    _overlay_baseline_law_documents(baseline_root, subject_root)
 
 
 def _build_index_subject_root(
@@ -427,3 +457,4 @@ def _build_index_subject_root(
         baseline_root / "tools" / "dune",
         subject_dune,
     )
+    _overlay_baseline_law_documents(baseline_root, subject_root)
