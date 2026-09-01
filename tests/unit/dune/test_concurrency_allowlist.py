@@ -71,7 +71,7 @@ def test_planted_status_bar_thread_fails(
         "import threading\n"
         "from PySide2.QtWidgets import QLabel\n"
         "\n"
-        "class StatusBar(QLabel):\n"
+        "class ShellStatusBarController(QLabel):\n"
         "    def refresh(self):\n"
         "        worker = threading.Thread(target=lambda: self.setText('ready'))\n"
         "        worker.start()\n",
@@ -86,6 +86,31 @@ def test_planted_status_bar_thread_fails(
         "concurrency: app/shell/status_bar.py:6: "
         "Thread is not an approved worker; "
         "use GeneralTaskScheduler for shell work\n"
+    )
+
+
+def test_planted_thread_in_real_status_bar_factory_fails(tmp_path: Path) -> None:
+    relative_path = "app/shell/status_bar.py"
+    source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+    import_line = "    from PySide2.QtWidgets import QLabel, QStatusBar\n"
+    assert import_line in source
+    planted_source = source.replace(
+        import_line,
+        import_line
+        + "    import threading\n\n"
+        + "    threading.Thread(target=lambda: None).start()\n",
+        1,
+    )
+    _write_source(tmp_path, relative_path, planted_source)
+
+    violations = find_concurrency_violations(tmp_path, [relative_path])
+
+    assert any(
+        violation.endswith(
+            "Thread is not an approved worker; "
+            "use GeneralTaskScheduler for shell work"
+        )
+        for violation in violations
     )
 
 

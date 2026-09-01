@@ -64,6 +64,11 @@ _THREAD_ALLOWANCES = (
         "concurrent.futures.ThreadPoolExecutor",
     ),
     (
+        "app/shell/python_console_workflow.py",
+        "PythonConsoleWorkflow._default_start_background_work",
+        "threading.Thread",
+    ),
+    (
         "run_plugin_host.py",
         "main",
         "threading.Thread",
@@ -122,6 +127,13 @@ _BLOCKING_ALLOWANCES = (
 
 _UI_PREFIXES = ("app/editors/", "app/shell/")
 _ALLOWLISTED_PATHS = frozenset(path for path, _owner, _call in _THREAD_ALLOWANCES)
+_SOURCE_HINTS = (
+    "Thread",
+    "SearchWorker",
+    "sleep",
+    *_BLOCKING_ADAPTERS,
+    *_BLOCKING_METHODS,
+)
 
 
 def find_concurrency_violations(
@@ -144,9 +156,12 @@ def find_concurrency_violations(
     violations: list[str] = []
     for relative_path in sorted(python_files):
         source_path = repo_root / relative_path
+        source = source_path.read_text(encoding="utf-8")
+        if not any(hint in source for hint in _SOURCE_HINTS):
+            continue
         try:
             tree = ast.parse(
-                source_path.read_text(encoding="utf-8"),
+                source,
                 filename=relative_path,
             )
         except SyntaxError as exc:
@@ -163,8 +178,7 @@ def find_concurrency_violations(
 class _ConcurrencyVisitor(ast.NodeVisitor):
     def __init__(self, relative_path: str, tree: ast.AST) -> None:
         self._relative_path = relative_path
-        self._aliases = _import_aliases(tree)
-        self._scheduled_nodes = _scheduled_task_nodes(tree, self._aliases)
+        self._aliases, self._scheduled_nodes = _analyze_tree(tree)
         self._scope: list[ast.AST] = []
         self.violations: list[str] = []
 
@@ -228,16 +242,11 @@ class _ConcurrencyVisitor(ast.NodeVisitor):
         return self._relative_path.startswith(_UI_PREFIXES)
 
     def _thread_call_is_allowed(self, call_name: str) -> bool:
-        if _matches_allowance(
+        return _matches_allowance(
             _THREAD_ALLOWANCES,
             self._relative_path,
             self._owner_name(),
             call_name,
-        ):
-            return True
-        return any(
-            _scope_has_main_thread_delivery(scope, self._aliases)
-            for scope in reversed(self._scope)
         )
 
     def _blocking_call_is_allowed(self, call_name: str) -> bool:
@@ -291,36 +300,36 @@ def _blocking_call_name(call_name: str) -> str:
     return ""
 
 
-def _scope_has_main_thread_delivery(
-    scope: ast.AST,
-    aliases: dict[str, str],
-) -> bool:
-    calls = [
-        _qualified_name(node.func, aliases)
-        for node in ast.walk(scope)
-        if isinstance(node, ast.Call)
-    ]
-    if any(name.rsplit(".", 1)[-1] == "dispatch_to_main_thread" for name in calls):
-        return True
-    has_signal = any(name.rsplit(".", 1)[-1] == "Signal" for name in calls)
-    has_connect = any(name.rsplit(".", 1)[-1] == "connect" for name in calls)
-    has_emit = any(name.rsplit(".", 1)[-1] == "emit" for name in calls)
-    return has_signal and has_connect and has_emit
+def _analyze_tree(tree: ast.AST) -> tuple[dict[str, str], set[int]]:
+    aliases: dict[str, str] = {}
+    definitions: dict[str, list[ast.AST]] = {}
+    calls: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = alias.asname or alias.name.split(".", 1)[0]
+                aliases[local_name] = alias.name if alias.asname else local_name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                aliases[alias.asname or alias.name] = (
+                    f"{node.module}.{alias.name}"
+                )
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            definitions.setdefault(node.name, []).append(node)
+        elif isinstance(node, ast.Call):
+            calls.append(node)
+    return aliases, _scheduled_task_nodes(calls, definitions, aliases)
 
 
 def _scheduled_task_nodes(
-    tree: ast.AST,
+    calls: Iterable[ast.Call],
+    definitions: dict[str, list[ast.AST]],
     aliases: dict[str, str],
 ) -> set[int]:
-    definitions: dict[str, list[ast.AST]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            definitions.setdefault(node.name, []).append(node)
-
     scheduled: set[int] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
+    for node in calls:
         call_name = _qualified_name(node.func, aliases)
         if call_name.rsplit(".", 1)[-1] != "run":
             continue
@@ -342,23 +351,6 @@ def _scheduled_task_nodes(
         elif isinstance(task_value, ast.Lambda):
             scheduled.add(id(task_value))
     return scheduled
-
-
-def _import_aliases(tree: ast.AST) -> dict[str, str]:
-    aliases: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local_name = alias.asname or alias.name.split(".", 1)[0]
-                aliases[local_name] = alias.name if alias.asname else local_name
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                aliases[alias.asname or alias.name] = (
-                    f"{node.module}.{alias.name}"
-                )
-    return aliases
 
 
 def _qualified_name(
