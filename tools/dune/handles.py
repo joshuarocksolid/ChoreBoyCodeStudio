@@ -19,6 +19,8 @@ _REQUIRED_HANDLE = re.compile(
 _MENTIONED_HANDLE = re.compile(
     r"`#?(shell(?:\.[A-Za-z_][A-Za-z0-9_]*)+(?:\.\*)?)`"
 )
+_INLINE_CODE = re.compile(r"`([^`]+)`")
+_SHORT_HANDLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _DUPLICATE_LIMITS = {
     "shell.editorTabs.textEditor": 1,
     "shell.explorerAction": 2,
@@ -320,10 +322,29 @@ def _parse_documented_handles(
     mentioned, mentioned_prefixes = _partition_handle_matches(
         _MENTIONED_HANDLE.finditer(text)
     )
+    expanded_required: set[str] = set(required)
+    expanded_mentioned: set[str] = set(mentioned)
+    for line in text.splitlines():
+        if " · " not in line and " / " not in line:
+            continue
+        prefix = ""
+        required_shorthand = False
+        for token_match in _INLINE_CODE.finditer(line):
+            token = token_match.group(1)
+            full_match = _MENTIONED_HANDLE.fullmatch(f"`{token}`")
+            if full_match:
+                name = full_match.group(1)
+                prefix = name.rsplit(".", 1)[0] + "."
+                required_shorthand = token.startswith("#")
+            elif prefix and _SHORT_HANDLE.fullmatch(token):
+                name = prefix + token
+                expanded_mentioned.add(name)
+                if required_shorthand:
+                    expanded_required.add(name)
     return _DocumentedHandles(
-        required,
+        frozenset(expanded_required),
         required_prefixes,
-        mentioned,
+        frozenset(expanded_mentioned),
         mentioned_prefixes,
     )
 

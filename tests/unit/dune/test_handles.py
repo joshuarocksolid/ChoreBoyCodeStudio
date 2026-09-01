@@ -18,8 +18,8 @@ def _write_manifest(repo_root: Path) -> None:
     )
 
 
-def _write_handles(repo_root: Path, *names: str) -> None:
-    path = (
+def _handles_path(repo_root: Path) -> Path:
+    return (
         repo_root
         / ".cursor"
         / "skills"
@@ -27,6 +27,10 @@ def _write_handles(repo_root: Path, *names: str) -> None:
         / "references"
         / "handles.md"
     )
+
+
+def _write_handles(repo_root: Path, *names: str) -> None:
+    path = _handles_path(repo_root)
     path.parent.mkdir(parents=True)
     path.write_text(
         "\n".join(f"`#{name}`" for name in names) + "\n",
@@ -107,4 +111,33 @@ def test_duplicate_allowlist_growth_fails(
         "handles: app/shell/widget.py:8: "
         "shell.welcome.onboardingActionBtn has 6 setObjectName assignments; "
         "duplicate allowlist permits 5\n"
+    )
+
+
+def test_abbreviated_documented_handle_missing_from_code_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_manifest(tmp_path)
+    path = _handles_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "`#shell.findBar.nextBtn` / `prevBtn`\n",
+        encoding="utf-8",
+    )
+    relative_path = _write_source(
+        tmp_path,
+        "class Widget:\n"
+        "    def build(self):\n"
+        '        self.setObjectName("shell.findBar.nextBtn")\n',
+    )
+
+    exit_code = run(tmp_path, [relative_path])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "handles: shell.findBar.prevBtn is documented but has no "
+        "setObjectName in app\n"
     )
