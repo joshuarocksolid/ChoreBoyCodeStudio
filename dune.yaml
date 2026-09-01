@@ -12,6 +12,8 @@ owners:
     - app/examples/**
   platform.filesystem:
     - app/filesystem/**
+  platform.features:
+    - app/features/**
   platform.intelligence:
     - app/intelligence/**
   platform.packaging:
