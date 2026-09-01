@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 if __package__:
+    from .file_roles import FileRoleError, find_file_role_violations
     from .ownership import (
         OwnershipManifestError,
         find_ownership_violations,
         parse_ownership_manifest,
     )
 else:
+    from file_roles import FileRoleError, find_file_role_violations
     from ownership import (
         OwnershipManifestError,
         find_ownership_violations,
@@ -35,7 +37,8 @@ def run(
             else list(tracked_files)
         )
         violations = find_ownership_violations(owners, app_files)
-    except (OSError, OwnershipManifestError, RuntimeError) as exc:
+        violations.extend(find_file_role_violations(repo_root, app_files))
+    except (FileRoleError, OSError, OwnershipManifestError, RuntimeError) as exc:
         print(f"dune check error: {exc}", file=sys.stderr)
         return 1
 
