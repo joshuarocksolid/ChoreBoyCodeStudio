@@ -4,6 +4,8 @@ The user formats with Black, organizes imports with isort, sees Problems / overl
 
 Owns AT-32, AT-36, AT-45–58, AT-73 (editor completion).
 
+<!-- dune-owners: platform.intelligence -->
+
 ## Sub-features
 
 - `format-file` **Tools → Format Current File** rewrites the buffer with Black 24.10.0.

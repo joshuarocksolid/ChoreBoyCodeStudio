@@ -4,6 +4,8 @@ Opening a file puts it in a tab. Edits mark the tab dirty. Save / Save All write
 
 Owns AT-06, AT-07, AT-08, AT-09, AT-44, request #43 (drag-drop open).
 
+<!-- dune-owners: platform.editors -->
+
 ## Sub-features
 
 - `editor-open` opens a project file in `#shell.editorTabs`.

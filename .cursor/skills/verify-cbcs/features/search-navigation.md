@@ -2,6 +2,8 @@
 
 Find and replace in the current file, search the project, jump to a file or symbol, and follow definitions / references / rename.
 
+<!-- dune-owners: platform.editors -->
+
 ## Sub-features
 
 - `find-in-file` opens `#shell.findBar` (Ctrl+F) and highlights matches.

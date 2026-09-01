@@ -4,6 +4,8 @@ Pasting flattened Python (typical of PDF / email copies) can be re-indented. The
 
 Owns AT-EDIT-FLAT-PYTHON-PASTE.
 
+<!-- dune-owners: platform.editors -->
+
 ## Sub-features
 
 - `paste-overlay` shows `#PasteHintOverlay` after a real Qt paste of flat Python (`insertFromMimeData`). Typed keys do not show it.

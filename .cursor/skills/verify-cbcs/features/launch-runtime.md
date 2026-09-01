@@ -4,6 +4,8 @@ The editor starts on the real desktop, stays up, and reports whether the FreeCAD
 
 Owns AT-01, AT-02, smoke M1.
 
+<!-- dune-owners: platform.bootstrap -->
+
 ## Sub-features
 
 - `launch-window` shows a maximized `ChoreBoy Code Studio v*` window.

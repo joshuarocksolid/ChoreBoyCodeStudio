@@ -4,6 +4,8 @@ Unsaved buffers are protected across a crash. Recovery Center and Local History 
 
 Owns AT-18, AT-65–71.
 
+<!-- dune-owners: platform.persistence -->
+
 ## Sub-features
 
 - `history-checkpoint` each Save creates a comparable revision (AT-65).

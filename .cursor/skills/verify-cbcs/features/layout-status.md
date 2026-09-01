@@ -4,6 +4,8 @@ Splitters persist. Reset Layout restores defaults. Zoom changes editor chrome. S
 
 Owns AT-25 plus status-bar contracts used by smoke M1/M3/M6.
 
+<!-- dune-owners: platform.shell -->
+
 ## Sub-features
 
 - `layout-default` explorer | editor | bottom tabs on first launch (AT-25).

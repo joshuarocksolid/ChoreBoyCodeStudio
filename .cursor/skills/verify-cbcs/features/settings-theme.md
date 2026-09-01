@@ -4,6 +4,8 @@ Settings edits global or project scope. Theme can be System, Light, Dark, High C
 
 Owns AT-34, AT-35, AT-43, AT-THEME-HIGH-CONTRAST, AT-THEME-NEUTRAL-DARK, smoke M5.
 
+<!-- dune-owners: platform.shell -->
+
 ## Sub-features
 
 - `settings-open` **File → Settings...** opens `#shell.settingsDialog`.

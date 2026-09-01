@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 if __package__:
     from .composition import CompositionError, find_composition_violations
     from .concurrency import ConcurrencyError, find_concurrency_violations
+    from .feature_map import FeatureMapError, find_feature_map_violations
     from .file_roles import FileRoleError, find_file_role_violations
     from .handles import HandlesError, find_handle_violations
     from .ownership import (
@@ -19,6 +20,7 @@ if __package__:
 else:
     from composition import CompositionError, find_composition_violations
     from concurrency import ConcurrencyError, find_concurrency_violations
+    from feature_map import FeatureMapError, find_feature_map_violations
     from file_roles import FileRoleError, find_file_role_violations
     from handles import HandlesError, find_handle_violations
     from ownership import (
@@ -53,9 +55,13 @@ def run(
         violations.extend(find_concurrency_violations(repo_root, app_files))
         violations.extend(find_handle_violations(repo_root, app_files))
         violations.extend(find_composition_violations(repo_root, app_files))
+        violations.extend(
+            find_feature_map_violations(repo_root, frozenset(owners))
+        )
     except (
         CompositionError,
         ConcurrencyError,
+        FeatureMapError,
         FileRoleError,
         HandlesError,
         OSError,

@@ -4,6 +4,8 @@ Project Health Check reports actionable problems. Support Bundle zips logs and r
 
 Owns AT-22, AT-23, AT-79.
 
+<!-- dune-owners: platform.support -->
+
 ## Sub-features
 
 - `health-check` **Tools → Project Health Check** lists structure / runner issues (AT-22).
