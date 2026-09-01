@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "id": "settings-toggle-no-ui-block",
+  "prompt": "Change an existing setting in ChoreBoy Code Studio and prove the editor remains responsive while the new setting is active.",
+  "verify_command": ".cursor/skills/cbcs-quality-loop/scripts/measure-smoke --repo /Users/local/Projects/ChoreBoyCodeStudio"
+}

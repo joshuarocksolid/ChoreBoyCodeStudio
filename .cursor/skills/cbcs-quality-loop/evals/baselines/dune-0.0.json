@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "case_id": "settings-toggle-no-ui-block",
+  "variant": "dune-0.0",
+  "judge": ".cursor/skills/cbcs-quality-loop/references/judge-criteria.md",
+  "source_artifact": "~/ChoreBoy/artifacts/verify-cbcs/20260817T183927Z",
+  "scores": {
+    "isolated_launch": {
+      "verdict": "pass",
+      "cite": "run.json records a source launch with a disposable guest_home."
+    },
+    "doctor_first": {
+      "verdict": "pass",
+      "cite": "prove-launch.json records doctor_rc 0 before the drive."
+    },
+    "real_qt_path": {
+      "verdict": "pass",
+      "cite": "measure.json M5 records four live theme triggers, and M6 records editor input."
+    },
+    "action_plus_result": {
+      "verdict": "fail",
+      "cite": "The artifact directory has no screenshot from M5."
+    },
+    "side_effects_when_it_mutates": {
+      "verdict": "fail",
+      "cite": "M5 does not read the active theme from persisted settings."
+    },
+    "cleanup_contract": {
+      "verdict": "pass",
+      "cite": "run.json records stopped_at, and measure.json records artifacts_remain true."
+    }
+  },
+  "passed": 4,
+  "total": 6
+}
